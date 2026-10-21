@@ -21,6 +21,7 @@ import {
 
 import { PRICED_IN_EFFECT, RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
+import { lineDeadlines } from './deadline';
 
 /**
  * Triage of the pricing run in effect for its period (PRD 12; PRD 5, J8 and J17; PRD 8, The status
@@ -122,8 +123,14 @@ export interface CandidateRow {
   readonly window_ends_on: string | null;
   readonly trace: unknown;
   readonly mapping_kind: string | null;
+  /** Whether the mapping it priced under is still the plan's mapping in force on its service date (payer_plan_mapping_in_force()). */
+  readonly mapping_in_force: boolean;
   readonly contract_version_id: string | null;
   readonly version_status: string | null;
+  /** Whether the version still covers the line's service date (true without a version). */
+  readonly version_covers_service: boolean;
+  /** Whether the run's rule release has a withdrawal. */
+  readonly release_withdrawn: boolean;
   readonly rate_record_id: string | null;
   readonly payer_id: string;
   readonly plan_id: string;
@@ -213,7 +220,12 @@ export async function candidateRows(scope: PracticeScope<ScopeClient>, practiceI
              SELECT cs.service_line_id FROM current_stage cs WHERE cs.stage = 'validated'
            ), in_effect AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT service_line_id FROM wanted)')})
            SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, r.release_no, p.variance_cents::text, p.window_ends_on::text, p.trace,
-                  m.mapping_kind, p.contract_version_id, v.status AS version_status, p.rate_record_id, pl.payer_id, pl.id AS plan_id,
+                  m.mapping_kind, p.contract_version_id, v.status AS version_status,
+                  coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
+                  (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
+                     AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
+                  EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no) AS release_withdrawn,
+                  p.rate_record_id, pl.payer_id, pl.id AS plan_id,
                   (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
                   c.superseded_by_claim_id IS NOT NULL AS superseded,
                   false AS written_off,
@@ -249,8 +261,17 @@ function referencesByRelease(client: ScopeClient): (releaseNo: number) => Promis
   };
 }
 
+/**
+ * The candidates as @tp/triage judges them: each with its pattern (the adjustment behavior detected from its
+ * trace) and whether its deadline is verified (lineDeadlines: D17 a, at L2), a line the loader cannot read being
+ * unverified.
+ */
 export async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[]): Promise<CandidateLine[]> {
   const references = referencesByRelease(client);
+  const deadlines = await lineDeadlines(
+    client,
+    rows.map((row) => row.priced_line_id),
+  );
   const lines: CandidateLine[] = [];
   for (const row of rows) {
     const behavior = detectBehavior(parseTrace(row.trace), await references(row.release_no));
@@ -268,10 +289,15 @@ export async function candidateLines(client: ScopeClient, rows: readonly Candida
       pattern,
       varianceCents: parseCents(row.variance_cents),
       windowEndsOn: row.window_ends_on,
+      deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
+      windowRuleComputed: deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED',
       claimReversed: row.reversed,
       claimSuperseded: row.superseded,
       mappingKind: row.mapping_kind,
+      mappingInForce: row.mapping_in_force,
       contractVersionStatus: row.version_status,
+      contractVersionCoversService: row.version_covers_service,
+      releaseWithdrawn: row.release_withdrawn,
       writtenOff: row.written_off,
       visitVarianceCents: row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents),
       reviewFlags: row.review_flags.map((flag) => flag.flag),

@@ -20,10 +20,15 @@ function candidate(variance: bigint, overrides: Partial<CandidateLine> = {}): Ca
     pattern: PATTERN_ONE,
     varianceCents: variance as Cents,
     windowEndsOn: '2027-01-15',
+    deadlineStatus: 'verified',
+    windowRuleComputed: true,
     claimReversed: false,
     claimSuperseded: false,
     mappingKind: 'contract',
+    mappingInForce: true,
     contractVersionStatus: 'signed_off',
+    contractVersionCoversService: true,
+    releaseWithdrawn: false,
     writtenOff: false,
     visitVarianceCents: null,
     reviewFlags: [],
@@ -71,6 +76,19 @@ describe('case grouping by payer pattern (PRD 12; CAS-03, CAS-04)', () => {
     expect(plan.created[0]?.lines.find((item) => item.serviceLineId === passed.serviceLineId)?.windowPassed).toBe(true);
     // A pattern of passed windows alone is no case.
     expect(planCases([passed], new Map(), SETTINGS, AS_OF).created).toEqual([]);
+  });
+
+  it('keeps a line whose deadline is not verified out of every case, struck or not: it waits with DEADLINE_UNVERIFIED (D17 a)', () => {
+    const open = Array.from({ length: 9 }, () => candidate(3000n));
+    const unverified = candidate(9000n, { deadlineStatus: 'unverified' });
+    const passedUnverified = candidate(9000n, { windowEndsOn: '2026-09-30', deadlineStatus: 'unverified' });
+    const plan = planCases([...open, unverified, passedUnverified], new Map(), SETTINGS, AS_OF);
+    expect(plan.created[0]?.lines.map((item) => item.serviceLineId)).toEqual(open.map((item) => item.serviceLineId));
+    expect(plan.created[0]?.actionableCents).toBe(27000n);
+    expect(plan.waiting.get(unverified.serviceLineId)).toEqual(['DEADLINE_UNVERIFIED']);
+    expect(plan.waiting.get(passedUnverified.serviceLineId)).toEqual(['WINDOW_PASSED', 'DEADLINE_UNVERIFIED']);
+    // A pattern whose deadlines are all unverified opens no case, however large.
+    expect(planCases(Array.from({ length: 20 }, () => candidate(30000n, { deadlineStatus: 'unverified' })), new Map(), SETTINGS, AS_OF).created).toEqual([]);
   });
 
   it('keeps lines below the line materiality, of reversed claims, or never validated out of every case (CAS-05, PRC-15)', () => {

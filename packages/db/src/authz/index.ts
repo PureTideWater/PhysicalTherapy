@@ -10,6 +10,7 @@ export {
   type ActorScope,
   type ClientOf,
   type AnyScope,
+  JobActorIsPersonError,
   type JobScopeRequest,
   OnePracticePerJobError,
   type PracticeAccess,
@@ -23,6 +24,7 @@ export {
   withActor,
   withJobScope,
   withPracticeScope,
+  withPublicSnapshot,
 } from './scope';
 export {
   type Effect,

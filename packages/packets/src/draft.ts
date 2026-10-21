@@ -1,5 +1,6 @@
 import { dollars } from './assemble';
 import type { PacketContent } from './format';
+import { interestStated } from './interest';
 
 /**
  * A deterministic draft of the pattern statement, built by code from the version's own facts (PRD 12:
@@ -7,6 +8,10 @@ import type { PacketContent } from './format';
  * model gateway (milestone 10), a person writes or edits the narrative; this draft is where they start.
  * Every figure it writes is one of the facts and every sentence carries its citation marker, so it
  * passes the verifier by construction (a property test holds it to that). No model is involved.
+ *
+ * It is written for the payer (audit item #37 part 1; docs/adr/0061): it names no internal term, says nothing of
+ * interest that could not be computed, and states the Medicare fee schedule a regulation's amount comes from by its
+ * release.
  */
 
 const plural = (count: number, one: string, many: string) => `${String(count)} ${count === 1 ? one : many}`;
@@ -17,7 +22,7 @@ function requirement(content: PacketContent): string[] {
     const release = content.rule_releases.at(-1);
     return [
       `The plan is a Medicare Advantage plan the practice has no contract with, so it owes the amount Original Medicare would pay under ${citation.reference} [1].`,
-      ...(release === undefined ? [] : [`Rule release ${String(release.release_no)} sets that amount [2].`]),
+      ...(release === undefined ? [] : [`The Medicare fee schedule in effect for those service dates (release ${String(release.release_no)}) sets that amount [2].`]),
     ];
   }
   const version = `The contract, version ${String(citation.version_no)},`;
@@ -53,12 +58,11 @@ export function draftNarrative(content: PacketContent): string {
       ? `Under the contract those lines come to ${dollars(pattern.expected_cents)}, a shortfall of ${dollars(pattern.variance_cents)} [3].`
       : `At the Original Medicare amount those lines come to ${dollars(pattern.expected_cents)}, a shortfall of ${dollars(pattern.variance_cents)} [3].`,
   ];
-  if (interest !== null) {
-    sentences.push(
-      interest.total_cents === null
-        ? 'Prompt-pay interest under the state rule could not be computed from the records on file [4].'
-        : `Prompt-pay interest of ${dollars(interest.total_cents)} is stated as its own line and is not part of the shortfall [4].`,
-    );
+  // Interest only where code computed it above zero (audit item #37 part 1, D9; the founder's ruling of 2026-10-20,
+  // Q4 (a); interestStated()): nothing is said of interest no line computed, or of $0.00, so the letter never reads as
+  // giving it up.
+  if (interest !== null && interest.total_cents !== null && interestStated(interest)) {
+    sentences.push(`Prompt-pay interest of ${dollars(interest.total_cents)} is stated as its own line and is not part of the shortfall [4].`);
   }
   return sentences.join(' ');
 }

@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import path from 'node:path';
 
 import { openPool } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import { type ExpiryResult, LocalMailSender, type SweepResult, expireScreenings, sweepScreeningRuns } from '@tp/worker/runtime';
 
 import { E2E_MAIL_OUTBOX_DIR, E2E_ORIGIN, e2eDatabaseUrl } from './env';
+import type { OutboxMessage } from './outbox';
 
 /**
  * The free screening's journey support (Change Order 001, CO-04): an upload built in memory from SYNTHETIC rows (no
@@ -85,24 +84,6 @@ export function memberIdCsv(): Buffer {
 export function dateOfServiceCsv(): Buffer {
   const header = [...SCREENING_HEADER.slice(0, 5), 'DOS', ...SCREENING_HEADER.slice(6)];
   return screeningCsv([['97110', 'GP', '1', '11', 'medicare_ffs', '2026-02-03', '60.00', '1']], header);
-}
-
-export interface OutboxMessage {
-  readonly to: readonly string[];
-  readonly subject: string;
-  readonly body: string;
-  readonly html: string;
-}
-
-/** The messages the local outbox holds for one address, oldest first. */
-export function outboxFor(email: string): OutboxMessage[] {
-  if (!existsSync(E2E_MAIL_OUTBOX_DIR)) {
-    return [];
-  }
-  return readdirSync(E2E_MAIL_OUTBOX_DIR)
-    .sort()
-    .map((file) => JSON.parse(readFileSync(path.join(E2E_MAIL_OUTBOX_DIR, file), 'utf8')) as OutboxMessage)
-    .filter((message) => message.to.includes(email));
 }
 
 /** The result link a screening email carries: the origin, /screening/results/ and the 32-letter token. */

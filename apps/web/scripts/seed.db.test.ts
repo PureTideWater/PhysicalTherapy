@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { openPool, readDatabaseUrl, withActor } from '@tp/db';
+import { openPool, readDatabaseUrl, withActor, withPracticeScope } from '@tp/db';
+import { SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
 import { type MigratedDatabase, createMigratedDatabase, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -66,6 +67,12 @@ describe('pnpm db:seed', () => {
       expect(new Set(required)).toEqual(new Set([false]));
       const terms = await withActor(pool, admin, async (scope) => (await scope.client.query<{ version: string }>('SELECT version FROM terms_version WHERE id = current_terms_version()')).rows);
       expect(terms).toEqual([{ version: SYNTHETIC_TERMS_VERSION }]);
+      // The group's practices print the SYNTHETIC correspondence contact, so their packets export (audit item #37 part 1).
+      const contacts = await withPracticeScope(pool, { actorId: admin, practiceIds: [result.practices.north, result.practices.south] }, async (scope) =>
+        (await scope.client.query<{ id: string; contact: unknown }>(`SELECT id, settings -> 'correspondence_contact' AS contact FROM practice WHERE id = ANY($1::uuid[]) ORDER BY id`, [[result.practices.north, result.practices.south]])).rows,
+      );
+      expect(contacts.map((row) => row.contact)).toEqual([SYNTHETIC_CORRESPONDENCE_CONTACT, SYNTHETIC_CORRESPONDENCE_CONTACT]);
+      expect(contacts).toHaveLength(2);
     } finally {
       await endPool(pool);
     }

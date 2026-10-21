@@ -7,8 +7,8 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError } from '../http/route';
 import type { Services } from '../server/services';
 import { type ExportRecord, type ReportDocumentSummary, exportHistory, listReportDocuments } from '../reports/documents';
-import { type Attestation, type DownloadRecord, type ReportDetail, type ReportSummary, downloads, listReports, reportFile, reportOf } from '../reports/queries';
-import { RUN_NOT_IN_EFFECT, type RunChoice, isRunInEffect, runsInEffect } from '../triage/queries';
+import { type Attestation, type DownloadRecord, REPORT_RELEASE_WITHDRAWN_TEXT, type ReportDetail, type ReportSummary, downloads, listReports, reportFile, reportOf } from '../reports/queries';
+import { RUN_NOT_IN_EFFECT, RUN_RELEASE_WITHDRAWN, type RunChoice, isRunInEffect, isRunReleaseWithdrawn, runsInEffect } from '../triage/queries';
 import { type ListPage, pageParam } from '../http/paging';
 import { lastMonth } from '../monitoring/queries';
 import { opaqueId } from './schemas';
@@ -99,8 +99,9 @@ export const reportsPage = practiceRoute({
 
 /**
  * Requests an audit report of the run in effect for its period (never a re-run nobody has accepted, nor a
- * run since replaced; the database refuses them too): recorded queued in the requester's name, and the
- * report job queued.
+ * run since replaced; the database refuses them too), and never of a run whose rule release was withdrawn
+ * (audit item #4: its content was wrong; refused here with the remedy, and by the database): recorded queued
+ * in the requester's name, and the report job queued.
  */
 export const generateReportAction = practiceRoute({
   id: 'practice.reports.generate',
@@ -114,6 +115,9 @@ export const generateReportAction = practiceRoute({
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
     if (!(await isRunInEffect(scope, practiceId, input.runId))) {
       throw new InputError([{ field: 'runId', message: RUN_NOT_IN_EFFECT }]);
+    }
+    if (await isRunReleaseWithdrawn(scope, input.runId)) {
+      throw new InputError([{ field: 'runId', message: RUN_RELEASE_WITHDRAWN }]);
     }
     const id = randomUUID();
     await scope.client.query('INSERT INTO audit_report (id, practice_id, pricing_run_id, requested_by) VALUES ($1, $2, $3, app_actor_id())', [id, practiceId, input.runId]);
@@ -181,8 +185,8 @@ export const reviewChecklistPage = practiceRoute({
 });
 
 async function lockedReport(scope: PracticeScope<ScopeClient>, practiceId: string, reportId: string) {
-  const { rows } = await scope.client.query<{ status: string; pdf_sha256: string | null; csv_sha256: string | null; attested_by: string | null; released_by: string | null }>(
-    'SELECT status, pdf_sha256, csv_sha256, attested_by, released_by FROM audit_report WHERE id = $1 AND practice_id = $2 FOR UPDATE',
+  const { rows } = await scope.client.query<{ status: string; pdf_sha256: string | null; csv_sha256: string | null; attested_by: string | null; released_by: string | null; release_withdrawn: boolean }>(
+    'SELECT status, pdf_sha256, csv_sha256, attested_by, released_by, pricing_run_release_withdrawn(pricing_run_id) AS release_withdrawn FROM audit_report WHERE id = $1 AND practice_id = $2 FOR UPDATE',
     [reportId, practiceId],
   );
   const row = rows[0];
@@ -195,7 +199,9 @@ async function lockedReport(scope: PracticeScope<ScopeClient>, practiceId: strin
 /**
  * The reviewer signs the attestation (once; a report already signed is left as it is): every item
  * confirmed and the SHA-256 of the PDF and the CSV the checklist showed, which must be the report's
- * own. No free text: an attestation holds no words a person typed (docs/adr/0040).
+ * own. No free text: an attestation holds no words a person typed (docs/adr/0040). A report whose rule
+ * release was withdrawn since it was generated is refused with the remedy (audit item #4; the database
+ * refuses it too).
  */
 export const attestReportAction = practiceRoute({
   id: 'practice.reports.attest',
@@ -222,6 +228,9 @@ export const attestReportAction = practiceRoute({
       if (found.status !== 'ready') {
         throw new InputError([{ field: 'reportId', message: 'only a generated report is attested' }]);
       }
+      if (found.release_withdrawn) {
+        throw new InputError([{ field: 'reportId', message: REPORT_RELEASE_WITHDRAWN_TEXT }]);
+      }
       if (found.pdf_sha256 !== input.pdfSha256 || found.csv_sha256 !== input.csvSha256) {
         throw new InputError([{ field: 'pdfSha256', message: 'the files the checklist showed are not this report’s; reload the checklist' }]);
       }
@@ -246,7 +255,10 @@ export const attestReportAction = practiceRoute({
   },
 });
 
-/** Releases a signed report (once; a report already released is left as it is). Unsigned, it is refused. */
+/**
+ * Releases a signed report (once; a report already released is left as it is). Unsigned, it is refused, and so
+ * is one whose rule release was withdrawn since it was generated (audit item #4; the database refuses it too).
+ */
 export const releaseReportAction = practiceRoute({
   id: 'practice.reports.release',
   kind: 'action',
@@ -261,6 +273,9 @@ export const releaseReportAction = practiceRoute({
     if (found.released_by === null) {
       if (found.attested_by === null) {
         throw new InputError([{ field: 'reportId', message: 'a report is released only after a reimbursement reviewer signs its attestation' }]);
+      }
+      if (found.release_withdrawn) {
+        throw new InputError([{ field: 'reportId', message: REPORT_RELEASE_WITHDRAWN_TEXT }]);
       }
       await scope.client.query('UPDATE audit_report SET released_by = app_actor_id() WHERE id = $1 AND practice_id = $2', [input.reportId, practiceId]);
     }

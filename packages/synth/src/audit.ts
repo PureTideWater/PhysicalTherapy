@@ -20,9 +20,22 @@ import { SynthWorld, claim, line, remittance, singleTransactionFile } from './x1
 
 export const AUDIT_INPUTS_FORMAT = 'tp-audit-inputs/1';
 
+/** The units and starts a contract window's evidence names (contract_version.dispute_window_unit and _measured_from). */
+export const AUDIT_WINDOW_UNITS = ['calendar_days', 'business_days', 'months'] as const;
+export const AUDIT_WINDOW_STARTS = ['date_of_service', 'remittance_date', 'payment_date', 'receipt_date'] as const;
+export type AuditWindowUnit = (typeof AUDIT_WINDOW_UNITS)[number];
+export type AuditWindowStart = (typeof AUDIT_WINDOW_STARTS)[number];
+
 export interface AuditContract {
   readonly effective_from: string;
   readonly dispute_window_days: number;
+  /**
+   * Where the contract states its dispute window (D17 a): the page and its exact words, which the specialist cites
+   * and verifies, with the rule the words state (best-option audit #5): the unit they count in and what they count
+   * from, from the fixed lists. Without it the contract's lines have no verified deadline and are not actionable;
+   * with a rule the product does not compute (anything but calendar days from the payment date, BPR16) neither.
+   */
+  readonly dispute_window_evidence?: { readonly page: number; readonly quote: string; readonly unit: AuditWindowUnit; readonly measured_from: AuditWindowStart };
   readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[];
 }
 
@@ -94,6 +107,16 @@ export function readAuditInputs(file: string): AuditInputs {
     check(plan.mapping !== 'contract' || plan.contract !== undefined, `${file}: plan ${plan.key} is mapped to a contract without one`);
     for (const rate of plan.contract?.schedule ?? []) {
       check(isCents(rate.amount_cents), `${file}: plan ${plan.key} ${rate.code}: amount_cents is integer cents as text`);
+    }
+    const evidence = plan.contract?.dispute_window_evidence;
+    if (evidence !== undefined) {
+      check(Number.isInteger(evidence.page) && evidence.page >= 1, `${file}: plan ${plan.key}: the window's evidence names a page from 1`);
+      check(
+        typeof evidence.quote === 'string' && evidence.quote.includes(`${String(plan.contract?.dispute_window_days)} days`),
+        `${file}: plan ${plan.key}: the window's evidence quotes the contract's own days`,
+      );
+      check((AUDIT_WINDOW_UNITS as readonly unknown[]).includes(evidence.unit), `${file}: plan ${plan.key}: the window's evidence names its unit: ${AUDIT_WINDOW_UNITS.join(', ')}`);
+      check((AUDIT_WINDOW_STARTS as readonly unknown[]).includes(evidence.measured_from), `${file}: plan ${plan.key}: the window's evidence names what it counts from: ${AUDIT_WINDOW_STARTS.join(', ')}`);
     }
   }
   for (const group of inputs.groups) {

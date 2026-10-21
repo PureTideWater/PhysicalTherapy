@@ -104,7 +104,7 @@ when it is red. Synthetic data only: the release and the uploads are generated, 
   `pnpm screening:capacity --runtime process --images <dir> --admin-url <superuser URL> --database tp_capacity --out <dir>`.
   The web and platform processes run in cgroups at production's limits, their output in `<out>/logs`; Postgres is the
   server named, unlimited and warm, so the run reports its limits as not applied and never passes. Its times are
-  indications, with the load average beside them. Roles belong to the whole server, so the run's four logins carry a
-  suffix of its own and are dropped with its database (kept, and named, with `--keep-database`); while it runs, a test
-  on the same server that lists a role's members (the billing test does) sees them, so run it on a server no test
-  suite is using.
+  indications, with the load average beside them. Roles belong to the whole server, so the run's five logins (the
+  migration task's: the web's, the worker's, the operator's, the queue's and billing's) carry a suffix of its own and
+  are dropped with its database (kept, and named, with `--keep-database`); while it runs, a test on the same server
+  that lists a role's members (the billing test does) sees them, so run it on a server no test suite is using.

@@ -90,8 +90,18 @@ describe('the containers’ environments', () => {
 
   it('gives a run on a shared server logins of its own, which every service and the migration task use', () => {
     const logins = harnessLogins('ab12cd34');
-    expect(Object.values(logins).map((login) => login.username)).toEqual(['tp_app_login_ab12cd34', 'tp_operator_login_ab12cd34', 'tp_queue_login_ab12cd34', 'tp_billing_login_ab12cd34']);
-    expect(loginsEnvironment('postgres://owner:secret@db:5432/tp_capacity', logins)).toMatchObject({ TP_APP_LOGIN_USERNAME: 'tp_app_login_ab12cd34', TP_BILLING_LOGIN_USERNAME: 'tp_billing_login_ab12cd34' });
+    expect(Object.values(logins).map((login) => login.username)).toEqual([
+      'tp_app_login_ab12cd34',
+      'tp_worker_login_ab12cd34',
+      'tp_operator_login_ab12cd34',
+      'tp_queue_login_ab12cd34',
+      'tp_billing_login_ab12cd34',
+    ]);
+    expect(loginsEnvironment('postgres://owner:secret@db:5432/tp_capacity', logins)).toMatchObject({
+      TP_APP_LOGIN_USERNAME: 'tp_app_login_ab12cd34',
+      TP_WORKER_LOGIN_USERNAME: 'tp_worker_login_ab12cd34',
+      TP_BILLING_LOGIN_USERNAME: 'tp_billing_login_ab12cd34',
+    });
     const web = webEnvironment('postgres://owner:secret@db:5432/tp_capacity', 'http://web:3000', dirs, { cookieSecret: 'c', masterKey: 'k' }, logins);
     const platform = platformEnvironment('postgres://owner:secret@db:5432/tp_capacity', 'http://web:3000', dirs, logins);
     expect([web.DATABASE_URL, web.BILLING_DATABASE_URL, web.QUEUE_DATABASE_URL, platform.OPERATOR_DATABASE_URL, platform.QUEUE_DATABASE_URL].map((url) => new URL(url ?? '').username)).toEqual([
@@ -104,5 +114,13 @@ describe('the containers’ environments', () => {
     // The Docker runtime's own Postgres keeps production's names.
     expect(loginsEnvironment('postgres://owner:secret@db:5432/tp_capacity').TP_APP_LOGIN_USERNAME).toBe(HARNESS_LOGINS.app.username);
     expect(() => harnessLogins('AB-12')).toThrow(RangeError);
+  });
+
+  it('gives the migration task every login variable it reads (apps/worker/src/deploy/logins.ts), and nothing else', () => {
+    const deploy = readFileSync(path.join(repositoryRoot, 'apps/worker/src/deploy/logins.ts'), 'utf8');
+    const wanted = [...deploy.matchAll(/'(TP_[A-Z]+_LOGIN_(?:USERNAME|PASSWORD))'/g)].map((match) => match[1]).sort();
+    expect(wanted).toContain('TP_WORKER_LOGIN_USERNAME');
+    const given = Object.keys(loginsEnvironment('postgres://owner:secret@db:5432/tp_capacity')).filter((name) => name !== 'DATABASE_URL').sort();
+    expect(given).toEqual(wanted);
   });
 });

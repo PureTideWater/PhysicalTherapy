@@ -1,4 +1,4 @@
-import { type RateMethod, type RateRecord, loadRateRecords } from '@tp/contracts';
+import { type DisputeWindowRule, type RateMethod, type RateRecord, disputeWindowRuleSchema, loadRateRecords } from '@tp/contracts';
 import { type CalendarEventKind, type DocumentKind, type PracticeCipher, type PracticeScope, type QuestionStatus, type QuestionTopic, type ScopeClient, type VersionStatus, readWithAudit } from '@tp/db/runtime';
 
 /**
@@ -401,8 +401,25 @@ export interface VersionSummary {
   readonly signedOffAt: string | null;
   readonly timelyFilingDays: number | null;
   readonly disputeWindowDays: number | null;
+  /** Where the contract states its dispute window and who verified it (D17 a); null while uncited. */
+  readonly disputeWindow: DisputeWindowView | null;
   readonly noticeDays: number | null;
   readonly appealLevels: readonly { readonly level: number; readonly days: number }[];
+}
+
+/**
+ * A version's cited dispute window: its document, page and quote, the rule the quote states (its unit and what it
+ * is counted from, best-option audit #5), and the specialist who verified it, when.
+ */
+export interface DisputeWindowView {
+  readonly documentId: string;
+  readonly page: number;
+  readonly quote: string;
+  /** What the quote counts the days in, and from (contract_version.dispute_window_unit and _measured_from); null only if the row breaks that rule. */
+  readonly rule: DisputeWindowRule | null;
+  /** Null while the citation is not verified (only a verified window of a signed-off version verifies its lines' deadlines). */
+  readonly verifiedBy: string | null;
+  readonly verifiedAt: string | null;
 }
 
 interface VersionRow {
@@ -427,6 +444,11 @@ interface VersionRow {
   readonly signed_off_at: Date | null;
   readonly timely_filing_days: number | null;
   readonly dispute_window_days: number | null;
+  readonly dispute_window_evidence: { readonly document_id: string; readonly page: number; readonly quote: string } | null;
+  readonly dispute_window_unit: string | null;
+  readonly dispute_window_measured_from: string | null;
+  readonly window_verified_by_email: string | null;
+  readonly dispute_window_verified_at: Date | null;
   readonly notice_days: number | null;
   readonly appeal_levels: { level: number; days: number }[];
 }
@@ -437,10 +459,19 @@ const VERSION_SELECT = `
          (SELECT count(*)::int FROM rate_record r WHERE r.contract_version_id = v.id) AS records,
          (SELECT count(*)::int FROM rate_record r WHERE r.contract_version_id = v.id AND r.verified_by IS NOT NULL) AS verified,
          a.email AS approved_by_email, v.approved_at, o.email AS signed_off_by_email, v.signed_off_at,
-         v.timely_filing_days, v.dispute_window_days, v.notice_days, v.appeal_levels
+         v.timely_filing_days, v.dispute_window_days, v.dispute_window_evidence, v.dispute_window_unit, v.dispute_window_measured_from,
+         w.email AS window_verified_by_email, v.dispute_window_verified_at,
+         v.notice_days, v.appeal_levels
     FROM contract_version v JOIN contract c ON c.id = v.contract_id JOIN payer y ON y.id = c.payer_id
     LEFT JOIN contract_version s ON s.id = v.supersedes_id
-    LEFT JOIN "user" a ON a.id = v.approved_by LEFT JOIN "user" o ON o.id = v.signed_off_by`;
+    LEFT JOIN "user" a ON a.id = v.approved_by LEFT JOIN "user" o ON o.id = v.signed_off_by
+    LEFT JOIN "user" w ON w.id = v.dispute_window_verified_by`;
+
+/** The rule a cited window states, read with the fixed lists (a value outside them reads as no rule: never computed, so never verified). */
+function windowRuleOf(row: Pick<VersionRow, 'dispute_window_unit' | 'dispute_window_measured_from'>): DisputeWindowRule | null {
+  const parsed = disputeWindowRuleSchema.safeParse({ unit: row.dispute_window_unit, measuredFrom: row.dispute_window_measured_from });
+  return parsed.success ? parsed.data : null;
+}
 
 function versionSummary(row: VersionRow): VersionSummary {
   return {
@@ -464,6 +495,17 @@ function versionSummary(row: VersionRow): VersionSummary {
     signedOffAt: row.signed_off_at?.toISOString() ?? null,
     timelyFilingDays: row.timely_filing_days,
     disputeWindowDays: row.dispute_window_days,
+    disputeWindow:
+      row.dispute_window_evidence === null
+        ? null
+        : {
+            documentId: row.dispute_window_evidence.document_id,
+            page: row.dispute_window_evidence.page,
+            quote: row.dispute_window_evidence.quote,
+            rule: windowRuleOf(row),
+            verifiedBy: row.dispute_window_verified_at === null ? null : (row.window_verified_by_email ?? 'the contract specialist'),
+            verifiedAt: row.dispute_window_verified_at?.toISOString() ?? null,
+          },
     noticeDays: row.notice_days,
     appealLevels: row.appeal_levels,
   };

@@ -1,4 +1,4 @@
-import { type AuditReportContent, reasonText } from '@tp/worker/reports';
+import { type AuditReportContent, reasonText, unattestedSubmissionsNote, unattestedSubmissionsOf, unattestedSubmissionsText } from '@tp/worker/reports';
 import { STAGE_LABELS } from '@tp/triage';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import Link from 'next/link';
@@ -52,6 +52,13 @@ const count = (value: number, noun: string) => `${String(value)} ${noun}${value 
 
 /** A stored case's state in words, as the Cases screen says it. */
 const stateText = (state: string): string => (state in CASE_STATE_TEXT ? CASE_STATE_TEXT[state as keyof typeof CASE_STATE_TEXT] : state);
+
+/**
+ * A stored case's state with its submissions sent without sign-off, when it has any (the founder's ruling of
+ * 2026-10-20: an export whose pricing went stale after it was made, never attested), as the report's PDF says it.
+ */
+const caseStateOf = (item: AuditReportContent['cases'][number]): string =>
+  item.unattested_submissions === undefined || item.unattested_submissions === 0 ? stateText(item.state) : `${stateText(item.state)}; ${unattestedSubmissionsText(item.unattested_submissions)}`;
 
 /** The headline: three numbers, then flagged and validated below, each linked to its stage. */
 export function Headline({ headline, practiceId, base }: { readonly headline: AuditReportContent['headline']; readonly practiceId: string; readonly base: string }) {
@@ -247,7 +254,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
               item.payer,
               item.plan,
               item.behavior_text,
-              stateText(item.state),
+              caseStateOf(item),
               // Its lines still actionable and their variance, the lines the headline sums (a report stored before the stages were read shows its share).
               `${String(item.actionable_now_lines ?? item.actionable_lines)} of ${String(item.lines)}`,
               <Money key="actionable" value={item.actionable_now_cents ?? item.actionable_cents} />,
@@ -281,12 +288,18 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
             rows={content.cases.map((item) => [
               item.payer,
               item.plan,
-              stateText(item.state),
+              caseStateOf(item),
               <Money key="approved" value={item.payer_approved_cents ?? '0'} />,
               <Money key="recovered" value={item.recovered_cents ?? '0'} />,
             ])}
             empty="No pattern reaches the case materiality yet."
           />
+          {unattestedSubmissionsOf(content) === 0 ? null : (
+            // The report's own sentence under its By case table (the founder's ruling of 2026-10-20; docs/adr/0061).
+            <p className="pt-2 text-sm" data-unattested-submissions={String(unattestedSubmissionsOf(content))}>
+              {unattestedSubmissionsNote(unattestedSubmissionsOf(content))}
+            </p>
+          )}
         </CardContent>
       </Card>
       <Card role="region" aria-label="Evidence gaps">

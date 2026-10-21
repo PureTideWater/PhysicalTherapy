@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { type ScopeClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { type JobContext, printRoiStatement, reconcileHandler } from '@tp/worker/runtime';
@@ -17,6 +17,7 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
+import { reconciliation } from '../reconciliation/queries';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
 import { matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
@@ -77,8 +78,31 @@ async function sessionOf(userId: string): Promise<string> {
   return token;
 }
 
-async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>): Promise<Outcome<R>> {
-  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>, using: Services = services): Promise<Outcome<R>> {
+  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, using);
+}
+
+/**
+ * The routes' services with a pool whose connections run `between` once, right after the first statement whose text
+ * holds `marker` has returned: a write that commits while a page is part way through its reads.
+ */
+function committingMidRead(marker: string, between: () => Promise<void>): Services {
+  let fired = false;
+  const pool: Services['pool'] = {
+    connect: async () => {
+      const client = await w.app.connect();
+      const query = async (text: string, values?: unknown[]) => {
+        const result = await client.query(text, values);
+        if (!fired && text.includes(marker)) {
+          fired = true;
+          await between();
+        }
+        return result;
+      };
+      return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
+    },
+  };
+  return { ...services, pool };
 }
 
 function ok<R>(outcome: Outcome<R>): R {
@@ -349,7 +373,19 @@ describe('the Reconciliation screen (PRD 7)', () => {
 
   it('takes back the PLB WO at once: recovered reduced by its amount, the recoupment shown with its evidence, the dashboard reading the ledger (LED-06)', async () => {
     await w.load(practice, 'LED-06/recoupment.835');
-    await reconcile();
+    // The reconcile commits while the screen reads: after its case lines and their stages, before its entries and totals.
+    // The screen reads one snapshot, so what it shows agrees with itself, all of it from before the take-back; read at
+    // READ COMMITTED it would show the line still Recovered beside recovered of 12.00.
+    const during = ok(await call(reconciliationPage, practice.manager, P(), undefined, committingMidRead('FROM case_line cl JOIN service_line l', () => reconcile())));
+    expect(during.totals).toMatchObject({ depositedCents: '3000', recoupedCents: '0', recoveredCents: '3000' });
+    expect(during.linkage.items[0]).toMatchObject({ stage: 'recovered', recoupments: [] });
+    expect(during.entries.items.map((entry) => entry.stage)).not.toContain('recouped');
+    // The screen's reads refuse a scope that reads statement by statement.
+    await expect(
+      withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, (scope) =>
+        reconciliation(scope, services, practice.practiceId, { caseId: null, linesPage: 1, entriesPage: 1 }, true, `test-${randomUUID()}`),
+      ),
+    ).rejects.toThrow('the ledger is read in one snapshot');
     const page = ok(await call(reconciliationPage, practice.manager, P()));
     expect(page.totals).toMatchObject({ approvedCents: '3000', depositedCents: '3000', recoupedCents: '-1800', recoveredCents: '1200' });
     const [line] = page.linkage.items;

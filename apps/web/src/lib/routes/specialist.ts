@@ -107,6 +107,8 @@ export const ledgerReviewPage = practiceRoute({
   path: '/p/[practiceId]/abstraction/ledger',
   phi: true,
   permission: 'ledger.adjust',
+  // The Reconciliation screen's own reads: one snapshot, the totals agreeing with the lines and entries beside them.
+  oneSnapshot: true,
   params: z.object({ practiceId: opaqueId, lines: pageParam, entries: pageParam, notice: z.enum(SPECIALIST_NOTICES).optional().catch(undefined) }),
   handle: async ({ scope, practiceId, params, access, request, services }): Promise<LedgerReviewPageData> => {
     const data = await reconciliation(scope, services, practiceId, { caseId: null, linesPage: params.lines, entriesPage: params.entries }, false, request.requestId);

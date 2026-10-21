@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { fakePool } from '../test-support/fake-pool';
 import { ScopeError, isUuid, requireUuid } from './ids';
-import { OnePracticePerJobError, accessByPractice, onePracticeJob, withActor, withJobScope, withPracticeScope } from './scope';
+import { JobActorIsPersonError, OnePracticePerJobError, accessByPractice, onePracticeJob, withActor, withJobScope, withPracticeScope, withPublicSnapshot } from './scope';
 
 const ACTOR = '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60';
 const PRACTICE_A = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
@@ -113,6 +113,17 @@ describe('withPracticeScope', () => {
     });
   });
 
+  it('reads one snapshot when the request asks for it (REPEATABLE READ from its first statement), and READ COMMITTED otherwise', async () => {
+    const snapshot = fakePool();
+    await withPracticeScope(snapshot.pool, { actorId: ACTOR, practiceIds: [PRACTICE_A], oneSnapshot: true }, () => Promise.resolve());
+    expect(snapshot.texts()).toEqual(['BEGIN ISOLATION LEVEL REPEATABLE READ', expect.stringContaining("set_config('app.actor_id'"), expect.stringContaining('open_practice_scope'), 'COMMIT']);
+    for (const request of [{ actorId: ACTOR, practiceIds: [PRACTICE_A] }, { actorId: ACTOR, practiceIds: [PRACTICE_A], oneSnapshot: false }]) {
+      const plain = fakePool();
+      await withPracticeScope(plain.pool, request, () => Promise.resolve());
+      expect(plain.texts()[0]).toBe('BEGIN');
+    }
+  });
+
   it('is empty when the actor may reach none of the requested practices', async () => {
     const { pool } = fakePool();
     await withPracticeScope(pool, { actorId: ACTOR, practiceIds: [PRACTICE_A] }, (scope) => {
@@ -126,6 +137,26 @@ describe('withPracticeScope', () => {
     expect(() => withPracticeScope(pool, { actorId: ACTOR, practiceIds: ['{a,b}'] }, () => Promise.resolve())).toThrow(
       new ScopeError('every practice ID must be a UUID'),
     );
+  });
+});
+
+describe('withPublicSnapshot', () => {
+  it('reads a public page in one read-only snapshot with no actor and no practice set, and commits', async () => {
+    const { pool, texts, released } = fakePool((text) => (text === 'SELECT 1 AS one' ? [{ one: 1 }] : undefined));
+    const result = await withPublicSnapshot(pool, async (client) => (await client.query<{ one: number }>('SELECT 1 AS one')).rows[0]?.one);
+    expect(result).toBe(1);
+    expect(texts()).toEqual(['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'SELECT 1 AS one', 'COMMIT']);
+    expect(released).toEqual([false]);
+  });
+
+  it('rolls back when the read fails, rethrows, and destroys a connection whose rollback fails', async () => {
+    const failing = fakePool();
+    await expect(withPublicSnapshot(failing.pool, () => Promise.reject(new Error('not found')))).rejects.toThrow('not found');
+    expect(failing.texts()).toEqual(['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'ROLLBACK']);
+    expect(failing.released).toEqual([false]);
+    const lost = fakePool((text) => (text === 'ROLLBACK' ? new Error('connection lost') : undefined));
+    await expect(withPublicSnapshot(lost.pool, () => Promise.reject(new Error('not found')))).rejects.toThrow('not found');
+    expect(lost.released).toEqual([true]);
   });
 });
 
@@ -185,5 +216,24 @@ describe('withJobScope (one practice per job, SEC-06)', () => {
 
   it('refuses a job ID that is not a UUID', () => {
     expect(() => onePracticeJob({ jobId: 'job-1', practiceId: PRACTICE_A })).toThrow(new ScopeError('jobId must be a UUID'));
+  });
+
+  it('asks the database whether the job ID names a person, and runs the job when it names none', async () => {
+    const { pool, texts } = fakePool((text) => (text.includes('app_actor_is_person') ? [{ person: false }] : undefined));
+    await expect(withJobScope(pool, { jobId: JOB, practiceId: PRACTICE_A }, () => Promise.resolve('ran'))).resolves.toBe('ran');
+    expect(texts()).toEqual(['BEGIN', expect.stringContaining("set_config('app.actor_id'"), 'SELECT app_actor_is_person() AS person', 'COMMIT']);
+  });
+
+  it('refuses a job ID that names a person before the job runs, and rolls back (docs/adr/0061)', async () => {
+    const { pool, texts } = fakePool((text) => (text.includes('app_actor_is_person') ? [{ person: true }] : undefined));
+    let ran = false;
+    await expect(
+      withJobScope(pool, { jobId: ACTOR, practiceId: PRACTICE_A }, () => {
+        ran = true;
+        return Promise.resolve();
+      }),
+    ).rejects.toThrow(JobActorIsPersonError);
+    expect(ran).toBe(false);
+    expect(texts().at(-1)).toBe('ROLLBACK');
   });
 });

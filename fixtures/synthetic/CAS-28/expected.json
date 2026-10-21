@@ -1,0 +1,21 @@
+{
+  "case": "CAS-28",
+  "module": "CAS",
+  "title": "Packet found by its reference",
+  "assertion": "Every version of the practice whose reference matches, none of another practice",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/reference.test.ts",
+    "apps/web/src/lib/routes/payer-copy-routes.db.test.ts",
+    "apps/web/e2e/packets.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Looks up any approved packet by its reference: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,54 +1,57 @@
 import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
-import { formatUsd, parseCents } from '@tp/money';
-import { EVIDENCE_GAP_CODES, type EvidenceGapCode, type ExportedPacket } from '@tp/packets';
+import { formatUnroundedUsd, formatUsd, parseCents } from '@tp/money';
+import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText, interestStated, lineInterestStated, payerAndPlanText } from '@tp/packets';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
+import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusionWords, releaseText, wordsOf } from './words';
 
 /**
- * A packet as one self-contained HTML document, which the worker prints to PDF with Chromium (PRD 15,
- * Documents: "Playwright and Chromium for PDF export of reports and packets, in the worker only"; PRD
- * 12, The packet): the practice and payer, the contract citation and the rule release, the pattern
- * statement (the approved narrative, identifiers inserted), the line schedule with each line's trace
- * reference, interest as its own line (never inside expected), the evidence list with its gaps, the
- * requested action, and the approval record (who, when, the version's hash, and the audit flag of a
- * single-user approval). It is the export, so it carries the identifiers inserted at export: it is
- * stored sealed with the practice's key. Nothing loads from outside the document. It is set in the report
- * frame's type and tokens (report/brand.ts) as the practice's own correspondence: the practice submits it to
- * its payer through its own channel, so the practice's name leads the cover and the running header (the
- * frame's white-label slot) and PaidWhole's lockup and name are not on it (docs/adr/0056). A packet states
- * no recovered total, so it never earns the seal or the badge.
+ * The payer's copy of a packet (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061): one
+ * self-contained HTML document the worker prints to PDF with Chromium (PRD 15, Documents; PRD 12, The packet). It is
+ * the practice's own letter to its payer, which the practice sends with the CSV schedule through its own channel, so
+ * it prints only what the payer's examiner needs and what code knows when it prints:
+ *
+ * - the practice and payer, the payer by its name with its identifier in words ("payer ID SYNPAYERQ") and the plan by
+ *   its name, or "plan identifier <id>" when no name is known, never a remittance key's qualifier code (2U:, CE:; the
+ *   verification of 2026-10-21; @tp/packets payerAndPlanText()), the contract's cited clause with its title, version,
+ *   effective dates and page (or the regulation), and [2], what the payment rules in effect supplied, by release (D14);
+ * - the pattern statement, exactly the approved narrative the export's verifier passed, identifiers inserted, and
+ *   nothing else in its block;
+ * - the line schedule (claim control number, patient and member ID; the patient control number is not printed,
+ *   Q2 (a));
+ * - the dispute window's dates only (Q3 (a)), with the contract's clause or the release's record behind it, and each
+ *   line's window and how its expected amount is computed (the trace's method, steps, the one rounding and the
+ *   patient share, in words);
+ * - interest only where code computed it ("Interest stated in this request: $X"; Q4 (a));
+ * - the evidence each citation marker names, by its label;
+ * - the requested action, and the approval line with the packet's reference and the correspondence contact (D4 to D6).
+ *
+ * The internal record stays where it lives and is shown on the reviewer's review page: no login or approval time,
+ * specialist line, audit flag, evidence gap, record ID, SHA-256, deadline status or verification, version number,
+ * trace reference or note on how amounts were computed is printed here (D2). The renderer gets no login and no hash
+ * (D13): only the version's content, its narrative and identifiers, and the payer copy's three facts. It is the
+ * export, so it carries the identifiers inserted at export: it is stored sealed with the practice's key. Nothing
+ * loads from outside the document. It is set in the report frame's type and tokens (report/brand.ts) as the
+ * practice's own correspondence: the practice's name leads the cover and the running header (the frame's white-label
+ * slot) and PaidWhole's lockup and name are not on it (docs/adr/0056). A packet states no recovered total, so it never
+ * earns the seal or the badge.
  */
 
-export interface ApprovalRecord {
-  readonly versionNo: number;
-  readonly versionSha256: string;
-  readonly draftedBy: string | null;
-  readonly approvedBy: string | null;
-  /** ISO timestamp. */
-  readonly approvedAt: string;
-  readonly approvedAlone: boolean;
-  readonly regulationConfirmedBy: string | null;
+/** What the payer's copy prints beside the version's content (D4 to D6): no login, no hash. */
+export interface PayerCopy {
+  /** The UTC calendar date of the version's approval. */
+  readonly approvedOn: string;
+  /** The packet's reference (packetReference(approved_sha256)). */
+  readonly reference: string;
+  /** The practice's correspondence contact as the export read it. */
+  readonly contact: CorrespondenceContact;
 }
 
 const usd = (value: string) => formatUsd(parseCents(value));
 
-const GAP_TEXT: Readonly<Record<EvidenceGapCode, string>> = {
-  interest_rate_unknown: 'The state rule record states no interest rate: interest cannot be computed until it does.',
-  interest_business_days: 'The state rule counts business days, and holidays are not in the record: interest cannot be computed.',
-  prompt_pay_rule_missing: 'The rule release holds no prompt-pay rule for the state named: interest cannot be computed.',
-  prompt_pay_rule_not_in_effect: 'The prompt-pay rule was not in effect when the payer received this claim.',
-  claim_received_date_unknown: 'The remittance does not say when the payer received this claim: its interest cannot be computed.',
-  contract_document_hash_unknown: 'The cited contract document has no stored SHA-256.',
-};
-
-/** What an evidence gap says in the export. */
-export function gapText(code: EvidenceGapCode): string {
-  return GAP_TEXT[code];
-}
-
-/** Every gap code (for the tests: each has its sentence). */
-export const GAP_CODES = EVIDENCE_GAP_CODES;
+/** Cents as decimal text (an unrounded amount keeps its fraction of a cent) in dollars, grouped and signed as usd() is. */
+const exactUsd = (value: string): string => formatUnroundedUsd(value);
 
 /** A table; `figures` names its columns (1-based) of codes and of amounts or counts, set in the mono face. */
 function table(caption: string, headers: readonly string[], rows: readonly (readonly string[])[], figures: FigureColumns = {}): string {
@@ -58,11 +61,103 @@ function table(caption: string, headers: readonly string[], rows: readonly (read
 }
 
 /**
- * The Verified gate for a packet (docs/adr/0057): a dispute packet asks for money and states no recovered
- * total, so reportReconciliation finds none and the seal never prints on it.
+ * The dispute window of a tp-packet/2 version: the date its window ends, never a claim that the dispute is timely
+ * (Q3 (a)), the evidence behind it, and each line's window and calculation. An exportable version's deadline is
+ * verified, so its last day is stated; a version without one is refused here rather than printed with no date. Above
+ * the first level the window is the level's own (the payer's denial reopened the case for it), so the copy states
+ * that window alone: the lines' first-level windows and their clauses are not this level's deadline, and are neither
+ * printed nor listed per line (nor in the CSV).
  */
-export function packetReconciliation(approval: ApprovalRecord): ReportReconciliation {
-  return reportReconciliation({ report: { kind: 'packet_version', id: approval.versionSha256 }, proofLevel: DEFAULT_PROOF_LEVEL, statedRecoveredCents: null, recoveredEntryIds: [], ledger: new Map() });
+function disputeWindowSection(content: PacketContentV2): string {
+  const { deadline } = content;
+  if (deadline.ends_on === null) {
+    throw new TypeError('the payer’s copy states the dispute window’s last day; a version without one is not printed');
+  }
+  const nextLevel = deadline.basis === 'next_level_window';
+  const window = nextLevel
+    ? `The window for dispute level ${String(content.dispute_level)} ends on ${deadline.ends_on}.`
+    : `The earliest dispute window among the listed lines ends on ${deadline.ends_on}.`;
+  const sources = (nextLevel ? [] : deadline.sources).map((source) => {
+    if (source.kind === 'contract_window') {
+      const length = source.days === null ? '' : `: ${counted(source.days, 'day')}`;
+      return `<li>The contract’s dispute window${escapeHtml(length)} (page ${String(source.page)}):<blockquote>${escapeHtml(source.quote)}</blockquote></li>`;
+    }
+    const program = source.program === null ? '' : `${wordsOf(PROGRAM_TEXT, source.program, 'dispute window program')} `;
+    return `<li>The ${escapeHtml(program)}dispute window in effect for the service dates (release ${String(source.release_no)}).</li>`;
+  });
+  const rows = content.lines.map((line) => {
+    const { calculation } = line;
+    const steps = calculation.steps.map((step) => `${wordsOf(STEP_TEXT, step.step, 'calculation step')} ${exactUsd(step.amount_cents)}`).join('; ');
+    const rounding = calculation.rounding === null ? '' : `${wordsOf(ROUNDING_TEXT, calculation.rounding.rule, 'rounding rule')}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
+    const computed = [wordsOf(METHOD_TEXT, calculation.method, 'calculation method'), steps, rounding, calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents)];
+    return nextLevel ? [String(line.row), ...computed] : [String(line.row), line.deadline.ends_on ?? '', ...computed];
+  });
+  return [
+    `<h2>Dispute window</h2>`,
+    `<p><strong>${escapeHtml(window)}</strong></p>`,
+    sources.length === 0 ? '' : `<ul>${sources.join('')}</ul>`,
+    nextLevel
+      ? table('How each line’s expected amount is computed', ['Row', 'Method', 'Steps', 'Rounding', 'Patient share'], rows, { code: [1, 2], amount: [3, 4, 5] })
+      : table('Each line’s dispute window and how its expected amount is computed', ['Row', 'Window ends', 'Method', 'Steps', 'Rounding', 'Patient share'], rows, { code: [1, 3], date: [2], amount: [4, 5, 6] }),
+  ].join('');
+}
+
+/**
+ * Prompt-pay interest, stated only where code computed it above zero (Q4 (a); lineInterestStated()): the state's rule,
+ * the lines whose interest was computed above zero, and their total. Nothing is said of the other lines, and $0.00 is
+ * never stated or totalled, so the copy never reads as giving interest up.
+ */
+function interestSection(content: PacketContent): string {
+  const { interest } = content;
+  if (interest === null) {
+    return '';
+  }
+  const heading = `<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2>`;
+  if (interest.days_to_pay === null) {
+    return `${heading}<p>Prompt-pay interest is not stated in this request.</p>`;
+  }
+  const rule = `<p>State ${escapeHtml(interest.state)}${interest.statute === null ? '' : `, ${escapeHtml(interest.statute)}`}: payment due ${String(interest.days_to_pay)} ${escapeHtml(interest.day_basis ?? '')} days after the payer received the claim${interest.annual_rate_percent === null ? '' : `, interest at ${escapeHtml(interest.annual_rate_percent)}% a year`} (release ${String(interest.release_no)}).</p>`;
+  const exclusions = interest.exclusions.length === 0 ? '' : `<p>The rule does not apply to: ${escapeHtml(interest.exclusions.map((code) => exclusionWords(code)).join(', '))}.</p>`;
+  const computed = interest.lines.filter((line) => lineInterestStated(line));
+  if (computed.length === 0 || interest.total_cents === null || !interestStated(interest)) {
+    return `${heading}${rule}${exclusions}`;
+  }
+  const lines = table(
+    'Interest by line',
+    ['Row', 'Received', 'Due', 'Paid', 'Days late', 'Days unpaid to date', 'Interest'],
+    computed.map((line) => [
+      String(line.row),
+      line.received_on ?? '',
+      line.due_on ?? '',
+      line.paid_on,
+      line.days_late === null ? '' : String(line.days_late),
+      line.days_unpaid === null ? '' : String(line.days_unpaid),
+      usd(line.interest_cents ?? '0'),
+    ]),
+    { code: [1], date: [2, 3, 4], amount: [5, 6, 7] },
+  );
+  return `${heading}${rule}${exclusions}${lines}<p><strong>${escapeWithFigures(`Interest stated in this request: ${usd(interest.total_cents)}`)}</strong></p>`;
+}
+
+/** An evidence item as the payer's copy names it: its label, a rule release's as [2] reads (D14), never a record ID or hash. */
+function evidenceLabel(content: PacketContent, index: number): string {
+  const item = content.evidence[index];
+  if (item === undefined) {
+    return '';
+  }
+  if (item.kind !== 'rule_release') {
+    return item.label;
+  }
+  const release = content.rule_releases.find((candidate) => candidate.manifest_sha256 === item.sha256)?.release_no ?? Number.parseInt(/\d+/.exec(item.label)?.[0] ?? '', 10);
+  return releaseText(content, Number.isInteger(release) ? [release] : []);
+}
+
+/**
+ * The Verified gate for a packet (docs/adr/0057): a dispute packet asks for money and states no recovered total, so
+ * reportReconciliation finds none and the seal never prints on it. Keyed on the packet's reference (an opaque label).
+ */
+export function packetReconciliation(reference: string): ReportReconciliation {
+  return reportReconciliation({ report: { kind: 'packet_version', id: reference }, proofLevel: DEFAULT_PROOF_LEVEL, statedRecoveredCents: null, recoveredEntryIds: [], ledger: new Map() });
 }
 
 // The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors).
@@ -73,35 +168,45 @@ const STYLE = `
   table { margin: 4pt 0 8pt; font-size: 8pt; }
   th, td { padding: 4pt 3pt; }
   .narrative p { margin: 0 0 6pt; }
-  .flag { font-weight: 600; }
-  footer { margin-top: 16pt; font-size: 8pt; color: var(--pw-slate); border-top: 1px solid var(--pw-line); padding-top: 4pt; }
 `;
 
-export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, reconciliation: ReportReconciliation = packetReconciliation(approval)): string {
+/** The narrative's paragraphs as the payer's copy prints them: split on blank lines, trimmed, each its own <p>. */
+export function narrativeParagraphs(narrative: string): string[] {
+  return narrative
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph !== '');
+}
+
+export function packetHtml(exported: ExportedPacket, payerCopy: PayerCopy, reconciliation: ReportReconciliation = packetReconciliation(payerCopy.reference)): string {
   const { content, lines, narrative } = exported;
-  const { citation, practice, payer, pattern, interest } = content;
+  const { citation, practice, payer, pattern } = content;
+  // The payer and plan in words, never in their remittance-key form ("2U:SYNPAYERQ", "CE:SYNPLAN-FIX-ONE"), which the
+  // internal record and the review page keep.
+  const addressee = payerAndPlanText(payer);
   const identification = [
     `<p><strong>From:</strong> ${escapeHtml(practice.name)}${practice.npi === null ? '' : `, NPI ${escapeHtml(practice.npi)}`}${practice.tax_id_last4 === null ? '' : `, tax ID ending ${escapeHtml(practice.tax_id_last4)}`}</p>`,
-    `<p><strong>To:</strong> ${escapeHtml(payer.name)} (${escapeHtml(payer.payer_id_raw)}), plan ${escapeHtml(payer.plan_name ?? payer.plan_key)}</p>`,
-    `<p class="meta">Dispute level ${String(content.dispute_level)}; prepared ${escapeHtml(content.as_of)}.</p>`,
+    `<p><strong>To:</strong> ${escapeHtml(addressee)}</p>`,
+    `<p class="meta">Dispute level ${String(content.dispute_level)}; prepared ${escapeHtml(content.as_of)}; reference ${escapeHtml(payerCopy.reference)}.</p>`,
   ].join('');
   const cited =
     citation.kind === 'contract'
       ? [
-          `<p>[1] ${escapeHtml(citation.contract_title)}, version ${String(citation.version_no)} (effective ${escapeHtml(citation.effective_from)}${citation.effective_to === null ? '' : ` to ${escapeHtml(citation.effective_to)}`}), document ${escapeHtml(citation.document_id)}, page ${String(citation.page)}:</p>`,
+          `<p>[1] ${escapeHtml(citation.contract_title)}, version ${String(citation.version_no)} (effective ${escapeHtml(citation.effective_from)}${citation.effective_to === null ? '' : ` to ${escapeHtml(citation.effective_to)}`}), page ${String(citation.page)}:</p>`,
           `<blockquote>${escapeHtml(citation.quote)}</blockquote>`,
-          `<p class="meta">Page text SHA-256 ${escapeHtml(citation.page_sha256)}${citation.document_sha256 === null ? '' : `; document SHA-256 ${escapeHtml(citation.document_sha256)}`}.</p>`,
         ].join('')
       : `<p>[1] ${escapeHtml(citation.reference)}: ${escapeHtml(citation.statement)}</p>`;
-  const releases = content.rule_releases.map((release) => `Rule release ${String(release.release_no)} (manifest SHA-256 ${release.manifest_sha256})`).join('; ');
+  const releases = releaseText(
+    content,
+    content.rule_releases.map((release) => release.release_no),
+  );
   const schedule = table(
-    `[3] Line schedule: ${String(pattern.lines)} lines on ${String(pattern.claims)} claims`,
-    ['Row', 'Claim control number', 'Patient control number', 'Patient', 'Member ID', 'Service date', 'Code', 'Modifiers', 'Units', 'Expected', 'Observed', 'Variance', 'Trace'],
+    `[3] Line schedule: ${counted(pattern.lines, 'line')} on ${counted(pattern.claims, 'claim')}`,
+    ['Row', 'Claim control number', 'Patient', 'Member ID', 'Service date', 'Code', 'Modifiers', 'Units', 'Expected', 'Observed', 'Variance'],
     [
       ...lines.map((line) => [
         String(line.row),
         line.claim_control_number,
-        line.patient_control_number,
         line.patient_name,
         line.member_id,
         line.service_date,
@@ -111,61 +216,28 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, r
         usd(line.expected_cents),
         usd(line.observed_cents),
         usd(line.variance_cents),
-        line.trace_ref,
       ]),
-      ['', '', '', '', '', '', '', '', pattern.units, usd(pattern.expected_cents), usd(pattern.observed_cents), usd(pattern.variance_cents), 'Total'],
+      ['Total', '', '', '', '', '', '', pattern.units, usd(pattern.expected_cents), usd(pattern.observed_cents), usd(pattern.variance_cents)],
     ],
-    { code: [1, 7, 8], id: [2, 3, 5, 13], date: [6], amount: [9, 10, 11, 12] },
+    { code: [1, 6, 7], id: [2, 4], date: [5], amount: [8, 9, 10, 11] },
   );
-  const interestSection =
-    interest === null
-      ? ''
-      : [
-          `<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2>`,
-          `<p>State ${escapeHtml(interest.state)}${interest.statute === null ? '' : `, ${escapeHtml(interest.statute)}`}: ${interest.days_to_pay === null ? 'no rule on file' : `payment due ${String(interest.days_to_pay)} ${escapeHtml(interest.day_basis ?? '')} days after the payer received the claim`}${interest.annual_rate_percent === null ? '' : `, interest at ${escapeHtml(interest.annual_rate_percent)}% a year`} (rule release ${String(interest.release_no)}).</p>`,
-          interest.exclusions.length === 0 ? '' : `<p>The rule does not apply to: ${escapeHtml(interest.exclusions.join(', '))}.</p>`,
-          table(
-            'Interest by line',
-            ['Row', 'Received', 'Due', 'Paid', 'Days late', 'Days unpaid to date', 'Interest'],
-            interest.lines.map((line) => [
-              String(line.row),
-              line.received_on ?? 'not stated',
-              line.due_on ?? '',
-              line.paid_on,
-              line.days_late === null ? '' : String(line.days_late),
-              line.days_unpaid === null ? '' : String(line.days_unpaid),
-              line.interest_cents === null ? 'cannot be computed' : usd(line.interest_cents),
-            ]),
-            { code: [1], date: [2, 3, 4], amount: [5, 6, 7] },
-          ),
-          `<p><strong>Interest ${interest.computed ? '' : 'that can be computed '}in all: ${interest.total_cents === null ? 'cannot be computed' : escapeWithFigures(usd(interest.total_cents))}</strong></p>`,
-        ].join('');
-  const evidence = content.evidence.map((item, index) => {
+  const evidence = content.evidence.map((_item, index) => {
     const marker = content.sources.find((source) => source.kind === 'evidence' && source.evidence_index === index)?.marker;
-    return `<li>${marker === undefined ? '' : `[${String(marker)}] `}${escapeHtml(item.label)}${item.document_id === null ? '' : ` (document ${escapeHtml(item.document_id)})`}${item.sha256 === null ? '' : `, SHA-256 ${escapeHtml(item.sha256)}`}</li>`;
+    return `<li>${marker === undefined ? '' : `[${String(marker)}] `}${escapeHtml(evidenceLabel(content, index))}</li>`;
   });
-  const gaps = content.evidence_gaps.map((gap) => `<li>${gap.row === null ? '' : `Row ${String(gap.row)}: `}${escapeHtml(GAP_TEXT[gap.code])}</li>`);
-  const approvalRecord = [
-    `<p>Version ${String(approval.versionNo)}, SHA-256 ${escapeHtml(approval.versionSha256)}.</p>`,
-    `<p>Written by ${escapeHtml(approval.draftedBy ?? 'a person of the practice')}; approved by ${escapeHtml(approval.approvedBy ?? 'a person of the practice')} at ${escapeHtml(approval.approvedAt)}.</p>`,
-    approval.regulationConfirmedBy === null ? '' : `<p>The regulation's application to this case was confirmed by contract specialist ${escapeHtml(approval.regulationConfirmedBy)}.</p>`,
-    approval.approvedAlone
-      ? '<p class="flag">Audit flag: approved by the person who wrote it, in a practice with no second person to approve packets, at least 24 hours after it was written.</p>'
-      : '',
-  ].join('');
-  const paragraphs = narrative
-    .split(/\n\s*\n/)
-    .filter((paragraph) => paragraph.trim() !== '')
-    .map((paragraph) => `<p>${escapeWithFigures(paragraph.trim())}</p>`)
+  const paragraphs = narrativeParagraphs(narrative)
+    .map((paragraph) => `<p>${escapeWithFigures(paragraph)}</p>`)
     .join('');
+  const approval = `Approved for submission by ${practice.name} on ${payerCopy.approvedOn}, reference ${payerCopy.reference}.`;
+  const correspondence = `Correspondence about this dispute: ${correspondenceText(payerCopy.contact)}.`;
   return brandedDocument(
     {
       title: 'Payment dispute',
       kicker: 'Payment dispute',
       heading: 'Request to reprocess underpaid claims',
       practiceName: practice.name,
-      meta: [`To ${payer.name} (${payer.payer_id_raw}), plan ${payer.plan_name ?? payer.plan_key}`, `Dispute level ${String(content.dispute_level)}; prepared ${content.as_of}`, `Version ${String(approval.versionNo)}, SHA-256 ${approval.versionSha256.slice(0, 16)}`],
-      reference: `Version ${String(approval.versionNo)}, SHA-256 ${approval.versionSha256.slice(0, 16)}`,
+      meta: [`To ${addressee}`, `Dispute level ${String(content.dispute_level)}; prepared ${content.as_of}`, `Reference ${payerCopy.reference}`],
+      reference: `Reference ${payerCopy.reference}`,
       reconciliation,
       // The practice's own letter to its payer: its name leads, not the vendor's.
       whiteLabel: { firmName: practice.name },
@@ -173,21 +245,21 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, r
     STYLE,
     `<h1>Request to reprocess underpaid claims</h1>
 ${identification}
-<h2>Contract citation</h2>
+<h2>${citation.kind === 'contract' ? 'Contract citation' : 'Regulation cited'}</h2>
 ${cited}
 <p>[2] ${escapeHtml(releases)}</p>
 <h2>Pattern statement</h2>
 <div class="narrative">${paragraphs}</div>
 <h2>Line schedule</h2>
 ${schedule}
-${interestSection}
+${content.format === 'tp-packet/2' ? disputeWindowSection(content) : ''}
+${interestSection(content)}
 <h2>Evidence</h2>
 <ul>${evidence.join('')}</ul>
-${gaps.length === 0 ? '' : `<p><strong>Evidence gaps</strong></p><ul>${gaps.join('')}</ul>`}
 <h2>Requested action</h2>
 <p>${escapeWithFigures(content.requested_action)}</p>
-<h2>Approval record</h2>
-${approvalRecord}
-<footer>Every amount in this packet was computed by code from the practice's remittances and the cited contract terms; interest is stated apart from the variance.</footer>`,
+<h2>Approval and correspondence</h2>
+<p>${escapeHtml(approval)}</p>
+<p>${escapeHtml(correspondence)}</p>`,
   );
 }

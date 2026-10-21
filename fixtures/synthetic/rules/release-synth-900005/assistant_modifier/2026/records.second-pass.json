@@ -1,0 +1,34 @@
+{
+  "transcribed_by": "SYNTHETIC fixture author, second pass",
+  "transcribed_on": "2026-10-15",
+  "records": [
+    {
+      "record_type": "assistant_modifier",
+      "key": {
+        "modifier": "CQ"
+      },
+      "value": {
+        "payment_percent": "77"
+      },
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "quotes": [
+        "SYNTHETIC assistant modifiers CQ and CO pay 77% of the otherwise applicable amount from January 1, 2026."
+      ]
+    },
+    {
+      "record_type": "assistant_modifier",
+      "key": {
+        "modifier": "CO"
+      },
+      "value": {
+        "payment_percent": "77"
+      },
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "quotes": [
+        "SYNTHETIC assistant modifiers CQ and CO pay 77% of the otherwise applicable amount from January 1, 2026."
+      ]
+    }
+  ]
+}

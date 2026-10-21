@@ -14,7 +14,8 @@ import { type Figure, type FigureKind, scanText, sentenceSpans } from '../scan';
  * left out), and it fails:
  * - every figure (date, code, modifier, unit, amount, percentage, count, number or identifier) whose
  *   value is not among the inputs of its kind (a number may match a count, units or any other number
- *   of the inputs; a five-digit code may also match one);
+ *   of the inputs; a five-digit code may also match one; a contract window's day count only before
+ *   "day" or "days", and its page only after "page");
  * - every hidden character (one that prints as nothing or as something else), and every figure written
  *   in digits other than 0 to 9, which the verifier does not read;
  * - every occurrence of one of the case's own identifiers (a patient's name, a member ID, a claim
@@ -70,8 +71,13 @@ function monthDays(dates: ReadonlySet<string>): Set<string> {
   return new Set([...dates].map((date) => date.slice(5)));
 }
 
-/** Whether a figure's value is among the inputs of its kind. */
-function inInputs(figure: Figure, facts: NarrativeFacts, derived: { readonly months: ReadonlySet<string>; readonly monthDays: ReadonlySet<string> }): boolean {
+/** A day count's own words after it: "days", "calendar days", or "(30) days" after a number in words. */
+const DAYS_AFTER = /^\s*\)?\s*(?:\(\s*[\d,]+\s*\)\s*)?(?:calendar\s+|business\s+|working\s+)?days?(?![\p{L}\p{N}])/iu;
+/** A page's own word before it: "page 4", "p. 4". */
+const PAGE_BEFORE = /(?:^|[^\p{L}\p{N}])(?:page|p\.)\s*$/iu;
+
+/** Whether a figure's value is among the inputs of its kind (`text` is what the figure's positions are in). */
+function inInputs(figure: Figure, facts: NarrativeFacts, derived: { readonly months: ReadonlySet<string>; readonly monthDays: ReadonlySet<string> }, text: string): boolean {
   switch (figure.kind) {
     case 'amount':
       return facts.amounts.has(figure.value);
@@ -88,7 +94,11 @@ function inInputs(figure: Figure, facts: NarrativeFacts, derived: { readonly mon
     case 'modifier':
       return facts.modifiers.has(figure.value);
     case 'number':
-      return facts.numbers.has(figure.value);
+      return (
+        facts.numbers.has(figure.value) ||
+        (facts.dayCounts.has(figure.value) && DAYS_AFTER.test(text.slice(figure.end, figure.end + 48))) ||
+        (facts.pages.has(figure.value) && PAGE_BEFORE.test(text.slice(Math.max(0, figure.start - 16), figure.start)))
+      );
     case 'identifier':
       return facts.identifiers.has(figure.value);
   }
@@ -163,7 +173,7 @@ export function findMismatches(narrative: string, facts: NarrativeFacts, identif
     add('unreadable_figure', null, span);
   }
   for (const figure of scan.figures) {
-    if (!inInputs(figure, facts, derived)) {
+    if (!inInputs(figure, facts, derived, text)) {
       add('figure_not_in_input', figure.kind, at(figure));
     }
   }

@@ -11,6 +11,7 @@ import { MemorySealedBytes } from '../../intake/test-support/memory-bytes';
 import type { JobContext } from '../../jobs/handlers';
 import { exportPacketVersion } from '../../packets/export';
 import { approvePacketVersion, logSubmission, recordPayerResponse, writePacketVersion } from '../../packets/public';
+import { attestAsReviewer, grantedReviewer } from '../../packets/test-support/reviewer';
 import { DocumentStore } from '../../storage/documents';
 import { FIXTURES, type Practice } from '../../price/test-support/pricing-world';
 import { TriageWorld } from '../../triage/test-support/triage-world';
@@ -144,9 +145,10 @@ export class LedgerWorld {
 
   /**
    * The case's packet as milestone 8 sends it: the code-built draft written by the billing manager,
-   * approved by a second one, exported by the export job and logged as submitted on `submittedOn`. The
-   * export is dated before that day as a superuser with triggers off (the database dates it now), so
-   * the SYNTHETIC remittances of the past answer it.
+   * approved by a second one, exported by the export job, downloaded and attested by a reimbursement reviewer
+   * under a support grant (D16; docs/adr/0061) and logged as submitted on `submittedOn`. The export is dated
+   * before that day as a superuser with triggers off (the database dates it now), so the SYNTHETIC
+   * remittances of the past answer it.
    */
   async submit(target: Practice, caseId: string, submittedOn: string): Promise<{ readonly versionId: string; readonly submissionId: string }> {
     const as = <T>(actorId: string, run: (scope: Scope) => Promise<T>) => withPracticeScope(this.app, { actorId, practiceIds: [target.practiceId] }, (scope) => run(scope as Scope));
@@ -159,6 +161,7 @@ export class LedgerWorld {
       throw new Error(`the packet was not exported: ${exported.outcome}`);
     }
     await this.superuser('UPDATE packet_version SET exported_at = $2::date - 1 WHERE id = $1', [version.versionId, submittedOn]);
+    await attestAsReviewer(this.app, { documents: this.packets, keys: this.keys }, target.practiceId, await grantedReviewer(this.owner, target.practiceId), version.versionId);
     const logged = await as(target.manager, (scope) =>
       logSubmission(scope, this.keys, { practiceId: target.practiceId, versionId: version.versionId, submittedOn, channel: 'payer_portal', reference: 'SYNTHETIC-PORTAL-REF', requestId: 'test-submit' }),
     );

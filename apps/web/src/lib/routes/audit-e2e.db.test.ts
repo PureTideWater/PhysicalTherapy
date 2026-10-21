@@ -4,7 +4,21 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateRecord, approveRateRecordField, approveVersion, createContract, createDraftVersion, signOffVersion } from '@tp/contracts';
+import {
+  EvidenceResolver,
+  RATE_RECORD_FIELDS,
+  type WorkflowContext,
+  addRateRecord,
+  approveRateRecordField,
+  approveVersion,
+  citeDisputeWindow,
+  createContract,
+  createDraftVersion,
+  disputeWindowRuleSchema,
+  signOffVersion,
+  verifyDisputeWindow,
+  windowRuleComputed,
+} from '@tp/contracts';
 import { documentPages, readDocumentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
@@ -59,7 +73,14 @@ interface Inputs {
   readonly plans: readonly {
     readonly key: string;
     readonly mapping: 'contract' | 'no_agreement';
-    readonly contract?: { readonly effective_from: string; readonly dispute_window_days: number; readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[] };
+    readonly contract?: {
+      readonly effective_from: string;
+      readonly dispute_window_days: number;
+      /** Where the contract states its window, which the specialist cites and verifies (D17 a). */
+      /** Where the window is written, and the rule the quote states (best-option audit #5): its unit and what it counts from. */
+      readonly dispute_window_evidence?: { readonly page: number; readonly quote: string; readonly unit: string; readonly measured_from: string };
+      readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[];
+    };
   }[];
 }
 
@@ -303,7 +324,10 @@ function as<T>(actorId: string, run: (context: WorkflowContext) => Promise<T>): 
 
 const quoteFor = (code: string, amountCents: string) => `${code} is paid ${formatCents(parseCents(amountCents))} per unit`;
 
-/** A plan's contract as inputs.json states it: abstracted by the specialist, signed off by the billing manager. */
+/**
+ * A plan's contract as inputs.json states it: abstracted by the specialist, its dispute window cited on the page the
+ * inputs name and verified against it (D17 a, as the worksheet reads it), signed off by the billing manager.
+ */
 async function signedOffContract(contract: NonNullable<Inputs['plans'][number]['contract']>, payerId: string): Promise<string> {
   const documentId = randomUUID();
   await asOwner(owner, [practiceId], () =>
@@ -316,7 +340,7 @@ async function signedOffContract(contract: NonNullable<Inputs['plans'][number]['
   contractPdfs.set(
     documentId,
     syntheticPdf([
-      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', `Disputes are raised within ${String(contract.dispute_window_days)} days of the remittance.`],
+      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', `Disputes are raised within ${String(contract.dispute_window_days)} days of the payment date.`],
       ['SYNTHETIC EXHIBIT A FEE SCHEDULE', ...contract.schedule.map((rate) => quoteFor(rate.code, rate.amount_cents))],
     ]),
   );
@@ -338,6 +362,15 @@ async function signedOffContract(contract: NonNullable<Inputs['plans'][number]['
       const { rateRecordId } = await addRateRecord(context, { practiceId, versionId, terms, citation: { documentId, page: 2, quote: quoteFor(rate.code, rate.amount_cents) } });
       for (const field of RATE_RECORD_FIELDS) {
         await approveRateRecordField(context, { practiceId, rateRecordId, field });
+      }
+    }
+    const window = contract.dispute_window_evidence;
+    if (window !== undefined) {
+      const rule = disputeWindowRuleSchema.parse({ unit: window.unit, measuredFrom: window.measured_from });
+      await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: window.page, quote: window.quote }, rule });
+      // As the worksheet reads it: only a window counted the way the product computes it is verified; another is approved unverified.
+      if (windowRuleComputed(rule)) {
+        expect(await verifyDisputeWindow(context, { practiceId, versionId })).toMatchObject({ verified: true });
       }
     }
     await approveVersion(context, { practiceId, versionId });

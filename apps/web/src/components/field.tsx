@@ -1,11 +1,15 @@
 import { Input, Label } from '@tp/ui';
 import type { ComponentProps } from 'react';
 
-/** A labelled input (PRD 6, Cross-cutting: labels on every control). A page with several forms gives each field its own id. */
+/**
+ * A labelled input (PRD 6, Cross-cutting: labels on every control). A page with several forms gives each field its own id.
+ * Each field may shrink to its column (min-w-0, and a select no wider than it), so a long option never widens a form
+ * past a phone's width.
+ */
 export function Field({ label, name, hint, id: given, ...props }: { readonly label: string; readonly name: string; readonly hint?: string } & ComponentProps<'input'>) {
   const id = given ?? `field-${name}`;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} name={name} aria-describedby={hint === undefined ? undefined : `${id}-hint`} {...props} />
       {hint === undefined ? null : (
@@ -34,9 +38,9 @@ export function SelectField({
 }) {
   const id = given ?? `field-${name}`;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <select id={id} name={name} required={required} defaultValue={defaultValue} className="h-9 rounded-md border border-input bg-transparent px-2 text-sm">
+      <select id={id} name={name} required={required} defaultValue={defaultValue} className="h-9 max-w-full rounded-md border border-input bg-transparent px-2 text-sm">
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -58,7 +62,7 @@ export function TextAreaField({
 }: { readonly label: string; readonly name: string; readonly hint?: string; readonly rows?: number } & ComponentProps<'textarea'>) {
   const id = given ?? `field-${name}`;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       <textarea
         id={id}

@@ -1,4 +1,5 @@
 import { type LineStage, STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
+import { SUBMISSION_UNATTESTED_WORDS, type SubmissionUnattestedReason } from '@tp/worker/packets';
 
 /**
  * A case's timeline (PRD 7, Cases: "detail with ... notes, timeline"): every recorded step of the case
@@ -37,7 +38,10 @@ export type TimelineEvent =
   | { readonly kind: 'version_written'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly verifierPassed: boolean }
   | { readonly kind: 'version_approved'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly approvedAlone: boolean }
   | { readonly kind: 'version_exported'; readonly at: string; readonly by: null; readonly versionNo: number; readonly sha256: string }
-  | { readonly kind: 'submitted'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly level: number; readonly channel: keyof typeof CHANNEL_TEXT }
+  /** The reimbursement reviewer's attestation over the export (D16): never a person of the practice. */
+  | { readonly kind: 'export_attested'; readonly at: string; readonly by: null; readonly versionNo: number }
+  /** A submission, and the reason the database recorded it sent without sign-off, if it was (submission.unattested_reason). */
+  | { readonly kind: 'submitted'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly level: number; readonly channel: keyof typeof CHANNEL_TEXT; readonly unattestedReason: SubmissionUnattestedReason | null }
   | { readonly kind: 'response'; readonly at: string; readonly by: string | null; readonly response: ResponseKindText; readonly reopens: boolean };
 
 /** What the event records, in fixed words. */
@@ -67,8 +71,13 @@ export function eventText(event: TimelineEvent): string {
       return `Packet version ${String(event.versionNo)} approved${event.approvedAlone ? ' alone after the 24-hour delay (single-user practice, audit flag)' : ' by a second person'}`;
     case 'version_exported':
       return `Packet version ${String(event.versionNo)} exported as PDF and CSV (PDF SHA-256 ${event.sha256.slice(0, 12)}…)`;
+    case 'export_attested':
+      return `Packet version ${String(event.versionNo)}’s export attested over its SHA-256 by the reimbursement reviewer`;
     case 'submitted':
-      return `Packet version ${String(event.versionNo)} submitted through the ${CHANNEL_TEXT[event.channel].toLowerCase()}, dispute level ${String(event.level)}`;
+      // A submission sent without sign-off says so, in the founder's words, as the submissions page does.
+      return `Packet version ${String(event.versionNo)} submitted through the ${CHANNEL_TEXT[event.channel].toLowerCase()}, dispute level ${String(event.level)}${
+        event.unattestedReason === null ? '' : `; ${SUBMISSION_UNATTESTED_WORDS[event.unattestedReason]}`
+      }`;
     case 'response':
       return `Payer response: ${RESPONSE_TEXT[event.response]}${event.reopens ? ', reopening the case for the next dispute level' : ''}`;
   }
@@ -82,6 +91,8 @@ export function eventActor(event: TimelineEvent): string {
   switch (event.kind) {
     case 'version_exported':
       return 'the export job';
+    case 'export_attested':
+      return 'the reimbursement reviewer';
     case 'response':
       return 'the recovery ledger’s matching';
     case 'stage':

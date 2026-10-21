@@ -10,6 +10,7 @@ import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } f
 import { KEPT_SUMMARY, REQUEST_AUDIT_KEPT, SENT_KEPT, convertKept } from '../src/lib/screening/retention';
 import { expectAccessible } from './a11y';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
+import { outboxFor } from './outbox';
 import {
   CLEAN_ROWS,
   SCREENING_HEADER,
@@ -19,7 +20,6 @@ import {
   dateOfServiceCsv,
   expireScreeningsOnce,
   memberIdCsv,
-  outboxFor,
   priceScreeningsOnce,
   resultLinkIn,
   screeningRowsCsv,

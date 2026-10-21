@@ -18,6 +18,7 @@ export const HELP: Readonly<Record<ShellSection, string>> = {
   cases: 'Shortfalls grouped by payer pattern. Work a case into a packet a person approves; the drafter never approves their own.',
   reconciliation: 'Later remittances, postings and deposits matched to approved cases. A line is recovered only with a ledger entry posted or deposited at the practice’s proof level.',
   reports: 'The audit report, coverage report, monthly summary and ROI statements, with their export history.',
+  packet_reviews: 'Exported packets waiting for the reimbursement reviewer: review each PDF and CSV and attest over their SHA-256. A packet is submitted only after it.',
   notifications: 'In-app notices: digests, finished runs and cases nearing their deadline. Counts and totals only.',
   contracts: 'Your payer contracts and their versions. A rate is used only once a specialist signs it off with its page and quote.',
   abstraction: 'Abstract a contract into rate records with their evidence; each is signed off before any line is priced with it.',

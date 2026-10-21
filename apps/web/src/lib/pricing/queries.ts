@@ -1,3 +1,4 @@
+import type { DisputeWindowStart, DisputeWindowUnit } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import type { UnpricedReason } from '@tp/pricing';
 import { ELIGIBLE_RUN, IN_EFFECT_SINCE, RUN_IN_EFFECT, type RerunReason, type RunCoverage, parseCoverage, rerunReasons } from '@tp/worker/pricing';
@@ -329,6 +330,13 @@ export interface PricedLineView {
   readonly unpricedReason: UnpricedReason | null;
   readonly adjustmentsApplied: readonly { readonly name: string; readonly before_cents: string; readonly after_cents: string }[];
   readonly windowEndsOn: string | null;
+  /**
+   * The contract version's cited window when its rule is not the one the engine counts (calendar days after the payment
+   * date, contract_window_rule_computed()): its length and rule, so the screen states the rule in words and not the
+   * engine's date, which counts the length another way (audit item #5; PR 6c computes it). Null when the rule is the
+   * computed one or none is cited.
+   */
+  readonly windowRuleNotComputed: { readonly length: number; readonly rule: { readonly unit: DisputeWindowUnit; readonly measuredFrom: DisputeWindowStart } } | null;
   /** The stored trace (tp-pricing-trace/2), for roles that read PHI; null for the others. */
   readonly trace: unknown;
 }
@@ -366,6 +374,9 @@ interface PricedLineRow {
   readonly unpriced_reason: UnpricedReason | null;
   readonly adjustments_applied: PricedLineView['adjustmentsApplied'];
   readonly window_ends_on: string | null;
+  readonly window_rule_length: number | null;
+  readonly window_rule_unit: DisputeWindowUnit | null;
+  readonly window_rule_measured_from: DisputeWindowStart | null;
   readonly trace: unknown;
 }
 
@@ -373,7 +384,7 @@ interface PricedLineRow {
  * The line as a complete run priced it: the run asked for, or else the eligible run (a first run or an
  * accepted re-run) that priced it and took effect last. Undefined when no such run (or not that run)
  * priced it. The trace is read only for roles that read PHI (it carries the line's service and
- * remittance dates).
+ * payment dates: BPR16, which the engine's trace labels remittance_date).
  */
 export async function pricedLineOf(scope: Scope, practiceId: string, serviceLineId: string, runId: string | null, withTrace: boolean, requestId: string): Promise<PricedLineView | undefined> {
   const [row] = await readWithAudit(
@@ -386,10 +397,14 @@ export async function pricedLineOf(scope: Scope, practiceId: string, serviceLine
                   r.engine_version, r.completed_at, p.mapping_id, p.contract_version_id, p.rate_record_id, p.method,
                   p.expected_allowed_cents::text AS expected_allowed_cents, p.expected_unrounded::text AS expected_unrounded,
                   p.observed_allowed_cents::text AS observed_allowed_cents, p.variance_cents::text AS variance_cents, p.unpriced_reason,
-                  p.adjustments_applied, p.window_ends_on::text AS window_ends_on, CASE WHEN $4 THEN p.trace END AS trace
+                  p.adjustments_applied, p.window_ends_on::text AS window_ends_on, CASE WHEN $4 THEN p.trace END AS trace,
+                  cv.dispute_window_days AS window_rule_length, cv.dispute_window_unit AS window_rule_unit, cv.dispute_window_measured_from AS window_rule_measured_from
              FROM priced_line p
              JOIN pricing_run r ON r.id = p.pricing_run_id
              JOIN rule_release rr ON rr.release_no = r.release_no
+             LEFT JOIN contract_version cv ON cv.id = p.contract_version_id AND cv.practice_id = p.practice_id
+                   AND cv.dispute_window_unit IS NOT NULL AND cv.dispute_window_days IS NOT NULL
+                   AND NOT contract_window_rule_computed(cv.dispute_window_unit, cv.dispute_window_measured_from)
             WHERE p.practice_id = $1 AND p.service_line_id = $2 AND r.status = 'complete' AND ($3::uuid IS NOT NULL OR ${ELIGIBLE_RUN('r')}) AND ($3::uuid IS NULL OR r.id = $3::uuid)
             ORDER BY ${IN_EFFECT_SINCE('r')} DESC, r.id DESC
             LIMIT 1`,
@@ -423,6 +438,10 @@ export async function pricedLineOf(scope: Scope, practiceId: string, serviceLine
     unpricedReason: row.unpriced_reason,
     adjustmentsApplied: row.adjustments_applied,
     windowEndsOn: row.window_ends_on,
+    windowRuleNotComputed:
+      row.window_rule_length === null || row.window_rule_unit === null || row.window_rule_measured_from === null
+        ? null
+        : { length: row.window_rule_length, rule: { unit: row.window_rule_unit, measuredFrom: row.window_rule_measured_from } },
     trace: row.trace,
   };
 }

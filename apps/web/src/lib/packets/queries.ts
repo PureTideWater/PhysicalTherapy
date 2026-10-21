@@ -1,14 +1,30 @@
-import { createHash } from 'node:crypto';
-
-import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
-import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative } from '@tp/packets';
-import { type PacketVersionDetail, approvePacketVersion, packetOfCase, packetVersionOf, writePacketVersion } from '@tp/worker/packets';
+import { type PracticeScope, type ScopeClient, loadPracticeCipher } from '@tp/db/runtime';
+import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative, exportFileName, packetReference } from '@tp/packets';
+import type { DeadlineStatus } from '@tp/triage';
+import {
+  type ExportReadiness,
+  type ExportReadinessReason,
+  type PacketAttestation,
+  type PacketExportFile,
+  type PacketVersionDetail,
+  approvePacketVersion,
+  downloadPacketExport,
+  exportReadiness,
+  packetOfCase,
+  packetVersionOf,
+  writePacketVersion,
+} from '@tp/worker/packets';
 
 import type { Services } from '../server/services';
 import type { JobQueue } from '../uploads/queue';
 import { peopleEmails } from '../cases/people';
 import { NotFoundError } from '../http/route';
-import { type ApprovalState, approvalState } from './approval';
+import { type ApprovalState, type BlockedReason, approvalState } from './approval';
+import { type ContactNow, contactNow } from './contact';
+import { type ExportAttempt, exportAttempt } from './export-attempts';
+import { PRICING_BLOCKED_TEXT, type PricingNowView, pricingNow } from './pricing';
+
+export { DEADLINE_NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, STALE_LEVEL_NOT_EXPORTABLE } from './export-attempts';
 
 /**
  * The packet builder's reads and steps (PRD 7, Packet builder: "citation, line table, traces, narrative
@@ -19,6 +35,16 @@ import { type ApprovalState, approvalState } from './approval';
  * job inserts them, into the PDF and CSV. Each step is made once: saving the text a current version
  * already holds writes nothing, approving an approved version and exporting an exported one do
  * nothing.
+ *
+ * CO-05 (docs/adr/0061): the builder shows each line's deadline and its status, and the version's; the
+ * export is asked for only when the database, deriving the deadline again now, says it is not
+ * unverified. D16: once exported, a reimbursement reviewer attests the export over its two SHA-256 on
+ * the review page; a submission is logged only after that.
+ *
+ * The best-option audit's items #4 and #26 (the founder's ruling of 2026-10-18): the version shown carries its
+ * pricing now (pricingNow(): the stale lines with their figures then and now), its export readiness (the one
+ * @tp/worker/packets exportReadiness() the export action and the job ask too, every reason with its fix) and
+ * the latest attempt at its export (exportAttempt()); approval is blocked ahead while its pricing is not current.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -37,6 +63,9 @@ export interface VersionSummary {
   readonly exportedAt: string | null;
   readonly exportSha256: string | null;
   readonly exportCsvSha256: string | null;
+  /** The deadline status the version stated when it was written (tp-packet/1: unverified). */
+  readonly deadlineStatus: DeadlineStatus;
+  readonly attestedAt: string | null;
 }
 
 export interface VersionView {
@@ -49,6 +78,11 @@ export interface VersionView {
   readonly narrative: string;
   /** The hash an approval names. */
   readonly contentSha256: string;
+  /**
+   * The packet's reference once the version is approved (packetReference of its approved SHA-256; audit item #37 part
+   * 1, D5): what the payer's copy prints in its approval line and names its files by, and what a payer quotes back.
+   */
+  readonly reference: string | null;
   readonly verifier: VerifierReport;
   readonly writtenAt: string;
   readonly writtenBy: string | null;
@@ -60,6 +94,24 @@ export interface VersionView {
   readonly exportCsvSha256: string | null;
   /** The documents the person attached to its evidence list. */
   readonly attachedDocumentIds: readonly string[];
+  /** The deadline status the version stated when it was written. */
+  readonly deadlineStatus: DeadlineStatus;
+  /** The deadline status the database derives now (what the export is held to; CO-05). */
+  readonly deadlineNow: DeadlineStatus;
+  /** Whether the version is of the case's dispute level now: one written before a denial reopened the case is not exported. */
+  readonly atCaseLevel: boolean;
+  /** The verifier's report over what the export printed, once exported. */
+  readonly exportVerifier: VerifierReport | null;
+  /** The reimbursement reviewer's attestation over the export (D16), once made. */
+  readonly attestation: { readonly by: string | null; readonly at: string; readonly checklist: PacketAttestation['checklist'] } | null;
+  /** Whether its pricing is still current, with the stale lines' figures then and now (audit item #4). */
+  readonly pricingNow: PricingNowView;
+  /** Whether it can be exported today, and every reason it cannot (audit item #26): what the export action and the job say. */
+  readonly exportReadiness: ExportReadiness;
+  /** The latest attempt at its export since the latest request (audit item #26). */
+  readonly exportAttempt: ExportAttempt;
+  /** No one but the version's writer approves packets in the practice (a single-user practice for packets). */
+  readonly singleUser: boolean;
 }
 
 export interface ApprovalRequest {
@@ -85,6 +137,8 @@ export interface BuilderView {
   readonly approvalRequest: ApprovalRequest | null;
   readonly promptPayStates: readonly string[];
   readonly attachable: readonly AttachableDocument[];
+  /** The practice's correspondence contact now, which the payer's copy prints (no export without it; D6, D7). */
+  readonly contact: ContactNow;
 }
 
 interface HistoryRow {
@@ -100,13 +154,15 @@ interface HistoryRow {
   readonly exported_at: Date | null;
   readonly export_sha256: string | null;
   readonly export_csv_sha256: string | null;
+  readonly deadline_verification_status: DeadlineStatus;
+  readonly attested_at: Date | null;
 }
 
 /** The case's packet's versions, newest first (codes, dates and hashes; no narrative). */
 async function history(scope: Scope, practiceId: string, packetId: string): Promise<{ rows: HistoryRow[]; drafterId: string | null }> {
   const { rows } = await scope.client.query<HistoryRow>(
     `SELECT v.id, v.version_no, p.current_version_id = v.id AS current, v.created_at, v.drafted_by, v.verifier_passed, v.approved_at, v.approved_by, v.approved_alone,
-            v.exported_at, v.export_sha256, v.export_csv_sha256
+            v.exported_at, v.export_sha256, v.export_csv_sha256, v.deadline_verification_status, v.attested_at
        FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.packet_id = $1 AND v.practice_id = $2 ORDER BY v.version_no DESC`,
     [packetId, practiceId],
   );
@@ -134,7 +190,29 @@ function attachedOf(content: PacketContent): string[] {
   return content.evidence.filter((item) => item.kind === 'attached_document' && item.document_id !== null).map((item) => item.document_id as string);
 }
 
-function versionView(detail: PacketVersionDetail, writtenBy: string | null): VersionView {
+/** The deadline status the database derives now for a version's content (CO-05: what the export is held to). */
+export async function deadlineNow(scope: Scope, caseId: string, content: PacketContent): Promise<DeadlineStatus> {
+  const { rows } = await scope.client.query<{ status: DeadlineStatus }>('SELECT packet_version_deadline_status($1, $2::jsonb) AS status', [caseId, JSON.stringify(content)]);
+  return rows[0]?.status ?? 'unverified';
+}
+
+/** Whether a version's dispute level is the case's now (1 + its reopened denials), as the export and the attestation require. */
+export async function atCaseLevel(scope: Scope, caseId: string, content: PacketContent): Promise<boolean> {
+  const { rows } = await scope.client.query<{ level: number }>('SELECT 1 + case_reopened_levels($1) AS level', [caseId]);
+  return rows[0]?.level === content.dispute_level;
+}
+
+interface VersionChecks {
+  readonly deadlineNow: DeadlineStatus;
+  readonly atCaseLevel: boolean;
+  readonly pricingNow: PricingNowView;
+  readonly exportReadiness: ExportReadiness;
+  readonly exportAttempt: ExportAttempt;
+  /** No one but the version's writer approves packets in the practice: the writer approves alone after the 24-hour delay. */
+  readonly singleUser: boolean;
+}
+
+function versionView(detail: PacketVersionDetail, writtenBy: string | null, attestedBy: string | null, checks: VersionChecks): VersionView {
   return {
     id: detail.versionId,
     packetId: detail.packetId,
@@ -143,6 +221,7 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null): Ver
     content: detail.content,
     narrative: detail.narrative,
     contentSha256: detail.contentSha256,
+    reference: detail.approvedAt === null ? null : packetReference(detail.contentSha256),
     verifier: detail.verifier,
     writtenAt: detail.createdAt.toISOString(),
     writtenBy,
@@ -152,6 +231,10 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null): Ver
     exportSha256: detail.exportSha256,
     exportCsvSha256: detail.exportCsvSha256,
     attachedDocumentIds: attachedOf(detail.content),
+    deadlineStatus: detail.deadlineStatus,
+    exportVerifier: detail.exportVerifier,
+    attestation: detail.attestedAt === null || detail.attestation === null ? null : { by: attestedBy, at: detail.attestedAt.toISOString(), checklist: detail.attestation.checklist },
+    ...checks,
   };
 }
 
@@ -165,7 +248,7 @@ export async function builderView(
   if (found === undefined) {
     return undefined;
   }
-  const common = { promptPayStates: await promptPayStates(scope), attachable: await attachable(scope, input.practiceId) };
+  const common = { promptPayStates: await promptPayStates(scope), attachable: await attachable(scope, input.practiceId), contact: await contactNow(scope, input.practiceId) };
   if (found.packetId === null) {
     if (input.versionId !== undefined) {
       throw new NotFoundError();
@@ -188,16 +271,24 @@ export async function builderView(
   );
   const emails = await peopleEmails(scope, input.practiceId, [...rows.flatMap((row) => [row.drafted_by, row.approved_by]), ...requests.map((row) => row.created_by)]);
   const person = (id: string | null) => (id === null ? null : (emails.get(id) ?? 'a former member of the practice'));
-  const { rows: facts } = await scope.client.query<{ matches: boolean; others: boolean }>(
-    'SELECT packet_version_matches_case($1, v.content) AS matches, practice_has_other_packet_approver($2, app_actor_id()) AS others FROM packet_version v WHERE v.id = $3',
+  const { rows: facts } = await scope.client.query<{ matches: boolean; others: boolean; writer_alone: boolean }>(
+    `SELECT packet_version_matches_case($1, v.content) AS matches, practice_has_other_packet_approver($2, app_actor_id()) AS others,
+            NOT practice_has_other_packet_approver($2, v.drafted_by) AS writer_alone
+       FROM packet_version v WHERE v.id = $3`,
     [input.caseId, input.practiceId, shown.id],
   );
+  const pricing = await pricingNow(scope, { practiceId: input.practiceId, content: detail.content, requestId: input.requestId });
+  const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: shown.id, asOf: input.now.toISOString().slice(0, 10) });
+  if (readiness === undefined) {
+    throw new NotFoundError();
+  }
   const approval = approvalState(
     {
       verifierPassed: shown.verifier_passed,
       verifierCurrent: detail.verifier.format === VERIFIER_FORMAT,
       current: shown.current,
       matchesCase: facts[0]?.matches ?? false,
+      pricingCurrent: pricing.status === 'current',
       regulationCitation: detail.content.citation.kind === 'regulation',
       regulationConfirmed: detail.regulationConfirmedBy !== null,
       approvedAt: shown.approved_at?.toISOString() ?? null,
@@ -227,8 +318,17 @@ export async function builderView(
       exportedAt: row.exported_at?.toISOString() ?? null,
       exportSha256: row.export_sha256,
       exportCsvSha256: row.export_csv_sha256,
+      deadlineStatus: row.deadline_verification_status,
+      attestedAt: row.attested_at?.toISOString() ?? null,
     })),
-    version: versionView(detail, person(shown.drafted_by)),
+    version: versionView(detail, person(shown.drafted_by), await attesterEmail(scope, detail.attestedBy), {
+      deadlineNow: await deadlineNow(scope, input.caseId, detail.content),
+      atCaseLevel: await atCaseLevel(scope, input.caseId, detail.content),
+      pricingNow: pricing,
+      exportReadiness: readiness,
+      exportAttempt: await exportAttempt(scope, shown.id, input.now),
+      singleUser: facts[0]?.writer_alone ?? false,
+    }),
     approval,
     approvalRequest: request === undefined ? null : { at: request.created_at.toISOString(), by: person(request.created_by), message: cipher === null || request.body === null ? null : cipher.decrypt('case_activity.body', request.body) },
     ...common,
@@ -251,7 +351,9 @@ const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.l
 /**
  * Writes a version (CAS-13: an edit is a new version, which clears the packet's approval), unless the
  * packet's current version already holds exactly what is asked (the same words, the same prompt-pay
- * state and attachments, its lines still the case's): then nothing is written and that version stands.
+ * state and attachments, its lines still the case's, and its pricing still current): then nothing is written and
+ * that version stands. A version whose pricing is no longer current is never "unchanged": the write goes through,
+ * so loadAssembly() refuses it naming the stale lines and the remedy (audit item #4).
  */
 export async function writeVersionOnce(scope: Scope, services: Pick<Services, 'keys'>, input: WriteRequest): Promise<{ readonly versionId: string; readonly written: boolean }> {
   const found = await packetOfCase(scope, { practiceId: input.practiceId, caseId: input.caseId });
@@ -261,10 +363,14 @@ export async function writeVersionOnce(scope: Scope, services: Pick<Services, 'k
   if (found.currentVersionId !== null) {
     const current = await packetVersionOf(scope, services.keys, { practiceId: input.practiceId, versionId: found.currentVersionId, requestId: input.requestId, purpose: 'packet_build' });
     if (current !== undefined) {
-      const { rows } = await scope.client.query<{ matches: boolean }>('SELECT packet_version_matches_case($1, $2::jsonb) AS matches', [input.caseId, JSON.stringify(current.content)]);
+      const { rows } = await scope.client.query<{ matches: boolean; pricing: string | null }>(
+        'SELECT packet_version_matches_case($1, $2::jsonb) AS matches, packet_version_pricing_check($2::jsonb) AS pricing',
+        [input.caseId, JSON.stringify(current.content)],
+      );
       const wanted = input.narrative ?? draftNarrative(current.content);
       if (
         rows[0]?.matches === true &&
+        rows[0].pricing === 'current' &&
         wanted === current.narrative &&
         (current.content.interest?.state ?? null) === input.promptPayState &&
         sameSet(attachedOf(current.content), input.attachedDocumentIds)
@@ -314,72 +420,100 @@ export async function approveOnce(scope: Scope, input: { readonly practiceId: st
   return true;
 }
 
-/** Why an export is not asked for. */
-export const NOT_EXPORTABLE = 'an export prints the packet’s current version once it is approved';
+/** Why approval is blocked, in words, with the next step (the approval panel's reason, beside its disabled button). */
+export const BLOCKED_TEXT: Readonly<Record<BlockedReason, string>> = {
+  verifier: 'Approval is blocked: the verifier failed this version (its mismatches are listed above). Correct the narrative and save a new version; only a version that passes can be approved.',
+  verifier_outdated: 'An earlier verifier checked this version. Save it again as a new version so the current verifier checks it; only a version the current verifier passed can be approved.',
+  not_current: 'A later version of this packet was written since; only the current version can be approved.',
+  case_changed: 'The case’s lines changed since this version was written (a line was written off or reopened); write a new version first.',
+  pricing_not_current: PRICING_BLOCKED_TEXT.approval,
+  regulation:
+    'A contract specialist confirms the Medicare Advantage regulation applies to this case before its packet can be approved: they do it on their Regulations to confirm page, under the practice’s support grant (the platform administrator opens one from a ticket).',
+};
+
+/** Why the drafter's Approve button is disabled (CAS-09; audit item #61): someone else approves, and the drafter asks them. */
+export const DRAFTER_APPROVAL_TEXT = 'A second person who approves packets approves it; ask with Request approval.';
+
+/** The same, once the drafter has asked (the Request approval form is gone then): the request stands, and the approver approves here. */
+export const DRAFTER_REQUESTED_TEXT = 'Approval is requested; a second person who approves packets approves it here.';
+
+/** The person who attested an export, by email; null when they are no longer a user. */
+async function attesterEmail(scope: Scope, userId: string | null): Promise<string | null> {
+  if (userId === null) {
+    return null;
+  }
+  const { rows } = await scope.client.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [userId]);
+  return rows[0]?.email ?? null;
+}
+
+/** What an export request came to: queued, exported already, or refused before anything was queued with every reason. */
+export type ExportRequestOutcome =
+  | { readonly outcome: 'queued' }
+  | { readonly outcome: 'exported' }
+  /** singleUser: no one but the version's writer approves packets in the practice (the not_approved words say who approves). */
+  | { readonly outcome: 'refused'; readonly reasons: readonly [ExportReadinessReason, ...ExportReadinessReason[]]; readonly singleUser: boolean };
 
 /**
  * Asks the worker to print a version's export (the packet_export job: the PDF and the CSV schedule, the
  * identifiers inserted, stored sealed, their SHA-256 recorded on the version; CAS-11, CAS-12). A version
- * exported already is left as it is ('exported'); one not approved or not current is refused.
+ * exported already is left as it is ('exported'). Anything the job would refuse is refused here first, before
+ * anything is queued, with every reason that holds (@tp/worker/packets exportReadiness(), which the job asks
+ * again; audit item #26): not approved, not current, a tp-packet/1 version, the case changed or closed, an
+ * earlier dispute level, a line's window passed on `asOf`, its pricing not current, its deadline not verified,
+ * or its statements not its inputs'. The page shows each with its fix.
  */
-export async function requestExportOnce(scope: Scope, queue: JobQueue, input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string }): Promise<'queued' | 'exported' | 'refused'> {
-  const version = await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
-  if (version.exported) {
-    return 'exported';
+export async function requestExportOnce(
+  scope: Scope,
+  queue: JobQueue,
+  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly asOf: string },
+): Promise<ExportRequestOutcome> {
+  await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
+  const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: input.versionId, asOf: input.asOf });
+  if (readiness === undefined) {
+    throw new NotFoundError();
   }
-  if (!version.approved || !version.current) {
-    return 'refused';
+  if (readiness.outcome === 'refused') {
+    const { rows } = await scope.client.query<{ alone: boolean }>(
+      'SELECT NOT practice_has_other_packet_approver($1, v.drafted_by) AS alone FROM packet_version v WHERE v.id = $2 AND v.practice_id = $1',
+      [input.practiceId, input.versionId],
+    );
+    return { ...readiness, singleUser: rows[0]?.alone ?? false };
+  }
+  if (readiness.outcome !== 'ready') {
+    return readiness;
   }
   await queue.enqueue('packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId });
-  return 'queued';
-}
-
-/** A stored export did not match the SHA-256 its version recorded: it is never sent. */
-export class PacketFileIntegrityError extends Error {
-  override readonly name = 'PacketFileIntegrityError';
-}
-
-async function collect(source: AsyncIterable<Uint8Array>): Promise<Buffer> {
-  const parts: Buffer[] = [];
-  for await (const part of source) {
-    parts.push(Buffer.from(part));
-  }
-  return Buffer.concat(parts);
+  return { outcome: 'queued' };
 }
 
 /**
  * A version's exported PDF or CSV (line-level PHI: the identifiers are in it), read from the sealed
- * store, checked against the SHA-256 the version recorded, and recorded as an audited line-level
- * export. Undefined when the version has no export.
+ * store, checked against the SHA-256 the version recorded, and recorded as the viewer's download of that
+ * file (@tp/worker/packets downloadPacketExport(): packet_export_pdf_downloaded or
+ * packet_export_csv_downloaded, a line-level export, written only once the bytes hashed to the recorded
+ * SHA-256). A reimbursement reviewer's two downloads are what their attestation needs (docs/adr/0061).
+ * Undefined when the version has no export; a file that does not match throws
+ * PacketExportFileIntegrityError and is never sent.
  */
-export async function exportFile(
+export function exportFile(
   scope: Scope,
   services: Pick<Services, 'keys' | 'documents'>,
-  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly file: 'pdf' | 'csv'; readonly requestId: string },
+  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly file: PacketExportFile; readonly requestId: string },
 ): Promise<Uint8Array<ArrayBuffer> | undefined> {
-  const [row] = await readWithAudit(
-    scope,
-    { objectType: 'packet_version', purpose: 'line_export', requestId: input.requestId },
-    async (client) =>
-      (
-        await client.query<{ id: string; practice_id: string; key: string | null; sha256: string | null }>(
-          `SELECT v.id, v.practice_id, ${input.file === 'pdf' ? 'v.export_pdf_key' : 'v.export_csv_key'} AS key, ${input.file === 'pdf' ? 'v.export_sha256' : 'v.export_csv_sha256'} AS sha256
-             FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2 AND p.case_id = $3`,
-          [input.versionId, input.practiceId, input.caseId],
-        )
-      ).rows,
-    (found) => ({ objectId: found.id, practiceId: found.practice_id }),
+  return downloadPacketExport(scope, services, input);
+}
+
+/**
+ * The name an exported file is served under (audit item #37 part 1, D8): payment-dispute-<REF>.pdf or
+ * payment-dispute-<REF>-schedule.csv, the reference of the version's approved SHA-256, never a record ID. Undefined
+ * when the version of the case has no export.
+ */
+export async function exportFileNameOf(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly file: PacketExportFile }): Promise<string | undefined> {
+  const { rows } = await scope.client.query<{ approved_sha256: string | null }>(
+    `SELECT v.approved_sha256 FROM packet_version v JOIN packet p ON p.id = v.packet_id
+      WHERE v.id = $1 AND v.practice_id = $2 AND p.case_id = $3 AND v.exported_at IS NOT NULL`,
+    [input.versionId, input.practiceId, input.caseId],
   );
-  if (row?.key === null || row?.key === undefined || row.sha256 === null) {
-    return undefined;
-  }
-  const cipher = await loadPracticeCipher(scope, services.keys, input.practiceId);
-  const bytes = await collect(services.documents.read(cipher, row.key));
-  if (createHash('sha256').update(bytes).digest('hex') !== row.sha256) {
-    throw new PacketFileIntegrityError('the stored packet export does not match the SHA-256 its version recorded');
-  }
-  await recordAuditEvent(scope, { action: 'packet_export_downloaded', objectType: 'packet_version', objectId: input.versionId, practiceId: input.practiceId, purpose: 'line_export', requestId: input.requestId });
-  const out = new Uint8Array(new ArrayBuffer(bytes.length));
-  out.set(bytes);
-  return out;
+  const sha = rows[0]?.approved_sha256 ?? null;
+  return sha === null ? undefined : exportFileName(packetReference(sha), input.file);
 }

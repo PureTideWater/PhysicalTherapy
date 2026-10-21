@@ -1,5 +1,5 @@
 import { rolesPermit } from '@tp/db/runtime';
-import { NARRATIVE_MAX_LENGTH } from '@tp/worker/packets';
+import { type ExportAwaitingAttestation, NARRATIVE_MAX_LENGTH, type SubmissionUnattestedReason, packetVersionUnattestedReason } from '@tp/worker/packets';
 import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
@@ -8,7 +8,11 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
 import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
 import { modelFeatures } from '../models/path';
-import { NOT_EXPORTABLE, type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
+import { canSetCorrespondence } from '../packets/contact';
+import { exportRefusalText } from '../packets/export-attempts';
+import { type BuilderView, approveOnce, builderView, exportFile, exportFileNameOf, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
+import { ATTEST_CONFIRMATIONS, PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
+import { sentWithoutSignOffOf } from '../packets/unattested';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText } from './schemas';
@@ -26,6 +30,18 @@ import { opaqueId, optionalText } from './schemas';
  * practice's writer wait 24 hours); exporting and downloading the export is phi.export, since the
  * export inserts the identifiers (the billing manager and the firm principal). Every step records an
  * audit event, and is made once.
+ *
+ * CO-05 and D16 (docs/adr/0061): the export is refused while the version's deadline is not verified, with
+ * the next step in words; once exported, the reimbursement reviewer (audit_finding.validate, the reviewer
+ * role under a support grant) reviews the export's PDF and CSV on its review page and attests over their
+ * SHA-256, once, and a submission is logged only after that. The reviewer edits nothing else.
+ *
+ * The best-option audit's items #4, #26 and #61 (the founder's ruling of 2026-10-18): the builder shows a
+ * version's pricing now and blocks its approval while it is not current; the export is refused before anything
+ * is queued for every reason the job would refuse it, each with its fix, and the page shows the latest attempt
+ * (in progress, retrying, refused with its fix, failed); and a version is written through one form whose submit
+ * buttons (save, the code-built draft, the model's draft) the page's one server action routes to the write or
+ * the model draft below, each with its own schema, role, transaction and audit event.
  */
 
 const STATE_CODE = z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, 'a two-letter state code');
@@ -44,6 +60,8 @@ export interface BuilderPageData {
   readonly canDraftWithModel: boolean;
   readonly drafts: readonly DraftView[];
   readonly modelNotice: ModelNotice | null;
+  /** Whether the viewer sets the practice's correspondence contact (the administrator, by ownership): the Export card links to it. */
+  readonly canSetContact: boolean;
 }
 
 export const packetPage = practiceRoute({
@@ -94,6 +112,7 @@ export const packetPage = practiceRoute({
       canDraftWithModel: rolesPermit(access.roles, 'packet.draft') && (await modelFeatures(scope, services, practiceId)).draftPacketNarrative,
       drafts: await packetDrafts(scope, practiceId, params.caseId),
       modelNotice: params.model ?? null,
+      canSetContact: canSetCorrespondence(access),
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.caseId }) },
@@ -213,6 +232,9 @@ export const approvePacketVersionAction = practiceRoute({
  * Asks the worker to export the approved current version: the packet_export job prints the PDF and the
  * CSV schedule with the identifiers inserted from the claim and patient records, stores both sealed
  * and records their SHA-256 on the version (CAS-11, CAS-12). An exported version is left as it is.
+ * What the job would refuse is refused here at once, before anything is queued (the best-option audit's item
+ * #26): one issue per reason that holds, its field the reason's code and its message the reason with its fix,
+ * which the packet page lists. The job records its own refusals and failed tries, which the page shows.
  */
 export const exportPacketAction = practiceRoute({
   id: 'practice.cases.packet.export',
@@ -224,11 +246,12 @@ export const exportPacketAction = practiceRoute({
   input: z.object({ caseId: opaqueId, versionId: opaqueId }),
   audit: { action: 'packet_export_requested', objectType: 'packet_version' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
-    const outcome = await requestExportOnce(scope, services.queue, { practiceId, caseId: input.caseId, versionId: input.versionId });
-    if (outcome === 'refused') {
-      throw new InputError([{ field: 'refused', message: NOT_EXPORTABLE }]);
+    const asOf = services.now().toISOString().slice(0, 10);
+    const outcome = await requestExportOnce(scope, services.queue, { practiceId, caseId: input.caseId, versionId: input.versionId, asOf });
+    if (outcome.outcome === 'refused') {
+      throw new InputError(outcome.reasons.map((reason) => ({ field: reason, message: exportRefusalText(reason, { singleUser: outcome.singleUser }) })));
     }
-    return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?version=${input.versionId}&notice=${outcome === 'queued' ? 'export_requested' : 'exported'}` };
+    return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?version=${input.versionId}&notice=${outcome.outcome === 'queued' ? 'export_requested' : 'exported'}` };
   },
   // The world's exported version: exported already, so nothing is queued.
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
@@ -236,14 +259,18 @@ export const exportPacketAction = practiceRoute({
 
 const downloadParams = z.object({ practiceId: opaqueId, caseId: opaqueId, versionId: opaqueId });
 
-/** An exported version's file, checked against its SHA-256 and recorded as a line-level export; not found before the export. */
-async function exported(context: PracticeContext<z.output<typeof downloadParams>, unknown>, file: 'pdf' | 'csv'): Promise<Uint8Array<ArrayBuffer>> {
+/**
+ * An exported version's file, checked against its SHA-256 and recorded as a line-level export, with the name it is
+ * served under (D8: the packet's reference, never a record ID); not found before the export.
+ */
+async function exported(context: PracticeContext<z.output<typeof downloadParams>, unknown>, file: 'pdf' | 'csv'): Promise<Download<Uint8Array<ArrayBuffer>>> {
   const { scope, practiceId, params, request, services } = context;
-  const bytes = await exportFile(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, file, requestId: request.requestId });
-  if (bytes === undefined) {
+  const filename = await exportFileNameOf(scope, { practiceId, caseId: params.caseId, versionId: params.versionId, file });
+  const bytes = filename === undefined ? undefined : await exportFile(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, file, requestId: request.requestId });
+  if (filename === undefined || bytes === undefined) {
     throw new NotFoundError();
   }
-  return bytes;
+  return { download: file === 'pdf' ? { filename, contentType: 'application/pdf', body: bytes } : { filename, contentType: 'text/csv; charset=utf-8', body: bytes } };
 }
 
 /** The exported PDF (the packet with its identifiers inserted: line-level PHI), for the roles that export PHI. */
@@ -256,10 +283,8 @@ export const packetPdf = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: downloadParams,
-  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
-    // The file's name is the version's opaque ID, never a payer's or a patient's name.
-    download: { filename: `packet-${context.params.versionId}.pdf`, contentType: 'application/pdf', body: await exported(context, 'pdf') },
-  }),
+  // The file's name is the packet's reference (payment-dispute-<REF>.pdf), never a record ID, a payer's or a patient's name.
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'pdf'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
 
@@ -273,10 +298,142 @@ export const packetCsv = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: downloadParams,
-  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
-    download: { filename: `packet-schedule-${context.params.versionId}.csv`, contentType: 'text/csv; charset=utf-8', body: await exported(context, 'csv') },
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'csv'),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
+});
+
+const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256');
+
+/** The attestation's input: the two SHA-256 and one required box per checklist item, built from the checklist (D10), so none can be left out. */
+export const ATTEST_INPUT = z.object({
+  caseId: opaqueId,
+  versionId: opaqueId,
+  pdfSha256: sha256,
+  csvSha256: sha256,
+  ...ATTEST_CONFIRMATIONS,
+});
+
+export interface PacketReviewsPageData {
+  readonly practiceId: string;
+  readonly awaiting: readonly ExportAwaitingAttestation[];
+}
+
+/** The exports waiting for the reimbursement reviewer's attestation (D16), oldest first. */
+export const packetReviewsPage = practiceRoute({
+  id: 'practice.packet_reviews',
+  kind: 'page',
+  path: '/p/[practiceId]/packet-reviews',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: z.object({ practiceId: opaqueId }),
+  handle: async ({ scope, practiceId }): Promise<PacketReviewsPageData> => ({ practiceId, awaiting: await awaitingAttestation(scope, practiceId) }),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
+});
+
+export interface PacketReviewPageData {
+  readonly practiceId: string;
+  readonly review: PacketReview;
+  readonly checklist: typeof PACKET_CHECKLIST;
+  readonly notice: 'attested' | null;
+  /**
+   * The submission of this export logged sent without sign-off, once there is one (its pricing went stale after the
+   * export; the founder's ruling of 2026-10-20): the version is never attested.
+   */
+  readonly sentWithoutSignOff: Awaited<ReturnType<typeof sentWithoutSignOffOf>>;
+  /** Why its export may be logged without the attestation (its pricing went stale after the export); null otherwise. */
+  readonly unattestedReason: SubmissionUnattestedReason | null;
+}
+
+/** The reviewer's review of one export: its content, deadline, files and their SHA-256, and the checklist to attest over them. */
+export const packetReviewPage = practiceRoute({
+  id: 'practice.cases.packet.review',
+  kind: 'page',
+  path: '/p/[practiceId]/cases/[caseId]/packet/[versionId]/review',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: z.object({ practiceId: opaqueId, caseId: opaqueId, versionId: opaqueId, notice: optionalText(z.enum(['attested'])) }),
+  handle: async ({ scope, practiceId, params, request, actor, services }): Promise<PacketReviewPageData> => ({
+    practiceId,
+    review: await packetReview(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, viewerId: actor.userId, requestId: request.requestId }),
+    checklist: PACKET_CHECKLIST,
+    notice: params.notice ?? null,
+    sentWithoutSignOff: await sentWithoutSignOffOf(scope, { practiceId, versionId: params.versionId }),
+    unattestedReason: await packetVersionUnattestedReason(scope.client, { practiceId, versionId: params.versionId }),
   }),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
 
-export const PACKET_ROUTES = [packetPage, writeVersionAction, requestApprovalAction, approvePacketVersionAction, exportPacketAction, packetPdf, packetCsv] as const;
+/**
+ * The reviewer attests the export (D16; once: an attested export is left as it is): every item confirmed
+ * and the SHA-256 of the PDF and the CSV the review showed, which must be the export's. No free text. The
+ * database refuses a reviewer who drafted, wrote or approved the packet, a version not current or whose
+ * case changed, and one whose deadline is not verified now.
+ */
+export const attestPacketExportAction = practiceRoute({
+  id: 'practice.cases.packet.attest',
+  kind: 'action',
+  path: '/p/[practiceId]/cases/packet/attest',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: z.object({ practiceId: opaqueId }),
+  input: ATTEST_INPUT,
+  audit: { action: 'packet_export_attested', objectType: 'packet_version' },
+  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    await underPacketRules(() => attestOnce(scope, { practiceId, caseId: input.caseId, versionId: input.versionId, pdfSha256: input.pdfSha256, csvSha256: input.csvSha256, requestId: request.requestId }));
+    return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet/${input.versionId}/review?notice=attested` };
+  },
+  sample: {
+    params: (refs) => ({ practiceId: refs.practiceId }),
+    // The world's exported version, attested already before its submission: nothing changes.
+    input: (refs) => ({
+      caseId: refs.submittedCaseId,
+      versionId: refs.exportedVersionId,
+      pdfSha256: refs.exportedVersionPdfSha256,
+      csvSha256: refs.exportedVersionCsvSha256,
+      ...Object.fromEntries(PACKET_CHECKLIST.map((item) => [`confirm_${item.id}`, 'on'])),
+    }),
+  },
+});
+
+/** The exported PDF for the reviewer the review names it to (audit_finding.validate): read-only, checked against its SHA-256, the download recorded. */
+export const reviewPacketPdf = practiceRoute({
+  id: 'practice.cases.packet.review_pdf',
+  kind: 'handler',
+  method: 'GET',
+  path: '/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/pdf',
+  rateLimit: 'export',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: downloadParams,
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'pdf'),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
+});
+
+/** The exported CSV schedule for the reviewer (line-level PHI, under the support grant): checked against its SHA-256, the download recorded. */
+export const reviewPacketCsv = practiceRoute({
+  id: 'practice.cases.packet.review_csv',
+  kind: 'handler',
+  method: 'GET',
+  path: '/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/csv',
+  rateLimit: 'export',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: downloadParams,
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'csv'),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
+});
+
+export const PACKET_ROUTES = [
+  packetPage,
+  writeVersionAction,
+  requestApprovalAction,
+  approvePacketVersionAction,
+  exportPacketAction,
+  packetPdf,
+  packetCsv,
+  packetReviewsPage,
+  packetReviewPage,
+  attestPacketExportAction,
+  reviewPacketPdf,
+  reviewPacketCsv,
+] as const;

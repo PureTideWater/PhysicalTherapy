@@ -124,6 +124,9 @@ export const practiceHome = practiceRoute({
   path: '/p/[practiceId]',
   phi: true,
   permission: 'practice.open',
+  // The headline's three numbers and the stage counts below them: one snapshot, so a reconcile that commits while the
+  // dashboard reads never counts a line at two stages.
+  oneSnapshot: true,
   params: z.object({ practiceId: opaqueId }),
   handle: async ({ scope, practiceId, access, request, services }) => {
     const [practice] = await readWithAudit(

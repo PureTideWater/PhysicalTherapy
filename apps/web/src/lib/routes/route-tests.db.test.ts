@@ -43,7 +43,7 @@ import { seedTriage, seedTriageLine } from './test-support/triage-world';
 import { seedMonitoring } from './test-support/monitoring-world';
 import { seedLedger } from './test-support/ledger-world';
 import { seedModelProposals } from './test-support/model-world';
-import { seedPacketLine, seedPackets } from './test-support/packet-world';
+import { seedPacketCases, seedPacketLine, seedPackets } from './test-support/packet-world';
 import { seedReportDocument } from './test-support/report-world';
 import { seedBilling } from './test-support/billing-world';
 import { csrfTokenFor } from '../http/csrf';
@@ -357,6 +357,18 @@ async function buildWorld(name: string): Promise<World> {
   const packetLineId = await seedPacketLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId });
   const regulationLineId = await seedPacketLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId, lineNo: 4, serviceDate: '2026-03-18' });
   const { pricingRunId, rerunId } = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
+  // The packets' own cases, before the audit report's triage (which would take their lines, their windows verified, into its case).
+  const packetCases = await seedPacketCases({
+    owner,
+    practiceId: tenant.practiceId,
+    pricingRunId,
+    packetLineServiceLineId: packetLineId,
+    regulationLineServiceLineId: regulationLineId,
+    payerId: loaded.payerId,
+    planId: loaded.planId,
+    signedOffVersionId: contracts.signedOffVersionId,
+    uploaderId: tenant.adminUserId,
+  });
   const triage = await seedTriage({
     owner,
     app,
@@ -372,23 +384,20 @@ async function buildWorld(name: string): Promise<World> {
     managerId: manager,
     reviewerId,
   });
-  const packets = await seedPackets({
-    owner,
-    app,
-    keys,
-    documents,
-    practiceId: tenant.practiceId,
-    pricingRunId,
-    caseId: triage.caseId,
-    packetLineServiceLineId: packetLineId,
-    regulationLineServiceLineId: regulationLineId,
-    payerId: loaded.payerId,
-    planId: loaded.planId,
-    signedOffVersionId: contracts.signedOffVersionId,
-    analystId: actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'analyst')?.userId ?? '',
-    managerId: manager,
-    uploaderId: tenant.adminUserId,
-  });
+  const packets = await seedPackets(
+    {
+      owner,
+      app,
+      keys,
+      documents,
+      practiceId: tenant.practiceId,
+      caseId: triage.caseId,
+      analystId: actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'analyst')?.userId ?? '',
+      managerId: manager,
+      reviewerId,
+    },
+    packetCases,
+  );
   const monitoring = await seedMonitoring({ owner, practiceId: tenant.practiceId, adminUserId: tenant.adminUserId, pricingRunId, payerId: loaded.payerId });
   const ledger = await seedLedger({
     owner,

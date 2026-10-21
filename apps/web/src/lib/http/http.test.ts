@@ -23,6 +23,14 @@ describe('route definitions', () => {
     ).toThrow('names no audit event');
   });
 
+  it('refuse one snapshot for a route that changes records: a mutation writes at READ COMMITTED, where the pricing locks hold', () => {
+    const params = z.object({ practiceId: z.string() });
+    expect(() =>
+      practiceRoute({ id: 'test.snapshot', kind: 'action', path: '/p/[practiceId]/x', phi: false, permission: 'practice.open', oneSnapshot: true, params, audit: { action: 'x', objectType: 'y' }, handle: () => Promise.resolve({}) }),
+    ).toThrow('only a read takes one snapshot');
+    expect(practiceRoute({ id: 'test.snapshot.page', kind: 'page', path: '/p/[practiceId]', phi: true, permission: 'practice.open', oneSnapshot: true, params, handle: () => Promise.resolve(1) })).toMatchObject({ mutation: false });
+  });
+
   it('record their access, method and whether they change records', () => {
     const page = practiceRoute({ id: 'test.page', kind: 'page', path: '/p/[practiceId]', phi: true, permission: 'practice.open', params: z.object({ practiceId: z.string() }), handle: () => Promise.resolve(1) });
     expect(page).toMatchObject({ method: 'GET', mutation: false, access: { kind: 'practice', permission: 'practice.open' } });
@@ -309,10 +317,42 @@ describe('the route-handler adapter', () => {
       handle: () => Promise.reject(new InputError([{ field: 'x', message: 'no' }])),
     });
     expect((await downloadHandler(refusing, () => services)(new Request('http://localhost/x'))).status).toBe(400);
-    expect((await downloadHandler(refusing, () => services)(new Request('http://localhost/x', { method: 'POST', body: '{' }))).status).toBe(400);
     const notAFile = publicRoute({ id: 'test.json', kind: 'handler', path: '/sign-in/json', phi: false, params: z.object({}), handle: () => Promise.resolve({ a: 1 }) });
     const json = await downloadHandler(notAFile as never, () => services)(new Request('http://localhost/x'));
     expect(await json.json()).toEqual({ a: 1 });
+  });
+});
+
+describe('a download route answers a GET alone (docs/adr/0061)', () => {
+  it.each(['HEAD', 'POST', 'PUT', 'DELETE'])('refuses %s with 405 before the route runs, so no download is recorded', async (method) => {
+    let ran = 0;
+    let servicesRead = 0;
+    const route = publicRoute<Record<string, never>, unknown, Download>({
+      id: 'test.download_counted',
+      kind: 'handler',
+      path: '/sign-in/download-counted',
+      phi: false,
+      params: z.object({}),
+      input: z.unknown(),
+      handle: () => {
+        ran += 1;
+        return Promise.resolve({ download: { filename: 'receipt-3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60.csv', contentType: 'text/csv; charset=utf-8', body: 'a,b\r\n' } });
+      },
+    });
+    const handler = downloadHandler(route, () => {
+      servicesRead += 1;
+      return services;
+    });
+    const response = await handler(new Request('http://localhost/x', { method, ...(method === 'POST' || method === 'PUT' ? { body: '{}' } : {}) }));
+    expect(response.status).toBe(405);
+    expect(response.headers.get('allow')).toBe('GET');
+    expect(response.headers.get('cache-control')).toBe(PRIVATE_NO_STORE);
+    expect(response.headers.get('content-disposition')).toBeNull();
+    expect(ran).toBe(0);
+    expect(servicesRead).toBe(0);
+    // The same handler serves a GET.
+    expect((await handler(new Request('http://localhost/x'))).status).toBe(200);
+    expect(ran).toBe(1);
   });
 });
 

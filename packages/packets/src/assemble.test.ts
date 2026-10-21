@@ -8,7 +8,7 @@ import { narrativeFacts } from './facts';
 import { IDENTIFIER_KINDS } from './format';
 import { canonicalJson, versionSha256 } from './hash';
 import { lineHoldsOnlyPlaceholders } from './placeholders';
-import { IDS, REGULATION, SHA, assemblyInput, contractCitation, line, promptPayRecord } from './test-support';
+import { IDS, REGULATION, SHA, assemblyInput, contractCitation, contractWindowSource, internalTermsIn, line, promptPayRecord } from './test-support';
 import { verifyNarrative } from './verifier';
 
 describe('assemblePacket', () => {
@@ -107,12 +107,81 @@ describe('assemblePacket', () => {
     expect(unknown.interest?.total_cents).toBeNull();
     expect(unknown.evidence_gaps).toEqual([{ code: 'interest_rate_unknown', row: null }]);
     expect(unknown.requested_action).not.toContain('interest');
-    expect(draftNarrative(unknown)).toContain('could not be computed');
+    // Nothing is said of interest no line computed (audit item #37 part 1, D9; Q4 (a)).
+    expect(draftNarrative(unknown)).not.toMatch(/interest/i);
+  });
+
+  it('writes tp-packet/2: each line’s deadline with its status and source, and its calculation copied as given (CO-05)', () => {
+    expect(content.format).toBe('tp-packet/2');
+    for (const item of content.lines) {
+      expect(item.deadline).toEqual({ ends_on: '2036-04-05', status: 'verified', source: 'contract', cause: null });
+      expect(item.window_ends_on).toBe(item.deadline.ends_on);
+      expect(item.calculation).toMatchObject({ method: 'FIXED_SCHEDULE', release_no: 900001, steps: [{ step: 'base', amount_cents: item.expected_cents }], trace_sha256: SHA });
+      expect(item.calculation.rounding?.rounded_cents).toBe(item.expected_cents);
+    }
+    expect(content.deadline).toEqual({ basis: 'line_windows', ends_on: '2036-04-05', status: 'verified', lines_verified: 3, lines: 3, causes: [], sources: [contractWindowSource()] });
+  });
+
+  it('states the earliest line window, and an unverified deadline when any line’s is, with each cause once (D17)', () => {
+    const uncited = { status: 'unverified', source: 'contract', cause: 'CONTRACT_WINDOW_UNCITED' } as const;
+    const mixed = assemblePacket(
+      assemblyInput({
+        lines: [
+          line(1, { windowEndsOn: '2027-01-10', deadline: { ...uncited, endsOn: '2027-01-10' } }),
+          line(2, { windowEndsOn: '2026-12-01', deadline: { ...uncited, endsOn: '2026-12-01' } }),
+          line(3),
+        ],
+        deadlineSources: [contractWindowSource({ verified_by: null, verified_at: null }), contractWindowSource({ verified_by: null, verified_at: null })],
+      }),
+    );
+    expect(mixed.deadline).toMatchObject({ basis: 'line_windows', ends_on: '2026-12-01', status: 'unverified', lines_verified: 1, lines: 3, causes: ['CONTRACT_WINDOW_UNCITED'] });
+    // A source named twice is listed once.
+    expect(mixed.deadline.sources).toHaveLength(1);
+    expect(mixed.lines.map((item) => item.deadline.status)).toEqual(['unverified', 'unverified', 'verified']);
+  });
+
+  it('states the next level’s window after a reopened denial, and refuses a later level without it', () => {
+    const next = { status: 'unverified', source: 'contract', endsOn: '2026-12-15', cause: 'NEXT_LEVEL_UNCITED' } as const;
+    const second = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: next }));
+    expect(second.deadline).toMatchObject({ basis: 'next_level_window', ends_on: '2026-12-15', status: 'unverified', lines_verified: 3, lines: 3, causes: ['NEXT_LEVEL_UNCITED'] });
+    const verified = assemblePacket(assemblyInput({ disputeLevel: 2, citation: REGULATION, contractDocuments: [], nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-15', cause: null } }));
+    expect(verified.deadline).toMatchObject({ basis: 'next_level_window', status: 'verified', causes: [] });
+    expect(() => assemblePacket(assemblyInput({ disputeLevel: 2 }))).toThrow(PacketAssemblyError);
   });
 
   it('starts the requested action with its level after a reopened denial', () => {
     expect(requestedAction(contractCitation(), 2, false)).toMatch(/^Dispute level 2\. Reprocess/);
     expect(dollars('123456')).toBe('$1234.56');
+  });
+});
+
+describe('draftNarrative for the payer (audit item #37 part 1, T10)', () => {
+  const computed = { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() };
+  const notComputed = { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) };
+  const received = [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
+  const cases = {
+    'a contract, interest computed': assemblyInput({ asOf: '2026-05-01', lines: received, interest: computed }),
+    'a contract, interest not computed': assemblyInput({ interest: notComputed }),
+    'a contract, no interest': assemblyInput(),
+    'a regulation, interest computed': assemblyInput({ asOf: '2026-05-01', citation: REGULATION, contractDocuments: [], lines: received, interest: computed }),
+    'a regulation, interest not computed': assemblyInput({ citation: REGULATION, contractDocuments: [], interest: notComputed }),
+    'a regulation, no interest': assemblyInput({ citation: REGULATION, contractDocuments: [] }),
+  };
+
+  for (const [name, input] of Object.entries(cases)) {
+    it(`holds no internal term and passes the verifier: ${name}`, () => {
+      const content = assemblePacket(input);
+      const draft = draftNarrative(content);
+      expect(internalTermsIn(draft)).toEqual([]);
+      expect(draft).not.toMatch(/could not be computed|cannot be computed|not stated|in all/);
+      expect(verifyNarrative(draft, narrativeFacts(content), []).passed).toBe(true);
+    });
+  }
+
+  it('states the Medicare fee schedule a regulation’s amount comes from by its release, and interest only where it was computed', () => {
+    expect(draftNarrative(assemblePacket(cases['a regulation, no interest']))).toContain('The Medicare fee schedule in effect for those service dates (release 900001) sets that amount [2].');
+    expect(draftNarrative(assemblePacket(cases['a contract, interest computed']))).toContain('Prompt-pay interest of $');
+    expect(draftNarrative(assemblePacket(cases['a contract, interest not computed']))).not.toContain('[4]');
   });
 });
 

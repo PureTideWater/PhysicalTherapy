@@ -1,4 +1,4 @@
-import { PROSPECT_BILLING_ARRANGEMENTS, PROSPECT_SOURCES, type ProspectSource, type ScopeClient, type ScopePool } from '@tp/db/runtime';
+import { PROSPECT_BILLING_ARRANGEMENTS, PROSPECT_SOURCES, type ProspectSource, type ScopeClient, type ScopePool, withPublicSnapshot } from '@tp/db/runtime';
 import { type Cents, cents } from '@tp/money';
 import { textPhiFindings } from '@tp/observability';
 import {
@@ -138,25 +138,6 @@ async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeC
   } finally {
     client.release();
   }
-}
-
-/**
- * Reads in one read-only transaction at REPEATABLE READ: every statement sees one snapshot and one now(), so a result
- * the expiry job or a replacing submission deletes between two reads is either read whole or not found, never a summary
- * over an empty page of groups.
- */
-async function withSnapshot<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
-  return withClient(pool, async (client) => {
-    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    try {
-      const result = await work(client);
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    }
-  });
 }
 
 function pgError(error: unknown): { readonly code: string; readonly constraint: string | undefined } | null {
@@ -764,8 +745,10 @@ export const screeningResult = publicRoute({
   params: z.object({ resultId, requested: optionalText(z.literal('1')), groups: groupsPage }),
   handle: async ({ params, services }): Promise<ScreeningResultData> => {
     const hash = screeningTokenHash(params.resultId);
-    // Every read on one snapshot (withSnapshot): the summary, the counts, the page of groups, the coverage and the rows.
-    return withSnapshot(services.pool, async (client) => {
+    // Every read on one snapshot (withPublicSnapshot: one read-only transaction at REPEATABLE READ, so a result the
+    // expiry job or a replacing submission deletes between two reads is read whole or not found, never a summary over
+    // an empty page of groups): the summary, the counts, the page of groups, the coverage and the rows.
+    return withPublicSnapshot(services.pool, async (client) => {
       const summary = (await client.query<SummaryRow>('SELECT * FROM screening_result_summary($1)', [hash])).rows[0];
       if (summary === undefined) {
         throw new NotFoundError();

@@ -44,3 +44,50 @@ export async function tabTo(page: Page, target: { readonly role: 'link' | 'butto
   }
   throw new Error(`Tab never reached the ${target.role} ${String(target.name)}`);
 }
+
+/**
+ * The page at a phone's width (390 px): it does not scroll sideways (a wide table scrolls inside its own region), and
+ * axe-core finds no violation there, a scrollable region a keyboard cannot reach among them. The viewport is put back
+ * as it was.
+ */
+export async function atPhoneWidth(page: Page, what: string, options: { readonly axe?: boolean } = {}): Promise<void> {
+  const before = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  try {
+    await expect.poll(() => page.evaluate(sidewaysScroll), { message: `${what}: no sideways scroll at 390 px` }).toEqual({ scrollWidth: 390, overflowing: [] });
+    if (options.axe !== false) {
+      await expectAccessible(page, `${what}, at 390 px`);
+    }
+  } finally {
+    if (before !== null) {
+      await page.setViewportSize(before);
+    }
+  }
+}
+
+/**
+ * The page's scroll width and the elements that make it wider than the window: each one whose right edge passes the
+ * window's, outside any element that scrolls or clips sideways, named by its tag, its test hooks and its first classes,
+ * so a failure says what to fix.
+ */
+function sidewaysScroll(): { readonly scrollWidth: number; readonly overflowing: readonly string[] } {
+  const width = window.innerWidth;
+  const clipped = (element: Element): boolean => {
+    for (let parent = element.parentElement; parent !== null && parent !== document.body; parent = parent.parentElement) {
+      if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(parent).overflowX)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const overflowing = [...document.body.querySelectorAll('*')]
+    .filter((element) => element.getBoundingClientRect().right > width + 0.5 && !clipped(element))
+    .filter((element) => ![...element.children].some((child) => child.getBoundingClientRect().right > width + 0.5))
+    .slice(0, 5)
+    .map((element) => {
+      const hooks = [...element.attributes].filter((attribute) => attribute.name.startsWith('data-') || attribute.name === 'id').map((attribute) => `[${attribute.name}=${attribute.value}]`);
+      const classes = [...element.classList].slice(0, 6).join('.');
+      return `${element.tagName.toLowerCase()}${hooks.join('')}${classes === '' ? '' : `.${classes}`} (right ${String(Math.round(element.getBoundingClientRect().right))})`;
+    });
+  return { scrollWidth: document.documentElement.scrollWidth, overflowing };
+}

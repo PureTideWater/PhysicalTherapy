@@ -1,4 +1,4 @@
-import { IDENTIFIER_KINDS, type IdentifierKind, type PacketContent, type ScheduleLine } from './format';
+import { IDENTIFIER_KINDS, type IdentifierKind, type LineCalculation, type LineDeadline, type PacketContent, type ScheduleLine } from './format';
 
 /**
  * Identifier placeholders (PRD 12: "Identifiers (patient name, member ID, claim numbers) are held as
@@ -45,12 +45,14 @@ export function fillPlaceholders(text: string, identifiers: ReadonlyMap<number, 
   });
 }
 
-/** A schedule line with its identifiers inserted: what the export prints. */
+/** A schedule line with its identifiers inserted: what the export prints (a tp-packet/2 line with its deadline and calculation). */
 export interface ExportLine extends Omit<ScheduleLine, IdentifierKind> {
   readonly claim_control_number: string;
   readonly patient_control_number: string;
   readonly patient_name: string;
   readonly member_id: string;
+  readonly deadline?: LineDeadline;
+  readonly calculation?: LineCalculation;
 }
 
 export interface ExportedPacket {

@@ -7,10 +7,12 @@ import {
   approveFieldAction,
   approveVersionAction,
   askQuestionAction,
+  citeWindowAction,
   removeRateRecordAction,
   startAbstraction,
   supersedeVersionAction,
   updateVersionAction,
+  verifyWindowAction,
   withdrawQuestionAction,
 } from '../../../../lib/routes/abstraction';
 import { proposeTermsAction, rejectProposalAction } from '../../../../lib/routes/models';
@@ -25,6 +27,14 @@ export async function startAbstractionFormAction(_state: ActionState, form: Form
 
 export async function updateVersionFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(updateVersionAction, form, practice(form));
+}
+
+export async function citeWindowFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(citeWindowAction, form, practice(form));
+}
+
+export async function verifyWindowFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(verifyWindowAction, form, practice(form));
 }
 
 export async function addRateRecordFormAction(_state: ActionState, form: FormData): Promise<ActionState> {

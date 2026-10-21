@@ -16,6 +16,7 @@
     "./runtime": "./src/runtime.ts",
     "./testing": "./src/price/test-support/pricing-world.ts",
     "./testing/triage": "./src/triage/test-support/triage-world.ts",
+    "./testing/payer-copy": "./src/packets/test-support/payer-copy.ts",
     "./billing": "./src/billing/public.ts",
     "./era-formats": "./src/parse/era/formats.ts",
     "./screening": "./src/screening/public.ts",

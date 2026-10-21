@@ -1,18 +1,74 @@
-import type { PacketContent, VerifierReport } from '@tp/packets';
-import { Badge } from '@tp/ui';
+import { type LineDeadline, type PacketContent, type VerifierReport, interestExclusionText, interestStated, lineInterestStated } from '@tp/packets';
+import { type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED } from '@tp/triage';
+import { Alert, AlertDescription, AlertTitle, Badge } from '@tp/ui';
 import Link from 'next/link';
 import { Fragment } from 'react';
 
 import { Money } from '../remittances/display';
-import { EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
+import { ScrollTable } from '../scroll-table';
+import { StatusChip, type StatusTone } from '../status';
+import { METHOD_NAMES, ROUNDING_NAMES } from '../../lib/contracts/display';
+import { labelOf } from '../../lib/copy/words';
+import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
 
 /**
  * Display pieces of the packet builder (PRD 7, Packet builder; PRD 12, The packet): the citation, the
  * line schedule with each line's trace (identifiers shown as their placeholders: only the export inserts
  * them), the interest line (its own line, never in expected), the evidence list with its gaps, the
  * numbered sources, and the stored verifier result with each mismatch marked in the narrative. Every
- * dollar figure carries its stage label.
+ * dollar figure carries its stage label. A tp-packet/2 version also shows each line's deadline with its
+ * status as a label (never a color alone), the version's deadline with the evidence it rests on and,
+ * when it is not verified, why in words and what to do; and each line's calculation summary.
  */
+
+/**
+ * A deadline's status is not a payment status (docs/adr/0056): verified and no window are neutral system states;
+ * unverified is an evidence gap that blocks the export, danger text on the danger tint. Never Whole or Short, which
+ * say how a line was paid.
+ */
+const DEADLINE_TONE: Readonly<Record<DeadlineStatus, StatusTone>> = { verified: 'neutral', unverified: 'danger', not_applicable: 'neutral' };
+
+/** A code a trace or a cause names (FIXED_SCHEDULE, contract_adjustment, CONTRACT_WINDOW_UNCITED) as a label, never the code itself. */
+const codeLabel = (code: string): string => labelOf(code.toLowerCase());
+
+/** A calculation's method in words: the contract's method, or Medicare Advantage non-contracted. */
+function methodName(method: string): string {
+  if (method === 'MA_NONCONTRACTED') {
+    return 'Medicare Advantage, non-contracted';
+  }
+  return method in METHOD_NAMES ? METHOD_NAMES[method as keyof typeof METHOD_NAMES] : codeLabel(method);
+}
+
+/** A rounding rule in words. */
+function roundingName(rule: string): string {
+  return rule in ROUNDING_NAMES ? ROUNDING_NAMES[rule as keyof typeof ROUNDING_NAMES] : codeLabel(rule);
+}
+
+/** A deadline's status as a labelled chip (the label says it; the tint only repeats it). */
+export function DeadlineChip({ status }: { readonly status: DeadlineStatus }) {
+  return (
+    <StatusChip tone={DEADLINE_TONE[status]} data-deadline-status={status}>
+      {DEADLINE_STATUS_TEXT[status]}
+    </StatusChip>
+  );
+}
+
+function LineDeadlineCell({ deadline, windowEndsOn }: { readonly deadline: LineDeadline | undefined; readonly windowEndsOn: string | null }) {
+  if (deadline === undefined) {
+    return <span className="font-mono tabular-nums whitespace-nowrap">{windowEndsOn ?? '—'}</span>;
+  }
+  return (
+    <span className="flex flex-col items-start gap-0.5">
+      <span className="font-mono tabular-nums whitespace-nowrap">{deadline.ends_on ?? '—'}</span>
+      <DeadlineChip status={deadline.status} />
+      {deadline.cause === null ? null : (
+        <span className="text-xs" data-deadline-cause={deadline.cause}>
+          {codeLabel(deadline.cause)}
+        </span>
+      )}
+    </span>
+  );
+}
 
 /** A SHA-256, shortened on screen with the whole value as its title (and copyable in the page). */
 export function Hash({ value, label }: { readonly value: string | null; readonly label?: string }) {
@@ -90,7 +146,7 @@ function Placeholder({ value }: { readonly value: string }) {
  */
 export function LineSchedule({ content, practiceId }: { readonly content: PacketContent; readonly practiceId: string }) {
   return (
-    <div className="overflow-x-auto">
+    <ScrollTable label="Line schedule">
       <table className="w-full text-sm" aria-label="Line schedule">
         <thead>
           <tr className="border-b text-left align-bottom">
@@ -104,13 +160,13 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
             <th className="py-1 pr-3 text-right font-medium">Observed</th>
             <th className="py-1 pr-3 text-right font-medium">Variance (Actionable)</th>
             <th className="py-1 pr-3 font-medium">Paid, on</th>
-            <th className="py-1 pr-3 font-medium">Window ends</th>
+            <th className="py-1 pr-3 font-medium">{content.format === 'tp-packet/2' ? 'Deadline' : 'Window ends'}</th>
             <th className="py-1 font-medium">Trace</th>
           </tr>
         </thead>
         <tbody>
           {content.lines.map((line) => (
-            <tr key={line.row} className="border-b align-top last:border-0" data-row={line.row}>
+            <tr key={line.row} className="border-b align-top last:border-0" data-row={line.row} data-deadline={'deadline' in line ? line.deadline.status : undefined}>
               <td className="py-1 pr-3 font-mono tabular-nums">{line.row}</td>
               <td className="py-1 pr-3 font-mono text-xs" data-placeholder="claim_control_number">
                 <Placeholder value={line.claim_control_number} />
@@ -133,7 +189,9 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
               <td className="py-1 pr-3">
                 <Money value={line.paid_cents} />, <span className="whitespace-nowrap">{line.paid_on}</span>
               </td>
-              <td className="py-1 pr-3 font-mono tabular-nums whitespace-nowrap">{line.window_ends_on ?? '—'}</td>
+              <td className="py-1 pr-3">
+                <LineDeadlineCell deadline={'deadline' in line ? line.deadline : undefined} windowEndsOn={line.window_ends_on} />
+              </td>
               <td className="py-1 whitespace-nowrap">
                 <Link className="underline" href={`/p/${practiceId}/lines/${line.service_line_id}?run=${line.pricing_run_id}`}>
                   Line trace
@@ -143,7 +201,133 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
           ))}
         </tbody>
       </table>
+    </ScrollTable>
+  );
+}
+
+/**
+ * The version's deadline (tp-packet/2): the date the dispute is filed by, its status as a label, the
+ * evidence it rests on, and, when it is not verified, each cause in words with its next step. A version
+ * written before tp-packet/2 states none and is written again.
+ */
+export function DeadlineSummary({ content, now }: { readonly content: PacketContent; readonly now: DeadlineStatus }) {
+  if (content.format !== 'tp-packet/2') {
+    return (
+      <p className="text-sm" data-deadline-summary="outdated">
+        This version was written before packets stated their deadline, so it cannot be exported. Write a new version of the packet: it states each line’s deadline and whether it is verified.
+      </p>
+    );
+  }
+  const { deadline } = content;
+  return (
+    <div className="flex flex-col gap-2 text-sm" data-deadline-summary={deadline.status} data-deadline-now={now}>
+      <p className="flex flex-wrap items-center gap-2">
+        <span>
+          File by <span className="font-mono tabular-nums">{deadline.ends_on ?? '—'}</span> ({deadline.basis === 'next_level_window' ? 'the next dispute level’s window' : 'the earliest of the lines’ windows'}).
+        </span>
+        <DeadlineChip status={deadline.status} />
+        <span className="text-muted-foreground">
+          <span className="font-mono tabular-nums">{deadline.lines_verified}</span> of <span className="font-mono tabular-nums">{deadline.lines}</span> {deadline.lines === 1 ? 'line’s window' : 'lines’ windows'} verified.
+        </span>
+      </p>
+      {content.citation.kind === 'regulation' && !MA_DISPUTE_ROUTE_CONFIRMED ? (
+        // Best-option audit #5: no Medicare Advantage packet exports until the specialist confirms the route (golden QUESTIONS Q34).
+        <Alert variant="destructive" role="note" data-deadline-route="unconfirmed">
+          <AlertTitle>Medicare Advantage: not exported yet</AlertTitle>
+          <AlertDescription>{MA_ROUTE_NOTICE}</AlertDescription>
+        </Alert>
+      ) : null}
+      {now !== deadline.status ? (
+        <p data-deadline-changed="yes">
+          Derived again now, the deadline is <DeadlineChip status={now} />: the export is held to that. Write a new version to state it.
+        </p>
+      ) : null}
+      {deadline.causes.length === 0 ? null : (
+        <ul className="list-disc pl-5" aria-label="Why the deadline is not verified">
+          {deadline.causes.map((cause) => (
+            <li key={cause} data-cause={cause}>
+              <span className="font-medium">{codeLabel(cause)}</span>: {DEADLINE_CAUSE_TEXT[cause]}
+            </li>
+          ))}
+        </ul>
+      )}
+      {deadline.sources.length === 0 ? (
+        <p className="text-muted-foreground">No evidence of a window is cited.</p>
+      ) : (
+        <ul className="list-disc pl-5" aria-label="Deadline evidence">
+          {deadline.sources.map((source) =>
+            source.kind === 'contract_window' ? (
+              <li key={`contract:${source.contract_version_id}`} data-source="contract_window">
+                Contract window of <span className="font-mono tabular-nums">{source.days ?? '—'}</span> {source.days === 1 ? 'day' : 'days'}, document <span className="font-mono text-xs">{source.document_id}</span>, page{' '}
+                <span className="font-mono tabular-nums">{source.page}</span>, {source.verified_at === null ? 'citation not checked against its page' : `citation checked against its page ${source.verified_at.slice(0, 10)}`}:{' '}
+                <q className="italic">{source.quote}</q> Page SHA-256 <Hash value={source.hash} />
+              </li>
+            ) : (
+              <li key={`release:${source.sha256}`} data-source="release_record">
+                Rule release <span className="font-mono tabular-nums">{source.release_no}</span>, dispute-window record{source.program === null ? '' : ` (${source.program === 'commercial_default' ? 'the commercial default' : codeLabel(source.program)})`} at level{' '}
+                <span className="font-mono">{source.level ?? 'unknown'}</span>, SHA-256 <Hash value={source.sha256} />
+              </li>
+            ),
+          )}
+        </ul>
+      )}
     </div>
+  );
+}
+
+/** Each line's calculation summary (tp-packet/2), as its trace recorded it: never computed again here. */
+export function CalculationTable({ content }: { readonly content: PacketContent }) {
+  if (content.format !== 'tp-packet/2') {
+    return null;
+  }
+  return (
+    <ScrollTable label="Calculations">
+      <table className="w-full text-sm" aria-label="Calculations">
+        <thead>
+          <tr className="border-b text-left align-bottom">
+            <th className="py-1 pr-3 font-medium">Row</th>
+            <th className="py-1 pr-3 font-medium">Method, release</th>
+            <th className="py-1 pr-3 font-medium">Steps</th>
+            <th className="py-1 pr-3 font-medium">Rounding</th>
+            <th className="py-1 pr-3 text-right font-medium">Patient share (shown, never counted)</th>
+            <th className="py-1 font-medium">Trace SHA-256</th>
+          </tr>
+        </thead>
+        <tbody>
+          {content.lines.map((line) => (
+            <tr key={line.row} className="border-b align-top last:border-0" data-calculation-row={line.row}>
+              <td className="py-1 pr-3 font-mono tabular-nums">{line.row}</td>
+              <td className="py-1 pr-3">
+                {methodName(line.calculation.method)}, release <span className="font-mono tabular-nums">{line.calculation.release_no}</span>
+              </td>
+              <td className="py-1 pr-3">
+                <ul aria-label={`Steps of row ${String(line.row)}`}>
+                  {line.calculation.steps.map((step, index) => (
+                    <li key={`${step.step}:${String(index)}`}>
+                      {codeLabel(step.step)} <span className="font-mono tabular-nums">{step.amount_cents}</span> cents
+                    </li>
+                  ))}
+                </ul>
+              </td>
+              <td className="py-1 pr-3">
+                {line.calculation.rounding === null ? (
+                  '—'
+                ) : (
+                  <>
+                    {roundingName(line.calculation.rounding.rule)}: <span className="font-mono tabular-nums">{line.calculation.rounding.unrounded_cents}</span> cents to{' '}
+                    <Money value={line.calculation.rounding.rounded_cents} />
+                  </>
+                )}
+              </td>
+              <td className="py-1 pr-3 text-right">{line.calculation.patient_share_cents === null ? '—' : <Money value={line.calculation.patient_share_cents} />}</td>
+              <td className="py-1">
+                <Hash value={line.calculation.trace_sha256} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ScrollTable>
   );
 }
 
@@ -158,14 +342,20 @@ export function InterestSection({ content }: { readonly content: PacketContent }
         {interest.state} prompt-pay rule{interest.statute === null ? '' : ` (${interest.statute})`}, rule release {interest.release_no}: {interest.days_to_pay === null ? 'days to pay not stated' : `${String(interest.days_to_pay)} days to pay`},{' '}
         {interest.annual_rate_percent === null ? 'no interest rate stated' : `${interest.annual_rate_percent}% a year`}. Interest is its own line and never part of expected.
       </p>
+      {interest.exclusions.length === 0 ? null : (
+        // In the payer's copy's own words (@tp/packets interestExclusionText), never the release's codes.
+        <p data-interest-exclusions={String(interest.exclusions.length)}>The rule does not apply to: {interest.exclusions.map(interestExclusionText).join(', ')}.</p>
+      )}
       <p>
         Interest total: {interest.total_cents === null ? 'not computed' : <Money value={interest.total_cents} />}
         {interest.computed ? '' : ' (some lines could not be computed; see the evidence gaps)'}
+        {interest.total_cents !== null && !interestStated(interest) ? '; not stated in the payer’s copy, which states only interest above $0.00' : ''}
       </p>
       <ul className="list-disc pl-5" aria-label="Interest lines">
         {interest.lines.map((line) => (
           <li key={line.row}>
             Row {line.row}: due {line.due_on ?? '—'}, paid {line.paid_on}, {line.days_late === null ? '—' : `${String(line.days_late)} days late`}; interest {line.interest_cents === null ? 'not computed' : <Money value={line.interest_cents} />}
+            {line.interest_cents !== null && !lineInterestStated(line) ? ', not stated in the payer’s copy' : ''}
           </li>
         ))}
       </ul>

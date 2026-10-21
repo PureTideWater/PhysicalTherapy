@@ -60,7 +60,18 @@ export interface TraceStepView {
   readonly recorded: string | null;
   /** The rule records the step names, in the order they appear in it. */
   readonly records: readonly TraceRecord[];
+  /** A note on how to read what the engine recorded (its names for a date), or null. */
+  readonly note: string | null;
 }
+
+/**
+ * The engine's trace names the payment date (BPR16, the check's issue date or the EFT's effective date) remittance_date,
+ * in the claim facts and as the dispute window's start (packages/pricing, frozen until PR 6c). The founder ruled on
+ * 2026-10-20 that "the remittance date" is the remittance advice's own date, so the trace's name is read for the reader
+ * beside the step that records it (docs/adr/0061, Owner rulings (2026-10-20)).
+ */
+export const TRACE_REMITTANCE_DATE_NOTE =
+  'The engine’s record names this date remittance_date: it is the payment date (BPR16, the check’s issue date or the EFT’s effective date), not the remittance advice’s own date.';
 
 const TITLES: Readonly<Record<string, string>> = {
   release: 'Rule release and engine',
@@ -117,9 +128,26 @@ export function traceOrder(): { readonly parts: readonly string[]; readonly step
   return { parts, steps };
 }
 
+/** Whether a recorded part names the engine's remittance_date (a key, or the window's measured_from value). */
+function namesRemittanceDate(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(namesRemittanceDate);
+  }
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  return Object.entries(value).some(([key, item]) => key === 'remittance_date' || item === 'remittance_date' || namesRemittanceDate(item));
+}
+
 function step(key: string, value: unknown): TraceStepView {
   const absent = value === undefined || value === null || (Array.isArray(value) && value.length === 0);
-  return { key, title: titleOf(key), recorded: absent ? null : JSON.stringify(value, null, 2), records: absent ? [] : recordsIn(value) };
+  return {
+    key,
+    title: titleOf(key),
+    recorded: absent ? null : JSON.stringify(value, null, 2),
+    records: absent ? [] : recordsIn(value),
+    note: !absent && namesRemittanceDate(value) ? TRACE_REMITTANCE_DATE_NOTE : null,
+  };
 }
 
 /**

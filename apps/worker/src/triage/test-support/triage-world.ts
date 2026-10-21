@@ -1,14 +1,30 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateRecord, approveRateRecordField, approveVersion, createContract, createDraftVersion, signOffVersion } from '@tp/contracts';
+import {
+  DISPUTE_WINDOW_START_TEXT,
+  type DisputeWindowRule,
+  EvidenceResolver,
+  RATE_RECORD_FIELDS,
+  type WorkflowContext,
+  addRateRecord,
+  approveRateRecordField,
+  approveVersion,
+  citeDisputeWindow,
+  createContract,
+  createDraftVersion,
+  signOffVersion,
+  verifyDisputeWindow,
+  windowRuleComputed,
+} from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { type KeyProvider, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { formatCents, parseCents } from '@tp/money';
+import { CORRESPONDENCE_CONTACT_KEY, SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
 
 import { MemorySealedBytes } from '../../intake/test-support/memory-bytes';
-import { type Practice, PricingWorld, SETTINGS } from '../../price/test-support/pricing-world';
+import { type Practice, PricingWorld, SETTINGS, WINDOW_QUOTE_RULE, windowQuote } from '../../price/test-support/pricing-world';
 import { type ReportOutcome, type ReportServices, generateAuditReport } from '../../report/generate';
 import { ChromiumPdfRenderer, type PdfRenderer, chromiumInstalled } from '../../report/pdf';
 import { DocumentStore, collect } from '../../storage/documents';
@@ -18,9 +34,15 @@ import { type TriageOutcome, executeTriage } from '../execute';
  * Test support for triage and the audit report against a scratch database (synthetic data only): the
  * pricing runs' world (SYNTHETIC release 900001, practices with a billing manager, 835s loaded by the
  * parse_835 job, runs created and priced by the price job), plus fixed-schedule contracts signed off
- * through @tp/contracts' services (the CAS fixtures price at fixed amounts per unit) and triage run in
- * the practice's job scope.
+ * through @tp/contracts' services (the CAS fixtures price at fixed amounts per unit), each with its dispute
+ * window cited on page 1 and verified by the specialist unless a test leaves it uncited (D17 a), and triage run
+ * in the practice's job scope.
  */
+
+export interface PracticeOptions {
+  /** Whether the practice has the SYNTHETIC correspondence contact set (true unless false). */
+  readonly contact?: boolean;
+}
 
 export interface FixedContract {
   readonly contractId: string;
@@ -31,6 +53,14 @@ export interface FixedContract {
 export interface FixedContractOptions {
   readonly effectiveFrom: string;
   readonly disputeWindowDays: number;
+  /** Whether the specialist cites the window on its page and verifies it (true unless false): an uncited window leaves its lines' deadlines unverified (D17 a). */
+  readonly windowCited?: boolean;
+  /**
+   * The rule the window's quote states (best-option audit #5): calendar days after the payment date, the rule the
+   * product computes, unless named. A window cited with another rule is not verified: the version is approved with
+   * its window unverified, and its lines' deadlines stay unverified (CONTRACT_WINDOW_RULE_NOT_COMPUTED).
+   */
+  readonly windowRule?: DisputeWindowRule;
   /** An amount in cents per unit for each code. */
   readonly schedule: readonly { readonly code: string; readonly amountCents: string }[];
   readonly payerId?: string;
@@ -39,6 +69,9 @@ export interface FixedContractOptions {
 }
 
 const quoteFor = (code: string, amountCents: string) => `${code} is paid ${formatCents(parseCents(amountCents))} per unit`;
+/** The page's words for a window of `days` under `rule`: the pricing world's own quote for the computed rule. */
+const ruleQuote = (days: number, rule: DisputeWindowRule) =>
+  windowRuleComputed(rule) ? windowQuote(days) : `Disputes are raised within ${String(days)} ${rule.unit === 'business_days' ? 'business days' : rule.unit === 'months' ? 'months' : 'days'} of ${DISPUTE_WINDOW_START_TEXT[rule.measuredFrom]}.`;
 
 export class TriageWorld {
   private readonly contractDocuments = new Map<string, Uint8Array>();
@@ -73,9 +106,13 @@ export class TriageWorld {
     return { documents: this.reports, keys: this.keys, pdf: this.pdf };
   }
 
-  /** A practice with the SYNTHETIC pricing settings and the given triage settings. */
-  practice(label: string, settings: object = {}): Promise<Practice> {
-    return this.pricing.practice(label, { ...SETTINGS, ...settings });
+  /**
+   * A practice with the SYNTHETIC pricing settings and the given triage settings, and the SYNTHETIC correspondence
+   * contact every payer's copy prints (audit item #37 part 1, D6), unless `contact: false` leaves it out (the export's
+   * refusal contact_missing, D7).
+   */
+  practice(label: string, settings: object = {}, options: PracticeOptions = {}): Promise<Practice> {
+    return this.pricing.practice(label, { ...SETTINGS, ...(options.contact === false ? {} : { [CORRESPONDENCE_CONTACT_KEY]: SYNTHETIC_CORRESPONDENCE_CONTACT }), ...settings });
   }
 
   /** Runs `run` as `actorId` in the practice's request scope, with a resolver over this world's contract documents. */
@@ -113,11 +150,12 @@ export class TriageWorld {
   /** A signed-off version of a new contract with the payer whose exhibit quotes `quotes` and holds `records`. */
   private async contractWith(
     target: Practice,
-    options: { readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly payerId?: string },
+    options: { readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly payerId?: string; readonly windowCited?: boolean; readonly windowRule?: DisputeWindowRule },
     quotes: readonly string[],
     records: readonly { readonly terms: object; readonly quote: string }[],
   ): Promise<FixedContract> {
     const { owner } = this;
+    const windowRule = options.windowRule ?? WINDOW_QUOTE_RULE;
     const documentId = randomUUID();
     await asOwner(owner, [target.practiceId], () =>
       owner.query(
@@ -129,7 +167,7 @@ export class TriageWorld {
     this.contractDocuments.set(
       documentId,
       syntheticPdf([
-        ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.'],
+        ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', ruleQuote(options.disputeWindowDays, windowRule)],
         ['SYNTHETIC EXHIBIT A FEE SCHEDULE', ...quotes],
       ]),
     );
@@ -155,6 +193,13 @@ export class TriageWorld {
         }
         ids.push(rateRecordId);
       }
+      if (options.windowCited !== false) {
+        await citeDisputeWindow(context, { practiceId: target.practiceId, versionId, citation: { documentId, page: 1, quote: ruleQuote(options.disputeWindowDays, windowRule) }, rule: windowRule });
+        // Only a window whose rule the product computes is verified; another is approved unverified.
+        if (windowRuleComputed(windowRule)) {
+          await verifyDisputeWindow(context, { practiceId: target.practiceId, versionId });
+        }
+      }
       await approveVersion(context, { practiceId: target.practiceId, versionId });
       return ids;
     });
@@ -166,7 +211,10 @@ export class TriageWorld {
    * A signed-off version of a new contract with the payer: one per-visit amount for a visit of the given
    * codes (PRD 11 step 2: once per claim and date, carried by the first included line), flags off.
    */
-  async perVisitContract(target: Practice, options: { readonly codes: readonly string[]; readonly amountCents: string; readonly effectiveFrom: string; readonly disputeWindowDays: number }): Promise<FixedContract> {
+  async perVisitContract(
+    target: Practice,
+    options: { readonly codes: readonly string[]; readonly amountCents: string; readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly windowCited?: boolean },
+  ): Promise<FixedContract> {
     const quote = `A visit of ${options.codes.join(', ')} is paid ${formatCents(parseCents(options.amountCents))} per visit`;
     return this.contractWith(target, options, [quote], [{ terms: { scope: { codes: options.codes }, method: 'PER_VISIT', parameters: { amount_cents: options.amountCents }, flags: { timed_units_rule: 'PER_CODE' } }, quote }]);
   }

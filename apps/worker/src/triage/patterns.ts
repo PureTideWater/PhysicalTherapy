@@ -1,6 +1,6 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { type Cents, sumCents } from '@tp/money';
-import { BEHAVIOR_TEXT, type CandidateLine, type PatternKey, type TriageSettings, patternId, planCases, pursuitCost, triageSettings } from '@tp/triage';
+import { BEHAVIOR_TEXT, type CandidateLine, type PatternKey, type TriageSettings, judgeLine, patternId, planCases, pursuitCost, triageSettings } from '@tp/triage';
 
 import { candidateLines, candidateRows, insertCaseLines, lockPractice, openCase, openCases } from './execute';
 
@@ -41,6 +41,12 @@ export interface WaitingPattern {
 export interface WaitingPatterns {
   readonly patterns: readonly WaitingPattern[];
   readonly settings: TriageSettings;
+  /**
+   * The validated lines in no case that wait for a verified deadline (DEADLINE_UNVERIFIED, D17 a), and the
+   * shortfall they validate: they join no pattern until their contract's window is cited and verified (or their
+   * release record reaches L2), so the screen says how many and how much, and what to do.
+   */
+  readonly deadlineUnverified: { readonly lines: number; readonly validatedCents: Cents };
 }
 
 interface Planned {
@@ -118,7 +124,12 @@ export async function waitingPatterns(scope: PracticeScope<ScopeClient>, practic
       openCaseId: entry.caseId,
     })),
   ];
-  return { patterns, settings };
+  const unverified = candidates.filter((line) => plan.waiting.get(line.serviceLineId)?.includes('DEADLINE_UNVERIFIED') === true);
+  const deadlineUnverified = {
+    lines: unverified.length,
+    validatedCents: sumCents(unverified.map((line) => judgeLine(line, settings.lineMaterialityCents, asOf).validatedCents ?? (0n as Cents))),
+  };
+  return { patterns, settings, deadlineUnverified };
 }
 
 export type OpenOnPatternOutcome =

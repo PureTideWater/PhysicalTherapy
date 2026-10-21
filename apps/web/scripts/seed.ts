@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { LocalKeyProvider, OWNER_ROLE, SeedError, type SeedPerson, type SeedResult, databaseClient, readDatabaseUrl, seedSyntheticTenancy } from '@tp/db';
+import { CORRESPONDENCE_CONTACT_KEY, SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
 
 import { FileDevStore } from '../src/lib/auth/dev-store';
 import { hashPassword } from '../src/lib/auth/password';
@@ -11,8 +12,8 @@ import { defaultDevAuthDirectory, developmentMasterKey } from '../src/lib/server
 import { SYNTHETIC_PERSONAS, personaEmail, personaPassword, personaTotpSecret } from './synthetic-personas';
 
 /**
- * `pnpm db:seed`: the synthetic tenancy (packages/db/src/seed.ts) and, for each person, their
- * credentials in the local identity provider's store, so development and the e2e tests can sign in
+ * `pnpm db:seed`: the synthetic tenancy (packages/db/src/seed.ts), the SYNTHETIC correspondence contact of the
+ * group's practices, and, for each person, their credentials in the local identity provider's store, so development and the e2e tests can sign in
  * as every persona. DATABASE_URL names a login that can SET ROLE to the owner (the docker-compose
  * superuser locally); TP_DEV_AUTH_DIR the provider's directory (the web server's default when unset);
  * TP_LOCAL_MASTER_KEY the local key provider's master key (the development key when unset).
@@ -42,6 +43,7 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
   try {
     result = await seedSyntheticTenancy(client, people, new LocalKeyProvider(options.masterKey));
     await acceptSyntheticTerms(client, result);
+    await setSyntheticCorrespondence(client, result);
   } finally {
     await client.end();
   }
@@ -84,6 +86,24 @@ async function acceptSyntheticTerms(client: ReturnType<typeof databaseClient>, r
       publisher,
     ]);
     await client.query("INSERT INTO terms_acceptance (user_id, terms_version_id, request_id) SELECT unnest($1::uuid[]), $2, 'seed'", [Object.values(result.users), rows[0]?.id]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
+
+/**
+ * The SYNTHETIC correspondence contact on the group's two practices (audit item #37 part 1, D6), so a packet exports in
+ * development as it does once a practice administrator has set one; the other group's practice is left without one.
+ */
+async function setSyntheticCorrespondence(client: ReturnType<typeof databaseClient>, result: SeedResult): Promise<void> {
+  const practices = [result.practices.north, result.practices.south];
+  await client.query('BEGIN');
+  try {
+    await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
+    await client.query("SELECT set_config('app.practice_ids', $1, true)", [`{${practices.join(',')}}`]);
+    await client.query(`UPDATE practice SET settings = jsonb_set(settings, '{${CORRESPONDENCE_CONTACT_KEY}}', $2::jsonb) WHERE id = ANY($1::uuid[])`, [practices, JSON.stringify(SYNTHETIC_CORRESPONDENCE_CONTACT)]);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');

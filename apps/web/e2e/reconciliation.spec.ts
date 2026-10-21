@@ -58,7 +58,12 @@ async function uploadExport(page: Page, kind: 'posting_export' | 'eft_export', f
   await expect(uploads.getByRole('region', { name: 'This batch' }).getByRole('status')).toContainText('1 of 1 sent; 1 of 1 taken in', { timeout: 90_000 });
 }
 
-/** The ledger's figure on the Reconciliation screen, once the worker has written it. */
+/**
+ * The ledger's figure on the Reconciliation screen, once the worker has written it. The reconcile writes the figure,
+ * the matches and the lines' stages in one transaction, and the screen reads them all in one snapshot, so the
+ * assertions that follow on the same render (a line's stage, its evidence, the entries) hold as soon as the figure
+ * does; read statement by statement, a render could show the new figure beside the line's old stage.
+ */
 async function expectFigure(page: Page, practiceId: string, figure: string, text: string): Promise<void> {
   await expect(async () => {
     await page.goto(`/p/${practiceId}/reconciliation`);

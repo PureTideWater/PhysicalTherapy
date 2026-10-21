@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 
-import { appDevLoginUrl } from '@tp/db';
+import { appDevLoginUrl, workerDevLoginUrl } from '@tp/db';
 
 import { repositoryRoot } from './content-files';
 
@@ -10,10 +10,11 @@ const LOCAL_DATABASE_URL = 'postgres://postgres:test@localhost:5432/postgres';
 /**
  * `pnpm dev`: starts Postgres 18 and MinIO with Docker Compose, then the web app and the worker.
  * Without Docker it says so and starts the apps anyway against whatever DATABASE_URL points at. The
- * web app and the worker's practice jobs connect as the application role's dev login (`pnpm
- * db:migrate --dev-login` creates it), so row-level security binds them in development as in
- * production; only pg-boss's own tables use DATABASE_URL itself (QUEUE_DATABASE_URL), and platform
- * jobs run only where OPERATOR_DATABASE_URL is set, each transaction as tp_operator.
+ * web app connects as the application role's dev login and the worker's practice jobs as the worker's
+ * own (tp_app's privileges, marked as a job's by tp_job; docs/adr/0061); `pnpm db:migrate --dev-login`
+ * creates both, so row-level security binds them in development as in production. Only pg-boss's own
+ * tables use DATABASE_URL itself (QUEUE_DATABASE_URL), and platform jobs run only where
+ * OPERATOR_DATABASE_URL is set, each transaction as tp_operator.
  */
 const compose = spawnSync('docker', ['compose', 'up', '--detach', '--wait'], { cwd: repositoryRoot, stdio: 'inherit' });
 if (compose.status !== 0) {
@@ -29,7 +30,7 @@ const apps = [
   spawn('pnpm', ['--filter', '@tp/worker', 'run', 'dev'], {
     cwd: repositoryRoot,
     stdio: 'inherit',
-    env: { ...process.env, DATABASE_URL: appDevLoginUrl(databaseUrl), QUEUE_DATABASE_URL: databaseUrl },
+    env: { ...process.env, DATABASE_URL: workerDevLoginUrl(databaseUrl), QUEUE_DATABASE_URL: databaseUrl },
   }),
 ];
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

@@ -56,6 +56,9 @@ export const DEPARTURES: readonly { readonly what: string; readonly direction: '
 /** The logins the migration task creates (apps/worker/src/deploy/logins.ts), for the harness's scratch database only. */
 export const HARNESS_LOGINS = {
   app: { username: 'tp_app_login', password: 'synthetic-capacity-app' },
+  // The worker's own login (docs/adr/0061): the migration task requires it, though no harness service connects as it
+  // (the platform worker connects as the operator and queue logins, and no practice job runs in the test).
+  worker: { username: 'tp_worker_login', password: 'synthetic-capacity-worker' },
   operator: { username: 'tp_operator_login', password: 'synthetic-capacity-operator' },
   queue: { username: 'tp_queue_login', password: 'synthetic-capacity-queue' },
   billing: { username: 'tp_billing_login', password: 'synthetic-capacity-billing' },
@@ -74,7 +77,13 @@ export function harnessLogins(suffix: string): HarnessLogins {
     throw new RangeError('a login suffix is 1 to 16 lowercase letters and digits');
   }
   const withSuffix = (login: { readonly username: string; readonly password: string }) => ({ username: `${login.username}_${suffix}`, password: login.password });
-  return { app: withSuffix(HARNESS_LOGINS.app), operator: withSuffix(HARNESS_LOGINS.operator), queue: withSuffix(HARNESS_LOGINS.queue), billing: withSuffix(HARNESS_LOGINS.billing) };
+  return {
+    app: withSuffix(HARNESS_LOGINS.app),
+    worker: withSuffix(HARNESS_LOGINS.worker),
+    operator: withSuffix(HARNESS_LOGINS.operator),
+    queue: withSuffix(HARNESS_LOGINS.queue),
+    billing: withSuffix(HARNESS_LOGINS.billing),
+  };
 }
 
 /** A login's URL on the harness's database. */
@@ -91,6 +100,8 @@ export function loginsEnvironment(ownerUrl: string, logins: HarnessLogins = HARN
     DATABASE_URL: ownerUrl,
     TP_APP_LOGIN_USERNAME: logins.app.username,
     TP_APP_LOGIN_PASSWORD: logins.app.password,
+    TP_WORKER_LOGIN_USERNAME: logins.worker.username,
+    TP_WORKER_LOGIN_PASSWORD: logins.worker.password,
     TP_OPERATOR_LOGIN_USERNAME: logins.operator.username,
     TP_OPERATOR_LOGIN_PASSWORD: logins.operator.password,
     TP_QUEUE_LOGIN_USERNAME: logins.queue.username,

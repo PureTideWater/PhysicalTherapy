@@ -7,6 +7,7 @@ export {
   centsToString,
   compareCents,
   formatCents,
+  formatUnroundedUsd,
   formatUsd,
   maxCents,
   minCents,

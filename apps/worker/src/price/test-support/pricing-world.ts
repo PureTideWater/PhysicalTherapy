@@ -3,7 +3,20 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateRecord, approveRateRecordField, approveVersion, createContract, createDraftVersion, mapPlan, signOffVersion } from '@tp/contracts';
+import {
+  EvidenceResolver,
+  RATE_RECORD_FIELDS,
+  type WorkflowContext,
+  addRateRecord,
+  approveRateRecordField,
+  approveVersion,
+  citeDisputeWindow,
+  createContract,
+  createDraftVersion,
+  mapPlan,
+  signOffVersion,
+  verifyDisputeWindow,
+} from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, openPool, provisionPracticeKey, withJobScope, withPracticeScope } from '@tp/db';
@@ -41,12 +54,23 @@ const RERUN_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900004');
 export const WINDOW_RELEASE = 900003;
 const WINDOW_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900003');
 
+/**
+ * SYNTHETIC release 900005: release 900001 with its three Medicare dispute windows read at L2 (D17 a), so a Medicare
+ * Advantage line priced under it has a verified deadline. Loaded only by the tests that need it.
+ */
+export const DEADLINE_RELEASE = 900005;
+const DEADLINE_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900005');
+
 /** The SYNTHETIC place-of-service split and default rounding of a practice's settings. */
 export const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' };
 
 export const quoteAt = (percentage: string) => `Every covered service is paid at ${percentage}% of the Medicare fee schedule`;
-const contractPages = (percentage: string) => [
-  ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.'],
+/** Where the SYNTHETIC agreement states its dispute window (page 1), which the specialist cites and verifies (D17 a). */
+export const windowQuote = (days: number) => `Disputes are raised within ${String(days)} days of the payment date.`;
+/** The rule windowQuote() states, as the specialist records it with the citation (best-option audit #5): calendar days after the payment date (BPR16), the rule the product computes. */
+export const WINDOW_QUOTE_RULE = { unit: 'calendar_days', measuredFrom: 'payment_date' } as const;
+const contractPages = (percentage: string, disputeWindowDays: number | null) => [
+  ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', ...(disputeWindowDays === null ? [] : [windowQuote(disputeWindowDays)])],
   ['SYNTHETIC EXHIBIT A FEE SCHEDULE', quoteAt(percentage)],
 ];
 /** A general term (no codes): a percentage of the current Medicare fee schedule, flags off, timed units per code. */
@@ -80,6 +104,8 @@ export class PricingWorld {
     readonly database: MigratedDatabase,
     readonly owner: DatabaseClient,
     readonly app: DatabasePool,
+    /** The worker's own login (tp_worker_dev), which every job of this world runs on, as the worker does (docs/adr/0061). */
+    readonly worker: DatabasePool,
     readonly specialist: string,
   ) {}
 
@@ -88,15 +114,17 @@ export class PricingWorld {
     const owner = databaseClient(database.url);
     await owner.connect();
     const app = openPool(database.appUrl, poolSize);
+    const worker = openPool(database.workerUrl, poolSize);
     await loadRelease(owner, RELEASE_DIR, { release: RELEASE, allowSyntheticFixtureForTests: true });
     const internal = await createOrganization(owner, 'internal', 'pricing');
     const specialist = await createUser(owner, { hardwareKeyRequired: true });
     await addMembership(owner, internal, specialist, 'contract_specialist');
-    return new PricingWorld(database, owner, app, specialist);
+    return new PricingWorld(database, owner, app, worker, specialist);
   }
 
   async close(): Promise<void> {
     await endPool(this.app);
+    await endPool(this.worker);
     await this.owner.end();
     await this.database.drop();
   }
@@ -115,13 +143,13 @@ export class PricingWorld {
     return { world, practiceId: world.practiceId, manager, cipher: key.cipher };
   }
 
-  /** A job's context for the practice: its own job ID, a logger writing to `logs`, and its one-practice scope. */
+  /** A job's context for the practice: its own job ID, a logger writing to `logs`, and its one-practice scope on the worker's own login. */
   jobContext(practiceId: string, logs: Record<string, unknown>[] = [], lastAttempt = false): JobContext {
     const jobId = randomUUID();
     return {
       jobId,
       logger: createLogger({ sink: (line) => logs.push(JSON.parse(line) as Record<string, unknown>) }),
-      transaction: (work) => withJobScope(this.app, { jobId, practiceId }, work),
+      transaction: (work) => withJobScope(this.worker, { jobId, practiceId }, work),
       enqueue: () => Promise.resolve(null),
       lastAttempt,
     };
@@ -206,8 +234,16 @@ export class PricingWorld {
     return (await this.one<{ id: string }>('SELECT id FROM plan WHERE practice_id = $1 AND plan_key = $2', [target.practiceId, key])).id;
   }
 
-  /** A signed-off version of a new contract with the payer: one general term at a percentage of Medicare (110 unless said). */
-  async signedContract(target: Practice, effectiveFrom: string, options: { effectiveTo?: string; disputeWindowDays?: number; percentage?: string; payerId?: string } = {}): Promise<SignedContract> {
+  /**
+   * A signed-off version of a new contract with the payer: one general term at a percentage of Medicare (110 unless
+   * said). A dispute window the contract states is cited on its page and verified by the specialist, as the
+   * specialist abstracts it (D17 a), unless `windowCited` is false: then its lines' deadlines stay unverified.
+   */
+  async signedContract(
+    target: Practice,
+    effectiveFrom: string,
+    options: { effectiveTo?: string; disputeWindowDays?: number; percentage?: string; payerId?: string; windowCited?: boolean } = {},
+  ): Promise<SignedContract> {
     const { owner } = this;
     const percentage = options.percentage ?? '110';
     const documentId = randomUUID();
@@ -218,7 +254,7 @@ export class PricingWorld {
         [documentId, target.practiceId, createHash('sha256').update(documentId).digest('hex'), target.manager],
       ),
     );
-    this.contractDocuments.set(documentId, syntheticPdf(contractPages(percentage)));
+    this.contractDocuments.set(documentId, syntheticPdf(contractPages(percentage, options.disputeWindowDays ?? null)));
     const payerId = options.payerId ?? (await this.payerOf(target));
     const { contractId, versionId } = await this.as(target, target.manager, async (context) => {
       const contract = await createContract(context, { practiceId: target.practiceId, payerId, title: 'SYNTHETIC COMMERCIAL AGREEMENT' });
@@ -237,6 +273,10 @@ export class PricingWorld {
       for (const field of RATE_RECORD_FIELDS) {
         await approveRateRecordField(context, { practiceId: target.practiceId, rateRecordId: id, field });
       }
+      if (options.disputeWindowDays !== undefined && options.windowCited !== false) {
+        await citeDisputeWindow(context, { practiceId: target.practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote(options.disputeWindowDays) }, rule: WINDOW_QUOTE_RULE });
+        await verifyDisputeWindow(context, { practiceId: target.practiceId, versionId });
+      }
       await approveVersion(context, { practiceId: target.practiceId, versionId });
       return id;
     });
@@ -251,6 +291,11 @@ export class PricingWorld {
   /** Loads SYNTHETIC release 900004 into the scratch database (once): from then on it is the release in force. */
   async loadRerunRelease(): Promise<void> {
     await loadRelease(this.owner, RERUN_RELEASE_DIR, { release: RERUN_RELEASE, allowSyntheticFixtureForTests: true });
+  }
+
+  /** Loads SYNTHETIC release 900005 into the scratch database (once): from then on it is the release in force. */
+  async loadDeadlineRelease(): Promise<void> {
+    await loadRelease(this.owner, DEADLINE_RELEASE_DIR, { release: DEADLINE_RELEASE, allowSyntheticFixtureForTests: true });
   }
 
   /** Loads SYNTHETIC release 900003 into the scratch database (once): from then on it is the release in force. */

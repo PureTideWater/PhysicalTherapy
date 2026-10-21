@@ -1,5 +1,5 @@
 import { ENCRYPTED_COLUMNS } from './crypto/cipher';
-import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
 
 /**
  * The catalog test (PRD 8 Invariants; PRD 16 Tenant isolation; test matrix SEC-01), as a function so
@@ -469,6 +469,12 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
       problems.push(`the application role ${appRole} may SET ROLE ${role}`);
     }
   }
+  // The application role is never marked as a job's (docs/adr/0061): only the worker's own login is, so a person's
+  // request on the web's login records their downloads and attests, and a job's connection does neither.
+  const marked = await rows<{ marked: boolean }>(client, "SELECT to_regrole($2) IS NOT NULL AND pg_has_role($1, $2, 'MEMBER') AS marked", [appRole, JOB_ROLE]);
+  if (marked[0]?.marked === true) {
+    problems.push(`the application role ${appRole} is a member of the job role ${JOB_ROLE}`);
+  }
   for (const item of NOT_FOR_THE_APPLICATION) {
     const found = await rows<{ app: boolean; role: boolean }>(
       client,
@@ -490,6 +496,7 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     ['operator', operatorRole],
     ['billing', billingRole],
     ['e-signature', ESIGN_ROLE],
+    ['job', JOB_ROLE],
   ] as const) {
     const roleExists = await rows<{ exists: boolean }>(client, 'SELECT to_regrole($1) IS NOT NULL AS exists', [role]);
     if (roleExists[0]?.exists === true) {

@@ -1,14 +1,18 @@
 import {
   ContractWorkflowError,
+  DISPUTE_WINDOW_STARTS,
+  DISPUTE_WINDOW_UNITS,
   RATE_RECORD_FIELDS,
   type WorkflowContext,
   addRateRecord,
   amendVersion,
   approveRateRecordField,
   approveVersion,
+  citeDisputeWindow,
   removeRateRecord,
   supersedeVersion,
   updateDraftVersion,
+  verifyDisputeWindow,
 } from '@tp/contracts';
 import { type PracticeScope, QUESTION_TOPICS, type ScopeClient, loadPracticeCipher } from '@tp/db/runtime';
 import { z } from 'zod';
@@ -48,7 +52,9 @@ import { opaqueId, optionalText, requiredText } from './schemas';
  * every route here needs rate_record.edit, which only that role holds in a practice; approving a field
  * and a version also need the platform permission rate_record.approve, which packages/contracts and the
  * database check. The specialist enters each rate record by hand with its document, page and quote;
- * the citation is checked against the page before it is stored, and again before each approval.
+ * the citation is checked against the page before it is stored, and again before each approval. The
+ * contract's own dispute window is cited and verified the same way (D17 a): only a verified window of
+ * a signed-off version verifies its lines' deadlines.
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
@@ -64,6 +70,8 @@ async function workflow(scope: PracticeScope<ScopeClient>, services: Services, p
 
 /** A line of the synthetic contract every route-test world holds (route-tests.db.test.ts). */
 export const SAMPLE_QUOTE = '97140 Manual therapy $30.50 per unit';
+/** Where that contract states its dispute window (page 1): what the window routes' samples cite. */
+export const SAMPLE_WINDOW_QUOTE = 'Disputes are raised within 3650 days of the payment date.';
 
 /** A citation that does not resolve becomes the problem in words, beside the field it belongs to. */
 async function citing<T>(run: () => Promise<T>): Promise<T> {
@@ -196,6 +204,70 @@ export const updateVersionAction = practiceRoute({
     params: (refs) => ({ practiceId: refs.practiceId }),
     input: (refs) => ({ versionId: refs.draftVersionId, effectiveFrom: '2026-01-01', timelyFilingDays: '180', disputeWindowDays: '120', noticeDays: '90' }),
   },
+});
+
+/**
+ * Cites where the contract states its dispute window (D17 a): the document, page and exact words, checked against
+ * the page before they are stored with the page's hash, and the rule the quote states (best-option audit #5): the
+ * unit it counts in and what it counts from, which the specialist chooses from the fixed lists (no default; nothing
+ * parses the quote). A new citation, or a new unit or start, clears the window's verification.
+ */
+export const citeWindowAction = practiceRoute({
+  id: 'practice.abstraction.cite_window',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/versions/cite-window',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({
+    versionId: opaqueId,
+    documentId: opaqueId,
+    page: z.coerce.number().int().min(1).max(999_999),
+    quote: requiredText(2000),
+    unit: z.enum(DISPUTE_WINDOW_UNITS, 'choose the unit the quote counts in: calendar days, business days or months'),
+    measuredFrom: z.enum(DISPUTE_WINDOW_STARTS, 'choose what the quote counts from: the date of service, the remittance date, the payment date or the day the practice received it'),
+  }),
+  audit: { action: 'contract_window_citation_requested', objectType: 'contract_version' },
+  handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
+    await citing(async () =>
+      citeDisputeWindow(await workflow(scope, services, practiceId, request.requestId), {
+        practiceId,
+        versionId: input.versionId,
+        citation: { documentId: input.documentId, page: input.page, quote: input.quote },
+        rule: { unit: input.unit, measuredFrom: input.measuredFrom },
+      }),
+    );
+    return { objectId: input.versionId, redirect: versionPath(practiceId, input.versionId) };
+  },
+  sample: {
+    params: (refs) => ({ practiceId: refs.practiceId }),
+    input: (refs) => ({ versionId: refs.draftVersionId, documentId: refs.contractDocumentId, page: '1', quote: SAMPLE_WINDOW_QUOTE, unit: 'calendar_days', measuredFrom: 'payment_date' }),
+  },
+});
+
+/**
+ * The contract specialist verifies the cited window against its page (rate_record.approve, which packages/contracts
+ * and the database check): verified only while the citation resolves, and only when its cited rule is the one the
+ * product computes (calendar days after the payment date; refused otherwise with the reason); a person does it,
+ * never a model.
+ */
+export const verifyWindowAction = practiceRoute({
+  id: 'practice.abstraction.verify_window',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/versions/verify-window',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({ versionId: opaqueId }),
+  audit: { action: 'contract_window_verification_requested', objectType: 'contract_version' },
+  handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
+    const result = await verifyDisputeWindow(await workflow(scope, services, practiceId, request.requestId), { practiceId, versionId: input.versionId });
+    if (!result.evidence.resolved) {
+      throw new InputError([{ field: 'quote', message: `${EVIDENCE_PROBLEM_TEXT[result.evidence.problem]}; the window stays unverified until its citation resolves` }]);
+    }
+    return { objectId: input.versionId, redirect: versionPath(practiceId, input.versionId) };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ versionId: refs.draftVersionId }) },
 });
 
 const text = (max: number) => optionalText(z.string().max(max));
@@ -427,6 +499,8 @@ export const ABSTRACTION_ROUTES = [
   abstractionVersionPage,
   startAbstraction,
   updateVersionAction,
+  citeWindowAction,
+  verifyWindowAction,
   addRateRecordAction,
   removeRateRecordAction,
   approveFieldAction,

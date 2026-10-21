@@ -17,10 +17,16 @@
  * - `tp_esign` holds only EXECUTE on record_esigned_agreement() (docs/adr/0053 and 0055): NOLOGIN, owns
  *   nothing. Only the e-signature webhook's own login may SET ROLE to it, so no other route can record
  *   an agreement by that path.
- * - `tp_app_dev`, `tp_billing_dev` and `tp_esign_dev` are the dev and test logins for the application
- *   role, billing's login and the e-signature webhook's login, with fixed local passwords. They are
- *   created only when asked (`pnpm db:migrate --dev-login`); production logins come from Secrets
- *   Manager (apps/worker/src/deploy/logins.ts).
+ * - `tp_job` marks the worker's own login, which the practice jobs connect as (docs/adr/0061): NOLOGIN,
+ *   owns nothing, holds no privilege, and no login may SET ROLE to it. The worker's login is a member of
+ *   tp_app, as the web's is, and of tp_job besides, so `session_user` (which only a superuser can change:
+ *   SET ROLE and SECURITY DEFINER change current_user, never the login a connection signed in as) tells a
+ *   job's connection from a person's request whatever the job sets app.actor_id to. The database refuses a
+ *   packet export's download evidence and its attestation on such a connection (app_session_is_job()).
+ * - `tp_app_dev`, `tp_worker_dev`, `tp_billing_dev` and `tp_esign_dev` are the dev and test logins for the
+ *   application role, the worker's login, billing's login and the e-signature webhook's login, with fixed
+ *   local passwords. They are created only when asked (`pnpm db:migrate --dev-login`); production logins
+ *   come from Secrets Manager (apps/worker/src/deploy/logins.ts).
  *
  * Roles belong to the whole PostgreSQL cluster, so the bootstrap is idempotent and tolerates another
  * database's migration creating the same role at the same moment. It works from a superuser (dev and
@@ -33,15 +39,19 @@ export const APP_ROLE = 'tp_app';
 export const OPERATOR_ROLE = 'tp_operator';
 export const BILLING_ROLE = 'tp_billing';
 export const ESIGN_ROLE = 'tp_esign';
+/** The marker of the worker's own login (a member of tp_app and of this role); it holds no privilege. */
+export const JOB_ROLE = 'tp_job';
 export const APP_DEV_LOGIN = 'tp_app_dev';
 /** Local only: the dev and test login's password. Never used outside a developer machine or CI. */
 export const APP_DEV_PASSWORD = 'tp_app_dev';
+/** Local only: the worker's dev and test login, a member of tp_app and of the marker tp_job (its password is its name). */
+export const WORKER_DEV_LOGIN = 'tp_worker_dev';
 /** Local only: billing's dev and test login (its password is its name, as the application's). */
 export const BILLING_DEV_LOGIN = 'tp_billing_dev';
 /** Local only: the e-signature webhook's dev and test login. */
 export const ESIGN_DEV_LOGIN = 'tp_esign_dev';
 /** The dev logins, each with the role it may switch to (the application's inherits its role). */
-const DEV_LOGINS = [APP_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN] as const;
+const DEV_LOGINS = [APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN] as const;
 
 /** The pg_roles columns the bootstrap manages, and the keyword that sets each. */
 const ATTRIBUTES = {
@@ -68,7 +78,9 @@ export const WANTED_ROLES: Readonly<Record<string, RoleAttributes>> = {
   [OPERATOR_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [BILLING_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [ESIGN_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
+  [JOB_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [APP_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
+  [WORKER_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
   [BILLING_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
   [ESIGN_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
 };
@@ -108,9 +120,9 @@ EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
 END $$`;
 }
 
-/** The roles the bootstrap creates, in order: the owner, the application, operator, billing and e-signature roles and, when asked, the dev logins. */
+/** The roles the bootstrap creates, in order: the owner, the application, operator, billing, e-signature and job roles and, when asked, the dev logins. */
 export function managedRoles(options: { readonly devLogin: boolean }): string[] {
-  return [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, ...(options.devLogin ? DEV_LOGINS : [])];
+  return [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, ...(options.devLogin ? DEV_LOGINS : [])];
 }
 
 /** CREATE ROLE for one managed role; a role that already exists is left for roleAlteration. */
@@ -150,15 +162,35 @@ END $$`,
 END $$`,
   ];
   if (options.devLogin) {
-    statements.push(`DO $$ BEGIN
-  IF NOT pg_has_role('${APP_DEV_LOGIN}', '${APP_ROLE}', 'MEMBER') THEN
-    GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN};
-  END IF;
-EXCEPTION WHEN unique_violation THEN NULL;
-END $$`);
+    // The web's dev login and the worker's both inherit the application role; the worker's is also marked as a
+    // job's (docs/adr/0061), and the web's never is.
+    statements.push(inherits(APP_DEV_LOGIN, APP_ROLE), inherits(WORKER_DEV_LOGIN, APP_ROLE), marks(WORKER_DEV_LOGIN, JOB_ROLE));
     statements.push(switchesTo(BILLING_DEV_LOGIN, BILLING_ROLE), switchesTo(ESIGN_DEV_LOGIN, ESIGN_ROLE));
   }
   return statements;
+}
+
+/** Makes `member` a member of `role` that inherits its privileges (idempotent). */
+export function inherits(member: string, role: string): string {
+  return `DO $$ BEGIN
+  IF NOT pg_has_role('${member}', '${role}', 'MEMBER') THEN
+    GRANT ${role} TO ${member};
+  END IF;
+EXCEPTION WHEN unique_violation THEN NULL;
+END $$`;
+}
+
+/**
+ * Makes `member` a member of the marker `role` that neither inherits it nor may SET ROLE to it (idempotent): the
+ * membership is all it carries, read with pg_has_role(session_user, role, 'MEMBER').
+ */
+export function marks(member: string, role: string): string {
+  return `DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = '${role}'::regrole AND m.member = '${member}'::regrole) THEN
+    GRANT ${role} TO ${member} WITH INHERIT FALSE, SET FALSE;
+  END IF;
+EXCEPTION WHEN unique_violation THEN NULL;
+END $$`;
 }
 
 /** Lets `member` SET ROLE to `role` without inheriting its privileges (idempotent). */
@@ -240,6 +272,11 @@ function devLoginUrl(databaseUrl: string, login: string): string {
 /** The URL of the dev and test login for the application role, on the same server and database. */
 export function appDevLoginUrl(databaseUrl: string): string {
   return devLoginUrl(databaseUrl, APP_DEV_LOGIN);
+}
+
+/** The URL of the worker's dev and test login (tp_app's privileges, marked as a job's by tp_job), on the same server and database. */
+export function workerDevLoginUrl(databaseUrl: string): string {
+  return devLoginUrl(databaseUrl, WORKER_DEV_LOGIN);
 }
 
 /** The URL of billing's dev and test login (it may SET ROLE tp_billing), on the same server and database. */
