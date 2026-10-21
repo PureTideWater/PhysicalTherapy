@@ -191,7 +191,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SCR-12',
     title: 'Attribution on the screening and the audit request',
     assertion:
-      "The proxy sets pw_first_touch once from a landing URL's campaign codes and paid click (HttpOnly, SameSite=Lax, 30 days, never the click ID, never on /api or Next's assets); a code with an identifier's shape (a member ID, a date, a phone number, a Medicare Beneficiary Identifier, digits alone) dropped; a production server neither sets nor reads it until its legal review is recorded; both forms keep how the prospect heard of us (closed list, optional), the cookie's codes and click kind, and a screened referring firm; conversion carries them with from_screening; the console declines a request with a reason from the closed list",
+      "The proxy sets pw_first_touch once from a landing URL's campaign codes and paid click (HttpOnly, SameSite=Lax, 30 days, never the click ID, never on /api or Next's assets); a code with an identifier's shape (a member ID, a date, a phone number, a Medicare Beneficiary Identifier, digits alone) dropped; a production server neither sets nor reads it until its legal review is recorded; both forms keep how the prospect heard of us (closed list, optional), the cookie's source and medium codes and click kind, its campaign code only when the founder lists it as the row is written and other otherwise (a database trigger on every table that keeps one, whoever writes; a code listed later changes no row), and a screened referring firm; conversion carries them with from_screening; the console declines a request with a reason from the closed list",
   },
   {
     id: 'SCR-13',

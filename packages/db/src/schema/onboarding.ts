@@ -102,6 +102,7 @@ export const prospectRequest = pgTable(
     /** The first-party attribution cookie's campaign codes, normalised and shape-checked. */
     utmSource: text('utm_source'),
     utmMedium: text('utm_medium'),
+    /** Kept only when listed in marketing_campaign as the request is written, 'other' otherwise (the founder's ruling of 2026-10-21). */
     utmCampaign: text('utm_campaign'),
     /** The kind of paid click the landing URL carried (never the click ID). */
     paidClick: text('paid_click', { enum: PAID_CLICKS }),

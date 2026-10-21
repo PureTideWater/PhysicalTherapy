@@ -678,8 +678,16 @@ describe('an expired screening', () => {
 });
 
 describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened signal through the routes (audit #57)', () => {
+  /** A link's codes with a campaign the founder lists (beforeAll), so every row keeps it. */
   const COOKIE = { [ATTRIBUTION_COOKIE]: 's=linkedin&m=paid-social&c=fall-launch&k=paid_social' };
+  /** The same with a code of a code's shape that no one listed: a person's name typed into a link. */
+  const NAMED = 'jane-doe-follow-up';
+  const UNLISTED_COOKIE = { [ATTRIBUTION_COOKIE]: `s=linkedin&m=paid-social&c=${NAMED}&k=paid_social` };
   const convertInput = (resultId: string) => ({ resultId, contactName: 'SYNTHETIC CONTACT', locations: '2', payers: 'SYNTHETIC PAYER', billingArrangement: 'in_house' });
+
+  beforeAll(async () => {
+    await world.owner.query("INSERT INTO marketing_campaign (code, label, added_by) VALUES ('fall-launch', 'SYNTHETIC fall launch', $1)", [world.specialistId]);
+  });
 
   it('keeps how the prospect heard of us, the cookie’s codes and kind of click and the referring firm, with an outcome the database writes', async () => {
     const email = `attributed.${randomUUID().slice(0, 8)}@clinic-attributed.synthetic.test`;
@@ -701,9 +709,9 @@ describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened 
         followup_consent_sha256: null,
         screening_terms_sha256: null,
         stage: 'accepted',
-        // paid-social is no medium the list knows: the paid click names the channel; the code is not listed.
+        // paid-social is no medium the list knows: the paid click names the channel; the code is listed, so kept.
         channel: 'paid_social',
-        campaign: 'other',
+        campaign: 'fall-launch',
         outcome_source: 'social',
       },
     ]);
@@ -781,6 +789,48 @@ describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened 
       { from_screening: true, source: 'search', utm_source: 'linkedin', utm_medium: 'paid-social', utm_campaign: 'fall-launch', paid_click: 'paid_social', referring_firm: 'Synthetic Billing Partners', lead_opened: true, converted: true },
     ]);
     expect(ok(await world.call(screeningResult, { params: { resultId: token } })).converted).toBe(true);
+  });
+
+  it('keeps an unlisted campaign code as other in every row, and puts the code given in no log line, job, email, audit event or refusal (the founder’s ruling of 2026-10-21)', async () => {
+    const email = `unlisted.${randomUUID().slice(0, 8)}@clinic-unlisted.synthetic.test`;
+    // A refusal the database makes (a ZIP the locality map does not price) says nothing of the code.
+    const refused = await world.call(screeningSubmit, { input: submitInput({ contactEmail: `unlisted.zip.${randomUUID().slice(0, 8)}@clinic-unlisted.synthetic.test`, zip: '00099' }), cookies: UNLISTED_COOKIE });
+    expect(refused.status).toBe('invalid');
+    expect(JSON.stringify(refused)).not.toContain(NAMED);
+    await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email }), heardFrom: 'search' }, cookies: UNLISTED_COOKIE });
+    await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: `unlisted.refused.${randomUUID().slice(0, 8)}@clinic-unlisted.synthetic.test`, headers: [...SCREENING_HEADERS, 'Member ID'] }) }, cookies: UNLISTED_COOKIE });
+    await world.price();
+    const token = world.tokenFor(email);
+    expect((await world.call(screeningOpened, { input: { resultId: token } })).status).toBe('ok');
+    expect(ok(await world.call(screeningConvert, { input: convertInput(token) }))).toEqual({ redirect: `/screening/results/${token}?requested=1` });
+    const kept = (
+      await world.owner.query(
+        `SELECT p.utm_campaign AS prospect, o.campaign AS outcome, l.utm_campaign AS lead, q.utm_campaign AS request
+           FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_run r ON r.upload_id = u.id JOIN screening_outcome o ON o.upload_id = u.id
+           JOIN prospect_request q ON q.id = r.converted_prospect_request_id JOIN screening_lead l ON l.prospect_request_id = q.id
+          WHERE p.contact_email = $1`,
+        [email],
+      )
+    ).rows;
+    expect(kept).toEqual([{ prospect: 'other', outcome: 'other', lead: 'other', request: 'other' }]);
+    const held = await world.owner.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM (
+         SELECT utm_campaign AS code FROM screening_prospect UNION ALL SELECT utm_campaign FROM screening_lead
+         UNION ALL SELECT utm_campaign FROM prospect_request UNION ALL SELECT campaign FROM screening_outcome
+         UNION ALL SELECT e::text FROM audit_event e) t
+        WHERE strpos(t.code, $1) > 0`,
+      [NAMED],
+    );
+    expect(held.rows).toEqual([{ n: 0 }]);
+    // The services' log lines (the web routes' and the worker's sweep), the jobs queued and the emails sent.
+    expect(world.logLines.length).toBeGreaterThan(0);
+    for (const [what, value] of [
+      ['log lines', world.logLines],
+      ['jobs', [world.queue.jobs, world.queue.screeningRuns]],
+      ['emails', world.mail.sent],
+    ] as const) {
+      expect(JSON.stringify(value), what).not.toContain(NAMED);
+    }
   });
 
   it('offers the source list on the page, and names the labels’ version the database names', async () => {

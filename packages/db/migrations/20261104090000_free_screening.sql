@@ -59,12 +59,16 @@
 --   never on another practice's figures), every claim-line sum 0 or at least 11. The result page and the result email
 --   say whether this screening's summary is kept and with which request (screening_result_summary's kept_with,
 --   operator_screening_complete's), so a prospect whose screening took over an earlier request is told so.
--- - marketing_campaign: the campaign codes an outcome may name, listed by the founder.
+-- - marketing_campaign: the campaign codes a row may keep, listed by the founder. Every row that keeps a link's
+--   campaign code (a prospect, a kept summary, an audit request and an outcome) keeps it only when it is listed as the
+--   row is written, 'other' for any other code and null for none, by a trigger on each table, whatever writes it (the
+--   founder's ruling of 2026-10-21: a shape check cannot catch a person's name typed inside a code). A code listed
+--   later leaves the rows that kept 'other' as they are.
 -- - screening_prospect gains how the prospect heard of us, the attribution cookie's campaign codes and kind of paid
 --   click, a referring firm, and the SHA-256s of the follow-up consent (PR 6e captures it) and of the screening terms
 --   accepted (audit #51); screening_run gains when the result was first opened by a person.
--- - prospect_request gains the same attribution, whether it came from a screening, and why a declined request was
---   declined (a closed list).
+-- - prospect_request gains the same attribution (its campaign code only when listed), whether it came from a
+--   screening, and why a declined request was declined (a closed list).
 --
 -- The tables live in schema public with row-level security forced and one policy, the owner's; they have no
 -- practice_id and no phi_table_registry row, and no role but the owner reads or writes them. The application role
@@ -83,10 +87,12 @@
 --
 -- Runs as tp_owner. Safe with the previous image running: yes. Added: nine tables, their CHECK and trigger functions,
 -- the standing a result's figures are read by (screening_standing), the bands and channel outcomes are written with,
--- the definer functions and their grants, and a second, twelve-argument submit_prospect_request. Altered:
--- prospect_request gains eight columns with their CHECKs (built-ins only, so the application role's direct updates
--- need no EXECUTE), a column grant (UPDATE (declined_reason) to tp_app) and a replaced trigger function
--- (prospect_request_fixed); its declined rows take 'not_recorded' as their reason. The previous image's review,
+-- the campaign list's check (marketing_campaign_kept, marketing_campaign_listed_only), the definer functions and their
+-- grants, and a second, twelve-argument submit_prospect_request. Altered: prospect_request gains eight columns with
+-- their CHECKs (built-ins only, so the application role's direct updates need no EXECUTE), a column grant (UPDATE
+-- (declined_reason) to tp_app), a replaced trigger function (prospect_request_fixed) and a trigger that keeps its
+-- campaign code only when listed (prospect_request_campaign_listed, on an insert or an update naming utm_campaign,
+-- which the application role's updates never name); its declined rows take 'not_recorded' as their reason. The previous image's review,
 -- decline and conversion meet only built-in CHECKs, its decline records 'not_recorded', and it calls the six-argument
 -- submit_prospect_request, which stays. No other existing table, function, policy, CHECK or grant changes, and no DDL
 -- touches a rule, ledger or pricing table. Rollout: migrate, then the new worker (it creates the screening queues),
@@ -274,7 +280,9 @@ CREATE TABLE screening_prospect (
   source text CONSTRAINT screening_prospect_source CHECK (source IS NULL OR source IN (
     'search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other')),
   -- The campaign codes of the first-party attribution cookie (pw_first_touch; apps/web/src/lib/http/attribution.ts),
-  -- normalised there and shape-checked here: codes a link carried, never a person's identifier.
+  -- normalised there and shape-checked here: codes a link carried, never a person's identifier. The campaign code is
+  -- kept only when the founder lists it, 'other' otherwise (marketing_campaign_listed_only(), the founder's ruling of
+  -- 2026-10-21): a shape check cannot catch a name typed inside a code.
   utm_source text CONSTRAINT screening_prospect_utm_source CHECK (utm_source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
   utm_medium text CONSTRAINT screening_prospect_utm_medium CHECK (utm_medium ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
   utm_campaign text CONSTRAINT screening_prospect_utm_campaign CHECK (utm_campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
@@ -573,9 +581,9 @@ CREATE TRIGGER screening_result_no_truncate BEFORE TRUNCATE ON screening_result 
 -- campaign codes the founder lists
 -- ---------------------------------------------------------------------------------------------------
 
--- The campaign codes an outcome may name: campaigns the founder sends to many people, so a one-off code never
--- reaches an outcome. A listed code stays listed (no update, delete or truncate); listing one later does not
--- reclassify the outcomes that named it 'other'.
+-- The campaign codes a row may keep: campaigns the founder sends to many people, so a one-off code is never kept. A
+-- listed code stays listed (no update, delete or truncate); listing one later does not reclassify the rows that
+-- kept 'other'.
 CREATE TABLE marketing_campaign (
   code text PRIMARY KEY CONSTRAINT marketing_campaign_code CHECK (code ~ '^[a-z0-9][a-z0-9._-]{0,63}$' AND code <> 'other'),
   -- What the listing's audit event names (marketing_campaign_registered's object), so the trail says which code was listed.
@@ -586,6 +594,37 @@ CREATE TABLE marketing_campaign (
 );
 CREATE TRIGGER marketing_campaign_fixed BEFORE UPDATE OR DELETE ON marketing_campaign FOR EACH ROW EXECUTE FUNCTION reject_change();
 CREATE TRIGGER marketing_campaign_no_truncate BEFORE TRUNCATE ON marketing_campaign FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
+
+-- A campaign code as a row keeps it (the founder's ruling of 2026-10-21): the code itself only when it is listed in
+-- marketing_campaign as the row is written, 'other' for any other code, and null for none. A shape check cannot
+-- catch a person's name typed inside a code ('jane-doe-follow-up' has a code's shape); the founder's list can. A code
+-- listed later leaves a row that kept 'other' as it is: the code it was given was never stored.
+CREATE FUNCTION marketing_campaign_kept(given text) RETURNS text
+LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT CASE WHEN given IS NULL THEN NULL
+              WHEN EXISTS (SELECT 1 FROM marketing_campaign c WHERE c.code = given) THEN given
+              ELSE 'other' END
+$$;
+
+-- Every row that keeps a link's campaign code (screening_prospect, screening_lead and prospect_request, as
+-- utm_campaign) keeps it through this trigger, as it is inserted and on any update that names the column, so no
+-- write path stores a code the founder has not listed: the definer functions, the owner's own writes, and any role
+-- that might be granted a write later (the trigger runs as the role writing, which must then also read the list, or
+-- the write fails). A code of the wrong shape is refused before the column's CHECK can print the row, so no error
+-- carries it; the web layer drops one before it gets here. On an update the table's immutability guard (the
+-- tables' *_fixed and *_rules triggers) still refuses any change: a row's code is set once, as it is written.
+CREATE FUNCTION marketing_campaign_listed_only() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF NEW.utm_campaign !~ '^[a-z0-9][a-z0-9._-]{0,63}$' THEN
+    RAISE EXCEPTION 'a campaign code is 1 to 64 lower-case letters, digits, dots, hyphens and underscores'
+      USING ERRCODE = 'check_violation', CONSTRAINT = TG_TABLE_NAME || '_utm_campaign';
+  END IF;
+  NEW.utm_campaign := marketing_campaign_kept(NEW.utm_campaign);
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER screening_prospect_campaign_listed BEFORE INSERT OR UPDATE OF utm_campaign ON screening_prospect
+  FOR EACH ROW EXECUTE FUNCTION marketing_campaign_listed_only();
 
 -- One row for every screening, a refused one included, written by the definer functions alone and kept with no end
 -- date (the founder's ruling of 2026-10-20, Q6): its stage, the month, how the prospect heard of us, the channel, a
@@ -605,7 +644,8 @@ CREATE TABLE screening_outcome (
   source text CONSTRAINT screening_outcome_source CHECK (source IS NULL OR source IN (
     'search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other')),
   channel text NOT NULL CONSTRAINT screening_outcome_channel CHECK (channel IN ('none', 'email', 'paid_search', 'paid_social', 'social', 'partner', 'event', 'content', 'other')),
-  -- A code from marketing_campaign when it is listed there at submission; 'other' when not; null with no campaign code.
+  -- A code from marketing_campaign when it is listed there at submission; 'other' when not; null with no campaign code
+  -- (the prospect's utm_campaign as kept, and screening_outcome_campaign_listed() on every write).
   campaign text CONSTRAINT screening_outcome_campaign CHECK (campaign IS NULL OR campaign = 'other' OR campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
   consented boolean NOT NULL DEFAULT false,
   row_band text NOT NULL CONSTRAINT screening_outcome_row_band CHECK (row_band IN ('none', '1_100', '101_1k', '1k_10k', '10k_50k', 'over_50k')),
@@ -680,6 +720,19 @@ BEGIN
 END;
 $$;
 CREATE TRIGGER screening_outcome_rules BEFORE UPDATE ON screening_outcome FOR EACH ROW EXECUTE FUNCTION screening_outcome_rules();
+-- The outcome's campaign, as marketing_campaign_listed_only() keeps a utm_campaign: listed, 'other' or null.
+CREATE FUNCTION screening_outcome_campaign_listed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF NEW.campaign !~ '^[a-z0-9][a-z0-9._-]{0,63}$' THEN
+    RAISE EXCEPTION 'a campaign code is 1 to 64 lower-case letters, digits, dots, hyphens and underscores'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_campaign';
+  END IF;
+  NEW.campaign := marketing_campaign_kept(NEW.campaign);
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER screening_outcome_campaign_listed BEFORE INSERT OR UPDATE OF campaign ON screening_outcome
+  FOR EACH ROW EXECUTE FUNCTION screening_outcome_campaign_listed();
 CREATE TRIGGER screening_outcome_kept BEFORE DELETE ON screening_outcome FOR EACH ROW EXECUTE FUNCTION reject_change();
 CREATE TRIGGER screening_outcome_no_truncate BEFORE TRUNCATE ON screening_outcome FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
 
@@ -806,6 +859,8 @@ BEGIN
 END;
 $$;
 CREATE TRIGGER screening_lead_rules BEFORE UPDATE ON screening_lead FOR EACH ROW EXECUTE FUNCTION screening_lead_rules();
+CREATE TRIGGER screening_lead_campaign_listed BEFORE INSERT OR UPDATE OF utm_campaign ON screening_lead
+  FOR EACH ROW EXECUTE FUNCTION marketing_campaign_listed_only();
 
 -- A lead is deleted only once it expires (or is withdrawn, which moves its expiry to now), when a complete screening
 -- of the same practice (the same ZIP and practice name, or the same contact address) was uploaded after it, which
@@ -938,6 +993,14 @@ UPDATE prospect_request SET declined_reason = 'not_recorded' WHERE status = 'dec
 
 ALTER TABLE prospect_request ADD CONSTRAINT prospect_request_declined CHECK ((status = 'declined') = (declined_reason IS NOT NULL));
 
+-- A request keeps its campaign code only when the founder lists it (marketing_campaign_listed_only(), the founder's
+-- ruling of 2026-10-21), whether submit_prospect_request() or convert_screening() writes it. The trigger fires on an
+-- insert and on an update that names utm_campaign alone: the application role's review updates name only the columns
+-- it is granted (status, organization_id, reviewed_by, declined_reason), so they never fire it and need no read of
+-- the list, and an update that names the column meets prospect_request_fixed(), which refuses any change to it.
+CREATE TRIGGER prospect_request_campaign_listed BEFORE INSERT OR UPDATE OF utm_campaign ON prospect_request
+  FOR EACH ROW EXECUTE FUNCTION marketing_campaign_listed_only();
+
 -- ---------------------------------------------------------------------------------------------------
 -- The public form (tp_app)
 -- ---------------------------------------------------------------------------------------------------
@@ -972,8 +1035,8 @@ $$;
 -- them); nothing in an error names a value. The upload replaces any earlier accepted screening of the same practice
 -- (the same ZIP and practice name, or the same contact address): that one is deleted with its upload, run and rows,
 -- each an audit event (screening_replaced), so a practice never has two screenings held at once to be subtracted.
--- The prospect keeps how they heard of us, the campaign codes and kind of paid click of the attribution cookie, the
--- referring firm, and the SHA-256s of the consent and terms wording accepted (null for none). Its counts-only outcome
+-- The prospect keeps how they heard of us, the campaign codes and kind of paid click of the attribution cookie (its
+-- campaign code only when the founder lists it, 'other' otherwise), the referring firm, and the SHA-256s of the consent and terms wording accepted (null for none). Its counts-only outcome
 -- is written here (accepted, its bands and channel computed here, and whether a refused upload of the practice is
 -- still kept: after_refusal), and the outcomes of the screenings it replaces are marked superseded before they are
 -- deleted; a refused outcome is never changed. Kept summaries (screening_lead) are not touched here: a later screening
@@ -1037,27 +1100,28 @@ BEGIN
     INTO rows_hash
     FROM unnest(codes, modifier_sets, unit_counts, places, products, bands, allowed_cents, claim_counts)
            WITH ORDINALITY AS u (code, mods, unit_count, place, product, band, allowed, claims, ordinality);
+  -- The campaign code is kept only when the founder lists it (marketing_campaign_listed_only(), on the table): the
+  -- prospect returns the code as kept, listed, 'other' or null, and the outcome takes that, so the two never differ.
   WITH prospect AS (
     INSERT INTO screening_prospect (practice_name, state, zip, contact_email, source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm,
                                     followup_consent_sha256, screening_terms_sha256)
     VALUES (btrim(practice), state_code, zip5, lower(btrim(email)), heard_from, campaign_source, campaign_medium, campaign_name, click_kind, firm,
             consent_sha256, terms_sha256)
-    RETURNING id
+    RETURNING id, utm_campaign
   ), upload AS (
     INSERT INTO screening_upload (prospect_id, rows_sha256, row_count, status, left_out_rows, left_out_claim_lines, left_out_allowed_cents)
     SELECT prospect.id, rows_hash, n, 'accepted', rows_left_out, claim_lines_left_out, allowed_cents_left_out FROM prospect
     RETURNING id
   ), outcome AS (
-    -- The counts-only outcome: bands, the channel computed here, a campaign code only when the founder lists it.
+    -- The counts-only outcome: bands, the channel computed here, the prospect's campaign code as kept.
     INSERT INTO screening_outcome (upload_id, screened_month, stage, source, channel, campaign, consented, row_band, left_out_band, release_no, after_refusal)
-    SELECT upload.id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM'), 'accepted', heard_from, marketing_channel(campaign_medium, click_kind),
-           CASE WHEN campaign_name IS NULL THEN NULL WHEN EXISTS (SELECT 1 FROM marketing_campaign c WHERE c.code = campaign_name) THEN campaign_name ELSE 'other' END,
+    SELECT upload.id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM'), 'accepted', heard_from, marketing_channel(campaign_medium, click_kind), prospect.utm_campaign,
            consent_sha256 IS NOT NULL, screening_count_band(n), screening_count_band(rows_left_out), in_force,
            -- A refused upload of the practice (the same ZIP and practice name, or the same contact address) still kept.
            EXISTS (SELECT 1 FROM screening_upload ru JOIN screening_prospect rp ON rp.id = ru.prospect_id
                     WHERE ru.status = 'rejected'
                       AND (rp.contact_email = lower(btrim(email)) OR (rp.zip = zip5 AND screening_practice_key(rp.practice_name) = screening_practice_key(practice))))
-      FROM upload
+      FROM upload, prospect
     RETURNING id
   ), run AS (
     INSERT INTO screening_run (upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count)
@@ -1127,23 +1191,23 @@ BEGIN
     RAISE EXCEPTION 'screening is closed until a rule release is in force and a place-of-service split is approved'
       USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_closed';
   END IF;
+  -- The campaign code as kept (listed, 'other' or null; marketing_campaign_listed_only()), the outcome's too.
   WITH prospect AS (
     INSERT INTO screening_prospect (practice_name, state, zip, contact_email, source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm,
                                     screening_terms_sha256)
     VALUES (btrim(practice), state_code, zip5, lower(btrim(email)), heard_from, campaign_source, campaign_medium, campaign_name, click_kind, firm, terms_sha256)
-    RETURNING id
+    RETURNING id, utm_campaign
   ), upload AS (
     INSERT INTO screening_upload (prospect_id, row_count, status, rejection_reasons)
     SELECT prospect.id, $5, 'rejected', reasons FROM prospect
     RETURNING id
   ), outcome AS (
     INSERT INTO screening_outcome (upload_id, screened_month, stage, source, channel, campaign, row_band, refusal_codes)
-    SELECT upload.id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM'), 'refused', heard_from, marketing_channel(campaign_medium, click_kind),
-           CASE WHEN campaign_name IS NULL THEN NULL WHEN EXISTS (SELECT 1 FROM marketing_campaign c WHERE c.code = campaign_name) THEN campaign_name ELSE 'other' END,
+    SELECT upload.id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM'), 'refused', heard_from, marketing_channel(campaign_medium, click_kind), prospect.utm_campaign,
            screening_count_band($5),
            ARRAY(SELECT d.code FROM (SELECT DISTINCT r ->> 'code' AS code FROM jsonb_array_elements(CASE WHEN jsonb_typeof(reasons) = 'array' THEN reasons ELSE '[]'::jsonb END) r) d
                   ORDER BY d.code COLLATE "C")
-      FROM upload
+      FROM upload, prospect
     RETURNING id
   )
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
@@ -1490,7 +1554,8 @@ END;
 $$;
 
 -- The public audit request with its attribution (/request-audit): how the requester heard of us, the attribution
--- cookie's campaign codes and kind of paid click, and the referring firm. The six-argument form stays for the
+-- cookie's campaign codes (its campaign code only when the founder lists it, 'other' otherwise: the table's
+-- prospect_request_campaign_listed) and kind of paid click, and the referring firm. The six-argument form stays for the
 -- previous image until no image calls it.
 CREATE FUNCTION submit_prospect_request(contact text, email text, organization text, location_count integer, payer_names text[], arrangement text,
   heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text) RETURNS uuid
@@ -1872,7 +1937,8 @@ $$;
 
 -- The listing is an audit event naming the campaign's ID (marketing_campaign.id), so the trail says which code was
 -- listed and by whom. That a listed campaign is one sent to many people is the founder's rule, kept by review (ADR
--- 0062); the outcome reports (PR 7) show a campaign's cohort only at a minimum size.
+-- 0062); the outcome reports (PR 7) show a campaign's cohort only at 11 or more (the founder's ruling of 2026-10-21).
+-- Listing a code changes no row already written: one that kept 'other' keeps it.
 CREATE FUNCTION console_register_marketing_campaign(code text, label text) RETURNS void
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -1897,7 +1963,7 @@ REVOKE ALL ON screening_prospect, screening_upload, screening_place_of_service_s
 REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_valid(jsonb), screening_split_valid(jsonb), screening_modifiers_valid(text[]),
   screening_practice_key(text), marketing_channel(text, text), screening_count_band(bigint), screening_difference_band(bigint),
   screening_open_band(timestamptz, timestamptz), screening_refusal_codes_valid(text[]), screening_labels_version(), screening_replaced(uuid),
-  screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(), screening_result_rules(), screening_outcome_rules(), screening_lead_rules(),
+  marketing_campaign_kept(text), marketing_campaign_listed_only(), screening_outcome_campaign_listed(), screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(), screening_result_rules(), screening_outcome_rules(), screening_lead_rules(),
   screening_lead_kept(), screening_lead_product_kept(), screening_split_in_force(), screening_status(), screening_standing(bigint, bigint, bigint, bigint),
   screening_zip_status(text),
   submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text, text, text, text, text, text, text, text, text),

@@ -226,10 +226,18 @@ describe('the audit request’s attribution and the console’s decline reasons 
   const columns = 'SELECT source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm, from_screening, status, declined_reason FROM prospect_request WHERE organization_name = $1';
 
   it('keeps how the requester heard of us, the cookie’s codes and kind of click, and the referring firm; refuses a source off the list or a firm with an identifier', async () => {
+    // The founder lists the campaign, so the request keeps its code (the founder's ruling of 2026-10-21).
+    await owner.query("INSERT INTO marketing_campaign (code, label, added_by) VALUES ('fall-launch', 'SYNTHETIC fall launch', $1)", [platformAdmin]);
     expect((await requested('Synthetic Attributed Clinic', { heardFrom: 'association', referringFirm: ' Synthetic  Billing Partners ' }, 's=apta&m=newsletter&c=fall-launch&k=paid_search')).status).toBe('ok');
     expect((await owner.query(columns, ['Synthetic Attributed Clinic'])).rows).toEqual([
       { source: 'association', utm_source: 'apta', utm_medium: 'newsletter', utm_campaign: 'fall-launch', paid_click: 'paid_search', referring_firm: 'Synthetic Billing Partners', from_screening: false, status: 'new', declined_reason: null },
     ]);
+    // A code of a code's shape that no one listed (a name typed into a link) is kept as other, never as given.
+    expect((await requested('Synthetic Unlisted Clinic', {}, 's=apta&m=newsletter&c=jane-doe-follow-up')).status).toBe('ok');
+    expect((await owner.query(columns, ['Synthetic Unlisted Clinic'])).rows).toEqual([
+      { source: null, utm_source: 'apta', utm_medium: 'newsletter', utm_campaign: 'other', paid_click: null, referring_firm: null, from_screening: false, status: 'new', declined_reason: null },
+    ]);
+    expect((await owner.query("SELECT count(*)::int AS n FROM prospect_request WHERE utm_campaign = 'jane-doe-follow-up'")).rows).toEqual([{ n: 0 }]);
     // Blank answers are none.
     expect((await requested('Synthetic Blank Clinic', { heardFrom: '', referringFirm: '' })).status).toBe('ok');
     expect((await owner.query(columns, ['Synthetic Blank Clinic'])).rows).toEqual([

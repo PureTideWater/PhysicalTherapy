@@ -9,6 +9,7 @@ import { ATTRIBUTION_COOKIE } from '../src/lib/http/attribution';
 import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
 import { KEPT_SUMMARY, REQUEST_AUDIT_KEPT, SENT_KEPT, convertKept } from '../src/lib/screening/retention';
 import { expectAccessible } from './a11y';
+import { personaEmail } from '../scripts/synthetic-personas';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
 import { outboxFor } from './outbox';
 import {
@@ -64,6 +65,36 @@ const FIRM = 'SYNTHETIC BILLING PARTNERS';
 /** The landing URL: campaign codes as a newsletter's link carries them, and a SYNTHETIC search click ID. */
 const LANDING = '/screening?utm_source=Newsletter&utm_medium=email&utm_campaign=Fall+Launch&gclid=SYNTHETICCLICK123';
 const CAMPAIGN = 'fall-launch';
+/** A campaign code no one listed: a SYNTHETIC person's name typed into a link, which has a code's shape once normalised. */
+const UNLISTED_LANDING = '/request-audit?utm_source=Newsletter&utm_medium=email&utm_campaign=Jane+Doe+Follow+Up';
+const UNLISTED = 'jane-doe-follow-up';
+
+/**
+ * Lists a campaign as the console's action will (PR 7 builds its screen): console_register_marketing_campaign, as the
+ * application role, by the journey's platform administrator (the screening-admin persona the seed creates). Once: a
+ * retried run finds it listed.
+ */
+async function listCampaign(code: string, label: string): Promise<void> {
+  await withDatabase(async (client) => {
+    if ((await client.query('SELECT 1 FROM marketing_campaign WHERE code = $1', [code])).rows.length > 0) {
+      return;
+    }
+    const administrator = (await client.query<{ id: string }>('SELECT id FROM "user" WHERE email = $1', [personaEmail('screening-admin')])).rows[0]?.id;
+    expect(administrator, 'the seeded platform administrator').toBeDefined();
+    await client.query('BEGIN');
+    try {
+      await client.query('SET LOCAL ROLE tp_app');
+      await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [administrator]);
+      await client.query('SELECT console_register_marketing_campaign($1, $2)', [code, label]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+    const registered = await client.query("SELECT e.actor_id FROM audit_event e JOIN marketing_campaign c ON c.id = e.object_id WHERE e.action = 'marketing_campaign_registered' AND c.code = $1", [code]);
+    expect(registered.rows).toEqual([{ actor_id: administrator }]);
+  });
+}
 
 async function fillProspect(page: Page): Promise<void> {
   await page.getByLabel('Practice name').fill(PRACTICE);
@@ -123,10 +154,9 @@ test('a specialist approves the split; a file with patient information is refuse
 
   let template = Buffer.alloc(0);
   await test.step('landing with campaign codes and a paid click sets the first-party cookie once: the codes and the kind of click, never the click ID (SCR-12)', async () => {
-    // The founder lists the campaign, so an outcome may name it (a code no one listed counts as other).
-    await withDatabase((client) =>
-      client.query(`INSERT INTO marketing_campaign (code, label, added_by) SELECT $1, 'SYNTHETIC fall launch', id FROM "user" ORDER BY created_at LIMIT 1 ON CONFLICT DO NOTHING`, [CAMPAIGN]),
-    );
+    // The founder lists the campaign, so every row may keep it (a code no one listed is kept as other; the
+    // founder's ruling of 2026-10-21).
+    await listCampaign(CAMPAIGN, 'SYNTHETIC fall launch');
     await page.goto(LANDING);
     const cookie = (await context.cookies()).find((item) => item.name === ATTRIBUTION_COOKIE);
     expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
@@ -529,6 +559,41 @@ test('a specialist approves the split; a file with patient information is refuse
     } finally {
       await admin.close();
     }
+  });
+
+  await test.step('a campaign code no one listed is kept as other, the visitor’s own cookie aside, and listing it later changes nothing (the founder’s ruling of 2026-10-21)', async () => {
+    const visitor = await browser.newContext();
+    const landed = await visitor.newPage();
+    const organization = `SYNTHETIC UNLISTED CLINIC ${randomBytes(3).toString('hex').toUpperCase()}`;
+    try {
+      await landed.goto(UNLISTED_LANDING);
+      // The visitor's own first-touch cookie holds the code as the link carried it, in their browser alone.
+      const cookie = (await visitor.cookies()).find((item) => item.name === ATTRIBUTION_COOKIE);
+      expect(decodeURIComponent(cookie?.value ?? '')).toBe(`s=newsletter&m=email&c=${UNLISTED}`);
+      await landed.getByLabel('Your name').fill('SYNTHETIC REQUESTER');
+      await landed.getByLabel('Work email').fill(`unlisted-${CONTACT}`);
+      await landed.getByLabel('Organization').fill(organization);
+      await landed.getByLabel('Locations').fill('1');
+      await landed.getByLabel('Payers you bill').fill('SYNTHETIC PAYER D');
+      await landed.getByLabel('How you bill').selectOption('in_house');
+      await landed.getByRole('button', { name: 'Send request' }).click();
+      await expect(landed.getByText('Request received')).toBeVisible();
+    } finally {
+      await visitor.close();
+    }
+    const kept = 'SELECT utm_source, utm_medium, utm_campaign FROM prospect_request WHERE organization_name = $1';
+    // Every table that keeps a campaign code, and the audit trail, searched for the code as given.
+    const holding = `SELECT count(*)::int AS n FROM (
+        SELECT utm_campaign AS code FROM screening_prospect UNION ALL SELECT utm_campaign FROM screening_lead
+        UNION ALL SELECT utm_campaign FROM prospect_request UNION ALL SELECT campaign FROM screening_outcome
+        UNION ALL SELECT e::text FROM audit_event e) t WHERE strpos(t.code, $1) > 0`;
+    const stored = await withDatabase(async (client) => ({
+      request: (await client.query<Record<string, unknown>>(kept, [organization])).rows,
+      holding: (await client.query<{ n: number }>(holding, [UNLISTED])).rows,
+    }));
+    expect(stored).toEqual({ request: [{ utm_source: 'newsletter', utm_medium: 'email', utm_campaign: 'other' }], holding: [{ n: 0 }] });
+    await listCampaign(UNLISTED, 'SYNTHETIC listed after the request');
+    expect(await withDatabase(async (client) => (await client.query<Record<string, unknown>>(kept, [organization])).rows)).toEqual([{ utm_source: 'newsletter', utm_medium: 'email', utm_campaign: 'other' }]);
   });
 
   await context.close();

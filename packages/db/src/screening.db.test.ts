@@ -1253,7 +1253,14 @@ async function convert(token: string): Promise<string> {
   return row?.id ?? '';
 }
 
-async function reject(options: { readonly practice?: string; readonly email: string; readonly rowCount?: number; readonly reasons?: readonly object[]; readonly source?: string | null }): Promise<string> {
+async function reject(options: {
+  readonly practice?: string;
+  readonly email: string;
+  readonly rowCount?: number;
+  readonly reasons?: readonly object[];
+  readonly source?: string | null;
+  readonly campaign?: string | null;
+}): Promise<string> {
   const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS id', [
     options.practice ?? `Synthetic Refused ${letters()}`,
     'MN',
@@ -1264,7 +1271,7 @@ async function reject(options: { readonly practice?: string; readonly email: str
     options.source ?? null,
     null,
     null,
-    null,
+    options.campaign ?? null,
     null,
     null,
     null,
@@ -1291,6 +1298,24 @@ async function ageLead(leadId: string, months: number): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+/** A platform administrator (organization.manage) of an internal organization of their own: who lists campaigns. */
+async function platformAdministrator(): Promise<string> {
+  const owner = await admin.connect();
+  try {
+    const internal = await createOrganization(owner, 'internal');
+    const administrator = await createUser(owner, { hardwareKeyRequired: true });
+    await addMembership(owner, internal, administrator, 'platform_admin');
+    return administrator;
+  } finally {
+    owner.release();
+  }
+}
+
+/** Lists a campaign code as the console does (console_register_marketing_campaign, as the application role). */
+async function listCampaign(code: string, administrator: string): Promise<void> {
+  await as(APP_ROLE, 'SELECT console_register_marketing_campaign($1, $2)', [code, `SYNTHETIC ${code}`], administrator);
 }
 
 /** Every CHECK literal pg_get_constraintdef prints for a constraint, in its order. */
@@ -1491,8 +1516,12 @@ describe('audit #57: the counts-only outcome (SCR-10)', () => {
     // An unlisted campaign code counts as other, and listing it later does not reclassify it; no code is null.
     const unlisted = await submit({ attribution: { utmCampaign: 'one-off-code', utmMedium: 'email' } });
     expect(await outcomeOfUpload((await idsOf(unlisted)).uploadId)).toMatchObject({ campaign: 'other', channel: 'email' });
+    const prospectCampaign = async () => (await admin.query<{ utm_campaign: string | null }>('SELECT utm_campaign FROM screening_prospect WHERE id = $1', [(await idsOf(unlisted)).prospectId])).rows;
+    // The prospect keeps other too, never the code (the founder's ruling of 2026-10-21).
+    expect(await prospectCampaign()).toEqual([{ utm_campaign: 'other' }]);
     await admin.query("INSERT INTO marketing_campaign (code, label, added_by) VALUES ('one-off-code', 'SYNTHETIC listed later', $1)", [specialist]);
     expect(await outcomeOfUpload((await idsOf(unlisted)).uploadId)).toMatchObject({ campaign: 'other' });
+    expect(await prospectCampaign()).toEqual([{ utm_campaign: 'other' }]);
     const none = await submit();
     expect(await outcomeOfUpload((await idsOf(none)).uploadId)).toMatchObject({ campaign: null, channel: 'none', source: null });
   });
@@ -2205,6 +2234,8 @@ describe('audit #57: the campaign list and the request’s new columns', () => {
   });
 
   it('grants the twelve-argument audit request to the application role alone, and keeps the six-argument one for the previous image', async () => {
+    // The founder lists the campaign, so the request keeps its code (the founder's ruling of 2026-10-21).
+    await listCampaign('fall-launch', await platformAdministrator());
     const { rows } = await admin.query<{ name: string; app: boolean; public: boolean; definer: boolean }>(
       `SELECT p.oid::regprocedure::text AS name, has_function_privilege($1, p.oid, 'EXECUTE') AS app, p.prosecdef AS definer,
               EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE') AS public
@@ -2250,6 +2281,205 @@ describe('audit #57: the campaign list and the request’s new columns', () => {
     await expect(as(APP_ROLE, 'SELECT submit_prospect_request($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)', ['S', 's@synthetic.test', 'O', 1, ['P'], 'mixed', 'friend', null, null, null, null, null])).rejects.toMatchObject({
       constraint: 'prospect_request_source',
     });
+  });
+});
+
+describe('the founder’s ruling of 2026-10-21: a row keeps a link’s campaign code only when the founder lists it', () => {
+  /** A person's name typed inside a code: a code's shape, which no shape check catches, and on no list. */
+  const NAMED = 'jane-doe-follow-up';
+  const LISTED = 'ruling-listed';
+  let administrator: string;
+
+  beforeAll(async () => {
+    administrator = await platformAdministrator();
+    await listCampaign(LISTED, administrator);
+  });
+
+  /** Every stored campaign value of the four tables that keep one, by table. */
+  async function campaignsHolding(code: string): Promise<{ table: string; n: number }[]> {
+    const { rows } = await admin.query<{ table: string; n: number }>(
+      `SELECT t.name AS table, count(*)::int AS n FROM (
+         SELECT 'screening_prospect' AS name, utm_campaign AS code FROM screening_prospect
+         UNION ALL SELECT 'screening_lead', utm_campaign FROM screening_lead
+         UNION ALL SELECT 'prospect_request', utm_campaign FROM prospect_request
+         UNION ALL SELECT 'screening_outcome', campaign FROM screening_outcome) t
+        WHERE t.code = $1 GROUP BY t.name ORDER BY t.name`,
+      [code],
+    );
+    return rows;
+  }
+
+  const REQUEST = 'SELECT submit_prospect_request($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) AS id';
+  const requestValues = (campaign: string | null) => [
+    'SYNTHETIC REQUESTER',
+    `requester.${letters()}@synthetic.test`,
+    `SYNTHETIC ORGANIZATION ${letters()}`,
+    1,
+    ['SYNTHETIC PAYER'],
+    'mixed',
+    null,
+    'newsletter',
+    'email',
+    campaign,
+    null,
+    null,
+  ];
+
+  it('keeps a listed code, other for any other code and null for none, at submission, refusal and an audit request, the outcome as its prospect', async () => {
+    for (const [given, kept] of [
+      [LISTED, LISTED],
+      [NAMED, 'other'],
+      [null, null],
+    ] as const) {
+      const email = `ruling.${letters()}@synthetic.test`;
+      const runId = await submit({ email, attribution: { utmCampaign: given, utmMedium: 'email' } });
+      const { prospectId, uploadId } = await idsOf(runId);
+      expect((await admin.query('SELECT utm_campaign FROM screening_prospect WHERE id = $1', [prospectId])).rows, `submitted ${String(given)}`).toEqual([{ utm_campaign: kept }]);
+      expect((await outcomeOfUpload(uploadId))?.campaign, `submitted ${String(given)}`).toBe(kept);
+      const refused = await reject({ email: `ruling.refused.${letters()}@synthetic.test`, campaign: given });
+      expect(
+        (await admin.query('SELECT p.utm_campaign, o.campaign FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id JOIN screening_outcome o ON o.upload_id = u.id WHERE u.id = $1', [refused])).rows,
+        `refused ${String(given)}`,
+      ).toEqual([{ utm_campaign: kept, campaign: kept }]);
+      // The application role's one way to write a request, called directly, as the web layer would not.
+      const [request] = await as<{ id: string }>(APP_ROLE, REQUEST, requestValues(given));
+      expect((await admin.query('SELECT utm_campaign FROM prospect_request WHERE id = $1', [request?.id])).rows, `requested ${String(given)}`).toEqual([{ utm_campaign: kept }]);
+    }
+    expect(await campaignsHolding(NAMED)).toEqual([]);
+  });
+
+  it('carries the kept code, never the one given, into the summary and the request a conversion writes', async () => {
+    for (const [given, kept] of [
+      [LISTED, LISTED],
+      [NAMED, 'other'],
+    ] as const) {
+      const email = `ruling.converted.${letters()}@synthetic.test`;
+      const runId = await submit({ email, attribution: { utmCampaign: given, utmSource: 'newsletter', utmMedium: 'email' } });
+      const token = tokenHash();
+      await complete(runId, token);
+      const requestId = await convert(token);
+      expect((await admin.query('SELECT utm_campaign, from_screening FROM prospect_request WHERE id = $1', [requestId])).rows, String(given)).toEqual([{ utm_campaign: kept, from_screening: true }]);
+      expect((await leadsOf(email)).map((lead) => lead.utm_campaign), String(given)).toEqual([kept]);
+    }
+    expect(await campaignsHolding(NAMED)).toEqual([]);
+  });
+
+  it('leaves a row that kept other as it is when its code is listed later, and keeps the code from then on', async () => {
+    const later = 'ruling-listed-later';
+    const runId = await submit({ attribution: { utmCampaign: later } });
+    const { prospectId, uploadId } = await idsOf(runId);
+    const [request] = await as<{ id: string }>(APP_ROLE, REQUEST, requestValues(later));
+    const before = { prospect: [{ utm_campaign: 'other' }], outcome: 'other', request: [{ utm_campaign: 'other' }] };
+    const now = async () => ({
+      prospect: (await admin.query('SELECT utm_campaign FROM screening_prospect WHERE id = $1', [prospectId])).rows,
+      outcome: (await outcomeOfUpload(uploadId))?.campaign,
+      request: (await admin.query('SELECT utm_campaign FROM prospect_request WHERE id = $1', [request?.id])).rows,
+    });
+    expect(await now()).toEqual(before);
+    await listCampaign(later, administrator);
+    expect(await now()).toEqual(before);
+    const listedNow = await submit({ attribution: { utmCampaign: later } });
+    expect((await outcomeOfUpload((await idsOf(listedNow)).uploadId))?.campaign).toBe(later);
+    expect(await campaignsHolding(later)).toEqual([
+      { table: 'screening_outcome', n: 1 },
+      { table: 'screening_prospect', n: 1 },
+    ]);
+  });
+
+  it('holds every write path to the list: the owner’s own inserts and updates, and the application role’s direct writes, beside each table’s immutability guard', async () => {
+    const release = (await admin.query<{ manifest_sha256: string }>('SELECT manifest_sha256 FROM rule_release WHERE release_no = 900001')).rows[0]?.manifest_sha256;
+    const inserts: Record<string, (code: string | null) => Promise<pg.QueryResult<{ id: string; kept: string | null }>>> = {
+      screening_prospect: (code) =>
+        admin.query<{ id: string; kept: string | null }>("INSERT INTO screening_prospect (practice_name, state, zip, contact_email, utm_campaign) VALUES ('Synthetic Direct', 'MN', '00011', 'direct@synthetic.test', $1) RETURNING id, utm_campaign AS kept", [code]),
+      screening_lead: (code) =>
+        admin.query<{ id: string; kept: string | null }>(
+          `INSERT INTO screening_lead (practice_name, state, zip, contact_email, utm_campaign, consent_sha256, release_no, release_manifest_sha256, engine_version, labels_version,
+                                       screened_at, row_count, claim_lines, observed_cents, anomaly_rows, left_out_rows, expires_at)
+           VALUES ('Synthetic Direct', 'MN', '00011', $2, $1, $3, 900001, $4, 'phase-two/1', screening_labels_version(), now(), 1, 11, 100, 0, 0, now() + interval '1 day')
+           RETURNING id, utm_campaign AS kept`,
+          [code, `direct.${letters()}@synthetic.test`, hex('1'), release],
+        ),
+      prospect_request: (code) =>
+        admin.query<{ id: string; kept: string | null }>(
+          `INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement, utm_campaign)
+           VALUES ('SYNTHETIC DIRECT', 'direct@synthetic.test', $2, 1, ARRAY['SYNTHETIC PAYER'], 'mixed', $1) RETURNING id, utm_campaign AS kept`,
+          [code, `SYNTHETIC DIRECT ${letters()}`],
+        ),
+      screening_outcome: (code) =>
+        admin.query<{ id: string; kept: string | null }>(
+          `INSERT INTO screening_outcome (screened_month, stage, channel, campaign, row_band, refusal_codes)
+           VALUES (to_char(now(), 'YYYY-MM'), 'refused', 'none', $1, '1_100', '{no_rows}') RETURNING id, campaign AS kept`,
+          [code],
+        ),
+    };
+    const kept: Record<string, Record<string, string>> = {};
+    for (const [table, insert] of Object.entries(inserts)) {
+      const byGiven: Record<string, string> = {};
+      kept[table] = byGiven;
+      for (const [given, expected] of [
+        [LISTED, LISTED],
+        [NAMED, 'other'],
+        ['other', 'other'],
+        [null, null],
+      ] as const) {
+        const { rows } = await insert(given);
+        expect(rows[0]?.kept, `${table} ${String(given)}`).toBe(expected);
+        byGiven[String(given)] = rows[0]?.id ?? '';
+      }
+      // A code of the wrong shape is refused by the column's rule, and the error carries no value.
+      for (const malformed of ['jane.doe@synthetic.test', 'Jane Doe', 'a'.repeat(65)]) {
+        const refusal = await insert(malformed).then(
+          () => undefined,
+          (error: unknown) => error as pg.DatabaseError,
+        );
+        expect(refusal, `${table} ${malformed}`).toMatchObject({ code: '23514', constraint: table === 'screening_outcome' ? 'screening_outcome_campaign' : `${table}_utm_campaign` });
+        expect(`${refusal?.message ?? ''} ${refusal?.detail ?? ''}`, `${table} ${malformed}`).not.toContain(malformed);
+      }
+    }
+    expect(await campaignsHolding(NAMED)).toEqual([]);
+    // An update that names the column meets the table's guard: a listed code never changes, and a kept summary that
+    // kept other keeps other, the code given rewritten before its guard compares it.
+    const ids = (table: string) => kept[table] ?? {};
+    await expect(admin.query('UPDATE screening_prospect SET utm_campaign = $1 WHERE id = $2', [NAMED, ids('screening_prospect')[LISTED]])).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query('UPDATE screening_lead SET utm_campaign = $1 WHERE id = $2', [NAMED, ids('screening_lead')[LISTED]])).rejects.toMatchObject({ code: '23514', constraint: 'screening_lead_fixed' });
+    await expect(admin.query('UPDATE prospect_request SET utm_campaign = $1 WHERE id = $2', [NAMED, ids('prospect_request')[LISTED]])).rejects.toMatchObject({ code: '23514' });
+    await expect(admin.query('UPDATE screening_outcome SET campaign = $1 WHERE id = $2', [NAMED, ids('screening_outcome')[LISTED]])).rejects.toMatchObject({ code: '23514', constraint: 'screening_outcome_sealed' });
+    await admin.query('UPDATE screening_lead SET utm_campaign = $1 WHERE id = $2', [NAMED, ids('screening_lead')[NAMED]]);
+    expect(await campaignsHolding(NAMED)).toEqual([]);
+    // The application role writes none of the four directly: no insert, and no update of the column it is not granted.
+    await expect(
+      as(APP_ROLE, "INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement, utm_campaign) VALUES ('S', 's@synthetic.test', 'O', 1, ARRAY['P'], 'mixed', $1)", [NAMED], administrator),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(as(APP_ROLE, 'UPDATE prospect_request SET utm_campaign = $1 WHERE id = $2', [NAMED, ids('prospect_request')[LISTED]], administrator)).rejects.toMatchObject({ code: '42501' });
+    await expect(as(APP_ROLE, "INSERT INTO marketing_campaign (code, label, added_by) VALUES ($1, 'x', $2)", [NAMED, administrator], administrator)).rejects.toMatchObject({ code: '42501' });
+    // Its review, a direct update of the columns it is granted, still works with the trigger in place and needs no read of the list.
+    for (const id of [ids('prospect_request')[LISTED], ids('prospect_request')[NAMED]]) {
+      expect(await as(APP_ROLE, "UPDATE prospect_request SET status = 'contacted', reviewed_by = $1 WHERE id = $2 RETURNING utm_campaign", [administrator, id], administrator)).toHaveLength(1);
+    }
+    expect((await admin.query('SELECT utm_campaign, status FROM prospect_request WHERE id = ANY ($1) ORDER BY utm_campaign', [[ids('prospect_request')[LISTED], ids('prospect_request')[NAMED]]])).rows).toEqual([
+      { utm_campaign: 'other', status: 'contacted' },
+      { utm_campaign: LISTED, status: 'contacted' },
+    ]);
+  });
+
+  // 23: a row trigger (1), before (2), on insert (4) and on update (16), here of the one column.
+  it('puts the trigger on every column that keeps a campaign code, before each insert and each update naming it', async () => {
+    const { rows } = await admin.query<{ table_name: string; column_name: string; trigger: string | null }>(
+      `SELECT c.relname AS table_name, a.attname AS column_name,
+              (SELECT string_agg(t.tgname || ' ' || p.proname, ', ') FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+                WHERE t.tgrelid = c.oid AND NOT t.tgisinternal AND t.tgenabled = 'O' AND (t.tgtype::integer & 23) = 23
+                  AND (SELECT array_agg(k) FROM unnest(t.tgattr::int2[]) k) = ARRAY[a.attnum] AND p.proname IN ('marketing_campaign_listed_only', 'screening_outcome_campaign_listed')) AS trigger
+         FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
+          AND (a.attname = 'utm_campaign' OR (c.relname = 'screening_outcome' AND a.attname = 'campaign'))
+        ORDER BY 1`,
+    );
+    expect(rows).toEqual([
+      { table_name: 'prospect_request', column_name: 'utm_campaign', trigger: 'prospect_request_campaign_listed marketing_campaign_listed_only' },
+      { table_name: 'screening_lead', column_name: 'utm_campaign', trigger: 'screening_lead_campaign_listed marketing_campaign_listed_only' },
+      { table_name: 'screening_outcome', column_name: 'campaign', trigger: 'screening_outcome_campaign_listed screening_outcome_campaign_listed' },
+      { table_name: 'screening_prospect', column_name: 'utm_campaign', trigger: 'screening_prospect_campaign_listed marketing_campaign_listed_only' },
+    ]);
   });
 });
 

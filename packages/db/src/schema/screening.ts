@@ -67,6 +67,7 @@ export const screeningProspect = pgTable(
     /** The first-party attribution cookie's campaign codes (pw_first_touch), normalised and shape-checked. */
     utmSource: text('utm_source'),
     utmMedium: text('utm_medium'),
+    /** Kept only when listed in marketing_campaign as the row is written, 'other' otherwise (a trigger; the founder's ruling of 2026-10-21). */
     utmCampaign: text('utm_campaign'),
     /** The kind of paid click the landing URL carried, from a click-ID parameter's presence (never its value). */
     paidClick: text('paid_click', { enum: PAID_CLICKS }),
@@ -217,7 +218,11 @@ export type ScreeningOutcomeStage = (typeof SCREENING_OUTCOME_STAGES)[number];
 /** How long a converted or consenting prospect's frozen summary is kept, from the upload (the founder's ruling of 2026-10-20). */
 export const SCREENING_LEAD_MONTHS = 12;
 
-/** The campaign codes an outcome may name: the founder lists campaigns sent to many people; a listed code stays listed. */
+/**
+ * The campaign codes a row may keep: the founder lists campaigns sent to many people; a listed code stays listed. A
+ * prospect, a kept summary, an audit request and an outcome keep a link's campaign code only when it is listed here as
+ * the row is written, 'other' for any other code (marketing_campaign_listed_only(); the founder's ruling of 2026-10-21).
+ */
 export const marketingCampaign = pgTable('marketing_campaign', {
   code: text('code').primaryKey(),
   /** What the listing's audit event names. */
@@ -290,6 +295,7 @@ export const screeningLead = pgTable(
     source: text('source', { enum: PROSPECT_SOURCES }),
     utmSource: text('utm_source'),
     utmMedium: text('utm_medium'),
+    /** The prospect's, as kept: a listed code, 'other' or none. */
     utmCampaign: text('utm_campaign'),
     paidClick: text('paid_click', { enum: PAID_CLICKS }),
     referringFirm: text('referring_firm'),
