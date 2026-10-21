@@ -1,140 +1,138 @@
 # PR 6 (free screening): what you are asked to approve
 
-Branch `co-001/pr-06-free-screening`, checked at commit `3c1b289357d04d1b10ff631c6e56fdcfa3f94d0e` (after your rulings of October 18, 2026 on the best-option audit's items 6 and 1, your ZIP+4 ruling of 11:47 UTC that day, and the review fixes of October 20). One new database migration: `20261104090000_free_screening.sql`. It is this pull request's own migration, not yet merged and applied only to scratch databases, so these changes were made in it in place; no other migration changed.
+Branch `co-001/pr-06-free-screening`, pull request #31, checked at commit `6a4ec80be` (October 21, 2026). It sits on `claude/build-platform` at `5df4108`, which already holds PR 5 and the images fix (#32). There is one new database migration, `20261104090000_free_screening.sql`. It is this pull request's own migration and has not been merged, so this round changed it in place. No other migration changed.
 
-**Do not sign yet.** PR 5 merges first. After it does, this document is generated again and its fingerprint changes. You will be asked to approve it then, not now. The approval line is still blank, and no one has been added to the approver list.
+**This is the version to sign.** PR 5 has merged, and the document was generated again on top of it. The approval line is blank, and no name was added to the approver list. You sign the document's SHA-256 below.
 
-## What the change is
+## What the change does, in plain words
 
-A prospect who has no account uploads a file of totals: one row for each code, modifiers, units, place of service, payer type and quarter, with the allowed total and the claim count. Each row must add up to at least 11 claim lines. The system prices each row against Medicare and emails a private link to the result.
+A prospect with no account uploads a file of totals: one row for each code, modifiers, units, place of service, payer type and quarter, with the allowed total and the claim count. No patient information is allowed. Each row must add up to at least 11 claim lines. The system prices each Medicare row with the unchanged engine and emails a private link to the result. The prospect can turn the result into an audit request.
 
-**New tables (5)**
-- `screening_prospect`: the practice's name, state, 5-digit ZIP and contact email.
-- `screening_upload`: a fingerprint (hash) of the rows the server accepted, the row count, whether it was accepted, the coded reasons for a refusal, and three totals for the small rows the browser left out (how many rows, their claim lines, their allowed dollars).
-- `screening_place_of_service_split`: which places of service count as facility and which as non-facility. A contract specialist (a person, never a model) approves it. It is never edited in place, and the latest approval is the one in force.
-- `screening_run`: one pricing of an accepted upload. It is fixed to the rule release and split in force at the time, and it stores only a scrambled form of the link's secret.
-- `screening_result`: one line for each row sent: its totals, the engine's Medicare figure times the claim count, the difference, and why a row could not be priced. For a code in the reduction across codes it also holds the second, fully reduced figure. A row here always has at least 11 claim lines.
+The schema change adds **nine tables** and **55 functions**, adds eight columns to `prospect_request`, and replaces that table's guard function. Nothing else that already exists changes.
 
-**New functions (31)**
+**Tables for a screening (kept 30 days, then deleted)**
+- `screening_prospect`: the practice's name, state, 5-digit ZIP and contact email, how they heard of us, the campaign codes of the link they came from, a referring firm, and fingerprints of the consent and screening terms they accepted.
+- `screening_upload`: a fingerprint of the rows the server accepted, the row count, accepted or refused, coded reasons for a refusal, and three totals for the small rows the browser left out.
+- `screening_place_of_service_split`: which places of service count as facility and which as non-facility. A contract specialist (a person, never a model) approves it. It is never edited, and the latest approval is the one in force.
+- `screening_run`: one pricing of an accepted upload. It is fixed to the rule release and split in force at the time. It stores only a scrambled form of the link's secret, and when the result was first opened.
+- `screening_result`: one line for each row: its totals, the engine's Medicare figure times the claim count, and the difference. A code in the reduction across codes also gets its fully reduced figure. Every stored row has at least 11 claim lines.
 
-The website uses these. Each one runs with fixed rights, and none of them gives direct access to the tables:
-- `screening_status`: is screening open (a published rule release and an approved split)?
-- `screening_zip_status`: does the release map this ZIP, and does it need a ZIP+4?
-- `submit_screening`: stores an accepted upload and its rows, computes the fingerprint of those rows itself, replaces any earlier screening of the same practice, queues the pricing, and writes audit events.
-- `reject_screening_upload`: stores a refused upload (row count and coded reasons only, no fingerprint) and writes an audit event.
-- `screening_result_summary`, `screening_result_groups`, `screening_result_coverage`, `screening_result_rows`: read a result by its link. They give the totals, the rows left out before sending, the anomalies by code and payer, the coverage, and the top rows, with both figures where a code has two and where each row and group stands.
-- `convert_screening`: turns a screening into an audit request and writes an audit event.
-- `console_screening_splits`, `console_approve_screening_split`: let the specialist see and approve the split.
+**Tables for what outlives a screening (your rulings of October 20)**
+- `screening_outcome`: one counts-only line for every screening, kept with no end date. It holds bands and shares, never a name, email, ZIP, exact count, date or dollar figure.
+- `screening_lead` and `screening_lead_product`: the frozen summary of a converted or consenting practice's screening, kept 12 months.
+- `marketing_campaign`: the campaign codes you list. It is new in this round, under your ruling of October 21 below.
 
-The background jobs use these:
-- `operator_screening_due`, `operator_screening_claim`, `operator_screening_release`, `operator_screening_rows`, `operator_screening_record`, `operator_screening_complete`, `operator_screening_fail`: find, price, record and finish (or fail) a run.
-- `operator_screening_expire`: deletes everything 30 days after the upload and logs each deletion.
+**Functions.** The website reaches the tables only through fixed-rights functions: submit, refuse, read a result by its link, record that the link was opened, convert to an audit request, withdraw a kept summary, approve the split and list a campaign. The background jobs have their own functions to price, finish, expire and send reminders. The database's own guards check every value and stop rows from being changed.
 
-The database runs these internally, as rule checks and guards:
-- `screening_rejection_valid`, `screening_rejections_valid`: a refusal reason can never hold a column heading or a cell.
-- `screening_split_valid`: checks the split's format. `screening_modifiers_valid` checks the modifiers' format.
-- `screening_split_in_force`: finds the latest approved split.
-- `screening_practice_key` (new): the practice's name as compared, in lower case with extra spaces removed.
-- `screening_replaced` (new): whether a later screening of the same practice exists.
-- `screening_kept_until_expiry`: nothing is deleted before its 30 days are up, unless a later screening of the same practice replaces it.
-- `screening_run_rules`: a run only moves forward, and its link and its conversion are each set once.
-- `screening_result_inserted`, `screening_result_rules`: rows are added with their run, and each is priced once.
-- `screening_standing`: says where an allowed total stands against a row's figures.
+## Your ruling of October 21, and how it is built
 
-## Why
+The question was whether a link's campaign code should be kept only when it is on your list. A format check cannot catch a person's name typed into a code, for example `jane-doe-follow-up`.
 
-- CO-04 (free screening) and CO-12's screening tables.
-- Your decisions D18 to D21 (all option a), with D11 for the wording.
-- Your rulings of October 18, 2026: the four on the first review, your approval after the best-option audit (items 6 and 1), and your ZIP+4 ruling of 11:47 UTC, below.
+- **Built in the database.** Four columns can keep a campaign code: the prospect's, the kept summary's, the audit request's and the outcome's. Each one keeps the code only when you have listed it at the moment the row is written. Any other code is stored as `other`, and no code is stored as empty. A trigger on each table does this for every writer: the website's functions, the owner's own statements, and any role given write access later.
+- **A code you list later changes nothing already stored.** A row that kept `other` keeps it, because the code it was given was never stored.
+- **The code goes nowhere else.** No log line, job, email, error message or audit event carries an unlisted code. Only the visitor's own first-visit cookie, in their own browser, may still hold it.
+- **Listing a code** takes a platform administrator, and each listing is an audit event. PR 7 builds the screen for it. Today it is the function `console_register_marketing_campaign`.
+- **Source and medium** keep their format checks, as you ruled.
+- **Your other rulings that day are recorded and built as described:** a match on the contact address alone deletes the earlier kept summary and carries no request. The result page and the email say when a summary is kept with an earlier request. A kept summary is deleted early only through PR 6e's withdrawal link. PR 7's campaign reports show a cohort only at 11 or more. The images fix merged on its own as #32.
 
-## Your rulings of October 18, 2026
+**Proved on a fresh database at this commit** (PostgreSQL 18, all 42 migrations, synthetic data):
+- A listed code (`verify-listed`) was kept as written.
+- An unlisted code (`jane-doe-follow-up`) was stored as `other` in every table.
+- An empty code stayed empty.
+- When the website's database role wrote to these tables directly, Postgres refused every attempt with "permission denied". It has no way to write them except through the functions.
+- After the unlisted code was listed, nothing stored earlier changed. No table held the unlisted code anywhere.
 
-They are recorded in ADR 0062 ("Owner rulings (2026-10-18)", rulings 1 to 6) and in the Approval section of `docs/product/reconciliation-001.md`, each in your name and dated.
+## What changed since the version you last saw
 
-1. **Reduction across codes (D19).** A code in Medicare's multiple procedure reduction gets two figures, both from the unchanged engine: priced on its own, and priced as a later code of a visit (fully reduced). A row is an anomaly only when its allowed total is more than $5 a claim line below the fully reduced figure.
-2. **Sequestration.** Every figure is the engine's amount before sequestration, read from the engine's own calculation. The reimbursement specialist confirms this later (Q21).
-3. **ZIP+4, superseded.** Your first ruling kept refusing a ZIP whose locality needs a ZIP+4. **You superseded it at 11:47 UTC on October 18, 2026:** ZIP+4 localities are fixed before launch in their own pull request, **PR 6b**. In PR 6b, practice settings and the screening accept a ZIP+4, and the engine finds the locality from it; five-digit ZIPs and the golden test lines are unchanged; and the change order's freeze on the engine is loosened for that lookup only. ADR 0062 marks ruling 3 as superseded, in your name, with the time. The Approval section of reconciliation-001 says the same, and its engine check now names PR 6b's lookup as the one exception. **This pull request still refuses such a ZIP until PR 6b lands**, with a clear message ("this ZIP code spans two Medicare localities, and a free screening cannot price one yet"). The upload page says a ZIP that spans two Medicare localities cannot be screened yet. PR 6 itself changes nothing in the engine.
-4. **Withdrawn release.** A result priced under a release that is later withdrawn keeps its notice and can still be converted to an audit request.
-5. **At least 11 claim lines a row (audit item 6, critical).** See "The 11-claim-line floor" below.
-6. **Denied lines (audit item 1, the template's part).** See "Denied lines" below. Changing how the paid audit's triage reads denials is PR 6d, not this pull request.
-
-## The 11-claim-line floor (audit item 6)
-
-A row with only a few claim lines can be one patient's care (with its quarter, next to the practice's name and ZIP), which is not de-identified under HIPAA, and a prospect has no business associate agreement with us. So every row must add up to at least **11 claim lines**, the CMS small-cell standard. It is **one setting** (`SCREENING_MIN_CLAIM_LINES = 11`), enforced in three places:
-
-- **In the browser.** A row of fewer than 11 claim lines is left out before anything is sent. The page says how many rows, claim lines and dollars it left out, for example: "Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $366.24 allowed in your file. They are not sent, and no figure includes them." If every row is too small, nothing is sent.
-- **On the server.** A request built to get around the browser, with a small row in it, is refused, naming the row: "Row 2 sums fewer than 11 claim lines; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient's care: leave it out." Nothing about the refused rows is stored except the row count and the coded reason (row number and "claim count"). No code, quarter, dollars or fingerprint of them is kept.
-- **In the database.** A rule (`screening_result_claim_count`, 11 to 100,000) refuses any stored row of fewer than 11 claim lines, and a second rule keeps the "left out" totals consistent with the floor (each left-out row 1 to 10 claim lines). A test fails if the database rule and the setting ever differ.
-
-The result says so too: a "Left out before sending" section shows the rows, claim lines and dollars the browser left out, apart from every figure.
-
-**Two protections added by the review of October 20, under your same ruling:**
-- **No fingerprint of the file.** The browser used to send a hash of the whole file, which included the small rows. Together with the left-out totals, a small row's details could have been worked out by trial. Now the database computes the fingerprint itself, from the rows it accepted only. A refused upload keeps no fingerprint at all.
-- **One screening per practice at a time.** The CMS standard also forbids working out a small number by subtracting two larger ones (for example, the same row at 12 claim lines in one screening and 11 in the next). So a new screening from the same practice (same practice name and ZIP, or same email address) replaces the earlier one, and the earlier link stops working. Each replacement is an audit event (`screening_replaced`). The upload page, the result, the email and the page an old link opens all say so.
-
-**What counsel still has to confirm** (recorded in ADR 0062): the number 11; whether it should count claim lines or patients (a plan of care can give one patient 11 lines in a quarter; if counsel says patients, a patient-count column is added later with a new migration); whether the result may show a left-out total under 11 claim lines; and how wide "the same practice" should be.
-
-## Denied lines (audit item 1, the template's part)
-
-A denied line (no authorization, visit limit reached, duplicate, timely filing, not covered) pays nothing for a reason that is not about the rate. Inside a row of totals it would look like a shortfall against Medicare. So the screening template and the upload page tell prospects to leave denied lines out of every total and claim count, because a denial is not a rate variance.
-
-- The downloadable template now starts with note lines (each beginning with #, which the page skips), in plain words: what a row is (totals only, no patient information), the 11-claim-line rule, and: "Leave denied lines out of every total and claim count: a line the payer paid nothing on because it was denied, for a missing authorization, a visit limit, a duplicate, timely filing or a service not covered. A denial is not a rate variance, and a screening compares rates."
-- The upload page lists the same two rules, and the column guide repeats them beside the allowed total and the claim count.
-
-## What changed in the schema since the version you last saw (commit `dfd48f8`)
-
-All of it is inside `20261104090000_free_screening.sql`. No other migration changed.
-- `screening_upload`: `file_sha256` is now `rows_sha256` (the fingerprint of the accepted rows, empty on a refused upload); **3 new columns** for what the browser left out (`left_out_rows`, `left_out_claim_lines`, `left_out_allowed_cents`, whole cents); new checks: the fingerprint is there exactly when the upload is accepted, each left-out row is 1 to 10 claim lines and at most $25,000 a line, a refused upload leaves nothing out, and accepted plus left-out rows stay within 50,000.
-- `screening_result`: the claim count's rule is now **11 to 100,000** (it was 1 to 100,000).
-- `screening_prospect`: **2 new indexes** to find the earlier screening of the same practice.
-- A refusal can now carry the reason `too_few_claim_lines` (a row number and the claim-count field, nothing else).
-- **2 new functions** (`screening_practice_key`, `screening_replaced`), so there are 31 screening functions, and 271 functions in the schema (was 269).
-- `submit_screening` takes no fingerprint and takes the three left-out totals; `reject_screening_upload` takes no fingerprint; `screening_result_summary` also returns the left-out totals; `screening_kept_until_expiry` lets a replaced screening go early.
+You last saw commit `3c1b289`, document SHA-256 `afba214a...`, from October 20. Everything new is inside the same migration:
+- **Four new tables:** `screening_outcome`, `screening_lead`, `screening_lead_product` and `marketing_campaign` (described above).
+- **New columns:**
+  - `screening_prospect` gains eight: how they heard of us, three campaign codes, the kind of paid click, a referring firm, and the consent and terms fingerprints.
+  - `screening_run` gains when the result was first opened.
+  - `prospect_request` gains eight: the same attribution columns, whether it came from a screening, and why it was declined (from a closed list, required on a decline).
+- **24 new functions (55 in all, up from 31):**
+  - The outcome bands and the marketing channel.
+  - Freezing, keeping and withdrawing a summary.
+  - Reminders.
+  - The release read per run (audit #53).
+  - The result page read one page of 50 groups at a time, so the largest result opens within the web task's memory.
+  - "Result opened".
+  - The campaign list and its triggers.
+  - A second form of the audit-request function that takes the attribution.
+- **One existing function replaced:** `prospect_request_fixed()`, the guard that stops an audit request from being changed. It now also protects the decline reason and the new columns.
+- **Faster result reads:** the standing check runs inline, and a page read of the largest shape fell from about 0.47 s to about 0.2 s.
+- **The document's own cross-check is corrected.** It had listed four false column differences on the outcome table's share columns, because the checker did not know the small-integer column type. The columns always matched. The checker now reads one shared type map, a test fails if the schema ever uses a type it does not know, and the document now reports 0 differences, as the base does.
+- **PR 5 merged underneath this branch.**
+  - The two migrations change no common object.
+  - A full comparison of the database before and after PR 6's migration found every object PR 5 added unchanged: functions, triggers, rules, policies, permissions and the worker's own login.
+  - Where both migrations meet, PR 5's additions are all present: the audit trail's four triggers, the rule-withdrawal lock, its user links, its permissions for the website, and the worker's `tp_job` login.
 
 ## What it does not change
 
 - The pricing engine. No file under `packages/pricing/src` changed.
-- The golden test lines (`fixtures/golden`, including `QUESTIONS.md`) and the content releases (`content/releases`).
-- The ledger, and what counts as recovered.
-- The catalog test and its rules, the row-level security rules, and the cross-tenant test.
-- The PHI registry: still 44 tables. None of the new tables is in it, because none holds patient data.
+- The golden test lines (`fixtures/golden`), the content releases (`content/releases`), and the ledger or what counts as recovered.
+- Any earlier migration, `approvers.json`, or the approval line, which the generator left blank.
+- The catalog test, the row-level security rules and the cross-tenant test. All nine new tables force row-level security, and only the owner may read or write them.
+- The PHI registry. It still has 44 tables. None of the new tables holds patient data, so none is in it.
 
-## No upload bytes, no PHI
+## What you approve in the document
 
-- The file is read in the prospect's browser and never leaves it. The server receives only the rows of totals of at least 11 claim lines, and checks them again. It stores a fingerprint of the rows it accepted, the row count, the three left-out totals and coded reasons, never a byte of the file.
-- A file with a name, date of birth, member ID, date of service or claim number column is refused in the browser, naming the column, and nothing is sent. If the server catches one itself, it records only the count and a coded reason such as "column 6, date of service".
-- A test (SEC-17) reads the database's own description of these tables: no patient-shaped columns, no date columns, no practice link, and no access for any other role.
-- The link's secret is 32 random letters (about 150 bits). Only its scrambled form is stored, and it is never logged.
-- The emails, pages and results never say "owed", "underpaid" or "recovered", and they show the logo without the tagline.
-
-## Changes in the domain-model document
-
-- **Item to approve (C5), "decided and built".** The screening tables are built like the audit request (row-level security forced, owner-only policy, no practice link, no PHI-registry entry, written only through the functions above). C5's explanation now also says what an upload keeps (the accepted rows' fingerprint, the three left-out totals, never the file), that no row of fewer than 11 claim lines is stored, and that a practice keeps one screening at a time. Approving the document also approves the fifth table, the place-of-service split, which CO-12 does not list.
-- **Five information-only rows (D22 to D26).** The five new tables are not in the original data dictionary.
-- The number of items to approve stays at 23; 84 tables, 1 view, 44 in the PHI registry. Nothing about any existing table changed.
+- Items C1 and C5. C5 covers the screening tables, built like the audit request: row-level security forced, an owner-only policy, no practice link, no PHI-registry entry, and written only through the functions. Approving C5 also approves the fifth table, the place-of-service split, which CO-12 does not list.
+- Nine information-only rows: the nine new tables are not in the original data dictionary.
+- The totals: 23 items to approve, 88 tables, 1 view, 44 in the PHI registry.
 
 ## Fingerprint
 
-The document's SHA-256, as the repository's own check computes it, is:
+The document's SHA-256, the hash the approval line must carry, is:
 
-`afba214a550ea030936ab5ccba51d4173a8cd0ea843c17ca761e85bb4fa3c2c3`
+`a17f33aa3b3ace6efcf11171789b6cfbdb0193f0dc76be5b28cdd47840deebfe`
 
-(It was `07b0a49e...` at the version you last saw, and `7359829a...` after the floor alone.) The migration's own SHA-256 is `fd88506d7276cdb12c9320d4bacca60439a2cafef8f33392ee0beb8d8b1385ce`. **This will change again when the document is generated again after PR 5 merges**, and that later version is the one you will be asked to sign.
+- It was `afba214a...` at the version you last saw. An earlier draft of this round showed `bf20bbc3...`; it differed only in the false cross-check line above.
+- The document you approved for PR 5, now on `claude/build-platform`, is `6f72ea56...`.
+- The migration's own SHA-256 is `8bc938ac54150a7d1d93255acb4610851b3d2bd85f37d6b7a521a6ed950b0a43`.
+
+The repository's check confirms that the document matches the schema and refuses only because the approval line is blank.
 
 ## Is it safe to run with the current version still live?
 
-Yes. The migration only adds things. It does not alter or remove any existing table, function, policy, check or permission. It does not touch rule, ledger or pricing tables. The only links to existing tables are references to `prospect_request` and `user`, and neither table changes.
+Yes. The migration adds tables and functions. The only existing table it changes is `prospect_request`: eight new columns, a decline-reason permission for the website, the replaced guard, and the campaign trigger. Declines recorded before this change get the reason `not_recorded`. The current website keeps working: its review, decline and conversion still pass. The migration does not touch rule, ledger or pricing tables.
 
-The current website and worker ignore the new tables. Rollout order: run the migration, then the new worker, then the new website.
+Rollout order: run the migration, then the new worker, then the new website.
 
-## Speed
+## Checks at this commit
 
-The 50,000-row screening stays well under its 60-second limit: the browser read it in 0.3 seconds, it was stored in 2.5 seconds, and the link was emailed 5.5 seconds after the upload (test run at this commit on October 20).
+- **The cross-check fix (`e297346`):** the new type-map test failed without the fix, naming the four columns, and passed with it; typecheck, lint, the domain-model tests and the schema test passed, and the regenerated document matches the schema.
+- **Fresh clone at `26de663`** (the same schema and code apart from the cross-check fix):
+  - All 42 migrations applied from zero on PostgreSQL 18.
+  - The document check passed.
+  - The catalog and cross-tenant tests passed, 1,126 of 1,126, in 17 seconds.
+  - The largest-result page test passed 3 of 3 in 39 seconds, against a 120-second limit. It read all 20,507 groups, and every page stayed under the 512 MiB memory limit.
+- **The fix round's full local suite at this code:**
+  - Typecheck, lint and the copy and log checks passed.
+  - 4,097 unit tests passed, and the 36 golden lines passed.
+  - 8,773 database tests passed. The only failure is the test that waits for your signature.
+  - The screening and reconciliation browser journeys passed.
+- **GitHub:**
+  - On this commit, the images, licenses and approval-of-record checks passed.
+  - The main check and the capacity test were still running when this was written.
+  - The capacity runs on the Docker images at `8f6e4d5` and `7bcb5fc` passed, with time marked "open until PR 6b". In the first of them, the worst-shape upload took 69.7 seconds from a cold start on GitHub's runner. That runner is not Fargate, so the 60-second promise is judged after PR 6b.
 
 ## What stays open
 
-- Counsel's answer on the floor: the number 11, claim lines or patients, whether a left-out total under 11 claim lines may be shown, and how wide "the same practice" is.
-- PR 6b (ZIP+4 localities) before launch; until it lands this pull request refuses a ZIP that needs a ZIP+4.
-- PR 6d (reading denials in the paid audit's triage).
-- The specialist's answer to Q21. If a payer's allowed amount turns out to be reported after sequestration, the comparison comes back to you.
-- Real prospects can use screening only after release 1 is published. All tests used synthetic data only.
+- **Counsel:**
+  - The 11-claim-line floor: the number, claim lines or patients, whether a left-out total under 11 may be shown, and how wide "the same practice" is.
+  - The wording of what is kept, which still says "the campaign codes ... of the link you came from" and could now say a campaign code is kept only when it is one we list.
+  - The cookie disclosure.
+  - The screening terms. Until counsel's review is done, a production server keeps the screening closed and neither sets nor reads the cookie.
+- **PR 6b (before launch):**
+  - ZIP+4 localities. Until then, a ZIP that spans two Medicare localities is refused with a clear message.
+  - The screening's own task and its size and cost.
+  - Turning on the 60-second time check.
+- **Later pull requests:**
+  - PR 6d: denials in the paid audit's triage.
+  - PR 6e: consent capture, the withdrawal page and reminders.
+  - PR 7: the campaign screen, the reports with their cohort of 11, and the lead list.
+  - A later migration replaces the `not_recorded` fill-in for declines with a refusal, once the old website no longer runs.
+- **The specialist:** the answer to Q21 on sequestration.
+
+Real prospects can use the screening only after release 1 is published. All tests used synthetic data only.
