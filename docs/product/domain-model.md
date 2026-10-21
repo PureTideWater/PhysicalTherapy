@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `592244e0f4555d337f31069360feb3afe889bf7f` on branch `co-001/pr-06-free-screening` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `e297346a80e83be2b26b75223e6fd34471c1c04c` on branch `co-001/pr-06-free-screening` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 42; head `20261104090000_free_screening.sql`
 - PostgreSQL 18; schema `public`: 88 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 32 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -6703,11 +6703,7 @@ Run against the same migrated database by `packages/db/src/domain-model/cross-ch
 Drizzle tables: 87; migrated tables (excluding schema_migrations): 87
 In the database, not in Drizzle: none
 In Drizzle, not in the database: none
-  screening_outcome.priced_share_pct: Drizzle PgSmallInt, database smallint
-  screening_outcome.contract_share_pct: Drizzle PgSmallInt, database smallint
-  screening_outcome.could_not_price_share_pct: Drizzle PgSmallInt, database smallint
-  screening_outcome.not_screened_share_pct: Drizzle PgSmallInt, database smallint
-Column differences (name, type, nullability): 4
+Column differences (name, type, nullability): 0
 catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 ```
 
@@ -6715,4 +6711,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261104090000_free_screening.sql` (42 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `bf20bbc3705a54028a9411c8a04ad2fd5ac07c3eeb2fb4ea88dbc713060c3c19`
+Approved by: ________  Date: ________  Document SHA-256: `a17f33aa3b3ace6efcf11171789b6cfbdb0193f0dc76be5b28cdd47840deebfe`
