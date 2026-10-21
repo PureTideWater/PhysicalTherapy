@@ -1,9 +1,10 @@
-import type { ContractCitation, PacketContent, PacketCitation } from '@tp/packets';
+import { type ContractCitation, INTEREST_EXCLUSION_TEXT, type PacketContent, type PacketCitation } from '@tp/packets';
 
 /**
  * The words the payer's copy of a packet prints for its codes, one module for both files the practice sends (the
  * PDF, ./html.ts, and the CSV schedule, ./csv.ts; audit item #37 part 1, D3 and D14; docs/adr/0061): a trace's
- * method, step and rounding codes are never printed as codes, and [2] names what the rule releases supplied.
+ * method, step and rounding codes and a prompt-pay rule's exclusions are never printed as codes, and [2] names what the
+ * rule releases supplied.
  */
 
 /** The calculation's methods, steps and rounding rules in words. */
@@ -30,6 +31,8 @@ export const ROUNDING_TEXT: Readonly<Record<string, string>> = {
   HALF_EVEN_CENT: 'half even to the cent',
   TRUNCATE: 'truncated to the cent',
 };
+/** A prompt-pay rule's exclusions, as the review page says them too (@tp/packets INTEREST_EXCLUSION_TEXT). */
+export const EXCLUSION_TEXT: Readonly<Record<string, string>> = INTEREST_EXCLUSION_TEXT;
 /** A release dispute-window record's program, as it reads before "dispute window". */
 export const PROGRAM_TEXT: Readonly<Record<string, string>> = { medicare: 'Medicare', commercial_default: 'commercial default' };
 

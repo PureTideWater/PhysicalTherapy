@@ -24,6 +24,19 @@ import type { EvidenceGap, EvidenceGapCode, InterestLine, InterestSection } from
  * the plan is one is the person's to confirm before approval.
  */
 
+/**
+ * A prompt-pay rule's exclusions as the payer's copy and the review page say them (audit item #37 part 1: a release's
+ * codes are never printed as codes): the record's own codes in words. A code not listed reads in lower case with its
+ * underscores as spaces, so no code is ever printed as one.
+ */
+export const INTEREST_EXCLUSION_TEXT: Readonly<Record<string, string>> = {
+  self_funded_erisa_plans: 'self-funded ERISA plans',
+  self_funded_plans: 'self-funded plans',
+};
+
+/** One exclusion in words (INTEREST_EXCLUSION_TEXT). */
+export const interestExclusionText = (code: string): string => INTEREST_EXCLUSION_TEXT[code] ?? code.toLowerCase().replace(/_/g, ' ');
+
 export interface PromptPayRecord {
   readonly state: string;
   readonly release_no: number;

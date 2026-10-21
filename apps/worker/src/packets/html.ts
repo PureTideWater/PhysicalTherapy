@@ -1,10 +1,10 @@
 import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
-import { decimal, formatUsd, parseCents } from '@tp/money';
+import { formatUnroundedUsd, formatUsd, parseCents } from '@tp/money';
 import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText } from '@tp/packets';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
-import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, releaseText, wordsOf } from './words';
+import { EXCLUSION_TEXT, METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, releaseText, wordsOf } from './words';
 
 /**
  * The payer's copy of a packet (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061): one
@@ -48,10 +48,8 @@ export interface PayerCopy {
 
 const usd = (value: string) => formatUsd(parseCents(value));
 
-/** Cents as decimal text (an unrounded amount keeps its fraction of a cent) in dollars. */
-function exactUsd(value: string): string {
-  return /^-?\d+$/.test(value) ? usd(value) : `$${decimal(value).dividedBy(decimal(100n)).toString()}`;
-}
+/** Cents as decimal text (an unrounded amount keeps its fraction of a cent) in dollars, grouped and signed as usd() is. */
+const exactUsd = (value: string): string => formatUnroundedUsd(value);
 
 /** A table; `figures` names its columns (1-based) of codes and of amounts or counts, set in the mono face. */
 function table(caption: string, headers: readonly string[], rows: readonly (readonly string[])[], figures: FigureColumns = {}): string {
@@ -63,18 +61,21 @@ function table(caption: string, headers: readonly string[], rows: readonly (read
 /**
  * The dispute window of a tp-packet/2 version: the date its window ends, never a claim that the dispute is timely
  * (Q3 (a)), the evidence behind it, and each line's window and calculation. An exportable version's deadline is
- * verified, so its last day is stated; a version without one is refused here rather than printed with no date.
+ * verified, so its last day is stated; a version without one is refused here rather than printed with no date. Above
+ * the first level the window is the level's own (the payer's denial reopened the case for it), so the copy states
+ * that window alone: the lines' first-level windows and their clauses are not this level's deadline, and are neither
+ * printed nor listed per line (nor in the CSV).
  */
 function disputeWindowSection(content: PacketContentV2): string {
   const { deadline } = content;
   if (deadline.ends_on === null) {
     throw new TypeError('the payer’s copy states the dispute window’s last day; a version without one is not printed');
   }
-  const window =
-    deadline.basis === 'next_level_window'
-      ? `The window for dispute level ${String(content.dispute_level)} ends on ${deadline.ends_on}.`
-      : `The earliest dispute window among the listed lines ends on ${deadline.ends_on}.`;
-  const sources = deadline.sources.map((source) => {
+  const nextLevel = deadline.basis === 'next_level_window';
+  const window = nextLevel
+    ? `The window for dispute level ${String(content.dispute_level)} ends on ${deadline.ends_on}.`
+    : `The earliest dispute window among the listed lines ends on ${deadline.ends_on}.`;
+  const sources = (nextLevel ? [] : deadline.sources).map((source) => {
     if (source.kind === 'contract_window') {
       const length = source.days === null ? '' : `: ${counted(source.days, 'day')}`;
       return `<li>The contract’s dispute window${escapeHtml(length)} (page ${String(source.page)}):<blockquote>${escapeHtml(source.quote)}</blockquote></li>`;
@@ -86,20 +87,16 @@ function disputeWindowSection(content: PacketContentV2): string {
     const { calculation } = line;
     const steps = calculation.steps.map((step) => `${wordsOf(STEP_TEXT, step.step)} ${exactUsd(step.amount_cents)}`).join('; ');
     const rounding = calculation.rounding === null ? '' : `${wordsOf(ROUNDING_TEXT, calculation.rounding.rule)}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
-    return [
-      String(line.row),
-      line.deadline.ends_on ?? '',
-      wordsOf(METHOD_TEXT, calculation.method),
-      steps,
-      rounding,
-      calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents),
-    ];
+    const computed = [wordsOf(METHOD_TEXT, calculation.method), steps, rounding, calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents)];
+    return nextLevel ? [String(line.row), ...computed] : [String(line.row), line.deadline.ends_on ?? '', ...computed];
   });
   return [
     `<h2>Dispute window</h2>`,
     `<p><strong>${escapeHtml(window)}</strong></p>`,
     sources.length === 0 ? '' : `<ul>${sources.join('')}</ul>`,
-    table('Each line’s dispute window and how its expected amount is computed', ['Row', 'Window ends', 'Method', 'Steps', 'Rounding', 'Patient share'], rows, { code: [1, 3], date: [2], amount: [4, 5, 6] }),
+    nextLevel
+      ? table('How each line’s expected amount is computed', ['Row', 'Method', 'Steps', 'Rounding', 'Patient share'], rows, { code: [1, 2], amount: [3, 4, 5] })
+      : table('Each line’s dispute window and how its expected amount is computed', ['Row', 'Window ends', 'Method', 'Steps', 'Rounding', 'Patient share'], rows, { code: [1, 3], date: [2], amount: [4, 5, 6] }),
   ].join('');
 }
 
@@ -117,7 +114,7 @@ function interestSection(content: PacketContent): string {
     return `${heading}<p>Prompt-pay interest is not stated in this request.</p>`;
   }
   const rule = `<p>State ${escapeHtml(interest.state)}${interest.statute === null ? '' : `, ${escapeHtml(interest.statute)}`}: payment due ${String(interest.days_to_pay)} ${escapeHtml(interest.day_basis ?? '')} days after the payer received the claim${interest.annual_rate_percent === null ? '' : `, interest at ${escapeHtml(interest.annual_rate_percent)}% a year`} (release ${String(interest.release_no)}).</p>`;
-  const exclusions = interest.exclusions.length === 0 ? '' : `<p>The rule does not apply to: ${escapeHtml(interest.exclusions.join(', '))}.</p>`;
+  const exclusions = interest.exclusions.length === 0 ? '' : `<p>The rule does not apply to: ${escapeHtml(interest.exclusions.map((code) => wordsOf(EXCLUSION_TEXT, code)).join(', '))}.</p>`;
   const computed = interest.lines.filter((line) => line.interest_cents !== null);
   if (computed.length === 0 || interest.total_cents === null) {
     return `${heading}${rule}${exclusions}`;

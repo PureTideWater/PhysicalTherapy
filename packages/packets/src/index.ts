@@ -85,7 +85,7 @@ export {
   isPacketV2,
 } from './format';
 export { canonicalJson, versionSha256 } from './hash';
-export { type InterestLineInput, type InterestResult, type PromptPayRecord, promptPayInterest } from './interest';
+export { INTEREST_EXCLUSION_TEXT, type InterestLineInput, type InterestResult, type PromptPayRecord, interestExclusionText, promptPayInterest } from './interest';
 export {
   type ExportLine,
   type ExportedPacket,

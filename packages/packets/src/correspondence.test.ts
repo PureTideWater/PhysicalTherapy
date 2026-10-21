@@ -73,6 +73,13 @@ describe('correspondenceContactSetting', () => {
     expect(refusedFor({ ...base, address: { line1: '100 SYNTHETIC WAY', city: 'RALEIGH', state: 'NC', zip: '2760' } })).toBe('address_zip');
     expect(refusedFor({ ...base, address: { line1: 'L'.repeat(101), city: 'RALEIGH', state: 'NC', zip: '27601' } })).toBe('address_line1');
     expect(refusedFor({ ...base, fax: '9195550101' } as CorrespondenceContactInput)).toBe('contact');
+    // The contact's email is the one email the payer's copy prints (Q1 (a)): the name and the address lines hold no @.
+    expect(refusedFor({ ...base, name: 'J. DOE (jdoe@practice.test)' })).toBe('name');
+    const mailing = { line1: '100 SYNTHETIC WAY', city: 'RALEIGH', state: 'NC', zip: '27601' };
+    expect(refusedFor({ ...base, address: { ...mailing, line1: 'billing@practice.test' } })).toBe('address_line1');
+    expect(refusedFor({ ...base, address: { ...mailing, line2: 'ATTN billing@practice.test' } })).toBe('address_line2');
+    expect(refusedFor({ ...base, address: { ...mailing, city: 'RALEIGH@X' } })).toBe('address_city');
+    expect(CORRESPONDENCE_FIELD_RULES.name).toContain('no @');
     for (const field of CORRESPONDENCE_FIELDS) {
       expect(new CorrespondenceContactError(field).message).toBe(CORRESPONDENCE_FIELD_RULES[field]);
     }

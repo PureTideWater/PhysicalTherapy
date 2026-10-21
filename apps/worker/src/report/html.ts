@@ -60,6 +60,19 @@ export function unattestedSubmissionsText(submissions: number): string {
   return `${count(submissions, 'submission')} ${words}`;
 }
 
+/**
+ * What the report says under its By case table of the submissions sent without sign-off across its cases (none said
+ * when there are none); the Reports screen says the same under its own.
+ */
+export function unattestedSubmissionsNote(submissions: number): string {
+  return `${unattestedSubmissionsText(submissions)}. Each sent an export whose pricing went stale after it was made, so no reimbursement reviewer attested it; the payer's answer to it counts here as any other's.`;
+}
+
+/** The submissions sent without sign-off across a report's cases. */
+export function unattestedSubmissionsOf(content: { readonly cases: readonly { readonly unattested_submissions?: number }[] }): number {
+  return content.cases.reduce((total, item) => total + (item.unattested_submissions ?? 0), 0);
+}
+
 /** A case's state in the report's words, with its submissions sent without sign-off when it has any. */
 export function caseStateText(item: { readonly state: string; readonly unattested_submissions?: number }): string {
   const state = CASE_STATE_WORDS[item.state] ?? item.state;
@@ -185,7 +198,7 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
 
   // Payer approved and recovered by case: the headline's two figures from the same cases' lines, the ledger's entries for them.
   const ledgerRows = content.cases.map((item) => [item.payer, item.plan, caseStateText(item), usd(item.payer_approved_cents ?? '0'), usd(item.recovered_cents ?? '0')]);
-  const unattested = content.cases.reduce((total, item) => total + (item.unattested_submissions ?? 0), 0);
+  const unattested = unattestedSubmissionsOf(content);
   const ledgerNone = approvedNone && recoveredNone;
   sections.push(
     `<section aria-label="${escapeHtml(`${labels.payer_approved} and ${recovered.toLowerCase()}`)}"><h2>${escapeWithFigures(`${labels.payer_approved} and ${recovered.toLowerCase()}`)}</h2><p>${escapeWithFigures(
@@ -195,9 +208,7 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
     )}</p>${table('By case', ['Payer', 'Plan', 'State', `${labels.payer_approved} (this run)`, `${recovered} (this run)`], ledgerRows, 'No pattern reaches the case materiality yet.', { id: [2], amount: [4, 5] })}${
       unattested === 0
         ? ''
-        : `<p data-unattested-submissions="${String(unattested)}">${escapeWithFigures(
-            `${unattestedSubmissionsText(unattested)}. Each sent an export whose pricing went stale after it was made, so no reimbursement reviewer attested it; the payer's answer to it counts here as any other's.`,
-          )}</p>`
+        : `<p data-unattested-submissions="${String(unattested)}">${escapeWithFigures(unattestedSubmissionsNote(unattested))}</p>`
     }</section>`,
   );
 

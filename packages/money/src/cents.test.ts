@@ -9,6 +9,7 @@ import {
   centsToString,
   compareCents,
   formatCents,
+  formatUnroundedUsd,
   formatUsd,
   maxCents,
   minCents,
@@ -146,6 +147,31 @@ describe('formatUsd', () => {
 
   it('keeps every digit of amounts beyond float precision', () => {
     expect(formatUsd(cents(900719925474099399n))).toBe('$9,007,199,254,740,993.99');
+  });
+});
+
+describe('formatUnroundedUsd', () => {
+  it('formats an unrounded amount in formatUsd’s grouping and sign, its fraction of a cent kept after the cents', () => {
+    expect(formatUnroundedUsd('12345678.5')).toBe('$123,456.785');
+    expect(formatUnroundedUsd('-150.5')).toBe('-$1.505');
+    expect(formatUnroundedUsd('-0.25')).toBe('-$0.0025');
+    expect(formatUnroundedUsd('10000.50')).toBe('$100.005');
+    expect(formatUnroundedUsd('10000.000')).toBe('$100.00');
+    expect(formatUnroundedUsd('-0')).toBe('$0.00');
+  });
+
+  it('reads a whole number of cents exactly as formatUsd does', () => {
+    fc.assert(
+      fc.property(fc.bigInt({ min: -(10n ** 15n), max: 10n ** 15n }), (value) => {
+        expect(formatUnroundedUsd(value.toString())).toBe(formatUsd(cents(value)));
+      }),
+    );
+  });
+
+  it('refuses anything but cents as decimal text', () => {
+    for (const text of ['', '1.', '.5', '1e3', '$1.00', '1,000', ' 1']) {
+      expect(() => formatUnroundedUsd(text)).toThrow(MoneyError);
+    }
   });
 });
 

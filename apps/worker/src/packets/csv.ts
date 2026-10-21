@@ -10,7 +10,8 @@ import { METHOD_TEXT, wordsOf } from './words';
  * files, and the reviewer attests both. One row per schedule line with the identifiers inserted at export (the claim
  * control number, the patient and the member ID; the patient control number is not printed, Q2 (a)), its amounts in
  * dollars, what the payer paid and when, the line's interest only where code computed it (its own column, never added
- * to expected; empty otherwise, Q4 (a)), the line's window's last day, and its calculation as its trace recorded it:
+ * to expected; empty otherwise, Q4 (a)), the line's window's last day (at the first level only), and its calculation
+ * as its trace recorded it:
  * the method in the PDF's words, the unrounded and rounded amounts and the patient share (reported, never
  * subtracted). No trace reference, deadline status or source, or SHA-256: those stay on the reviewer's review page.
  * Line-level PHI: stored sealed with the practice's key, downloaded only by roles that export PHI. Fields go through
@@ -46,6 +47,19 @@ const dollars = (value: string | null): CsvCell => ({ number: value === null ? '
 const exactDollars = (value: string | null | undefined): CsvCell =>
   value === null || value === undefined ? { number: '' } : /^-?\d+$/.test(value) ? dollars(value) : { number: decimal(value).dividedBy(decimal(100n)).toString() };
 
+/**
+ * A line's window's last day as the CSV states it: a tp-packet/2 line's own deadline (never the engine's window behind
+ * it, which may be one not verified), and nothing above the first level, where the dispute's window is the level's own
+ * (the PDF states it) and the line's first-level window is not this level's deadline. A tp-packet/1 version states no
+ * deadline, so its line's window is the engine's, as it always printed.
+ */
+function windowEndsOn(exported: ExportedPacket, line: ExportedPacket['lines'][number]): string {
+  if (exported.content.format !== 'tp-packet/2') {
+    return line.window_ends_on ?? '';
+  }
+  return exported.content.deadline.basis === 'next_level_window' ? '' : (line.deadline?.ends_on ?? '');
+}
+
 export function packetCsv(exported: ExportedPacket): string {
   const interest = new Map((exported.content.interest?.lines ?? []).map((line) => [line.row, line.interest_cents]));
   return csvDocument(
@@ -66,7 +80,7 @@ export function packetCsv(exported: ExportedPacket): string {
       text(line.paid_on),
       text(line.received_on ?? ''),
       dollars(interest.get(line.row) ?? null),
-      text(line.deadline?.ends_on ?? line.window_ends_on ?? ''),
+      text(windowEndsOn(exported, line)),
       text(line.calculation === undefined ? '' : wordsOf(METHOD_TEXT, line.calculation.method)),
       exactDollars(line.calculation?.rounding?.unrounded_cents),
       exactDollars(line.calculation?.rounding?.rounded_cents),

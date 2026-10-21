@@ -5,6 +5,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 
 import type { PdfRenderer } from '../../report/pdf';
+import { PACKET_CSV_COLUMNS } from '../csv';
 import { narrativeParagraphs } from '../html';
 
 /**
@@ -19,7 +20,9 @@ import { narrativeParagraphs } from '../html';
  *   and when, a verification level, a cause, an evidence gap's code);
  * - every secret given (a login's email, a row's UUID, a stored SHA-256), matched without regard to case; the patient
  *   control numbers are always among them, since the payer's copy does not print them (Q2 (a));
- * - outside the narrative and the quoted clauses, the internal terms (PAYER_COPY_INTERNAL_TERMS).
+ * - outside the narrative and the quoted clauses, the internal terms (PAYER_COPY_INTERNAL_TERMS), and anything shaped
+ *   like a code (CODE_SHAPES: words joined by underscores, in lower or in upper case, such as a pattern's behavior, an
+ *   observed basis, a deadline cause, a deadline basis or a release's exclusion), the CSV's own header row set aside.
  *
  * A printed PDF wraps text where its lines end, inside an identifier or a hash too, so every value is matched with any
  * whitespace allowed between its characters. Each leak is named by its kind and what was found.
@@ -30,6 +33,10 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const HEX_RUN = /[0-9a-f]{16,}/gi;
 const PRINTED_IDENTIFIERS: readonly IdentifierKind[] = ['claim_control_number', 'patient_name', 'member_id'];
 const INTERNAL_KEYS: ReadonlySet<string> = new Set(['hash', 'trace_ref', 'verified_by', 'verified_at', 'level', 'cause', 'causes', 'reasons']);
+/** A code, never printed as one (words.ts): lower-case words joined by underscores, or upper-case ones. */
+export const CODE_SHAPES: readonly RegExp[] = [/\b[a-z0-9]+(?:_[a-z0-9]+)+\b/, /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/];
+/** The CSV's header row: its column names are the schedule's own, the one place a code's shape is the payer's. */
+const CSV_HEADER = PACKET_CSV_COLUMNS.join(',');
 
 /** Every string the content holds under an internal key, and every evidence gap's code. */
 export function internalValues(content: PacketContent): string[] {
@@ -130,6 +137,12 @@ export function payerCopyLeaks(text: string, scan: PayerCopyScan): string[] {
     const match = term.exec(words);
     if (match !== null) {
       leaks.push(`term:${match[0]}`);
+    }
+  }
+  const unheaded = words.replaceAll(CSV_HEADER, ' ');
+  for (const shape of CODE_SHAPES) {
+    for (const match of unheaded.matchAll(new RegExp(shape.source, 'g'))) {
+      leaks.push(`code:${match[0]}`);
     }
   }
   return leaks;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  type CorrespondenceContact,
   type PacketContent,
   type PacketContentV1,
   type PacketContentV2,
@@ -11,7 +12,8 @@ import {
   fillPlaceholders,
   insertIdentifiers,
 } from '@tp/packets';
-import { REGULATION, assemblyInput, contractCitation, line, promptPayRecord } from '@tp/packets/testing';
+import { IDS, REGULATION, assemblyInput, calculation, contractCitation, line, promptPayRecord } from '@tp/packets/testing';
+import { cents } from '@tp/money';
 
 import { ChromiumPdfRenderer, chromiumInstalled } from '../report/pdf';
 import { amountsNotInMono } from '../report/test-support/figures';
@@ -35,17 +37,52 @@ const scanOf = (packet: PacketContent, text: string, rows: typeof identifiers) =
 /** The phrases the interest and timeliness rulings keep off the payer's copy (Q3 (a), Q4 (a)). */
 const FORBIDDEN = [/cannot be computed/i, /can be computed/i, /in all/i, /not claimed/i, /filed within/i, /No dispute window/i];
 
-const printedOf = (packet: PacketContent, text = draftNarrative(packet), rows = identifiers) => packetHtml(insertIdentifiers(packet, text, rows), payerCopy);
+const printedOf = (packet: PacketContent, text = draftNarrative(packet), rows = identifiers, copy = payerCopy) => packetHtml(insertIdentifiers(packet, text, rows), copy);
 /** Identifiers for every row of a SYNTHETIC version of up to three lines. */
 const rowsOf = (packet: PacketContent) => new Map([...maximalIdentifiers].filter(([row]) => row <= packet.lines.length));
+
+const received = [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
+/** A version at dispute level 2, its window the level's own (a release record at L2, as Q34 would allow). */
+const level2 = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));
+/** Every route through the renderer: a contract and a regulation, interest computed, partly, not, with no rule on file, level 2, a practice with an NPI and tax ID. */
+const VERSIONS: Readonly<Record<string, PacketContent>> = {
+  'contract, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
+  'contract, partly computed': content,
+  'contract, not computed': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } })),
+  'contract, no rule on file': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } })),
+  'contract, the real exclusion code': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ exclusions: ['self_funded_erisa_plans', 'self_funded_plans'] }) } })),
+  'regulation, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', citation: REGULATION, contractDocuments: [], lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
+  'regulation, no interest': assemblePacket(assemblyInput({ citation: REGULATION, contractDocuments: [] })),
+  'level 2': level2,
+  'a practice with an NPI and tax ID': assemblePacket(assemblyInput({ practice: { practice_id: IDS.practice, name: 'SYNTHETIC THERAPY GROUP 01', npi: '1234567893', tax_id_last4: '6789' } })),
+  maximal: maximalContent,
+};
+/** The contacts a practice may set: the full SYNTHETIC one, a name and phone only, an address without an email, an email without an address. */
+const { email: _email, address: _address, phone_extension: _extension, ...bare } = SYNTHETIC_CORRESPONDENCE_CONTACT;
+const CONTACTS: readonly CorrespondenceContact[] = [
+  SYNTHETIC_CORRESPONDENCE_CONTACT,
+  bare,
+  { ...bare, ...(SYNTHETIC_CORRESPONDENCE_CONTACT.address === undefined ? {} : { address: SYNTHETIC_CORRESPONDENCE_CONTACT.address }) },
+  { ...bare, phone_extension: '7', ...(SYNTHETIC_CORRESPONDENCE_CONTACT.email === undefined ? {} : { email: SYNTHETIC_CORRESPONDENCE_CONTACT.email }) },
+];
 
 describe('packetHtml: the payer’s copy', () => {
   const html = packetHtml(exported, payerCopy);
   const maximal = packetHtml(maximalExported, payerCopy);
 
-  it('T1: holds no login, record ID, SHA-256, verification, audit flag, gap, specialist line, version number, footer or internal term, from a version with every internal field filled', () => {
+  it('T1: holds no login, record ID, SHA-256, verification, audit flag, gap, specialist line, version number, footer, internal term or code, from a version with every internal field filled', () => {
     expect(payerCopyLeaks(htmlText(maximal), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
     expect(payerCopyLeaks(htmlText(html), scanOf(content, narrative, identifiers))).toEqual([]);
+    // Every route through the renderer, with each contact a practice may set, in both files.
+    for (const [name, packet] of Object.entries(VERSIONS)) {
+      const text = name === 'maximal' ? maximalNarrative : draftNarrative(packet);
+      const rows = name === 'maximal' ? maximalIdentifiers : rowsOf(packet);
+      for (const contact of CONTACTS) {
+        const scan = { ...scanOf(packet, text, rows), allowedEmail: contact.email ?? null };
+        expect(payerCopyLeaks(htmlText(printedOf(packet, text, rows, { ...payerCopy, contact })), scan), `${name}, HTML`).toEqual([]);
+      }
+      expect(payerCopyLeaks(packetCsv(insertIdentifiers(packet, text, rows)), scanOf(packet, text, rows)), `${name}, CSV`).toEqual([]);
+    }
     for (const printed of [html, maximal]) {
       expect(printed).not.toMatch(/<footer|data-deadline/);
       expect(htmlText(printed)).not.toMatch(/Approval record|Audit flag|Evidence gaps|Version \d+, SHA|trace|SHA-256|specialist|verif/i);
@@ -57,6 +94,12 @@ describe('packetHtml: the payer’s copy', () => {
     expect(payerCopyLeaks(planted, scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual(
       expect.arrayContaining([`email:${INTERNAL_RECORD.approver}`, expect.stringMatching(/^uuid:/), expect.stringMatching(/^hex:/), 'secret:SYNPCN0002']),
     );
+    // And a code printed as a code: a pattern's behavior, an observed basis, a release's default, a deadline cause or basis, an exclusion.
+    const codes = ['BELOW_CONTRACT_RATE', 'paid_plus_pr', 'COMMERCIAL_DEFAULT', 'NEXT_LEVEL_UNCITED', 'line_windows', 'next_level_window', 'self_funded_erisa_plans'];
+    const found = payerCopyLeaks(`${htmlText(maximal)} ${codes.join(' ')}`, scanOf(maximalContent, maximalNarrative, maximalIdentifiers));
+    expect([...found].sort()).toEqual(codes.map((code) => `code:${code}`).sort());
+    // The CSV's own header row is the payer's schedule, not a code.
+    expect(payerCopyLeaks(packetCsv(maximalExported), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
   });
 
   it('T2: closes with the approval line, its reference, and the correspondence contact; the cover names the reference', () => {
@@ -70,17 +113,7 @@ describe('packetHtml: the payer’s copy', () => {
   });
 
   it('T3: prints every marker a narrative may cite in its section: a contract and a regulation, interest computed, partly computed, not computed, and no rule on file', () => {
-    const received = [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
-    const versions: Record<string, PacketContent> = {
-      'contract, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
-      'contract, partly computed': content,
-      'contract, not computed': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } })),
-      'contract, no rule on file': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } })),
-      'regulation, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', citation: REGULATION, contractDocuments: [], lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
-      'regulation, no interest': assemblePacket(assemblyInput({ citation: REGULATION, contractDocuments: [] })),
-      maximal: maximalContent,
-    };
-    for (const [name, packet] of Object.entries(versions)) {
+    for (const [name, packet] of Object.entries(VERSIONS)) {
       const printed = name === 'maximal' ? maximal : printedOf(packet, draftNarrative(packet), rowsOf(packet));
       const evidence = printed.slice(printed.indexOf('<h2>Evidence</h2>'), printed.indexOf('<h2>Requested action</h2>'));
       for (const source of packet.sources) {
@@ -183,9 +216,19 @@ describe('packetHtml: the payer’s copy', () => {
     // The trace's codes in words: the method, each step and the rounding rule.
     expect(html).toContain('<tr><td>1</td><td>2036-04-05</td><td>Fixed schedule</td><td>base $100.00</td><td>half up to the cent: $100.00 to $100.00</td><td>$14.00</td></tr>');
     expect(html).not.toMatch(/FIXED_SCHEDULE|HALF_UP_CENT/);
-    const level2 = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));
-    expect(printedOf(level2, draftNarrative(level2), rowsOf(level2))).toContain('<p><strong>The window for dispute level 2 ends on 2026-12-01.</strong></p>');
-    for (const printed of [html, maximal, printedOf(level2, draftNarrative(level2), rowsOf(level2))]) {
+    // Above the first level the copy states the level's own window alone: no first-level clause or release record, no
+    // line's first-level window (in the PDF or the CSV), and each line's calculation still.
+    const second = printedOf(level2, draftNarrative(level2), rowsOf(level2));
+    const window = second.slice(second.indexOf('<h2>Dispute window</h2>'), second.indexOf('</table>', second.indexOf('<h2>Dispute window</h2>')));
+    expect(window).toContain('<h2>Dispute window</h2><p><strong>The window for dispute level 2 ends on 2026-12-01.</strong></p><table');
+    expect(window).not.toMatch(/<ul>|The contract’s dispute window|dispute window in effect|Window ends|2036-04-05/);
+    expect(window).toContain('<caption>How each line’s expected amount is computed</caption>');
+    expect(window).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Method</th><th scope="col">Steps</th><th scope="col">Rounding</th><th scope="col">Patient share</th></tr></thead>');
+    expect(window).toContain('<tr><td>1</td><td>Fixed schedule</td><td>base $100.00</td><td>half up to the cent: $100.00 to $100.00</td><td>$14.00</td></tr>');
+    const secondCsv = packetCsv(insertIdentifiers(level2, draftNarrative(level2), rowsOf(level2))).split('\r\n');
+    expect(secondCsv[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('window_ends_on') + 1)).toBe('');
+    expect(secondCsv.join('\n')).not.toContain('2036-04-05');
+    for (const printed of [html, maximal, second]) {
       for (const phrase of FORBIDDEN) {
         expect(htmlText(printed)).not.toMatch(phrase);
       }
@@ -193,6 +236,20 @@ describe('packetHtml: the payer’s copy', () => {
     }
     const unstated: PacketContentV2 = { ...content, deadline: { ...content.deadline, ends_on: null } };
     expect(() => printedOf(unstated, narrative, identifiers)).toThrow(TypeError);
+  });
+
+  it('T7: prints an unrounded amount in the rounded amount’s form, grouped and signed, its fraction of a cent kept', () => {
+    const large = calculation(cents(12345679n), cents(7000n), cents(5600n), {
+      steps: [{ step: 'base', amount_cents: '12345678.5' }],
+      rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '12345678.5', rounded_cents: '12345679' },
+    });
+    const packet = assemblePacket(assemblyInput({ lines: [line(1, { expectedCents: cents(12345679n), varianceCents: cents(12338679n), calculation: large })] }));
+    const printed = printedOf(packet, draftNarrative(packet), rowsOf(packet));
+    expect(printed).toContain('<td>base $123,456.785</td><td>half up to the cent: $123,456.785 to $123,456.79</td>');
+    const window = printed.slice(printed.indexOf('<h2>Dispute window</h2>'), printed.indexOf('</table>', printed.indexOf('<h2>Dispute window</h2>')));
+    expect(window).not.toContain('$123456');
+    // The CSV keeps plain decimal dollars, the fraction of a cent with them.
+    expect(packetCsv(insertIdentifiers(packet, draftNarrative(packet), rowsOf(packet))).split('\r\n')[1]).toContain(',Fixed schedule,123456.785,123456.79,');
   });
 
   it('counts one line, one claim and one day in the singular', () => {
@@ -211,7 +268,7 @@ describe('packetHtml: the payer’s copy', () => {
     // Row 1 computed, row 2 (its received date unknown) not: only row 1 is listed.
     const interest = html.slice(html.indexOf('<h2>[4]'), html.indexOf('<h2>Evidence</h2>'));
     expect(interest).toContain('<p>State ZZ, SYNTHETIC statute ZZ 1-2-3: payment due 33 calendar days after the payer received the claim, interest at 9% a year (release 900001).</p>');
-    expect(interest).toContain('<p>The rule does not apply to: self_funded_plans.</p>');
+    expect(interest).toContain('<p>The rule does not apply to: self-funded plans.</p>');
     expect(interest).toContain('<caption>Interest by line</caption>');
     expect(interest).toMatch(/<tbody><tr><td>1<\/td><td>2026-03-02<\/td>[^]*?<\/tr><\/tbody>/);
     expect(interest.match(/<tr><td>\d+<\/td>/g)).toEqual(['<tr><td>1</td>']);
@@ -220,8 +277,14 @@ describe('packetHtml: the payer’s copy', () => {
     const noneHtml = printedOf(none, draftNarrative(none), rowsOf(none));
     const noneSection = noneHtml.slice(noneHtml.indexOf('<h2>[4]'), noneHtml.indexOf('<h2>Evidence</h2>'));
     expect(noneSection).toBe(
-      '<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2><p>State ZZ, SYNTHETIC statute ZZ 1-2-3: payment due 33 calendar days after the payer received the claim (release 900001).</p><p>The rule does not apply to: self_funded_plans.</p>\n',
+      '<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2><p>State ZZ, SYNTHETIC statute ZZ 1-2-3: payment due 33 calendar days after the payer received the claim (release 900001).</p><p>The rule does not apply to: self-funded plans.</p>\n',
     );
+    // The release's own codes in words: the real North Carolina draft record's exclusion among them.
+    const real = VERSIONS['contract, the real exclusion code'];
+    if (real === undefined) {
+      throw new Error('the version with the real exclusion code');
+    }
+    expect(printedOf(real, draftNarrative(real), rowsOf(real))).toContain('<p>The rule does not apply to: self-funded ERISA plans, self-funded plans.</p>');
     const noRule = assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } }));
     const noRuleHtml = printedOf(noRule, draftNarrative(noRule), rowsOf(noRule));
     expect(noRuleHtml.slice(noRuleHtml.indexOf('<h2>[4]'), noRuleHtml.indexOf('<h2>Evidence</h2>'))).toBe(

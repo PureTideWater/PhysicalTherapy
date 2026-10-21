@@ -6,8 +6,9 @@
  * contact_missing).
  *
  * A name or office and a phone number are required; the extension, an email and a mailing address are optional.
- * The contact's email is the one email the payer's copy prints (its logins never are). It is staff contact data,
- * not PHI, and it is never logged.
+ * The contact's email is the one email the payer's copy prints (its logins never are), so the name and the address
+ * lines hold no @: a second email typed there would print beside it. It is staff contact data, not PHI, and it is
+ * never logged.
  *
  * Stored shape (the key is absent until set; no other key):
  *
@@ -65,13 +66,13 @@ export type CorrespondenceField = (typeof CORRESPONDENCE_FIELDS)[number];
 /** What each refusal says (fixed words, never the value). */
 export const CORRESPONDENCE_FIELD_RULES: Readonly<Record<CorrespondenceField, string>> = {
   contact: 'a correspondence contact names a person or office and a phone number, and holds nothing else',
-  name: 'a name or office of 1 to 120 characters, with no hidden characters',
+  name: 'a name or office of 1 to 120 characters, with no hidden characters and no @ (an email goes in its own field)',
   phone: 'a 10-digit phone number, such as (919) 555-0100',
   phone_extension: 'an extension of 1 to 6 digits',
   email: 'an email address of at most 254 characters, with one @ and no spaces',
-  address_line1: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters',
-  address_line2: 'a second address line of 1 to 100 characters',
-  address_city: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters',
+  address_line1: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters with no @ (an email goes in its own field)',
+  address_line2: 'a second address line of 1 to 100 characters with no @ (an email goes in its own field)',
+  address_city: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters with no @ (an email goes in its own field)',
   address_state: 'a USPS state or territory code, such as NC',
   address_zip: 'a ZIP code of five digits, or ZIP+4',
 };
@@ -100,8 +101,11 @@ const EXTENSION = /^\d{1,6}$/;
 const ZIP = /^\d{5}(-\d{4})?$/;
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
 
-/** Text of `min` to `max` characters with no hidden character, trimmed; null for a blank. */
-function plainText(value: unknown, max: number, field: CorrespondenceField): string | null {
+/**
+ * Text of `min` to `max` characters with no hidden character, trimmed; null for a blank. `noAt` refuses an @ too (the
+ * name and the address lines: the email field holds the one email the payer's copy prints).
+ */
+function plainText(value: unknown, max: number, field: CorrespondenceField, noAt = false): string | null {
   if (value === null || value === undefined) {
     return null;
   }
@@ -112,7 +116,7 @@ function plainText(value: unknown, max: number, field: CorrespondenceField): str
   if (text === '') {
     return null;
   }
-  if ([...text].length > max || HIDDEN.test(text)) {
+  if ([...text].length > max || HIDDEN.test(text) || (noAt && text.includes('@'))) {
     throw new CorrespondenceContactError(field);
   }
   return text;
@@ -137,9 +141,9 @@ function address(value: CorrespondenceContactInput['address']): CorrespondenceAd
   if (typeof value !== 'object') {
     throw new CorrespondenceContactError('address_line1');
   }
-  const line1 = plainText(value.line1, 100, 'address_line1');
-  const line2 = plainText(value.line2, 100, 'address_line2');
-  const city = plainText(value.city, 100, 'address_city');
+  const line1 = plainText(value.line1, 100, 'address_line1', true);
+  const line2 = plainText(value.line2, 100, 'address_line2', true);
+  const city = plainText(value.city, 100, 'address_city', true);
   const state = plainText(value.state, 2, 'address_state')?.toUpperCase() ?? null;
   const zip = plainText(value.zip, 10, 'address_zip');
   if (line1 === null && line2 === null && city === null && state === null && zip === null) {
@@ -171,7 +175,7 @@ export function correspondenceContactSetting(input: CorrespondenceContactInput):
   if (input.address !== null && input.address !== undefined && (typeof input.address !== 'object' || Object.keys(input.address).some((key) => !ADDRESS_KEYS.has(key)))) {
     throw new CorrespondenceContactError('contact');
   }
-  const name = plainText(input.name, 120, 'name');
+  const name = plainText(input.name, 120, 'name', true);
   if (name === null) {
     throw new CorrespondenceContactError('name');
   }
