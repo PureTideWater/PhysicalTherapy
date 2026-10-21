@@ -204,11 +204,13 @@ async function approveSplit(settings: object = SPLIT): Promise<string> {
 
 /** Moves a run to complete with the given token hash, pricing its pending rows as the operator would. */
 async function complete(runId: string, tokenSha256: string): Promise<void> {
-  expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
-  const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000)', [runId]);
+  const [claimed] = await as<{ attempt: number }>(OPERATOR_ROLE, 'SELECT attempt FROM operator_screening_claim($1)', [runId]);
+  expect(claimed).toBeDefined();
+  const attempt = claimed?.attempt ?? 0;
+  const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000, $2)', [runId, attempt]);
   const lines = pending.map(() => 5_000n);
   const reduced = pending.map(() => 4_000n);
-  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)', [
+  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)', [
     runId,
     pending.map((row) => row.row_no),
     pending.map(() => 'priced'),
@@ -225,8 +227,9 @@ async function complete(runId: string, tokenSha256: string): Promise<void> {
     pending.map(() => null),
     pending.map(() => null),
     pending.map(() => hex('f')),
+    attempt,
   ]);
-  expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, tokenSha256, 'phase-two/1', `test-${randomUUID()}`])).toHaveLength(1);
+  expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, $5)', [runId, tokenSha256, 'phase-two/1', `test-${randomUUID()}`, attempt])).toHaveLength(1);
 }
 
 /** As the superuser, with triggers off for the statement: moves a screening's dates back past its expiry. */
@@ -732,7 +735,7 @@ describe('the screening rules', () => {
     const runId = await submit();
     // A contract-required row is not pending, so the operator's record leaves it as it is.
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
-    const recorded = await as<{ n: number }>(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [
+    const recorded = await as<{ n: number }>(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 1) AS n', [
       runId,
       [3, 4],
       ['priced', 'priced'],
@@ -761,7 +764,7 @@ describe('the screening rules', () => {
     const REDUCED: Reduced = ['4000', '4000.4', '44000', '34000', hex('e')];
     const NONE: Reduced = [null, null, null, null, null];
     const figures = (line: string, unrounded: string, expected: string, difference: string, pooled: boolean | null = true, reduced: Reduced = pooled === true ? REDUCED : NONE) =>
-      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [
+      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 1) AS n', [
         runId,
         [1],
         ['priced'],
@@ -800,7 +803,7 @@ describe('the screening rules', () => {
     const line = 49_950_000n;
     const expected = line * 100_000n;
     expect(
-      await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [
+      await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 1) AS n', [
         big,
         [1],
         ['priced'],
@@ -828,7 +831,7 @@ describe('the screening rules', () => {
     const runId = await submit();
     await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId]);
     const record = (disposition: string, reason: string | null, detail: string | null, trace: string | null) =>
-      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [runId, [2], [disposition], [null], [null], [null], [null], [null], [null], [null], [null], [null], [null], [reason], [detail], [trace]]);
+      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 1) AS n', [runId, [2], [disposition], [null], [null], [null], [null], [null], [null], [null], [null], [null], [null], [reason], [detail], [trace]]);
     await expect(record('unpriced', null, null, hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced' });
     await expect(record('unpriced', 'NO_AGREEMENT', 'no_gpci', hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced' });
     await expect(record('unpriced', 'GUESSED', null, hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced_reason' });
@@ -875,7 +878,7 @@ describe('the screening rules', () => {
     );
     expect(release.find((row) => row.record_type === 'locality_map')?.sha256).toBe(hex('b'));
     // It completes only once nothing is pending.
-    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, hex('2'), 'phase-two/1', 'x'])).rejects.toMatchObject({ code: '23514' });
+    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 1)', [runId, hex('2'), 'phase-two/1', 'x'])).rejects.toMatchObject({ code: '23514' });
     // The trigger refuses moving started_at without a claim, so a stale run is aged as the superuser, triggers off.
     await expect(admin.query("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId])).rejects.toMatchObject({ code: '23514' });
     const client = await admin.connect();
@@ -889,9 +892,37 @@ describe('the screening rules', () => {
     }
     expect((await as<{ status: string }>(OPERATOR_ROLE, 'SELECT status FROM operator_screening_due(0, 100) WHERE run_id = $1', [runId]))).toEqual([{ status: 'pricing' }]);
     expect(await as<{ attempt: number }>(OPERATOR_ROLE, 'SELECT attempt FROM operator_screening_claim($1)', [runId])).toEqual([{ attempt: 2 }]);
-    const pending = await as<{ row_no: number }>(OPERATOR_ROLE, 'SELECT row_no FROM operator_screening_rows($1, 0, 5000)', [runId]);
+    // The attempt fences what follows: attempt 1, overtaken by the stale claim, reads no row, records none, completes
+    // nothing and fails nothing, so it cannot leave attempt 2 short of a row it read as pending.
+    expect(await as(OPERATOR_ROLE, 'SELECT row_no FROM operator_screening_rows($1, 0, 5000, 1)', [runId])).toEqual([]);
+    await expect(
+      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 1)', [
+        runId,
+        [2],
+        ['rates_change_in_band'],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
+        [hex('f')],
+      ]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'screening_run_attempt' });
+    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 1)', [runId, hex('2'), 'phase-two/1', 'x'])).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'screening_run_attempt',
+    });
+    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3, 1)', [runId, 'RELEASE_READ_OUTSIDE_FETCH', 'x'])).toEqual([]);
+    const pending = await as<{ row_no: number }>(OPERATOR_ROLE, 'SELECT row_no FROM operator_screening_rows($1, 0, 5000, 2)', [runId]);
     expect(pending.map((row) => row.row_no)).toEqual([1, 2]);
-    await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)', [
+    await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 2)', [
       runId,
       [1, 2],
       ['priced', 'rates_change_in_band'],
@@ -910,13 +941,13 @@ describe('the screening rules', () => {
       [hex('f'), hex('f')],
     ]);
     // A token is stored only as its hash: a link token itself does not fit the column.
-    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, 'abcdefghijklmnopqrstuvwxyzabcdef', 'phase-two/1', 'x'])).rejects.toMatchObject({
+    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 2)', [runId, 'abcdefghijklmnopqrstuvwxyzabcdef', 'phase-two/1', 'x'])).rejects.toMatchObject({
       constraint: 'screening_run_result_token',
     });
-    const done = await as<{ contact_email: string; row_count: number }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, hex('2'), 'phase-two/1', 'x']);
+    const done = await as<{ contact_email: string; row_count: number }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 2)', [runId, hex('2'), 'phase-two/1', 'x']);
     expect(done).toEqual([{ contact_email: expect.stringMatching(/@synthetic\.test$/) as string, row_count: 6 }]);
-    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, hex('3'), 'phase-two/1', 'x'])).toEqual([]);
-    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3)', [runId, 'PRICING_FAILED', 'x'])).toEqual([]);
+    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 2)', [runId, hex('3'), 'phase-two/1', 'x'])).toEqual([]);
+    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3, NULL)', [runId, 'PRICING_FAILED', 'x'])).toEqual([]);
     await expect(admin.query('UPDATE screening_run SET result_token_sha256 = $2 WHERE id = $1', [runId, hex('4')])).rejects.toMatchObject({ code: '23514' });
     const [summary] = await as<{ priced_rows: number; unpriced_rows: number; contract_rows: number; contract_observed_cents: string; not_screened_rows: number; converted: boolean }>(
       APP_ROLE,
@@ -934,7 +965,7 @@ describe('the screening rules', () => {
     ]);
     // A failed run is done; a queued one may fail.
     const queued = await submit();
-    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3)', [queued, 'RELEASE_UNAVAILABLE', 'x'])).toHaveLength(1);
+    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3, NULL)', [queued, 'RELEASE_UNAVAILABLE', 'x'])).toHaveLength(1);
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [queued])).toEqual([]);
     await expect(admin.query("UPDATE screening_run SET status = 'pricing', attempts = 1, started_at = now(), failed_at = NULL, failure_code = NULL WHERE id = $1", [queued])).rejects.toMatchObject({
       code: '23514',
@@ -1144,9 +1175,11 @@ async function outcomeById(id: string): Promise<Record<string, unknown> | undefi
 
 /** Completes a run as complete() does, with a withdrawal token's hash for a consent summary. */
 async function completeWith(runId: string, token: string, withdrawal: string | null): Promise<void> {
-  expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
-  const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000)', [runId]);
-  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)', [
+  const [claimed] = await as<{ attempt: number }>(OPERATOR_ROLE, 'SELECT attempt FROM operator_screening_claim($1)', [runId]);
+  expect(claimed).toBeDefined();
+  const attempt = claimed?.attempt ?? 0;
+  const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000, $2)', [runId, attempt]);
+  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)', [
     runId,
     pending.map((row) => row.row_no),
     pending.map(() => 'priced'),
@@ -1163,8 +1196,56 @@ async function completeWith(runId: string, token: string, withdrawal: string | n
     pending.map(() => null),
     pending.map(() => null),
     pending.map(() => hex('f')),
+    attempt,
   ]);
-  await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4, $5)', [runId, token, withdrawal, 'phase-two/1', `test-${randomUUID()}`]);
+  await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4, $5, $6)', [runId, token, withdrawal, 'phase-two/1', `test-${randomUUID()}`, attempt]);
+}
+
+/** Claims a run and records every pending row as priced, as complete() does, without completing it; the attempt. */
+async function priceAll(runId: string): Promise<number> {
+  const [claimed] = await as<{ attempt: number }>(OPERATOR_ROLE, 'SELECT attempt FROM operator_screening_claim($1)', [runId]);
+  const attempt = claimed?.attempt ?? 0;
+  const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000, $2)', [runId, attempt]);
+  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)', [
+    runId,
+    pending.map((row) => row.row_no),
+    pending.map(() => 'priced'),
+    pending.map(() => '5000'),
+    pending.map(() => '5000.25'),
+    pending.map((row) => (5000n * BigInt(row.claim_count)).toString()),
+    pending.map((row) => (5000n * BigInt(row.claim_count) - BigInt(row.observed_allowed_cents)).toString()),
+    pending.map(() => false),
+    pending.map(() => null),
+    pending.map(() => null),
+    pending.map(() => null),
+    pending.map(() => null),
+    pending.map(() => null),
+    pending.map(() => null),
+    pending.map(() => null),
+    pending.map(() => hex('f')),
+    attempt,
+  ]);
+  return attempt;
+}
+
+/** One statement as `role` inside the client's open transaction (SET LOCAL, so the role ends with it). */
+async function asRole(client: pg.PoolClient, role: string, sql: string, values: unknown[]): Promise<unknown> {
+  await client.query(`SET LOCAL ROLE ${role}`);
+  await client.query("SELECT set_config('app.practice_ids', '{}', true)");
+  return (await client.query(sql, values)).rows;
+}
+
+/** Waits until the client's backend waits on a lock (its statement sent and blocked). */
+async function blockedOnLock(client: pg.PoolClient): Promise<void> {
+  const pid = (client as unknown as { processID: number }).processID;
+  for (let tries = 0; tries < 200; tries += 1) {
+    const { rows } = await admin.query<{ wait: string | null }>('SELECT wait_event_type AS wait FROM pg_stat_activity WHERE pid = $1', [pid]);
+    if (rows[0]?.wait === 'Lock') {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('the session never waited on a lock');
 }
 
 async function convert(token: string): Promise<string> {
@@ -1478,7 +1559,7 @@ describe('audit #57: the counts-only outcome (SCR-10)', () => {
 
   it('fails with its run', async () => {
     const runId = await submit();
-    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3)', [runId, 'PRICING_FAILED', 'x']);
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3, NULL)', [runId, 'PRICING_FAILED', 'x']);
     expect(await outcomeOfUpload((await idsOf(runId)).uploadId)).toMatchObject({ stage: 'failed', engine_version: null, priced_share_pct: null });
   });
 
@@ -1696,7 +1777,7 @@ describe('audit #57: the kept summary of a converted or consenting practice (SCR
     // later one's completion, so a failed or abandoned resend deletes nothing.
     const failed = await submit({ email, practice: `Synthetic Renamed ${letters()}` });
     expect(await leadsOf(email)).toEqual([expect.objectContaining({ id: kept?.id, upload_id: null, prospect_request_id: requestId })]);
-    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3)', [failed, 'PRICING_FAILED', 'x']);
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3, NULL)', [failed, 'PRICING_FAILED', 'x']);
     const abandoned = await submit({ email });
     expect((await leadsOf(email)).map((lead) => lead.id)).toEqual([kept?.id]);
     // Nor may anyone delete it before it expires.
@@ -1739,7 +1820,8 @@ describe('audit #57: the kept summary of a converted or consenting practice (SCR
     await expect(completeWith(refused, tokenHash(), null)).rejects.toMatchObject({ code: '23514', constraint: 'screening_lead_withdrawal_token' });
     const runId = await submit({ email, consentSha256: hex('c') });
     const withdrawal = sha256(`withdraw-${randomUUID()}`);
-    await completeWith(runId, tokenHash(), withdrawal);
+    const consentToken = tokenHash();
+    await completeWith(runId, consentToken, withdrawal);
     const [lead] = await leadsOf(email);
     expect(lead).toMatchObject({ consent_sha256: hex('c'), withdrawal_token_sha256: withdrawal, prospect_request_id: null, reminder_sent_at: null });
     expect(await outcomeOfUpload((await idsOf(runId)).uploadId)).toMatchObject({ consented: true });
@@ -1765,6 +1847,138 @@ describe('audit #57: the kept summary of a converted or consenting practice (SCR
     expect(await leadsOf(email)).toEqual([]);
     expect((await admin.query('SELECT count(*)::int AS n FROM screening_lead_product WHERE lead_id = $1', [lead?.id])).rows).toEqual([{ n: 0 }]);
     expect((await admin.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_lead_withdrawn' AND object_id = $1", [lead?.id])).rows).toEqual([{ n: 1 }]);
+    // A prospect who withdrew can still request an audit from the same link: the summary is kept on the request alone,
+    // and the consent they withdrew is not kept again.
+    const requestId = await convert(consentToken);
+    expect(await leadsOf(email)).toEqual([expect.objectContaining({ prospect_request_id: requestId, consent_sha256: null, withdrawal_token_sha256: null, reminder_sent_at: null })]);
+  });
+
+  it('carries a request once when two completions at once each match the one summary that holds it, and the other completes without it', async () => {
+    // Matching a practice is not transitive: the summary (Chain, y1) matches S2 by its address and S3 by its ZIP and
+    // name, while S2 and S3 match each other by neither, so neither replaced the other at submission.
+    const chain = `Synthetic Chain ${letters()}`;
+    const y1 = `chain.one.${letters()}@synthetic.test`;
+    const y3 = `chain.three.${letters()}@synthetic.test`;
+    const first = await submit({ practice: chain, email: y1 });
+    const token = tokenHash();
+    await complete(first, token);
+    const requestId = await convert(token);
+    const second = await submit({ practice: `Synthetic Other ${letters()}`, email: y1 });
+    const third = await submit({ practice: chain, email: y3 });
+    const attempts = [await priceAll(second), await priceAll(third)];
+    const one = await admin.connect();
+    const two = await admin.connect();
+    try {
+      for (const client of [one, two]) {
+        await client.query('BEGIN');
+        await client.query(`SET LOCAL ROLE ${OPERATOR_ROLE}`);
+        await client.query("SELECT set_config('app.practice_ids', '{}', true)");
+      }
+      await one.query('SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, $5)', [second, tokenHash(), 'phase-two/1', 'x', attempts[0]]);
+      // The second completion waits on the summary the first deleted, then finds it gone: it carries nothing.
+      const waiting = two.query('SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, $5)', [third, tokenHash(), 'phase-two/1', 'x', attempts[1]]);
+      await blockedOnLock(two);
+      await one.query('COMMIT');
+      expect((await waiting).rows).toHaveLength(1);
+      await two.query('COMMIT');
+    } finally {
+      one.release();
+      two.release();
+    }
+    expect(await leadsOf(y1)).toEqual([expect.objectContaining({ prospect_request_id: requestId, upload_id: (await idsOf(second)).uploadId })]);
+    expect(await leadsOf(y3)).toEqual([]);
+    expect((await admin.query<{ status: string }>('SELECT status FROM screening_run WHERE id = ANY($1) ORDER BY status', [[second, third]])).rows).toEqual([{ status: 'complete' }, { status: 'complete' }]);
+  });
+
+  it('never deadlocks a submission with the opened signal, a conversion, a completion or a failure of the screening it replaces, nor with the expiry job', async () => {
+    // Each case: a third session holds the replaced screening's prospect (KEY SHARE), so the submission that replaces it
+    // waits at its first lock; the other operation then runs on the replaced screening to its commit while the holder
+    // still holds (it needs nothing the submission locks first); then the holder lets go and the submission replaces it.
+    const cases: readonly { readonly name: string; readonly prepare: (runId: string, token: string) => Promise<unknown>; readonly run: (client: pg.PoolClient, runId: string, token: string, attempt: number) => Promise<unknown> }[] = [
+      {
+        name: 'opened',
+        prepare: (runId, token) => complete(runId, token),
+        run: (client, _runId, token) => asRole(client, APP_ROLE, 'SELECT screening_result_opened($1)', [token]),
+      },
+      {
+        name: 'convert',
+        prepare: (runId, token) => complete(runId, token),
+        run: (client, _runId, token) => asRole(client, APP_ROLE, 'SELECT convert_screening($1, $2, $3, $4, $5, $6)', [token, 'SYNTHETIC CONTACT', 2, ['SYNTHETIC PAYER'], 'in_house', 'x']),
+      },
+      {
+        name: 'complete',
+        prepare: (runId) => priceAll(runId),
+        run: (client, runId, token, attempt) => asRole(client, OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, $5)', [runId, token, 'phase-two/1', 'x', attempt]),
+      },
+      {
+        name: 'fail',
+        prepare: () => Promise.resolve(),
+        run: (client, runId) => asRole(client, OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3, NULL)', [runId, 'PRICING_FAILED', 'x']),
+      },
+    ];
+    for (const item of cases) {
+      const practice = `Synthetic Lock Order ${letters()}`;
+      const replaced = await submit({ practice, email: `lock.${letters()}@synthetic.test` });
+      const token = tokenHash();
+      const prepared = await item.prepare(replaced, token);
+      const attempt = typeof prepared === 'number' ? prepared : 0;
+      const { prospectId } = await idsOf(replaced);
+      const holder = await admin.connect();
+      const submitter = await admin.connect();
+      const other = await admin.connect();
+      try {
+        await holder.query('BEGIN');
+        await holder.query('SELECT 1 FROM screening_prospect WHERE id = $1 FOR KEY SHARE', [prospectId]);
+        await submitter.query('BEGIN');
+        await submitter.query(`SET LOCAL ROLE ${APP_ROLE}`);
+        const submitted = submitter.query(SUBMIT, submitValues({ practice, email: `lock.other.${letters()}@synthetic.test` })).then(
+          async () => {
+            await submitter.query('COMMIT');
+            return 'submitted';
+          },
+          async (error: { code?: string }) => {
+            await submitter.query('ROLLBACK');
+            return `submit failed ${String(error.code)}`;
+          },
+        );
+        await blockedOnLock(submitter);
+        await other.query('BEGIN');
+        const done = await item.run(other, replaced, token, attempt).then(
+          async () => {
+            await other.query('COMMIT');
+            return 'done';
+          },
+          async (error: { code?: string }) => {
+            await other.query('ROLLBACK');
+            return `failed ${String(error.code)}`;
+          },
+        );
+        await holder.query('COMMIT');
+        expect([item.name, done, await submitted]).toEqual([item.name, 'done', 'submitted']);
+      } finally {
+        holder.release();
+        submitter.release();
+        other.release();
+      }
+      expect((await admin.query('SELECT 1 FROM screening_run WHERE id = $1', [replaced])).rows, item.name).toEqual([]);
+    }
+    // The expiry job beside a submission that replaces an expired screening: it skips the prospect the submission holds
+    // and returns at once; the submission then replaces it.
+    const practice = `Synthetic Lock Expiry ${letters()}`;
+    const expired = await submit({ practice, email: `lock.expired.${letters()}@synthetic.test` });
+    await age(expired, 31);
+    const submitter = await admin.connect();
+    try {
+      await submitter.query('BEGIN');
+      await submitter.query(`SET LOCAL ROLE ${APP_ROLE}`);
+      await submitter.query(SUBMIT, submitValues({ practice, email: `lock.expiry.${letters()}@synthetic.test` }));
+      await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_expire(1000, $1)', ['x']);
+      expect((await admin.query('SELECT 1 FROM screening_run WHERE id = $1', [expired])).rows).toHaveLength(1);
+      await submitter.query('COMMIT');
+    } finally {
+      submitter.release();
+    }
+    expect((await admin.query('SELECT 1 FROM screening_run WHERE id = $1', [expired])).rows).toEqual([]);
   });
 
   it('keeps what it was frozen with, sets its request and other fields once, and its products never change and go only with it', async () => {

@@ -502,6 +502,49 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'complete', attempts: 2 }]);
   });
 
+  it('stops a slow attempt a stale claim overtakes at its next call, failing nothing and sending nothing, and the run completes once', async () => {
+    const runId = await submit();
+    const mail = new MemoryMailSender();
+    // While attempt 1 is past its keyed read, its pricing turns stale and a second claim takes the run over.
+    const overtake = async () => {
+      await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE tp_operator');
+        expect((await client.query<{ attempt: number }>('SELECT attempt FROM operator_screening_claim($1)', [runId])).rows).toEqual([{ attempt: 2 }]);
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
+    };
+    expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: overtake }), runId)).toBe('not_claimed');
+    expect(mail.sent).toEqual([]);
+    expect(lines.map((line) => line.error_code).filter((code) => code !== undefined)).toEqual(['SCREENING_ATTEMPT_SUPERSEDED']);
+    expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'pricing', attempts: 2 }]);
+    expect((await results(runId)).filter((row) => row.disposition === 'pending').length).toBeGreaterThan(0);
+    // The claim that took it over stops in turn (here, by going stale), and the next one prices and sends once.
+    await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+    expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 1, failed: 0, skipped: 0 });
+    expect(mail.sent.map((message) => message.subject)).toEqual(['Your screening is ready']);
+    expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'complete', attempts: 3 }]);
+  });
+
+  it('stops quietly when a later screening of the practice replaces the run while it is priced: no failure, no email, no read outside the fetch', async () => {
+    const practice = practiceName();
+    const runId = await submit({ practice });
+    const mail = new MemoryMailSender();
+    let replacement = '';
+    const replace = async () => {
+      replacement = await submit({ practice });
+    };
+    expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: replace }), runId)).toBe('not_claimed');
+    expect(mail.sent).toEqual([]);
+    expect(lines.map((line) => line.error_code).filter((code) => code !== undefined)).toEqual(['SCREENING_ATTEMPT_SUPERSEDED']);
+    expect((await owner.query('SELECT count(*)::int AS n FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ n: 0 }]);
+    expect(await priceScreeningRun(dependencies(mail), replacement)).toBe('complete');
+  });
+
   it('lets no contact address the mail service refuses hold up the sweep, and still fails that run once it is out of attempts', async () => {
     const poison = 'refused.synthetic@clinic-refused.synthetic.test';
     const poisonRun = await submit({ email: poison });

@@ -8,7 +8,7 @@ import { ReleaseReadOutsideFetch, type RequestedKeys, keyedRelease, screeningReq
 import { indexStoredRelease } from '../price/release';
 import { ReleaseKeysMismatch, ScreeningPricer, pricesAsMedicare, releaseChangeDays } from './adapter';
 import { screeningFailedMessage, screeningResultLink, screeningResultMessage, screeningStartLink } from './message';
-import { type OperatorPool, type RunKeys, asOperator, claimRun, completeRun, dueRuns, failRun, pendingRows, recordRows, releaseRecords, runKeys, runRecords } from './operator';
+import { type OperatorPool, type RunKeys, asOperator, attemptSuperseded, claimRun, completeRun, dueRuns, failRun, pendingRows, recordRows, releaseRecords, runKeys, runRecords } from './operator';
 import { newScreeningToken, screeningTokenHash } from './token';
 
 /**
@@ -19,16 +19,23 @@ import { newScreeningToken, screeningTokenHash } from './token';
  * One run: claim it (queued to pricing, or a stale one again, at most three attempts); fail it when its pinned
  * release is no longer there as pinned (unpublished, its manifest changed, or withdrawn); read the release (audit #53
  * part 2, "The release read"): the record types no row's key selects once per release and manifest, held for the
- * next run (at most two releases), and, in one transaction, the run's key set and the keyed records for it (its
- * distinct priced codes and the prospect's ZIP, from the database, never the caller); price its pending rows 5,000 at
- * a time through the adapter over a view that serves only those keys, the engine once per distinct line; record each
- * batch in one statement; then, in one transaction, complete it with the SHA-256 of a new link token and send the
- * link to the contact. A lookup outside the fetched keys, or a row whose code is not in the key set, fails the run
- * as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, and so do codes priced unequal to the key set after
- * the last batch: no row is stored on a lookup the run did not make. Each phase logs its milliseconds and record count,
- * numbers only, with the run's ID. A send that fails
- * rolls the completion back and the job fails; the run stays in pricing with every row recorded, and the sweep
- * claims it again once it is stale. After a third attempt the sweep fails the run, commits that, and then tells the
+ * next run (at most two releases), and, in one read-only transaction on one snapshot, the run's key set and the keyed
+ * records for it (its distinct priced codes and the prospect's ZIP, from the database, never the caller), so a release
+ * withdrawn between the two reads is seen by both or neither; price its pending rows 5,000 at a time through the
+ * adapter over a view that serves only those keys, the engine once per distinct line; record each batch in one
+ * statement; then, in one transaction, complete it with the SHA-256 of a new link token and send the link to the
+ * contact. A lookup outside the fetched keys, or a row whose code is not in the key set, fails the run as
+ * RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, and so does a code priced outside the key set after the last
+ * batch: no row is stored on a lookup the run did not make. Each phase logs its milliseconds and record count, numbers
+ * only, with the run's ID.
+ *
+ * The attempt the claim returns fences every later call (operator_screening_rows, _record, _complete and _fail take
+ * it): when a stale claim overtakes a slow attempt, or a later screening of the practice replaces the run while it is
+ * priced, the attempt reads no more rows, and its next record or its completion is refused; it then stops as
+ * not_claimed (SCREENING_ATTEMPT_SUPERSEDED, logged as information), failing nothing and sending nothing.
+ *
+ * A send that fails rolls the completion back and the job fails; the run stays in pricing with every row recorded, and
+ * the sweep claims it again once it is stale. After a third attempt the sweep fails the run, commits that, and then tells the
  * contact: a notice the mail service refuses is logged, and the run has failed anyway.
  *
  * The sweep takes each due run on its own: a run that throws (its contact's address refused by the mail service,
@@ -60,6 +67,11 @@ export interface ScreeningJobDependencies {
    * removed), to prove that a read outside the fetch fails the run. Production never sets it.
    */
   readonly alterReleaseRead?: { readonly keys?: (keys: RunKeys) => RunKeys; readonly requested?: (requested: RequestedKeys) => RequestedKeys };
+  /**
+   * Tests only: runs once the keyed read is done, before the first batch, so a test can overtake the attempt with a
+   * stale claim or replace the run there, as a slow attempt meets either. Production never sets it.
+   */
+  readonly afterKeyedRead?: () => Promise<void>;
 }
 
 export type ScreeningPriceOutcome = 'complete' | 'already_complete' | 'not_claimed' | 'failed';
@@ -113,8 +125,8 @@ const elapsed = (since: number): number => Math.round(performance.now() - since)
  * Fails a run, commits that, then tells its contact; false when it had ended already. A notice the mail service
  * refuses is logged by the run's ID alone, and the run stays failed.
  */
-export async function failScreeningRun(dependencies: ScreeningJobDependencies, runId: string, failureCode: string): Promise<boolean> {
-  const failed = await asOperator(dependencies.operator, (client) => failRun(client, runId, failureCode, dependencies.jobId));
+export async function failScreeningRun(dependencies: ScreeningJobDependencies, runId: string, failureCode: string, attempt: number | null = null): Promise<boolean> {
+  const failed = await asOperator(dependencies.operator, (client) => failRun(client, runId, failureCode, dependencies.jobId, attempt));
   if (failed === null) {
     return false;
   }
@@ -135,10 +147,21 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
     return 'not_claimed';
   }
   const key = `${String(claimed.releaseNo)}:${claimed.manifestSha256}`;
-  const unavailable = async (): Promise<'failed'> => {
+  const { attempt } = claimed;
+  const superseded = (): 'not_claimed' => {
+    logger.info('screening run attempt stopped: a later claim took the run over, or a later screening replaced it', {
+      job_id: dependencies.jobId,
+      screening_run_id: runId,
+      error_code: 'SCREENING_ATTEMPT_SUPERSEDED',
+    });
+    return 'not_claimed';
+  };
+  const unavailable = async (): Promise<'failed' | 'not_claimed'> => {
     // The pinned release is not there as pinned (or was withdrawn): nothing can price the run.
     RELEASES.delete(key);
-    await failScreeningRun(dependencies, runId, 'RELEASE_UNAVAILABLE');
+    if (!(await failScreeningRun(dependencies, runId, 'RELEASE_UNAVAILABLE', attempt))) {
+      return superseded();
+    }
     logger.error('screening run failed: its rule release is not available as pinned', { job_id: dependencies.jobId, screening_run_id: runId, error_code: 'RELEASE_UNAVAILABLE' });
     return 'failed';
   };
@@ -159,10 +182,15 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
     logger.info('screening release shared types held from an earlier run', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: 0, record_count: shared.recordCount });
   }
   const keyedStarted = performance.now();
-  const read = await asOperator(operator, async (client) => {
-    const keys = await runKeys(client, runId);
-    return keys === null ? null : { keys, records: await runRecords(client, runId) };
-  });
+  // The key set and its records on one snapshot: a withdrawal between the two reads is seen by both or by neither.
+  const read = await asOperator(
+    operator,
+    async (client) => {
+      const keys = await runKeys(client, runId);
+      return keys === null ? null : { keys, records: await runRecords(client, runId) };
+    },
+    { snapshot: true },
+  );
   if (read === null) {
     return unavailable();
   }
@@ -179,11 +207,14 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
     asOf: claimed.asOf,
     read: { codes, view },
   });
-  const outsideFetch = async (): Promise<'failed'> => {
-    await failScreeningRun(dependencies, runId, 'RELEASE_READ_OUTSIDE_FETCH');
+  const outsideFetch = async (): Promise<'failed' | 'not_claimed'> => {
+    if (!(await failScreeningRun(dependencies, runId, 'RELEASE_READ_OUTSIDE_FETCH', attempt))) {
+      return superseded();
+    }
     logger.error('screening run failed: its pricing read the release outside the keys fetched for it', { job_id: dependencies.jobId, screening_run_id: runId, error_code: 'RELEASE_READ_OUTSIDE_FETCH' });
     return 'failed';
   };
+  await dependencies.afterKeyedRead?.();
   let afterRow = 0;
   let pricingMs = 0;
   let recordingMs = 0;
@@ -191,7 +222,7 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
   let recordedRows = 0;
   for (;;) {
     const readStarted = performance.now();
-    const rows = await asOperator(operator, (client) => pendingRows(client, runId, afterRow, SCREENING_BATCH));
+    const rows = await asOperator(operator, (client) => pendingRows(client, runId, afterRow, SCREENING_BATCH, attempt));
     recordingMs += performance.now() - readStarted;
     if (rows.length === 0) {
       break;
@@ -209,26 +240,43 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
     pricingMs += performance.now() - pricingStarted;
     pricedRows += outcomes.length;
     const recordStarted = performance.now();
-    recordedRows += await asOperator(operator, (client) => recordRows(client, runId, outcomes));
+    try {
+      recordedRows += await asOperator(operator, (client) => recordRows(client, runId, outcomes, attempt));
+    } catch (error) {
+      if (attemptSuperseded(error)) {
+        return superseded();
+      }
+      throw error;
+    }
     recordingMs += performance.now() - recordStarted;
     afterRow = rows.at(-1)?.rowNo ?? afterRow;
   }
-  // The key set is the codes of the run's Medicare rows still to price when it was read (operator_screening_run_keys),
-  // which are the rows this attempt priced: the codes priced must be exactly the key set.
-  if (pricer.codes.size !== codes.size || [...codes].some((code) => !pricer.codes.has(code))) {
+  // The key set is the codes of the run's Medicare rows still to price when it was read (operator_screening_run_keys);
+  // every code priced must be in it (the view's ReleaseKeysMismatch already refuses a row outside it). Fewer codes than
+  // the key set is no fault: rows the attempt did not reach went with a run replaced or a stale claim that overtook it,
+  // and the completion below, fenced by the attempt, refuses both.
+  if ([...pricer.codes].some((code) => !codes.has(code))) {
     return outsideFetch();
   }
   logger.info('screening run rows priced', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(pricingMs), record_count: pricedRows });
   logger.info('screening run rows recorded', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(recordingMs), record_count: recordedRows });
   const token = (dependencies.newToken ?? newScreeningToken)();
-  const sent = await asOperator(operator, async (client) => {
-    const done = await completeRun(client, runId, screeningTokenHash(token), ENGINE_VERSION, dependencies.jobId);
-    if (done === null) {
-      return false;
+  let sent: boolean;
+  try {
+    sent = await asOperator(operator, async (client) => {
+      const done = await completeRun(client, runId, screeningTokenHash(token), ENGINE_VERSION, dependencies.jobId, attempt);
+      if (done === null) {
+        return false;
+      }
+      await dependencies.mail.send(screeningResultMessage({ to: done.contactEmail, link: screeningResultLink(dependencies.appOrigin, token), rows: done.rowCount }));
+      return true;
+    });
+  } catch (error) {
+    if (attemptSuperseded(error)) {
+      return superseded();
     }
-    await dependencies.mail.send(screeningResultMessage({ to: done.contactEmail, link: screeningResultLink(dependencies.appOrigin, token), rows: done.rowCount }));
-    return true;
-  });
+    throw error;
+  }
   if (!sent) {
     logger.info('screening run was complete already', { job_id: dependencies.jobId, screening_run_id: runId });
     return 'already_complete';
