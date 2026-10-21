@@ -9,11 +9,13 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 - #30: PR 5, deadlines and the payer's copy, d152976. Domain model 6f72ea56, approved.
 - #32: the images fix, 5df4108.
 - #31: PR 6, the free screening with audits #53 and #57 and the campaign list, 2ec3449. Domain model a17f33aa, approved by the founder in a66f148.
-- #34: PR 5b, the plan type in words. Squash-merge it once CI is green on f6a3974; if it is still open, finish it first.
+- #34: PR 5b, the plan type in words, squash-merged as 8e33cb3 (the squash settled efac005's malformed subject; no force push).
+
+`claude/build-platform` head: **8e33cb3**.
 
 `main` holds #27 (Dependabot grouping and the PR template) on top of the plan documents.
 
-**Nothing else is open or running.** No workflow is mid-run, and no worktree holds unpushed work. `/home/user/pr6` and `/home/user/pr5b` can go once #34 merges.
+**Nothing is open or running.** No pull request is open, no workflow is mid-run, no check-in is scheduled, and no worktree is left except `/home/user/ops`. Every scratch database is dropped. The archived run script `co-001-pr5-qualifiers-and-image-fix-wf_ac693abe-059.js` is the only one not on this branch: gitleaks read a document hash in it as a key, and the push was not forced.
 
 **Next, in order** (reconciliation-001 "Proposed pull requests, in order"; the combined audit `audits/combined/combined-report.md` maps each upgrade to its PR):
 1. **PR 6b.**
