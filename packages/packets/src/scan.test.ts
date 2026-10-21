@@ -135,6 +135,43 @@ describe('scanText', () => {
     expect(scan.markers.map((item) => item.sources)).toEqual([[1, 3]]);
   });
 
+  it('reads groups of thousands, every decimal and the punctuation after a figure exactly, in each figure’s form', () => {
+    expect(figures('Rose 12,345.5% and 1,234,567% and 9.25 per  cent.')).toEqual([
+      ['percent', '12345.5', '12,345.5%'],
+      ['percent', '1234567', '1,234,567%'],
+      ['percent', '9.25', '9.25 per  cent'],
+    ]);
+    // A dollar amount ends at its sentence's period; one with three decimals is no amount.
+    expect(figures('Paid $1,234,567.89, $12,345 and $5. Then $5.123 was written.')).toEqual([
+      ['amount', '123456789', '$1,234,567.89'],
+      ['amount', '1234500', '$12,345'],
+      ['amount', '500', '$5'],
+      ['number', '5.123', '5.123'],
+    ]);
+    expect(figures('Allowed 12,345.67 and 1,234,567.89.')).toEqual([
+      ['amount', '1234567', '12,345.67'],
+      ['amount', '123456789', '1,234,567.89'],
+    ]);
+    expect(figures('Units 12,345 and 1,234,567 and 2.125, then 3. Billed x2.')).toEqual([
+      ['number', '12345', '12,345'],
+      ['number', '1234567', '1,234,567'],
+      ['number', '2.125', '2.125'],
+      ['number', '3', '3'],
+      ['number', '2', 'x2'],
+    ]);
+    expect(figures('A 1/2. share; 1/2 3 times.')).toEqual([
+      ['identifier', '1/2', '1/2'],
+      ['identifier', '1/2', '1/2'],
+      ['number', '3', '3'],
+    ]);
+    // A date followed by a hyphen and a letter is still the date; a month and a day of two digits each.
+    expect(figures('On 2026-03-05-a and 12/25/2026 and 3/8/2026-a.')).toEqual([
+      ['date', '2026-03-05', '2026-03-05'],
+      ['date', '2026-12-25', '12/25/2026'],
+      ['date', '2026-03-08', '3/8/2026'],
+    ]);
+  });
+
   it('reads a remittance key led by its qualifier code as one identifier, digit or not, before any figure takes part of it (the verification of 2026-10-21)', () => {
     expect(figures('Plan CE:SYNPLAN-FIX-ONE. Payer (2U:SYNPAYERQ), XV:SYNPAYERXV; TRN03:1999999999 and CLP06:12 [1].')).toEqual([
       ['identifier', 'CE:SYNPLAN-FIX-ONE', 'CE:SYNPLAN-FIX-ONE'],
