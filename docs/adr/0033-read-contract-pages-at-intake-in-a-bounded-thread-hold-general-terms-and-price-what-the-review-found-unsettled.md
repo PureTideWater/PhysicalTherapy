@@ -1,6 +1,6 @@
 # 0033. Read contract pages at intake in a bounded thread, hold general terms, and price what the review found unsettled
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (2026-10-21: a ZIP whose locality needs its ZIP+4 is priced from the ZIP+4 file's range when the settings give one)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering); the reimbursement specialist answers fixtures/golden/QUESTIONS.md Q31 to Q38
 - **PRD sections:** 1 (rule 1), 2 (points 6 to 8), 5 (J5), 6 (Intake and documents; Contract repository), 7 (screen
@@ -55,7 +55,9 @@ The review of milestones 3 to 5 found, among smaller things:
   alert for every other detail); a line under `UNKNOWN` stops at step 3 with `UNITS_RULE_UNKNOWN`, after its
   fee-schedule value and before the reduction ranks it, whatever the code (no rule record says which codes are timed);
   more than `MAX_UNITS` (999) on a line is `ENGINE_ERROR units_above_limit`; a practice ZIP whose locality record
-  needs its ZIP+4 is `ENGINE_ERROR locality_needs_zip_plus_four`, with the flag in the trace. The reduction of a day
+  needs its ZIP+4 is `ENGINE_ERROR locality_needs_zip_plus_four`, with the flag in the trace; since PR 6b (ADR 0064),
+  only when the settings give no ZIP+4, and a ZIP+4 the plus-four file does not list is `ENGINE_ERROR
+  zip_plus_four_not_in_locality_map`. The reduction of a day
   runs inside the per-line guard, and each line's trace records only the day's first unit and its own units.
   `ENGINE_VERSION` is `phase-one/2`.
 - **`recompute` holds the fee schedule to what it was computed for**: the percentage, year basis and conversion factor
@@ -92,7 +94,7 @@ The review of milestones 3 to 5 found, among smaller things:
 | Accept .xls exhibits and leave them uncitable | The finding's complaint exactly: an exhibit no record can be verified from |
 | `UNITS_RULE_UNKNOWN` only for timed codes | No rule record names them, and the plan forbids typing CMS lists from memory (QUESTIONS Q32) |
 | Price 23 and 25, or call them `SECONDARY_PAYER` | Their reading is the specialist's (Q31); until then a review stop that pages no one |
-| A ZIP+4 or per-site locality setting now | No input carries one and no golden line prices one (Q37); stopping is never a guess |
+| A ZIP+4 or per-site locality setting now | No input carries one and no golden line prices one (Q37); stopping is never a guess. *ZIP+4 taken in PR 6b (ADR 0064); per-site localities in the multi-site PR (audit #16).* |
 | Keep format 1 and add optional fields | A strict format with optional window fields would let a claim silently skip steps 7 and 8 |
 
 ## Consequences

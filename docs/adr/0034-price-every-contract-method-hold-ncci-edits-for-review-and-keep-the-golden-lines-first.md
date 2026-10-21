@@ -1,6 +1,6 @@
 # 0034. Price every contract method, hold the NCCI edits for review, and keep the golden lines first
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (2026-10-21: `ENGINE_VERSION` `phase-two/2` for the ZIP+4 lookup, with two optional trace keys)
 - **Date:** 2026-10-18
 - **Deciders:** founder (engineering); the reimbursement specialist answers fixtures/golden/QUESTIONS.md Q39 to Q45
 - **PRD sections:** 2 (points 2, 6 and 8), 9 (contract rate records), 11 (the engine, every step), 18 (the pricing
@@ -53,7 +53,8 @@ multiple procedure reduction means for an amount that has no practice-expense pa
   every record stored before stays valid and is written back unchanged; the database checks only that `parameters` is
   an object, so no migration. It applies after sequestration: a percentage of the amount, or the line held to the cap
   (Q45).
-- **The trace is `tp-pricing-trace/2`** and `ENGINE_VERSION` is `phase-two/1`: the terms' fixed amount, lesser-of
+- **The trace is `tp-pricing-trace/2`** and `ENGINE_VERSION` is `phase-two/1` (`phase-two/2` since PR 6b's ZIP+4
+  lookup, ADR 0064, whose two keys are optional, so the format stays 2): the terms' fixed amount, lesser-of
   schedule and contract adjustment; the units step's medically unlikely edit, unit amount, schedule amount, charge and
   base; the per-visit step (the visit's lines and its carrier); the procedure-to-procedure edits with their records,
   indicators and bypasses; the contract adjustment entry; and the review flags in the outcome. `recompute` stays
