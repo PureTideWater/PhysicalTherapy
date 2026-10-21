@@ -14,8 +14,12 @@ import { ENGINE_ERROR_DETAILS, NO_PFS_VALUE_DETAILS, UNPRICED_REASONS } from './
  */
 export const TRACE_FORMAT = 'tp-pricing-trace/2';
 
-/** The engine's version, recorded in every trace and in `pricing_run.engine_version`. */
-export const ENGINE_VERSION = 'phase-two/1';
+/**
+ * The engine's version, recorded in every trace and in `pricing_run.engine_version`. phase-two/2 resolves the
+ * locality of a ZIP that needs its ZIP+4 from the ZIP+4 file (docs/adr/0064); every other input prices as under
+ * phase-two/1.
+ */
+export const ENGINE_VERSION = 'phase-two/2';
 
 const decimalText = z.string().regex(/^-?\d+(?:\.\d+)?$/, 'must be decimal text');
 const centsText = z.string().regex(/^(?:0|-?[1-9]\d*)$/, 'must be whole cents as integer text');
@@ -54,9 +58,13 @@ const claimFacts = z.strictObject({
   payer_plan_key: z.string().nullable(),
 });
 
-/** The practice settings as given (verbatim, like the line facts: a line refused for them still has a trace). */
+/**
+ * The practice settings as given (verbatim, like the line facts: a line refused for them still has a trace). The
+ * ZIP+4 is recorded only when one is given, so a trace without one keeps phase-two/1's keys.
+ */
 const settings = z.strictObject({
   zip: z.string(),
+  zip_plus_four: z.string().optional(),
   default_rounding: z.string().nullable(),
   place_of_service_settings: z.record(z.string(), z.string()),
 });
@@ -121,8 +129,20 @@ const feeSchedule = z.strictObject({
     .strictObject({ record: recordRef, work_rvu: decimalText, pe_rvu_facility: decimalText, pe_rvu_non_facility: decimalText, mp_rvu: decimalText, facility_pe_na: z.boolean(), non_facility_pe_na: z.boolean() })
     .nullable(),
   setting: setting.nullable(),
-  /** The practice ZIP's locality; a ZIP whose record needs its ZIP+4 stops the line (ENGINE_ERROR). */
-  locality: z.strictObject({ record: recordRef, carrier: z.string(), locality: z.string(), plus_four_required: z.boolean().nullable() }).nullable(),
+  /**
+   * The practice ZIP's locality record, its own carrier and locality as written. A ZIP whose record needs its ZIP+4
+   * is decided by the range of the plus-four record holding the settings' ZIP+4 (`plus_four`, present only then);
+   * without a ZIP+4 the line stops (ENGINE_ERROR).
+   */
+  locality: z
+    .strictObject({
+      record: recordRef,
+      carrier: z.string(),
+      locality: z.string(),
+      plus_four_required: z.boolean().nullable(),
+      plus_four: z.strictObject({ record: recordRef, zip_plus_four: z.string(), from: z.string(), to: z.string(), carrier: z.string(), locality: z.string() }).optional(),
+    })
+    .nullable(),
   gpci: z.strictObject({ record: recordRef, work_gpci: decimalText, pe_gpci: decimalText, mp_gpci: decimalText }).nullable(),
   conversion_factor: z.strictObject({ record: recordRef, applicability: z.string(), value: decimalText }).nullable(),
   percentage: decimalText,

@@ -279,6 +279,126 @@ describe('step 2, the base amount by method', () => {
   });
 });
 
+describe('step 2, the locality of a ZIP that needs its ZIP+4 (PRC-21; docs/adr/0064)', () => {
+  /**
+   * Release 900006: 900001 with a second locality, 99999-02 (GPCI work 1.000, PE 1.050, MP 0.700), and the ZIP+4 ranges
+   * of 00012, the ZIP the ZIP5 file flags: 0000-4999 in locality 01, 5000-8999 in locality 02, 9000-9999 not listed.
+   * At 100% of a commercial term with every flag off, 97110 non-facility is 620 + 1349 + 143 = 2112 cents in locality
+   * 01 and 0.31 x 1.000 x 2000 + 0.71 x 1.050 x 2000 + 0.11 x 0.700 x 2000 = 620 + 1491 + 154 = 2265 cents in 02.
+   */
+  const plusFourBase = readRuleRelease('fixtures/synthetic/rules/release-synth-900006');
+  const plusFourRelease = indexRelease(plusFourBase);
+  const commercial = contractAgreement({ terms: percentTerms() });
+  const at = (zip: string, zipPlusFour?: string | null) => ({ settings: practiceSettings(zipPlusFour === undefined ? { zip } : { zip, zipPlusFour }) });
+  const split = plusFourBase.records.find((record) => record.record_type === 'locality_map_plus_four') as RuleRecord;
+
+  it('(a) prices 00012-5000 at locality 02, naming the plus-four record and its range, with the ZIP5 record’s own carrier and locality kept', () => {
+    const line = pricedLine(priceOne({ agreement: commercial }, at('00012', '5000'), plusFourRelease));
+    expect(line.expectedAllowedCents).toBe(2265n);
+    expect(line.trace.steps.fee_schedule?.unit_cents).toEqual({ work: '620', pe: '1491', mp: '154', total: '2265' });
+    expect(line.trace.settings).toEqual({ zip: '00012', zip_plus_four: '5000', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility', '22': 'facility' } });
+    const locality = line.trace.steps.fee_schedule?.locality;
+    expect(locality).toEqual({
+      record: plusFourRelease.ref(plusFourBase.records.find((record) => record.record_type === 'locality_map' && keyOf(record).zip === '00012') as RuleRecord),
+      carrier: '99999',
+      locality: '01',
+      plus_four_required: true,
+      plus_four: { record: plusFourRelease.ref(split), zip_plus_four: '5000', from: '5000', to: '8999', carrier: '99999', locality: '02' },
+    });
+    expect(locality?.plus_four?.record).toMatchObject({ record_type: 'locality_map_plus_four', key: { zip: '00012' }, effective_from: '2026-01-01', effective_to: '2026-12-31' });
+    expect(line.trace.steps.fee_schedule?.gpci).toMatchObject({ record: { record_type: 'pfs_gpci', key: { carrier: '99999', locality: '02' } }, work_gpci: '1.000', pe_gpci: '1.050', mp_gpci: '0.700' });
+    expect(parseTrace(JSON.parse(JSON.stringify(line.trace)))).toEqual(line.trace);
+    // The range's last code, as golden G199 takes it.
+    expect(pricedLine(priceOne({ agreement: commercial }, at('00012', '8999'), plusFourRelease)).expectedAllowedCents).toBe(2265n);
+  });
+
+  it('(b) prices 00012-0001 at locality 01, the amount of 00011', () => {
+    const split01 = pricedLine(priceOne({ agreement: commercial }, at('00012', '0001'), plusFourRelease));
+    const whole = pricedLine(priceOne({ agreement: commercial }, at('00011'), plusFourRelease));
+    expect([split01.expectedAllowedCents, whole.expectedAllowedCents]).toEqual([2112n, 2112n]);
+    expect(split01.trace.steps.fee_schedule?.locality?.plus_four).toMatchObject({ zip_plus_four: '0001', from: '0000', to: '4999', locality: '01' });
+    expect(split01.trace.steps.fee_schedule?.gpci).toEqual(whole.trace.steps.fee_schedule?.gpci);
+    // Medicare Advantage terms apply their adjustments to the ZIP+4's locality too: 2265 less 3% sequestration is 2197.05.
+    expect(pricedLine(priceOne({}, at('00012', '5000'), plusFourRelease)).expectedUnroundedCents.toString()).toBe('2197.05');
+  });
+
+  it('(c) stops 00012 without a ZIP+4 with ENGINE_ERROR locality_needs_zip_plus_four, null or absent, and records the flag', () => {
+    for (const zipPlusFour of [undefined, null]) {
+      const line = unpricedLine(priceOne({ agreement: commercial }, at('00012', zipPlusFour), plusFourRelease));
+      expect(reasonOf(line)).toBe('ENGINE_ERROR locality_needs_zip_plus_four');
+      expect(line.trace.settings).toEqual({ zip: '00012', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility', '22': 'facility' } });
+      expect(line.trace.steps.fee_schedule?.locality).toEqual({ record: expect.objectContaining({ record_type: 'locality_map' }) as unknown, carrier: '99999', locality: '01', plus_four_required: true });
+      expect(line.trace.steps.fee_schedule?.gpci).toBeNull();
+      expect(pagesOperator('locality_needs_zip_plus_four')).toBe(true);
+    }
+  });
+
+  it('(d) stops a ZIP+4 no range holds with ENGINE_ERROR zip_plus_four_not_in_locality_map, never a neighbour’s locality', () => {
+    for (const zipPlusFour of ['9100', '9000', '9999']) {
+      const line = unpricedLine(priceOne({ agreement: commercial }, at('00012', zipPlusFour), plusFourRelease));
+      expect(reasonOf(line)).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+      expect(line.trace.steps.fee_schedule?.locality).toMatchObject({ locality: '01', plus_four_required: true });
+      expect(line.trace.steps.fee_schedule?.locality).not.toHaveProperty('plus_four');
+      expect(line.trace.steps.fee_schedule?.gpci).toBeNull();
+      expect(line.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'zip_plus_four_not_in_locality_map', step: 'fee_schedule' });
+    }
+    // An operator looks at it: the detail is not one of the review details.
+    expect(pagesOperator('zip_plus_four_not_in_locality_map')).toBe(true);
+    expect(REVIEW_DETAILS).toEqual(['claim_status_not_priced', 'mppr_needs_fee_schedule']);
+  });
+
+  it('(e) stops 00012-0001 under a release with no ZIP+4 record (900001), or one whose ZIP+4 record is not in force on the date', () => {
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0001')))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+    const ended = releaseVariant(plusFourBase, (records) => records.map((record) => (record.record_type === 'locality_map_plus_four' ? ruleRecordLike(record, { effective_to: '2026-03-09' }) : record)));
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0001'), ended))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+    expect(reasonOf(priceOne({ agreement: commercial, serviceDate: '2026-03-09' }, at('00012', '0001'), ended))).toBe('priced');
+    const twice = releaseVariant(plusFourBase, (records) => [...records, ruleRecordLike(split, { effective_from: '2026-03-01' })]);
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0001'), twice))).toBe('ENGINE_ERROR release_records_overlap');
+  });
+
+  it('(f) ignores a ZIP+4 given for a ZIP that does not need it: the amount of the five-digit ZIP, and only the settings differ in the trace', () => {
+    const given = pricedLine(priceOne({ agreement: commercial }, at('00011', '1234'), plusFourRelease));
+    const without = pricedLine(priceOne({ agreement: commercial }, at('00011'), plusFourRelease));
+    expect(given.expectedAllowedCents).toBe(without.expectedAllowedCents);
+    expect(given.trace.settings.zip_plus_four).toBe('1234');
+    expect(given.trace.steps.fee_schedule?.locality).not.toHaveProperty('plus_four');
+    expect({ ...given.trace, settings: without.trace.settings }).toEqual(without.trace);
+  });
+
+  it('(g) refuses a ZIP+4 that is not four digits as invalid settings, and records it as given', () => {
+    for (const zipPlusFour of ['12a4', '123', '', '12345', ' 123']) {
+      const line = unpricedLine(priceOne({ agreement: commercial }, at('00012', zipPlusFour), plusFourRelease));
+      expect(reasonOf(line)).toBe('ENGINE_ERROR invalid_settings');
+      expect(line.trace.settings.zip_plus_four).toBe(zipPlusFour);
+    }
+  });
+
+  it('(h) reads the plus-four record in force on the service date under a LOCKED basis, never by the basis year (Q07)', () => {
+    // 900002's 2025 fee schedule with 900006's ZIP+4 record, and a 2025 GPCI for locality 02 equal to 2025's locality 01: so
+    // 00012-5000 prices as the PRC-04 line does (97112 at 105% of 2025, 2054.14327125 cents), through locality 02.
+    const lockedBase = readRuleRelease(SYNTHETIC_RELEASES[900002]);
+    const gpci2025 = lockedBase.records.find((record) => record.record_type === 'pfs_gpci' && record.effective_from === '2025-01-01') as RuleRecord;
+    const withSplit = (window: { readonly effective_from: string; readonly effective_to: string | null }) =>
+      releaseVariant(lockedBase, (records) => [...records, ruleRecordLike(split, window), ruleRecordLike(gpci2025, { key: { carrier: '99999', locality: '02' } })]);
+    const locked = contractAgreement({ terms: percentTerms({ percentage: '105', yearBasis: 'LOCKED:2025', codes: ['97112'] }) });
+    const facts = { procedureCode: '97112', serviceDate: '2026-04-14', agreement: locked };
+    const line = pricedLine(priceOne(facts, at('00012', '5000'), withSplit({ effective_from: '2026-01-01', effective_to: '2026-12-31' })));
+    expect(line.expectedUnroundedCents.toString()).toBe('2054.14327125');
+    expect(line.trace.steps.fee_schedule).toMatchObject({ basis_year: 2025, lookup: 'latest_in_basis_year' });
+    expect(line.trace.steps.fee_schedule?.locality?.plus_four?.record).toMatchObject({ effective_from: '2026-01-01' });
+    expect(line.trace.steps.fee_schedule?.gpci?.record).toMatchObject({ key: { carrier: '99999', locality: '02' }, effective_from: '2025-01-01' });
+    // A ZIP+4 record of 2025 alone is the latest of the basis year, and is not read: it is not in force on the service date.
+    expect(reasonOf(priceOne(facts, at('00012', '5000'), withSplit({ effective_from: '2025-01-01', effective_to: '2025-12-31' })))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+  });
+
+  it('(i) prices a fixed-schedule line for 00012 without a ZIP+4: the locality is never read', () => {
+    const line = pricedLine(priceOne({ agreement: contractAgreement({ terms: fixedTerms(3250n) }) }, at('00012'), plusFourRelease));
+    expect(line.expectedAllowedCents).toBe(3250n);
+    expect(line.trace.steps.fee_schedule).toBeNull();
+    expect(reasonOf(priceOne({ agreement: contractAgreement({ terms: perVisitTerms(8800n) }) }, at('00012', '9100'), plusFourRelease))).toBe('priced');
+  });
+});
+
 describe('step 3, units', () => {
   it('multiplies by the units as billed, whole units of at least one', () => {
     expect(pricedLine(priceOne({ units: '3', agreement: contractAgreement() })).baseCents.toString()).toBe('6336');

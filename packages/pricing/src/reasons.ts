@@ -48,8 +48,10 @@ export const ENGINE_ERROR_DETAILS = [
   'units_not_whole',
   /** More units on one line than MAX_UNITS: malformed input, never ranked or priced. */
   'units_above_limit',
-  /** The practice ZIP's locality_map record says the ZIP needs its ZIP+4 to name a locality. */
+  /** The practice ZIP's locality_map record says the ZIP needs its ZIP+4 to name a locality, and the settings give no ZIP+4. */
   'locality_needs_zip_plus_four',
+  /** The ZIP+4 file in force on the service date has no range of the practice ZIP holding its ZIP+4. */
+  'zip_plus_four_not_in_locality_map',
   /** An always-therapy code with no share of its own and no general practice-expense reduction in force. */
   'no_mppr_rate',
   /** CQ or CO on the line and no assistant_modifier record in force on the service date. */
