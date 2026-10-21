@@ -88,9 +88,14 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   {
     id: 'CAS-26',
     title: 'Payer copy of an export',
-    assertion: 'No login, record ID, SHA-256, verification, internal note, or interest not computed; approval line, reference and contact printed; the internal record on the review page',
+    assertion:
+      'No login, record ID, SHA-256, verification, internal note, code, interest not computed or $0.00 interest; above the first level the level’s own window alone; approval line, reference and contact printed; the internal record on the review page',
   },
-  { id: 'CAS-27', title: 'Export with no correspondence contact', assertion: 'Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing' },
+  {
+    id: 'CAS-27',
+    title: 'Export with no correspondence contact',
+    assertion: 'Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing; Postgres refuses the export without a name and phone',
+  },
   { id: 'CAS-28', title: 'Packet found by its reference', assertion: 'Every version of the practice whose reference matches, none of another practice' },
   {
     id: 'CAS-29',

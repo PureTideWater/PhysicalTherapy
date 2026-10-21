@@ -2,7 +2,7 @@
   "case": "CAS-27",
   "module": "CAS",
   "title": "Export with no correspondence contact",
-  "assertion": "Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing",
+  "assertion": "Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing; Postgres refuses the export without a name and phone",
   "synthetic": true,
   "completesIn": 8,
   "assertedBy": [
