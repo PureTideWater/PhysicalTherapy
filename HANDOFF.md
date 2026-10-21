@@ -8,25 +8,55 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 3. Update the tracker (below) and tell the founder where things stand before starting new work.
 
 ## Fresh session: tools/setup-container.sh
-A new cloud session gets a fresh container, and only what is on GitHub survives. Before anything else, run `tools/setup-container.sh` from this branch once, as root. Pass every open `co-001/*` branch as an argument. Each one gets a worktree: `co-001/pr-06b-…` goes to `/home/user/pr6b`, and `co-001/<name>` goes to `/home/user/<name>`.
+A new cloud session gets a fresh container, and only what is on GitHub survives. Before anything else, run `tools/setup-container.sh` from this branch, as root, until it prints `OK`. Pass every open `co-001/*` branch as an argument. Each one gets a worktree: `co-001/pr-06b-…` goes to `/home/user/pr6b`, and `co-001/<name>` goes to `/home/user/<name>`.
 ```
 git -C /home/user/PhysicalTherapy fetch -q origin claude/build-ops
-git -C /home/user/PhysicalTherapy show origin/claude/build-ops:tools/setup-container.sh > /tmp/setup-container.sh
+git -C /home/user/PhysicalTherapy show FETCH_HEAD:tools/setup-container.sh > /tmp/setup-container.sh
 bash /tmp/setup-container.sh co-001/<open branch> ...
 ```
-- **If the repository is not cloned yet,** use `git clone -q --depth 1 -b claude/build-ops https://github.com/PureTideWater/PhysicalTherapy /tmp/ops-boot`, then run `bash /tmp/ops-boot/tools/setup-container.sh …`. The script clones the repository itself.
+- **Run the last line in the background.** A fresh run takes several minutes: it downloads about 100 MB and fills the 1.2 GB pnpm store through the proxy. That is longer than the Bash tool's default timeout of 2 minutes, which would cut it off. Give that Bash call `run_in_background: true` (or `timeout: 600000`), read the summary when it finishes, and run it again until it prints `OK`.
+- **A cut-off run is safe to repeat.** Each part is built next to its final path (`<path>.tmp.<pid>`) and moved into place only when it is complete, so a cluster, an install or a clone exists only when it is whole. A venv carries a marker file until it is complete. The next run removes whatever a cut-off run left behind. Only one run at a time: a second one stops at the lock in `/tmp/setup-container`.
+- **Why `FETCH_HEAD`:** the fetch updates `origin/claude/build-ops` only when the clone has the default fetch refspec, while `FETCH_HEAD` is always the commit just fetched. The script itself fetches each branch by name when the refspec is narrower.
+- **If the repository is not cloned yet,** use `git clone -q --depth 1 -b claude/build-ops https://github.com/PureTideWater/PhysicalTherapy /tmp/ops-boot`, then run `bash /tmp/ops-boot/tools/setup-container.sh …`, also in the background. The script clones the repository itself.
 - **What it sets up:** the same paths and ports as the environment recipe below.
   - PostgreSQL 18.4 in `/opt/pg18`, cluster `/root/pgdata18`, port 5433, superuser `postgres:test`, trust on the `/tmp` socket.
-  - PostgreSQL 16 in `/root/pgdata`, port 5432.
+  - PostgreSQL 16 in `/root/pgdata`, port 5432. The build had `postgresql-16` 16.15-0ubuntu0.24.04.1. The Ubuntu archive offers only its newest 16.x, so the script prints a note when the version differs.
   - Node v24.22.0 in `/opt/node24`.
-  - Python 3.12 and pyx12 4.0.0 in `/opt/py312-ci`.
+  - Python 3.12 with pyx12 4.0.0 and defusedxml 0.7.1 in `/opt/py312-ci`, as in CI.
+  - The oracle venv `/root/.venvs/tp-oracle`: Python 3.13 from the base image, with the same two packages. `tools/test-oracle/README.md` and the older briefs (`TP_ORACLE_PYTHON=/root/.venvs/tp-oracle/bin/python`) use this path. `/opt/py312-ci/bin/python` works for `pnpm test:oracle` too.
   - gitleaks 8.24.3 at `/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks`, also linked at `/tmp/claude-0/gitleaks/gitleaks`.
   - actionlint 1.7.7 in `/opt/actionlint`, on PATH as `/usr/local/bin/actionlint`. This is a new home: in the old container, actionlint lived only in that session's scratchpad.
+  - pnpm is the base image's 10.28.0. Only when no pnpm is on PATH, the script installs `pnpm@10.28.0` from the npm registry into `/opt/pnpm-10.28.0` (pinned hashes) and links it at `/usr/local/bin/pnpm`, outside `/opt/node24`.
   - It also starts both servers, checks out `claude/build-platform`, runs `pnpm install --frozen-lockfile`, and adds `/home/user/ops` and the PR worktrees.
-- **Checks:** every download is checked by version and SHA-256. nodejs.org is refused by the proxy, so Node comes from the npm package `node-linux-x64@24.22.0` (the same binary as before), checked against a pinned SHA-256 and the registry's SHA-512. When the proxy allows nodejs.org, the script uses it and checks against SHASUMS256.txt.
-- **Result:** it prints one line per tool with its version, then `OK`, or `FAILED` with exactly what failed. Running it again changes nothing that is already in place.
-- **Check without changing anything:** `SETUP_CHECK=1 bash /home/user/ops/tools/setup-container.sh <same branches>`. Then `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` as before.
-- **Testing:** `SETUP_PREFIX`, `PG18_PORT`, `PG16_PORT`, `PG16_SKIP=1`, `CLONE_DIR`, `OPS_DIR` and `WORKTREE_ROOT` let you test it elsewhere. The postgres user must be able to enter `SETUP_PREFIX`. The scratchpad cannot be used directly, because `/tmp/claude-0` is 0700 and Claude Code resets it, so bind-mount the scratchpad directory (for example at `/mnt/setup-test`). Tested on 2026-10-21: a fresh install, a rerun, check mode, and check mode on this machine.
+- **Checks:** every download is pinned.
+  - PostgreSQL 18, Node and pnpm are npm registry tarballs. Each is checked against a pinned SHA-256, a pinned SHA-512 and the registry's own SHA-512.
+  - Node comes only from `node-linux-x64@24.22.0`, the source of the build's `/opt/node24`. nodejs.org is not used: the proxy refuses it, and its checksum list would come from the same host, unpinned.
+  - actionlint is checked against its release's checksums file and a pinned SHA-256. pyx12 and defusedxml are installed with `pip --require-hashes`. gitleaks comes from the repository's own installer, which pins its SHA-256.
+  - Every run compares `/opt/pg18` and `/opt/node24` file for file with their tarballs, and checks that each venv holds exactly pyx12, defusedxml and pip.
+  - Only the Ubuntu packages (PostgreSQL 16, locales and python3.12-venv, each installed only when missing) are not pinned.
+- **Result:** it prints one line per part with its version, then `OK`, or `FAILED` with exactly what failed and what to do about it.
+- **Running it again** installs nothing that is already in place. It is not read-only, though: it fetches origin, fast-forwards branches that are behind, and runs `pnpm install` where `node_modules` does not match `pnpm-lock.yaml`. It never lets pnpm delete an existing `node_modules`; if pnpm wants to, the script stops and says how to do it. **While agents are working, use check mode instead.**
+- **Check without changing anything:** `SETUP_CHECK=1 bash /home/user/ops/tools/setup-container.sh <same branches>`. On the old container, add `ACTIONLINT=<old scratchpad>/gov-r2/actionlint`, because actionlint was never installed in `/opt/actionlint` there. Then `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` as before.
+- **Testing:** these settings let you test it elsewhere: `SETUP_PREFIX`, `PG18_PORT`, `PG16_PORT`, `PG16_SKIP=1`, `PG_SOCKET_DIR`, `CLONE_DIR`, `OPS_DIR`, `WORKTREE_ROOT` and `REPO_URL`, plus `ACTIONLINT` in check mode. The postgres user must be able to enter `SETUP_PREFIX`. The scratchpad cannot be used directly, because `/tmp/claude-0` is 0700 and Claude Code resets it, so bind-mount a scratchpad directory (for example at `/mnt/setup-test`).
+- **Tested on 2026-10-21, under a prefix:**
+  - a fresh install, with no pnpm on PATH so that the pinned pnpm path ran;
+  - runs killed with SIGKILL while PostgreSQL 18 was being copied into place, while a venv was being made, during initdb and during `git worktree add`, each followed by a run that ended in `OK`;
+  - a cluster without the port and socket lines, reported with its remedy, and a tampered cached tarball, reported by check mode and downloaded again by the next run;
+  - a clone with a narrow fetch refspec;
+  - a rerun and check mode, neither of which changed anything;
+  - check mode on this machine.
+  The installed trees are identical to this machine's `/opt/pg18` and `/opt/node24`, the venvs hold the same packages, and the clusters have the same settings apart from the port.
+
+### Paths that moved
+The old session's scratchpad does not survive. It is `/tmp/claude-0/-home-user-PhysicalTherapy/32de87b7-30ec-5c00-8f16-6ecf80418ed3/scratchpad`, written `scratchpad/` in this file and `SP` in the briefs. A new session has its own scratchpad under another id. The files in it that matter are on this branch, or the script rebuilds them:
+- `scratchpad/gov-r2/actionlint` and `scratchpad/gov-build/actionlint/actionlint` are now `/opt/actionlint/actionlint`, also `actionlint` on PATH.
+- `scratchpad/design/` is now `/home/user/ops/designs/`.
+- `scratchpad/best-option-audit/report.{md,json}` is now `/home/user/ops/audits/`, and `combined-report.{md,json}` is now `/home/user/ops/audits/combined/`.
+- `scratchpad/audit-page/build.py` is now `/home/user/ops/audit-page/build.py`.
+- `scratchpad/pr5-approval-summary.md` and `scratchpad/pr6-approval-summary.md` are now in `/home/user/ops/approval-summaries/`. Copy the latest ones here before the switch: review rounds rewrite them in the scratchpad.
+- `/root/.venvs/tp-oracle` and `/tmp/claude-0/gitleaks/gitleaks` keep their paths; the script rebuilds them.
+- `SP` (logs and per-role work directories) becomes the new session's own scratchpad.
+- **Before reusing a brief** from `workflow-scripts/`, rewrite its `SP`, `ENV`, `SCRATCH` and `ACTIONLINT` constants first, and point its design, audit and summary paths at the list above.
 
 ## Standing rule from the founder (2026-10-18)
 Recommend and build only the best option, whatever the effort to build it. The app must be a well-oiled, incredible product focused on quality, accuracy and user experience, and set up to become a multi-million-dollar business. Judge every option on:
@@ -125,7 +155,7 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
 ## Environment recipe (cloud container)
 - Postgres 16 on 5432: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /root/pgdata -o '-p 5432 -k /tmp' -l /tmp/pg16.log start"`.
 - Postgres 18 on 5433 (CI parity): `su postgres -c "/opt/pg18/bin/pg_ctl -D /root/pgdata18 -o '-p 5433 -k /tmp' -l /tmp/pg18.log start"`, superuser `postgres:test`.
-- Node 24 is at `/opt/node24/bin`; Python 3.12 with pyx12 is at `/opt/py312-ci/bin`; gitleaks 8.24.3 is at `/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks`, and also at `/tmp/claude-0/gitleaks/gitleaks`; actionlint 1.7.7 is at `/opt/actionlint/actionlint`. If the container is replaced, run `tools/setup-container.sh` (see "Fresh session").
+- Node 24 is at `/opt/node24/bin`; Python 3.12 with pyx12 is at `/opt/py312-ci/bin`; gitleaks 8.24.3 is at `/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks`, and also at `/tmp/claude-0/gitleaks/gitleaks`; after `tools/setup-container.sh`, actionlint 1.7.7 is at `/opt/actionlint/actionlint` (on the old container it is only in the scratchpad, at `gov-r2/actionlint`). If the container is replaced, run `tools/setup-container.sh` (see "Fresh session").
 - One worktree per PR (`/home/user/prN`). Each agent role gets its own database (`tp_prN_<role>_<n>`) and its own E2E port.
 - `pnpm lint` needs about 6 GiB of heap.
 - **Disk:** keep more than 5 GB free. Delete only clones that belong to merged PRs or finished workflows, after checking nothing running uses them.
