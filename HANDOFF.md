@@ -15,7 +15,7 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 
 `main` holds #27 (Dependabot grouping and the PR template) on top of the plan documents.
 
-**Nothing is open or running.** No pull request is open, no workflow is mid-run, no check-in is scheduled, and no worktree is left except `/home/user/ops`. Every scratch database is dropped. The archived run script `co-001-pr5-qualifiers-and-image-fix-wf_ac693abe-059.js` is the only one not on this branch: gitleaks read a document hash in it as a key, and the push was not forced.
+**Nothing of the build's is open or running.** The only open pull requests are three from Dependabot into `claude/build-platform`: #26 (npm minor and patch, 9 updates), #29 (GitHub Actions, 8 updates) and #33 (Docker base images). Leave them for the final pass's Dependabot step and the CI PR (the versions dismissed on 2026-10-18), each checked like any change; never merge one as it stands. No workflow is mid-run, no check-in is scheduled, and no worktree is left except `/home/user/ops`. Every scratch database is dropped. The archived run script `co-001-pr5-qualifiers-and-image-fix-wf_ac693abe-059.js` is the only one not on this branch: gitleaks read a document hash in it as a key, and the push was not forced.
 
 **Next, in order** (reconciliation-001 "Proposed pull requests, in order"; the combined audit `audits/combined/combined-report.md` maps each upgrade to its PR):
 1. **PR 6b.**
