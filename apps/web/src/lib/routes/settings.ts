@@ -406,7 +406,7 @@ export const correspondenceForm = z.object({
   address_line2: noAt(blankText(100, 'at most 100 characters')),
   address_city: noAt(blankText(100, 'at most 100 characters')),
   address_state: blankText(2, 'a USPS state or territory code, such as NC').pipe(z.string().toUpperCase()),
-  address_zip: blankText(10, 'a ZIP code of five digits, or ZIP+4'),
+  address_zip: blankText(10, 'a ZIP code of five digits, or ZIP+4 (nine digits, with or without its hyphen)'),
 });
 
 export interface CorrespondencePageData {

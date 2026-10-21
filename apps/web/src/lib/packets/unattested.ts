@@ -165,6 +165,12 @@ export const STALE_EXPORT_REVIEW = {
     `The practice logged this export’s submission of ${submittedOn} as sent without sign-off: pricing went stale after export. This version is never attested; reconciliation tracks the payer’s answer to it.`,
   /** The disabled attest button's reason. */
   button: 'Not attested: its pricing went stale after the export, so this export is never attested. Its replacement, a new version’s export, is the one to attest.',
+  /** The Exported files card: no download is asked for, since there is nothing to attest. */
+  files:
+    'Its pricing went stale after the export, so it is never attested and its files need no review download: they stay here as the record of what was exported. A download is still checked against its SHA-256 and recorded as yours.',
+  /** The Approved alone alert: no attestation of this export is promised. */
+  approvedAlone:
+    'No one else in the practice approves packets, so the person who wrote this version approved it alone, 24 hours after writing it. This export is never attested, so the check by a person who did not write it falls to its replacement: a new version’s export, which a reimbursement reviewer attests before it is sent.',
 } as const;
 
 /**
@@ -193,10 +199,12 @@ export const STALE_EXPORT_SUBMISSION = {
     allStale
       ? 'If it has not gone to the payer, do not send it: every line is stale, and no new version can be written until refreshing a case on new pricing is available.'
       : 'If it has not gone to the payer, do not send it: the stale lines are re-priced, a new version is written and approved on the pricing in effect, and its new export is attested before it is sent.',
-  confirm: 'This export went to the payer without the reimbursement reviewer’s sign-off, after its pricing went stale. Log it as sent without sign-off.',
+  // Whenever it was sent (before its pricing went stale or after), it went without the reviewer's sign-off: that is what
+  // the person confirms, and the reason says why it is never attested.
+  confirm: 'This export went to the payer without the reimbursement reviewer’s sign-off. Its pricing has since gone stale, so it is never attested; log it as sent without sign-off.',
   submit: 'Log the submission sent without sign-off',
   /** The refusal when the confirmation is not given. */
-  confirmRequired: 'confirm that this export went to the payer without the reimbursement reviewer’s sign-off; it is logged as sent without sign-off',
+  confirmRequired: 'confirm that this export went to the payer without the reimbursement reviewer’s sign-off; its pricing has since gone stale, so it is logged as sent without sign-off',
   /** The notice once it is logged. */
   logged:
     'The submission is logged as sent without sign-off: pricing went stale after export. It is recorded unattested with that reason and flagged with the cause, its packet version is never attested, and reconciliation tracks the payer’s answer to it.',

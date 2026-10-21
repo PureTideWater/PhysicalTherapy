@@ -16,6 +16,7 @@ import { TriageWorld } from '@tp/worker/testing/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
+import { eventText } from '../cases/timeline';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
@@ -29,7 +30,7 @@ import { MemoryQueue } from '../uploads/queue';
 import { attestPacketExportAction, packetReviewPage, packetReviewsPage } from './packets';
 import { reconciliationPage } from './reconciliation';
 import { logSubmissionAction, submissionsPage } from './submissions';
-import { reopenLineAction, writeOffLineAction } from './triage';
+import { casePage, reopenLineAction, writeOffLineAction } from './triage';
 
 /**
  * A submission sent without sign-off, through the screens' routes against PostgreSQL (the founder's ruling of
@@ -291,6 +292,10 @@ describe('an export whose pricing went stale after it was made and before its at
     const page = ok(await call(submissionsPage, setup.practice.manager, { ...P(setup.practice), caseId: setup.caseId, notice: 'logged_unattested' }));
     expect(page.notice).toBe('logged_unattested');
     expect(page.submissions.map((submission) => [submission.submissionId, submission.sent, submission.pricingCheck])).toEqual([[logged.objectId, { kind: 'unattested', reason: REASON }, 'PRICING_NOT_IN_EFFECT']]);
+
+    // The case page's timeline says so beside the submission, in the founder's words.
+    const timeline = ok(await call(casePage, setup.practice.manager, { ...P(setup.practice), caseId: setup.caseId })).timeline.filter((event) => event.kind === 'submitted');
+    expect(timeline.map((event) => eventText(event))).toEqual(['Packet version 1 submitted through the payer portal, dispute level 1; sent without sign-off: pricing went stale after export']);
 
     // The review: logged so, and never attested.
     const review = ok(await call(packetReviewPage, setup.reviewer, { ...P(setup.practice), caseId: setup.caseId, versionId: setup.versionId }));

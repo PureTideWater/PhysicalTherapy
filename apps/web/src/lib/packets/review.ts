@@ -45,7 +45,12 @@ import { atCaseLevel, deadlineNow } from './queries';
 
 type Scope = PracticeScope<ScopeClient>;
 
-/** What the reviewer confirms, item by item, before attesting (the attestation names each code; the founder's wording, Q5 (a)). */
+/**
+ * What the reviewer confirms, item by item, before attesting (the attestation names each code; the founder's wording,
+ * Q5 (a)). Two items say what each file carries, since the CSV is the line schedule alone (review of 2026-10-21): the
+ * PDF closes with the approval line, the reference and the contact, the CSV file is named by the reference; and above
+ * the first level the files state the level's own window without a clause. The founder confirms that wording.
+ */
 export const PACKET_CHECKLIST = [
   {
     id: 'figures',
@@ -53,7 +58,7 @@ export const PACKET_CHECKLIST = [
   },
   {
     id: 'deadline',
-    text: 'The deadline is verified: the contract window’s page, quote and hash are signed off, or the rule release’s window record is verified to the level required (shown on this page; the payer’s files state the window’s end and its clause, not its verification).',
+    text: 'The deadline is verified: the contract window’s page, quote and hash are signed off, or the rule release’s window record is verified to the level required (shown on this page; the payer’s files state the window’s end and, at the first level, the clause or record behind it, not its verification).',
   },
   {
     id: 'calculation',
@@ -62,11 +67,24 @@ export const PACKET_CHECKLIST = [
   { id: 'identifiers', text: 'The identifiers in the PDF and the CSV are the claim and patient records’ own, and the narrative holds none of them.' },
   {
     id: 'payer_copy',
-    text: 'The PDF and the CSV are fit to send to the payer: they name the practice, its approval line with this reference and its correspondence contact, and carry no login, record ID, SHA-256 or internal note (those are on this page).',
+    text: 'The PDF and the CSV are fit to send to the payer: the PDF names the practice and closes with its approval line, this reference and its correspondence contact; the CSV is its line schedule, its file named by this reference; neither carries a login, record ID, SHA-256 or internal note (those are on this page).',
   },
   { id: 'files', text: 'The PDF and the CSV I downloaded and reviewed are the files whose SHA-256 is shown here.' },
   { id: 'independent', text: 'I had no part in drafting, writing or approving this packet.' },
 ] as const satisfies readonly { readonly id: PacketAttestationItem; readonly text: string }[];
+
+/**
+ * The items an attestation records, in its own order, each in the checklist's wording today (the attestation stores
+ * the codes only, never the words; a code the checklist no longer holds shows as itself). The page says so beside them
+ * (ATTESTED_WORDING_NOTE), so a later rewording never passes for what an earlier reviewer saw.
+ */
+export function attestedItems(codes: readonly string[]): readonly { readonly id: string; readonly text: string }[] {
+  const words = new Map<string, string>(PACKET_CHECKLIST.map((item) => [item.id, item.text]));
+  return codes.map((id) => ({ id, text: words.get(id) ?? id }));
+}
+
+/** Beside an attestation's items: what the record holds, and whose words are shown. */
+export const ATTESTED_WORDING_NOTE = 'The attestation records each item by its code; the words shown are the checklist’s as it reads today.';
 
 const confirmed = z.literal('on', 'confirm this item');
 

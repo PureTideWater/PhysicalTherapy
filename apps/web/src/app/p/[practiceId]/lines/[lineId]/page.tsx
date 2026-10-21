@@ -155,6 +155,11 @@ export default async function LinePage(props: {
                         </ul>
                       )}
                       <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs">{item.recorded}</pre>
+                      {item.note === null ? null : (
+                        <p className="pt-1 text-xs text-muted-foreground" data-trace-note={item.key}>
+                          {item.note}
+                        </p>
+                      )}
                     </>
                   )}
                 </li>

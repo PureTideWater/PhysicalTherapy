@@ -50,6 +50,8 @@ const EVERY_TEXT = [
   STALE_EXPORT_REVIEW.whatToDo,
   STALE_EXPORT_REVIEW.ifSent,
   STALE_EXPORT_REVIEW.button,
+  STALE_EXPORT_REVIEW.files,
+  STALE_EXPORT_REVIEW.approvedAlone,
   STALE_EXPORT_REVIEW.sent('2026-10-20'),
   STALE_EXPORT_REVIEW.why(MIXED),
   ...PRICING_CHECK_CAUSES.map((cause) => STALE_EXPORT_REVIEW.why(allOf(cause))),
@@ -200,6 +202,12 @@ describe('the submissions page’s log of a stale export', () => {
     expect(STALE_EXPORT_SUBMISSION.sent).toContain('reconciliation tracks the payer’s answer');
     expect(STALE_EXPORT_SUBMISSION.submit).toBe('Log the submission sent without sign-off');
     expect(STALE_EXPORT_SUBMISSION.confirm).toContain('without the reimbursement reviewer’s sign-off');
+    // The person confirms how it went (without sign-off), never when: an export sent the day it was made, before its
+    // pricing went stale, is logged truthfully too (review of 2026-10-21).
+    for (const words of [STALE_EXPORT_SUBMISSION.confirm, STALE_EXPORT_SUBMISSION.confirmRequired]) {
+      expect(words).not.toMatch(/after its pricing went stale|went to the payer[^.;]*after/);
+      expect(words).toContain('has since gone stale');
+    }
     expect(STALE_EXPORT_SUBMISSION.logged).toMatch(/^The submission is logged as sent without sign-off: pricing went stale after export\. /);
     expect(STALE_EXPORT_SUBMISSION.logged).toContain('never attested');
     expect(CLOSED_CASE_SUBMISSION).toContain('reopen a line on the case page with the reason, then log the submission here');

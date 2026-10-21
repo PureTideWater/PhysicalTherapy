@@ -382,7 +382,7 @@ export default async function SubmissionsPage(props: Props) {
                     </Badge>
                   </p>
                   <p>
-                    Reference: {canReadPhi ? (submission.reference ?? '—') : 'shown to the roles that read PHI'}; follow up on {submission.followUpOn}.
+                    Payer’s reference: {canReadPhi ? (submission.reference ?? '—') : 'shown to the roles that read PHI'}; follow up on {submission.followUpOn}.
                   </p>
                   <p data-export-hash={submission.exportSha256}>
                     Export SHA-256: PDF <Hash value={submission.exportSha256} label="Submitted PDF SHA-256" />; CSV <Hash value={submission.exportCsvSha256} label="Submitted CSV SHA-256" />

@@ -1,4 +1,4 @@
-import { type LineDeadline, type PacketContent, type VerifierReport, interestExclusionText } from '@tp/packets';
+import { type LineDeadline, type PacketContent, type VerifierReport, interestExclusionText, interestStated, lineInterestStated } from '@tp/packets';
 import { type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Badge } from '@tp/ui';
 import Link from 'next/link';
@@ -349,11 +349,13 @@ export function InterestSection({ content }: { readonly content: PacketContent }
       <p>
         Interest total: {interest.total_cents === null ? 'not computed' : <Money value={interest.total_cents} />}
         {interest.computed ? '' : ' (some lines could not be computed; see the evidence gaps)'}
+        {interest.total_cents !== null && !interestStated(interest) ? '; not stated in the payer’s copy, which states only interest above $0.00' : ''}
       </p>
       <ul className="list-disc pl-5" aria-label="Interest lines">
         {interest.lines.map((line) => (
           <li key={line.row}>
             Row {line.row}: due {line.due_on ?? '—'}, paid {line.paid_on}, {line.days_late === null ? '—' : `${String(line.days_late)} days late`}; interest {line.interest_cents === null ? 'not computed' : <Money value={line.interest_cents} />}
+            {line.interest_cents !== null && !lineInterestStated(line) ? ', not stated in the payer’s copy' : ''}
           </li>
         ))}
       </ul>

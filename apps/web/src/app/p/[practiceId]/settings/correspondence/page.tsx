@@ -83,7 +83,7 @@ export default async function CorrespondencePage(props: { readonly params: Promi
                 <div className="grid gap-3 sm:grid-cols-[1fr_6rem_8rem]">
                   <Field label="City" name="address_city" maxLength={100} defaultValue={stored?.address?.city ?? ''} />
                   <SelectField label="State" name="address_state" options={[{ value: '', label: '—' }, ...states.map((code) => ({ value: code, label: code }))]} defaultValue={stored?.address?.state ?? ''} />
-                  <Field label="ZIP" name="address_zip" inputMode="numeric" maxLength={10} defaultValue={stored?.address?.zip ?? ''} />
+                  <Field label="ZIP" name="address_zip" inputMode="text" autoComplete="postal-code" maxLength={10} defaultValue={stored?.address?.zip ?? ''} />
                 </div>
               </fieldset>
             </ActionForm>

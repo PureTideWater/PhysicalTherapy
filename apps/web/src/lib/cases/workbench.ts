@@ -1,4 +1,5 @@
 import { type KeyProvider, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
+import { submissionSentOf } from '@tp/worker/packets';
 
 import type { CaseEvent } from '../triage/queries';
 import { peopleEmails } from './people';
@@ -130,7 +131,7 @@ export async function requestApproval(
 
 interface MilestoneRows {
   readonly versions: readonly { drafted_by: string; created_at: Date; version_no: number; verifier_passed: boolean; approved_by: string | null; approved_at: Date | null; approved_alone: boolean; exported_at: Date | null; export_sha256: string | null; attested_at: Date | null }[];
-  readonly submissions: readonly { submitted_by: string; created_at: Date; version_no: number; dispute_level: number; channel: keyof typeof CHANNEL_TEXT }[];
+  readonly submissions: readonly { submitted_by: string; created_at: Date; version_no: number; dispute_level: number; channel: keyof typeof CHANNEL_TEXT; unattested_reason: string | null }[];
   readonly responses: readonly { recorded_by: string | null; created_at: Date; kind: ResponseKindText; reopens_case: boolean }[];
 }
 
@@ -141,7 +142,7 @@ async function milestones(scope: Scope, practiceId: string, caseId: string): Pro
     [caseId, practiceId],
   );
   const { rows: submissions } = await scope.client.query<MilestoneRows['submissions'][number]>(
-    `SELECT s.submitted_by, s.created_at, v.version_no, s.dispute_level, s.channel
+    `SELECT s.submitted_by, s.created_at, v.version_no, s.dispute_level, s.channel, s.unattested_reason
        FROM submission s JOIN packet_version v ON v.id = s.packet_version_id WHERE s.case_id = $1 AND s.practice_id = $2 ORDER BY s.created_at, s.id`,
     [caseId, practiceId],
   );
@@ -204,7 +205,16 @@ export async function caseTimeline(
     }
   }
   for (const row of rows.submissions) {
-    events.push({ kind: 'submitted', at: row.created_at.toISOString(), by: person(row.submitted_by), versionNo: row.version_no, level: row.dispute_level, channel: row.channel });
+    const sent = submissionSentOf(row.unattested_reason);
+    events.push({
+      kind: 'submitted',
+      at: row.created_at.toISOString(),
+      by: person(row.submitted_by),
+      versionNo: row.version_no,
+      level: row.dispute_level,
+      channel: row.channel,
+      unattestedReason: sent.kind === 'unattested' ? sent.reason : null,
+    });
   }
   for (const row of rows.responses) {
     events.push({ kind: 'response', at: row.created_at.toISOString(), by: person(row.recorded_by), response: row.kind, reopens: row.reopens_case });

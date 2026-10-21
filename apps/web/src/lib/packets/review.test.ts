@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ATTEST_INPUT } from '../routes/packets';
 import { PRICING_BLOCKED_TEXT, PRICING_CAUSE_TEXT } from './pricing';
-import { ATTEST_CONFIRMATIONS, PACKET_CHECKLIST } from './review';
+import { ATTESTED_WORDING_NOTE, ATTEST_CONFIRMATIONS, PACKET_CHECKLIST, attestedItems } from './review';
 
 /**
  * The reviewer's checklist over a packet's export (D16) names exactly the codes the attestation holds,
@@ -27,13 +27,24 @@ describe('PACKET_CHECKLIST', () => {
     expect(text.figures).toBe(
       'Every figure, date, code and count in the PDF and the CSV comes from the version’s records, its approval, or the practice’s correspondence contact (printed as set), and the verifier passed the narrative the export printed.',
     );
-    expect(text.deadline).toMatch(/\(shown on this page; the payer’s files state the window’s end and its clause, not its verification\)\.$/);
+    // Above the first level the files state the level's own window without a clause (review of 2026-10-21).
+    expect(text.deadline).toMatch(/\(shown on this page; the payer’s files state the window’s end and, at the first level, the clause or record behind it, not its verification\)\.$/);
     expect(text.calculation).toBe(
       'Each line’s calculation in the PDF and the CSV is its trace’s: the method, the steps, the one rounding and the patient share, shown apart from expected; each trace’s SHA-256 is on this page.',
     );
+    // What each file carries: the CSV is the line schedule alone, its file named by the reference (review of 2026-10-21).
     expect(text.payer_copy).toBe(
-      'The PDF and the CSV are fit to send to the payer: they name the practice, its approval line with this reference and its correspondence contact, and carry no login, record ID, SHA-256 or internal note (those are on this page).',
+      'The PDF and the CSV are fit to send to the payer: the PDF names the practice and closes with its approval line, this reference and its correspondence contact; the CSV is its line schedule, its file named by this reference; neither carries a login, record ID, SHA-256 or internal note (those are on this page).',
     );
+  });
+});
+
+describe('an attestation’s items as the review shows them', () => {
+  it('are its own codes, in its own order, each in the checklist’s words today, a code no longer listed as itself, with a note saying so', () => {
+    expect(attestedItems(['payer_copy', 'figures', 'coverage']).map((item) => item.id)).toEqual(['payer_copy', 'figures', 'coverage']);
+    expect(attestedItems(['figures'])[0]?.text).toBe(PACKET_CHECKLIST[0].text);
+    expect(attestedItems(['coverage'])[0]?.text).toBe('coverage');
+    expect(ATTESTED_WORDING_NOTE).toBe('The attestation records each item by its code; the words shown are the checklist’s as it reads today.');
   });
 });
 

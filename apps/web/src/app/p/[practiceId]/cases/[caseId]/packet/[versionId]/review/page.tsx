@@ -11,8 +11,8 @@ import { StaleExportReview } from '../../../../../../../../components/packets/un
 import { Money } from '../../../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../../../components/shell';
 import { loadPage } from '../../../../../../../../lib/http/next';
-import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT } from '../../../../../../../../lib/packets/contact';
-import { COMPUTED_BY_CODE_NOTE, PACKET_ATTESTATION_TEXT } from '../../../../../../../../lib/packets/review';
+import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, PAYER_COPY_REVIEW_TEXT } from '../../../../../../../../lib/packets/contact';
+import { ATTESTED_WORDING_NOTE, COMPUTED_BY_CODE_NOTE, PACKET_ATTESTATION_TEXT, attestedItems } from '../../../../../../../../lib/packets/review';
 import { STALE_EXPORT_REVIEW } from '../../../../../../../../lib/packets/unattested';
 import { packetReviewPage } from '../../../../../../../../lib/routes/packets';
 import { attestPacketFormAction } from './actions';
@@ -64,6 +64,9 @@ export default async function PacketReviewPage(props: Props) {
             : review.viewerTookPart
               ? 'took_part'
               : null;
+  // An export whose pricing went stale after it was made is never attested (the founder's ruling of 2026-10-20): the page
+  // asks for no download and promises no attestation of it.
+  const stale = review.attestation === null && blocked === 'pricing_not_current';
   const downloadedBoth = review.viewerDownloaded.pdf && review.viewerDownloaded.csv;
   const missing = [review.viewerDownloaded.pdf ? null : 'the PDF', review.viewerDownloaded.csv ? null : 'the CSV schedule'].filter((file) => file !== null).join(' and ');
   return (
@@ -84,7 +87,9 @@ export default async function PacketReviewPage(props: Props) {
         <Alert data-approved-alone="true">
           <AlertTitle>Approved alone</AlertTitle>
           <AlertDescription>
-            No one else in the practice approves packets, so the person who wrote this version approved it alone, 24 hours after writing it. Your attestation is the only check of this export by a person who did not write it.
+            {stale
+              ? STALE_EXPORT_REVIEW.approvedAlone
+              : 'No one else in the practice approves packets, so the person who wrote this version approved it alone, 24 hours after writing it. Your attestation is the only check of this export by a person who did not write it.'}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -99,7 +104,9 @@ export default async function PacketReviewPage(props: Props) {
           <CardDescription>
             {review.exportedAt === null
               ? 'The version is not exported yet: it is attested once its export is made.'
-              : `Exported ${utc(review.exportedAt)}. Download both files and review them before you attest: each download is checked against its SHA-256 as it is served and recorded as yours, and the attestation names their SHA-256.`}
+              : stale
+                ? `Exported ${utc(review.exportedAt)}. ${STALE_EXPORT_REVIEW.files}`
+                : `Exported ${utc(review.exportedAt)}. Download both files and review them before you attest: each download is checked against its SHA-256 as it is served and recorded as yours, and the attestation names their SHA-256.`}
           </CardDescription>
         </CardHeader>
         {review.exportedAt === null ? null : (
@@ -109,14 +116,18 @@ export default async function PacketReviewPage(props: Props) {
                 PDF
               </a>{' '}
               SHA-256 <Hash value={review.exportSha256} label="PDF SHA-256" />
-              <span className="block text-muted-foreground">{review.viewerDownloaded.pdf ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
+              {stale && !review.viewerDownloaded.pdf ? null : (
+                <span className="block text-muted-foreground">{review.viewerDownloaded.pdf ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
+              )}
             </p>
             <p data-download="csv" data-downloaded={review.viewerDownloaded.csv ? 'true' : 'false'}>
               <a className="underline" href={`${path}/csv`} download>
                 CSV schedule
               </a>{' '}
               (line-level PHI: the download is recorded) SHA-256 <Hash value={review.exportCsvSha256} label="CSV SHA-256" />
-              <span className="block text-muted-foreground">{review.viewerDownloaded.csv ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
+              {stale && !review.viewerDownloaded.csv ? null : (
+                <span className="block text-muted-foreground">{review.viewerDownloaded.csv ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
+              )}
             </p>
             {review.exportVerifier === null ? null : (
               <p data-export-verifier={review.exportVerifier.passed ? 'passed' : 'failed'}>
@@ -140,7 +151,7 @@ export default async function PacketReviewPage(props: Props) {
       </Card>
       <Card role="region" aria-label="Citation">
         <CardHeader>
-          <CardTitle>Contract citation</CardTitle>
+          <CardTitle>{content.citation.kind === 'contract' ? 'Contract citation' : 'Regulation cited'}</CardTitle>
         </CardHeader>
         <CardContent>
           <Citation content={content} />
@@ -159,7 +170,7 @@ export default async function PacketReviewPage(props: Props) {
       <Card role="region" aria-label="Payer’s copy">
         <CardHeader>
           <CardTitle>Payer’s copy</CardTitle>
-          <CardDescription>What the exported PDF and CSV carry for the payer, besides the letter’s figures, citations and evidence. They carry no login, record ID, SHA-256 or internal note: those are on this page.</CardDescription>
+          <CardDescription>{PAYER_COPY_REVIEW_TEXT}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
           {review.reference === null || review.approvedAt === null ? (
@@ -231,30 +242,33 @@ export default async function PacketReviewPage(props: Props) {
       </Card>
       <Card role="region" aria-label="Attestation">
         <CardHeader>
-          <CardTitle>Attestation</CardTitle>
+          <CardTitle>{stale ? 'Not attested' : 'Attestation'}</CardTitle>
           <CardDescription>
-            {review.attestation === null ? 'Confirm every item. You attest over these files: ' : `Attested ${utc(review.attestation.at)}${review.attestation.byViewer ? ' by you' : ''} over these files: `}
+            {review.attestation !== null
+              ? `Attested ${utc(review.attestation.at)}${review.attestation.byViewer ? ' by you' : ''} over these files: `
+              : stale
+                ? 'This export is never attested: its pricing went stale after the export. Its files: '
+                : 'Confirm every item. You attest over these files: '}
             PDF <Hash value={review.exportSha256} />, CSV <Hash value={review.exportCsvSha256} />.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {review.attestation !== null ? (
             <div data-attestation="attested">
+              {/* The items the attestation records, by their codes, in the checklist's wording today. */}
               <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-                {checklist.map((item) => (
-                  <li key={item.id}>{item.text}</li>
+                {attestedItems(review.attestation.checklist).map((item) => (
+                  <li key={item.id} data-attested-item={item.id}>
+                    {item.text}
+                  </li>
                 ))}
               </ul>
               <p className="mt-2 text-sm">{PACKET_ATTESTATION_TEXT}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{ATTESTED_WORDING_NOTE}</p>
             </div>
           ) : blocked === 'pricing_not_current' && review.pricingNow.status !== 'current' ? (
             <div data-attestation="blocked" data-reason={blocked} className="flex flex-col gap-3">
               <StaleExportReview pricing={{ status: review.pricingNow.status, lines: review.pricingNow.lines }} versionLines={content.lines.length} unattestedReason={unattestedReason} sent={sentWithoutSignOff} />
-              <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-                {checklist.map((item) => (
-                  <li key={item.id}>{item.text}</li>
-                ))}
-              </ul>
               <div>
                 <Button type="button" disabled aria-describedby="attest-pricing">
                   Attest the export

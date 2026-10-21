@@ -83,6 +83,13 @@ test('an export whose pricing went stale after it was made is never attested, an
       const attest = attestation.getByRole('button', { name: 'Attest the export' });
       await expect(attest).toBeDisabled();
       await expect(attest).toHaveAccessibleDescription(/never attested/);
+      // Never attested, so the page asks for no download, lists no checklist and promises no attestation.
+      const files = reviewer.getByRole('region', { name: 'Export', exact: true });
+      await expect(files).toContainText('need no review download');
+      await expect(files).not.toContainText('You have not downloaded it yet.');
+      await expect(attestation.getByText('Not attested', { exact: true })).toBeVisible();
+      await expect(attestation).not.toContainText('Confirm every item');
+      await expect(attestation).not.toContainText('The PDF and the CSV are fit to send to the payer');
       await expectAccessible(reviewer, 'Packet review, an export whose pricing went stale after it was made');
       await atPhoneWidth(reviewer, 'Packet review, an export whose pricing went stale after it was made');
       assertNoPhi('url', reviewer.url(), { known: KNOWN });

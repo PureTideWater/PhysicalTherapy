@@ -207,6 +207,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(admin.locator('[data-notice="saved"]')).toBeVisible();
         await expect(admin.locator('[data-preview]')).toHaveText(`Correspondence about this dispute: ${correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)}.`);
         await expectAccessible(admin, 'Settings, Correspondence, saved');
+        await atPhoneWidth(admin, 'Settings, Correspondence, saved');
         assertNoPhi('url', admin.url(), { known: KNOWN });
       } finally {
         await adminContext.close();
@@ -395,6 +396,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(matches.getByRole('listitem')).toHaveCount(1);
       await expect(page.getByRole('region', { name: 'Packets with this reference' })).toContainText(reference);
       await expectAccessible(page, 'Packet by reference');
+      await atPhoneWidth(page, 'Packet by reference');
       await matches.getByRole('link', { name: /^Open the packet, version \d+$/ }).click();
       await expect(page).toHaveURL(new RegExp(`${casePath}/packet\\?version=[0-9a-f-]{36}$`));
       await expect(page.getByRole('region', { name: 'Version' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
