@@ -32,3 +32,16 @@ export { type DocumentPrintOutcome, type DocumentPrintServices, printReportDocum
 export { type TriageJobContext, type TriageOptions, type TriageOutcome, executeTriage, todayUtc } from './triage/execute';
 export { triageHandler } from './triage/job';
 export { type QueueClient, type RunningWorker, startWorker } from './worker';
+export {
+  SCREENING_BATCH,
+  type ScreeningJobDependencies,
+  type ScreeningPriceOutcome,
+  type SweepOptions,
+  type SweepResult,
+  failScreeningRun,
+  forgetScreeningReleases,
+  priceScreeningRun,
+  sweepScreeningRuns,
+} from './screening/job';
+export { type ExpiryDependencies, type ExpiryResult, expireScreenings } from './screening/expiry';
+export type { OperatorPool as ScreeningOperatorPool } from './screening/operator';

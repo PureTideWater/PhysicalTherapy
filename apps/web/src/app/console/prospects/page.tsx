@@ -3,11 +3,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
+import { SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { utc } from '../../../components/format';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
-import { prospectsPage } from '../../../lib/routes/console-onboarding';
+import { DECLINED_REASON_LABELS, prospectsPage } from '../../../lib/routes/console-onboarding';
 import { BILLING_ARRANGEMENT_LABELS } from '../../../lib/routes/onboarding';
 import { convertProspectAction, reviewProspectAction } from './actions';
 
@@ -24,14 +25,15 @@ const FILTERS = [
 /**
  * Audit requests from the public form (PRD 5, J1): who asked, their locations, payers and billing arrangement. The
  * founder scopes each on a call; converting one creates its practice group, named as the request named it, and
- * opens it to add the practice, record the agreements and invite the practice administrator.
+ * opens it to add the practice, record the agreements and invite the practice administrator. Declining one asks why,
+ * from a closed list (audit #57; the founder's ruling of 2026-10-20); PR 7 shows attribution and the funnel.
  */
 export default async function ProspectsPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(prospectsPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="prospects" roles={page.roles} message={page.message} nextStep="Audit requests are for platform administrators." />;
   }
-  const { prospects, status, page: current, pages, total } = page.data;
+  const { prospects, status, page: current, pages, total, declinedReasons } = page.data;
   return (
     <AppShell shell={page.shell} section="prospects">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Audit requests</h1>
@@ -73,6 +75,11 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
                 <td className="py-1 pr-3">{utc(prospect.createdAt)}</td>
                 <td className="py-1 pr-3">
                   <Badge variant="outline">{prospect.status}</Badge>
+                  {prospect.declinedReason === null ? null : (
+                    <span className="mt-1 block text-xs text-muted-foreground" data-declined-reason={prospect.declinedReason}>
+                      {DECLINED_REASON_LABELS[prospect.declinedReason]}
+                    </span>
+                  )}
                 </td>
                 <td className="py-1">
                   {prospect.status === 'converted' && prospect.organizationId !== null ? (
@@ -96,6 +103,13 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
                         <FormKeys />
                         <input type="hidden" name="prospectId" value={prospect.id} />
                         <input type="hidden" name="status" value="declined" />
+                        <SelectField
+                          label="Why declined"
+                          name="declinedReason"
+                          id={`declined-reason-${prospect.id}`}
+                          required
+                          options={[{ value: '', label: 'Choose a reason' }, ...declinedReasons]}
+                        />
                       </ActionForm>
                     </div>
                   )}

@@ -83,6 +83,8 @@ describe('startWorker', () => {
     expect(calls).toEqual([
       'start',
       ...JOB_TYPES.map((type) => `createQueue:${type}`),
+      // Every worker creates the platform queues, so a producer's send never meets a missing queue (docs/adr/0062).
+      ...PLATFORM_JOB_TYPES.map((type) => `createQueue:${type}`),
       ...JOB_TYPES.map((type) => `work:${type}`),
     ]);
     for (const type of JOB_TYPES) {
@@ -184,7 +186,17 @@ describe('startWorker', () => {
       pool,
       logger,
       handlers: { ...placeholderHandlers, price: failing },
-      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing, monitoring_schedule: failing, billing_dunning: failing, usage_snapshot: failing, support_mail: failing },
+      platform: {
+        audit_copy: failing,
+        restore_drill: failing,
+        support_grant_notices: failing,
+        monitoring_schedule: failing,
+        billing_dunning: failing,
+        usage_snapshot: failing,
+        support_mail: failing,
+        screening_price: failing,
+        screening_expiry: failing,
+      },
       heartbeatMs: 60_000,
     });
     const job = (retryCount: number) => ({ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } });
@@ -341,11 +353,14 @@ describe('startWorker', () => {
     expect(boss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 30_000 });
   });
 
-  it('runs no platform job unless it is given the platform handlers', async () => {
+  it('runs no platform job unless it is given the platform handlers, but creates their queues', async () => {
     const { boss, calls, client } = fakeBoss();
     const worker = await startWorker({ boss: client, pool, logger: capture().logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
     expect(boss.schedule).not.toHaveBeenCalled();
-    expect(calls.filter((call) => PLATFORM_JOB_TYPES.some((type) => call.endsWith(`:${type}`)))).toEqual([]);
+    expect(calls.filter((call) => PLATFORM_JOB_TYPES.some((type) => call.endsWith(`:${type}`)))).toEqual(PLATFORM_JOB_TYPES.map((type) => `createQueue:${type}`));
+    for (const type of PLATFORM_JOB_TYPES) {
+      expect(boss.createQueue).toHaveBeenCalledWith(type, QUEUE_OPTIONS);
+    }
     await worker.stop();
   });
 
@@ -364,6 +379,8 @@ describe('startWorker', () => {
       billing_dunning: () => Promise.resolve(),
       usage_snapshot: () => Promise.resolve(),
       support_mail: () => Promise.resolve(),
+      screening_price: () => Promise.resolve(),
+      screening_expiry: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
@@ -390,6 +407,8 @@ describe('startWorker', () => {
       billing_dunning: () => Promise.resolve(),
       usage_snapshot: () => Promise.resolve(),
       support_mail: () => Promise.resolve(),
+      screening_price: () => Promise.resolve(),
+      screening_expiry: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, logger: capture().logger, platform, heartbeatMs: 60_000 });
     for (const type of JOB_TYPES) {

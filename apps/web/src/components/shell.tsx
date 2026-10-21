@@ -156,6 +156,7 @@ export type ShellSection =
   | 'status_admin'
   | 'compliance'
   | 'console_models'
+  | 'screening_split'
   | 'home';
 
 /** The navigation: the practice's screens (or the specialist's or reviewer's one), the internal console, and the account's own pages. */
@@ -266,9 +267,14 @@ function ShellNav({ shell, section }: { readonly shell: Shell; readonly section:
             </RailLink>
           ) : null}
           {specialist ? (
-            <RailLink href="/console/specialist-queue" active={section === 'specialist_queue'}>
-              Specialist queue
-            </RailLink>
+            <>
+              <RailLink href="/console/specialist-queue" active={section === 'specialist_queue'}>
+                Specialist queue
+              </RailLink>
+              <RailLink href="/console/screening" active={section === 'screening_split'}>
+                Screening place of service
+              </RailLink>
+            </>
           ) : null}
         </nav>
       ) : null}

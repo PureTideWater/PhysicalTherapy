@@ -12,10 +12,15 @@ import { type Queryable } from './catalog-reads';
  * at the first), and the repository's own catalog test function, catalogProblems() (catalog.ts).
  */
 
-/** How PostgreSQL's information_schema names each Drizzle column type (as migrate.db.test.ts maps them). */
-const POSTGRES_TYPES: Readonly<Record<string, string>> = {
+/**
+ * How PostgreSQL's information_schema names each Drizzle column type. The one map both this cross-check and
+ * migrate.db.test.ts read, so the two cannot drift apart (a copy without PgSmallInt once reported four false column
+ * differences); cross-check.test.ts holds it to every column type the schema uses.
+ */
+export const POSTGRES_TYPES: Readonly<Record<string, string>> = {
   PgUUID: 'uuid',
   PgInteger: 'integer',
+  PgSmallInt: 'smallint',
   PgText: 'text',
   PgTimestamp: 'timestamp with time zone',
   PgJsonb: 'jsonb',

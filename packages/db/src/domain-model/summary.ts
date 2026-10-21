@@ -297,7 +297,13 @@ export function readDocument(text: string): DocumentReading {
 
   function closeFence(block: { readonly kind: string; readonly lines: readonly string[] }): void {
     if (block.kind === 'sql' && table !== null) add('tables', `view-definition:${table}`, `${table} view definition`, block.lines.join('\n'));
-    else for (const inner of block.lines) other(section, inner, section === 'Cross-checks' ? 'cross-checks' : 'other');
+    else {
+      const category = section === 'Cross-checks' ? 'cross-checks' : 'other';
+      // The block's info string is its opening line's own fact, so a change to it is reported; the fence's length is
+      // not (a fence only has to be longer than any backtick run inside the block).
+      other(section, `\`\`\`${block.kind}`, category);
+      for (const inner of block.lines) other(section, inner, category);
+    }
   }
 
   function readTableLine(name: string, line: string): void {

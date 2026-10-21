@@ -1,9 +1,13 @@
 export {
   ALLOWED_LOG_FIELDS,
   FORBIDDEN_FIELD_PATTERNS,
+  type IdentifierLogField,
   type LogField,
+  NUMERIC_LOG_FIELDS,
+  type NumericLogField,
   forbiddenFieldLabel,
   isAllowedLogField,
+  isNumericLogField,
 } from './fields';
 export {
   LOG_LEVELS,

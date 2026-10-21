@@ -130,3 +130,19 @@ describe('createLogger', () => {
     expect(String(write.mock.calls[0]?.[0])).toMatch(/"msg":"to stdout"}\n$/);
   });
 });
+
+describe('numeric fields', () => {
+  it('keeps a phase’s elapsed milliseconds and record count only as finite, non-negative numbers', () => {
+    const { lines, sink } = capture();
+    const logger = createLogger({ sink, now: fixedClock });
+    logger.info('phase', { screening_run_id: 'r-1', elapsed_ms: 1234, record_count: 0 });
+    logger.info('phase', { elapsed_ms: 'SYNTHETIC TWIN', record_count: Number.NaN } as unknown as LogFields);
+    logger.info('phase', { elapsed_ms: -1, record_count: Number.POSITIVE_INFINITY });
+    expect(lines.map((line) => JSON.parse(line) as Record<string, unknown>)).toEqual([
+      { screening_run_id: 'r-1', elapsed_ms: 1234, record_count: 0, time: '2026-10-14T12:00:00.000Z', level: 'info', msg: 'phase' },
+      { time: '2026-10-14T12:00:00.000Z', level: 'info', msg: 'phase' },
+      { time: '2026-10-14T12:00:00.000Z', level: 'info', msg: 'phase' },
+    ]);
+    expect(allowlistedFields({ elapsed_ms: 10n })).toEqual({});
+  });
+});

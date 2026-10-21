@@ -18,7 +18,11 @@
     "./testing/triage": "./src/triage/test-support/triage-world.ts",
     "./testing/payer-copy": "./src/packets/test-support/payer-copy.ts",
     "./billing": "./src/billing/public.ts",
-    "./era-formats": "./src/parse/era/formats.ts"
+    "./era-formats": "./src/parse/era/formats.ts",
+    "./screening": "./src/screening/public.ts",
+    "./screening-format": "./src/screening/format.ts",
+    "./screening-wording": "./src/screening/wording.ts",
+    "./screening-oracle": "./src/screening/test-support/legacy-release.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

@@ -21,6 +21,9 @@ import { ScopeError, isUuid, requireUuid } from './ids';
  *   a person is refused before the job's work runs, so no job acts in a person's name through this API.
  *   The worker connects as its own login, which the database tells from the web's whatever app.actor_id
  *   holds (docs/adr/0061).
+ * - withPublicSnapshot: a public page's reads (no actor, no practice in scope) in one snapshot: a
+ *   read-only transaction at REPEATABLE READ, oneSnapshot's counterpart for a page nobody signs in to,
+ *   which reads only what definer's-rights functions granted to the application role return.
  *
  * docs/adr/0013 records the model.
  */
@@ -92,7 +95,7 @@ async function transaction<P extends ScopePool<ScopeClient>, S, T>(
   pool: P,
   open: (client: ClientOf<P> & ScopeClient) => Promise<S>,
   run: (scope: S) => Promise<T>,
-  begin: 'BEGIN' | 'BEGIN ISOLATION LEVEL REPEATABLE READ' = 'BEGIN',
+  begin: 'BEGIN' | 'BEGIN ISOLATION LEVEL REPEATABLE READ' | 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' = 'BEGIN',
 ): Promise<T> {
   const client = (await pool.connect()) as ClientOf<P> & ScopeClient;
   try {
@@ -222,6 +225,16 @@ export function withPracticeScope<P extends ScopePool<ScopeClient>, T>(
     run,
     request.oneSnapshot === true ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN',
   );
+}
+
+/**
+ * A public page's reads in one snapshot: one read-only transaction at REPEATABLE READ with no actor and no practice
+ * in scope, so every statement reads the database as it stood at the first and one now(), and a row another
+ * transaction deletes between two reads is read whole or not at all (the free screening's result page, read by its
+ * link; docs/adr/0062). It writes nothing; a write in it fails.
+ */
+export function withPublicSnapshot<P extends ScopePool<ScopeClient>, T>(pool: P, run: (client: ClientOf<P> & ScopeClient) => Promise<T>): Promise<T> {
+  return transaction(pool, (client) => Promise.resolve(client), run, 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
 }
 
 export interface JobScopeRequest {

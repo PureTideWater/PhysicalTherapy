@@ -10,7 +10,8 @@ import { badgeText, descriptor, independenceClaim, sealLabel, sealText, tagline,
  * It reads the words a person sees, never the code around them: every string literal, template literal and
  * JSX text in the web app's source, in the report templates (the audit report, the ROI statement, the coverage
  * report, the monthly summary and the frame and packet templates they print in), in the email the worker sends
- * (the digest, dunning, support notices and support mail, and the mail template), and in the packages whose
+ * (the digest, dunning, support notices and support mail, the screening emails, and the mail template), in the
+ * screening's upload refusals, and in the packages whose
  * words the web app shows (the UI states, triage's labels and pattern words, the packet's narrative and
  * refusals, the contract calendar), parsed with the TypeScript compiler, so comments, identifiers and object
  * keys are never read. In an HTML template it reads the text and the attributes a person reads (aria-label,
@@ -42,10 +43,22 @@ import { badgeText, descriptor, independenceClaim, sealLabel, sealText, tagline,
 /**
  * The directories read, relative to the repository root: the web app; the report templates; the digest (its
  * sentences are the email and the digest page) and the mail template; the packet's template, narrative and
- * refusals (the workbench shows the refusals); and the packages whose words the screens show: the UI states,
- * triage (the stage labels, the write-off and pattern words) and the packet's assembly.
+ * refusals (the workbench shows the refusals); the worker's screening (the screening emails and the upload's
+ * refusals, which the screening page shows; a screening file, so owed, underpaid and recovered fail there); and
+ * the packages whose words the screens show: the UI states, triage (the stage labels, the write-off and pattern
+ * words) and the packet's assembly.
  */
-export const COPY_ROOTS = ['apps/web/src', 'apps/worker/src/report', 'apps/worker/src/digest', 'apps/worker/src/mail', 'apps/worker/src/packets', 'packages/ui/src', 'packages/triage/src', 'packages/packets/src'] as const;
+export const COPY_ROOTS = [
+  'apps/web/src',
+  'apps/worker/src/report',
+  'apps/worker/src/digest',
+  'apps/worker/src/mail',
+  'apps/worker/src/packets',
+  'apps/worker/src/screening',
+  'packages/ui/src',
+  'packages/triage/src',
+  'packages/packets/src',
+] as const;
 
 /**
  * The copy outside those directories: the ROI statement, which prints in the report frame; the notes a line's
