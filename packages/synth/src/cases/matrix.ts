@@ -70,6 +70,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'PRC-18', title: 'Property: turning a flag off never lowers the amount', assertion: 'Holds' },
   { id: 'PRC-19', title: 'Re-run under release 2 with one changed RVU', assertion: 'Diff lists exactly the affected lines' },
   { id: 'PRC-20', title: '100,000 lines', assertion: 'Under two minutes on one vCPU' },
+  {
+    id: 'PRC-21',
+    title: 'A ZIP whose locality needs its ZIP+4',
+    assertion:
+      "With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`. Never a guessed locality",
+  },
+  {
+    id: 'PRC-22',
+    title: 'The engine freeze outside the ZIP+4 lookup',
+    assertion:
+      "The base and head engines give equal results on every golden claim and on generated five-digit claims. The diff under `packages/pricing/src` holds only the exception's files, and no existing golden file changes",
+  },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
   { id: 'CAS-03', title: 'Lines grouped by payer pattern from traces', assertion: 'One case per pattern' },

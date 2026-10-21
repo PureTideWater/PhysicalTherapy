@@ -115,6 +115,13 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'PRC-18': none(5, 'A property test over generated line facts and flag settings (fast-check); no fixture.', ['packages/pricing/src/properties.test.ts']),
   'PRC-19': { completesIn: 7, build: pricing.prc19, assertedBy: ['apps/worker/src/price/rerun.db.test.ts', 'tools/release/dry-run.db.test.ts', 'apps/web/src/lib/routes/reruns-routes.db.test.ts'] },
   'PRC-20': none(7, 'The 100,000 lines are generated in memory by the performance test; nothing is committed.', ['packages/pricing/src/performance.test.ts']),
+  // Release 900006 and golden claims G196-G199 (docs/adr/0064); PR 6b-2 adds packages/db/src/location.db.test.ts.
+  'PRC-21': {
+    completesIn: 6,
+    build: pricing.prc21,
+    assertedBy: ['packages/pricing/src/engine.test.ts', 'packages/pricing/src/recompute.test.ts', 'packages/pricing/src/properties.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'tools/release/release.test.ts'],
+  },
+  'PRC-22': none(6, 'A differential test over generated claims and the golden lines; no fixture.', ['tools/engine-freeze/differential.test.ts', 'tools/engine-freeze/check.test.ts']),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
   'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },

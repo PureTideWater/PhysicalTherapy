@@ -1,0 +1,17 @@
+{
+  "case": "PRC-22",
+  "module": "PRC",
+  "title": "The engine freeze outside the ZIP+4 lookup",
+  "assertion": "The base and head engines give equal results on every golden claim and on generated five-digit claims. The diff under `packages/pricing/src` holds only the exception's files, and no existing golden file changes",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": ["tools/engine-freeze/differential.test.ts","tools/engine-freeze/check.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "A differential test over generated claims and the golden lines; no fixture.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
