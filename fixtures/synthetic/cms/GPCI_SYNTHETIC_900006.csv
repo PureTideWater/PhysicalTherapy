@@ -1,0 +1,5 @@
+SYNTHETIC geographic practice cost indices for tests - invented values - not CMS data,,,,,,
+Medicare Administrative Contractor (MAC),State,Locality Number,Locality Name,2026 PW GPCI (with 1.0 Floor),2026 PE GPCI,2026 MP GPCI
+99999,ZZ,01,SYNTHETIC LOCALITY ONE,1.000,0.950,0.650
+99999,ZZ,02,SYNTHETIC LOCALITY TWO,1.000,1.050,0.700
+* SYNTHETIC footnote: the localities above are invented.,,,,,,

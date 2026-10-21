@@ -278,6 +278,80 @@ describe('ZIP5 (locality_map)', () => {
   });
 });
 
+describe('ZIP9 (locality_map_plus_four)', () => {
+  /** A ZIP9 line as the layout docs/adr/0064 records puts it: ZIP5's positions 1-21, the code at 22-25, year and quarter at 76-80. */
+  const line = (code: string, { zip = '00012', locality = '01', state = 'ZZ', rural = 'R', flag = '1' } = {}) =>
+    `${`${state}${zip}99999${locality}${rural}${locality}   ${flag}${code}`.padEnd(75, ' ')}20261`;
+  const file = (...lines: string[]) => `${lines.join('\n')}\n`;
+
+  it('folds the synthetic file into one record of 00012 with two ranges, quoting the first and last line of each', () => {
+    const text = fixture('ZIP9_SYNTHETIC.txt');
+    const outcome = parse('locality_map_plus_four', text);
+    expect(outcome.rows.map((row) => [row.key, row.value, row.effective_from, row.effective_to, row.locator])).toEqual([
+      [
+        { zip: '00012' },
+        {
+          state: 'ZZ',
+          ranges: [
+            { from: '0000', to: '4999', carrier: '99999', locality: '01', rural_indicator: 'R' },
+            { from: '5000', to: '8999', carrier: '99999', locality: '02', rural_indicator: 'R' },
+          ],
+        },
+        '2026-01-01',
+        '2026-12-31',
+        'lines 1-9000',
+      ],
+    ]);
+    const lines = text.split('\n');
+    expect(outcome.rows[0]?.quotes).toEqual([lines[0], lines[4999], lines[5000], lines[8999]]);
+    expect(outcome.rows[0]?.quote).toBe(lines[0]);
+    expect(outcome.notes).toEqual(['9000 lines folded into 2 ranges of 1 ZIP codes']);
+  });
+
+  it('folds only consecutive codes of one carrier, locality and rural indicator, in code order whatever the line order', () => {
+    const text = file(line('0003'), line('0001'), line('0002', { locality: '02' }), line('0000'), line('0005'), line('0004', { rural: ' ' }), line('0100', { zip: '00011' }));
+    const { rows, notes } = parse('locality_map_plus_four', text);
+    expect(rows.map((row) => [row.key.zip, (row.value.ranges as { from: string; to: string; locality: string; rural_indicator: string }[]).map((range) => `${range.from}-${range.to} ${range.locality}${range.rural_indicator}`)])).toEqual([
+      ['00011', ['0100-0100 01R']],
+      ['00012', ['0000-0001 01R', '0002-0002 02R', '0003-0003 01R', '0004-0004 01', '0005-0005 01R']],
+    ]);
+    // A one-code range quotes its one line once; the record names the lines its ZIP spans.
+    expect(rows[0]?.quotes).toEqual([line('0100', { zip: '00011' })]);
+    expect(rows[0]?.locator).toBe('line 7');
+    expect(rows[1]?.quotes).toEqual([line('0000'), line('0001'), line('0002', { locality: '02' }), line('0003'), line('0004', { rural: ' ' }), line('0005')]);
+    expect(rows[1]?.locator).toBe('lines 1-6');
+    expect(notes).toEqual(['7 lines folded into 6 ranges of 2 ZIP codes']);
+  });
+
+  it('leaves a code the file does not list out of every range', () => {
+    const { rows } = parse('locality_map_plus_four', file(line('0000'), line('0002')));
+    expect((rows[0]?.value.ranges as { from: string; to: string }[]).map((range) => [range.from, range.to])).toEqual([
+      ['0000', '0000'],
+      ['0002', '0002'],
+    ]);
+  });
+
+  it('skips blank lines and reads CRLF line ends', () => {
+    expect(parse('locality_map_plus_four', `${line('0000')}\r\n\r\n${line('0001')}\r\n`).rows[0]?.value.ranges).toEqual([{ from: '0000', to: '0001', carrier: '99999', locality: '01', rural_indicator: 'R' }]);
+  });
+
+  it.each([
+    ['a line too short for the plus-four code', file(line('0000').slice(0, 24)), /line 1: 24 characters is too short for the ZIP9 layout/],
+    ['letters in the ZIP', file(line('0000', { zip: '0001A' })), /line 1: does not fit the ZIP9 layout/],
+    ['a state of digits', file(line('0000', { state: '12' })), /line 1: does not fit the ZIP9 layout/],
+    ['a bad rural indicator', file(line('0000', { rural: 'X' })), /line 1: rural indicator "X"/],
+    ['a plus-four flag of 0', file(line('0000', { flag: '0' })), /line 1: plus-four flag "0" is not 1/],
+    ['a blank plus-four flag', file(line('0000', { flag: ' ' })), /line 1: plus-four flag " " is not 1/],
+    ['a plus-four that is not four digits', file(line('00a0')), /line 1: plus-four "00a0" is not four digits/],
+    ['a blank plus-four', file(line('    ')), /line 1: plus-four " {4}" is not four digits/],
+    ['the same code twice', file(line('0000'), line('0001'), line('0000', { locality: '02' })), /line 3: ZIP\+4 00012-0000 appears twice \(line 1\)/],
+    ['a ZIP in two states', file(line('0000'), line('0001', { state: 'YY' })), /line 2: ZIP 00012 is in state YY here and ZZ on line 1/],
+    ['nothing', '\n\n', /no ZIP\+4 codes/],
+  ])('refuses %s', (_name, input, message) => {
+    expect(() => parse('locality_map_plus_four', input)).toThrow(message);
+  });
+});
+
 describe('conversion factors', () => {
   const first = fixture('conversion-factor-SYNTHETIC-pass-1.csv');
   const second = fixture('conversion-factor-SYNTHETIC-pass-2.csv');
@@ -480,6 +554,7 @@ describe('every parser', () => {
       pfs_rvu: 'PPRRVU_SYNTHETIC.csv',
       pfs_gpci: 'GPCI_SYNTHETIC.csv',
       locality_map: 'ZIP5_SYNTHETIC.txt',
+      locality_map_plus_four: 'ZIP9_SYNTHETIC.txt',
       conversion_factor: 'conversion-factor-SYNTHETIC-pass-1.csv',
       mppr_rate: 'MPPR_SYNTHETIC.csv',
       ncci_ptp: 'NCCI_PTP_SYNTHETIC.txt',
@@ -492,6 +567,9 @@ describe('every parser', () => {
       const text = fixture(file);
       for (const row of parse(type, text).rows) {
         expect(text.includes(row.quote), `${type} ${row.locator}`).toBe(true);
+        for (const quote of row.quotes ?? []) {
+          expect(text.split('\n').includes(quote), `${type} ${row.locator}`).toBe(true);
+        }
       }
     }
   });

@@ -3,20 +3,31 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { type RuleRecord, serializeRecords, sha256 } from '@tp/rules';
+import { type RuleRecord, type RuleRecordOf, serializeRecords, sha256 } from '@tp/rules';
 import { readRelease } from '@tp/rules/content';
 import { exampleRecord } from '@tp/rules/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { listFiles, repositoryRoot } from '../content-files';
 import { checkContent } from '../verify-content/check';
-import { assembleRelease } from './assemble';
+import { assembleRelease, plusFourGaps } from './assemble';
 import { ReleaseToolError, parseReleaseNumber } from './commands';
 import { dryRun } from './dry-run';
 import { type AffectedRun, type PricingRunSource, diffRecords, impactLines, recordChangeLines, releaseContents, releaseDirectory, runImpactLines } from './impact';
 import { loadDirectoryRefusal } from './load-directory';
 import { previousPublishedRelease } from './rollback';
-import { DEADLINE_RELEASE_DIR, RERUN_RELEASE_DIR, SYNTHETIC_RELEASE_DIR, renderDeadlineRelease, renderRerunRelease, renderSyntheticRelease } from './synthetic';
+import {
+  DEADLINE_RELEASE_DIR,
+  PLUS_FOUR_RELEASE_DIR,
+  RERUN_RELEASE_DIR,
+  SYNTHETIC_RELEASE_DIR,
+  ZIP9_SYNTHETIC_FILE,
+  renderDeadlineRelease,
+  renderPlusFourRelease,
+  renderRerunRelease,
+  renderSyntheticRelease,
+  renderZip9Synthetic,
+} from './synthetic';
 
 let root = '';
 
@@ -149,6 +160,92 @@ describe('release:assemble', () => {
     expect(() => assembleRelease({ root, release: 1, today: '2026-10-21' })).toThrow(/the drafts do not pass pnpm verify-content/);
     rmSync(path.join(root, 'content/drafts/therapy_threshold'), { recursive: true });
     expect(() => assembleRelease({ root, release: 1, today: '2026-10-21' })).toThrow('there are no drafts in content/drafts to assemble');
+  });
+});
+
+/** A ZIP5 and a ZIP9 line of one invented ZIP outside the reserved SYNTHETIC identifiers, as a quarter's two files give them. */
+const ZIP5_LINE = `${'YY999129999801 01   1'.padEnd(75, ' ')}20263`;
+const ZIP9_LINES = ['0000', '9999'].map((code) => `${`YY999129999801 01   1${code}`.padEnd(75, ' ')}20263`);
+const ZIP5_PATH = 'content/sources/locality_map/ZIP5_JUL2026.txt';
+const ZIP9_PATH = 'content/sources/locality_map_plus_four/ZIP9_JUL2026.txt';
+const QUARTER = { effective_from: '2026-07-01', effective_to: '2026-09-30' } as const;
+
+function parsedSource(file: string, text: string, parser: string): RuleRecord['source'] {
+  return { title: 'CMS ZIP code to carrier locality file', url: 'https://example.invalid/zip', path: file, retrieved: '2026-10-15', sha256: sha256(text), method: 'parser', parser, locator: 'line 1', synthetic: false };
+}
+
+const REVIEWED: RuleRecord['verification'] = { level: 'L2', by: 'A. Reviewer', on: '2026-10-20', questions: [] };
+
+/** The quarter's ZIP5 record of 99912, which needs its ZIP+4. */
+function flaggedZip(overrides: Partial<RuleRecordOf<'locality_map'>> = {}): RuleRecord {
+  const fields: Partial<RuleRecordOf<'locality_map'>> = {
+    key: { zip: '99912' },
+    value: { state: 'YY', carrier: '99998', locality: '01', rural_indicator: '', plus_four_required: true },
+    ...QUARTER,
+    source: parsedSource(ZIP5_PATH, `${ZIP5_LINE}\n`, 'cms_zip5_locality'),
+    verification: REVIEWED,
+    quotes: [ZIP5_LINE],
+    ...overrides,
+  };
+  return exampleRecord('locality_map', fields);
+}
+
+/** A ZIP9 record of 99912: every code in locality 01. */
+function plusFourOf(overrides: Partial<RuleRecordOf<'locality_map_plus_four'>> = {}): RuleRecord {
+  const fields: Partial<RuleRecordOf<'locality_map_plus_four'>> = {
+    key: { zip: '99912' },
+    value: { state: 'YY', ranges: [{ from: '0000', to: '9999', carrier: '99998', locality: '01', rural_indicator: '' }] },
+    ...QUARTER,
+    source: parsedSource(ZIP9_PATH, `${ZIP9_LINES.join('\n')}\n`, 'cms_zip9_locality'),
+    verification: REVIEWED,
+    quotes: [...ZIP9_LINES],
+    ...overrides,
+  };
+  return exampleRecord('locality_map_plus_four', fields);
+}
+
+describe('release:assemble and the ZIP+4 file (docs/adr/0064)', () => {
+  beforeEach(() => {
+    write(ZIP5_PATH, `${ZIP5_LINE}\n`);
+    write(ZIP9_PATH, `${ZIP9_LINES.join('\n')}\n`);
+  });
+
+  const draftFile = (type: string, records: readonly RuleRecord[]) => write(`content/drafts/${type}/2026/${type === 'locality_map' ? 'ZIP5_JUL2026' : 'ZIP9_JUL2026'}.json`, serializeRecords(records));
+
+  it('refuses a release whose ZIP5 file flags a ZIP that no ZIP9 record of the quarter covers, writing nothing', () => {
+    draftFile('locality_map', [flaggedZip()]);
+    expect(() => assembleRelease({ root, release: 1, today: '2026-10-21' })).toThrow(
+      `release 1 not assembled: the ZIP5 file flags ZIPs that its quarter's ZIP9 file does not cover:\n  ZIP 99912 needs its ZIP+4 (its locality_map record from 2026-07-01, ${ZIP5_PATH}), and no locality_map_plus_four record of that ZIP is in force on 2026-07-01: import the same quarter's ZIP9 file`,
+    );
+    expect(existsSync(path.join(root, 'content/outgoing/1'))).toBe(false);
+    // A ZIP9 draft still at L1 is not in the release, so it covers nothing.
+    draftFile('locality_map_plus_four', [plusFourOf({ verification: { level: 'L1', by: 'pnpm rules:import', on: '2026-10-16', questions: [] } })]);
+    expect(() => assembleRelease({ root, release: 1, today: '2026-10-21' })).toThrow(/ZIP 99912 needs its ZIP\+4/);
+  });
+
+  it('assembles the ZIP5 and ZIP9 records of one quarter, and the content checker accepts the ZIP9 record quoting two lines of its file', () => {
+    draftFile('locality_map', [flaggedZip()]);
+    draftFile('locality_map_plus_four', [plusFourOf()]);
+    const result = assembleRelease({ root, release: 1, today: '2026-10-21' });
+    expect(result).toMatchObject({ records: 2, excluded: 0 });
+    expect(checkContent(root).problems).toEqual([]);
+  });
+
+  it('names the first date a flagged window leaves uncovered, and takes the union of the ZIP9 windows', () => {
+    const flagged = flaggedZip();
+    expect(plusFourGaps([flagged, plusFourOf({ effective_to: '2026-08-31' })])).toEqual([expect.stringContaining('in force on 2026-09-01')]);
+    expect(plusFourGaps([flagged, plusFourOf({ effective_from: '2026-07-02' })])).toEqual([expect.stringContaining('in force on 2026-07-01')]);
+    expect(plusFourGaps([flagged, plusFourOf({ effective_from: '2026-08-01' }), plusFourOf({ effective_to: '2026-07-31' })])).toEqual([]);
+    expect(plusFourGaps([flagged, plusFourOf({ effective_to: '2026-07-31' }), plusFourOf({ effective_from: '2026-08-02' })])).toEqual([expect.stringContaining('in force on 2026-08-01')]);
+    expect(plusFourGaps([flagged, plusFourOf({ effective_from: '2026-01-01', effective_to: null })])).toEqual([]);
+    expect(plusFourGaps([flagged, plusFourOf({ key: { zip: '99913' } })])).toEqual([expect.stringContaining('ZIP 99912 needs its ZIP+4')]);
+    // An open ZIP5 window needs an open ZIP9 window; the walk crosses a year end.
+    const open = flaggedZip({ effective_to: null });
+    expect(plusFourGaps([open, plusFourOf({ effective_to: '2026-12-31' })])).toEqual([expect.stringContaining('in force on 2027-01-01')]);
+    expect(plusFourGaps([open, plusFourOf({ effective_to: '2026-12-31' }), plusFourOf({ effective_from: '2027-01-01', effective_to: null })])).toEqual([]);
+    // A ZIP that does not need its ZIP+4 needs no ZIP9 record.
+    expect(plusFourGaps([flaggedZip({ value: { state: 'YY', carrier: '99998', locality: '01', rural_indicator: '', plus_four_required: false } })])).toEqual([]);
+    expect(plusFourGaps([flaggedZip({ value: { state: 'YY', carrier: '99998', locality: '01', rural_indicator: null, plus_four_required: null } })])).toEqual([]);
   });
 });
 
@@ -321,11 +418,51 @@ describe('the synthetic release fixtures', () => {
       [SYNTHETIC_RELEASE_DIR, renderSyntheticRelease()],
       [RERUN_RELEASE_DIR, renderRerunRelease()],
       [DEADLINE_RELEASE_DIR, renderDeadlineRelease()],
+      [PLUS_FOUR_RELEASE_DIR, renderPlusFourRelease()],
     ] as const) {
       for (const [file, text] of files) {
         expect(readFileSync(path.join(repositoryRoot, dir, file), 'utf8'), file).toBe(text);
       }
     }
+    expect(readFileSync(path.join(repositoryRoot, ZIP9_SYNTHETIC_FILE), 'utf8')).toBe(renderZip9Synthetic());
+  });
+
+  it('give release 900006 a second GPCI locality and the ZIP+4 ranges of 00012, and nothing else changed against 900001 (PRC-21)', () => {
+    const first = readRelease(path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR)).records.map((located) => located.record);
+    const plusFour = readRelease(path.join(repositoryRoot, PLUS_FOUR_RELEASE_DIR));
+    expect(plusFour.problems).toEqual([]);
+    expect(plusFour.manifest.release).toBe(900_006);
+    const records = plusFour.records.map((located) => located.record);
+    expect(diffRecords(first, records)).toEqual([
+      { recordType: 'locality_map_plus_four', added: 1, removed: 0, changed: 0 },
+      { recordType: 'pfs_gpci', added: 1, removed: 0, changed: 0 },
+    ]);
+    expect(records.filter((record) => record.record_type === 'pfs_gpci').map((record) => [record.key, record.value])).toEqual([
+      [{ carrier: '99999', locality: '01' }, { state: 'ZZ', locality_name: 'SYNTHETIC LOCALITY ONE', work_gpci: '1.000', pe_gpci: '0.950', mp_gpci: '0.650' }],
+      [{ carrier: '99999', locality: '02' }, { state: 'ZZ', locality_name: 'SYNTHETIC LOCALITY TWO', work_gpci: '1.000', pe_gpci: '1.050', mp_gpci: '0.700' }],
+    ]);
+    const split = records.find((record) => record.record_type === 'locality_map_plus_four');
+    expect(split).toMatchObject({
+      key: { zip: '00012' },
+      value: {
+        state: 'ZZ',
+        ranges: [
+          { from: '0000', to: '4999', carrier: '99999', locality: '01', rural_indicator: 'R' },
+          { from: '5000', to: '8999', carrier: '99999', locality: '02', rural_indicator: 'R' },
+        ],
+      },
+      effective_from: '2026-01-01',
+      effective_to: '2026-12-31',
+      source: { path: ZIP9_SYNTHETIC_FILE, parser: 'cms_zip9_locality', synthetic: true },
+    });
+    const lines = renderZip9Synthetic().split('\n');
+    expect(lines).toHaveLength(9001);
+    expect(split?.quotes).toEqual([lines[0], lines[4999], lines[5000], lines[8999]]);
+    // The real-release check holds for 900006; 900001 flags 00012 with no ZIP9 file, on purpose, so the check stays off fixture releases.
+    expect(plusFourGaps(records)).toEqual([]);
+    expect(plusFourGaps(first)).toEqual([expect.stringContaining('ZIP 00012 needs its ZIP+4')]);
+    expect(checkContent(repositoryRoot, [PLUS_FOUR_RELEASE_DIR]).problems).toEqual([]);
+    expect(listFiles(repositoryRoot, PLUS_FOUR_RELEASE_DIR).map((file) => path.relative(PLUS_FOUR_RELEASE_DIR, file).split(path.sep).join('/')).sort()).toEqual([...renderPlusFourRelease().keys()].sort());
   });
 
   it('give release 900005 the three Medicare dispute windows at L2, with their values, source and quotes and an independent second pass, and nothing else (D17 a)', () => {

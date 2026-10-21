@@ -7,6 +7,8 @@ import {
   PARSERS,
   RELEASE_NOTES_FILE,
   type RuleRecord,
+  SYNTHETIC_CARRIER,
+  SYNTHETIC_STATE,
   buildManifest,
   buildParsedRecords,
   decodeSourceText,
@@ -45,7 +47,7 @@ const PARSED_SOURCES: readonly { readonly type: ImportableType; readonly file: s
   { type: 'claim_status_code', file: 'CLAIM_STATUS_SYNTHETIC.csv' },
 ];
 
-function parsedRecordFile(root: string, type: ImportableType, file: string): { path: string; records: RuleRecord[] } {
+function parsedRecordFile(root: string, type: ImportableType, file: string, builtOn: string = BUILT_ON): { path: string; records: RuleRecord[] } {
   const parser = PARSERS[type];
   const sourcePath = `${SYNTHETIC_SOURCES_DIR}/${file}`;
   const bytes = readFileSync(path.join(root, sourcePath));
@@ -53,9 +55,9 @@ function parsedRecordFile(root: string, type: ImportableType, file: string): { p
   const records = buildParsedRecords({
     parser,
     rows: outcome.rows,
-    source: { title: `SYNTHETIC ${parser.title} (invented values)`, url: null, path: sourcePath, retrieved: BUILT_ON, sha256: sha256(bytes), synthetic: true },
+    source: { title: `SYNTHETIC ${parser.title} (invented values)`, url: null, path: sourcePath, retrieved: builtOn, sha256: sha256(bytes), synthetic: true },
     checkedBy: 'SYNTHETIC fixture builder (tools/release/synthetic.ts)',
-    checkedOn: BUILT_ON,
+    checkedOn: builtOn,
   });
   return { path: `${type}/2026/${file.replace(/\.[^.]*$/, '')}.json`, records };
 }
@@ -208,11 +210,93 @@ export function renderDeadlineRelease(root: string = repositoryRoot): Map<string
   return generated;
 }
 
+/**
+ * The SYNTHETIC release of the ZIP+4 tests (test matrix PRC-21; docs/adr/0064): every file of release 900001
+ * unchanged but its GPCIs, parsed from fixtures/synthetic/cms/GPCI_SYNTHETIC_900006.csv (900001's locality 01 and a
+ * second one, 02), and a ZIP+4 file, fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt, for the ZIP 00012 that the ZIP5 file
+ * flags: codes 0000-4999 in locality 01 and 5000-8999 in locality 02, while 9000-9999 are not listed (the gap the
+ * tests of an unlisted ZIP+4 use). Releases 900001 to 900005 stay as they are, without a ZIP+4 record: there, 00012
+ * with any ZIP+4 is ENGINE_ERROR zip_plus_four_not_in_locality_map. No database loads 900006 before PR 6b-2, whose
+ * migration lets rule_record hold the new record type (the founder's answer to PR 6b's Q3 (a)).
+ */
+export const PLUS_FOUR_RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900006';
+export const PLUS_FOUR_RELEASE_NUMBER = 900_006;
+const PLUS_FOUR_BUILT_ON = '2026-10-21';
+const PLUS_FOUR_GPCI = { type: 'pfs_gpci' as const, file: 'GPCI_SYNTHETIC_900006.csv', replaces: 'pfs_gpci/2026/GPCI_SYNTHETIC.json' };
+const PLUS_FOUR_ZIP9 = { type: 'locality_map_plus_four' as const, file: 'ZIP9_SYNTHETIC.txt' };
+export const ZIP9_SYNTHETIC_FILE = `${SYNTHETIC_SOURCES_DIR}/${PLUS_FOUR_ZIP9.file}`;
+/** The ZIP+4 codes of ZIP9_SYNTHETIC.txt, all of the ZIP 00012: [first code, last code, locality]. */
+const ZIP9_SYNTHETIC_RANGES = [
+  [0, 4999, '01'],
+  [5000, 8999, '02'],
+] as const;
+
+/**
+ * The text of fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt: one 80-character line per code, in the ZIP9 layout that
+ * docs/adr/0064 records (one code per line). Positions 1-21 are the ZIP5 file's line for 00012 with the range's
+ * locality (state ZZ, ZIP 00012, carrier 99999, locality, rural indicator R, the lab locality, the plus-four flag
+ * 1), the code is at 22-25, and the year and quarter (20261) at 76-80, as in ZIP5_SYNTHETIC.txt. A file of 9,000
+ * lines is not typed by hand: it is rendered here, and a unit test holds the committed file equal to it.
+ */
+export function renderZip9Synthetic(): string {
+  const lines: string[] = [];
+  for (const [first, last, locality] of ZIP9_SYNTHETIC_RANGES) {
+    for (let code = first; code <= last; code += 1) {
+      const positions = `${SYNTHETIC_STATE}00012${SYNTHETIC_CARRIER}${locality}R${locality}   1${String(code).padStart(4, '0')}`;
+      lines.push(`${positions.padEnd(75, ' ')}20261`);
+    }
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/** Every file of release 900006, from release 900001 on disk, the GPCI file with a second locality and the ZIP9 file. */
+export function renderPlusFourRelease(root: string = repositoryRoot): Map<string, string> {
+  const first = path.join(root, SYNTHETIC_RELEASE_DIR);
+  const generated = new Map<string, string>();
+  const records: RuleRecord[] = [];
+  const carried = listContentFiles(first)
+    .map((file) => file.path)
+    .filter((file) => file !== MANIFEST_FILE && file !== RELEASE_NOTES_FILE && file !== PLUS_FOUR_GPCI.replaces);
+  for (const file of carried) {
+    generated.set(file, readFileSync(path.join(first, file), 'utf8'));
+    if (isRecordFile(file)) {
+      records.push(...readRecordFile(path.join(first, file), file).records.map((located) => located.record));
+    }
+  }
+  for (const source of [PLUS_FOUR_GPCI, PLUS_FOUR_ZIP9]) {
+    const parsed = parsedRecordFile(root, source.type, source.file, PLUS_FOUR_BUILT_ON);
+    generated.set(parsed.path, serializeRecords(parsed.records));
+    records.push(...parsed.records);
+  }
+  generated.set(
+    RELEASE_NOTES_FILE,
+    releaseNotes({
+      title: `SYNTHETIC test release ${String(PLUS_FOUR_RELEASE_NUMBER)}`,
+      summary: [
+        `Built ${PLUS_FOUR_BUILT_ON} by \`tsx tools/release/synthetic.ts\`: every file of release 900001 unchanged but its GPCIs, re-parsed from`,
+        'fixtures/synthetic/cms/GPCI_SYNTHETIC_900006.csv, which adds a second locality (99999-02), and a ZIP+4 file,',
+        'fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt, for the ZIP 00012 the ZIP5 file flags: codes 0000-4999 in locality 01 and 5000-8999 in',
+        'locality 02, while 9000-9999 are not listed. The release of the ZIP+4 tests (PRC-21; docs/adr/0064). Invented values for tests:',
+        'never published, never loaded outside a scratch test database, never used to price a real line.',
+      ].join('\n'),
+      records,
+      impact: ['SYNTHETIC fixture: loaded only into scratch test databases, by the tests that price a ZIP+4; none loads it before PR 6b-2.'],
+    }),
+  );
+  const hashes = new Map<string, string>([...generated.entries()].map(([file, text]): [string, string] => [file, sha256(text)]));
+  generated.set(MANIFEST_FILE, serializeManifest(buildManifest(PLUS_FOUR_RELEASE_NUMBER, hashes)));
+  return generated;
+}
+
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+  // The ZIP9 source first: release 900006 is parsed from it.
+  writeFileSync(path.join(repositoryRoot, ZIP9_SYNTHETIC_FILE), renderZip9Synthetic());
+  process.stdout.write(`synthetic ZIP9 source written to ${ZIP9_SYNTHETIC_FILE}\n`);
   for (const [dir, files] of [
     [SYNTHETIC_RELEASE_DIR, renderSyntheticRelease()],
     [RERUN_RELEASE_DIR, renderRerunRelease()],
     [DEADLINE_RELEASE_DIR, renderDeadlineRelease()],
+    [PLUS_FOUR_RELEASE_DIR, renderPlusFourRelease()],
   ] as const) {
     for (const [file, text] of files) {
       const target = path.join(repositoryRoot, dir, file);

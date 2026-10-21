@@ -25,7 +25,8 @@ import { impactLines } from './impact';
  * RELEASE.md and MANIFEST.json. The drafts must pass the content checker first. Drafts still at L1
  * stay in content/drafts and RELEASE.md lists them under "Drafts not in this release", so a reader
  * sees what the release leaves out; the dry-run's diff shows any record type it drops against the
- * release before. content/releases is never written here; CI publishes on merge.
+ * release before. A release whose ZIP5 records flag a ZIP that no ZIP9 record covers is refused
+ * (plusFourGaps). content/releases is never written here; CI publishes on merge.
  */
 
 const DRAFTS = 'content/drafts';
@@ -156,6 +157,56 @@ export function releaseNotes(input: ReleaseNotesInput): string {
   ].join('\n');
 }
 
+/** The calendar day after a YYYY-MM-DD date. */
+function dayAfter(date: string): string {
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+/**
+ * The ZIP+4 completeness check (docs/adr/0064): every ZIP whose locality_map record needs its ZIP+4
+ * (plus_four_required, the ZIP5 file's flag) has locality_map_plus_four records of that ZIP, from the same quarter's
+ * ZIP9 file, in force on every date of the flagged record's window. Without them the engine stops each of the ZIP's
+ * fee-schedule lines (ENGINE_ERROR zip_plus_four_not_in_locality_map) though the practice gave its ZIP+4, so a
+ * release that would do that is refused. One problem per flagged record, naming the first date left uncovered.
+ * Only real releases are checked: the SYNTHETIC releases 900001 to 900005 flag 00012 with no ZIP9 file, on purpose.
+ */
+export function plusFourGaps(records: readonly RuleRecord[]): string[] {
+  const windows = new Map<string, { from: string; to: string | null }[]>();
+  for (const record of records) {
+    if (record.record_type === 'locality_map_plus_four') {
+      const list = windows.get(record.key.zip) ?? [];
+      list.push({ from: record.effective_from, to: record.effective_to });
+      windows.set(record.key.zip, list);
+    }
+  }
+  const problems: string[] = [];
+  for (const record of records) {
+    if (record.record_type !== 'locality_map' || record.value.plus_four_required !== true) {
+      continue;
+    }
+    const { zip } = record.key;
+    // Walk the flagged window from its first day, each plus-four window that has started moving the walk past its end.
+    const ordered = [...(windows.get(zip) ?? [])].sort((a, b) => compareText(a.from, b.from));
+    let uncovered: string | null = record.effective_from;
+    for (const window of ordered) {
+      if (uncovered === null || (record.effective_to !== null && uncovered > record.effective_to)) {
+        break;
+      }
+      if (window.from <= uncovered && (window.to === null || window.to >= uncovered)) {
+        uncovered = window.to === null ? null : dayAfter(window.to);
+      }
+    }
+    if (uncovered !== null && (record.effective_to === null || uncovered <= record.effective_to)) {
+      problems.push(
+        `ZIP ${zip} needs its ZIP+4 (its locality_map record from ${record.effective_from}, ${record.source.path}), and no locality_map_plus_four record of that ZIP is in force on ${uncovered}: import the same quarter's ZIP9 file`,
+      );
+    }
+  }
+  return problems;
+}
+
 /** Writes RELEASE.md and MANIFEST.json for the files already in `dir`, and returns the manifest's hash. */
 export function sealRelease(dir: string, release: number, notes: string): string {
   writeFileSync(path.join(dir, RELEASE_NOTES_FILE), notes);
@@ -212,6 +263,10 @@ export function assembleRelease(request: AssembleRequest): AssembleResult {
         ? 'there are no drafts in content/drafts to assemble'
         : `release ${String(release)} not assembled: none of the ${String(excluded.length)} draft record(s) is verified to L2 or higher; verify them against their sources first`,
     );
+  }
+  const gaps = plusFourGaps(records);
+  if (gaps.length > 0) {
+    throw new ReleaseToolError([`release ${String(release)} not assembled: the ZIP5 file flags ZIPs that its quarter's ZIP9 file does not cover:`, ...gaps.slice(0, 20).map((gap) => `  ${gap}`)].join('\n'));
   }
 
   const impact = impactLines(root, release, records);

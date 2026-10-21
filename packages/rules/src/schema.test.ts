@@ -25,7 +25,7 @@ function withValue(type: Parameters<typeof exampleRecord>[0], value: Record<stri
 }
 
 describe('record types', () => {
-  it('has the fifteen data-dictionary types plus the denial-category lookup', () => {
+  it('has the fifteen data-dictionary types plus the denial-category lookup and the ZIP+4 ranges (PR 6b Q3 (a))', () => {
     expect(RULE_RECORD_TYPES).toEqual([
       'pfs_rvu',
       'pfs_gpci',
@@ -42,6 +42,7 @@ describe('record types', () => {
       'state_prompt_pay',
       'dispute_window',
       'locality_map',
+      'locality_map_plus_four',
       'denial_category',
     ]);
     expect(isRuleRecordType('carc') && !isRuleRecordType('fee')).toBe(true);
@@ -180,6 +181,50 @@ describe('ranges on numeric fields', () => {
     expect(issuesOf(exampleRecord('pfs_rvu', { key: { hcpcs: '97110', modifier: 'G' } }))).toEqual([expect.stringContaining('key.modifier')]);
     expect(issuesOf(exampleRecord('locality_map', { key: { zip: '123' } }))).toEqual([expect.stringContaining('key.zip')]);
     expect(issuesOf(exampleRecord('assistant_modifier', { key: { modifier: 'GP' } as never }))).toEqual([expect.stringContaining('key.modifier')]);
+  });
+});
+
+describe('the ZIP+4 ranges of a ZIP (locality_map_plus_four)', () => {
+  type Range = { from: unknown; to: unknown; carrier?: unknown; locality?: unknown; rural_indicator?: unknown };
+  const ranges = (...items: Range[]) => withValue('locality_map_plus_four', { ranges: items.map((item) => ({ carrier: '99999', locality: '01', rural_indicator: 'R', ...item })) });
+
+  it('takes inclusive four-digit ranges, sorted by their start and never overlapping, one code or the whole ZIP', () => {
+    expect(issuesOf(ranges({ from: '0000', to: '4999' }, { from: '5000', to: '8999', locality: '02' }))).toEqual([]);
+    expect(issuesOf(ranges({ from: '1234', to: '1234' }))).toEqual([]);
+    expect(issuesOf(ranges({ from: '0000', to: '9999', rural_indicator: null }))).toEqual([]);
+    expect(issuesOf(ranges({ from: '0000', to: '0001' }, { from: '0003', to: '0003' }))).toEqual([]);
+  });
+
+  it.each([
+    ['a range that ends before it starts', [{ from: '5000', to: '4999' }], 'value.ranges.0.to: is out of range: a range ends at 4999, before its start 5000'],
+    ['ranges out of order', [{ from: '5000', to: '8999' }, { from: '0000', to: '4999' }], 'value.ranges.1.from: must start after the range before it ends (8999)'],
+    ['overlapping ranges', [{ from: '0000', to: '5000' }, { from: '5000', to: '8999' }], 'value.ranges.1.from: must start after the range before it ends (5000)'],
+    ['a range inside the one before', [{ from: '0000', to: '8999' }, { from: '1000', to: '2000' }], 'value.ranges.1.from: must start after the range before it ends (8999)'],
+    ['a three-digit bound', [{ from: '000', to: '4999' }], 'value.ranges.0.from: must be the four digits of a ZIP+4'],
+    ['a five-digit bound', [{ from: '0000', to: '49999' }], 'value.ranges.0.to: must be the four digits of a ZIP+4'],
+    ['a bound with a letter', [{ from: '00A0', to: '4999' }], 'value.ranges.0.from: must be the four digits of a ZIP+4'],
+    ['a carrier of four digits', [{ from: '0000', to: '4999', carrier: '9999' }], 'value.ranges.0.carrier'],
+    ['a one-digit locality', [{ from: '0000', to: '4999', locality: '1' }], 'value.ranges.0.locality'],
+    ['a rural indicator other than blank, R or B', [{ from: '0000', to: '4999', rural_indicator: 'X' }], 'value.ranges.0.rural_indicator'],
+  ] as const)('refuses %s', (_name, items, message) => {
+    expect(issuesOf(ranges(...items))).toEqual([expect.stringContaining(message)]);
+  });
+
+  it('compares only the bounds the pattern accepts, so a malformed bound is reported once', () => {
+    expect(issuesOf(ranges({ from: '0000', to: '4999' }, { from: 'x', to: '5999' }, { from: '5000', to: '8999' }))).toEqual([expect.stringContaining('value.ranges.1.from: must be the four digits of a ZIP+4')]);
+  });
+
+  it('refuses a ZIP with no range, an extra field, and a key that is not a five-digit ZIP', () => {
+    expect(issuesOf(withValue('locality_map_plus_four', { ranges: [] }))).toEqual([expect.stringContaining('value.ranges: must hold at least one range')]);
+    expect(issuesOf(ranges({ from: '0000', to: '4999', plus_four_required: true } as Range))).toEqual([expect.stringContaining('value.ranges.0')]);
+    expect(issuesOf(exampleRecord('locality_map_plus_four', { key: { zip: '0001' } }))).toEqual([expect.stringContaining('key.zip: must be a five-digit ZIP code')]);
+    expect(issuesOf(withValue('locality_map_plus_four', { state: 'Z' }))).toEqual([expect.stringContaining('value.state')]);
+  });
+
+  it('holds at most one range per four-digit code', () => {
+    const every = Array.from({ length: 10_000 }, (_, code) => ({ from: String(code).padStart(4, '0'), to: String(code).padStart(4, '0') }));
+    expect(issuesOf(ranges(...every))).toEqual([]);
+    expect(issuesOf(ranges(...every, { from: '9999', to: '9999' }))).toEqual([expect.stringContaining('value.ranges: must hold at most 10000 ranges')]);
   });
 });
 
