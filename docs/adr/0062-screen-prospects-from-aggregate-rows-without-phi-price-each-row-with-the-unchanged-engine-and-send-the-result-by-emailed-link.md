@@ -289,22 +289,37 @@ what it still prices; the codes priced equal the key set on every attempt.
 (`tools/screening-capacity`; docs/runbooks/screening-capacity.md). Web and platform run as containers at production's
 task sizes, read from `infra/lib/environments.ts` (a quarter vCPU and 512 MiB with no swap, sharing the runner's last
 CPU); Postgres 18 at db.t4g.medium's size or the runner's share of it, with gp3's I/O baseline on the device behind
-Docker's data root and a 1 ms delay each way on its interface; every limit is read back before the run counts, and
-the harness and Chromium run on the other CPUs. The release is the SYNTHETIC production-shaped release 900100
+Docker's data root, a 1 GiB `/dev/shm` and a 1 ms delay each way on its link (netem on its own interface, which delays
+what it sends, and on the host's end of its veth pair, which delays what it receives: one alone delayed one direction
+and could never reach the 2 ms the check asks for); Postgres counts as ready once a client container on the services'
+network reaches it over TCP; every limit is read back before the run counts, and the harness and Chromium run on the
+other CPUs. The release is the SYNTHETIC production-shaped release 900100
 (`packages/synth/src/release/scale.ts` through `tools/release/scale.ts`: 2,245,245 invented records in CMS's layouts
 at the sizes of CMS's public files, the full practitioner PTP table among them, built outside the repository and
 loaded by the release loader with its synthetic option). The uploads are the practice shape (the large test's 50,000
 rows, held equal to them) and the worst shape (50,000 distinct priced lines over at least 15,000 codes, half of them
 in the reduction across codes, a tenth in a quarter whose records change), each alone and three at once with a small
-upload behind them. The verdict is split. The job fails on what PR 6 controls: an OOM kill, a restart or an exit the
-harness did not cause, anonymous memory above 90% of a task's limit, a limit not applied, a runner too small, a wrong
-or unfinished result, a result page that does not open (each emailed link, then its last page of groups), a run that
-records no batch for five minutes, or an oracle mismatch. The time from each
+upload behind them, sent once the three large runs exist so that it is queued behind them (each pricing job's place in
+the queue is recorded from pg-boss). S1, S4 and S5 start from a cold Postgres (restarted, the page cache dropped, both
+recorded); S4's three worst uploads are variants of the worst shape that differ from S1's and from each other in most of
+their codes, sharing the release's pooled and corrected codes, which every worst upload prices. The verdict is split.
+The job fails on what PR 6 controls: an OOM kill, a restart or an exit the harness did not cause (Postgres's own
+included), anonymous memory above 90% of a task's limit, a limit or a cold start not applied, a runner too small, a
+wrong or unfinished result, a result page that does not open (each emailed link, then its last page of groups), a run
+that records no batch for five minutes or stays queued while nothing in its scenario moves, a small upload not queued
+and started behind the large ones, an oracle mismatch or an oracle that compared fewer rows than the upload's Medicare
+rows (S1-1, S2-1 and S3-1, the last priced from the shared types the platform held), or a run that measured other than
+S1 to S5. The harness keeps deadlines of its own inside the job's 90 minutes (no scenario starts after 60, one still
+running at 70 ends there), writes its report after every scenario, and keeps every container's log beside it. The
+time from each
 submission to its email is measured always and reported as "open, PR 6b" while
 `environmentSettings('production').compute.screening` is absent; once PR 6b declares that consumer, a time above 48
 seconds on the runner fails the job until staging measures how much faster the runner is than Fargate, and from then
 on a time above 60 seconds scaled by that factor. The switch is that declaration, read from the settings the stacks
-deploy, and `tools/screening-capacity/report.test.ts` proves both sides of it. The platform container runs
+deploy, and `tools/screening-capacity/report.test.ts` proves both sides of it. A consumer declared while the harness
+still prices screenings in the platform container one at a time (`HARNESS_RUNS_SCREENING_CONSUMER`, false) fails the
+job as "consumer not run", so time is never enforced over the wrong topology: PR 6b runs the consumer's own service
+and concurrency in the harness and sets it (the capacity review of PR #31). The platform container runs
 `NODE_ENV=test` with the local outbox, because the worker refuses the outbox in production; every `NODE_ENV` read in
 the code the images load is listed in `tools/screening-capacity/env.ts`, with what it selects, and a test fails on
 one not listed. Each upload comes from its own client address through one trusted proxy hop, as production's load
@@ -367,8 +382,10 @@ no `practice_id`, no registry row, no other role's privilege):
   (computed by `marketing_channel()` from the campaign medium and the kind of paid click, never a caller's), a campaign
   code only when the founder lists it in `marketing_campaign` at submission (`other` otherwise, null with none),
   whether the prospect consented, bands of the row counts (`screening_count_band()`: none, up to 100, 1,000, 10,000,
-  50,000, more), the sorted codes of a refusal's reasons, whether a refused upload was followed by an accepted one of
-  the practice (`retried`), the release, and once priced the engine, four whole-percent shares of the file's allowed
+  50,000, more), the sorted codes of a refusal's reasons, whether an accepted screening followed a refused upload of
+  the practice still kept (`after_refusal`, on the accepted outcome: a flag on the refused one would tie its reasons,
+  through a small cohort, to the practice's later converted outcome and its request), the release, and once priced
+  the engine, four whole-percent shares of the file's allowed
   total (floored, so they sum to 97 to 100; all 0 when the total is 0), the band of the rows `screening_standing()`
   names anomalies and the band of their summed gap below their lowest figure (`screening_difference_band()`, the
   narrowest step $1,000), how soon the result was first opened (`screening_open_band()`, by UTC days from the upload),
@@ -387,16 +404,27 @@ no `practice_id`, no registry row, no other role's privilege):
   `screening_result_coverage()`, by payer product too. Every row sums at least 11 claim lines, so every claim-line sum
   is 0 or at least 11 (`screening_lead_product_cells`); the left-out claim lines and dollars are kept only at 11 or
   more. A practice keeps one summary at a time: a later screening of the practice (the same ZIP and practice name, or
-  the same contact address) replaces it at that screening's own completion (`operator_screening_complete()`), carrying
-  over the request of the latest summary that has one, each deletion an audit event (`screening_lead_replaced`, naming
-  the request it carried). A failed or abandoned resend deletes nothing, and a refused upload replaces nothing. A
-  conversion freezes the summary when the run has none, or gives it the request when it has none (decision 17: a
-  different address of the same practice replaces it the same way, with a notice in the console, PR 7). The summary
+  the same contact address) replaces it at that screening's own completion (`operator_screening_complete()`), each
+  deletion an audit event. The request of the latest summary of the same ZIP and practice name goes over to the later
+  screening's summary (decision 17: from any address, with a notice in the console, PR 7; `screening_lead_replaced`,
+  naming the request). A summary that matched by the contact address alone (a billing firm's address screening
+  another client, or the same practice renamed) is deleted for the subtraction rule but its request is left without a
+  summary, never carried onto another practice's figures (`screening_lead_left_request`, naming the request). A failed
+  or abandoned resend deletes nothing, a refused upload replaces nothing, and a completion after the screening's
+  expiry is refused (the job fails the run as `EXPIRED`). A conversion freezes the summary on its request alone, never
+  with a consent the prospect withdrew, when the run has none, or gives it the request when it has none (a summary
+  already carrying an earlier request keeps that one, and the conversion form says the new request has none of its
+  own). The result page and the result email say whether this screening's summary is kept and with what
+  (`screening_result_summary()`'s and `operator_screening_complete()`'s `kept_with`: none, its own request, an earlier
+  request it took over, or consent), so a later prospect whose screening took over a request is told that their
+  details are kept with it for 12 months, never that they are deleted. The summary
   goes after its 12 months (`operator_screening_expire()`, `screening_lead_expired`), on withdrawal
   (`screening_lead_withdraw()`, PR 6e's link), or with its request (the cascade #51's deletion uses); a delete
   otherwise is refused (`screening_lead_kept`).
 - `marketing_campaign`: the campaign codes the founder lists (`console_register_marketing_campaign()`, a platform
-  administrator; its screen is PR 7's), append-only.
+  administrator; its screen is PR 7's), append-only, each with an ID the listing's audit event names. That a listed
+  campaign is one sent to many people is the founder's rule, kept by review; PR 7's reports show a campaign's cohort
+  only from a minimum size.
 - `screening_prospect` gains `source` (the closed list of decision 8, optional), `utm_source`, `utm_medium`,
   `utm_campaign` and `paid_click` (from the attribution cookie), `referring_firm` (optional, screened by
   `textPhiFindings`), `followup_consent_sha256` (null until PR 6e captures consent) and `screening_terms_sha256` (the
@@ -406,7 +434,9 @@ no `practice_id`, no registry row, no other role's privilege):
   interaction, `focusin` among them) or by the conversion, never by the link's GET, which a mail scanner also makes.
 - `prospect_request` gains the same attribution, `from_screening` (set by `convert_screening()`, which now writes the
   request itself, since no later update may set it), and `declined_reason`, the closed list of decision 9, required on
-  the console's decline (`not_recorded` for a request declined before the list, or by the previous image). Every new
+  the console's decline (`not_recorded` for a request declined before the list, or by the previous image; a decline
+  that names it is refused, and the migration that follows the previous image's retirement makes a decline with no
+  reason raise instead of recording `not_recorded`). Every new
   CHECK on it writes its list inline and calls no function, because the application role updates the table directly
   (the bug migration 20261030110000 fixed for `prospect_payers_valid`); `prospect_request_fixed()` keeps the new
   columns fixed and a declined request's status and reason, with one exception for the backfill. A second,
@@ -418,21 +448,29 @@ no `practice_id`, no registry row, no other role's privilege):
 **The attribution cookie (decision 11).** `pw_first_touch`, first-party, set by the proxy (`src/proxy.ts`), which
 otherwise authorizes nothing and touches no database: on a page GET (never `/api` or Next's assets) whose URL carries
 a valid `utm_*` code after normalisation (lower case, trimmed, each run of white space or `+` a hyphen, then
-`^[a-z0-9][a-z0-9._-]{0,63}$` or dropped) or a click-ID parameter, and no such cookie yet, it sets the three codes and
+`^[a-z0-9][a-z0-9._-]{0,63}$` or dropped, and dropped too when it has an identifier's shape: nine or more digits, an
+SSN, a date, an email address or a phone number by `textPhiFindings`, a Medicare Beneficiary Identifier, or digits
+alone; a name has no shape a check can see) or a click-ID parameter, and no such cookie yet, it sets the three codes and
 the kind of paid click (`paid_search` for `gclid`, `gbraid`, `wbraid` or `msclkid`; `paid_social` for `fbclid`,
 `li_fat_id`, `ttclid` or `twclid`), read by presence alone, so the click ID never leaves the URL. `Max-Age` 30 days,
 `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` on https; the first visit wins. The screening and request-audit
 handlers read it on the server (`src/lib/http/attribution.ts`), check every value again, and pass the four values; the
 database's CHECKs hold the same shape. No script reads it, no third party receives it, and nothing logs it. The
-privacy notice (#51) discloses it; counsel confirms the disclosure.
+privacy notice (#51) discloses it; counsel confirms the disclosure. Until that review is recorded a production server
+neither sets the cookie nor reads it (docs/product/legal-surfaces.md, `attribution-cookie`;
+`src/lib/legal-surfaces.ts`), so no campaign code is kept from a visit before the disclosure exists, from the first
+production deploy on.
 
 **The CO-04 amendment.** CO-04 says results "expire after 30 days (a platform job deletes them)". A screening's
 result, rows and the prospect's details still do. What outlives them, by the founder's rulings of 2026-10-20: the
 counts-only outcome (no end date, decision 12), and for a practice that requested an audit or consented, the
 screening's totals with its practice name, ZIP, email and how it heard of us, kept with the request for 12 months from
-the screening (decision 10). Every surface that deletes or collects says so in the plain list of decision 7: the
-result page (and its converted variant), the email, the closed link's page, the upload form's email hint, the "sent"
-alert, the request-audit form and the conversion form.
+the screening (decision 10). Every surface that deletes or collects says so in the plain list of decision 7, from one
+wording (`apps/worker/src/screening/wording.ts`): the result page (by what its summary is kept with), the email (the
+same), the closed link's page, the upload form's email hint and the "sent" alert (each saying what is kept if an
+audit is requested from the screening or was from an earlier one of the same practice name and ZIP code, never
+whether one was), the request-audit form and the conversion form. Each is a legal surface (docs/product/legal-surfaces.md);
+a production server keeps the screening closed while any of the screening's waits for counsel's review.
 
 ## Alternatives considered
 
@@ -513,15 +551,17 @@ alert, the request-audit form and the conversion form.
   bands, whole-percent shares, closed codes and the release. A converted prospect who resends a file keeps the summary
   the founder takes to the scoping call: it moves to the later screening at that screening's completion, with its
   request. A billing firm screening several practices from one address keeps one summary of them at a time.
-- The attribution cookie is a cookie the proxy now sets; the privacy notice (#51) must disclose it before the
-  screening opens. The screening terms' hash is null until their wording and checkbox exist; making it required needs
+- The attribution cookie is a cookie the proxy now sets outside production; the privacy notice (#51) must disclose it
+  before any production server sets it, and until that review is recorded none does. The screening terms' hash is null until their wording and checkbox exist; making it required needs
   a later migration or the wording before this one merges (open).
 - What proves audit #57: SEC-17 at nine tables, the grants, the closed lists against `pg_get_constraintdef`, the
   bands, channel and refusal codes, the outcome's lifecycle (written at submission, refusal, completion and failure;
-  shares, anomaly and difference bands; retried and superseded; fixed columns, one-way stage, flags and first open
+  shares, anomaly and difference bands; after a refusal and superseded; fixed columns, one-way stage, flags and first open
   once; unlinked on expiry and replacement, then sealed; DELETE and TRUNCATE refused), the pair of outcomes that
   reveals no cell, the summary's freeze, sums, labels version, first open, 12 months, replacement at completion (by
-  address and by ZIP and name), withdrawal, reminders, expiry and cascade, and the re-linking test
+  address and by ZIP and name, the request carried only by the same practice), `kept_with`, withdrawal and a conversion
+  after it, reminders, expiry and cascade, a completion after expiry, the lock order beside the opened signal, a
+  conversion, a completion, a failure and the expiry job, the attempt's fence, and the re-linking test
   (`packages/db/src/screening.db.test.ts`); the backfill of declined requests (`migrate.db.test.ts`); the routes'
   attribution, the opened signal and the conversion (`apps/web/src/lib/screening/routes.db.test.ts`); the request's
   attribution and the console's decline as the application role (`onboarding-routes.db.test.ts`); the cookie, the
@@ -652,8 +692,9 @@ Decisions 13 to 16 (the 60-second promise and its test, audit #53) are recorded 
 capacity test.
 
 What stays open: counsel on the reworded surfaces and the cookie disclosure, on keeping a converted prospect's summary
-12 months without consent, on unlinked outcomes and the stated linkage while a summary or request is kept, and on a
-different address replacing a request's summary; the terms' wording and whether their hash is required; PR 6e's
+12 months without consent, on unlinked outcomes and the stated linkage while a summary or request is kept, on a
+different address replacing a request's summary and on telling that address so; the founder on a summary that matches
+by the contact address alone (built: deleted, its request left without one); the terms' wording and whether their hash is required; PR 6e's
 consent capture, withdrawal page and reminders; PR 7's funnel, lead list and campaign screen (a schema PR for its read
 functions).
 
@@ -677,7 +718,7 @@ The founder, Tyler Williams, accepted on 2026-10-20 the recommended answer to ev
 16. **How PR 6 merges before its consumer exists:** the test fails PR 6 on everything PR 6 controls; time shows as
     "open, PR 6b" until PR 6b declares the consumer in `infra/lib/environments.ts`, which switches it on in tested
     code. *Built:* `timeRule()` reads `compute.screening`; `report.test.ts` holds today's settings to "open" and a
-    declared consumer to "enforced".
+    declared consumer to "enforced", and fails a declared consumer the harness does not yet run ("consumer not run").
 
 The first local run (the process runtime of `tools/screening-capacity/containers.ts`, on a shared 4-CPU machine, its
 Postgres unlimited; 2026-10-20, images at 1d8acd0) is recorded in the PR 6 approval summary with the load average
@@ -690,8 +731,22 @@ holds one page of groups, above). The second local run (the same runtime, 2026-1
 opened every emailed link and then its last page of groups with HTTP 200, the worst shape's 20,507 groups included;
 web's anonymous memory peaked at 215 MiB with one worst-shape upload and 285 MiB with three and a small one at once,
 against 512 MiB and the 90% line at 461 MiB; no task exited, met its limit or was killed, and S1's stored rows equalled
-the oracle's. Its only failing checks are the Postgres limits the process runtime cannot apply. The first CI run's URL
-and figures are cited here once it runs.
+the oracle's. Its only failing checks are the Postgres limits the process runtime cannot apply. No run of the Docker runtime has yet produced a report: the first CI run (39520324078, at f500b1f) stopped at
+the migration task 0.23 s after starting it, and its error kept no stderr; the harness now keeps it, waits for Postgres
+over TCP, delays both directions, keeps Postgres for the oracle and saves every container's log (the review of PR #31).
+The second (39536429652, at cfd23cd) kept it: Node could not start as the images' user, since BuildKit gave the RDS
+bundle's `ADD --chmod=644` to /etc/ssl and /etc/ssl/certs (moby/buildkit#5943) and Node reads /etc/ssl/openssl.cnf as
+it starts; neither production image could have started. Both now add the bundle without `--chmod`, set the modes as
+root and read the bundle with Node as `node` in the build (8f6e4d5, held by tools/test/workflows.test.ts). The third
+(39537310623, at 8f6e4d5, a 4-CPU runner) is the first Docker run with a report, every scenario measured under the
+task limits: verdict pass, time open (PR 6b). Times to email: S1-1 (worst, cold) 69.7 s; S2-1 and S3-1 (practice)
+11.4 s and 10.0 s; S4 (three worst variants at once, cold) 62.0, 94.8 and 127.8 s, its small upload 116.7 s behind
+them; S5 (three practice shapes, cold) 32.0 to 49.2 s, its small upload 40.9 s; S1-1, S2-1 and S3-1 equalled the
+oracle. These are the runner's figures, not Fargate's (staging's factor stays open).
+A third local run (the process runtime, 2026-10-21, the harness of cfd23cd over images built from f500b1f's working tree with this round's job changes, every scenario) compared
+S1-1, S2-1 and S3-1 with the oracle at 50,000, 18,432 and 18,432 Medicare rows, each equal, and queued and started the
+small upload behind the three large ones in S4 and S5; its times are not measurements (the machine was running other
+suites).
 
 What stays open: staging's runner-to-Fargate factor; PR 6b's consumer (its size, two screenings at a time, the row
 cap and the honest message), sized from these measurements and decisions 14 and 15; the choice of a cache for keyed

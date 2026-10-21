@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type EnvironmentSettings, environmentSettings } from '../../infra/lib/environments';
-import { MIB, RUNNER_TO_FARGATE, TIME_ALLOWANCE_MS, TIME_PROMISE_MS, postgresLimit, productionLimits } from './limits';
+import { HARNESS_RUNS_SCREENING_CONSUMER, MIB, RUNNER_TO_FARGATE, TIME_ALLOWANCE_MS, TIME_PROMISE_MS, postgresLimit, productionLimits } from './limits';
 import {
   ALL_SCENARIOS,
   type AppliedLimits,
@@ -27,8 +27,8 @@ import {
  * link or token.
  */
 
-const OPEN: TimeRule = { consumerDeclared: false, runnerToFargate: null };
-const ENFORCED: TimeRule = { consumerDeclared: true, runnerToFargate: null };
+const OPEN: TimeRule = { consumerDeclared: false, consumerRun: false, runnerToFargate: null };
+const ENFORCED: TimeRule = { consumerDeclared: true, consumerRun: true, runnerToFargate: null };
 
 /** Production's settings with a screening consumer declared, as PR 6b will declare it. */
 function withConsumer(): EnvironmentSettings {
@@ -134,9 +134,22 @@ describe('the time verdict', () => {
   it('is open until environments.ts declares the screening consumer, and enforced from then on: the switch is the settings', () => {
     // Today production declares no screening consumer: PR 6b's declaration is what turns time on.
     expect(timeRule(environmentSettings('production'), RUNNER_TO_FARGATE)).toEqual(OPEN);
-    expect(timeRule(withConsumer(), RUNNER_TO_FARGATE)).toEqual(ENFORCED);
+    expect(timeRule(withConsumer(), RUNNER_TO_FARGATE, true)).toEqual(ENFORCED);
     expect(productionLimits(withConsumer()).platform).toEqual({ cpus: 1, memoryMiB: 2048 });
     expect(RUNNER_TO_FARGATE).toBeNull();
+  });
+
+  it('fails a run with the consumer declared while the harness still prices screenings in platform, one at a time', () => {
+    // The capacity review of PR #31: declaring compute.screening must not switch time on over the wrong topology.
+    expect(HARNESS_RUNS_SCREENING_CONSUMER).toBe(false);
+    const rule = timeRule(withConsumer(), RUNNER_TO_FARGATE);
+    expect(rule).toEqual({ consumerDeclared: true, consumerRun: false, runnerToFargate: null });
+    expect(verdict(measured(), rule)).toEqual({
+      pass: false,
+      time: 'enforced',
+      reasons: ['consumer not run: environments.ts declares the screening consumer, and the harness still prices screenings in the platform container one at a time'],
+    });
+    expect(verdict(measured(), OPEN).pass).toBe(true);
   });
 
   it('reports 120 s as "open, PR 6b" and passes the run while time is open', () => {
@@ -158,7 +171,7 @@ describe('the time verdict', () => {
   });
 
   it('once the runner-to-Fargate factor is measured, fails above 60 s scaled by it', () => {
-    const scaled: TimeRule = { consumerDeclared: true, runnerToFargate: 1.5 };
+    const scaled: TimeRule = { consumerDeclared: true, consumerRun: true, runnerToFargate: 1.5 };
     expect(timeVerdict(40_000, scaled)).toEqual({ status: 'pass' });
     expect(timeVerdict(40_100, scaled)).toEqual({ status: 'fail', reason: 'promise' });
   });

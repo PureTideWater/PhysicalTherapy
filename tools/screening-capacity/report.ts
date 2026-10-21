@@ -1,5 +1,15 @@
 import type { EnvironmentSettings } from '../../infra/lib/environments';
-import { type ContainerLimit, MEMORY_LIMIT_PERCENT, MIB, MIN_ROUND_TRIP_MS, type PostgresLimit, TIME_ALLOWANCE_MS, TIME_PROMISE_MS, screeningConsumer } from './limits';
+import {
+  type ContainerLimit,
+  HARNESS_RUNS_SCREENING_CONSUMER,
+  MEMORY_LIMIT_PERCENT,
+  MIB,
+  MIN_ROUND_TRIP_MS,
+  type PostgresLimit,
+  TIME_ALLOWANCE_MS,
+  TIME_PROMISE_MS,
+  screeningConsumer,
+} from './limits';
 import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
 
 /**
@@ -10,7 +20,8 @@ import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
  * cause, Postgres's included, anonymous memory above 90% of a task's limit, a limit or a cold start not applied, a
  * runner too small, a wrong or unfinished result, a stalled run, a small upload not queued behind the large ones, a
  * submission time not captured, an oracle mismatch or an oracle that compared fewer rows than the upload's Medicare
- * rows, and a partial run: every one of S1 to S5 must be measured). Time is measured always and judged by timeVerdict(): "open, PR 6b"
+ * rows, a partial run: every one of S1 to S5 must be measured, and a declared screening consumer the harness does not
+ * run as production will). Time is measured always and judged by timeVerdict(): "open, PR 6b"
  * while environments.ts declares no screening consumer, so it cannot fail the run; once PR 6b declares one, above 48 s
  * on the runner fails ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it
  * ("promise"). The report holds counts, times and hashes only: no row, link, token or address.
@@ -27,15 +38,19 @@ export const ALL_SCENARIOS = ['S1', 'S2', 'S3', 'S4', 'S5'] as const;
  */
 export const ORACLE_UPLOADS = ['S1-1', 'S2-1', 'S3-1'] as const;
 
-/** How the time is judged: whether the screening's consumer is declared, and the runner-to-Fargate factor once known. */
+/**
+ * How the time is judged: whether the screening's consumer is declared, whether the harness runs it as production
+ * will (HARNESS_RUNS_SCREENING_CONSUMER), and the runner-to-Fargate factor once known.
+ */
 export interface TimeRule {
   readonly consumerDeclared: boolean;
+  readonly consumerRun: boolean;
   readonly runnerToFargate: number | null;
 }
 
 /** The rule production's settings give: the switch is environments.ts's compute.screening (PR 6b), nothing else. */
-export function timeRule(settings: EnvironmentSettings, runnerToFargate: number | null): TimeRule {
-  return { consumerDeclared: screeningConsumer(settings) !== null, runnerToFargate };
+export function timeRule(settings: EnvironmentSettings, runnerToFargate: number | null, consumerRun: boolean = HARNESS_RUNS_SCREENING_CONSUMER): TimeRule {
+  return { consumerDeclared: screeningConsumer(settings) !== null, consumerRun, runnerToFargate };
 }
 
 export type TimeVerdict = { readonly status: 'open' } | { readonly status: 'pass' } | { readonly status: 'fail'; readonly reason: 'allowance' | 'promise' };
@@ -229,6 +244,9 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
   const reasons: string[] = [];
   if (measured.aborted !== null) {
     reasons.push(`run not finished: ${measured.aborted}`);
+  }
+  if (rule.consumerDeclared && !rule.consumerRun) {
+    reasons.push('consumer not run: environments.ts declares the screening consumer, and the harness still prices screenings in the platform container one at a time');
   }
   const ids = measured.scenarios.map((scenario) => scenario.id);
   if (ids.join(',') !== ALL_SCENARIOS.join(',')) {

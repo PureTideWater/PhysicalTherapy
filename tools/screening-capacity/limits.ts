@@ -83,6 +83,14 @@ export function screeningConsumer(settings: EnvironmentSettings): ScreeningConsu
   return compute.screening ?? null;
 }
 
+/**
+ * Whether the harness runs the consumer as production will: false while it prices screenings in the platform
+ * container, one at a time (env.ts, platformEnvironment's WORKER_JOBS=platform). A consumer declared while this is
+ * false fails the run ("consumer not run"), so time is never enforced over the wrong topology; PR 6b, which declares
+ * the consumer's service and concurrency, runs them here and sets this.
+ */
+export const HARNESS_RUNS_SCREENING_CONSUMER = false;
+
 /** Production's limits as the test applies them. */
 export interface ProductionLimits {
   readonly web: ContainerLimit;
