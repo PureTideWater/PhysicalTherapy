@@ -8,6 +8,7 @@ import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { readDatabaseUrl } from './config';
+import { POSTGRES_TYPES } from './domain-model/cross-check';
 import { MIGRATIONS_DIR, MigrationError, migrate, readMigrations } from './migrate';
 import { APP_DEV_LOGIN, APP_ROLE, OWNER_ROLE, appDevLoginUrl } from './roles';
 import { randomUUID } from 'node:crypto';
@@ -437,19 +438,6 @@ describe('roles', () => {
 });
 
 describe('the Drizzle schema', () => {
-  const POSTGRES_TYPES: Record<string, string> = {
-    PgUUID: 'uuid',
-    PgInteger: 'integer',
-    PgSmallInt: 'smallint',
-    PgText: 'text',
-    PgTimestamp: 'timestamp with time zone',
-    PgJsonb: 'jsonb',
-    PgDateString: 'date',
-    PgBoolean: 'boolean',
-    PgBigInt64: 'bigint',
-    PgNumeric: 'numeric',
-    PgArray: 'ARRAY',
-  };
   const tables = Object.values(schema as Record<string, unknown>).filter((value): value is PgTable => is(value, PgTable));
 
   it('defines every migrated table', async () => {
