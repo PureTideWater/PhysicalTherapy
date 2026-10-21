@@ -58,9 +58,10 @@ export function identifierShaped(raw: string, code: string): boolean {
  * A campaign code as kept: lower-cased and trimmed, each run of white space or '+' turned into '-', then held to
  * CAMPAIGN_CODE; anything else (an email address, a long or empty value) is dropped, and so is a code with an
  * identifier's shape (identifierShaped: a member ID, a date of birth, a phone number, a Medicare Beneficiary
- * Identifier, digits alone). A name has no shape a check can see, so one in a link's code is kept as the code it is:
- * an unlisted code counts as 'other' on the counts-only outcome, and is kept as it came only with the screening, its
- * summary or its request.
+ * Identifier, digits alone). A name has no shape a check can see, so the code reaches the database as normalised, and
+ * the database keeps it only when the founder lists it in marketing_campaign, 'other' otherwise, on every row that
+ * keeps one: the screening, its summary, its request and the counts-only outcome (marketing_campaign_listed_only();
+ * the founder's ruling of 2026-10-21). The visitor's own cookie may still hold it.
  */
 export function normaliseCampaignCode(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) {

@@ -45,7 +45,7 @@ describe('campaign codes', () => {
     expect(normaliseCampaignCode('spring-2026')).toBe('spring-2026');
     expect(normaliseCampaignCode('q4-2026-webinar')).toBe('q4-2026-webinar');
     expect(normaliseCampaignCode('fall_2026.v2')).toBe('fall_2026.v2');
-    // A name has no shape a check can see: it is kept as the code it is (an unlisted code is 'other' on the outcome).
+    // A name has no shape a check can see: it passes as normalised, and the database keeps an unlisted code as 'other' on every row.
     expect(normaliseCampaignCode('Jane Doe')).toBe('jane-doe');
     // A link that carries them sets none of them; read back from a cookie, they are dropped the same way.
     expect(attributionFromUrl(url('utm_source=mbr123456789&utm_campaign=1980-04-12'))).toBeNull();
