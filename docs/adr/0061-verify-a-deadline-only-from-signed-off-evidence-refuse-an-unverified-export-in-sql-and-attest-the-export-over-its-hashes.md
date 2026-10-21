@@ -648,11 +648,12 @@ migrate first (ADR 0049).
   `mappingInForce()` in `apps/worker/src/price/pricing-check.db.test.ts`, the forged request and the web-login refusal
   in `export-attempts.db.test.ts`, the level-2 window in `packets.db.test.ts`, the months and business-days windows in
   `report.db.test.ts` and `deadline.db.test.ts`, and the phone-width checks in the packets and contracts journeys.
-- `docs/product/domain-model.md` is regenerated at this migration and waits for the founder's approval (CO-02). The
-  founder approved the schema as first summarised on 2026-10-18; the downloads and the job role (`tp_job`,
-  `app_session_is_job()`), and the audit items' columns, checks, functions and triggers (the window's unit and start,
-  `submission.pricing_check`, the pricing check, the export attempts), change the text, so its new SHA-256 waits for
-  the founder's confirmation.
+- `docs/product/domain-model.md` is regenerated at this migration (CO-02). The founder approved the schema as first
+  summarised on 2026-10-18; the downloads and the job role (`tp_job`, `app_session_is_job()`), and the audit items'
+  columns, checks, functions and triggers (the window's unit and start, `submission.pricing_check`, the pricing check,
+  the export attempts, the unattested submission, the export guard's contact check), changed the text, and the
+  founder approved the regenerated text, SHA-256 `6f72ea56563c379e05a601f3af019ad4ce3358f55cc02b06fcec17ea23d830a0`,
+  on 2026-10-21 (Owner rulings (2026-10-21)). The founder writes the approval line; the build never does.
 
 ## Revisit when
 
@@ -706,7 +707,12 @@ copy only, and the internal record stays where it lives and is shown on the revi
   footer; a version without a stated last day is refused with a TypeError rather than printed.
 - **D3. The CSV is the payer's too** (`csv.ts`): no `patient_control_number`, `trace_ref`, `deadline_status`,
   `deadline_source` or `trace_sha256` column; the method in the PDF's words; interest empty where code did not
-  compute it. Both files take their words from one module (`words.ts`).
+  compute it. Both files take their words from one module (`words.ts`). Every row leads with the packet's reference,
+  its first column `packet_reference` (the founder's ruling of 2026-10-21): the same 10-character reference the PDF
+  prints and the file names carry (D5, D8), derived once by the export job and handed to both writers, so the
+  schedule still matches its letter if a payer's portal drops the file's name. `packetCsv()` refuses a reference not
+  in its printed form (a print failure), and the leak scan sets the reference aside as the copy's own, as it does the
+  identifiers the copy prints.
 - **D4. The approval line** names the version's own `content.practice.name` and the UTC calendar date of `approved_at`,
   as `prepared <as_of>` is; it reads the same for a single-user approval, whose audit flag stays internal.
 - **D5. The reference** is `packetReference(approved_sha256)`: the first 50 bits of the approved version's SHA-256 as
@@ -744,7 +750,8 @@ copy only, and the internal record stays where it lives and is shown on the revi
   Q1 (a) requires, so no code on the worker's login exports a copy without one; the job's `correspondenceContactOf()`
   reads the whole contact.
 - **D8. File names carry the reference**: `payment-dispute-<REF>.pdf` and `payment-dispute-<REF>-schedule.csv` on the
-  four download routes, where they were `packet-<versionId>.pdf` and `packet-schedule-<versionId>.csv`.
+  four download routes, where they were `packet-<versionId>.pdf` and `packet-schedule-<versionId>.csv`; the CSV's rows
+  carry it too (D3).
 - **D9. Interest states only what code computed (Q4 (a)).** The rule sentence ("State <ST>[, <statute>]: payment due <N>
   <basis> days after the payer received the claim[, interest at <R>% a year] (release <n>).") and its exclusions, in words (`INTEREST_EXCLUSION_TEXT`: "self-funded ERISA plans", never the release's code); the
   `Interest by line` table lists only the lines whose interest was computed, totalled as "Interest stated in this
@@ -764,8 +771,9 @@ copy only, and the internal record stays where it lives and is shown on the revi
   SHA-256 or internal note), `files` and `independent`. Review of 2026-10-21 found the design's wording of `payer_copy`
   (the CSV naming the practice, the approval line, the reference and the contact, which it does not) and of `deadline`
   (the files stating the window's clause, which they do not above the first level) untrue, so both say what each file
-  carries; the founder confirms the wording. The review page shows an attestation's items by the codes it records, in
-  the checklist's wording today, and says so. The attest action's Zod schema builds its
+  carries; the founder confirmed that wording as written on 2026-10-21 (Owner rulings (2026-10-21)), and it stays true
+  with the CSV's `packet_reference` column: the CSV is still the line schedule, its file named by the reference. The
+  review page shows an attestation's items by the codes it records, in the checklist's wording today, and says so. The attest action's Zod schema builds its
   `confirm_<id>` fields from the checklist, so a form missing any box is refused before the service runs and the list
   and the schema cannot drift. The attestation CHECK accepts any code, so no schema change.
 - **D11 to D13.** The verifier's inputs do not change (the same narrative, content and identifiers), so its report
@@ -894,7 +902,37 @@ neither attested nor logged.** `packet_version_unattested_reason()` needs the gu
 the pricing was current at the export, and the attestation refuses stale pricing, so such an export's submission is
 never logged and reconciliation cannot track the payer's answer to it. The submissions page says so and to tell
 support. No production export exists (PR 5 is unmerged); whether a staging environment holds such an export that was
-sent, and the remedy if one does, are open for the founder.
+sent, and the remedy if one does, were open for the founder, who ruled on 2026-10-21 that no remedy is needed (Owner
+rulings (2026-10-21)).
+
+## Owner rulings (2026-10-21)
+
+The founder, Tyler Williams, ruled on this pull request on 2026-10-21:
+
+- **The domain model's text is approved.** The founder approved the text of `docs/product/domain-model.md` as
+  regenerated from a fresh PostgreSQL 18 database at `20261103090000`, its SHA-256
+  `6f72ea56563c379e05a601f3af019ad4ce3358f55cc02b06fcec17ea23d830a0` (every line but the approval line and the
+  provenance line, CO-02). That confirms what the rulings of 2026-10-18 and 2026-10-20 left to the domain model's new
+  hash: the reviewer's downloads, the worker's own login (`tp_job`), the audit items' columns, checks, functions and
+  triggers, `contact_missing` in the refusal codes and the export guard (Q6 (a)), and the unattested submission. The
+  founder adds the approval line with a commit of their own; nothing in this change touches the document, its
+  approval line, `approvers.json` or a migration.
+- **The reviewer's checklist wording is confirmed as written.** The seven items of D10, `payer_copy` and `deadline` in
+  the words review of 2026-10-21 gave them (`PACKET_CHECKLIST`, `apps/web/src/lib/packets/review.ts`), unchanged.
+- **The CSV carries the packet's reference on every row** (a D3 change). The payer's CSV schedule leads each row with
+  a `packet_reference` column holding the same 10-character reference the PDF prints and the file names carry, so the
+  schedule still matches its letter if a payer's portal drops the file's name. Built as D3 now says: the export job
+  derives the reference once from the approved SHA-256 and hands it to the PDF and the CSV writer; the unit tests pin
+  the column first and the reference on every row of every version the leak scan prints, the export job's database
+  tests read the header and the reference on each row of the stored schedule, the packet journey on each row of the
+  downloaded one, and the leak scan sets it aside as the copy's own. No schema change: the reference is derived, never
+  stored. The checklist's `payer_copy` item names the CSV as the line schedule, its file named by the reference, which
+  stays true, so its wording does not change.
+- **No remedy for an export made before the guard whose pricing went stale since.** Review fixes (2026-10-21,
+  second round) named such an export as one that can be neither attested nor logged. No environment has sent a real
+  export, so no such export has reached a payer and no remedy is built: the submissions page keeps its words for the
+  case, and every export the guard admits stores the `export_verifier_report` that lets its submission be logged
+  unattested if its pricing goes stale after it.
 
 ## Owner rulings (2026-10-20)
 
