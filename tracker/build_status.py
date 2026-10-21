@@ -6,7 +6,11 @@ import json, os, subprocess, sys, datetime as dt
 
 OUT = sys.argv[1]
 REPO = "/home/user/PhysicalTherapy"
-WF = "/root/.claude/projects/-home-user-PhysicalTherapy/32de87b7-30ec-5c00-8f16-6ecf80418ed3/subagents/workflows"
+WF = "/root/.claude/projects/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/subagents/workflows"
+# The session of 2026-10-14 to 2026-10-21 kept its journals in a container that is gone. Its last published
+# work.json (2026-10-18 17:22 UTC) is kept here; a step whose journal is missing takes its state from it.
+FROZEN = {(r["batch"], r["step"]): (r["status"], r["started"], r["finished"])
+          for r in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "frozen-work-2026-10-18.json")))}
 NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
 
 def iso(t): return t.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -29,7 +33,7 @@ MILESTONES = [
   ("M9", "Recovery ledger and reconciliation", "Monitoring v1", 60, 90, "Built", "Met", ""),
   ("M10", "Model gateway", "Monitoring v1", 50, 70, "Built", "Needs a person", "Evaluation gates need model access"),
   ("M11", "Sign-in, billing, production readiness", "Monitoring v1", 60, 90, "Built", "Needs a person", "Real Stripe test ACH; AWS deploy"),
-  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Queued", "Not yet", "Step 0, PRs 1 to 4 and the screen fixes merged; PRs 5 and 6 built, your rulings being applied"),
+  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, PR 5b, governance and the screen fixes merged; PR 6b in design"),
   ("M11b", "Firm grants and minimal portfolio (change order PR 17)", "Change order 001", 34, 60, "Queued", "Not yet", "Inserted by the change order before milestone 12"),
   ("M12", "Firm organizations and portfolio", "Firm v1.5", 60, 90, "Queued", "Not yet", "Starts after the change order's 17 pull requests"),
   ("M13", "Intelligence and hardening", "Intelligence v2", 70, 100, "Queued", "Not yet", "Pen test and SOC 2 Type II are outside work"),
@@ -132,6 +136,16 @@ FRIENDLY = {
   "inventory: milestones-sections": "Check every milestone and amended section",
   "draft reconciliation + domain model": "Write the reconciliation and domain model",
   "critique + correct drafts": "Review and correct both documents",
+  "design: zip4-settings": "Design: ZIP+4 localities, pricing settings at onboarding",
+  "design: consumer-time": "Design: the screening's own consumer, its monthly cost, the 60-second check",
+  "design: email-streams": "Design: the screening's email kept apart from customer email",
+  "review: zip4-settings": "Design review: ZIP+4 and pricing settings",
+  "review: consumer-time": "Design review: consumer, cost and time check",
+  "review: email-streams": "Design review: email streams",
+  "revise: zip4-settings": "Design revised: ZIP+4 and pricing settings",
+  "revise: consumer-time": "Design revised: consumer, cost and time check",
+  "revise: email-streams": "Design revised: email streams",
+  "plan: pr6b": "One plan: pull requests, migration, your questions in one batch",
 }
 CO_STEPS = [
   "Step 0: milestones 10-11 green, CI running on GitHub",
@@ -185,6 +199,32 @@ MANUAL = {
   "PR 1: brand merge and copy check (CO-01, CO-11)": ("Done", "2026-10-17T06:57:00Z", "2026-10-17T17:49:00Z"),
   "Second round: approver list, stricter approval check, test fixes": ("Done", "2026-10-17T14:08:00Z", "2026-10-17T18:22:00Z"),
   "review: guardrails and CLAUDE.md": ("Done", "2026-10-17T13:26:00Z", "2026-10-17T14:05:00Z"),
+  "PR 5: the audit's critical fixes (#4, #5, #26, #61)": ("Done", "2026-10-18T17:20:00Z", "2026-10-20T21:25:00Z"),
+  "PR 6: the audit's privacy fix (#6, 11-line floor)": ("Done", "2026-10-18T16:40:00Z", "2026-10-20T18:30:00Z"),
+  "PR 5: packet deadline verification (CO-05)": ("Done", "2026-10-17T21:50:00Z", "2026-10-21T13:04:31Z"),
+  "PR 6: free screening (CO-04)": ("Done", "2026-10-17T21:50:00Z", "2026-10-21T18:16:26Z"),
+  "You approve the domain model (PR 5)": ("Done", "2026-10-21T03:30:00Z", "2026-10-21T12:30:00Z"),
+  "PR 5 on GitHub: CI green, then merge": ("Done", "2026-10-20T23:58:05Z", "2026-10-21T13:04:31Z"),
+  "You approve the domain model (PR 6)": ("Done", "2026-10-21T17:30:00Z", "2026-10-21T17:35:00Z"),
+  "PR 6 on GitHub: CI green, then merge": ("Done", "2026-10-21T00:16:27Z", "2026-10-21T18:16:26Z"),
+  "merge both audits and rank": ("Done", "2026-10-20T14:20:00Z", "2026-10-20T15:00:00Z"),
+  "You decide on the upgrades": ("Done", "2026-10-20T15:00:00Z", "2026-10-20T15:10:00Z"),
+  "Design: PR 5 payer's copy and PR 6 screening (19 questions)": ("Done", "2026-10-20T18:30:00Z", "2026-10-20T19:55:00Z"),
+  "You answered the 19 design questions": ("Done", "2026-10-20T19:55:00Z", "2026-10-20T20:00:00Z"),
+  "CI pinned to ubuntu-24.04 (#24)": ("Done", "2026-10-20T16:20:00Z", "2026-10-20T17:27:18Z"),
+  "Governance merged: hooks, pre-push check, approval of record (#25)": ("Done", "2026-10-18T16:40:00Z", "2026-10-20T21:40:16Z"),
+  "Main: Dependabot groups and the PR template (#27)": ("Done", "2026-10-20T21:57:00Z", "2026-10-20T22:24:07Z"),
+  "Images fix: Node starts as user node (#32)": ("Done", "2026-10-21T12:32:00Z", "2026-10-21T13:04:49Z"),
+  "PR 5b: the payer's copy prints the plan type in words (#34)": ("Done", "2026-10-21T13:15:00Z", "2026-10-21T19:01:28Z"),
+  "Fresh session: setup script, handoff, machine rebuilt": ("Done", "2026-10-21T18:40:00Z", "2026-10-21T19:50:00Z"),
+}
+# Steps whose label repeats across batches ("fix review findings"), kept by hand: (batch, label) -> (status, started, finished).
+BATCH_MANUAL = {
+  ("Urgent items from the audit", "hooks, approval summary and check, guide"): ("Done", "2026-10-18T16:40:00Z", "2026-10-20T14:20:00Z"),
+  ("Urgent items from the audit", "review: try to bypass it"): ("Done", "2026-10-20T14:20:00Z", "2026-10-20T16:00:00Z"),
+  ("Urgent items from the audit", "review: the founder's guide"): ("Done", "2026-10-20T14:20:00Z", "2026-10-20T16:00:00Z"),
+  ("Urgent items from the audit", "fix review findings"): ("Done", "2026-10-20T16:00:00Z", "2026-10-20T20:30:00Z"),
+  ("Urgent items from the audit", "fresh-clone verification"): ("Done", "2026-10-20T20:30:00Z", "2026-10-20T21:30:00Z"),
 }
 # Change order steps worked by a workflow run: label -> run id. Running while the run is open;
 # MANUAL marks a step Done when its pull request merges.
@@ -198,6 +238,8 @@ STEP_RUNS = {
 }
 BATCHES = [
   # (batch name, journal run id or None, planned labels in order)
+  ("PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check", "PR6B_DESIGN_RUN", ["design: zip4-settings", "design: consumer-time", "design: email-streams", "review: zip4-settings", "review: consumer-time", "review: email-streams", "revise: zip4-settings", "revise: consumer-time", "revise: email-streams", "plan: pr6b", "You approve the consumer's monthly cost and the design questions", "Builders", "Draft pull request on GitHub", "Two adversarial reviews", "Fix round with the full local suite", "Fresh-clone verification reading CI", "You approve the domain model (PR 6b)", "PR 6b on GitHub: CI green, then merge"]),
+  ("Since the audit: rulings and small pull requests", None, ["You decide on the upgrades", "Design: PR 5 payer's copy and PR 6 screening (19 questions)", "You answered the 19 design questions", "CI pinned to ubuntu-24.04 (#24)", "Governance merged: hooks, pre-push check, approval of record (#25)", "Main: Dependabot groups and the PR template (#27)", "Images fix: Node starts as user node (#32)", "PR 5b: the payer's copy prints the plan type in words (#34)", "Fresh session: setup script, handoff, machine rebuilt"]),
   ("PR 3: EMR export fixtures", "wf_fd24ff2c-ef4", ["set up the worktree and split the work", "formats, generators, templates", "fixture guard, check, approval hook", "review: ledger and intake", "review: guard robustness", "review: guardrails and security", "fix review findings", "fresh-clone verification", "PR 3 on GitHub: CI green, then merge (after PR 2)"]),
   ("PR 2: domain model", "wf_cbaf37ff-2e0", ["port generator, regenerate, tests, CLAUDE.md", "review: document accuracy", "review: gate robustness", "review: guardrails and CLAUDE.md", "fix review findings", "fresh-clone verification", "Second round: approver list, stricter approval check, test fixes", "Your name on the approver list (Tyler Williams)", "You approve the domain model", "PR 2 on GitHub: CI green, then merge"]),
   ("Urgent items from the audit", "wf_6a5ccaf0-c47", ["You decided the four urgent items", "Repair main (revert #7, Dependabot to the build branch)", "hooks, approval summary and check, guide", "review: try to bypass it", "review: the founder's guide", "fix review findings", "fresh-clone verification", "You: GitHub Pro, private repository, build account, rulesets", "PR 5: the audit's critical fixes (#4, #5, #26, #61)", "PR 6: the audit's privacy fix (#6, 11-line floor)"]),
@@ -217,13 +259,20 @@ BATCHES = [
 # Finished batches, for the history chart (wall-clock hours, measured).
 HISTORY = [
   ("Milestone 0", 3.1), ("Milestone 1", 4.0), ("Milestones 2-5", 9.4), ("Milestones 6-7", 8.7), ("Milestones 8-9", 13.0), ("Milestones 10-11", 14.5), ("Step 0: first CI run", 4.7), ("PR 1: brand and copy", 10.9), ("PaidWhole brand", 2.4), ("Change order review", 2.0), ("PR 2: domain model", 8.9), ("PR 3: EMR export files", 4.0), ("Screen-tour fixes", 5.9), ("PR 4: ERA exports as intake", 6.1),
+  ("PR 5b: plan type in words", 5.8),
 ]
+# PR 5, PR 6 and governance ran across the weekly-limit pause of 2026-10-19 and several container restarts, and
+# their journals are gone with the old container, so their wall-clock hours are not measured here.
 
 # ---- Estimate of the finish, in UTC (update when a batch ends).
 # Re-estimated 2026-10-17T05:15Z after the reconciliation: change order 001 is 585-995 plan hours,
 # at the recent 8-15 plan hours per wall-clock hour, plus milestones 12-13 and the final pass.
 # Re-estimated 2026-10-18T11:45Z: PRs take 6-9 hours, two at a time, plus waits for approvals; 11 PRs, M12-13, final pass left.
-ETA = {"low": "2026-10-21T18:00:00Z", "high": "2026-10-24T18:00:00Z"}
+# Re-estimated 2026-10-21T20:00Z after the switch: the founder adopted the combined audit (4,750-7,590 added plan
+# hours), so about 5,000-8,100 plan hours remain (PRs 6b-17, the audit's new PRs, 11b, 12, 13, final pass). At the
+# measured 8-15 plan hours per wall-clock hour and about 12 build hours a day under the ~11%-a-day usage pace:
+# about 28 to 81 days.
+ETA = {"low": "2026-11-18T18:00:00Z", "high": "2027-01-10T18:00:00Z"}
 
 # ---- Things only a person can do (the README holds the detail).
 BLOCKERS = [
@@ -234,6 +283,9 @@ BLOCKERS = [
   ("Complete a test ACH payment through real Stripe test mode", "M11", "You or your team", "Stripe account and test keys in Secrets Manager"),
   ("Reproduce the three real audits", "M6", "Founder and reviewer", "Run the first three practices through the app"),
   ("SOC 2 reports and a penetration test", "M11, M13", "Outside firms", "Engage an auditor and a testing firm"),
+  ("A GitHub identity for the build (runbook 3i), then APPROVAL_REVIEW_REQUIRED", "CO1", "You", "docs/runbooks/github-governance.md, step 3i; until then the build merges on green CI (D4 a)"),
+  ("Counsel: decisions 3, 4, 7 and 17, the cookie notice, the 11-line floor, the screening terms, the campaign-code wording", "CO1", "Counsel", "Before the first real packet and before the screening opens"),
+  ("Specialist: Q21 on sequestration", "M5, CO1", "Specialist", "fixtures/golden/QUESTIONS.md"),
 ]
 
 def journal(run):
@@ -255,7 +307,9 @@ for batch, run, labels in BATCHES:
         seq += 1
         aid = started.get(label)
         status, s_at, f_at = "Queued", None, None
-        if label in MANUAL:
+        if (batch, label) in BATCH_MANUAL:
+            status, s_at, f_at = BATCH_MANUAL[(batch, label)]
+        elif label in MANUAL:
             status, s_at, f_at = MANUAL[label]
         elif label in STEP_RUNS and os.path.isdir(os.path.join(WF, STEP_RUNS[label])):
             d = os.path.join(WF, STEP_RUNS[label])
@@ -270,6 +324,8 @@ for batch, run, labels in BATCHES:
                 status = "Done"; f_at = iso(mtime(log)) if os.path.exists(log) else None
             else:
                 status = "Running"
+        elif (batch, FRIENDLY.get(label, label)) in FROZEN:
+            status, s_at, f_at = FROZEN[(batch, FRIENDLY.get(label, label))]
         work.append({"seq": seq, "batch": batch, "step": FRIENDLY.get(label, label), "status": status,
                      "started": s_at, "finished": f_at})
 
@@ -284,7 +340,7 @@ summary = [{
   "commits": commits + brand_commits,
   "adrs": adrs,
   "golden_lines": 326,
-  "unit_tests": 3679, "db_tests": 8365, "e2e_journeys": 46,
+  "unit_tests": 3845, "db_tests": 8587, "e2e_journeys": 49,
 }]
 
 milestones = [{"id": m[0], "seq": i, "name": m[1], "release": m[2], "hours_low": m[3], "hours_high": m[4],
