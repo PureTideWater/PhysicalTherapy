@@ -1,6 +1,74 @@
 # PaidWhole build: handoff and state
 
-This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 18:52 UTC.
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-21 18:40 UTC. Start with "Start here" below; the dated sections after it are the full record.
+
+## Start here: state at the switch (2026-10-21, after PR 5 and PR 6)
+**Merged into `claude/build-platform`, all on green CI:**
+- #24: CI pinned to ubuntu-24.04.
+- #25: governance; ADR 0063, hooks and pre-push.
+- #30: PR 5, deadlines and the payer's copy, d152976. Domain model 6f72ea56, approved.
+- #32: the images fix, 5df4108.
+- #31: PR 6, the free screening with audits #53 and #57 and the campaign list, 2ec3449. Domain model a17f33aa, approved by the founder in a66f148.
+- #34: PR 5b, the plan type in words. Squash-merge it once CI is green on f6a3974; if it is still open, finish it first.
+
+`main` holds #27 (Dependabot grouping and the PR template) on top of the plan documents.
+
+**Nothing else is open or running.** No workflow is mid-run, and no worktree holds unpushed work. `/home/user/pr6` and `/home/user/pr5b` can go once #34 merges.
+
+**Next, in order** (reconciliation-001 "Proposed pull requests, in order"; the combined audit `audits/combined/combined-report.md` maps each upgrade to its PR):
+1. **PR 6b.**
+   - ZIP+4 localities: the engine lookup, practice settings and the screening. This is the only engine change the 2026-10-18 freeze exception allows.
+   - The screening's own consumer, sized to the worst accepted 50,000-row file. Give the founder its monthly cost before building it (decision 14); it may exceed the ~$18/month accepted.
+   - Switch on the 60-second time check (decisions 13 to 16; ADR 0062).
+   - Possibly a schema PR, which then needs the founder's approval.
+2. **PR 6c:** the audit's engine corrections, under one freeze exception (ADR 0061 notes on remittance_date).
+3. **PR 6d:** denials in the paid audit's triage (audit item 1).
+4. **PR 6e:** consent capture, the withdrawal page (screening_lead_withdraw) and reminders.
+5. **PR 7:** milestone 6 exit, with the red team, gates and scorecard. It also carries the console funnel, the lead list, the campaign screen (console_register_marketing_campaign) and campaign reports with a minimum cohort of 11. Its read functions make it a schema PR.
+6. **PRs 8 to 17** as listed in reconciliation-001. Schema PRs needing approval: 8, 14 and 17, plus any other that adds a migration.
+7. **The audit PRs, then milestone 12, milestone 13 and the final pass** (runbooks, whole-plan audit, 390 px screens, mono figures, e2e journeys, the Dependabot PRs, settings.json last).
+
+**Open for the founder (none blocks PR 6b):**
+- Whether the narrative verifier should also catch a letter claim-filing-indicator code (for example "plan identifier MC"). Today only digit codes fail as figures, and the approving person is the check (ADR 0061).
+- The CLP06 words: 7 of the 19 were matched against public sources. The X12 TR3 code list is the check of record before the first real packet.
+- **Counsel, before the first real packet and before the screening opens:**
+  - the wording in decisions 3, 4, 7 and 17;
+  - the cookie notice;
+  - the 11-claim-line floor (the number, lines or patients, a left-out total under 11, what counts as "the same practice");
+  - the screening terms;
+  - the "campaign codes ... of the link you came from" wording (retention.ts, wording.ts), which can now say a code is kept only when it is on the founder's list.
+- **The specialist:** Q21 on sequestration (`fixtures/golden/QUESTIONS.md`).
+- **The founder's own setup:** runbook 3i (a GitHub identity for the build), then `APPROVAL_REVIEW_REQUIRED`. Until then the build merges on green CI (D4 (a)).
+
+**Follow-ups to fold into a later PR:**
+- The CI PR takes the Dependabot versions dismissed on 2026-10-18.
+- Dependabot coverage for the postgres and minio images.
+- The build-branch docs fix: main has 11 files, and the PR template exists only on main.
+- A later migration that turns the `not_recorded` decline fill-in into a refusal once the old website no longer runs.
+
+**How this session worked, so the next one works the same way:**
+- **Pipeline (founder, 2026-10-20):**
+  1. Design first, with one reviewer.
+  2. Builders check what they touch.
+  3. Open a draft PR at once so CI runs during the reviews.
+  4. At least two adversarial reviews.
+  5. One full local suite in the fix round.
+  6. A fresh-clone verification that reads CI.
+  7. At most two heavy workflows at once.
+  8. Short agent reports.
+- **Use the default workflow agent for reviews,** given the checklist in `.claude/agents/<type>.md`. The custom agent types (payment-engine-reviewer, edi-reviewer) twice stopped without calling StructuredOutput, which left a PR unreviewed. Have the script refuse to go on when a review returns nothing.
+- **Approval lines:** this session's GitHub CLI token is invalid, so the suggested-change route of CLAUDE.md is unavailable. Post the exact line in one PR comment with the web-editor steps (the edit URL `https://github.com/PureTideWater/PhysicalTherapy/edit/<branch>/docs/product/domain-model.md`). The founder commits it. When the founder asks in chat for the build to write it, decline: CLAUDE.md, ADR 0063 and the protect-approval hook forbid it. Before asking, regenerate and read the Cross-checks block. This session found and fixed a false "Column differences: 4" there (e297346).
+- **Pushing:**
+  - Push from the worktree. If its checkout lacks `.githooks`, push from the main checkout with `GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C /home/user/PhysicalTherapy push origin <branch>`.
+  - The permission check refuses force-pushes. Never force: fix a malformed commit message with a squash merge of the PR instead. Squash is allowed on the build branch; ADR 0063 forbids it only into main.
+- **Merge order** when two PRs edit reconciliation-001 or the ADRs: merge the one the founder approved first, merge the base into the other with a merge commit, resolve keeping both, then merge it.
+- **Container restarts** stop Postgres and workflows. Restart both clusters (commands in "Environment recipe"), then resume a stopped workflow with `resumeFromRunId`, which works within one session only.
+- **Disk:** clear finished review clones under the scratchpad when free space drops below about 8 GB.
+
+**Weekly usage (founder, 2026-10-21):**
+- The meter was at 24% at 00:15 UTC and 35% at 12:40 UTC on Wednesday. The reset is assumed Tuesday 14:00 UTC; confirm it with the founder.
+- That is ahead of the ~11%-a-day pace, mostly from closing PR 5.
+- Ask the founder for the % and the reset time at session start and before each heavy run. Start no new heavy run past about 80%, never cut a run off mid-way, and keep every quality stage.
 
 ## How to resume in a new session
 1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
