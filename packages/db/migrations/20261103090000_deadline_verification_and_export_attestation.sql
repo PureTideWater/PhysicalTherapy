@@ -114,7 +114,12 @@
 -- by a transaction still open while the guard, the approval, the attestation or the submission's flag reads the
 -- pricing is not visible to it under READ COMMITTED, so those reads are serialized with the writes that make
 -- pricing stale (pricing_current_read_lock() shared, pricing_current_change_lock() exclusive): the step that
--- waited reads the change once committed, and the change that waited commits after a step that was current.
+-- waited reads the change once committed, and the change that waited commits after a step that was current. That
+-- holds only at READ COMMITTED, where each statement reads what committed before it: a REPEATABLE READ or
+-- SERIALIZABLE transaction keeps the snapshot it took before the change and would read past the lock (any session may
+-- set its own isolation), so pricing_current_read_lock() refuses every other isolation level, and approval, the export
+-- guard, the attestation and the submission's flag with it. The application's only such transactions are read-only
+-- (the audit copy, the restore drill, the domain-model generator).
 --
 -- Runs as tp_owner. Safe with the previous image running: yes. Added: nullable columns and a generated one
 -- (adding it rewrites the small packet_version table under a brief ACCESS EXCLUSIVE lock; every existing row is
@@ -130,14 +135,17 @@
 -- closed window, a correction and a withdrawal); replaced: packet_content_valid() and
 -- contract_version_rules() with their signatures, accepting tp-packet/1 and a version with no window citation as
 -- before, practice_export_history() and practice_export_count() with their signatures, listing what they listed
--- and the two download actions, and audit_report_belongs() and audit_report_rules() with their signatures,
--- refusing what they refused and a report on a withdrawn rule release. Removed: nothing. For the previous image:
--- its tp-packet/1 versions are written and approved, but their export is refused (its export job fails them),
--- its submissions of unattested exports are refused (its submission service refuses every one before the
--- database, so it logs none sent without sign-off, and the export of a version whose pricing went stale after it waits
--- for the new image to be logged) and those it logs are flagged by pricing_check and unattested_reason, which it
--- never writes nor reads, its export job does not know contact_missing (it exports for a practice with no
--- correspondence contact, printing its own copy, which names none), its approvals and exports of a version whose
+-- and the two download actions, audit_report_belongs() and audit_report_rules() with their signatures,
+-- refusing what they refused and a report on a withdrawn rule release, and submission_belongs() with its signature,
+-- refusing what it refused and a submission on the worker's login. Removed: nothing. For the previous image:
+-- its tp-packet/1 versions are written and approved, but its export job exports nothing after this migration: its
+-- UPDATE carries no tp-packet-verifier/2 report, which the guard refuses, so it records no export and no copy of its
+-- own reaches a payer (it does not know contact_missing, and no export goes out without a contact); its submission
+-- service has no attestation check and sends the plain INSERT, which the database decides: a submission of an
+-- attested export is logged as before, one of an export whose pricing went stale after it was made (an export only
+-- the new image's job made) is logged sent without sign-off, with its reason and its event, but without the person's
+-- confirmation and without its page showing it, and one of any other unattested export is refused; pricing_check and
+-- unattested_reason, which it never writes nor reads, flag what it logs; its approvals and exports of a version whose
 -- pricing is not current are refused, its report job
 -- fails a report on a withdrawn release when it makes it ready (the new image fails it as release_withdrawn
 -- first), its downloads are recorded as packet_export_downloaded, which no attestation counts (the reviewer
@@ -737,9 +745,13 @@ $$;
 -- COMMITTED each later statement of the step's trigger takes a new snapshot, so a check that waited for a change
 -- sees it committed and refuses, and a change that waited commits after a step that was current when it was made.
 -- The shared side never waits on a row the writers lock, and the writers touch no packet version, so the two never
--- wait on each other in a cycle.
+-- wait on each other in a cycle. Only under READ COMMITTED: a REPEATABLE READ or SERIALIZABLE transaction reads the
+-- snapshot it took first, which may predate a change the lock then finds committed, so it is refused before it reads.
 CREATE FUNCTION pricing_current_read_lock(target_practice uuid) RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
+  IF current_setting('transaction_isolation') IS DISTINCT FROM 'read committed' THEN
+    RAISE EXCEPTION 'whether a packet version''s pricing is current is read at READ COMMITTED only: an earlier snapshot would read past a change made since' USING ERRCODE = 'invalid_transaction_state';
+  END IF;
   PERFORM pg_advisory_xact_lock_shared(hashtextextended('pricing_current:' || target_practice::text, 0));
   PERFORM pg_advisory_xact_lock_shared(hashtextextended('pricing_current:withdrawal', 0));
 END;
@@ -1229,6 +1241,71 @@ BEGIN
   END IF;
   IF packet_version_pricing_check(version.content) IS DISTINCT FROM 'current' THEN
     RETURN 'pricing_stale_after_export';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+-- As before (20261027090000_packet_and_ledger_review.sql), and never on the worker's login (app_session_is_job()): a
+-- submission records what a person did through the payer's own channel and is logged in that person's own request,
+-- so code on the worker's login logs none, whatever it sets app.actor_id to, of an attested export as of one sent
+-- without sign-off (whose audit event audit_event_submission_unattested refuses on that login too; docs/adr/0061).
+CREATE OR REPLACE FUNCTION submission_belongs() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  version record;
+  previous record;
+  answer_kind text;
+  answer_reopens boolean;
+  answer_window date;
+BEGIN
+  IF app_session_is_job() THEN
+    RAISE EXCEPTION 'a submission is logged in the person''s own request, never on the worker''s login' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT app_actor_is_person() OR NEW.submitted_by IS DISTINCT FROM app_actor_id() OR NOT coalesce(app_actor_permitted(NEW.practice_id, 'submission.log'), false) THEN
+    RAISE EXCEPTION 'a submission is logged by a person who logs submissions, in their own name' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('submission:' || NEW.case_id::text, 0));
+  SELECT v.export_sha256, v.export_csv_sha256, v.exported_at, v.dispute_level, v.packet_id, v.version_no, p.current_version_id INTO version
+    FROM packet_version v JOIN packet p ON p.id = v.packet_id
+   WHERE v.id = NEW.packet_version_id AND p.case_id = NEW.case_id AND v.practice_id = NEW.practice_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'a submission is of a version of its case''s packet' USING ERRCODE = 'check_violation';
+  END IF;
+  IF version.exported_at IS NULL THEN
+    RAISE EXCEPTION 'a packet is submitted once it is exported' USING ERRCODE = 'check_violation';
+  END IF;
+  -- The current version, or one an edit replaced only when it was sent before the edit (the day before
+  -- the next version was written, UTC): an edit clears the approval, so what was not sent is never logged.
+  IF version.current_version_id IS DISTINCT FROM NEW.packet_version_id AND NOT EXISTS (
+       SELECT 1 FROM packet_version n
+        WHERE n.packet_id = version.packet_id AND n.version_no = version.version_no + 1 AND NEW.submitted_on < (n.created_at AT TIME ZONE 'UTC')::date) THEN
+    RAISE EXCEPTION 'a submission sends the packet''s current version; one an edit replaced is logged only when it was sent before the edit' USING ERRCODE = 'check_violation';
+  END IF;
+  IF (NEW.export_sha256, NEW.export_csv_sha256) IS DISTINCT FROM (version.export_sha256, version.export_csv_sha256) THEN
+    RAISE EXCEPTION 'a submission carries the SHA-256 of the export it sent' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.submitted_on < (version.exported_at AT TIME ZONE 'UTC')::date OR NEW.submitted_on > (now() AT TIME ZONE 'UTC')::date THEN
+    RAISE EXCEPTION 'a submission is dated from its export to today' USING ERRCODE = 'check_violation';
+  END IF;
+  IF EXISTS (SELECT 1 FROM "case" c WHERE c.id = NEW.case_id AND c.state = 'closed_written_off') THEN
+    RAISE EXCEPTION 'a case closed written off takes no submission' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.dispute_level IS DISTINCT FROM version.dispute_level THEN
+    RAISE EXCEPTION 'a submission sends a version of the case''s dispute level' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT s.id, s.submitted_on INTO previous
+    FROM submission s WHERE s.case_id = NEW.case_id AND s.id <> NEW.id ORDER BY s.submitted_on DESC, s.created_at DESC, s.id DESC LIMIT 1;
+  IF FOUND THEN
+    IF NEW.submitted_on < previous.submitted_on THEN
+      RAISE EXCEPTION 'a submission is dated on or after the case''s last one' USING ERRCODE = 'check_violation';
+    END IF;
+    SELECT r.kind, r.reopens_case, r.next_window_ends_on INTO answer_kind, answer_reopens, answer_window FROM payer_response r WHERE r.id = submission_latest_response(previous.id);
+    IF answer_kind IS NOT NULL AND NOT (answer_kind = 'info_requested' OR answer_reopens) THEN
+      RAISE EXCEPTION 'the payer has answered this dispute; only a denial that reopens the case starts the next level' USING ERRCODE = 'check_violation';
+    END IF;
+    IF answer_reopens AND NEW.submitted_on > answer_window THEN
+      RAISE EXCEPTION 'the next dispute level is submitted within its window' USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NULL;
 END;

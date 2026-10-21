@@ -571,19 +571,26 @@ export interface ExportAwaitingAttestation {
   readonly planKey: string;
   readonly lines: number;
   readonly varianceCents: Cents;
+  /**
+   * Its pricing went stale after the export (packet_version_unattested_reason()), so it is never attested: listed for
+   * the reviewer apart from the exports waiting, marked so, until the practice logs it or replaces it.
+   */
+  readonly neverAttested: boolean;
 }
 
 /**
- * The exports waiting for a reimbursement reviewer's attestation (D16): each packet's current version,
+ * The exports waiting for a reimbursement reviewer's attestation (D16): each open case's packet's current version,
  * exported, not attested, oldest first, except one whose submission was logged sent without sign-off (its pricing
- * went stale after the export; the founder's ruling of 2026-10-20), which is never attested. The version's own
- * content only (identifiers are placeholders in it).
+ * went stale after the export; the founder's ruling of 2026-10-20), which is never attested, and one of a case closed
+ * written off, which the attestation refuses. An export whose pricing went stale after it was made and that is not
+ * logged yet is listed marked neverAttested, so the reviewer's list never shows it as work. The version's own content
+ * only (identifiers are placeholders in it).
  */
 export async function exportsAwaitingAttestation(scope: PracticeScope<ScopeClient>, input: { readonly practiceId: string }): Promise<ExportAwaitingAttestation[]> {
-  const { rows } = await scope.client.query<{ id: string; case_id: string; version_no: number; exported_at: Date; export_sha256: string; export_csv_sha256: string; content: PacketContent }>(
-    `SELECT v.id, p.case_id, v.version_no, v.exported_at, v.export_sha256, v.export_csv_sha256, v.content
-       FROM packet_version v JOIN packet p ON p.current_version_id = v.id
-      WHERE v.practice_id = $1 AND v.exported_at IS NOT NULL AND v.attested_by IS NULL
+  const { rows } = await scope.client.query<{ id: string; case_id: string; version_no: number; exported_at: Date; export_sha256: string; export_csv_sha256: string; content: PacketContent; never_attested: boolean }>(
+    `SELECT v.id, p.case_id, v.version_no, v.exported_at, v.export_sha256, v.export_csv_sha256, v.content, packet_version_unattested_reason(v.id) IS NOT NULL AS never_attested
+       FROM packet_version v JOIN packet p ON p.current_version_id = v.id JOIN "case" c ON c.id = p.case_id AND c.practice_id = p.practice_id
+      WHERE v.practice_id = $1 AND v.exported_at IS NOT NULL AND v.attested_by IS NULL AND c.state <> 'closed_written_off'
         AND NOT EXISTS (SELECT 1 FROM submission s WHERE s.packet_version_id = v.id AND s.practice_id = v.practice_id AND s.unattested_reason IS NOT NULL)
       ORDER BY v.exported_at, v.id`,
     [input.practiceId],
@@ -601,6 +608,7 @@ export async function exportsAwaitingAttestation(scope: PracticeScope<ScopeClien
     planKey: row.content.payer.plan_key,
     lines: row.content.pattern.lines,
     varianceCents: parseCents(row.content.pattern.variance_cents),
+    neverAttested: row.never_attested,
   }));
 }
 
@@ -613,8 +621,19 @@ export interface LogSubmissionInput {
   readonly reference: string | null;
   /** The follow-up date; 45 days after the submission unless named (CAS-14). */
   readonly followUpOn?: string | null;
+  /**
+   * The person's confirmation that the export went to the payer without the reimbursement reviewer's sign-off: a
+   * submission the database records as sent without sign-off is logged only with it (SENT_WITHOUT_SIGN_OFF_UNCONFIRMED).
+   */
+  readonly sentWithoutSignOff?: boolean;
   readonly requestId: string;
 }
+
+/**
+ * The refusal of a submission the database recorded as sent without sign-off (its export's pricing went stale after
+ * it was made) when the person did not confirm that it went that way: the transaction rolls back, nothing is logged.
+ */
+export const SENT_WITHOUT_SIGN_OFF_UNCONFIRMED = 'a submission of an export never attested is logged as sent without sign-off only once the person confirms it went to the payer that way';
 
 export interface LoggedSubmission {
   readonly submissionId: string;
@@ -637,7 +656,9 @@ export interface LoggedSubmission {
  * before its attestation, which is never attested, is logged sent without sign-off for that reason
  * (packetVersionUnattestedReason(), asked here first; the database decides again under the pricing lock, records
  * submission.unattested_reason beside pricing_check and the audit event submission_logged_unattested, and refuses
- * every other unattested export).
+ * every other unattested export). One the database records so is logged only with the person's confirmation that it
+ * went without sign-off (sentWithoutSignOff), read against what the INSERT returned; without it the transaction rolls
+ * back (SENT_WITHOUT_SIGN_OFF_UNCONFIRMED).
  */
 export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: LogSubmissionInput): Promise<LoggedSubmission> {
   if (!isIsoDate(input.submittedOn) || (input.followUpOn !== undefined && input.followUpOn !== null && !isIsoDate(input.followUpOn))) {
@@ -680,6 +701,11 @@ export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: Key
     ),
   );
   const logged = rows[0] as { id: string; dispute_level: number; follow_up_on: string; export_sha256: string; export_csv_sha256: string; unattested_reason: string | null };
+  // What the database recorded decides, not what was read before the INSERT: a re-price committed in between makes an
+  // export that was current one sent without sign-off, which is logged only with the person's confirmation.
+  if (logged.unattested_reason !== null && input.sentWithoutSignOff !== true) {
+    throw new PacketRuleError('23514', SENT_WITHOUT_SIGN_OFF_UNCONFIRMED);
+  }
   return {
     submissionId: logged.id,
     caseId: version.case_id,

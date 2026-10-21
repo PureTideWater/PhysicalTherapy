@@ -36,6 +36,7 @@ export {
   type PacketVersionDetail,
   PacketRuleError,
   PRICING_NOT_CURRENT,
+  SENT_WITHOUT_SIGN_OFF_UNCONFIRMED,
   type RecordResponseInput,
   type RecordedResponse,
   type RegulationAwaiting,
