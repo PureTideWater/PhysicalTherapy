@@ -71,6 +71,10 @@ describe('correspondenceContactSetting', () => {
     expect(refusedFor({ ...base, address: { line1: '100 SYNTHETIC WAY', state: 'NC', zip: '27601' } })).toBe('address_city');
     expect(refusedFor({ ...base, address: { line1: '100 SYNTHETIC WAY', city: 'RALEIGH', state: 'ZZ', zip: '27601' } })).toBe('address_state');
     expect(refusedFor({ ...base, address: { line1: '100 SYNTHETIC WAY', city: 'RALEIGH', state: 'NC', zip: '2760' } })).toBe('address_zip');
+    expect(refusedFor({ ...base, address: { line1: '100 SYNTHETIC WAY', city: 'RALEIGH', state: 'NC', zip: '27601123' } })).toBe('address_zip');
+    // ZIP+4 typed as nine digits, as a phone's digits-only keypad gives it, is stored hyphenated.
+    expect(correspondenceContactSetting({ ...base, address: { line1: '100 SYNTHETIC WAY', city: 'RALEIGH', state: 'NC', zip: '276011234' } }).address?.zip).toBe('27601-1234');
+    expect(correspondenceContactSetting({ ...base, address: { line1: '100 SYNTHETIC WAY', city: 'RALEIGH', state: 'NC', zip: '27601-1234' } }).address?.zip).toBe('27601-1234');
     expect(refusedFor({ ...base, address: { line1: 'L'.repeat(101), city: 'RALEIGH', state: 'NC', zip: '27601' } })).toBe('address_line1');
     expect(refusedFor({ ...base, fax: '9195550101' } as CorrespondenceContactInput)).toBe('contact');
     // The contact's email is the one email the payer's copy prints (Q1 (a)): the name and the address lines hold no @.

@@ -37,6 +37,18 @@ export const INTEREST_EXCLUSION_TEXT: Readonly<Record<string, string>> = {
 /** One exclusion in words (INTEREST_EXCLUSION_TEXT). */
 export const interestExclusionText = (code: string): string => INTEREST_EXCLUSION_TEXT[code] ?? code.toLowerCase().replace(/_/g, ' ');
 
+/**
+ * Whether a line's interest is stated (audit item #37 part 1, D9; the founder's ruling of 2026-10-20, Q4 (a)): code
+ * computed it and it is above zero. A line paid on time, with the version's date before its due date, computes $0.00
+ * as of that date while interest on its unpaid shortfall keeps accruing after the due date, so $0.00 is not stated:
+ * printed and demanded, it would read as the practice stating no interest, the waiver Q4 (a) avoids. The payer's copy
+ * lists, totals and demands only stated interest, and a narrative states no other line's.
+ */
+export const lineInterestStated = (line: Pick<InterestLine, 'interest_cents'>): boolean => line.interest_cents !== null && parseCents(line.interest_cents) > 0n;
+
+/** Whether the version states any interest: its computed lines' total is above zero (lineInterestStated()). */
+export const interestStated = (section: Pick<InterestSection, 'total_cents'> | null): boolean => section !== null && section.total_cents !== null && parseCents(section.total_cents) > 0n;
+
 export interface PromptPayRecord {
   readonly state: string;
   readonly release_no: number;

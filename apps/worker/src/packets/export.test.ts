@@ -12,7 +12,7 @@ import {
   fillPlaceholders,
   insertIdentifiers,
 } from '@tp/packets';
-import { IDS, REGULATION, assemblyInput, calculation, contractCitation, line, promptPayRecord } from '@tp/packets/testing';
+import { IDS, REGULATION, assemblyInput, calculation, contractCitation, contractWindowSource, line, promptPayRecord } from '@tp/packets/testing';
 import { cents } from '@tp/money';
 
 import { ChromiumPdfRenderer, chromiumInstalled } from '../report/pdf';
@@ -21,7 +21,7 @@ import { PACKET_CSV_COLUMNS, packetCsv } from './csv';
 import { packetHtml } from './html';
 import { INTERNAL_RECORD, content, exported, identifiers, maximalContent, maximalExported, maximalIdentifiers, maximalNarrative, narrative, payerCopy } from './test-support/exported-packet';
 import { holdsLoosely, htmlText, narrativeBlock, outsideNarrative, payerCopyLeaks, printedPdfText } from './test-support/payer-copy';
-import { releaseText } from './words';
+import { PayerCopyWordsError, releaseText } from './words';
 
 /**
  * The payer's copy of an export (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061; PRD 12,
@@ -44,6 +44,49 @@ const rowsOf = (packet: PacketContent) => new Map([...maximalIdentifiers].filter
 const received = [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
 /** A version at dispute level 2, its window the level's own (a release record at L2, as Q34 would allow). */
 const level2 = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));
+/** Lines whose calculations take every step the engine writes: per unit, the schedule, the charge, the base and each adjustment. */
+const stepped = (method: 'PERCENT_OF_MEDICARE' | 'LESSER_OF' | 'PER_VISIT' | 'FIXED_SCHEDULE') =>
+  [1, 2].map((row) =>
+    line(row, {
+      calculation: calculation(cents(10000n), cents(7000n), cents(5600n), {
+        method,
+        steps: [
+          { step: method === 'PER_VISIT' ? 'visit' : 'unit', amount_cents: '5000' },
+          { step: 'schedule', amount_cents: '10000' },
+          { step: 'charge', amount_cents: '12000' },
+          { step: 'base', amount_cents: '10000' },
+          { step: 'mppr', amount_cents: '10000' },
+          { step: 'assistant_reduction', amount_cents: '10000' },
+          { step: 'contract_adjustment', amount_cents: '10000' },
+          { step: 'sequestration', amount_cents: '9999.5' },
+        ],
+        rounding: { rule: row === 1 ? 'HALF_EVEN_CENT' : 'TRUNCATE', unrounded_cents: '9999.5', rounded_cents: '10000' },
+      }),
+    }),
+  );
+/** The methods of T9, each with every step, a release record of no program, a window of no stated days, an end date and a plan name. */
+const METHOD_VERSIONS: Readonly<Record<string, PacketContent>> = {
+  'percent of Medicare, every step': assemblePacket(assemblyInput({ lines: stepped('PERCENT_OF_MEDICARE'), citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '110' } }) })),
+  'lesser of a percent schedule, every step': assemblePacket(
+    assemblyInput({ lines: stepped('LESSER_OF'), citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100' } } }) }),
+  ),
+  'lesser of a fixed schedule, every step': assemblePacket(
+    assemblyInput({ lines: stepped('LESSER_OF'), citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '5000' } } }) }),
+  ),
+  'per visit, every step': assemblePacket(assemblyInput({ lines: stepped('PER_VISIT'), citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '9000' } }) })),
+  'a release record of no program, a window of no stated days, an end date and a plan name': assemblePacket(
+    assemblyInput({
+      lines: stepped('FIXED_SCHEDULE'),
+      citation: contractCitation({ effective_to: '2026-12-31' }),
+      payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: '2U:SYNPAYERQ', plan_id: IDS.plan, plan_key: 'CE:SYNPLAN-FIX-ONE', plan_name: 'SYNTHETIC PLAN NAME' },
+      deadlineSources: [contractWindowSource({ days: null }), { kind: 'release_record', release_no: 900001, sha256: 'b'.repeat(64), program: null, level: 'L2' }],
+    }),
+  ),
+};
+/** Paid on time and dated before the due date: every line computes $0.00, which is not stated (Q4 (a)). */
+const zeroInterest = assemblePacket(
+  assemblyInput({ asOf: '2026-03-10', lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-03-09' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-03-09' })], interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } }),
+);
 /** Every route through the renderer: a contract and a regulation, interest computed, partly, not, with no rule on file, level 2, a practice with an NPI and tax ID. */
 const VERSIONS: Readonly<Record<string, PacketContent>> = {
   'contract, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
@@ -53,8 +96,10 @@ const VERSIONS: Readonly<Record<string, PacketContent>> = {
   'contract, the real exclusion code': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ exclusions: ['self_funded_erisa_plans', 'self_funded_plans'] }) } })),
   'regulation, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', citation: REGULATION, contractDocuments: [], lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
   'regulation, no interest': assemblePacket(assemblyInput({ citation: REGULATION, contractDocuments: [] })),
+  'contract, every line $0.00': zeroInterest,
   'level 2': level2,
   'a practice with an NPI and tax ID': assemblePacket(assemblyInput({ practice: { practice_id: IDS.practice, name: 'SYNTHETIC THERAPY GROUP 01', npi: '1234567893', tax_id_last4: '6789' } })),
+  ...METHOD_VERSIONS,
   maximal: maximalContent,
 };
 /** The contacts a practice may set: the full SYNTHETIC one, a name and phone only, an address without an email, an email without an address. */
@@ -127,6 +172,9 @@ describe('packetHtml: the payer’s copy', () => {
         }[source.kind];
         expect(source.kind === 'evidence' ? evidence : printed, `${name}: ${marker}`).toContain(where);
       }
+      // [1] under the heading of what it cites: a contract's clause, or the regulation (no contract with the plan).
+      expect(printed, name).toContain(packet.citation.kind === 'contract' ? '<h2>Contract citation</h2>' : '<h2>Regulation cited</h2>');
+      expect(printed, name).not.toContain(packet.citation.kind === 'contract' ? 'Regulation cited' : 'Contract citation');
     }
   });
 
@@ -290,7 +338,33 @@ describe('packetHtml: the payer’s copy', () => {
     expect(noRuleHtml.slice(noRuleHtml.indexOf('<h2>[4]'), noRuleHtml.indexOf('<h2>Evidence</h2>'))).toBe(
       '<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2><p>Prompt-pay interest is not stated in this request.</p>\n',
     );
-    for (const printed of [html, maximal, noneHtml, noRuleHtml]) {
+    // Every line computed at $0.00 (paid on time, the version dated before the due date): $0.00 is not stated, listed,
+    // totalled or demanded, since interest on the unpaid shortfall keeps accruing after the due date.
+    const zeroHtml = printedOf(zeroInterest, draftNarrative(zeroInterest), rowsOf(zeroInterest));
+    expect(zeroInterest.interest).toMatchObject({ computed: true, total_cents: '0' });
+    expect(zeroHtml.slice(zeroHtml.indexOf('<h2>[4]'), zeroHtml.indexOf('<h2>Evidence</h2>'))).toBe(
+      '<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2><p>State ZZ, SYNTHETIC statute ZZ 1-2-3: payment due 33 calendar days after the payer received the claim, interest at 9% a year (release 900001).</p><p>The rule does not apply to: self-funded plans.</p>\n',
+    );
+    expect(htmlText(zeroHtml)).not.toMatch(/Interest by line|Interest stated in this request|prompt-pay interest stated|\$0\.00/i);
+    expect(zeroInterest.requested_action).not.toMatch(/interest/i);
+    expect(draftNarrative(zeroInterest)).not.toMatch(/interest/i);
+    const zeroRows = packetCsv(insertIdentifiers(zeroInterest, draftNarrative(zeroInterest), rowsOf(zeroInterest))).split('\r\n');
+    expect(zeroRows[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest') + 1)).toBe('');
+    // A version with a line above zero beside a line at $0.00 lists and totals the first alone.
+    const mixed = assemblePacket(
+      assemblyInput({
+        asOf: '2026-05-01',
+        lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-04-20', paidOn: '2026-04-21', varianceCents: cents(3000n) })],
+        interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() },
+      }),
+    );
+    expect(mixed.interest?.lines.map((item) => item.interest_cents)).toEqual(['57', '0']);
+    const mixedHtml = printedOf(mixed, draftNarrative(mixed), rowsOf(mixed));
+    const mixedSection = mixedHtml.slice(mixedHtml.indexOf('<h2>[4]'), mixedHtml.indexOf('<h2>Evidence</h2>'));
+    expect(mixedSection.match(/<tr><td>\d+<\/td>/g)).toEqual(['<tr><td>1</td>']);
+    expect(htmlText(mixedSection)).toContain('Interest stated in this request: $0.57');
+    expect(mixed.requested_action).toContain('Pay the prompt-pay interest stated in the interest line');
+    for (const printed of [html, maximal, noneHtml, noRuleHtml, zeroHtml]) {
       // "not stated" is said only of the whole request when no rule is on file, never of a line or a date.
       expect(htmlText(printed).replace('Prompt-pay interest is not stated in this request.', '')).not.toMatch(/not stated/i);
       for (const phrase of FORBIDDEN) {
@@ -324,6 +398,17 @@ describe('packetHtml: the payer’s copy', () => {
       expect(releaseText(packet, [900001])).toBe(rules);
       expect(printedOf(packet, draftNarrative(packet), rowsOf(packet))).toContain(`<p>[2] ${rules}</p>`);
     }
+  });
+
+  it('refuses a code of a closed list it has no words for, rather than print it (the export records a print failure)', () => {
+    const [first, ...rest] = content.lines;
+    if (first === undefined) {
+      throw new Error('a line expected');
+    }
+    const unknown: PacketContentV2 = { ...content, lines: [{ ...first, calculation: { ...first.calculation, steps: [{ step: 'ncci_bundle', amount_cents: '10000' }] } }, ...rest] };
+    expect(() => printedOf(unknown, narrative, identifiers)).toThrow(PayerCopyWordsError);
+    const method: PacketContentV2 = { ...content, lines: [{ ...first, calculation: { ...first.calculation, method: 'CAPITATION' } }, ...rest] };
+    expect(() => packetCsv(insertIdentifiers(method, narrative, identifiers))).toThrow(PayerCopyWordsError);
   });
 
   it('prints an earlier tp-packet/1 version without a dispute window section', () => {

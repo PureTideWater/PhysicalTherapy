@@ -1,4 +1,5 @@
 import { IDENTIFIER_KINDS, type PacketContent } from './format';
+import { interestStated, lineInterestStated } from './interest';
 import { readableText } from './readable';
 import { type FigureKind, canonicalNumber, scanText } from './scan';
 
@@ -18,6 +19,11 @@ import { type FigureKind, canonicalNumber, scanText } from './scan';
  * count and every number its quote holds are day counts, and its page a page: each is a number of its
  * own kind, which a narrative states only as days ("3650 days") or as a page ("page 4"), so it never
  * stands in for a count of units, lines or claims. A tp-packet/1 version has none of them.
+ *
+ * A narrative states only what the payer's copy prints beside it (audit item #37 part 1; docs/adr/0061): above the
+ * first level the copy states the level's own window alone, so the lines' first-level windows and the contract window
+ * behind them are no figure there; and interest is stated only where code computed it above zero
+ * (interestStated()), so no $0.00 total and no due date, day count or amount of a line not stated is one either.
  */
 export interface NarrativeFacts {
   readonly amounts: ReadonlySet<string>;
@@ -125,6 +131,7 @@ function parameterFigures(value: unknown, sets: FactSets): void {
 export function narrativeFacts(content: PacketContent): NarrativeFacts {
   const sets = new FactSets();
   const { pattern, citation, interest } = content;
+  const nextLevel = content.format === 'tp-packet/2' && content.deadline.basis === 'next_level_window';
 
   sets.date(content.as_of);
   sets.number(content.dispute_level);
@@ -184,14 +191,20 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     for (const value of [line.expected_cents, line.observed_cents, line.variance_cents, line.paid_cents]) {
       sets.amount(value);
     }
-    for (const value of [line.service_date, line.paid_on, line.received_on, line.window_ends_on]) {
+    for (const value of [line.service_date, line.paid_on, line.received_on]) {
       sets.date(value);
+    }
+    // A line's first-level window, which the payer's copy states at the first level only.
+    if (!nextLevel) {
+      sets.date(line.window_ends_on);
     }
   }
 
   if (content.format === 'tp-packet/2') {
     for (const line of content.lines) {
-      sets.date(line.deadline.ends_on);
+      if (!nextLevel) {
+        sets.date(line.deadline.ends_on);
+      }
       const { calculation } = line;
       for (const step of calculation.steps) {
         sets.wholeCents(step.amount_cents);
@@ -201,7 +214,9 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
       sets.wholeCents(calculation.patient_share_cents);
     }
     sets.date(content.deadline.ends_on);
-    for (const source of content.deadline.sources) {
+    // Above the first level the payer's copy states the level's own window alone: the lines' first-level windows and
+    // the clauses behind them are not this level's deadline, are not printed, and so are no figure a narrative states.
+    for (const source of nextLevel ? [] : content.deadline.sources) {
       if (source.kind === 'contract_window') {
         sets.pages.add(canonicalNumber(String(source.page)));
         if (source.days !== null) {
@@ -218,15 +233,21 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     if (interest.annual_rate_percent !== null) {
       sets.percents.add(canonicalNumber(interest.annual_rate_percent));
     }
-    sets.amount(interest.total_cents);
     sets.quoted(interest.statute);
+    // Interest is stated only where code computed an amount above zero (Q4 (a); interestStated()): the payer's copy
+    // lists and totals those lines alone, so a narrative states no other line's interest, due date or days.
+    if (interestStated(interest)) {
+      sets.amount(interest.total_cents);
+    }
     for (const line of interest.lines) {
       sets.date(line.received_on);
-      sets.date(line.due_on);
       sets.date(line.paid_on);
-      sets.number(line.days_late);
-      sets.number(line.days_unpaid);
-      sets.amount(line.interest_cents);
+      if (lineInterestStated(line)) {
+        sets.date(line.due_on);
+        sets.number(line.days_late);
+        sets.number(line.days_unpaid);
+        sets.amount(line.interest_cents);
+      }
     }
   }
 

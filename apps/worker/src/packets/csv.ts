@@ -1,5 +1,5 @@
 import { decimal, formatCents, parseCents } from '@tp/money';
-import type { ExportedPacket } from '@tp/packets';
+import { type ExportedPacket, lineInterestStated } from '@tp/packets';
 
 import { type CsvCell, csvDocument } from '../report/csv';
 import { METHOD_TEXT, wordsOf } from './words';
@@ -9,8 +9,8 @@ import { METHOD_TEXT, wordsOf } from './words';
  * PDF is (audit item #37 part 1, D3; the founder's rulings of 2026-10-20; docs/adr/0061): the practice sends both
  * files, and the reviewer attests both. One row per schedule line with the identifiers inserted at export (the claim
  * control number, the patient and the member ID; the patient control number is not printed, Q2 (a)), its amounts in
- * dollars, what the payer paid and when, the line's interest only where code computed it (its own column, never added
- * to expected; empty otherwise, Q4 (a)), the line's window's last day (at the first level only), and its calculation
+ * dollars, what the payer paid and when, the line's interest only where code computed it above zero (its own column,
+ * never added to expected; empty otherwise, Q4 (a)), the line's window's last day (at the first level only), and its calculation
  * as its trace recorded it:
  * the method in the PDF's words, the unrounded and rounded amounts and the patient share (reported, never
  * subtracted). No trace reference, deadline status or source, or SHA-256: those stay on the reviewer's review page.
@@ -61,7 +61,9 @@ function windowEndsOn(exported: ExportedPacket, line: ExportedPacket['lines'][nu
 }
 
 export function packetCsv(exported: ExportedPacket): string {
-  const interest = new Map((exported.content.interest?.lines ?? []).map((line) => [line.row, line.interest_cents]));
+  // Only stated interest (computed, above zero; Q4 (a)): a line whose interest code did not compute, or computed as
+  // $0.00, has an empty cell, as the PDF lists neither.
+  const interest = new Map((exported.content.interest?.lines ?? []).filter((line) => lineInterestStated(line)).map((line) => [line.row, line.interest_cents]));
   return csvDocument(
     PACKET_CSV_COLUMNS,
     exported.lines.map((line) => [
@@ -81,7 +83,7 @@ export function packetCsv(exported: ExportedPacket): string {
       text(line.received_on ?? ''),
       dollars(interest.get(line.row) ?? null),
       text(windowEndsOn(exported, line)),
-      text(line.calculation === undefined ? '' : wordsOf(METHOD_TEXT, line.calculation.method)),
+      text(line.calculation === undefined ? '' : wordsOf(METHOD_TEXT, line.calculation.method, 'calculation method')),
       exactDollars(line.calculation?.rounding?.unrounded_cents),
       exactDollars(line.calculation?.rounding?.rounded_cents),
       exactDollars(line.calculation?.patient_share_cents),

@@ -1,5 +1,6 @@
 import { dollars } from './assemble';
 import type { PacketContent } from './format';
+import { interestStated } from './interest';
 
 /**
  * A deterministic draft of the pattern statement, built by code from the version's own facts (PRD 12:
@@ -57,9 +58,10 @@ export function draftNarrative(content: PacketContent): string {
       ? `Under the contract those lines come to ${dollars(pattern.expected_cents)}, a shortfall of ${dollars(pattern.variance_cents)} [3].`
       : `At the Original Medicare amount those lines come to ${dollars(pattern.expected_cents)}, a shortfall of ${dollars(pattern.variance_cents)} [3].`,
   ];
-  // Interest only where code computed it (audit item #37 part 1, D9; the founder's ruling of 2026-10-20, Q4 (a)):
-  // nothing is said of interest no line computed, so the letter never reads as giving it up.
-  if (interest !== null && interest.total_cents !== null) {
+  // Interest only where code computed it above zero (audit item #37 part 1, D9; the founder's ruling of 2026-10-20,
+  // Q4 (a); interestStated()): nothing is said of interest no line computed, or of $0.00, so the letter never reads as
+  // giving it up.
+  if (interest !== null && interest.total_cents !== null && interestStated(interest)) {
     sentences.push(`Prompt-pay interest of ${dollars(interest.total_cents)} is stated as its own line and is not part of the shortfall [4].`);
   }
   return sentences.join(' ');

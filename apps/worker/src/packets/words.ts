@@ -1,14 +1,16 @@
-import { type ContractCitation, INTEREST_EXCLUSION_TEXT, type PacketContent, type PacketCitation } from '@tp/packets';
+import type { RoundingRule } from '@tp/money';
+import { type CitedMethod, type ContractCitation, type PacketContent, type PacketCitation, interestExclusionText } from '@tp/packets';
 
 /**
  * The words the payer's copy of a packet prints for its codes, one module for both files the practice sends (the
  * PDF, ./html.ts, and the CSV schedule, ./csv.ts; audit item #37 part 1, D3 and D14; docs/adr/0061): a trace's
- * method, step and rounding codes and a prompt-pay rule's exclusions are never printed as codes, and [2] names what the
- * rule releases supplied.
+ * method, step and rounding codes, a release record's program and a prompt-pay rule's exclusions are never printed as
+ * codes, and [2] names what the rule releases supplied. A code of a closed list without its words refuses the copy
+ * (PayerCopyWordsError); words.test.ts holds every list's codes to their words.
  */
 
 /** The calculation's methods, steps and rounding rules in words. */
-export const METHOD_TEXT: Readonly<Record<string, string>> = {
+export const METHOD_TEXT: Readonly<Record<CitedMethod, string>> = {
   FIXED_SCHEDULE: 'Fixed schedule',
   PERCENT_OF_MEDICARE: 'Percent of Medicare',
   LESSER_OF: 'Lesser of',
@@ -26,18 +28,42 @@ export const STEP_TEXT: Readonly<Record<string, string>> = {
   sequestration: 'sequestration',
   contract_adjustment: 'contract adjustment',
 };
-export const ROUNDING_TEXT: Readonly<Record<string, string>> = {
+export const ROUNDING_TEXT: Readonly<Record<RoundingRule, string>> = {
   HALF_UP_CENT: 'half up to the cent',
   HALF_EVEN_CENT: 'half even to the cent',
   TRUNCATE: 'truncated to the cent',
 };
-/** A prompt-pay rule's exclusions, as the review page says them too (@tp/packets INTEREST_EXCLUSION_TEXT). */
-export const EXCLUSION_TEXT: Readonly<Record<string, string>> = INTEREST_EXCLUSION_TEXT;
 /** A release dispute-window record's program, as it reads before "dispute window". */
 export const PROGRAM_TEXT: Readonly<Record<string, string>> = { medicare: 'Medicare', commercial_default: 'commercial default' };
 
-/** A code not in its table, in words: lower case, its underscores as spaces. */
-export const wordsOf = (table: Readonly<Record<string, string>>, code: string): string => table[code] ?? code.toLowerCase().replace(/_/g, ' ');
+/**
+ * A code of a closed list the payer's copy has no words for: a method, step, rounding rule or program added to the
+ * engine, the packet format or the rules schema without its words here. The copy is not printed rather than print a
+ * code, or a code lower-cased into words no scan can tell from prose; the export job records it as a print failure.
+ */
+export class PayerCopyWordsError extends TypeError {
+  override readonly name = 'PayerCopyWordsError';
+
+  constructor(readonly list: string) {
+    super(`the payer’s copy has no words for a ${list} it would print`);
+  }
+}
+
+/** A code of a closed list in its words (METHOD_TEXT, STEP_TEXT, ROUNDING_TEXT, PROGRAM_TEXT); one without them is refused. */
+export function wordsOf(table: Readonly<Record<string, string>>, code: string, list: string): string {
+  const words = Object.hasOwn(table, code) ? table[code] : undefined;
+  if (words === undefined) {
+    throw new PayerCopyWordsError(list);
+  }
+  return words;
+}
+
+/**
+ * A prompt-pay rule's exclusion in words, as the review page says it too (@tp/packets INTEREST_EXCLUSION_TEXT). The
+ * rules schema holds exclusions as free text, not a closed list, so one not listed reads in lower case with its
+ * underscores as spaces rather than refuse the copy.
+ */
+export const exclusionWords = (code: string): string => interestExclusionText(code);
 
 /** A count and its noun, singular for one (the screen tour's C1, as the web's counted()). */
 export const counted = (count: number, one: string, many = `${one}s`): string => `${String(count)} ${count === 1 ? one : many}`;

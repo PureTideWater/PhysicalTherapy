@@ -1,10 +1,10 @@
 import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
 import { formatUnroundedUsd, formatUsd, parseCents } from '@tp/money';
-import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText } from '@tp/packets';
+import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText, interestStated, lineInterestStated } from '@tp/packets';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
-import { EXCLUSION_TEXT, METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, releaseText, wordsOf } from './words';
+import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusionWords, releaseText, wordsOf } from './words';
 
 /**
  * The payer's copy of a packet (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061): one
@@ -80,14 +80,14 @@ function disputeWindowSection(content: PacketContentV2): string {
       const length = source.days === null ? '' : `: ${counted(source.days, 'day')}`;
       return `<li>The contract’s dispute window${escapeHtml(length)} (page ${String(source.page)}):<blockquote>${escapeHtml(source.quote)}</blockquote></li>`;
     }
-    const program = source.program === null ? '' : `${wordsOf(PROGRAM_TEXT, source.program)} `;
+    const program = source.program === null ? '' : `${wordsOf(PROGRAM_TEXT, source.program, 'dispute window program')} `;
     return `<li>The ${escapeHtml(program)}dispute window in effect for the service dates (release ${String(source.release_no)}).</li>`;
   });
   const rows = content.lines.map((line) => {
     const { calculation } = line;
-    const steps = calculation.steps.map((step) => `${wordsOf(STEP_TEXT, step.step)} ${exactUsd(step.amount_cents)}`).join('; ');
-    const rounding = calculation.rounding === null ? '' : `${wordsOf(ROUNDING_TEXT, calculation.rounding.rule)}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
-    const computed = [wordsOf(METHOD_TEXT, calculation.method), steps, rounding, calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents)];
+    const steps = calculation.steps.map((step) => `${wordsOf(STEP_TEXT, step.step, 'calculation step')} ${exactUsd(step.amount_cents)}`).join('; ');
+    const rounding = calculation.rounding === null ? '' : `${wordsOf(ROUNDING_TEXT, calculation.rounding.rule, 'rounding rule')}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
+    const computed = [wordsOf(METHOD_TEXT, calculation.method, 'calculation method'), steps, rounding, calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents)];
     return nextLevel ? [String(line.row), ...computed] : [String(line.row), line.deadline.ends_on ?? '', ...computed];
   });
   return [
@@ -101,8 +101,9 @@ function disputeWindowSection(content: PacketContentV2): string {
 }
 
 /**
- * Prompt-pay interest, stated only where code computed it (Q4 (a)): the state's rule, the lines whose interest was
- * computed, and their total. Nothing is said of the other lines, so the copy never reads as giving interest up.
+ * Prompt-pay interest, stated only where code computed it above zero (Q4 (a); lineInterestStated()): the state's rule,
+ * the lines whose interest was computed above zero, and their total. Nothing is said of the other lines, and $0.00 is
+ * never stated or totalled, so the copy never reads as giving interest up.
  */
 function interestSection(content: PacketContent): string {
   const { interest } = content;
@@ -114,9 +115,9 @@ function interestSection(content: PacketContent): string {
     return `${heading}<p>Prompt-pay interest is not stated in this request.</p>`;
   }
   const rule = `<p>State ${escapeHtml(interest.state)}${interest.statute === null ? '' : `, ${escapeHtml(interest.statute)}`}: payment due ${String(interest.days_to_pay)} ${escapeHtml(interest.day_basis ?? '')} days after the payer received the claim${interest.annual_rate_percent === null ? '' : `, interest at ${escapeHtml(interest.annual_rate_percent)}% a year`} (release ${String(interest.release_no)}).</p>`;
-  const exclusions = interest.exclusions.length === 0 ? '' : `<p>The rule does not apply to: ${escapeHtml(interest.exclusions.map((code) => wordsOf(EXCLUSION_TEXT, code)).join(', '))}.</p>`;
-  const computed = interest.lines.filter((line) => line.interest_cents !== null);
-  if (computed.length === 0 || interest.total_cents === null) {
+  const exclusions = interest.exclusions.length === 0 ? '' : `<p>The rule does not apply to: ${escapeHtml(interest.exclusions.map((code) => exclusionWords(code)).join(', '))}.</p>`;
+  const computed = interest.lines.filter((line) => lineInterestStated(line));
+  if (computed.length === 0 || interest.total_cents === null || !interestStated(interest)) {
     return `${heading}${rule}${exclusions}`;
   }
   const lines = table(
@@ -240,7 +241,7 @@ export function packetHtml(exported: ExportedPacket, payerCopy: PayerCopy, recon
     STYLE,
     `<h1>Request to reprocess underpaid claims</h1>
 ${identification}
-<h2>Contract citation</h2>
+<h2>${citation.kind === 'contract' ? 'Contract citation' : 'Regulation cited'}</h2>
 ${cited}
 <p>[2] ${escapeHtml(releases)}</p>
 <h2>Pattern statement</h2>

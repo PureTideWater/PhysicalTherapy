@@ -21,7 +21,7 @@ import {
   type ScheduleLineV2,
   type Source,
 } from './format';
-import { type PromptPayRecord, promptPayInterest } from './interest';
+import { type PromptPayRecord, interestStated, promptPayInterest } from './interest';
 import { placeholder } from './placeholders';
 import { canonicalNumber } from './scan';
 
@@ -338,7 +338,7 @@ export function assemblePacket(input: AssemblyInput): PacketContentV2 {
     interest,
     evidence,
     evidence_gaps: gaps,
-    requested_action: requestedAction(input.citation, input.disputeLevel, interest !== null && interest.total_cents !== null),
+    requested_action: requestedAction(input.citation, input.disputeLevel, interestStated(interest)),
     sources,
     deadline: packetDeadline(input, lines),
   };

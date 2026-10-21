@@ -74,7 +74,7 @@ export const CORRESPONDENCE_FIELD_RULES: Readonly<Record<CorrespondenceField, st
   address_line2: 'a second address line of 1 to 100 characters with no @ (an email goes in its own field)',
   address_city: 'a mailing address names its street line, city, state and ZIP, each 1 to 100 characters with no @ (an email goes in its own field)',
   address_state: 'a USPS state or territory code, such as NC',
-  address_zip: 'a ZIP code of five digits, or ZIP+4',
+  address_zip: 'a ZIP code of five digits, or ZIP+4 (nine digits, with or without its hyphen)',
 };
 
 /** A contact refused, naming the field (the rule's words, never the value). */
@@ -145,7 +145,9 @@ function address(value: CorrespondenceContactInput['address']): CorrespondenceAd
   const line2 = plainText(value.line2, 100, 'address_line2', true);
   const city = plainText(value.city, 100, 'address_city', true);
   const state = plainText(value.state, 2, 'address_state')?.toUpperCase() ?? null;
-  const zip = plainText(value.zip, 10, 'address_zip');
+  // ZIP+4 typed as nine digits (a phone's digits-only keypad has no hyphen) is stored in its hyphenated form.
+  const typed = plainText(value.zip, 10, 'address_zip');
+  const zip = typed !== null && /^\d{9}$/.test(typed) ? `${typed.slice(0, 5)}-${typed.slice(5)}` : typed;
   if (line1 === null && line2 === null && city === null && state === null && zip === null) {
     return undefined;
   }

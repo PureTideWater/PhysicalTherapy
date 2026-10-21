@@ -74,7 +74,11 @@ export class PacketExportIntegrityError extends Error {
   override readonly name = 'PacketExportIntegrityError';
 }
 
-/** The PDF renderer failed: nothing is stored, and the job fails (fixed words; the renderer's own error is the cause, never logged). */
+/**
+ * The payer's copy could not be printed: the PDF renderer failed, or the copy's renderer refused the version (a code it
+ * has no words for, a window without its last day). Nothing is stored, and the job fails (fixed words; the error is the
+ * cause, never logged).
+ */
 export class PacketExportRenderError extends Error {
   override readonly name = 'PacketExportRenderError';
 
@@ -166,14 +170,17 @@ export async function exportPacketVersion(
     }
     const exported = insertIdentifiers(version.content, narrative, identifiers.rows);
     // The payer's copy: the approval's UTC date, the reference its approved hash gives, the contact (D4 to D6, D13).
-    const html = packetHtml(exported, { approvedOn: version.approved_at.toISOString().slice(0, 10), reference: packetReference(version.approved_sha256), contact: contact.contact });
+    // A copy the renderer refuses (a code it has no words for, a window without its last day) is a print failure, as
+    // Chromium's is: nothing is printed.
     let pdf: Uint8Array;
+    let csv: Buffer;
     try {
+      const html = packetHtml(exported, { approvedOn: version.approved_at.toISOString().slice(0, 10), reference: packetReference(version.approved_sha256), contact: contact.contact });
+      csv = Buffer.from(packetCsv(exported), 'utf8');
       pdf = await services.pdf.render(html);
     } catch (error) {
       throw new PacketExportRenderError(error);
     }
-    const csv = Buffer.from(packetCsv(exported), 'utf8');
     // The hashes of the exact bytes printed, which the store must seal unchanged.
     const pdfSha256 = sha256(pdf);
     const csvSha256 = sha256(csv);
