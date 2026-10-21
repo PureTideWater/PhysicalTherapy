@@ -30,7 +30,7 @@ const FINDINGS = { type: 'object', properties: { findings: { type: 'array', item
 
 phase('Build')
 const build = await agent(`${COMMON}
-Your role: build (port 4401). Build the three items with their tests. Run typecheck, lint, lint:logs, lint:copy, test, test:golden, synth --all (clean), check:fixtures, test:db on Postgres 18 (report the one expected approval failure), and e2e/screening.spec.ts. Commit and push. Return what you built, the new document SHA-256 the generator prints, checks and open items.`, { label: 'small-cell floor, template wording, ZIP+4 amendment', phase: 'Build', schema: CHECKS })
+Your role: build (port 4401). An earlier attempt at this role was cut off by a usage limit after committing the floor in all three layers, the template wording, the ADR and reconciliation amendments and the regenerated domain model (head 1bc9426), while it was running the full checks. Read git log and the diff since dfd48f8 first, review that work critically against the three items, finish anything missing, and complete the checks below. Build the three items with their tests. Run typecheck, lint, lint:logs, lint:copy, test, test:golden, synth --all (clean), check:fixtures, test:db on Postgres 18 (report the one expected approval failure), and e2e/screening.spec.ts. Commit and push. Return what you built, the new document SHA-256 the generator prints, checks and open items.`, { label: 'small-cell floor, template wording, ZIP+4 amendment', phase: 'Build', schema: CHECKS })
 if (!build) throw new Error('build failed')
 
 phase('Review')

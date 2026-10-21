@@ -1,83 +1,183 @@
-# PR 5: the schema change to approve (packet deadline and export sign-off)
+# PR 5: what changed since you approved 6435fadd, and the new hash to sign
 
-**Document:** `docs/product/domain-model.md` on branch `co-001/pr-05-packet-deadline`, head `eda61d7`. It is regenerated and **not yet approved**.
+**Document:** `docs/product/domain-model.md` on branch `co-001/pr-05-packet-deadline`, head `6d93b40`. It is regenerated and **not yet approved**.
 
-**SHA-256 to sign:** `6435faddc07eb3626848cccc64aff3cd2d7647281256b68a724561334da02673`. The repository's own approval code computed it (`pnpm db:domain-model --check --require-approval` prints it, and so does `documentSha256()`). It covers every line of the document except the provenance line and the approval line. Until you sign, exactly one database test fails: the approval check.
+**SHA-256 to sign:** `372fa545c9d183e690389a06a94fb05002597d5f54fa42f2347296df05d2a1bc`
 
-## What changes
+- The repository's own approval code prints it (`pnpm db:domain-model --check --require-approval`), and I computed it again separately: the same.
+- It replaces both earlier hashes: `6435fadd…`, which you approved on 2026-10-18, and `4ec492ab…`, which I sent after your download rule and you have not signed. Neither carries over.
+- Until you sign, exactly one database test fails: the approval check. Every other one passes, apart from one backup drill this machine cannot run (see Checks).
 
-The change is one migration, `20261103090000_deadline_verification_and_export_attestation`. It adds no new table.
+**Still one migration.** `20261103090000_deadline_verification_and_export_attestation` is extended in place. It has only ever run on scratch databases.
 
-**Contract versions**
-- `dispute_window_evidence`: where the contract states its dispute window, given as the document, the page, the exact words and the page's fingerprint. It is empty on every existing contract.
-- `dispute_window_verified_by` and `dispute_window_verified_at`: the contract specialist who checked those words against the page, and when.
-- Rules:
-  - The evidence must be complete and must come from one of the version's own documents.
-  - Only a specialist can check it, once, in their own name.
-  - Any later edit clears the check.
-  - A version whose window is cited but not checked cannot be approved.
-  - After approval the evidence is frozen, like the version's other terms.
+- No table is added. There are still 79 tables, 44 of them on the PHI registry.
+- No row-level-security setting or policy changes: still 71 tables forced and 156 policies. The catalog and cross-tenant tests pass.
+- The counts that move, from your approval to now: functions 248 to 267, of which those that run with their owner's rights go from 110 to 112; triggers 216 to 225; one marker role (`tp_job`); three new columns.
 
-**Packet versions**
-- `deadline_verification_status`: verified, unverified or not applicable. The database computes it from the packet's own content, and no one can type it in. Older packets read "unverified".
-- `export_verifier_report`: the result of running the figure checker again over exactly what the export printed.
-- `attested_by`, `attested_at` and `attestation`: the reimbursement reviewer's sign-off. It covers the PDF's and the CSV's fingerprints and a checklist of codes, with no free text.
-- **Guard when a version is written:** each line's deadline and calculation must match the stored pricing record exactly, or the version is refused.
-- **Guard at export:** the export is refused if the deadline is not verified, if the version is not at the case's current dispute level, or if there is no passing checker report. Postgres enforces this, and the application's database role cannot turn it off (tested).
-- **Guard at sign-off:** only a reimbursement reviewer can sign, once, in their own name, after the export, and with a deadline that is not unverified. Anyone who drafted, edited or approved any version of that packet cannot sign.
+**What nothing here changes:**
 
-**Submissions**
-- A submission can be logged only for an export that has been signed off.
-
-## Why
-- **D15:** the change is made to the existing milestone 8 packet, so there is no second export path.
-- **D16 (a) plus (c):** you sign off over the export's fingerprints as reimbursement reviewer, under a support grant, the same way you sign audit reports. Where a practice has its own users, one of them approves the packet and you sign off. The person who drafted a packet never approves it, and internal users still approve nothing else.
-- **D17 (a):** a deadline counts as verified only when it rests on something a person signed off:
-  - for Medicare and Medicare Advantage, a rule record at L2 or higher (L3 for E3);
-  - for a contract, the contract's own window, with its page, words and fingerprint checked by a specialist.
-  - A release's commercial default is never verified.
-
-## What it does not change
 - **Pricing:** no file under `packages/pricing/src` changes.
-- **Golden lines:** `fixtures/golden` is identical byte for byte, and `test:golden` passes.
-- **Releases:** 900001 to 900004 are identical byte for byte. A new SYNTHETIC test release, 900005, is added the same way 900004 was.
-- **Ledger:** no ledger table is touched, and "recovered" still counts only posted or deposited entries.
-- **Row-level security:** no policy or RLS setting changes. The catalog and cross-tenant tests pass.
-- **PHI registry:** no row is added. There are still 79 tables, 44 of them registered.
+- **Golden lines:** `fixtures/golden` is byte for byte the same, and `test:golden` passes.
+- **Releases:** 900001 to 900004 are byte for byte the same.
+- **Ledger:** no ledger table or rule is touched. "Recovered" still counts only posted or deposited entries.
 
-## Actionable totals will fall, as approved
+## 1. Your download rule, and the worker's own login
 
-No existing contract version has window evidence. Their lines therefore wait as "Deadline not verified" until a specialist cites and checks the window on a corrected version. Medicare and Medicare Advantage lines also wait unless their rule record is at L2 or higher. This is what D17 (a) means: "verified" must rest on a source a person signed off.
+This is the change I described with `4ec492ab…`. It is unchanged since then.
 
-AUDIT-01 shows the effect:
-- With its two windows' evidence: $280.00 actionable on 8 lines.
-- With the same inputs and no evidence: $0.00 actionable, and all 18 validated lines ($553.00) wait.
-- Flagged and validated figures do not move.
+**What it does**
+- The reimbursement reviewer can attest an export only after downloading both its PDF and its CSV.
+- A download counts only once the file's bytes match the fingerprint stored for it. It is then recorded in the reviewer's own name.
+- The rule is held in the attest route and again in Postgres.
+- The worker now signs in to the database with a login of its own, marked by the role `tp_job`. Postgres refuses a download record or an attestation from that login, whatever person the worker claims to be. So a compromised worker cannot fake the reviewer's downloads.
 
-## Divergences
-- **Sections A and B:** nothing new. There are still 23 divergences to approve.
-- **C2 and C3 (rewritten):** they now say which part is built.
-  - **C2:** the export's checker report and the sign-off live on `packet_version`, not on a separate `packet_export` table.
-  - **C3:** `deadline_verification_status` is built as text with a CHECK, because the schema uses no Postgres enums. The roles and `readiness_grade` are still to come.
-- **Section D:** 8 new columns are listed as "not in the Data dictionary". These are for information only.
-- **Changed wording:** the approval paragraph now says that approving also approves any part of C2 to C5 whose status says it is built.
+**What it does not change**
+- No table is added.
+- It does add a sixth database login and secret in the infrastructure.
 
-## Safe while the previous version of the app is running: yes (tested)
+## 2. #4: one check that a packet's pricing is still current
 
-I ran PR 4's own code in a scratch copy:
-1. It wrote, approved, exported and submitted packets on the old schema.
-2. The migration then ran over that live data:
-   - existing versions became "unverified";
-   - stored exports were kept;
-   - contracts were not touched.
-3. Afterwards PR 4's code went on writing packet versions, creating contracts, pricing and opening cases.
+**What it does**
+- A packet line counts as current only when all of these hold:
+  - it still has the pricing in effect (no re-run accepted since has replaced it);
+  - its rule release has not been withdrawn;
+  - its plan is still mapped the same way;
+  - its contract version is still signed off and still covers the service date, which catches a back-dated amendment.
+- Postgres makes this one check at approval, at the export (the guard) and at attestation. The export request and the export job make it first, so the person hears no at once.
+- I reproduced the audit's own example: a percent-of-Medicare line priced under a release that is then withdrawn. Every step refused it: approval, even a bare database update by a second billing manager; the export request, with nothing queued; the export job; the guard; and the attestation.
+- **A submission is never refused for this.** It records something that already happened outside the product. It is logged and flagged with the reason. The database writes the flag, and the application cannot set it (tested).
+- The builder, review and submissions pages show each stale line's expected amount and shortfall as they were and as they are now. A line not priced again yet says so.
+- **Actionable totals drop at once**, on the Cases list, the case page, the dashboard and the audit report's triage. Triage has new reasons: release withdrawn, version not in force, mapping not in force. Each case keeps its own recorded ask until PR 11 refreshes it.
+- No audit report is requested, generated, attested or released on a withdrawn release.
+- **The wording is fixed.** "The case is judged again first" is gone, and so is any offer to wait. A refusal names the stale lines and gives the one step that works: write them off on the case page, then write, approve and export the packet again without them.
+- The check cannot race a change made at the same moment. It takes a lock that the changes take too. Tests hold a change open across each step: the step waits, then refuses.
 
-It was refused only in two places:
-- exporting a packet that had not yet been exported, because its deadline is not verified;
-- logging a submission of an export nobody has signed off.
+**What it does not change**
+- Pricing and the ledger.
+- Nothing refreshes a case automatically yet. That, the fan-out of a withdrawal to every practice, and the alert for packets already sent are PR 11.
 
-Both refusals are what D16 and D17 require. The migration briefly locks the small `packet_version` table while it adds the computed column. Run the migration before deploying the new version (ADR 0049).
+**One decision for you.** Suppose pricing goes stale after the export but before the attestation. The attestation is then refused for good. A submission needs an attested export, so if that file already went to the payer, its submission cannot be logged.
+- The submissions page now says not to send such an export, and to tell support if it went.
+- How such a submission should be logged is your call. The two options are an unattested submission record, or an attestation of a stale export with its own flag.
 
-## PR 4
+## 3. #5: a contract window's unit and start; no Medicare Advantage packet exports until Q34
 
-This document also contains PR 4's schema (ERA export intake, migration `20261102090000`). You approved that part on 2026-10-18 (hash `374a7b83…`), and PR 4 has since been merged into `claude/build-platform`. It is unchanged here. Because PR 5 changes the text, the generator reset the approval line, and the new hash covers PR 4's part together with PR 5's. Signing it approves both.
+**What it does**
+- When the specialist cites the window, they also choose, from the quote:
+  - its unit: calendar days, business days or months;
+  - what it runs from: date of service, remittance date, payment date, or the day the practice received it.
+- Both come from fixed lists, and Postgres holds the lists. Nothing reads the quote automatically.
+- "Verified" is allowed only for the rule the product computes today: **calendar days after the payment date** (BPR16, the check or EFT date). The service, a database trigger and a database CHECK each refuse any other rule. I checked all 12 unit-and-start combinations against the database's rule, and only that one counts.
+- The abstraction screen shows the computed rule beside the quote, for example "ends 90 calendar days after the payment date", and says whether the two match.
+- If they do not match, Verify is disabled with the reason. The version can still be approved, but its window stays unverified. Its lines wait with no date shown, and the screen says to keep the contract's own deadline. A date counted the wrong way could be later than the real one.
+- **Medicare Advantage non-contracted deadlines stay unverified until the specialist confirms the dispute route (golden QUESTIONS Q34).** This holds even under release 900005's L2 records.
+  - The consequence: **no packet of a Medicare Advantage non-contracted line exports until then.** Medicare Advantage actionable totals drop to zero.
+  - The packet's deadline, the Cases page and the specialist's regulations page say why, and say that the plan's own dispute policy is worked outside the product meanwhile.
+  - I confirmed the route is the only thing holding these lines back. With the route switch turned on in a scratch copy, the same lines verify.
+  - A Medicare Advantage plan mapped to a contract is not held.
+
+**What it does not change**
+- The engine still counts every contract window as calendar days after the payment date. Counting from the cited unit and start is PR 6c.
+- Existing signed-off contract versions stay frozen. A new citation goes on an amended or corrected version.
+
+**A second decision for you: what "remittance date" means.** The build treats "the remittance date" as the date printed on the remittance advice, not the payment date. Contracts that say "within N days of the remittance date" therefore stay unverified until PR 6c, and their totals drop too. If you rule that "remittance date" means the payment date, such windows verify now.
+
+## 4. #26: an export the job would refuse is refused at once, and every refusal or failure is recorded
+
+**What it does**
+- Before anything is queued, the export request runs the same checks the job will run. If any fails, it refuses at once and lists every reason with its fix. Nothing is queued.
+- Every refusal or failed try of the export job is recorded as an audit event: the version's ID and a code, with no words and no patient data. Only the worker's own login can write these events; a person cannot. I checked this with a render failure, and neither the events nor the logs carry an identifier or the error's text.
+- The packet page shows the latest attempt:
+  - in progress, refreshing about every five seconds;
+  - trying again;
+  - refused, with its fix;
+  - failed, with nothing stored and the operator alerted;
+  - an hour with no answer counts as failed.
+
+**What it does not change**
+- No table is added: the audit log is the record. The optional attempts table is PR 8's.
+
+## 5. #61: the drafter's Approve button, and one form for the builder
+
+**What it does**
+- The person who drafted a version sees the Approve button disabled, with the reason, next to Request approval. Once approval is requested, the reason says so. The database still refuses the drafter's approval (tested).
+- A version is written through one form. Each field appears once, with its own ID, and the Save, code-built draft and model draft buttons all send the same fields. A chosen prompt-pay interest line is no longer dropped. I checked this on the real page with the Save button.
+
+**What it does not change**
+- Who may approve.
+- The accessibility gate over every screen is PR 7.
+
+## Safe while the previous version of the app is running
+
+**Yes (tested).** I ran the current live code (`claude/build-platform`, which has PR 4) in a scratch copy, in two ways.
+
+1. **Over live data.** That code wrote, approved, exported and submitted packets on its own schema. Then the new version's `pnpm db:migrate` ran over that data:
+   - every packet version, export fingerprint, submission and contract version was unchanged;
+   - existing packet versions read "unverified";
+   - the new columns are empty on every old row.
+
+   Afterwards the old code went on as before: writing and approving packet versions, signing off contracts, pricing and triaging. It was refused only where D16 and D17 require:
+   - exporting a version whose deadline is not verified;
+   - logging another submission of an export no reimbursement reviewer has attested.
+
+2. **Its own tests on the new schema.** I ran 15 of the old code's database test files, covering packets, contracts, pricing and re-runs, triage, reports, the ledger and their routes.
+   - 152 tests passed.
+   - The 21 that failed fail on one refusal: "a packet version whose deadline is not verified is not exported".
+   - The same four files pass on the old schema, so the migration is the only cause.
+
+Things that also hold while the old version still runs:
+- Its export job writes no attempt events, so a refused export shows "in progress", then "failed, no result" after an hour.
+- Its triage does not know the new reasons, so it may open a case whose export the database then refuses.
+
+The migration briefly locks the small `packet_version` table while it adds the computed column. As before, run the migration before deploying the new version (ADR 0049).
+
+## Checks on head `6d93b40`
+
+All on the exact head, in a fresh clone, with `CI=true`.
+
+| Check | Result |
+|---|---|
+| `pnpm install --frozen-lockfile` | passed |
+| `pnpm check:fixtures` | passed |
+| `pnpm typecheck` | passed |
+| `pnpm lint` | passed |
+| `pnpm lint:logs` | passed |
+| `pnpm lint:copy` | passed |
+| `gitleaks`, this branch's commits since `claude/build-platform` | no leaks |
+| `pnpm verify-content` | passed |
+| `tools/check-releases-immutable.sh` | passed |
+| `pnpm synth --all` | tree left clean |
+| `pnpm test` | 3,656 passed |
+| `pnpm test:golden` | 36 passed |
+| `pnpm test:oracle` | 629 fixtures agree |
+| `db:migrate` on a fresh PostgreSQL 18 database | 41 migrations applied |
+| `db:domain-model --check --strict` | passed |
+| `db:domain-model --check --require-approval` | fails only for the missing approval, printing the hash above |
+| `pnpm test:db` | 8,430 passed, 1 failed (the approval check only), 1 skipped (a backup drill that needs PostgreSQL 18's `pg_dump`, which this machine lacks) |
+| `pnpm test:e2e` | 46 of 46 passed, none retried |
+| `pnpm build` | passed |
+| `pnpm cdk:diff` | synthesized every stack; no AWS credentials here for the staging diff |
+
+**Proofs of the four items, in a scratch copy.** I wrote my own tests, separate from the builders'. They cover:
+- the audit's withdrawn-release example (#4);
+- the window lists and the 12 rules (#5);
+- the Medicare Advantage route (#5);
+- a render failure and its coded record (#26);
+- the drafter's refusal (#61);
+- the real packet page, checked as the drafter in the browser (#61).
+
+All of them pass.
+
+I then broke each guard in turn, and my tests or the builders' caught every break:
+- the pricing check;
+- the export guard's pricing step;
+- the computed-rule test, in SQL and in TypeScript;
+- the Medicare Advantage route switch, in SQL and in TypeScript;
+- the withdrawal's triage reason;
+- the job's failure record.
+
+**One small, harmless finding.** The model-draft button carries a `name` that React replaces, and React logs a warning about it in development. The model's action never reads that field, so nothing is lost.
+
+## Before the pull request opens
+
+- `claude/build-platform` moved on after this branch last merged it: #24 pins CI runners to Ubuntu 24.04. PR 5 should merge it first. That merge touches only CI files and their test, so it changes neither the schema nor this hash.
