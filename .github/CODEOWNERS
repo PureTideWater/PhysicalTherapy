@@ -30,6 +30,10 @@
 /packages/synth/src/guard/ @PureTideWater
 /tools/check-releases-immutable.sh @PureTideWater
 
+# The engine freeze (reconciliation-001; docs/adr/0064): its check, its differential test and the exception a pull
+# request declares in exception.json, so declaring one takes the founder's review.
+/tools/engine-freeze/ @PureTideWater
+
 # The published rule releases (content/releases is created by publish-content.yml) and the synthetic releases.
 /content/releases/ @PureTideWater
 /fixtures/synthetic/rules/release-*/ @PureTideWater
