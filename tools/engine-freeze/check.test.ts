@@ -269,8 +269,13 @@ describe('the engine freeze', () => {
     const committed = exceptionSchema.parse(JSON.parse(readFileSync(path.join(repositoryRoot, EXCEPTION_FILE), 'utf8')));
     for (const file of committed.engine_files) expect(RULING_ENGINE_FILES).toContain(file);
     expect(committed.ruling).toContain('2026-10-18 11:47 UTC');
-    // PR 6b-1 is pull request 35.
-    expect(committed.pull_request).toBe(35);
+    // PR 6b-2 is pull request 36: no engine or golden file, and its migration's one statement on a rule table, the
+    // record-type CHECK widened by locality_map_plus_four (the founder's answer of 2026-10-21 to PR 6b's Q3 (a)).
+    expect(committed.pull_request).toBe(36);
+    expect([committed.engine_files, committed.golden_added, committed.golden_edited]).toEqual([[], [], []]);
+    expect(committed.rule_table_ddl).toHaveLength(1);
+    expect(committed.rule_table_ddl[0]?.migration).toBe('packages/db/migrations/20261105090000_pricing_location_and_zip_plus_four.sql');
+    expect(committed.rule_table_ddl[0]?.statement).toMatch(/^ALTER TABLE rule_record DROP CONSTRAINT rule_record_record_type_check, ADD CONSTRAINT rule_record_record_type_check CHECK \(record_type IN \(.*'locality_map_plus_four'.*\)\)$/);
   });
 
   it('writes the job summary under "Engine freeze": the base, the exception, the engine diff stat, what it let through and the problems', () => {
