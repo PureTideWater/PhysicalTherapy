@@ -17,38 +17,23 @@ on:
     # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (audit #54).
     - cron: "41 6 * * 1"
   workflow_dispatch:
+  # A push to the build branch measures any change to what the images or the harness are built from; a pull request
+  # measures one that changes a path of the derived watched list (the changes job below).
   push:
     branches: [claude/build-platform]
     paths:
-      - apps/worker/src/screening/**
-      - apps/worker/src/price/**
-      - apps/worker/src/jobs/**
-      - apps/worker/src/worker.ts
-      - apps/worker/src/main.ts
-      - apps/worker/src/config.ts
-      - apps/worker/src/deploy/**
-      - apps/worker/build.ts
-      - apps/worker/src/mail/**
-      - apps/web/src/lib/screening/**
-      - apps/web/src/app/screening/**
-      - apps/web/src/components/screening/**
-      - apps/web/src/proxy.ts
-      - packages/pricing/src/**
-      - packages/rules/src/**
-      - packages/contracts/src/**
-      - packages/money/src/**
-      - packages/db/migrations/**
-      - packages/synth/src/release/**
-      - packages/synth/src/screening/**
+      - apps/web/**
+      - apps/worker/**
+      - packages/**
       - tools/screening-capacity/**
-      - tools/release/scale.ts
-      - infra/lib/environments.ts
-      - infra/lib/screening.ts
-      - infra/lib/constructs/compute.ts
-      - infra/lib/constructs/database.ts
-      - apps/web/Dockerfile
-      - apps/worker/Dockerfile
+      - tools/release/**
+      - tools/content-files.ts
+      - tools/verify-content/**
+      - infra/lib/**
+      - fixtures/synthetic/rules/**
+      - package.json
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - .github/workflows/screening-capacity.yml
   # Every pull request: the gate decides from its changed files (the changes job's watched list) whether to measure.
   pull_request:
@@ -62,16 +47,19 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Whether to measure: always outside a pull request; on one, when it changes a watched path. The pull request's list
-  # is the push list less the lockfile and the migrations that do not name the screening, which the push to the build
-  # branch measures after they merge. Reads file names only: no install, no repository code run.
+  # Whether to measure: always outside a pull request; on one, when it changes a path of the watched list
+  # (tools/screening-capacity/watched-paths.txt: every file the measured images and the harness import, derived from
+  # their entry points by tools/screening-capacity/watched.ts and held to it by a unit test, and the files no import
+  # reaches, the lockfile, manifests and migrations among them), as the base commit keeps it and as the pull request
+  # does, so a pull request cannot drop its own path. Reads file names and that list only: no install, no repository
+  # code run.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       measure: ${{ steps.watched.outputs.measure }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -90,20 +78,41 @@ jobs:
           fi
           # A diff that cannot be read fails the step (and so the gate), never reads as "nothing changed".
           git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"
+          list=tools/screening-capacity/watched-paths.txt
+          # The list as the base keeps it and as the pull request does; a base without one (before PR 6b-3) measures.
+          if ! git cat-file -e "$BASE:$list" 2>/dev/null; then
+            echo "the base keeps no watched list: measure"
+            echo "measure=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          { git show "$BASE:$list"; git show "$HEAD:$list" 2>/dev/null || true; } | grep -v -e '^#' -e '^$' | sort -u > "$RUNNER_TEMP/watched"
           measure=false
           while IFS= read -r file; do
-            case "$file" in
-              apps/worker/src/screening/*|apps/worker/src/price/*|apps/worker/src/jobs/*|apps/worker/src/worker.ts|apps/worker/src/main.ts|apps/worker/src/config.ts|apps/worker/src/deploy/*|apps/worker/build.ts|apps/worker/src/mail/*|apps/web/src/lib/screening/*|apps/web/src/app/screening/*|apps/web/src/components/screening/*|apps/web/src/proxy.ts|packages/pricing/src/*|packages/rules/src/*|packages/contracts/src/*|packages/money/src/*|packages/db/migrations/*screening*.sql|packages/synth/src/release/*|packages/synth/src/screening/*|tools/screening-capacity/*|tools/release/scale.ts|infra/lib/environments.ts|infra/lib/screening.ts|infra/lib/constructs/compute.ts|infra/lib/constructs/database.ts|apps/web/Dockerfile|apps/worker/Dockerfile|.github/workflows/screening-capacity.yml)
+            while IFS= read -r pattern; do
+              # A path as it is (one may hold brackets, as app/screening/results/[resultId]/ does), else the line as a
+              # shell pattern, unquoted so its * matches (across / too).
+              if [ "$file" = "$pattern" ]; then
                 measure=true
                 echo "watched: $file"
-                ;;
-            esac
+                break
+              fi
+              # shellcheck disable=SC2254
+              case "$file" in
+                $pattern)
+                  measure=true
+                  echo "watched: $file"
+                  break
+                  ;;
+              esac
+            done < "$RUNNER_TEMP/watched"
           done < "$RUNNER_TEMP/changed-paths"
           echo "measure=$measure" >> "$GITHUB_OUTPUT"
 
   capacity:
     needs: changes
     if: needs.changes.outputs.measure == 'true'
+    outputs:
+      sizing: ${{ steps.measure.outputs.sizing }}
     # A 4-CPU runner: Postgres keeps db.t4g.medium's 2 vCPU and the consumer its 2 (a smaller one stops as "runner too
     # small"). A public repository's standard runner has 4. Once the repository is private its standard runner has 2,
     # so this label (and the release's capacity job's, the same runner) becomes the 4-core larger runner the founder
@@ -115,18 +124,18 @@ jobs:
     timeout-minutes: 90
     steps:
       # The harness calls no GitHub API and pushes nothing, so the token is not left in the checkout.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       # The production images, from their Dockerfiles, as supply-chain.yml builds them. Every run reads the layer cache;
       # only a push to the build branch writes it, and only the final layers (mode=min): both Dockerfiles copy the whole
       # checkout before installing, so the install and build layers change with every commit and exporting them each run
       # would churn the repository's 10 GB of Actions cache (audit #53 part 1's capacity review).
       - name: Build the web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: apps/web/Dockerfile
@@ -137,7 +146,7 @@ jobs:
           cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-web' || '' }}
 
       - name: Build the worker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: apps/worker/Dockerfile
@@ -147,8 +156,8 @@ jobs:
           cache-from: type=gha,scope=screening-capacity-worker
           cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-worker' || '' }}
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       # The browser the uploads are sent from: Playwright's own Chromium, as ci.yml installs it.
@@ -158,7 +167,7 @@ jobs:
       # and saved straight after, so a measurement that fails still leaves it cached for the next run.
       - name: Restore the scale release
         id: scale-release
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/scale-release
           key: screening-scale-release-${{ hashFiles('packages/synth/src/release/**', 'tools/release/scale.ts', 'packages/rules/src/**', 'fixtures/synthetic/rules/release-synth-900001/**') }}
@@ -169,7 +178,7 @@ jobs:
         run: pnpm exec tsx tools/release/scale.ts --out "$RUNNER_TEMP/scale-release"
       - name: Save the scale release
         if: steps.scale-release.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/scale-release
           key: ${{ steps.scale-release.outputs.cache-primary-key }}
@@ -177,6 +186,7 @@ jobs:
       # The harness, its child processes and Chromium on Postgres's CPUs (0-1 on a 4-CPU runner), never the consumer's
       # (2-3) or the CPU web and platform share (3): the layout's own answer (limits.ts, harnessCpus).
       - name: Measure under production limits
+        id: measure
         run: |
           cpus=$(pnpm -s screening:capacity --print-harness-cpus)
           echo "harness on CPUs $cpus"
@@ -188,7 +198,7 @@ jobs:
 
       # The report (written after every scenario, so a run that stops still has its figures), its SHA-256 and the
       # services' logs (IDs, codes and numbers by the logger's allowlist, synthetic data, result links masked).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: screening-capacity
@@ -201,11 +211,15 @@ jobs:
           retention-days: 90
 
   # The required check (Q8): passes at once when no watched path changed, else only when the measurement passed. It runs
-  # whatever the other jobs did, except when the run itself is cancelled (a newer push to the pull request).
+  # whatever the other jobs did, a cancelled run included: GitHub reports a job its condition skipped as a success for a
+  # required check, so a gate skipped on a cancel would pass with no measurement; run, it fails (CAPACITY=cancelled).
+  # A run a newer push superseded fails only on the older commit, which no longer gates the pull request. A passing
+  # measurement whose worst time is above 44 s also carries the founder's sizing question (O9) here, as a warning on the
+  # pull request's checks.
   gate:
     name: screening-capacity gate
     needs: [changes, capacity]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -214,6 +228,7 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           MEASURE: ${{ needs.changes.outputs.measure }}
           CAPACITY: ${{ needs.capacity.result }}
+          SIZING: ${{ needs.capacity.outputs.sizing }}
         run: |
           if [ "$CHANGES" != "success" ]; then
             echo "the changed paths could not be read ($CHANGES)"
@@ -226,6 +241,9 @@ jobs:
           if [ "$CAPACITY" != "success" ]; then
             echo "the capacity measurement did not pass ($CAPACITY): see its job's summary"
             exit 1
+          fi
+          if [ -n "$SIZING" ]; then
+            echo "::warning title=Sizing question (O9)::$SIZING"
           fi
           echo "the capacity measurement passed with time enforced"
 

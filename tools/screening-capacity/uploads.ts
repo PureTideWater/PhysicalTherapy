@@ -133,7 +133,7 @@ export function uploadAccountDomain(upload: Pick<UploadSpec, 'contactEmail'>): s
  * The "sent" page the web lands an accepted upload on (apps/web/src/lib/screening/sent.ts, screeningSentPath). The
  * harness waits for it to know the page accepted the upload; whether the upload waited is read from its run.
  */
-export const SENT_PAGE = /\/screening\?sent=1&wait=(?:soon|minutes|account|day)$/;
+export const SENT_PAGE = /\/screening\?sent=1&wait=(?:soon|minutes|waiting|sent)$/;
 
 /** The five scenarios (the design's §3.4): each upload with its own ZIP in its own locality, name, address and domain. */
 export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): ScenarioSpec[] {

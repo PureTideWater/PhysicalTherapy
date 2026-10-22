@@ -23,6 +23,7 @@ import {
   type ServiceName,
   type ServiceSpec,
   masked,
+  processImagesProblems,
   screeningServices,
   serviceCommand,
   stderrTail,
@@ -55,6 +56,7 @@ import {
   markdown,
   oracleKind,
   report,
+  sizingQuestion,
   timeRule,
 } from './report';
 import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
@@ -819,6 +821,16 @@ async function main(): Promise<number> {
       // Production's settings declare the consumer since PR 6b-3; without it there is nothing to measure as production runs.
       throw new HarnessStop('CONSUMER_NOT_DECLARED');
     }
+    if (opts.runtime === 'process') {
+      // The layout must hold what the images hold, or every worker stops as it loads its bundle.
+      const missing = processImagesProblems({ worker: path.join(opts.images ?? '', 'worker'), web: path.join(opts.images ?? '', 'web') });
+      for (const problem of missing) {
+        say(`process images: ${problem}`);
+      }
+      if (missing.length > 0) {
+        throw new HarnessStop('PROCESS_IMAGES_INCOMPLETE');
+      }
+    }
     const built = await ensureRelease(opts.releaseDir ?? path.join(opts.out, 'release'));
     release = { ...release, releaseNo: built.releaseNo, manifestSha256: built.manifestSha256, records: built.records };
     say(`release ${String(release.releaseNo)}: ${String(release.records)} records`);
@@ -951,7 +963,13 @@ async function main(): Promise<number> {
     say(`  ${reason}`);
   }
   if (full.sizing.question) {
-    say(`sizing question for the founder (O9): the worst time, ${full.sizing.worstUpload ?? ''}'s ${((full.sizing.worstMs ?? 0) / 1000).toFixed(1)} s, is above 44 s`);
+    const question = sizingQuestion(full.sizing);
+    say(`sizing question for the founder (O9): ${question}`);
+    // On the pull request's checks too, not in the log alone: a warning annotation here, and the gate prints it again.
+    process.stdout.write(`::warning title=Sizing question (O9)::${question}\n`);
+    if (process.env.GITHUB_OUTPUT !== undefined) {
+      appendFileSync(process.env.GITHUB_OUTPUT, `sizing=${question}\n`);
+    }
   }
   return full.verdict.pass ? 0 : 1;
 }

@@ -13,10 +13,11 @@ import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
  * Decision 13's launch check (the founder's rulings of 2026-10-20; docs/adr/0062; the design's §5.4; test matrix SCR-20):
  * production's screening opens only when the latest capacity report for the image being deployed passes with time
  * enforced, on both image IDs. The release workflow keeps each tag's report as an asset of its GitHub release; the
- * deployer pulls the tag's web-production and worker images and runs
+ * deployer copies the tag's web-production and worker images to the environment's ECR repositories, pulls those copies
+ * back from ECR (the images ECS runs; docs/runbooks/deploy-and-rollback.md, step 3) and runs
  *
  *   pnpm exec tsx tools/screening-capacity/launch-check.ts --report <screening-capacity.json> --tag <tag> \
- *     --web-image <web-production:tag as pulled> --worker-image <worker:tag as pulled>
+ *     --web-image <WebRepositoryUri>:<tag> --worker-image <WorkerRepositoryUri>:<tag>
  *
  * which prints `ScreeningLaunch=<tag>:<the report's SHA-256>` for the deploy's ScreeningLaunch parameter, or names each
  * reason and exits non-zero (the deploy then passes `closed`). It holds the report to:
@@ -24,8 +25,8 @@ import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
  * - its format (tp-screening-capacity/4), the Docker runtime (the process runtime cannot limit Postgres), a passing
  *   verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again;
  * - the tag's commit;
- * - both images: the IDs the deployer pulled equal the IDs measured (`docker image inspect -f {{.Id}}`), so the web image
- *   measured, built with production's static origin, is the one deployed, and the worker image too;
+ * - both images: the IDs the deployer pulled back from ECR equal the IDs measured (`docker image inspect -f {{.Id}}`),
+ *   so the web image measured, built with production's static origin, is the one deployed, and the worker image too;
  * - the consumer measured equal to environments.ts's compute.screening for production: its tasks, vCPUs, memory and
  *   concurrency.
  *

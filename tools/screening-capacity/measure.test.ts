@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
@@ -16,10 +20,12 @@ import {
   netemCommands,
   peerIndex,
   postgresRunArgs,
+  processImagesProblems,
   processShellCommand,
   screeningServices,
   serviceCommand,
   stderrTail,
+  workerPlaywrightVersion,
 } from './containers';
 
 /**
@@ -99,7 +105,7 @@ describe('the services’ commands', () => {
     // The consumer's container command (infra/lib/constructs/compute.ts, PR 6b-3): #31's explicit heap limit.
     expect(SERVICE_COMMANDS.screening).toEqual((COMMANDS as Readonly<Record<string, readonly string[]>>).screening);
     expect(SERVICE_COMMANDS.screening).toContain(SCREENING_MAIN_HEAP_FLAG);
-    expect(SCREENING_MAIN_HEAP_FLAG).toBe('--max-old-space-size=512');
+    expect(SCREENING_MAIN_HEAP_FLAG).toBe('--max-old-space-size=896');
     expect(screeningServices(1)).toEqual(['screening-1']);
     expect(screeningServices(2)).toEqual(['screening-1', 'screening-2']);
     expect([isScreeningService('screening-1'), isScreeningService('screening-0'), isScreeningService('platform')]).toEqual([true, false, false]);
@@ -110,7 +116,7 @@ describe('the services’ commands', () => {
   it('exec each process under taskset with its whole cpuset, after joining its cgroups (the cgroup-v1 affinity fix)', () => {
     const dirs = ['/sys/fs/cgroup/cpu/tp-capacity-screening-1', '/sys/fs/cgroup/cpuset/tp-capacity-screening-1', '/sys/fs/cgroup/memory/tp-capacity-screening-1'];
     expect(processShellCommand(dirs, '2-3', SERVICE_COMMANDS.screening)).toBe(
-      'echo $$ > /sys/fs/cgroup/cpu/tp-capacity-screening-1/cgroup.procs && echo $$ > /sys/fs/cgroup/cpuset/tp-capacity-screening-1/cgroup.procs && echo $$ > /sys/fs/cgroup/memory/tp-capacity-screening-1/cgroup.procs && exec taskset -c 2-3 node --enable-source-maps --max-old-space-size=512 dist/main.js',
+      'echo $$ > /sys/fs/cgroup/cpu/tp-capacity-screening-1/cgroup.procs && echo $$ > /sys/fs/cgroup/cpuset/tp-capacity-screening-1/cgroup.procs && echo $$ > /sys/fs/cgroup/memory/tp-capacity-screening-1/cgroup.procs && exec taskset -c 2-3 node --enable-source-maps --max-old-space-size=896 dist/main.js',
     );
     expect(processShellCommand(['/sys/fs/cgroup/tp-capacity-web'], '3', SERVICE_COMMANDS.web)).toBe('echo $$ > /sys/fs/cgroup/tp-capacity-web/cgroup.procs && exec taskset -c 3 node apps/web/server.js');
     expect(() => processShellCommand([], '2-3; rm -rf /', SERVICE_COMMANDS.web)).toThrow(RangeError);
@@ -140,7 +146,7 @@ describe('Docker’s arguments', () => {
     );
     expect(args.slice(0, 7)).toEqual(['run', '-d', '--name', 'tp-capacity-screening-1', '--network', 'tp-capacity', '--network-alias']);
     expect(args).toEqual(expect.arrayContaining(['--cpus=2', '--cpuset-cpus=2-3', '--memory=4096m', '--memory-swap=4096m', '--restart=no', '-e', 'WORKER_JOBS=screening']));
-    expect(args.slice(-5)).toEqual(['tp-worker:capacity', 'node', '--enable-source-maps', '--max-old-space-size=512', 'dist/main.js']);
+    expect(args.slice(-5)).toEqual(['tp-worker:capacity', 'node', '--enable-source-maps', '--max-old-space-size=896', 'dist/main.js']);
   });
 
   it('give Postgres its CPUs, memory with no swap and gp3’s baseline on the data root’s device', () => {
@@ -186,5 +192,31 @@ describe('a failed command', () => {
     expect(stderrTail('x'.repeat(1_000)).length).toBe(400);
     expect(stderrTail('')).toBe('no stderr');
     expect(masked('GET /screening/results/abcdefghijklmnopqrstuvwxyzabcdef 200')).toBe('GET /screening/results/<token> 200');
+  });
+});
+
+describe('the process runtime\'s images', () => {
+  it('names what the layout lacks of the images, playwright-core beside the worker\'s bundle at its pinned version among them', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'capacity-images-'));
+    try {
+      const images = { worker: path.join(dir, 'worker'), web: path.join(dir, 'web') };
+      for (const file of ['dist/main.js', 'dist/screening-thread.js', 'dist/migrate.js', 'dist/logins.js', 'migrations/.keep', 'web-placeholder']) {
+        mkdirSync(path.dirname(path.join(images.worker, file)), { recursive: true });
+        writeFileSync(path.join(images.worker, file), '');
+      }
+      mkdirSync(path.join(images.web, 'apps/web'), { recursive: true });
+      writeFileSync(path.join(images.web, 'apps/web/server.js'), '');
+      // The integrator's first smoke run: dist and migrations alone, and every worker stopped as it loaded its bundle.
+      expect(processImagesProblems(images, '1.56.1')).toEqual([expect.stringMatching(/node_modules\/playwright-core is missing, not 1\.56\.1, .*npm install --no-save playwright-core@1\.56\.1/)]);
+      mkdirSync(path.join(images.worker, 'node_modules/playwright-core'), { recursive: true });
+      writeFileSync(path.join(images.worker, 'node_modules/playwright-core/package.json'), JSON.stringify({ name: 'playwright-core', version: '1.55.0' }));
+      expect(processImagesProblems(images, '1.56.1')).toEqual([expect.stringContaining('is at 1.55.0, not 1.56.1')]);
+      writeFileSync(path.join(images.worker, 'node_modules/playwright-core/package.json'), JSON.stringify({ name: 'playwright-core', version: '1.56.1' }));
+      expect(processImagesProblems(images, '1.56.1')).toEqual([]);
+      // The version the image installs is the worker's own pin.
+      expect(workerPlaywrightVersion()).toBe('1.56.1');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

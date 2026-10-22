@@ -561,3 +561,12 @@ export function worstTime(full: Pick<Measurements, 'scenarios'>): { readonly id:
   }
   return worst;
 }
+
+/**
+ * The sizing question's one line (O9; the design's §2.4): the worst upload and its time, above the 44-s line, numbers and
+ * an upload's label only. run.ts says it in the job's log, annotates the job with it as a warning and hands it to the
+ * gate, so it reaches the pull request's checks and not the log alone.
+ */
+export function sizingQuestion(sizing: { readonly worstUpload: string | null; readonly worstMs: number | null }): string {
+  return `the worst time, ${sizing.worstUpload ?? 'an upload'}'s ${((sizing.worstMs ?? 0) / 1000).toFixed(1)} s, is above 44 s: the consumer's size goes to the founder before merge`;
+}

@@ -37,6 +37,24 @@ function workflow(name: string): Workflow {
   return parse(readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8')) as Workflow;
 }
 
+/**
+ * The actions the release and capacity workflows run, each pinned to a full commit SHA with its version in a comment
+ * (the review of 2026-10-22): a moved tag cannot run code in the push job, which holds packages: write, nor write the
+ * capacity report the launch check reads. trivy-action was pinned this way already.
+ */
+const PINNED = {
+  checkout: 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
+  cacheRestore: 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830',
+  cacheSave: 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830',
+  downloadArtifact: 'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093',
+  uploadArtifact: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
+  setupNode: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020',
+  buildPush: 'docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8',
+  login: 'docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9',
+  setupBuildx: 'docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f',
+  pnpm: 'pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1',
+} as const;
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isList = (value: unknown): value is readonly unknown[] => Array.isArray(value);
 
@@ -249,7 +267,7 @@ describe('workflows', () => {
       expect(build.strategy?.matrix?.image).toEqual(['web', 'web-staging', 'web-production', 'worker']);
       expect(build.permissions).toBeUndefined();
       const steps = build.steps;
-      const built = stepIndex(steps, (step) => step.uses === 'docker/build-push-action@v6');
+      const built = stepIndex(steps, (step) => step.uses === PINNED.buildPush);
       expect(steps.filter((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toHaveLength(1);
       expect(steps[built]?.with).toMatchObject({ push: false, load: true, file: '${{ steps.image.outputs.dockerfile }}', tags: '${{ steps.image.outputs.ref }}' });
       expect(String(steps[built]?.with?.['build-args']).trim()).toBe('STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}');
@@ -261,7 +279,7 @@ describe('workflows', () => {
       const scan = stepIndex(steps, isScan);
       const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
       const saved = stepIndex(steps, (step) => step.run?.includes('docker save') === true);
-      const kept = steps.findLastIndex((step) => step.uses === 'actions/upload-artifact@v4');
+      const kept = steps.findLastIndex((step) => step.uses === PINNED.uploadArtifact);
       expect(steps[scan]?.with).toMatchObject({ 'image-ref': '${{ steps.image.outputs.ref }}', severity: 'HIGH,CRITICAL', 'exit-code': '1' });
       expect([built < scan, scan < sbom, sbom < saved, saved < kept]).toEqual([true, true, true, true]);
       // The image ID beside the image, so the jobs that load it can prove it is the one scanned.
@@ -277,8 +295,8 @@ describe('workflows', () => {
       const workflowRunner = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
       expect(capacity['runs-on']).toEqual(workflowRunner);
       const steps = capacity.steps;
-      expect(steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false } });
-      expect(steps.filter((step) => step.uses === 'actions/download-artifact@v4').map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
+      expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
+      expect(steps.filter((step) => step.uses === PINNED.downloadArtifact).map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
       expect(steps.some((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toBe(false);
       expect(runs('capacity')).not.toMatch(/docker (?:buildx )?build/);
       const measure = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
@@ -290,7 +308,7 @@ describe('workflows', () => {
       expect((steps[measure] as Step & { env?: Record<string, string> }).env).toEqual({ PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
       expect(steps[measure]?.run).toContain('set -- "$@" --static-asset-origin "$PRODUCTION_ORIGIN"');
       const kept = steps[measure + 1] as Step & { if?: string };
-      expect(kept.uses).toBe('actions/upload-artifact@v4');
+      expect(kept.uses).toBe(PINNED.uploadArtifact);
       expect(kept.if).toBe('always()');
       expect(String(kept.with?.path)).toContain('screening-capacity.sha256');
     });
@@ -321,7 +339,7 @@ describe('workflows', () => {
       for (const [name, entry] of Object.entries(release.jobs)) {
         expect(JSON.stringify(entry.permissions ?? {}).includes('"contents":"write"'), name).toBe(name === 'report');
       }
-      expect(report.steps.map((step) => step.uses ?? 'run')).toEqual(['actions/download-artifact@v4', 'run']);
+      expect(report.steps.map((step) => step.uses ?? 'run')).toEqual([PINNED.downloadArtifact, 'run']);
       const commands = runs('report')
         .split('\n')
         .map((line) => line.trim())
@@ -483,37 +501,20 @@ describe('workflows', () => {
     expect(on.workflow_dispatch).toBeNull();
     const push = on.push as { branches: string[]; paths: string[] };
     expect(push.branches).toEqual(['claude/build-platform']);
-    // Pushes measure every change that can move the result: the consumer's own files, migrations and the lockfile included.
+    // A push to the build branch measures any change to what the images or the harness are built from.
     const pushPaths = [
-      'apps/worker/src/screening/**',
-      'apps/worker/src/price/**',
-      'apps/worker/src/jobs/**',
-      'apps/worker/src/worker.ts',
-      'apps/worker/src/main.ts',
-      'apps/worker/src/config.ts',
-      'apps/worker/src/deploy/**',
-      'apps/worker/build.ts',
-      'apps/worker/src/mail/**',
-      'apps/web/src/lib/screening/**',
-      'apps/web/src/app/screening/**',
-      'apps/web/src/components/screening/**',
-      'apps/web/src/proxy.ts',
-      'packages/pricing/src/**',
-      'packages/rules/src/**',
-      'packages/contracts/src/**',
-      'packages/money/src/**',
-      'packages/db/migrations/**',
-      'packages/synth/src/release/**',
-      'packages/synth/src/screening/**',
+      'apps/web/**',
+      'apps/worker/**',
+      'packages/**',
       'tools/screening-capacity/**',
-      'tools/release/scale.ts',
-      'infra/lib/environments.ts',
-      'infra/lib/screening.ts',
-      'infra/lib/constructs/compute.ts',
-      'infra/lib/constructs/database.ts',
-      'apps/web/Dockerfile',
-      'apps/worker/Dockerfile',
+      'tools/release/**',
+      'tools/content-files.ts',
+      'tools/verify-content/**',
+      'infra/lib/**',
+      'fixtures/synthetic/rules/**',
+      'package.json',
       'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
       '.github/workflows/screening-capacity.yml',
     ];
     expect(push.paths).toEqual(pushPaths);
@@ -527,18 +528,23 @@ describe('workflows', () => {
     });
     expect(Object.keys(capacity.jobs).sort()).toEqual(['capacity', 'changes', 'gate', 'notify']);
 
-    // The changed paths: file names only, from a checkout that keeps no token; a pull request measures when it changes
-    // the push list less the lockfile and the migrations that do not name the screening.
+    // The changed paths: file names only, from a checkout that keeps no token; a pull request measures when it changes a
+    // path of the derived watched list as the base keeps it or as the pull request does (tools/screening-capacity/
+    // watched.ts; its own test holds the list to the import graph and the push paths to the list).
     const changes = capacity.jobs.changes;
     expect(changes?.['runs-on']).toBe('ubuntu-24.04');
     expect(changes?.permissions).toBeUndefined();
     expect(changes?.outputs).toEqual({ measure: '${{ steps.watched.outputs.measure }}' });
-    expect(changes?.steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
+    expect(changes?.steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
     const watched = changes?.steps.find((step) => (step as Step & { id?: string }).id === 'watched');
     const script = watched?.run ?? '';
-    const patterns = /case "\$file" in\s+([^)]+)\)/.exec(script)?.[1]?.split('|') ?? [];
-    expect(patterns).toEqual(pushPaths.filter((entry) => entry !== 'pnpm-lock.yaml').map((entry) => (entry === 'packages/db/migrations/**' ? 'packages/db/migrations/*screening*.sql' : entry.replace(/\*\*$/, '*'))));
     expect(script).toContain('git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"');
+    expect(script).toContain('list=tools/screening-capacity/watched-paths.txt');
+    // A base with no list measures; the list is read from the base and from the head, so a pull request cannot drop its own path.
+    expect(script).toContain('if ! git cat-file -e "$BASE:$list" 2>/dev/null; then');
+    expect(script).toContain('{ git show "$BASE:$list"; git show "$HEAD:$list" 2>/dev/null || true; }');
+    expect(script).toContain('if [ "$file" = "$pattern" ]; then');
+    expect(script).toMatch(/case "\$file" in\s+\$pattern\)/);
     expect(script).toContain('if [ "$EVENT" != "pull_request" ]; then');
 
     // The measurement: only when the changes say so, on a 4-CPU runner (a public repository's standard one; the 4-core
@@ -551,7 +557,7 @@ describe('workflows', () => {
     expect(measure?.permissions).toBeUndefined();
     const steps = measure?.steps ?? [];
     // Both production images built from their Dockerfiles before the harness runs.
-    const builds = steps.filter((step) => step.uses === 'docker/build-push-action@v6');
+    const builds = steps.filter((step) => step.uses === PINNED.buildPush);
     expect(builds.map((step) => [step.with?.file, step.with?.load, step.with?.tags])).toEqual([
       ['apps/web/Dockerfile', true, 'tp-web:capacity'],
       ['apps/worker/Dockerfile', true, 'tp-worker:capacity'],
@@ -565,20 +571,20 @@ describe('workflows', () => {
     );
     // The scale release: restored, built in a step of its own when missing, and saved straight after, before the
     // measurement, so a failing measurement still caches it.
-    const restore = stepIndex(steps, (step) => step.uses === 'actions/cache/restore@v4');
+    const restore = stepIndex(steps, (step) => step.uses === PINNED.cacheRestore);
     const build = stepIndex(steps, (step) => step.run?.includes('tools/release/scale.ts') === true);
-    const save = stepIndex(steps, (step) => step.uses === 'actions/cache/save@v4');
+    const save = stepIndex(steps, (step) => step.uses === PINNED.cacheSave);
     expect([restore < build, build < save]).toEqual([true, true]);
     expect(steps.some((step) => step.uses === 'actions/cache@v4')).toBe(false);
     expect((steps[build] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
     expect((steps[save] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
     const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
-    expect(stepIndex(steps, (step) => step.uses === 'docker/build-push-action@v6')).toBeLessThan(run);
+    expect(stepIndex(steps, (step) => step.uses === PINNED.buildPush)).toBeLessThan(run);
     expect(save).toBeLessThan(run);
     // The harness on Postgres's CPUs, from the layout itself, never the consumer's.
     expect(steps[run]?.run).toContain('cpus=$(pnpm -s screening:capacity --print-harness-cpus)');
     expect(steps[run]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity');
-    const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
+    const upload = stepIndex(steps, (step) => step.uses === PINNED.uploadArtifact);
     expect(upload).toBe(run + 1);
     expect((steps[upload] as Step & { if?: string }).if).toBe('always()');
     expect(String(steps[upload]?.with?.path).trim().split('\n')).toEqual([
@@ -589,14 +595,18 @@ describe('workflows', () => {
     ]);
     expect(steps[upload]?.with?.['retention-days']).toBe(90);
     // The measuring job's checkout keeps no token: nothing it runs calls GitHub.
-    expect(steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false } });
+    expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
+    // A sizing question (a worst time above 44 s) leaves the job as an output the gate prints as a warning (O9).
+    expect(measure?.outputs).toEqual({ sizing: '${{ steps.measure.outputs.sizing }}' });
+    expect((steps[run] as Step & { id?: string }).id).toBe('measure');
 
-    // The required check: one job, named for the ruleset, that runs whatever the others did unless the run is cancelled,
-    // passes when nothing watched changed and otherwise only on a passing measurement; it checks nothing out.
+    // The required check: one job, named for the ruleset, that runs whatever the others did, a cancelled run included (a
+    // job its condition skips reports success to a required check), passes when nothing watched changed and otherwise
+    // only on a passing measurement; it checks nothing out.
     const gate = capacity.jobs.gate;
     expect(gate?.name).toBe('screening-capacity gate');
     expect(gate?.needs).toEqual(['changes', 'capacity']);
-    expect(gate?.if).toBe('${{ !cancelled() }}');
+    expect(gate?.if).toBe('${{ always() }}');
     expect(gate?.permissions).toBeUndefined();
     expect(gate?.steps.every((step) => step.uses === undefined)).toBe(true);
     const decide = gate?.steps.map((step) => step.run ?? '').join('\n') ?? '';
@@ -604,7 +614,13 @@ describe('workflows', () => {
     expect(decide).toContain('if [ "$MEASURE" != "true" ]; then');
     expect(decide).toContain('if [ "$CAPACITY" != "success" ]; then');
     const decision: Step & { readonly env?: unknown } = gate?.steps[0] ?? {};
-    expect(decision.env).toEqual({ CHANGES: '${{ needs.changes.result }}', MEASURE: '${{ needs.changes.outputs.measure }}', CAPACITY: '${{ needs.capacity.result }}' });
+    expect(decision.env).toEqual({
+      CHANGES: '${{ needs.changes.result }}',
+      MEASURE: '${{ needs.changes.outputs.measure }}',
+      CAPACITY: '${{ needs.capacity.result }}',
+      SIZING: '${{ needs.capacity.outputs.sizing }}',
+    });
+    expect(decide).toContain('echo "::warning title=Sizing question (O9)::$SIZING"');
 
     // The issue: a job of its own, the only one that may write, that needs the measurement, skips pull requests and runs no repository code.
     const notify = capacity.jobs.notify;
@@ -616,6 +632,25 @@ describe('workflows', () => {
     expect(notify?.steps.some((step) => step.uses?.startsWith('actions/checkout') === true)).toBe(false);
     expect(notify?.steps.every((step) => step.uses === undefined)).toBe(true);
     expect(notify?.steps.map((step) => step.run ?? '').join('\n')).toContain('--label screening-capacity');
+  });
+});
+
+describe('the release and capacity workflows\' actions (the review of 2026-10-22)', () => {
+  it('pin every action to a full commit SHA with its version beside it, so no moved tag runs in a job that pushes images or writes the report', () => {
+    for (const name of ['release.yml', 'screening-capacity.yml']) {
+      const lines = readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8')
+        .split('\n')
+        .filter((line) => /^\s*(?:-\s+)?uses:/.test(line));
+      expect(lines.length, name).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line, `${name}: ${line.trim()}`).toMatch(/uses: [\w./-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
+      }
+    }
+    const pinned = new Set(Object.values(PINNED));
+    for (const name of ['release.yml', 'screening-capacity.yml']) {
+      const used = [...readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8').matchAll(/uses: ([\w./-]+@[0-9a-f]{40})/g)].map((match) => match[1] ?? '');
+      expect(used.filter((ref) => !ref.startsWith('aquasecurity/trivy-action@') && !pinned.has(ref as (typeof PINNED)[keyof typeof PINNED])), name).toEqual([]);
+    }
   });
 });
 

@@ -527,10 +527,46 @@ function cgroupVersion(): CgroupVersion {
   return existsSync('/sys/fs/cgroup/cgroup.controllers') ? 2 : 1;
 }
 
-/** The images' layout of the build outputs, under a directory: worker/dist and worker/migrations, web/ the standalone server. */
+/**
+ * The images' layout of the build outputs, under a directory, as the Dockerfiles lay them out: worker/dist,
+ * worker/migrations and worker/node_modules/playwright-core (apps/worker/Dockerfile installs it beside the bundle, which
+ * imports it at its top, at the version apps/worker/package.json pins: `npm install --no-save playwright-core@<version>`
+ * in worker/), and web/ the standalone server with its static files and public.
+ */
 export interface ProcessImages {
   readonly worker: string;
   readonly web: string;
+}
+
+/** The playwright-core version the worker image installs beside its bundle (apps/worker/package.json, as the Dockerfile pins it). */
+export function workerPlaywrightVersion(root: string = path.resolve(import.meta.dirname, '../..')): string {
+  const manifest = JSON.parse(readFileSync(path.join(root, 'apps/worker/package.json'), 'utf8')) as { dependencies?: Record<string, string> };
+  return manifest.dependencies?.['playwright-core'] ?? '';
+}
+
+/**
+ * What the process runtime's layout lacks of what the images hold, each by its path, or nothing: without
+ * playwright-core every worker process stops as it loads its bundle, and the run stopped with PLATFORM_NOT_READY (the
+ * integrator's first smoke run), which said nothing of why.
+ */
+export function processImagesProblems(images: ProcessImages, playwrightVersion: string = workerPlaywrightVersion()): string[] {
+  const problems: string[] = [];
+  for (const needed of ['dist/main.js', 'dist/screening-thread.js', 'dist/migrate.js', 'dist/logins.js', 'migrations']) {
+    if (!existsSync(path.join(images.worker, needed))) {
+      problems.push(`${path.join(images.worker, needed)} is missing (pnpm --filter @tp/worker build, then copy dist and packages/db/migrations)`);
+    }
+  }
+  const playwright = path.join(images.worker, 'node_modules/playwright-core/package.json');
+  const installed = existsSync(playwright) ? (JSON.parse(readFileSync(playwright, 'utf8')) as { version?: string }).version : undefined;
+  if (installed !== playwrightVersion) {
+    problems.push(
+      `${path.join(images.worker, 'node_modules/playwright-core')} is ${installed === undefined ? 'missing' : `at ${installed}`}, not ${playwrightVersion}, which the worker image installs beside its bundle (npm install --no-save playwright-core@${playwrightVersion} in ${images.worker})`,
+    );
+  }
+  if (!existsSync(path.join(images.web, 'apps/web/server.js'))) {
+    problems.push(`${path.join(images.web, 'apps/web/server.js')} is missing (the web's standalone server, with .next/static and public beside it)`);
+  }
+  return problems;
 }
 
 export class ProcessRuntime implements Runtime {
