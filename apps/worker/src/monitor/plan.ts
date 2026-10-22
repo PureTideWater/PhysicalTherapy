@@ -1,4 +1,4 @@
-import { type LocationStatus, PricingRefusedError, isLocationStatus } from '@tp/contracts';
+import { LOCATION_NOT_READY_STATUSES, type LocationStatus, PricingRefusedError, isLocationStatus } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 
 import { PricingLocationWaiting, PricingRunInputError, createPricingRun } from '../price/create';
@@ -25,8 +25,8 @@ import { currentReleaseNo } from '../price/release';
  *    and while the newest run of that exact month failed location_not_ready (a line needed a ZIP+4, or a
  *    ZIP or ZIP+4 Medicare's list does not hold; never a gap in the content such as no_locality_plus_four,
  *    whose run completes with the line ENGINE_ERROR for the operator) under the release in force, covering
- *    the month's newest line, and was created at or after the location was last saved
- *    (waitingOnLocation). So such a month is not priced
+ *    the month's newest line, and was created at or after the location was last saved, while the location still
+ *    reads as one a line cannot price at (waitingOnLocation). So such a month is not priced
  *    again every day: saving the location (which queues this step by its request) or a new release in force
  *    plans it again. Each waiting month is listed with its location's status.
  *
@@ -111,11 +111,19 @@ export async function uncoveredMonths(client: ScopeClient, practiceId: string): 
   return rows.map((row) => ({ periodFrom: row.period_from, periodTo: row.period_to }));
 }
 
+/** The statuses at which a month whose run failed location_not_ready still cannot price, so it waits with no new run. */
+const STILL_WAITING: readonly LocationStatus[] = ['zip_missing', ...LOCATION_NOT_READY_STATUSES];
+
 /**
  * Whether an uncovered month waits on the practice's location with no new run: the newest run of exactly that month
  * failed location_not_ready, under `releaseNo` (the release in force), its cut-off at or after the month's newest line
- * (the same lines as uncoveredMonths()), and was created at or after the practice's location was last saved. A save of
- * the location, a new release in force or a newer line plans it again.
+ * (the same lines as uncoveredMonths()), and was created at or after the practice's location was last saved; and the
+ * location's status over the month, as it reads now, is still one at which a line cannot price. The last condition is
+ * what decides: a run created while a save was still open has a created_at later than the save's updated_at (both are
+ * their transaction's start) yet read the old location, so the times alone never prove a run saw the saved location. A
+ * month whose location is now ready, or waits on content PaidWhole loads (locality_not_loaded), is always planned; that
+ * starts no daily loop, since a run at such a status never fails location_not_ready. A save of the location, a new
+ * release in force or a newer line plans it again.
  */
 export async function waitingOnLocation(client: ScopeClient, practiceId: string, month: PlannedMonth, releaseNo: number): Promise<boolean> {
   const { rows } = await client.query<{ waits: boolean }>(
@@ -132,9 +140,10 @@ export async function waitingOnLocation(client: ScopeClient, practiceId: string,
      )
      SELECT coalesce(r.status = 'failed' AND r.failure_code = 'location_not_ready' AND r.release_no = $4
                      AND r.cut_off >= (SELECT n.at FROM newest n)
-                     AND r.created_at >= (SELECT s.updated_at FROM practice_site s WHERE s.practice_id = $1), false) AS waits
+                     AND r.created_at >= (SELECT s.updated_at FROM practice_site s WHERE s.practice_id = $1)
+                     AND practice_location_status($1, $4, $2::date, $3::date) = ANY ($5::text[]), false) AS waits
        FROM last_run r`,
-    [practiceId, month.periodFrom, month.periodTo, releaseNo],
+    [practiceId, month.periodFrom, month.periodTo, releaseNo, STILL_WAITING],
   );
   return rows[0]?.waits ?? false;
 }

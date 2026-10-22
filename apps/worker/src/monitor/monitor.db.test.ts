@@ -678,6 +678,36 @@ describe('PRC-23: months that wait on the practice’s pricing location (audit #
     ]);
   });
 
+  it('plans a waiting month again once the location is ready, when its failed run was created during the save and read the old location', async () => {
+    const practice = await medicareMonth('LOC-RACE');
+    expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');
+    // A person's save of a ready ZIP begins (its practice_site.updated_at is this transaction's start) and is still open.
+    const save = await w.app.connect();
+    try {
+      await save.query('BEGIN');
+      await save.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [practice.manager, `{${practice.practiceId}}`]);
+      expect((await save.query<{ status: string }>("SELECT practice_set_location($1, '00011', NULL) AS status", [practice.practiceId])).rows).toEqual([{ status: 'ready' }]);
+      // Meanwhile a daily plan creates February's run, later than the save's start, and its price job reads the old location.
+      const c = await chain();
+      try {
+        await daily(c, practice);
+        expect(await ran(c)).toEqual([
+          ['monitor', 'succeeded'],
+          ['price', 'succeeded'],
+        ]);
+      } finally {
+        await c.worker.stop();
+      }
+      expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
+      await save.query('COMMIT');
+    } finally {
+      save.release();
+    }
+    // The location is now ready: the month is planned again, whatever the failed run's time says.
+    const plan = await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID()));
+    expect(plan).toMatchObject({ outcome: 'planned', created: [MONTH], waitingOnLocation: [] });
+  });
+
   it('plans a waiting month again once a new release is in force (last in the file: it publishes release 900004)', async () => {
     const practice = await medicareMonth('LOC-RELEASE');
     expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');
