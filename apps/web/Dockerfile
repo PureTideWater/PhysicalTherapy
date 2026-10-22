@@ -4,7 +4,7 @@
 #   docker build -f apps/web/Dockerfile --build-arg STATIC_ASSET_ORIGIN=https://<StaticDomainName> -t tp-web .
 # Without it, pages load their assets from the application's own host.
 
-FROM node:24-slim AS build
+FROM node:25-slim AS build
 ARG STATIC_ASSET_ORIGIN=""
 ENV NEXT_TELEMETRY_DISABLED=1 \
     STATIC_ASSET_ORIGIN=${STATIC_ASSET_ORIGIN}
@@ -14,7 +14,7 @@ COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/web..."
 RUN pnpm --filter @tp/web build
 
-FROM node:24-slim AS runtime
+FROM node:25-slim AS runtime
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
