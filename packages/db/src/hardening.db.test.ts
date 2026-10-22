@@ -5,7 +5,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { withActor, withPracticeScope } from './authz';
 import { readDatabaseUrl } from './config';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from './testing';
+import {
+  type MigratedDatabase,
+  type TenantWorld,
+  addMembership,
+  asOwner,
+  createMigratedDatabase,
+  createOrganization,
+  createPracticeWithLocation,
+  createTenantWorld,
+  createUser,
+  endPool,
+} from './testing';
 
 /**
  * The rules migration 20261015180000 adds after the milestone 1 review, each against the application
@@ -320,7 +331,7 @@ describe('practices', () => {
       code(
         (async () => {
           const id = randomUUID();
-          await asOwner(owner, [id], () => owner.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC', 'local:v1:AAAA')", [id, organizationId]));
+          await asOwner(owner, [id], () => createPracticeWithLocation(owner, { id, organizationId, name: 'SYNTHETIC', dataKeyRef: 'local:v1:AAAA' }));
         })(),
       );
     const empty = await createOrganization(owner, 'group', 'empty');

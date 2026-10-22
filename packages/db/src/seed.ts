@@ -3,14 +3,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { KeyProvider } from './crypto/key-provider';
 import { provisionPracticeKey } from './crypto/practice-keys';
 import type { MembershipRole } from './schema/tenancy';
-import { type OwnerClient, asOwner } from './tenant-world';
+import { type OwnerClient, asOwner, createPracticeWithLocation } from './tenant-world';
 
 /**
  * The synthetic tenancy `pnpm db:seed` writes for development and the e2e tests (synthetic only;
  * never a real organization, practice or person):
  *
- * - SYNTHETIC THERAPY GROUP owning two practices (North and South), each with its BAA and engagement
- *   letter recorded by reference and SHA-256;
+ * - SYNTHETIC THERAPY GROUP owning two practices (North and South), each with its pricing location (billing ZIP
+ *   27601) and its BAA and engagement letter recorded by reference and SHA-256;
  * - SYNTHETIC OTHER GROUP owning a third practice, for cross-tenant checks;
  * - SYNTHETIC BILLING FIRM with an engagement letter and a grant to North approved by North's
  *   practice administrator (all firm roles, 90 days);
@@ -104,7 +104,8 @@ export async function seedSyntheticTenancy(client: OwnerClient, people: readonly
     const id = practices[practice];
     const key = await provisionPracticeKey(keys, id);
     await asOwner(client, [id], async () => {
-      await client.query("INSERT INTO practice (id, organization_id, name, zip, data_key_ref) VALUES ($1, $2, $3, '27601', $4)", [id, organizations[owning[practice]], names[practice], key.dataKeyRef]);
+      // The practice with its pricing location (practice_site; practice.zip is deprecated): ZIP 27601, as before.
+      await createPracticeWithLocation(client, { id, organizationId: organizations[owning[practice]], name: names[practice], dataKeyRef: key.dataKeyRef, zip: '27601' });
       for (const kind of ['baa', 'engagement'] as const) {
         await client.query(
           `INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256)

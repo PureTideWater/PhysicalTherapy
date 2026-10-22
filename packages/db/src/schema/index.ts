@@ -303,6 +303,7 @@ export { REPORT_DOCUMENT_KINDS, REPORT_DOCUMENT_STATUSES, type ReportDocumentKin
 export { type RuleRecordRow, type RuleReleaseRow, type RuleReleaseWithdrawalRow, ruleRecord, ruleRelease, ruleReleaseWithdrawal } from './rules';
 export {
   type MarketingCampaignRow,
+  type PlaceOfServiceSplitRow,
   SCREENING_DAYS,
   SCREENING_DISPOSITIONS,
   SCREENING_LEAD_MONTHS,
@@ -316,7 +317,6 @@ export {
   type ScreeningOutcomeRow,
   type ScreeningOutcomeStage,
   type ScreeningPayerProduct,
-  type ScreeningPlaceOfServiceSplitRow,
   type ScreeningProspectRow,
   type ScreeningResultRow,
   type ScreeningRunRow,
@@ -324,10 +324,10 @@ export {
   type ScreeningUploadRow,
   type ScreeningUploadStatus,
   marketingCampaign,
+  placeOfServiceSplit,
   screeningLead,
   screeningLeadProduct,
   screeningOutcome,
-  screeningPlaceOfServiceSplit,
   screeningProspect,
   screeningResult,
   screeningRun,
@@ -349,6 +349,7 @@ export {
   type PhiTableRegistryRow,
   type PracticeRow,
   type PracticeSettings,
+  type PracticeSiteRow,
   type SupportGrantRow,
   USER_STATUSES,
   type UserRow,
@@ -359,6 +360,7 @@ export {
   organization,
   phiTableRegistry,
   practice,
+  practiceSite,
   supportGrant,
   user,
 } from './tenancy';

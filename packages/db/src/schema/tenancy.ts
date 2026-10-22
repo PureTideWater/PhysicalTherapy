@@ -84,6 +84,10 @@ export const practice = pgTable(
     taxIdLast4: text('tax_id_last4'),
     npi: text('npi'),
     localityCode: text('locality_code'),
+    /**
+     * Deprecated by practice_site (migrations/20261105090000; ADR 0064): never read or written, and the application
+     * role may not insert or update it. Kept with its backfilled value until the multi-site pull request drops it.
+     */
     zip: text('zip'),
     settings: jsonb('settings').$type<PracticeSettings>().notNull().default({}),
     dataKeyRef: text('data_key_ref'),
@@ -94,6 +98,33 @@ export const practice = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [index('practice_by_organization').on(table.organizationId)],
+);
+
+/**
+ * The practice's pricing location (migrations/20261105090000_pricing_location_and_zip_plus_four.sql; audit #16's
+ * minimal record and #33; ADR 0064): its billing ZIP and, where Medicare's locality list needs it, the ZIP+4. One per
+ * practice, undated (the founder's answer to PR 6b's Q2 (a)); a practice is created with it in the same transaction
+ * (the deferred check practice_has_site), and it is never deleted. Registered and forced like every table with a NOT
+ * NULL practice_id, though it holds no PHI. The application role reads it in a practice's scope and writes it only
+ * through practice_set_location() and the console's console_set_practice_location().
+ */
+export const practiceSite = pgTable(
+  'practice_site',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    practiceId: uuid('practice_id')
+      .notNull()
+      .references(() => practice.id),
+    /** Five digits. */
+    zip: text('zip').notNull(),
+    /** Four digits, for a ZIP whose locality_map record needs them; null otherwise. */
+    zipPlusFour: text('zip_plus_four'),
+    /** The person who last set it; null when backfilled from practice.zip. */
+    updatedBy: uuid('updated_by').references(() => user.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [uniqueIndex('practice_site_one_per_practice').on(table.practiceId)],
 );
 
 export const membership = pgTable(
@@ -204,6 +235,7 @@ export const phiTableRegistry = pgTable('phi_table_registry', {
 export type OrganizationRow = typeof organization.$inferSelect;
 export type UserRow = typeof user.$inferSelect;
 export type PracticeRow = typeof practice.$inferSelect;
+export type PracticeSiteRow = typeof practiceSite.$inferSelect;
 export type MembershipRow = typeof membership.$inferSelect;
 export type AgreementRow = typeof agreement.$inferSelect;
 export type GrantRow = typeof grant.$inferSelect;

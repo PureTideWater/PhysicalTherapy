@@ -15,10 +15,11 @@ import { user } from './tenancy';
 /**
  * The free screening layer (Change Order 001, CO-04 and CO-12; reconciliation-001 D18 to D21; docs/adr/0062),
  * mirroring migrations/20261104090000_free_screening.sql for typed queries. None holds PHI and none has a
- * practice_id: a prospect's practice name, state, ZIP and contact address; an upload's row count and rejection
- * reasons (codes, column positions and kinds, never a header or a cell), and for an accepted one the SHA-256 of the
- * rows the server accepted (never of the file); the place-of-service split a
- * contract specialist approves; a run pinned to a release and a split; and one aggregate row per uploaded row with
+ * practice_id: a prospect's practice name, state, ZIP (with its ZIP+4 only where Medicare's locality list needs it)
+ * and contact address; an upload's row count and rejection reasons (codes, column positions and kinds, never a header
+ * or a cell), and for an accepted one the SHA-256 of the rows the server accepted (never of the file); the
+ * place-of-service split a contract specialist approves (place_of_service_split since migrations/20261105090000, every
+ * practice's default too); a run pinned to a release and a split; and one aggregate row per uploaded row with
  * the engine's figures. Row-level security is forced on every one with the owner's policy only; the application and
  * operator roles reach them through the SECURITY DEFINER functions alone. A screening's prospect, upload, run and rows
  * expire 30 days after its upload, and an accepted screening goes sooner when a later one of the same practice
@@ -59,7 +60,7 @@ export const screeningProspect = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     practiceName: text('practice_name').notNull(),
     state: text('state').notNull(),
-    /** Five digits; no ZIP+4 (the engine takes a five-digit ZIP alone, so a ZIP that needs its ZIP+4 is refused). */
+    /** Five digits; the ZIP+4, where Medicare needs it, is zipPlusFour. */
     zip: text('zip').notNull(),
     contactEmail: text('contact_email').notNull(),
     /** How the prospect heard of PaidWhole (PROSPECT_SOURCES), or none. */
@@ -79,6 +80,11 @@ export const screeningProspect = pgTable(
     screeningTermsSha256: text('screening_terms_sha256'),
     createdAt: createdAt(),
     expiresAt: expiresAt(),
+    /**
+     * The ZIP+4's four digits, kept only when the ZIP's locality_map record in the release in force needs them, and
+     * deleted with the prospect (migrations/20261105090000; ADR 0064); null otherwise.
+     */
+    zipPlusFour: text('zip_plus_four'),
   },
   (table) => [
     index('screening_prospect_by_expiry').on(table.expiresAt),
@@ -114,12 +120,28 @@ export const screeningUpload = pgTable(
     leftOutAllowedCents: bigint('left_out_allowed_cents', { mode: 'bigint' }).notNull().default(0n),
     createdAt: createdAt(),
     expiresAt: expiresAt(),
+    /**
+     * The Medicare rows the browser left out because their quarter is outside the release's loaded content
+     * (rule_release_content_span(); audit #7, the founder's answer to PR 6b's Q6 (a)): how many, their claim lines and
+     * their allowed total, counted after the floor's. Never which rows; zero on a rejected upload; never copied to a
+     * kept summary or an outcome (migrations/20261105090000).
+     */
+    outsideContentRows: integer('outside_content_rows').notNull().default(0),
+    outsideContentClaimLines: bigint('outside_content_claim_lines', { mode: 'bigint' }).notNull().default(0n),
+    outsideContentAllowedCents: bigint('outside_content_allowed_cents', { mode: 'bigint' }).notNull().default(0n),
   },
   (table) => [index('screening_upload_by_prospect').on(table.prospectId)],
 );
 
-export const screeningPlaceOfServiceSplit = pgTable(
-  'screening_place_of_service_split',
+/**
+ * The place-of-service split a contract specialist approves (rate_record.approve), append-only, the latest approval in
+ * force: the free screening's split since migrations/20261104090000 and, since migrations/20261105090000 (PR 6b; ADR
+ * 0064), every practice's default for a place it has not set, pinned on each pricing run
+ * (pricing_run.place_of_service_split_id). Renamed from screening_place_of_service_split; the approval's audit action
+ * and object type keep the old names.
+ */
+export const placeOfServiceSplit = pgTable(
+  'place_of_service_split',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     settings: jsonb('settings').$type<Readonly<Record<string, 'facility' | 'non_facility'>>>().notNull(),
@@ -128,7 +150,7 @@ export const screeningPlaceOfServiceSplit = pgTable(
       .references(() => user.id),
     approvedAt: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('screening_place_of_service_split_in_force').on(table.approvedAt.desc(), table.id.desc())],
+  (table) => [index('place_of_service_split_in_force').on(table.approvedAt.desc(), table.id.desc())],
 );
 
 export const screeningRun = pgTable(
@@ -144,7 +166,7 @@ export const screeningRun = pgTable(
     releaseManifestSha256: text('release_manifest_sha256').notNull(),
     placeOfServiceSplitId: uuid('place_of_service_split_id')
       .notNull()
-      .references(() => screeningPlaceOfServiceSplit.id),
+      .references(() => placeOfServiceSplit.id),
     rowCount: integer('row_count').notNull(),
     status: text('status', { enum: SCREENING_RUN_STATUSES }).notNull().default('queued'),
     attempts: integer('attempts').notNull().default(0),
@@ -358,7 +380,7 @@ export const screeningLeadProduct = pgTable(
 
 export type ScreeningProspectRow = typeof screeningProspect.$inferSelect;
 export type ScreeningUploadRow = typeof screeningUpload.$inferSelect;
-export type ScreeningPlaceOfServiceSplitRow = typeof screeningPlaceOfServiceSplit.$inferSelect;
+export type PlaceOfServiceSplitRow = typeof placeOfServiceSplit.$inferSelect;
 export type ScreeningRunRow = typeof screeningRun.$inferSelect;
 export type ScreeningResultRow = typeof screeningResult.$inferSelect;
 export type MarketingCampaignRow = typeof marketingCampaign.$inferSelect;

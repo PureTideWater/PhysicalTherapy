@@ -100,6 +100,7 @@ describe('the catalog test', () => {
       { table_name: 'plan', policy_name: 'plan_tenant' },
       { table_name: 'posting_row', policy_name: 'posting_row_tenant' },
       { table_name: 'practice', policy_name: 'practice_tenant' },
+      { table_name: 'practice_site', policy_name: 'practice_site_tenant' },
       { table_name: 'priced_line', policy_name: 'priced_line_tenant' },
       { table_name: 'pricing_run', policy_name: 'pricing_run_tenant' },
       { table_name: 'provider_adjustment', policy_name: 'provider_adjustment_tenant' },
@@ -151,6 +152,7 @@ describe('the catalog test', () => {
       { table: 'plan', tenantColumn: 'practice_id' },
       { table: 'posting_row', tenantColumn: 'practice_id' },
       { table: 'practice', tenantColumn: 'id' },
+      { table: 'practice_site', tenantColumn: 'practice_id' },
       { table: 'priced_line', tenantColumn: 'practice_id' },
       { table: 'pricing_run', tenantColumn: 'practice_id' },
       { table: 'provider_adjustment', tenantColumn: 'practice_id' },
@@ -279,6 +281,7 @@ describe('the catalog test', () => {
       ['end_support_grant(uuid)', 'narrows'],
       ['console_contract_queue()', 'counts'],
       ['console_set_practice_settings(uuid,text,jsonb)', 'narrows'],
+      ['console_set_practice_location(uuid,text,text)', 'narrows'],
       ['console_release_runs()', 'counts'],
       ['console_model_spend(date)', 'counts'],
     ]);

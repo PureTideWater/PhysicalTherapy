@@ -13,6 +13,7 @@ import {
   asOwner,
   createMigratedDatabase,
   createOrganization,
+  createPracticeWithLocation,
   createTenantWorld,
   createUser,
   endPool,
@@ -367,9 +368,7 @@ describe('a practice always keeps a practice administrator', () => {
     const group = await createOrganization(owner, 'group');
     const practiceId = randomUUID();
     const create = () =>
-      asOwner(owner, [practiceId], () =>
-        owner.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC NEW PRACTICE', 'local:v1:AAAA')", [practiceId, group]),
-      );
+      asOwner(owner, [practiceId], () => createPracticeWithLocation(owner, { id: practiceId, organizationId: group, name: 'SYNTHETIC NEW PRACTICE', dataKeyRef: 'local:v1:AAAA' }));
     await expect(create()).rejects.toThrow(/a practice always has an administrator/);
     const invited = await createUser(owner, { status: 'invited', mfaEnrolled: false });
     await addMembership(owner, group, invited, 'practice_admin');
@@ -401,7 +400,7 @@ describe('organizations and roles', () => {
     const firm = await createOrganization(owner, 'firm');
     const practiceId = randomUUID();
     await expect(
-      asOwner(owner, [practiceId], () => owner.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC', 'local:v1:AAAA')", [practiceId, firm])),
+      asOwner(owner, [practiceId], () => createPracticeWithLocation(owner, { id: practiceId, organizationId: firm, name: 'SYNTHETIC', dataKeyRef: 'local:v1:AAAA' })),
     ).rejects.toThrow(/owned by a practice group/);
     await expect(asOwner(owner, [], () => owner.query("UPDATE organization SET kind = 'internal' WHERE id = $1", [firm]))).rejects.toThrow(/fixed at creation/);
   });

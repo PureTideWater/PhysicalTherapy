@@ -84,9 +84,38 @@ export function placeholderDataKeyRef(): string {
   return `local:v1:${randomBytes(48).toString('base64')}`;
 }
 
+export interface PracticeWithLocation {
+  readonly id: string;
+  /** The owning practice group (null is refused by the database: a practice always has one). */
+  readonly organizationId: string | null;
+  readonly name: string;
+  /** The practice's wrapped data key; a placeholder when left out. */
+  readonly dataKeyRef?: string;
+  /** The billing ZIP: 00011 by default, the SYNTHETIC releases' ZIP that needs no ZIP+4. */
+  readonly zip?: string;
+  readonly zipPlusFour?: string | null;
+  readonly settings?: Readonly<Record<string, unknown>>;
+}
+
 /**
- * A practice group, its practice, an active practice administrator with MFA, and the practice's BAA:
- * the smallest tenant the policies treat as real.
+ * Inserts a practice and its pricing location (practice_site) in the caller's transaction, as the owner role inside
+ * a scope that holds the practice: since migration 20261105090000 every practice is created with its location, which
+ * the database checks at commit (practice_has_site; audit #33). Synthetic data only.
+ */
+export async function createPracticeWithLocation(client: OwnerClient, practice: PracticeWithLocation): Promise<void> {
+  await client.query('INSERT INTO practice (id, organization_id, name, data_key_ref, settings) VALUES ($1, $2, $3, $4, $5)', [
+    practice.id,
+    practice.organizationId,
+    practice.name,
+    practice.dataKeyRef ?? placeholderDataKeyRef(),
+    JSON.stringify(practice.settings ?? {}),
+  ]);
+  await client.query('INSERT INTO practice_site (practice_id, zip, zip_plus_four) VALUES ($1, $2, $3)', [practice.id, practice.zip ?? '00011', practice.zipPlusFour ?? null]);
+}
+
+/**
+ * A practice group, its practice with its pricing location (ZIP 00011), an active practice administrator with MFA,
+ * and the practice's BAA: the smallest tenant the policies treat as real.
  */
 export async function createTenantWorld(client: OwnerClient, label: string): Promise<TenantWorld> {
   const organizationId = await createOrganization(client, 'group', label);
@@ -95,12 +124,7 @@ export async function createTenantWorld(client: OwnerClient, label: string): Pro
   const practiceId = randomUUID();
   const agreementId = randomUUID();
   await asOwner(client, [practiceId], async () => {
-    await client.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [
-      practiceId,
-      organizationId,
-      `SYNTHETIC PRACTICE ${label.toUpperCase()}`,
-      placeholderDataKeyRef(),
-    ]);
+    await createPracticeWithLocation(client, { id: practiceId, organizationId, name: `SYNTHETIC PRACTICE ${label.toUpperCase()}` });
     await client.query(
       `INSERT INTO agreement (id, organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256)
        VALUES ($1, $2, $3, 'baa', '1', now(), 'SYNTHETIC SIGNER', $4, $5)`,

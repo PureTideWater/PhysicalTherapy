@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withJobScope, withPracticeScope } from './authz';
 import { readDatabaseUrl } from './config';
 import { DOCUMENT_KINDS, ERA_FORMAT_IDS, documentObjectKey } from './schema';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from './testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createPracticeWithLocation, createTenantWorld, createUser, endPool } from './testing';
 
 /**
  * The rules of migrations 20261016090000 (source_document, payer, plan), 20261017090000 (the malware
@@ -41,9 +41,7 @@ beforeAll(async () => {
   manager = await createUser(owner);
   await addMembership(owner, north.organizationId, manager, 'billing_manager');
   unsigned = randomUUID();
-  await asOwner(owner, [unsigned], () =>
-    owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [unsigned, north.organizationId, 'SYNTHETIC UNSIGNED PRACTICE', placeholderDataKeyRef()]),
-  );
+  await asOwner(owner, [unsigned], () => createPracticeWithLocation(owner, { id: unsigned, organizationId: north.organizationId, name: 'SYNTHETIC UNSIGNED PRACTICE' }));
 });
 
 afterAll(async () => {
@@ -99,7 +97,7 @@ describe('source_document', () => {
   it('counts only a BAA the practice’s own group signed, for the practice or the whole group', async () => {
     const practiceId = randomUUID();
     await asOwner(owner, [practiceId], async () => {
-      await owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [practiceId, north.organizationId, 'SYNTHETIC SECOND PRACTICE', placeholderDataKeyRef()]);
+      await createPracticeWithLocation(owner, { id: practiceId, organizationId: north.organizationId, name: 'SYNTHETIC SECOND PRACTICE' });
       await owner.query(
         `INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256) VALUES ($1, $2, 'engagement', '1', now(), 'SYNTHETIC SIGNER', 'esign:synthetic-e', $3)`,
         [north.organizationId, practiceId, sha()],
