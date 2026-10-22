@@ -348,6 +348,16 @@ describe('step 2, the locality of a ZIP that needs its ZIP+4 (PRC-21; docs/adr/0
       expect(line.trace.steps.fee_schedule?.gpci).toBeNull();
       expect(line.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'zip_plus_four_not_in_locality_map', step: 'fee_schedule' });
     }
+    // A code below the first range's start is in no range either.
+    const fromOne = releaseVariant(plusFourBase, (records) =>
+      records.map((record) =>
+        record.record_type === 'locality_map_plus_four'
+          ? ruleRecordLike(record, { value: { ...(record.value as object), ranges: (record.value as { ranges: { from: string }[] }).ranges.map((range, index) => (index === 0 ? { ...range, from: '1000' } : range)) } })
+          : record,
+      ),
+    );
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0999'), fromOne))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '1000'), fromOne))).toBe('priced');
     // An operator looks at it: the detail is not one of the review details.
     expect(pagesOperator('zip_plus_four_not_in_locality_map')).toBe(true);
     expect(REVIEW_DETAILS).toEqual(['claim_status_not_priced', 'mppr_needs_fee_schedule']);
@@ -862,7 +872,14 @@ describe('step 8, the dispute window', () => {
 
 describe('inputs the engine refuses', () => {
   it('is ENGINE_ERROR for settings it cannot read', () => {
-    const settings = [practiceSettings({ zip: '1234' }), practiceSettings({ defaultRounding: 'NEAREST' as never }), practiceSettings({ placeOfServiceSettings: { '1': 'facility' } }), practiceSettings({ placeOfServiceSettings: { '11': 'clinic' as never } })];
+    const settings = [
+      practiceSettings({ zip: '1234' }),
+      practiceSettings({ defaultRounding: 'NEAREST' as never }),
+      practiceSettings({ placeOfServiceSettings: { '1': 'facility' } }),
+      practiceSettings({ placeOfServiceSettings: { '11': 'clinic' as never } }),
+      // One bad place among good ones.
+      practiceSettings({ placeOfServiceSettings: { '11': 'non_facility', '22': 'clinic' as never } }),
+    ];
     for (const setting of settings) {
       expect(reasonOf(priceOne({}, { settings: setting }))).toBe('ENGINE_ERROR invalid_settings');
     }

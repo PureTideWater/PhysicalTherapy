@@ -234,6 +234,18 @@ describe('recompute(trace)', () => {
     // Without the ZIP+4 step a flagged ZIP's line has no locality, and the GPCI no longer follows from the ZIP5 record.
     expect(tampered((trace) => delete locality(trace).plus_four)).toEqual(['locality ZIP+4', 'GPCI record key']);
     expect(tampered((trace) => (locality(trace).plus_four_required = false))).toEqual(['locality ZIP+4']);
+    // What each check says, in full.
+    const said = (change: (trace: PricingTrace) => void): string[] => {
+      const trace = stored(first);
+      change(trace);
+      return [...recompute(trace).differences];
+    };
+    expect(said((trace) => delete locality(trace).plus_four)).toContain('locality ZIP+4: the trace records decided by the ZIP+4, the recomputation gives required');
+    expect(said((trace) => delete trace.settings.zip_plus_four)).toEqual(['ZIP+4 against the settings: the trace records (none), the recomputation gives 5000']);
+    expect(said((trace) => (split(trace).to = '4999'))).toEqual(['ZIP+4 in its range: the trace records inside, the recomputation gives outside']);
+    expect(said((trace) => (split(trace).record.effective_to = '2026-01-31'))).toEqual(['ZIP+4 record window: the trace records covers the service date, the recomputation gives does not']);
+    expect(said((trace) => (locality(trace).plus_four_unlisted = split(trace).record))).toEqual(['ZIP+4 range not listed: the trace records none recorded, the recomputation gives recorded on a priced line']);
+    expect(said((trace) => (locality(trace).record.effective_to = '2026-01-31'))).toEqual(['locality record window: the trace records covers the service date, the recomputation gives does not']);
     // Only the plus-four record decides, and a priced line never records a ZIP+4 file without its range.
     expect(tampered((trace) => (split(trace).record.record_type = 'locality_map'))).toEqual(['ZIP+4 record type']);
     expect(tampered((trace) => (locality(trace).plus_four_unlisted = split(trace).record))).toEqual(['ZIP+4 range not listed']);
