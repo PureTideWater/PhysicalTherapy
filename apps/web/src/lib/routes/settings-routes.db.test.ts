@@ -181,6 +181,9 @@ function ok<R>(outcome: Outcome<R>): R {
 
 const P = () => ({ practiceId });
 
+/** The confirm form as Pricing settings posts it: the box, and the ZIP and ZIP+4 the page showed (blank: none). */
+const confirmForm = (shownZip: string, shownZipPlusFour = '') => ({ confirm: 'on', shownZip, shownZipPlusFour });
+
 function jobContext(): JobContext {
   const jobId = randomUUID();
   return {
@@ -261,7 +264,7 @@ describe('the location and its status, for everyone who opens the practice', () 
     // A viewer and an analyst are refused both actions, and nothing is written.
     for (const refused of [viewer, analyst]) {
       expect((await call(setPricingLocationAction, refused, P(), { zip: '00012' })).status).toBe('forbidden');
-      expect((await call(confirmPricingLocationAction, refused, P(), { confirm: 'on' })).status).toBe('forbidden');
+      expect((await call(confirmPricingLocationAction, refused, P(), confirmForm('00011'))).status).toBe('forbidden');
     }
     expect((await owner.query('SELECT zip FROM practice_site WHERE practice_id = $1', [practiceId])).rows).toEqual([{ zip: '00011' }]);
     expect(queue.jobs).toEqual([]);
@@ -271,7 +274,10 @@ describe('the location and its status, for everyone who opens the practice', () 
     for (const zip of ['', '2760', '27601-12', '27601 1234', 'ZIP 00011']) {
       expect(await call(setPricingLocationAction, manager, P(), { zip }), zip).toEqual({ status: 'invalid', issues: [{ field: 'zip', message: 'five digits, or ZIP+4 such as 27601-1234' }] });
     }
-    expect(await call(confirmPricingLocationAction, manager, P(), {})).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
+    expect(await call(confirmPricingLocationAction, manager, P(), { shownZip: '00011', shownZipPlusFour: '' })).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
+    // The location the page showed travels with the confirmation, in its shapes (a tampered form names its field).
+    expect(await call(confirmPricingLocationAction, manager, P(), { confirm: 'on' })).toMatchObject({ status: 'invalid', issues: [{ field: 'shownZip' }] });
+    expect(await call(confirmPricingLocationAction, manager, P(), confirmForm('0001', '12a4'))).toMatchObject({ status: 'invalid', issues: [{ field: 'shownZip' }, { field: 'shownZipPlusFour' }] });
     const client = await app.connect();
     try {
       await client.query('BEGIN');
@@ -294,7 +300,7 @@ describe('Getting started: "Confirm your billing ZIP"', () => {
     // Created with the practice, by no person of it: not confirmed yet.
     expect(await billingZipStep()).toBe(false);
     expect(ok(await call(pricingSettingsPage, world.adminUserId, P())).confirmed).toBe(false);
-    const confirmed = ok(await call(confirmPricingLocationAction, world.adminUserId, P(), { confirm: 'on' }));
+    const confirmed = ok(await call(confirmPricingLocationAction, world.adminUserId, P(), confirmForm('00011')));
     expect(confirmed).toEqual({ objectId: practiceId, redirect: `/p/${practiceId}/settings/pricing?notice=confirmed` });
     expect(await billingZipStep()).toBe(true);
     expect((await owner.query("SELECT actor_id, object_type, object_id FROM audit_event WHERE action = 'pricing_location_confirmed'")).rows).toEqual([
@@ -318,7 +324,7 @@ async function changedByThePlatform(): Promise<void> {
 describe('the confirmation, as every role that may give it (review of PR 6b-2, findings 1 and 8)', () => {
   it('is recorded on the location for the billing manager and the firm principal, who then see it, as everyone who opens the practice does', async () => {
     expect(ok(await call(pricingSettingsPage, manager, P())).confirmed).toBe(false);
-    expect(ok(await call(confirmPricingLocationAction, manager, P(), { confirm: 'on' }))).toEqual({ objectId: practiceId, redirect: `/p/${practiceId}/settings/pricing?notice=confirmed` });
+    expect(ok(await call(confirmPricingLocationAction, manager, P(), confirmForm('00011')))).toEqual({ objectId: practiceId, redirect: `/p/${practiceId}/settings/pricing?notice=confirmed` });
     for (const person of [manager, viewer, analyst, world.adminUserId]) {
       expect(ok(await call(pricingSettingsPage, person, P())).confirmed, person).toBe(true);
     }
@@ -326,7 +332,7 @@ describe('the confirmation, as every role that may give it (review of PR 6b-2, f
     expect((await owner.query('SELECT confirmed_by FROM practice_site WHERE practice_id = $1', [practiceId])).rows).toEqual([{ confirmed_by: manager }]);
     await changedByThePlatform();
     expect(ok(await call(pricingSettingsPage, firmPrincipal, P()))).toMatchObject({ canEdit: true, confirmed: false });
-    ok(await call(confirmPricingLocationAction, firmPrincipal, P(), { confirm: 'on' }));
+    ok(await call(confirmPricingLocationAction, firmPrincipal, P(), confirmForm('00011')));
     expect(ok(await call(pricingSettingsPage, firmPrincipal, P())).confirmed).toBe(true);
     expect(ok(await call(pricingSettingsPage, manager, P())).confirmed).toBe(true);
     expect((await owner.query('SELECT confirmed_by FROM practice_site WHERE practice_id = $1', [practiceId])).rows).toEqual([{ confirmed_by: firmPrincipal }]);
@@ -335,6 +341,74 @@ describe('the confirmation, as every role that may give it (review of PR 6b-2, f
       { actor_id: manager },
       { actor_id: firmPrincipal },
     ]);
+  });
+});
+
+describe('a confirmation from a page that showed another location (verification of PR 6b-2, finding 1)', () => {
+  const CHANGED = { status: 'invalid', issues: [{ field: 'shownZip', message: 'The billing ZIP changed since this page loaded. Review it, then confirm.' }] };
+  const confirmations = async () => (await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE action = 'pricing_location_confirmed'")).rows[0]?.n;
+  const site = async () =>
+    (
+      await owner.query<{ zip: string; zip_plus_four: string | null; confirmed_by: string | null }>('SELECT zip, zip_plus_four, confirmed_by FROM practice_site WHERE practice_id = $1', [
+        practiceId,
+      ])
+    ).rows[0];
+
+  it('confirms nothing from a page read before the location changed, says so, and the page read again shows the location as it stands, which is then confirmed', async () => {
+    // The billing manager's page shows 00011, confirmed; the platform then sets 00012-5000 (as the console would).
+    expect(ok(await call(pricingSettingsPage, manager, P()))).toMatchObject({ location: { zip: '00011', zipPlusFour: null }, confirmed: true });
+    await owner.query("UPDATE practice_site SET zip = '00012', zip_plus_four = '5000' WHERE practice_id = $1", [practiceId]);
+    const before = { confirmations: await confirmations(), site: await site() };
+    expect(await call(confirmPricingLocationAction, manager, P(), confirmForm('00011'))).toEqual(CHANGED);
+    // A page that showed the ZIP without the ZIP+4 it now has showed another location too.
+    expect(await call(confirmPricingLocationAction, manager, P(), confirmForm('00012'))).toEqual(CHANGED);
+    expect({ confirmations: await confirmations(), site: await site() }).toEqual(before);
+    // The page read again, with the notice: the location as it stands, waiting for the practice's confirmation.
+    expect(ok(await call(pricingSettingsPage, manager, { ...P(), notice: 'changed' }))).toMatchObject({
+      notice: 'changed',
+      locationText: '00012-5000',
+      reading: { status: 'locality_not_loaded' },
+      confirmed: false,
+    });
+    expect(await billingZipStep()).toBe(false);
+    expect(ok(await call(confirmPricingLocationAction, manager, P(), confirmForm('00012', '5000')))).toEqual({ objectId: practiceId, redirect: `/p/${practiceId}/settings/pricing?notice=confirmed` });
+    expect(ok(await call(pricingSettingsPage, manager, P())).confirmed).toBe(true);
+    expect(await confirmations()).toBe((before.confirmations ?? 0) + 1);
+  });
+
+  it('refuses through the database one that read the location before a change committed while it waited (practice_site_changed), in the same words', async () => {
+    // A change of the location holds its row, uncommitted, when the billing manager confirms what the page showed.
+    const watcher = databaseClient(database.url);
+    await watcher.connect();
+    await owner.query('BEGIN');
+    try {
+      await owner.query("UPDATE practice_site SET zip = '00011', zip_plus_four = NULL WHERE practice_id = $1", [practiceId]);
+      const holder = (await owner.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+      const before = await confirmations();
+      // The handler reads 00012-5000 as committed, and the database's confirmation waits on the change's lock.
+      const confirming = call(confirmPricingLocationAction, manager, P(), confirmForm('00012', '5000'));
+      let waiting = false;
+      for (let attempt = 0; attempt < 400 && !waiting; attempt += 1) {
+        waiting =
+          (await watcher.query<{ waiting: boolean }>('SELECT EXISTS (SELECT 1 FROM pg_stat_activity a WHERE $1 = ANY (pg_blocking_pids(a.pid))) AS waiting', [holder])).rows[0]?.waiting === true;
+        if (!waiting) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+      expect(waiting).toBe(true);
+      await owner.query('COMMIT');
+      expect(await confirming).toEqual(CHANGED);
+      expect(await confirmations()).toBe(before);
+    } catch (error) {
+      await owner.query('ROLLBACK');
+      throw error;
+    } finally {
+      await watcher.end();
+    }
+    expect(await site()).toMatchObject({ zip: '00011', zip_plus_four: null });
+    expect(ok(await call(pricingSettingsPage, manager, P())).confirmed).toBe(false);
+    // Confirmed as it stands, so the tests below start from a confirmed 00011.
+    ok(await call(confirmPricingLocationAction, world.adminUserId, P(), confirmForm('00011')));
   });
 });
 
@@ -366,7 +440,7 @@ describe('saving the location (audit #33)', () => {
     // A location that still asks for its ZIP+4 is not confirmed as it stands, whoever sends the confirmation.
     const confirmations = async () => (await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE action = 'pricing_location_confirmed'")).rows[0]?.n;
     const before = await confirmations();
-    expect(await call(confirmPricingLocationAction, world.adminUserId, P(), { confirm: 'on' })).toEqual({
+    expect(await call(confirmPricingLocationAction, world.adminUserId, P(), confirmForm('00012'))).toEqual({
       status: 'invalid',
       issues: [{ field: 'zip', message: 'Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.' }],
     });
@@ -434,7 +508,7 @@ describe('saving the location (audit #33)', () => {
     expect(ok(await call(pricingSettingsPage, world.adminUserId, P())).confirmed).toBe(true);
     expect(await billingZipStep()).toBe(true);
     // Content PaidWhole loads leaves the customer nothing to change: the billing manager's confirmation is taken too.
-    ok(await call(confirmPricingLocationAction, manager, P(), { confirm: 'on' }));
+    ok(await call(confirmPricingLocationAction, manager, P(), confirmForm('00012', '0001')));
     expect((await owner.query('SELECT confirmed_by FROM practice_site WHERE practice_id = $1', [practiceId])).rows).toEqual([{ confirmed_by: manager }]);
     expect(ok(await call(practiceHome, viewer, P())).practice).toMatchObject({ zip: '00012', zipPlusFour: '0001' });
     expect(queue.jobs.splice(0)).toEqual([{ type: 'monitor', payload: { practice_id: practiceId, request_id: expect.stringMatching(/^test-/) } }]);

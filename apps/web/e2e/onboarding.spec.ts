@@ -418,6 +418,21 @@ test('a practice created with no seeded settings reaches a priced month from its
       await expect(admin.locator('[data-location-note]').getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', '/support?from=settings');
       await expectAccessible(admin, 'Pricing settings');
       await noSidewaysScroll(admin, 390, 'Pricing settings');
+      // The platform changes the location after this page loaded (as the console would): the confirmation sent from it
+      // confirms nothing, and the page is read again, showing the location as it stands (verification of PR 6b-2,
+      // finding 1).
+      const moveTo = (zip: string, plusFour: string | null) =>
+        withDatabase((client) => client.query('UPDATE practice_site SET zip = $2, zip_plus_four = $3 WHERE practice_id = $1', [practices.ready, zip, plusFour]));
+      await moveTo('00012', '5000');
+      await admin.getByRole('button', { name: 'Confirm the billing ZIP' }).click();
+      await expect(admin.locator('[data-notice="changed"]')).toHaveText('The billing ZIP changed since this page loaded. Review it, then confirm.');
+      await expect(admin).toHaveURL(new RegExp(`/p/${practices.ready}/settings/pricing\\?notice=changed$`));
+      await expect(admin.locator('[data-location-zip]')).toHaveText('00012-5000');
+      await expect(admin.getByRole('button', { name: 'Confirm the billing ZIP' })).toBeVisible();
+      await expectAccessible(admin, 'Pricing settings after the location changed');
+      await moveTo('00011', null);
+      await admin.goto(`/p/${practices.ready}/settings/pricing`);
+      await expect(admin.locator('[data-location-zip]')).toHaveText('00011');
       await admin.getByRole('button', { name: 'Confirm the billing ZIP' }).click();
       await expect(admin.locator('[data-notice="confirmed"]')).toBeVisible();
       await admin.goto(`/p/${practices.ready}/settings`);

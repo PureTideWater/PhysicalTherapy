@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
 import {
+  LOCATION_CHANGED,
   type LocationReading,
   type MonthWaitingOnLocation,
   type PracticeLocation,
@@ -28,7 +29,7 @@ import { ZIP_CODE_FORMAT, parseZipCode, zipCodeText } from '../zip';
 import { canSetCorrespondence, correspondenceSettingsPath } from '../packets/contact';
 import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
-import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { ROLES_BY_KIND } from './console';
 import { blankOptional, emailAddress, opaqueId, optionalText } from './schemas';
 
@@ -562,7 +563,8 @@ export interface PricingSettingsPageData {
   readonly pricedBefore: readonly PricedBeforeLocation[];
   /** pricing_settings.set: the practice administrator, the billing manager and the firm principal (the founder's answer to PR 6b's Q5 (a)). */
   readonly canEdit: boolean;
-  readonly notice: 'saved' | 'confirmed' | null;
+  /** What the action that led here did: saved, confirmed, or nothing, as the location changed since its page loaded. */
+  readonly notice: 'saved' | 'confirmed' | 'changed' | null;
 }
 
 const PLACE_SETTINGS = new Set(['facility', 'non_facility']);
@@ -622,7 +624,7 @@ export const pricingSettingsPage = practiceRoute({
   path: '/p/[practiceId]/settings/pricing',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId, notice: optionalText(z.enum(['saved', 'confirmed'])).catch(undefined) }),
+  params: z.object({ practiceId: opaqueId, notice: optionalText(z.enum(['saved', 'confirmed', 'changed'])).catch(undefined) }),
   handle: async ({ scope, practiceId, access, params, request }): Promise<PricingSettingsPageData> => {
     const { location, reading } = await practiceLocationReading(scope.client, practiceId);
     const { places, split } = await placesInEffect(scope.client, practiceId);
@@ -663,11 +665,29 @@ export const billingZipInput = z.object({
     }),
 });
 
-/** The setters' refusals of a malformed ZIP or ZIP+4 (the handler's check, bypassed), named on the form's field. */
+/**
+ * The confirmation's refusal when the location is no longer the one its page showed, on the shown ZIP's field in the
+ * notice's words: the Pricing settings form reads the page again with the notice instead (isLocationChanged).
+ */
+export const LOCATION_CHANGED_ISSUE = { field: 'shownZip', message: LOCATION_CHANGED } as const;
+
+/** Whether a refusal is LOCATION_CHANGED_ISSUE: nothing was confirmed because the location changed since the page loaded. */
+export function isLocationChanged(issues: readonly Issue[] | undefined): boolean {
+  return (issues ?? []).some((issue) => issue.field === LOCATION_CHANGED_ISSUE.field && issue.message === LOCATION_CHANGED_ISSUE.message);
+}
+
+/**
+ * The location functions' refusals a form names: a malformed ZIP or ZIP+4 (the handler's check, bypassed) on the ZIP's
+ * field, and a confirmation of a location that changed since its page loaded (practice_site_changed) as
+ * LOCATION_CHANGED_ISSUE.
+ */
 export function locationRefusal(error: unknown): InputError | undefined {
   if (isPgError(error, ['23514']) && typeof error === 'object' && error !== null && 'constraint' in error) {
     if (error.constraint === 'practice_site_zip' || error.constraint === 'practice_site_zip_plus_four') {
       return new InputError([{ field: 'zip', message: ZIP_CODE_FORMAT }]);
+    }
+    if (error.constraint === 'practice_site_changed') {
+      return new InputError([LOCATION_CHANGED_ISSUE]);
     }
   }
   return undefined;
@@ -704,12 +724,16 @@ export const setPricingLocationAction = practiceRoute({
 });
 
 /**
- * Confirms the location as it stands (Getting started's "Confirm your billing ZIP"): a location the platform
- * administrator entered, or changed, waits for a person of the practice to confirm it. The role check here and in
- * Postgres: practice_confirm_location() refuses anyone but a person outside the platform's staff who holds
- * pricing_settings.set in the active practice (42501), and a location that still asks the customer for something
- * (practice_site_settled), and records the confirmation on the location, which everyone who opens the practice reads
- * (review of PR 6b-2, findings 1, 8 and 9). Audited as pricing_location_confirmed.
+ * Confirms the location the page showed (Getting started's "Confirm your billing ZIP"): a location the platform
+ * administrator entered, or changed, waits for a person of the practice to confirm it. The form carries the ZIP and
+ * ZIP+4 its page showed, and only that location is confirmed: one changed since the page loaded (by the console, or by
+ * a change that commits while the confirmation waits on it) is refused here and again in Postgres, which compares it
+ * with the location locked (practice_site_changed), and the page is read again with LOCATION_CHANGED (verification of
+ * PR 6b-2, finding 1). The role check here and in Postgres: practice_confirm_location() refuses anyone but a person
+ * outside the platform's staff who holds pricing_settings.set in the active practice (42501), and a location that
+ * still asks the customer for something (practice_site_settled), and records the confirmation on the location, which
+ * everyone who opens the practice reads (review of PR 6b-2, findings 1, 8 and 9). Audited as pricing_location_confirmed;
+ * a refusal confirms and audits nothing.
  */
 export const confirmPricingLocationAction = practiceRoute({
   id: 'practice.settings.pricing_confirm',
@@ -718,22 +742,36 @@ export const confirmPricingLocationAction = practiceRoute({
   phi: true,
   permission: 'pricing_settings.set',
   params: practiceParams,
-  input: z.object({ confirm: z.literal('on', { message: 'confirm the billing ZIP above' }) }),
+  input: z.object({
+    confirm: z.literal('on', { message: 'confirm the billing ZIP above' }),
+    // The location the page showed: its ZIP, and its ZIP+4 (blank for none).
+    shownZip: z.string().regex(/^[0-9]{5}$/, 'five digits'),
+    shownZipPlusFour: optionalText(z.string().regex(/^[0-9]{4}$/, 'four digits')).transform((value) => value ?? null),
+  }),
   audit: { action: 'pricing_location_confirmed', objectType: 'practice' },
-  handle: async ({ scope, practiceId }): Promise<MutationResult> => {
+  handle: async ({ scope, practiceId, input }): Promise<MutationResult> => {
     const { location, reading } = await practiceLocationReading(scope.client, practiceId);
     if (location === null) {
       throw new InputError([{ field: 'zip', message: 'add the billing ZIP first' }]);
+    }
+    if (location.zip !== input.shownZip || location.zipPlusFour !== input.shownZipPlusFour) {
+      throw new InputError([LOCATION_CHANGED_ISSUE]);
     }
     // A location that still asks the customer for something (its ZIP+4, a ZIP or ZIP+4 Medicare's list lacks) is not
     // confirmed as it stands: the status says what to do first.
     if (!locationSettled(reading)) {
       throw new InputError([{ field: 'zip', message: reading.text }]);
     }
-    await scope.client.query('SELECT practice_confirm_location($1)', [practiceId]);
+    try {
+      await scope.client.query('SELECT practice_confirm_location($1, $2, $3)', [practiceId, input.shownZip, input.shownZipPlusFour]);
+    } catch (error) {
+      // practice_site_changed: a change that committed while the confirmation waited on the location's lock.
+      throw locationRefusal(error) ?? error;
+    }
     return { objectId: practiceId, redirect: `${pricingSettingsPath(practiceId)}?notice=confirmed` };
   },
-  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ confirm: 'on' }) },
+  // The synthetic world's practice is created at 00011, with no ZIP+4.
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ confirm: 'on', shownZip: '00011', shownZipPlusFour: '' }) },
 });
 
 export interface AccessLogEntry {

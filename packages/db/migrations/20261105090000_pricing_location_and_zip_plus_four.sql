@@ -15,8 +15,10 @@
 --   console_set_practice_settings() (a platform administrator, who reads it whole, its ZIP+4 too, through
 --   console_practice_settings()). A person's save or confirmation is recorded on the location (confirmed_by,
 --   confirmed_at), which every role that opens the practice reads, and the console's change of the ZIP or ZIP+4
---   clears it (the review of 2026-10-22, findings 1, 2, 8, 9 and 14). A practice is created with its location in the
---   same transaction (the deferred constraint trigger practice_has_site), whoever inserts it; a location is never
+--   clears it (the review of 2026-10-22, findings 1, 2, 8, 9 and 14). A confirmation is of the ZIP and ZIP+4 the person
+--   was shown, compared with the location locked, so one from a page read before a change, or one that waited on the
+--   console's change, confirms nothing (practice_site_changed; the verification of 2026-10-22, finding 1). A practice
+--   is created with its location in the same transaction (the deferred constraint trigger practice_has_site), whoever inserts it; a location is never
 --   deleted, and changes only its ZIP, ZIP+4, who set them and who confirmed them; its updated_at and updated_by move
 --   only when the ZIP or ZIP+4 changes (finding 11). Backfilled from practice.zip; a practice with no ZIP before this
 --   migration (dev and staging only) gets no row and its months wait.
@@ -288,15 +290,21 @@ BEGIN
 END;
 $$;
 
--- Confirms the practice's location as it stands (Getting started's "Confirm your billing ZIP"; the review of
--- 2026-10-22, findings 1, 8 and 9): practice_set_location()'s guard, and only a location that leaves nothing to
--- change under the release in force, over the whole release (ready, or locality_not_loaded: content PaidWhole loads);
--- any other status, a practice with no location among them, is refused (practice_site_settled). Records the person
--- and the time on the location, which every role that opens the practice reads; the location itself, its updated_at
--- and its updated_by stay. Returns the status. It keeps the caller's scope. The route records the audit event.
-CREATE FUNCTION practice_confirm_location(target uuid) RETURNS text
+-- Confirms the practice's location as the person was shown it (Getting started's "Confirm your billing ZIP"; the review
+-- of 2026-10-22, findings 1, 8 and 9): practice_set_location()'s guard; then the location, locked, must still hold
+-- exactly the ZIP and ZIP+4 the page showed (shown_zip, and shown_zip_plus_four, null for none), so a confirmation from
+-- a page read before a change, or one that waited on the console's change and reads the location once that commits,
+-- confirms nothing (practice_site_changed; the verification of 2026-10-22, finding 1); and only a location that leaves
+-- nothing to change under the release in force, over the whole release (ready, or locality_not_loaded: content
+-- PaidWhole loads), is confirmed: any other status, a practice with no location among them, is refused
+-- (practice_site_settled). Records the person and the time on the location, which every role that opens the practice
+-- reads; the location itself, its updated_at and its updated_by stay. Returns the status. It keeps the caller's scope.
+-- The route records the audit event.
+CREATE FUNCTION practice_confirm_location(target uuid, shown_zip text, shown_zip_plus_four text) RETURNS text
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
+  stored_zip text;
+  stored_plus_four text;
   standing text;
 BEGIN
   IF app_actor_id() IS NULL OR NOT app_actor_is_person() OR user_is_internal(app_actor_id())
@@ -304,6 +312,13 @@ BEGIN
      OR NOT coalesce(app_actor_permitted(target, 'pricing_settings.set'), false)
      OR NOT EXISTS (SELECT 1 FROM practice p WHERE p.id = target AND p.status = 'active') THEN
     RAISE EXCEPTION 'a practice''s pricing location is confirmed by a person of the practice who holds pricing_settings.set in it, while it is active' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  -- Locked before it is read: a change holding the row (the console's) commits first and this reads the row as it then
+  -- stands; a change that comes later waits for this transaction, and clears the confirmation if it moves the ZIP or
+  -- ZIP+4. The status below and the update read the same locked row.
+  SELECT s.zip, s.zip_plus_four INTO stored_zip, stored_plus_four FROM practice_site s WHERE s.practice_id = target FOR UPDATE;
+  IF FOUND AND (stored_zip, stored_plus_four) IS DISTINCT FROM (shown_zip, shown_zip_plus_four) THEN
+    RAISE EXCEPTION 'a practice''s pricing location is confirmed only as the person was shown it, and it changed since' USING ERRCODE = 'check_violation', CONSTRAINT = 'practice_site_changed';
   END IF;
   standing := practice_location_status(target, current_rule_release(), NULL, NULL);
   IF standing IS DISTINCT FROM 'ready' AND standing IS DISTINCT FROM 'locality_not_loaded' THEN
@@ -355,8 +370,8 @@ REVOKE ALL ON FUNCTION practice_location_status(uuid, integer, date, date) FROM 
 GRANT EXECUTE ON FUNCTION practice_location_status(uuid, integer, date, date) TO tp_app;
 REVOKE ALL ON FUNCTION practice_set_location(uuid, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION practice_set_location(uuid, text, text) TO tp_app;
-REVOKE ALL ON FUNCTION practice_confirm_location(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION practice_confirm_location(uuid) TO tp_app;
+REVOKE ALL ON FUNCTION practice_confirm_location(uuid, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION practice_confirm_location(uuid, text, text) TO tp_app;
 REVOKE ALL ON FUNCTION console_set_practice_location(uuid, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION console_set_practice_location(uuid, text, text) TO tp_app;
 

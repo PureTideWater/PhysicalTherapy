@@ -10,7 +10,7 @@ import { Money } from '../../../../../components/remittances/display';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
-import { LOCATION_NOTE, locationSettled, waitingHeadline } from '../../../../../lib/pricing/location';
+import { LOCATION_CHANGED, LOCATION_NOTE, locationSettled, waitingHeadline } from '../../../../../lib/pricing/location';
 import { pricingSettingsPage } from '../../../../../lib/routes/settings';
 import { confirmPricingLocation, setPricingLocation } from './actions';
 
@@ -19,8 +19,8 @@ export const metadata: Metadata = { title: 'Pricing settings' };
 /** Where "tell us" goes: the support form, opened from Settings. */
 const SUPPORT_HREF = '/support?from=settings';
 
-/** The fields a refusal names, by their labels. */
-const FORM_LABELS = { zip: 'Billing ZIP', confirm: 'Confirmation' } as const;
+/** The fields a refusal names, by their labels (the confirm form's shown location among them). */
+const FORM_LABELS = { zip: 'Billing ZIP', confirm: 'Confirmation', shownZip: 'Billing ZIP', shownZipPlusFour: 'ZIP+4' } as const;
 
 /** What a save says, by the location it leaves: one that prices (or waits only on PaidWhole's content), or one that still asks for something. */
 const SAVED_SETTLED = 'Months waiting on the billing ZIP are being priced.';
@@ -56,6 +56,10 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
         <Alert role="status" data-notice="confirmed">
           <AlertTitle>Confirmed</AlertTitle>
           <AlertDescription>The billing ZIP is confirmed as it stands.</AlertDescription>
+        </Alert>
+      ) : notice === 'changed' ? (
+        <Alert role="status" data-notice="changed">
+          <AlertDescription>{LOCATION_CHANGED}</AlertDescription>
         </Alert>
       ) : null}
       <Card role="region" aria-label="Pricing location">
@@ -109,6 +113,9 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="confirm" value="on" />
+                  {/* The location this page shows: only it is confirmed, never one changed since the page loaded. */}
+                  <input type="hidden" name="shownZip" value={location.zip} />
+                  <input type="hidden" name="shownZipPlusFour" value={location.zipPlusFour ?? ''} />
                   <p className="text-muted-foreground">If the billing ZIP above is right, confirm it.</p>
                 </ActionForm>
               ) : null}

@@ -18,6 +18,13 @@ import type { Totals } from '../contracts/mapping-queries';
  */
 export const LOCATION_NOTE = 'This location prices every month, earlier months too when they are re-run. If the practice moved, tell us before changing it.';
 
+/**
+ * What a confirmation sent from a page that showed another location than the one stored says, once the page is read
+ * again: the ZIP or ZIP+4 changed after the page loaded (the console's change, or one that committed while the
+ * confirmation waited), so nothing was confirmed (practice_site_changed; verification of PR 6b-2, finding 1).
+ */
+export const LOCATION_CHANGED = 'The billing ZIP changed since this page loaded. Review it, then confirm.';
+
 export interface PracticeLocation {
   readonly zip: string;
   readonly zipPlusFour: string | null;
