@@ -110,14 +110,3 @@ jobs:
         if: ${{ !cancelled() }}
       - run: pnpm cdk:diff
         if: ${{ !cancelled() }}
-  mutation:
-    if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'money')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm stryker run

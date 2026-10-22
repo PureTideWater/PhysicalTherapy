@@ -24,3 +24,10 @@ catalog:
 # pnpm 10 runs no dependency lifecycle scripts unless they are listed here.
 onlyBuiltDependencies:
   - esbuild
+
+# A local fix to a dependency, applied at install (pnpm patch): @stryker-mutator/vitest-runner 10.0.0 named each test
+# by its describe and test names joined by spaces, while Vitest 5 filters by its fullTestName (joined by " > "), so a
+# mutant run selected no test and every covered mutant survived. The patch names a test by its fullTestName. Drop it
+# when a release of the runner supports Vitest 5 (tools/stryker/canary checks it on every mutation run).
+patchedDependencies:
+  "@stryker-mutator/vitest-runner@10.0.0": patches/@stryker-mutator__vitest-runner@10.0.0.patch

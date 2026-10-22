@@ -3,10 +3,12 @@
  * Mutation testing of the packet verifier alone (PRD section 18; docs/adr/0047): its check and the
  * reading of a narrative it rests on. `pnpm stryker run stryker.verifier.config.mjs`.
  *
- * Under Vitest 5 the vitest runner of stryker.config.mjs reports most of these mutants as survived
+ * Under Vitest 5 the vitest runner of stryker.config.mjs reported most of these mutants as survived
  * without running a test (a reported survivor applied by hand fails the tests), so this configuration
  * uses Stryker's command runner: every mutant runs the whole packets unit suite, stopping at the
- * first failure.
+ * first failure. The cause was the runner's test names, which selected no test under Vitest 5; the
+ * runner is patched for it (patches/@stryker-mutator__vitest-runner@10.0.0.patch, docs/adr/0064), and
+ * this configuration keeps the command runner its 2026-10-16 score was measured with.
  *
  * @type {import('@stryker-mutator/api/core').PartialStrykerOptions}
  */
