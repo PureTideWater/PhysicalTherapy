@@ -1,6 +1,6 @@
 # 0064. Resolve a split ZIP's locality from the ZIP+4 file's ranges, the one engine change the freeze allows
 
-- **Status:** accepted (PR 6b-1, the engine part); amends [0029](0029-price-a-claim-at-a-time-from-resolved-agreements-and-recompute-every-amount-from-its-trace.md) (the trace's two optional keys), [0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md) (the locality rule) and [0034](0034-price-every-contract-method-hold-ncci-edits-for-review-and-keep-the-golden-lines-first.md) (`ENGINE_VERSION`). PR 6b-2 amends it with the practice's location record, the pricing settings taken at onboarding, the months that wait for them and the screening's ZIP+4.
+- **Status:** accepted (PR 6b-1, the engine part); amends [0029](0029-price-a-claim-at-a-time-from-resolved-agreements-and-recompute-every-amount-from-its-trace.md) (the trace's two optional keys), [0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md) (the locality rule) and [0034](0034-price-every-contract-method-hold-ncci-edits-for-review-and-keep-the-golden-lines-first.md) (`ENGINE_VERSION`). PR 6b-2 amends it with the practice's location record, the pricing settings taken at onboarding, the months that wait for them, the split every practice defaults to and the screening's ZIP+4 ("Amendment (PR 6b-2)", below; the founder's answers of 2026-10-21 to Q2, Q3, Q5, Q6 and Q11 (a)).
 - **Date:** 2026-10-21
 - **Deciders:** the founder, Tyler Williams: the ruling of 11:47 UTC on 2026-10-18 that supersedes ADR 0062's owner ruling 3 (`docs/product/reconciliation-001.md`, the engine freeze at line 428 and the Approval at line 499), and on 2026-10-21 (about 22:30 UTC) the answers to PR 6b's 13 questions ("Do all the recommended options for these questions as long as it optimizes the app"; every recommended answer of `designs/pr6b-plan.md` section 3 accepted), of which this pull request builds Q3 (a) and Q4 (a); the build (PR 6b-1 of Change Order 001)
 - **PRD sections:** 9 (rule records and releases), 11 (the engine: step 2 and the trace), 18 (the pricing oracle); Change Order 001 and reconciliation-001's checks (lines 423-454); test matrix PRC-16, PRC-21 and PRC-22; ADRs 0020, 0029, 0033, 0034, 0037 and 0062
@@ -147,3 +147,97 @@ five-digit input's trace carries neither new key.
 - the specialist answers Q37 (a ZIP+4 the ZIP9 file does not list);
 - PR 6b-2 lands (the practice's location, settings at onboarding, the screening's ZIP+4), or the multi-site pull
   request gives each site its own location.
+
+## Amendment (PR 6b-2, 2026-10-21): the practice's location, pricing settings at onboarding, the months that wait, the split, the screening's ZIP+4 and the content span
+
+Migration `20261105090000_pricing_location_and_zip_plus_four.sql` (audit #33, #16's minimal record, #7's screening part
+and #31's ZIP+4 key). Its schema is approved with `docs/product/domain-model.md` (CO-02).
+
+**The founder's answers this amendment builds, recorded 2026-10-21** (about 22:30 UTC, PR 6b's 13 questions, every
+recommended answer accepted):
+- **Q2 (a):** the practice's pricing location is its own record, `practice_site`, one per practice and undated, set in
+  Settings > Pricing settings (and by the platform administrator at creation and from the console). The multi-site pull
+  request adds windows, NPIs and therapists per location and drops the unique index.
+- **Q3 (a):** `rule_record`'s record-type CHECK takes `locality_map_plus_four`, a granted exception to
+  reconciliation-001's rule-table check. It is the migration's one statement on a rule table, and
+  `tools/engine-freeze/exception.json` (rewritten for this pull request: no engine file, no golden file) names it
+  exactly as `check.ts` prints it. A closed-list test holds `RULE_RECORD_TYPES` equal to the CHECK's 17 values.
+- **Q5 (a):** the permission `pricing_settings.set` for the practice administrator, the billing manager (a firm's under
+  a grant, as it signs off contracts) and so the firm principal; the reimbursement reviewer is denied it, as every
+  write. A granted exception to "the permission matrix changes only in PR 14"; one of the pull request's two
+  adversarial reviews uses the security-reviewer checklist.
+- **Q6 (a):** a Medicare row whose quarter is outside the release's loaded content is left out by the browser and
+  counted on the upload (three numbers, never which rows, deleted with the upload at 30 days); a request that bypasses
+  the browser is refused by the server and by `submit_screening()` (`screening_band_outside_content`).
+- **Q11 (a):** no wording change for the ZIP+4 in what the pages say is kept: the words already cover a ZIP+4 entered
+  in the ZIP code field (counsel confirms).
+
+**The location.** `practice_site (practice_id, zip, zip_plus_four, updated_by)`: the ZIP five digits, the ZIP+4 four or
+null (`practice_site_zip`, `practice_site_zip_plus_four`), one per practice (`practice_site_one_per_practice`). It holds
+no PHI but has a NOT NULL `practice_id`, so it is registered and forced, with the tenant policy and the owner's for the
+definer functions. The application role holds SELECT alone; a location is never deleted or truncated and changes only
+its ZIP, ZIP+4 and who set them (`practice_site_rules`). A practice is created with its location in the same
+transaction, whoever inserts it: the deferred constraint trigger `practice_has_site` checks at commit. The migration
+backfills each practice's `practice.zip`; `practice.zip` is deprecated (never read or written; the application role
+may no longer insert or update it) and is dropped by the multi-site pull request.
+
+**Its status in a release.** `locality_status(release, zip5, plus_four, period_from, period_to)` and
+`practice_location_status(practice, release, period_from, period_to)` (both invoker, granted to `tp_app`) answer from
+the closed list `ready | no_release | zip_missing | zip_unknown | locality_not_loaded | zip_plus_four_needed |
+zip_plus_four_unknown`, with the carrier and locality when ready. One order differs from the design's literal "first
+match wins": a flagged ZIP with no ZIP+4 is `zip_plus_four_needed` before the release's missing ZIP+4 list is
+`locality_not_loaded`, so under 900001 the customer is first asked for the ZIP+4 and, once it is given, told the list
+is not loaded (the design's own journey, steps 5 and 6). A ZIP+4 that is not four digits is held by no range.
+
+**Who sets it.** `practice_set_location()` (definer) refuses anyone but a person who holds `pricing_settings.set` in
+a practice of the transaction's scope, and a malformed ZIP or ZIP+4 by the constraint's name, upserts the row and
+returns its status under the release in force; it keeps the caller's scope. `console_set_practice_location()` is the
+platform administrator's (`organization.manage`), runs in the one practice's scope and restores the caller's (a
+reviewed scope function in `packages/db/src/catalog.ts`), and returns null for a practice that does not exist.
+`console_set_practice_settings()` keeps its signature, so the previous image's save works: a ZIP that differs from the
+location's sets it and clears its ZIP+4, the same ZIP or none leaves it, and `practice.zip` is never written.
+`console_practice_settings()` reads the location's ZIP.
+
+**No run without a location.** `pricing_run_rules()` (still invoker) refuses a run, a re-run included, of a practice
+of the caller's scope that has no location (`pricing_run_location_missing`). A run of a practice outside the scope is
+left to the tenant policy's refusal after the trigger, so a probe from another practice learns nothing about that
+practice's location (a refinement of the design, found by the generated cross-tenant test). A location that is not
+ready (`zip_plus_four_needed` and the like) still gets its run: the run fails `location_not_ready` only when a line
+needs the location (ADR 0039's amendment, the worker's part).
+
+**The split, every practice's default.** `screening_place_of_service_split` becomes `place_of_service_split` (its
+constraint, index, triggers, policy, primary key and foreign key renamed; `screening_split_valid` becomes
+`place_of_service_split_valid`, its ACL kept). The audit action `screening_split_approved` and object type
+`screening_place_of_service_split` keep their names, so the approval history reads under one name. Each pricing run
+pins the split in force (`pricing_run.place_of_service_split_id`, set by `pricing_run_rules()` through the definer
+`place_of_service_split_in_force()`; another value is refused, `pricing_run_split_pinned`; fixed once inserted; null
+on every earlier run and when none is approved), and the price job reads it through the definer
+`pricing_run_split(run)`, which answers only in the run's own practice's scope. `console_place_of_service_splits()` and
+`console_approve_place_of_service_split()` replace the screening's console functions.
+
+**The screening's ZIP+4.** `screening_prospect.zip_plus_four` is kept only when the ZIP's `locality_map` record needs
+it, and deleted with the prospect. `submit_screening()` takes it after the ZIP and refuses `screening_zip_unknown`,
+`screening_zip_plus_four` (enter the ZIP+4), `screening_zip_plus_four_unknown` and `screening_locality_not_loaded`
+from `locality_status()`; `screening_zip_status()` is dropped. `operator_screening_claim()` returns the ZIP+4, and the
+keyed read holds the ZIP's `locality_map_plus_four` record (the sixth keyed type, left out of
+`operator_screening_release()`). The labels move to `screening-labels/2026-11-05` (`screening_labels_version()`).
+
+**The content a release has loaded (audit #7).** `rule_release_content_span(release)` (invoker, `tp_app`) gives, for
+the per-code reduction, the general reduction and the MUE, the union of their records' windows, with a FILTER so a
+content with no record is the empty span, never every date. `submit_screening()` refuses a Medicare row whose quarter
+(`screening_band_days()`, no grant) is not inside every span, and stores the three counts of the rows the browser left
+out for that reason (`outside_content_rows`, `outside_content_claim_lines`, `outside_content_allowed_cents`: 11 to
+100,000 claim lines a row, at most $25,000.00 a claim line, none on a refused upload, and the floor's and these rows
+with the accepted ones at most 50,000). `band_outside_content` joins the rejection codes (14 now), and
+`screening_result_summary()` returns the three counts beside the floor's (a column set the design's table did not list;
+the result page's sentence needs them).
+
+**Deploy window.** Safe with the previous image running but for: practice creation in the console (it writes
+`practice.zip` and no location), the split's console approval (renamed), the screening's submission (new signature;
+closed in production until release 1), a run created by one image and priced by the other (`engine_version_mismatch`;
+the month is planned again), the old image's strict trace schema refusing a trace with a ZIP+4, and the old image's
+price jobs reading the backfilled `practice.zip` rather than a location saved through the new image.
+
+**The Data dictionary stays verbatim** (reconciliation-001, D2 (a)): the domain model records `practice_site` and the
+seventeenth record type, as it records every accepted divergence, in place of the edit to `data-dictionary.md` the
+design proposed.
