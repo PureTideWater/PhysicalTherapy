@@ -1,12 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
+import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
+import { COMMANDS } from '../../infra/lib/constructs/compute';
 import { MIB, MIN_ROUND_TRIP_MS, NETWORK_DELAY_MS, postgresLimit, productionLimits } from './limits';
-import { anonBytes, cpuThrottling, ioMax, median, memoryEvents, phaseLines, phasesByRun, psqlTimings, workerStarted } from './measure';
-import { CommandError, ROUND_TRIP_SCRIPT, delayedRoundTripMs, dockerRunArgs, interfaceByIndex, masked, netemCommands, peerIndex, postgresRunArgs, stderrTail } from './containers';
+import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, workerStarted } from './measure';
+import {
+  CommandError,
+  ROUND_TRIP_SCRIPT,
+  SERVICE_COMMANDS,
+  delayedRoundTripMs,
+  dockerRunArgs,
+  interfaceByIndex,
+  isScreeningService,
+  masked,
+  netemCommands,
+  peerIndex,
+  postgresRunArgs,
+  processShellCommand,
+  screeningServices,
+  serviceCommand,
+  stderrTail,
+} from './containers';
 
 /**
- * The capacity test's readers (audit #53 part 1): cgroup files of both versions, the platform's phase lines, psql's
- * timings and io.max; and the Docker arguments that apply production's limits. Synthetic inputs only.
+ * The capacity test's readers (audit #53 part 1): cgroup files of both versions, the consumer's phase and time-to-email
+ * lines, psql's timings and io.max; the Docker arguments and the process runtime's command that apply production's
+ * limits, the consumer's included (PR 6b-3). Synthetic inputs only.
  */
 
 describe('cgroup readers', () => {
@@ -34,7 +53,7 @@ describe('cgroup readers', () => {
   });
 });
 
-describe('the platform’s log', () => {
+describe('the consumer’s log', () => {
   it('reads the job’s phase lines by run, numbers only, and the worker’s start line', () => {
     const lines = [
       'not json',
@@ -55,17 +74,73 @@ describe('the platform’s log', () => {
     expect(workerStarted(lines)).toBe(true);
     expect(workerStarted(lines.slice(0, 3))).toBe(false);
   });
+
+  it('reads the time-to-email lines with their tier, and the runs a log shows priced (the platform’s must show none)', () => {
+    const lines = [
+      JSON.stringify({ job_id: 'j', screening_run_id: 'r-1', elapsed_ms: 31_234, time: '2026-10-22T12:00:31.300Z', level: 'info', msg: 'screening result emailed' }),
+      JSON.stringify({ job_id: 'j', screening_run_id: 'r-2', elapsed_ms: 95_000, error_code: 'SCREENING_ACCOUNT_SHARE', time: '2026-10-22T12:01:35.000Z', level: 'info', msg: 'screening result emailed after waiting' }),
+      JSON.stringify({ job_id: 'j', screening_run_id: 'r-3', elapsed_ms: 'soon', time: '2026-10-22T12:01:35.000Z', level: 'info', msg: 'screening result emailed' }),
+      JSON.stringify({ job_id: 'j', record_count: 0, elapsed_ms: 0, time: '2026-10-22T12:02:00.000Z', level: 'info', msg: 'screening queue' }),
+      JSON.stringify({ job_id: 'j', screening_run_id: 'r-4', elapsed_ms: 900, record_count: 2000, time: '2026-10-22T12:00:00.000Z', level: 'info', msg: 'screening release shared types read' }),
+    ];
+    expect(emailedLines(lines)).toEqual([
+      { runId: 'r-1', elapsedMs: 31_234, tier: 'normal', at: '2026-10-22T12:00:31.300Z' },
+      { runId: 'r-2', elapsedMs: 95_000, tier: 'waiting', at: '2026-10-22T12:01:35.000Z' },
+    ]);
+    expect([...pricedRuns(lines)].sort()).toEqual(['r-1', 'r-2', 'r-4']);
+    expect(pricedRuns([JSON.stringify({ msg: 'worker started', time: '2026-10-22T12:00:00.000Z' }), JSON.stringify({ msg: 'screening expiry', job_id: 'j', record_count: 0, time: '2026-10-22T12:00:00.000Z' })]).size).toBe(0);
+  });
+});
+
+describe('the services’ commands', () => {
+  it('are production’s task definitions’ own, the consumer’s with the main thread’s 512 MiB heap', () => {
+    expect(SERVICE_COMMANDS.web).toEqual(COMMANDS.web);
+    expect(SERVICE_COMMANDS.platform).toEqual(COMMANDS.worker);
+    // The consumer's container command (infra/lib/constructs/compute.ts, PR 6b-3): #31's explicit heap limit.
+    expect(SERVICE_COMMANDS.screening).toEqual((COMMANDS as Readonly<Record<string, readonly string[]>>).screening);
+    expect(SERVICE_COMMANDS.screening).toContain(SCREENING_MAIN_HEAP_FLAG);
+    expect(SCREENING_MAIN_HEAP_FLAG).toBe('--max-old-space-size=512');
+    expect(screeningServices(1)).toEqual(['screening-1']);
+    expect(screeningServices(2)).toEqual(['screening-1', 'screening-2']);
+    expect([isScreeningService('screening-1'), isScreeningService('screening-0'), isScreeningService('platform')]).toEqual([true, false, false]);
+    expect(serviceCommand('screening-1')).toEqual(SERVICE_COMMANDS.screening);
+    expect(serviceCommand('platform')).toEqual(SERVICE_COMMANDS.platform);
+  });
+
+  it('exec each process under taskset with its whole cpuset, after joining its cgroups (the cgroup-v1 affinity fix)', () => {
+    const dirs = ['/sys/fs/cgroup/cpu/tp-capacity-screening-1', '/sys/fs/cgroup/cpuset/tp-capacity-screening-1', '/sys/fs/cgroup/memory/tp-capacity-screening-1'];
+    expect(processShellCommand(dirs, '2-3', SERVICE_COMMANDS.screening)).toBe(
+      'echo $$ > /sys/fs/cgroup/cpu/tp-capacity-screening-1/cgroup.procs && echo $$ > /sys/fs/cgroup/cpuset/tp-capacity-screening-1/cgroup.procs && echo $$ > /sys/fs/cgroup/memory/tp-capacity-screening-1/cgroup.procs && exec taskset -c 2-3 node --enable-source-maps --max-old-space-size=512 dist/main.js',
+    );
+    expect(processShellCommand(['/sys/fs/cgroup/tp-capacity-web'], '3', SERVICE_COMMANDS.web)).toBe('echo $$ > /sys/fs/cgroup/tp-capacity-web/cgroup.procs && exec taskset -c 3 node apps/web/server.js');
+    expect(() => processShellCommand([], '2-3; rm -rf /', SERVICE_COMMANDS.web)).toThrow(RangeError);
+  });
 });
 
 describe('Docker’s arguments', () => {
   const limits = productionLimits();
   const postgres = postgresLimit({ cpus: 4, memoryMiB: 16_000, cpuModel: '', kernel: '' }, limits);
 
-  it('give web and platform a quarter CPU on the last CPU and 512 MiB with no swap, never restarted', () => {
-    const args = dockerRunArgs({ name: 'platform', env: { NODE_ENV: 'test' }, limit: limits.platform, cpuset: postgres.taskCpuset }, { image: 'tp-worker:capacity', network: 'tp-capacity', dataHost: '/tmp/data', dataService: '/data', user: '1001:1001' });
+  it('give web and platform a quarter CPU on the consumer’s last CPU and 512 MiB with no swap, never restarted', () => {
+    const args = dockerRunArgs(
+      { name: 'platform', env: { NODE_ENV: 'test' }, limit: limits.platform, cpuset: postgres.taskCpuset, command: SERVICE_COMMANDS.platform },
+      { image: 'tp-worker:capacity', network: 'tp-capacity', dataHost: '/tmp/data', dataService: '/data', user: '1001:1001' },
+    );
     expect(args).toEqual(expect.arrayContaining(['--cpus=0.25', '--cpuset-cpus=3', '--memory=512m', '--memory-swap=512m', '--restart=no', '-e', 'NODE_ENV=test']));
-    expect(args.at(-1)).toBe('tp-worker:capacity');
+    expect(args.slice(-4)).toEqual(['tp-worker:capacity', 'node', '--enable-source-maps', 'dist/main.js']);
     expect(args.slice(args.indexOf('--user'), args.indexOf('--user') + 2)).toEqual(['--user', '1001:1001']);
+  });
+
+  it('give the consumer its 2 vCPU on CPUs 2-3 and 4 GiB with no swap, running the worker image with its heap limit', () => {
+    const screening = limits.screening;
+    expect(screening).not.toBeNull();
+    const args = dockerRunArgs(
+      { name: 'screening-1', env: { WORKER_JOBS: 'screening' }, limit: screening ?? { cpus: 0, memoryMiB: 0 }, cpuset: postgres.consumerCpuset, command: SERVICE_COMMANDS.screening },
+      { image: 'tp-worker:capacity', network: 'tp-capacity', dataHost: '/tmp/data', dataService: '/data' },
+    );
+    expect(args.slice(0, 7)).toEqual(['run', '-d', '--name', 'tp-capacity-screening-1', '--network', 'tp-capacity', '--network-alias']);
+    expect(args).toEqual(expect.arrayContaining(['--cpus=2', '--cpuset-cpus=2-3', '--memory=4096m', '--memory-swap=4096m', '--restart=no', '-e', 'WORKER_JOBS=screening']));
+    expect(args.slice(-5)).toEqual(['tp-worker:capacity', 'node', '--enable-source-maps', '--max-old-space-size=512', 'dist/main.js']);
   });
 
   it('give Postgres its CPUs, memory with no swap and gp3’s baseline on the data root’s device', () => {
@@ -73,7 +148,7 @@ describe('Docker’s arguments', () => {
     expect(args).toEqual(
       expect.arrayContaining([
         '--cpus=2',
-        '--cpuset-cpus=0-2',
+        '--cpuset-cpus=0-1',
         '--memory=4096m',
         '--memory-swap=4096m',
         '--device-read-iops=/dev/sda:3000',

@@ -3,10 +3,12 @@
  * "Capacity under production limits"), and the environment each is given.
  *
  * The web container runs NODE_ENV=production with the e2e suite's TP_ALLOW_LOCAL_PROVIDERS=e2e, as the e2e suite's
- * production build does. The platform container runs NODE_ENV=test with MAIL_OUTBOX_DIR, because the worker refuses
- * a local mail outbox in production (apps/worker/src/config.ts) and the test reads the emails from that outbox. A
- * production escape for the worker's mail was rejected: it would put a switch in production's configuration that
- * sends mail nowhere, for a test.
+ * production build does. The platform and screening containers run NODE_ENV=test with MAIL_OUTBOX_DIR, because the
+ * worker refuses a local mail outbox in production (apps/worker/src/config.ts) and the test reads the emails from that
+ * outbox. A production escape for the worker's mail was rejected: it would put a switch in production's configuration
+ * that sends mail nowhere, for a test. The screening consumer (WORKER_JOBS=screening, PR 6b-3) runs on its own login,
+ * which switches to tp_screening as production's does, with the declared concurrency; the platform beside it prices no
+ * screening.
  *
  * NODE_ENV_READS lists every place the code the two images load reads NODE_ENV (apps/worker/src and packages/*\/src,
  * tests aside), what it selects, and why the departure does not change what is measured: each selects a provider or
@@ -28,7 +30,7 @@ export const NODE_ENV_READS: readonly NodeEnvRead[] = [
     file: 'apps/worker/src/config.ts',
     reads: 1,
     selects:
-      'isProduction(), called by the five config readers (readWorkerConfig, readPlatformWorkerConfig, readPlatformConfig, readNotificationConfig, readIntakeConfig): which local implementations are refused and which settings are required (S3, RDS, SES, KMS, an https APP_ORIGIN). The platform worker passes its production flag on to the model gateway and models/permitted.ts, which choose a provider with it.',
+      'isProduction(), called by the six config readers (readWorkerConfig, readPlatformWorkerConfig, readScreeningWorkerConfig, readPlatformConfig, readNotificationConfig, which readScreeningConfig calls for the screening consumer, and readIntakeConfig): which local implementations are refused and which settings are required (S3, RDS, SES, KMS, MAIL_FROM, an https APP_ORIGIN). The platform worker passes its production flag on to the model gateway and models/permitted.ts, which choose a provider with it; the screening consumer passes it to nothing that prices.',
   },
   {
     file: 'packages/model-gateway/src/config.ts',
@@ -44,12 +46,17 @@ export const NODE_ENV_READS: readonly NodeEnvRead[] = [
 
 /** What the harness changes from production, and which way each change moves the measurement. */
 export const DEPARTURES: readonly { readonly what: string; readonly direction: 'harsher' | 'equal or harsher' | 'gentler' | 'none' }[] = [
-  { what: 'Postgres gets min(2, CPUs less one) CPUs and min(4 GiB, the runner less 3.5 GiB) of memory: fewer than db.t4g.medium on a 2-vCPU runner', direction: 'harsher' },
+  { what: 'Postgres gets db.t4g.medium’s 2 vCPU and 4 GiB on the runner’s first two CPUs, which the harness and Chromium share', direction: 'harsher' },
+  { what: 'web and platform share the screening consumer’s last CPU (their quarter-vCPU quotas inside it)', direction: 'harsher' },
   { what: 'one web container takes every upload where production runs two web tasks', direction: 'harsher' },
   { what: 'a 2 ms round trip to Postgres, more than an in-VPC trip plus Multi-AZ’s synchronous commit', direction: 'harsher' },
   { what: 'gp3’s I/O baseline without its burst', direction: 'equal or harsher' },
+  {
+    what: 'Postgres runs on two full CPUs; db.t4g.medium earns 24 CPU credits an hour (a 20% baseline per vCPU) and bursts on its balance, and RDS runs T4g in Unlimited mode, so a drained balance is billed rather than throttled (AWS’s documentation; not verified by the harness)',
+    direction: 'gentler',
+  },
   { what: 'mail is a file in an outbox instead of an SES call of about 0.1 s', direction: 'gentler' },
-  { what: 'the platform worker runs NODE_ENV=test with MAIL_OUTBOX_DIR (NODE_ENV_READS: providers and required settings only)', direction: 'none' },
+  { what: 'the platform and screening workers run NODE_ENV=test with MAIL_OUTBOX_DIR (NODE_ENV_READS: providers and required settings only)', direction: 'none' },
   { what: 'the web runs NODE_ENV=production with TP_ALLOW_LOCAL_PROVIDERS=e2e (local identity, keys, billing and model providers)', direction: 'none' },
 ];
 
@@ -62,6 +69,8 @@ export const HARNESS_LOGINS = {
   operator: { username: 'tp_operator_login', password: 'synthetic-capacity-operator' },
   queue: { username: 'tp_queue_login', password: 'synthetic-capacity-queue' },
   billing: { username: 'tp_billing_login', password: 'synthetic-capacity-billing' },
+  // The screening consumer's login (PR 6b-3): it may SET ROLE tp_screening and holds nothing else.
+  screening: { username: 'tp_screening_login', password: 'synthetic-capacity-screening' },
 } as const;
 
 export type HarnessLogins = Readonly<Record<keyof typeof HARNESS_LOGINS, { readonly username: string; readonly password: string }>>;
@@ -83,6 +92,7 @@ export function harnessLogins(suffix: string): HarnessLogins {
     operator: withSuffix(HARNESS_LOGINS.operator),
     queue: withSuffix(HARNESS_LOGINS.queue),
     billing: withSuffix(HARNESS_LOGINS.billing),
+    screening: withSuffix(HARNESS_LOGINS.screening),
   };
 }
 
@@ -108,6 +118,8 @@ export function loginsEnvironment(ownerUrl: string, logins: HarnessLogins = HARN
     TP_QUEUE_LOGIN_PASSWORD: logins.queue.password,
     TP_BILLING_LOGIN_USERNAME: logins.billing.username,
     TP_BILLING_LOGIN_PASSWORD: logins.billing.password,
+    TP_SCREENING_LOGIN_USERNAME: logins.screening.username,
+    TP_SCREENING_LOGIN_PASSWORD: logins.screening.password,
   };
 }
 
@@ -124,7 +136,10 @@ export interface HarnessDirectories {
   readonly compliance: string;
 }
 
-/** The platform worker's environment: production's platform settings, with the local outbox and directories (see the module comment). */
+/**
+ * The platform worker's environment: production's platform settings, with the local outbox and directories (see the
+ * module comment). It prices no screening: the platform's jobs no longer include screening_price (PR 6b-3).
+ */
 export function platformEnvironment(databaseUrl: string, origin: string, dirs: HarnessDirectories, logins: HarnessLogins = HARNESS_LOGINS): Record<string, string> {
   return {
     NODE_ENV: 'test',
@@ -140,6 +155,38 @@ export function platformEnvironment(databaseUrl: string, origin: string, dirs: H
   };
 }
 
+/**
+ * The screening consumer's environment (WORKER_JOBS=screening; one per task): production's screening settings, the
+ * screening and queue logins only, the declared concurrency, and the local outbox (see the module comment). The worker
+ * refuses the application and operator logins here (apps/worker/src/config.ts), as production's task holds neither.
+ */
+export function screeningEnvironment(databaseUrl: string, origin: string, dirs: HarnessDirectories, concurrency: number, logins: HarnessLogins = HARNESS_LOGINS): Record<string, string> {
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) {
+    throw new RangeError('the screening consumer prices 1 to 8 screenings at once');
+  }
+  return {
+    NODE_ENV: 'test',
+    WORKER_JOBS: 'screening',
+    SCREENING_DATABASE_URL: loginUrl(databaseUrl, logins.screening),
+    QUEUE_DATABASE_URL: loginUrl(databaseUrl, logins.queue),
+    SCREENING_CONCURRENCY: String(concurrency),
+    MAIL_OUTBOX_DIR: dirs.outbox,
+    APP_ORIGIN: origin,
+  };
+}
+
+/** What the web's environment carries of production's screening settings. */
+export interface WebScreeningSettings {
+  /**
+   * The static host the measured image was built for (STATIC_ASSET_ORIGIN, Next's assetPrefix; docs/adr/0055), which
+   * production's task sets for the CSP; null for an image built with none. The harness's browser is routed to the web
+   * container for it (run.ts).
+   */
+  readonly staticAssetOrigin?: string | null;
+  /** Screenings priced at once in all (desiredCount × concurrency), from which the "sent" page's wait is told. */
+  readonly screeningSlots?: number;
+}
+
 /** The web's environment: the production build with the e2e suite's local providers, one trusted proxy hop (each upload its own client address). */
 export function webEnvironment(
   databaseUrl: string,
@@ -147,8 +194,11 @@ export function webEnvironment(
   dirs: HarnessDirectories,
   secrets: { readonly cookieSecret: string; readonly masterKey: string },
   logins: HarnessLogins = HARNESS_LOGINS,
+  screening: WebScreeningSettings = {},
 ): Record<string, string> {
   return {
+    ...(screening.staticAssetOrigin === undefined || screening.staticAssetOrigin === null ? {} : { STATIC_ASSET_ORIGIN: screening.staticAssetOrigin }),
+    ...(screening.screeningSlots === undefined ? {} : { SCREENING_SLOTS: String(screening.screeningSlots) }),
     NODE_ENV: 'production',
     NEXT_TELEMETRY_DISABLED: '1',
     DATABASE_URL: loginUrl(databaseUrl, logins.app),

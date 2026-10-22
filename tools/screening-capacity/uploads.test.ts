@@ -2,12 +2,13 @@ import { SCALE_RELEASE_SHAPE, scalePlusFourRanges, scaleZips } from '@tp/synth';
 import { describe, expect, it } from 'vitest';
 
 import { ORACLE_UPLOADS, oracleKind } from './report';
-import { scenarios, splitZip, typedZip } from './uploads';
+import { scenarios, splitZip, typedZip, uploadAccountDomain } from './uploads';
 
 /**
  * The capacity test's uploads (audit #53 part 1; PR 6b, docs/adr/0064): every upload from its own ZIP, the five-digit
  * ones from ZIPs that need no ZIP+4, and S1-2 from a ZIP the release splits across localities, typed with a ZIP+4 in
- * the next locality's range, so its run is compared with the whole-release oracle.
+ * the next locality's range, so its run is compared with the whole-release oracle; and every upload from a domain of
+ * its own, a prospect of its own (PR 6b-3, Q7).
  */
 
 describe('the capacity uploads', () => {
@@ -33,5 +34,25 @@ describe('the capacity uploads', () => {
     // Each upload the oracle compares is one the scenarios send.
     expect(ORACLE_UPLOADS.every((id) => uploads.some((upload) => upload.id === id))).toBe(true);
     expect(uploads.filter((upload) => upload.zipPlusFour !== null).map((upload) => [upload.id, oracleKind(upload.id)])).toEqual([['S1-2', 'whole_release']]);
+  });
+
+  it('sends every upload from a domain of its own, so each is its own rate-limit account and none crosses a share (Q7)', () => {
+    const uploads = scenarios().flatMap((scenario) => scenario.uploads);
+    const domains = uploads.map((upload) => uploadAccountDomain(upload));
+    expect(new Set(domains).size).toBe(uploads.length);
+    expect(domains.every((domain) => domain.endsWith('.synthetic.test'))).toBe(true);
+    expect(uploadAccountDomain(uploads.find((upload) => upload.id === 'S4-3') ?? { contactEmail: '' })).toBe('capacity-s4-upload3.synthetic.test');
+    // No account sends more than one upload: S4's three worst files are three prospects, never one past its 100,000 rows.
+    expect(scenarios().find((scenario) => scenario.id === 'S4')?.uploads.filter((upload) => upload.shape === 'worst')).toHaveLength(3);
+  });
+
+  it('starts every cold scenario, and S2, from a fresh consumer, and S3 from the one that priced S2', () => {
+    expect(scenarios().map((scenario) => [scenario.id, scenario.freshConsumer, scenario.freshPostgres])).toEqual([
+      ['S1', true, true],
+      ['S2', true, false],
+      ['S3', false, false],
+      ['S4', true, true],
+      ['S5', true, true],
+    ]);
   });
 });

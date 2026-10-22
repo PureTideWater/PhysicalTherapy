@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -53,7 +53,7 @@ async function submit(rows: readonly SynthScreeningRow[], zip: string, plusFour:
                              places => $8, products => $9, bands => $10, allowed_cents => $11, claim_counts => $12, rows_left_out => 0, claim_lines_left_out => 0,
                              allowed_cents_left_out => 0, rows_outside_content => 0, claim_lines_outside_content => 0, allowed_cents_outside_content => 0,
                              heard_from => NULL, campaign_source => NULL, campaign_medium => NULL, campaign_name => NULL, click_kind => NULL, firm => NULL,
-                             consent_sha256 => NULL, terms_sha256 => NULL, request => $13) AS id`,
+                             consent_sha256 => NULL, terms_sha256 => NULL, received => NULL, rate_account_subject => $14, request => $13) AS id`,
     [
       `Synthetic Oracle Therapy ${label}`,
       zip,
@@ -68,6 +68,8 @@ async function submit(rows: readonly SynthScreeningRow[], zip: string, plusFour:
       rows.map((row) => row.allowedCents.toString()),
       rows.map((row) => row.claimCount),
       `test-${randomUUID()}`,
+      // The rate limiter's keyed subject the web passes (PR 6b-3): any 64 hex characters here, one account per upload.
+      createHash('sha256').update(`oracle-account:${label}`).digest('hex'),
     ],
   );
   return created?.id ?? '';

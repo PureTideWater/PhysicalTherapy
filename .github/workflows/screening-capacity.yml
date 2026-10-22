@@ -2,12 +2,16 @@ name: screening-capacity
 
 # The free screening's capacity test under production limits (audit #53 part 1; docs/adr/0062, "Capacity under
 # production limits"; docs/runbooks/screening-capacity.md): the production images run as containers under production's
-# task sizes (a quarter vCPU and 512 MiB for web and platform), Postgres at db.t4g.medium's size or the runner's share of
-# it with gp3's I/O baseline and a 1 ms delay each way, the SYNTHETIC scale release 900100 and the practice and worst
-# 50,000-row uploads, alone and three at once with a small one behind them. The job fails on everything PR 6 controls;
-# the time to email is reported as "open, PR 6b" until infra/lib/environments.ts declares the screening's own consumer,
-# and fails the job from then on (the founder's rulings of 2026-10-20, decisions 13 to 16). Synthetic data only, no
-# credentials. Not a required check: it runs where its paths change, weekly and on request.
+# task sizes (a quarter vCPU and 512 MiB for web and platform; the screening consumer, WORKER_JOBS=screening, at 2 vCPU
+# and 4 GiB pricing three at once), Postgres at db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms
+# delay each way, the SYNTHETIC scale release 900100 and the practice and worst 50,000-row uploads, alone and three at
+# once with a small one behind them. Time is enforced: above 48 s on the runner fails (decisions 13 to 16, the founder's
+# rulings of 2026-10-20; PR 6b-3). Synthetic data only, no credentials.
+#
+# A required check from PR 6b-3 on (the founder's Q8 of 2026-10-21; the founder sets the ruleset, runbook
+# screening-capacity "Making it required"): every pull request runs the workflow, and its "screening-capacity gate" job
+# passes at once when no watched path changed, else only when the measurement passed. A path filter on the trigger
+# would leave a required check pending forever on every other pull request.
 on:
   schedule:
     # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (audit #54).
@@ -20,6 +24,10 @@ on:
       - apps/worker/src/price/**
       - apps/worker/src/jobs/**
       - apps/worker/src/worker.ts
+      - apps/worker/src/main.ts
+      - apps/worker/src/config.ts
+      - apps/worker/src/deploy/**
+      - apps/worker/build.ts
       - apps/worker/src/mail/**
       - apps/web/src/lib/screening/**
       - apps/web/src/app/screening/**
@@ -35,31 +43,15 @@ on:
       - tools/screening-capacity/**
       - tools/release/scale.ts
       - infra/lib/environments.ts
+      - infra/lib/screening.ts
+      - infra/lib/constructs/compute.ts
       - infra/lib/constructs/database.ts
       - apps/web/Dockerfile
       - apps/worker/Dockerfile
       - pnpm-lock.yaml
       - .github/workflows/screening-capacity.yml
+  # Every pull request: the gate decides from its changed files (the changes job's watched list) whether to measure.
   pull_request:
-    # Where the screening, pricing, the harness or the images change; schema and lockfile pull requests elsewhere are
-    # measured by the push to the build branch after they merge.
-    paths:
-      - apps/worker/src/screening/**
-      - apps/worker/src/price/**
-      - apps/web/src/lib/screening/**
-      - apps/web/src/app/screening/**
-      - apps/web/src/components/screening/**
-      - packages/pricing/src/**
-      - packages/rules/src/**
-      - packages/synth/src/release/**
-      - packages/synth/src/screening/**
-      - packages/db/migrations/*screening*.sql
-      - tools/screening-capacity/**
-      - tools/release/scale.ts
-      - infra/lib/environments.ts
-      - apps/web/Dockerfile
-      - apps/worker/Dockerfile
-      - .github/workflows/screening-capacity.yml
 
 permissions:
   contents: read
@@ -70,7 +62,53 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Whether to measure: always outside a pull request; on one, when it changes a watched path. The pull request's list
+  # is the push list less the lockfile and the migrations that do not name the screening, which the push to the build
+  # branch measures after they merge. Reads file names only: no install, no repository code run.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      measure: ${{ steps.watched.outputs.measure }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+      - name: Read the changed paths
+        id: watched
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "measure=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A diff that cannot be read fails the step (and so the gate), never reads as "nothing changed".
+          git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"
+          measure=false
+          while IFS= read -r file; do
+            case "$file" in
+              apps/worker/src/screening/*|apps/worker/src/price/*|apps/worker/src/jobs/*|apps/worker/src/worker.ts|apps/worker/src/main.ts|apps/worker/src/config.ts|apps/worker/src/deploy/*|apps/worker/build.ts|apps/worker/src/mail/*|apps/web/src/lib/screening/*|apps/web/src/app/screening/*|apps/web/src/components/screening/*|apps/web/src/proxy.ts|packages/pricing/src/*|packages/rules/src/*|packages/contracts/src/*|packages/money/src/*|packages/db/migrations/*screening*.sql|packages/synth/src/release/*|packages/synth/src/screening/*|tools/screening-capacity/*|tools/release/scale.ts|infra/lib/environments.ts|infra/lib/screening.ts|infra/lib/constructs/compute.ts|infra/lib/constructs/database.ts|apps/web/Dockerfile|apps/worker/Dockerfile|.github/workflows/screening-capacity.yml)
+                measure=true
+                echo "watched: $file"
+                ;;
+            esac
+          done < "$RUNNER_TEMP/changed-paths"
+          echo "measure=$measure" >> "$GITHUB_OUTPUT"
+
   capacity:
+    needs: changes
+    if: needs.changes.outputs.measure == 'true'
+    # A 4-CPU runner: Postgres keeps db.t4g.medium's 2 vCPU and the consumer its 2 (a smaller one stops as "runner too
+    # small"). A public repository's standard runner has 4. Once the repository is private its standard runner has 2,
+    # so this label (and the release's capacity job's, the same runner) becomes the 4-core larger runner the founder
+    # creates (Q1 (d)), pinned to its image like every label here (audit #19); until then a private run is refused as
+    # too small and the screening cannot open.
     runs-on: ubuntu-24.04
     # A run takes 30 to 60 minutes (the scale release, two image builds, five scenarios); a hung scenario stops at 90
     # instead of GitHub's 360 (docs/adr/0063).
@@ -136,28 +174,60 @@ jobs:
           path: ${{ runner.temp }}/scale-release
           key: ${{ steps.scale-release.outputs.cache-primary-key }}
 
-      # The harness, its child processes and Chromium on every CPU but the last, which web and platform share.
+      # The harness, its child processes and Chromium on Postgres's CPUs (0-1 on a 4-CPU runner), never the consumer's
+      # (2-3) or the CPU web and platform share (3): the layout's own answer (limits.ts, harnessCpus).
       - name: Measure under production limits
         run: |
-          last=$(( $(nproc) - 1 ))
-          taskset -c "0-$(( last > 0 ? last - 1 : 0 ))" pnpm screening:capacity \
+          cpus=$(pnpm -s screening:capacity --print-harness-cpus)
+          echo "harness on CPUs $cpus"
+          taskset -c "$cpus" pnpm screening:capacity \
             --out "$RUNNER_TEMP/screening-capacity" \
             --release-dir "$RUNNER_TEMP/scale-release" \
             --web-image tp-web:capacity \
             --worker-image tp-worker:capacity
 
-      # The report (written after every scenario, so a run that stops still has its figures) and the services' logs
-      # (IDs, codes and numbers by the logger's allowlist, synthetic data, result links masked).
+      # The report (written after every scenario, so a run that stops still has its figures), its SHA-256 and the
+      # services' logs (IDs, codes and numbers by the logger's allowlist, synthetic data, result links masked).
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: screening-capacity
           path: |
             ${{ runner.temp }}/screening-capacity/screening-capacity.json
+            ${{ runner.temp }}/screening-capacity/screening-capacity.sha256
             ${{ runner.temp }}/screening-capacity/summary.md
             ${{ runner.temp }}/screening-capacity/logs/
           if-no-files-found: ignore
           retention-days: 90
+
+  # The required check (Q8): passes at once when no watched path changed, else only when the measurement passed. It runs
+  # whatever the other jobs did, except when the run itself is cancelled (a newer push to the pull request).
+  gate:
+    name: screening-capacity gate
+    needs: [changes, capacity]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Pass when nothing watched changed, else only on a passing measurement
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          MEASURE: ${{ needs.changes.outputs.measure }}
+          CAPACITY: ${{ needs.capacity.result }}
+        run: |
+          if [ "$CHANGES" != "success" ]; then
+            echo "the changed paths could not be read ($CHANGES)"
+            exit 1
+          fi
+          if [ "$MEASURE" != "true" ]; then
+            echo "no watched path changed: nothing to measure"
+            exit 0
+          fi
+          if [ "$CAPACITY" != "success" ]; then
+            echo "the capacity measurement did not pass ($CAPACITY): see its job's summary"
+            exit 1
+          fi
+          echo "the capacity measurement passed with time enforced"
 
   # A failure outside a pull request opens one issue, or comments on the one already open. This job holds the
   # workflow's only write permission and runs no repository code: it checks nothing out.

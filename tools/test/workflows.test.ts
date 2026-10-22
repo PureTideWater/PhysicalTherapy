@@ -470,21 +470,29 @@ describe('workflows', () => {
     expect(verify).toBeLessThan(publish);
   });
 
-  it('measure the screening under production limits on pushes, pull requests, weekly and on request, failing on what PR 6 controls and opening an issue from a job of its own (audit #53 part 1)', () => {
+  it('measure the screening under production limits with time enforced on pushes, weekly and on request, and gate every pull request through one required job that measures only when a watched path changed (audit #53 part 1; the founder’s Q8 of 2026-10-21)', () => {
     const file = readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8');
-    const capacity = parse(file) as Workflow & { permissions: unknown; concurrency: Record<string, unknown>; jobs: Record<string, Job & { 'timeout-minutes'?: number; needs?: unknown; if?: string; permissions?: unknown }> };
+    const capacity = parse(file) as Workflow & {
+      permissions: unknown;
+      concurrency: Record<string, unknown>;
+      jobs: Record<string, Job & { name?: string; 'timeout-minutes'?: number; needs?: unknown; if?: string; permissions?: unknown; outputs?: Record<string, string> }>;
+    };
     const on = capacity.on as Record<string, { branches?: string[]; paths?: string[] } | null | { cron: string }[]>;
     expect(Object.keys(on).sort()).toEqual(['pull_request', 'push', 'schedule', 'workflow_dispatch']);
     expect(on.schedule).toEqual([{ cron: '41 6 * * 1' }]);
     expect(on.workflow_dispatch).toBeNull();
     const push = on.push as { branches: string[]; paths: string[] };
     expect(push.branches).toEqual(['claude/build-platform']);
-    // Pushes measure every change that can move the result, migrations and the lockfile included.
-    expect(push.paths).toEqual([
+    // Pushes measure every change that can move the result: the consumer's own files, migrations and the lockfile included.
+    const pushPaths = [
       'apps/worker/src/screening/**',
       'apps/worker/src/price/**',
       'apps/worker/src/jobs/**',
       'apps/worker/src/worker.ts',
+      'apps/worker/src/main.ts',
+      'apps/worker/src/config.ts',
+      'apps/worker/src/deploy/**',
+      'apps/worker/build.ts',
       'apps/worker/src/mail/**',
       'apps/web/src/lib/screening/**',
       'apps/web/src/app/screening/**',
@@ -500,39 +508,44 @@ describe('workflows', () => {
       'tools/screening-capacity/**',
       'tools/release/scale.ts',
       'infra/lib/environments.ts',
+      'infra/lib/screening.ts',
+      'infra/lib/constructs/compute.ts',
       'infra/lib/constructs/database.ts',
       'apps/web/Dockerfile',
       'apps/worker/Dockerfile',
       'pnpm-lock.yaml',
       '.github/workflows/screening-capacity.yml',
-    ]);
-    // Pull requests only where the screening, pricing, the harness or the images change: no lockfile, no other migration.
-    expect((on.pull_request as { paths: string[] }).paths).toEqual([
-      'apps/worker/src/screening/**',
-      'apps/worker/src/price/**',
-      'apps/web/src/lib/screening/**',
-      'apps/web/src/app/screening/**',
-      'apps/web/src/components/screening/**',
-      'packages/pricing/src/**',
-      'packages/rules/src/**',
-      'packages/synth/src/release/**',
-      'packages/synth/src/screening/**',
-      'packages/db/migrations/*screening*.sql',
-      'tools/screening-capacity/**',
-      'tools/release/scale.ts',
-      'infra/lib/environments.ts',
-      'apps/web/Dockerfile',
-      'apps/worker/Dockerfile',
-      '.github/workflows/screening-capacity.yml',
-    ]);
+    ];
+    expect(push.paths).toEqual(pushPaths);
+    // Every pull request runs it, so the required gate is always reported: no path filter on the trigger.
+    expect(on.pull_request).toBeNull();
     expect(capacity.permissions).toEqual({ contents: 'read' });
     // Pushes group by commit and are never cancelled; only a pull request's older run is.
     expect(capacity.concurrency).toEqual({
       group: "screening-capacity-${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
       'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
     });
-    expect(Object.keys(capacity.jobs).sort()).toEqual(['capacity', 'notify']);
+    expect(Object.keys(capacity.jobs).sort()).toEqual(['capacity', 'changes', 'gate', 'notify']);
+
+    // The changed paths: file names only, from a checkout that keeps no token; a pull request measures when it changes
+    // the push list less the lockfile and the migrations that do not name the screening.
+    const changes = capacity.jobs.changes;
+    expect(changes?.['runs-on']).toBe('ubuntu-24.04');
+    expect(changes?.permissions).toBeUndefined();
+    expect(changes?.outputs).toEqual({ measure: '${{ steps.watched.outputs.measure }}' });
+    expect(changes?.steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
+    const watched = changes?.steps.find((step) => (step as Step & { id?: string }).id === 'watched');
+    const script = watched?.run ?? '';
+    const patterns = /case "\$file" in\s+([^)]+)\)/.exec(script)?.[1]?.split('|') ?? [];
+    expect(patterns).toEqual(pushPaths.filter((entry) => entry !== 'pnpm-lock.yaml').map((entry) => (entry === 'packages/db/migrations/**' ? 'packages/db/migrations/*screening*.sql' : entry.replace(/\*\*$/, '*'))));
+    expect(script).toContain('git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"');
+    expect(script).toContain('if [ "$EVENT" != "pull_request" ]; then');
+
+    // The measurement: only when the changes say so, on a 4-CPU runner (a public repository's standard one; the 4-core
+    // larger runner once the repository is private, Q1 (d)).
     const measure = capacity.jobs.capacity;
+    expect(measure?.needs).toBe('changes');
+    expect(measure?.if).toBe("needs.changes.outputs.measure == 'true'");
     expect(measure?.['runs-on']).toBe('ubuntu-24.04');
     expect(measure?.['timeout-minutes']).toBe(90);
     expect(measure?.permissions).toBeUndefined();
@@ -562,16 +575,37 @@ describe('workflows', () => {
     const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
     expect(stepIndex(steps, (step) => step.uses === 'docker/build-push-action@v6')).toBeLessThan(run);
     expect(save).toBeLessThan(run);
-    expect(steps[run]?.run).toContain('taskset -c');
+    // The harness on Postgres's CPUs, from the layout itself, never the consumer's.
+    expect(steps[run]?.run).toContain('cpus=$(pnpm -s screening:capacity --print-harness-cpus)');
+    expect(steps[run]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity');
     const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
     expect(upload).toBe(run + 1);
     expect((steps[upload] as Step & { if?: string }).if).toBe('always()');
     expect(String(steps[upload]?.with?.path).trim().split('\n')).toEqual([
       '${{ runner.temp }}/screening-capacity/screening-capacity.json',
+      '${{ runner.temp }}/screening-capacity/screening-capacity.sha256',
       '${{ runner.temp }}/screening-capacity/summary.md',
       '${{ runner.temp }}/screening-capacity/logs/',
     ]);
     expect(steps[upload]?.with?.['retention-days']).toBe(90);
+    // The measuring job's checkout keeps no token: nothing it runs calls GitHub.
+    expect(steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false } });
+
+    // The required check: one job, named for the ruleset, that runs whatever the others did unless the run is cancelled,
+    // passes when nothing watched changed and otherwise only on a passing measurement; it checks nothing out.
+    const gate = capacity.jobs.gate;
+    expect(gate?.name).toBe('screening-capacity gate');
+    expect(gate?.needs).toEqual(['changes', 'capacity']);
+    expect(gate?.if).toBe('${{ !cancelled() }}');
+    expect(gate?.permissions).toBeUndefined();
+    expect(gate?.steps.every((step) => step.uses === undefined)).toBe(true);
+    const decide = gate?.steps.map((step) => step.run ?? '').join('\n') ?? '';
+    expect(decide).toContain('if [ "$CHANGES" != "success" ]; then');
+    expect(decide).toContain('if [ "$MEASURE" != "true" ]; then');
+    expect(decide).toContain('if [ "$CAPACITY" != "success" ]; then');
+    const decision: Step & { readonly env?: unknown } = gate?.steps[0] ?? {};
+    expect(decision.env).toEqual({ CHANGES: '${{ needs.changes.result }}', MEASURE: '${{ needs.changes.outputs.measure }}', CAPACITY: '${{ needs.capacity.result }}' });
+
     // The issue: a job of its own, the only one that may write, that needs the measurement, skips pull requests and runs no repository code.
     const notify = capacity.jobs.notify;
     expect(notify?.['runs-on']).toBe('ubuntu-24.04');
@@ -579,8 +613,6 @@ describe('workflows', () => {
     expect(notify?.if).toBe("failure() && github.event_name != 'pull_request'");
     expect(notify?.permissions).toEqual({ issues: 'write' });
     expect(notify?.['timeout-minutes']).toBe(5);
-    // The measuring job's checkout keeps no token: nothing it runs calls GitHub.
-    expect(steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false } });
     expect(notify?.steps.some((step) => step.uses?.startsWith('actions/checkout') === true)).toBe(false);
     expect(notify?.steps.every((step) => step.uses === undefined)).toBe(true);
     expect(notify?.steps.map((step) => step.run ?? '').join('\n')).toContain('--label screening-capacity');
@@ -688,8 +720,8 @@ describe('job timeouts', () => {
       'mutation.yml': { mutation: 120 },
       'supply-chain.yml': { licenses: 15, images: 15 },
       'approval-of-record.yml': { 'approval-of-record': 5 },
-      // A pull request that touches the screening, pricing, the harness or the images runs it (audit #53 part 1).
-      'screening-capacity.yml': { capacity: 90, notify: 5 },
+      // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8).
+      'screening-capacity.yml': { changes: 5, capacity: 90, gate: 5, notify: 5 },
     });
   });
 });

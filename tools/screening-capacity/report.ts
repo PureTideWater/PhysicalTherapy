@@ -7,6 +7,7 @@ import {
   MIN_ROUND_TRIP_MS,
   type PostgresLimit,
   TIME_ALLOWANCE_MS,
+  TIME_METRIC_BELOW_MS,
   TIME_PROMISE_MS,
   screeningConsumer,
 } from './limits';
@@ -14,20 +15,22 @@ import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
 
 /**
  * The capacity test's verdict and report (audit #53 part 1; docs/adr/0062, "Capacity under production limits"; the
- * founder's rulings of 2026-10-20, decisions 13 to 16).
+ * founder's rulings of 2026-10-20, decisions 13 to 16, and of 2026-10-21, Q1 (a) and Q7).
  *
- * The split verdict: the run fails on everything PR 6 controls (an OOM kill, a restart or exit the harness did not
- * cause, Postgres's included, anonymous memory above 90% of a task's limit, a limit or a cold start not applied, a
- * runner too small, a wrong or unfinished result, a stalled run, a small upload not queued behind the large ones, a
- * submission time not captured, an oracle mismatch or an oracle that compared fewer rows than the upload's Medicare
- * rows, a partial run: every one of S1 to S5 must be measured, and a declared screening consumer the harness does not
- * run as production will). Time is measured always and judged by timeVerdict(): "open, PR 6b"
- * while environments.ts declares no screening consumer, so it cannot fail the run; once PR 6b declares one, above 48 s
- * on the runner fails ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it
- * ("promise"). The report holds counts, times and hashes only: no row, link, token or address.
+ * The verdict: the run fails on everything the build controls (an OOM kill, a restart or exit the harness did not cause,
+ * Postgres's included, anonymous memory above 90% of a task's limit, the consumer's included, a limit or a cold start
+ * not applied, the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished
+ * result, a stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the
+ * platform pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
+ * that left for the static origin, a submission time not captured, an oracle mismatch or an oracle that compared fewer
+ * rows than the upload's Medicare rows, a partial run: every one of S1 to S5 must be measured, and a declared screening
+ * consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
+ * environments.ts declares no screening consumer; with it declared (PR 6b-3), above 48 s on the runner fails
+ * ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it ("promise"). The report
+ * holds counts, times, hashes and image IDs only: no row, link, token or address.
  */
 
-export const REPORT_FORMAT = 'tp-screening-capacity/3';
+export const REPORT_FORMAT = 'tp-screening-capacity/4';
 
 /** The scenarios a passing run measures, every one of them. */
 export const ALL_SCENARIOS = ['S1', 'S2', 'S3', 'S4', 'S5'] as const;
@@ -93,12 +96,18 @@ export function timeLabel(verdict: TimeVerdict): string {
 
 /** The limits as the containers report them (docker inspect, or the cgroup's own files). */
 export interface AppliedContainer {
-  readonly name: 'web' | 'platform' | 'postgres';
+  /** web, platform, screening-1 to screening-N, or postgres. */
+  readonly name: string;
   /** CPU quota in billionths of a CPU (Docker's NanoCpus); null when none applies. */
   readonly nanoCpus: number | null;
   readonly memoryBytes: number | null;
   readonly memorySwapBytes: number | null;
   readonly cpuset: string | null;
+  /**
+   * The process's CPU affinity as the kernel reports it (the process runtime, which execs each service under taskset;
+   * absent for Docker, whose cpuset is the container's own); null when it could not be read.
+   */
+  readonly affinity?: string | null;
 }
 
 export interface AppliedLimits {
@@ -112,21 +121,38 @@ export interface AppliedLimits {
 export interface ExpectedLimits {
   readonly web: ContainerLimit;
   readonly platform: ContainerLimit;
+  /** One consumer task's limits, and how many tasks (screening-1 to screening-N); null and 0 without a consumer. */
+  readonly screening: ContainerLimit | null;
+  readonly screeningTasks: number;
   readonly postgres: PostgresLimit;
   readonly storage: { readonly iops: number; readonly bytesPerSecond: number };
+}
+
+/** The consumer as measured (the design's §5.1): its tasks, each task's size, and the screenings each prices at once. */
+export interface ConsumerMeasure {
+  readonly tasks: number;
+  readonly cpus: number;
+  readonly memoryMiB: number;
+  readonly concurrency: number;
+}
+
+/** The containers a run measures with the limits each must have: web, platform, every consumer task, Postgres. */
+export function expectedContainers(expected: ExpectedLimits): { readonly name: string; readonly cpus: number; readonly memoryMiB: number; readonly cpuset: string }[] {
+  const screening = expected.screening;
+  return [
+    { name: 'web', ...expected.web, cpuset: expected.postgres.taskCpuset },
+    { name: 'platform', ...expected.platform, cpuset: expected.postgres.taskCpuset },
+    ...(screening === null ? [] : Array.from({ length: expected.screeningTasks }, (_, index) => ({ name: `screening-${String(index + 1)}`, ...screening, cpuset: expected.postgres.consumerCpuset }))),
+    { name: 'postgres', cpus: expected.postgres.cpus, memoryMiB: expected.postgres.memoryMiB, cpuset: expected.postgres.cpuset },
+  ];
 }
 
 /** Each limit the run should have applied and did not ("limit not applied"); empty when all hold. */
 export function limitProblems(applied: AppliedLimits, expected: ExpectedLimits): string[] {
   const problems: string[] = [];
-  const want: Record<AppliedContainer['name'], { readonly cpus: number; readonly memoryMiB: number; readonly cpuset: string }> = {
-    web: { ...expected.web, cpuset: expected.postgres.taskCpuset },
-    platform: { ...expected.platform, cpuset: expected.postgres.taskCpuset },
-    postgres: { cpus: expected.postgres.cpus, memoryMiB: expected.postgres.memoryMiB, cpuset: expected.postgres.cpuset },
-  };
-  for (const name of ['web', 'platform', 'postgres'] as const) {
+  for (const target of expectedContainers(expected)) {
+    const name = target.name;
     const container = applied.containers.find((item) => item.name === name);
-    const target = want[name];
     if (container === undefined) {
       problems.push(`${name}: no limits read`);
       continue;
@@ -141,6 +167,14 @@ export function limitProblems(applied: AppliedLimits, expected: ExpectedLimits):
     if (container.cpuset !== target.cpuset) {
       problems.push(`${name}: cpuset ${String(container.cpuset)}, not ${target.cpuset}`);
     }
+    // The process runtime's services run under taskset; an affinity narrower than the cpuset is the cgroup-v1 collapse.
+    if (container.affinity !== undefined && container.affinity !== target.cpuset) {
+      problems.push(`${name}: CPU affinity ${String(container.affinity)}, not ${target.cpuset}`);
+    }
+  }
+  const extra = applied.containers.filter((container) => !expectedContainers(expected).some((target) => target.name === container.name));
+  for (const container of extra) {
+    problems.push(`${container.name}: a container the run does not declare`);
   }
   const io = applied.ioMax;
   if (io === null || io.riops !== expected.storage.iops || io.wiops !== expected.storage.iops || io.rbps !== expected.storage.bytesPerSecond || io.wbps !== expected.storage.bytesPerSecond) {
@@ -182,10 +216,20 @@ export interface UploadMeasure {
   readonly stalled: boolean;
   /** The run's status at the end (complete, failed, pricing, queued), or null when no run was found. */
   readonly runStatus: string | null;
+  /** The run's tier as submit_screening set it (Q7): its wait reason (null in the normal tier) and pg-boss priority. */
+  readonly waitReason: string | null;
+  readonly queuePriority: number | null;
+  /**
+   * The consumer's time-to-email line for the run (TimeToEmailMs): its elapsed_ms (from the web's received_at until the
+   * send returned and the completion committed), the line's own time from the scenario's start, and whether it was the
+   * normal line or the waiting tier's; null when no consumer logged one.
+   */
+  readonly logged: { readonly elapsedMs: number; readonly atMs: number; readonly tier: 'normal' | 'waiting' } | null;
 }
 
 export interface ContainerMeasure {
-  readonly name: 'web' | 'platform';
+  /** web, platform, or a consumer task (screening-1 to screening-N). */
+  readonly name: string;
   readonly limitBytes: number;
   readonly anonPeakBytes: number;
   readonly anonSamples: number;
@@ -208,8 +252,15 @@ export interface ScenarioMeasure {
   readonly containers: readonly ContainerMeasure[];
   /** Postgres's OOM kills during the scenario, its restarts and whether it ran at the end (null where not read). */
   readonly postgres: { readonly oomKills: number | null; readonly restarts: number | null; readonly running: boolean | null };
-  /** Platform jobs that ran during the scenario, from pg-boss's job table, with their seconds. */
-  readonly platformJobs: readonly { readonly name: string; readonly count: number; readonly seconds: number }[];
+  /** Jobs that ran during the scenario, from pg-boss's job table, by queue, with their seconds. */
+  readonly jobs: readonly { readonly name: string; readonly count: number; readonly seconds: number }[];
+  /** The scenario's runs the platform's log shows it pricing or emailing (none since PR 6b-3: the consumer prices them). */
+  readonly platformPricedRuns: number;
+  /**
+   * With a static asset origin: requests the pages made to it that the harness served from the web container's own
+   * /_next/static/, and those that would have left for it (anything else, or a fetch that failed); null without one.
+   */
+  readonly staticOrigin: { readonly routed: number; readonly left: number } | null;
 }
 
 export interface OracleComparison {
@@ -227,7 +278,12 @@ export interface OracleComparison {
 export interface Measurements {
   readonly commit: string;
   readonly runtime: 'docker' | 'process';
-  readonly imageDigests: Readonly<Record<string, string>>;
+  /** The measured images' IDs (`docker image inspect -f {{.Id}}`); null on the process runtime, which runs no image. */
+  readonly images: { readonly web: string | null; readonly worker: string | null };
+  /** The consumer as measured; null when the settings declare none (the harness then stops). */
+  readonly consumer: ConsumerMeasure | null;
+  /** The static host the web image was built for, which the harness routed to the web container; null for none. */
+  readonly staticAssetOrigin: string | null;
   readonly runner: { readonly cpus: number; readonly memoryMiB: number; readonly cpuModel: string; readonly kernel: string; readonly loadAverage: readonly number[] };
   readonly expected: ExpectedLimits;
   readonly applied: AppliedLimits;
@@ -269,6 +325,9 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
   if (rule.consumerDeclared && !rule.consumerRun) {
     reasons.push('consumer not run: environments.ts declares the screening consumer, and the harness still prices screenings in the platform container one at a time');
   }
+  if (rule.consumerDeclared && measured.consumer === null) {
+    reasons.push('consumer not measured: environments.ts declares the screening consumer, and the report names none');
+  }
   const ids = measured.scenarios.map((scenario) => scenario.id);
   if (ids.join(',') !== ALL_SCENARIOS.join(',')) {
     reasons.push(`partial run: measured ${ids.length === 0 ? 'no scenario' : ids.join(', ')}; a verdict needs ${ALL_SCENARIOS.join(', ')}${measured.only.length === 0 ? '' : ` (asked for ${measured.only.join(', ')})`}`);
@@ -298,9 +357,26 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       if (times.some(([created, started]) => created === null || started === null)) {
         reasons.push(`queue order not recorded: ${small.id}`);
       } else if (large.some((item) => (item.jobCreatedMs ?? 0) > (small.jobCreatedMs ?? 0) || (item.jobStartedMs ?? 0) > (small.jobStartedMs ?? 0))) {
-        // One run at a time (the platform's consumer): the small one is queued, and starts, after every large one.
+        // pg-boss takes jobs by priority, then age: the small one, queued last at the same priority, starts last.
         reasons.push(`queue order: ${small.id} was not queued and started behind the scenario's large uploads`);
       }
+    }
+    const slots = measured.consumer === null ? 0 : measured.consumer.tasks * measured.consumer.concurrency;
+    const atOnce = Math.min(large.length, slots);
+    if (atOnce > 1) {
+      // The consumer's slots, used at once: the first `atOnce` large uploads start before any large one is emailed, as
+      // they do with that many threads (the design's binding case: three worst uploads priced in parallel).
+      const firstEmail = Math.min(...large.map((item) => item.emailedMs ?? Number.POSITIVE_INFINITY));
+      const first = [...large].sort((a, b) => (a.jobCreatedMs ?? Number.POSITIVE_INFINITY) - (b.jobCreatedMs ?? Number.POSITIVE_INFINITY)).slice(0, atOnce);
+      if (first.some((item) => item.jobStartedMs === null || item.jobStartedMs >= firstEmail)) {
+        reasons.push(`slots not used: ${scenario.id}'s first ${String(atOnce)} large uploads were not priced at once (${String(slots)} declared)`);
+      }
+    }
+    if (scenario.platformPricedRuns > 0) {
+      reasons.push(`platform priced a screening: ${scenario.id} (${String(scenario.platformPricedRuns)} run${scenario.platformPricedRuns === 1 ? '' : 's'})`);
+    }
+    if (scenario.staticOrigin !== null && scenario.staticOrigin.left > 0) {
+      reasons.push(`request left for the static origin: ${scenario.id} (${String(scenario.staticOrigin.left)})`);
     }
     for (const container of scenario.containers) {
       const where = `${scenario.id} ${container.name}`;
@@ -338,11 +414,17 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       if (upload.emailedMs !== null && upload.submittedMs === null) {
         reasons.push(`submission time not captured: ${where}`);
       }
+      if (upload.waitReason !== null || upload.logged?.tier === 'waiting') {
+        // Every scenario upload is a different prospect's (one account each) inside the day's cap: none may wait (Q7).
+        reasons.push(`waiting tier: ${where} (${upload.waitReason ?? 'logged as waiting'}, priority ${String(upload.queuePriority)})`);
+      }
       if (upload.submittedMs !== null && upload.emailedMs !== null) {
-        const time = timeVerdict(upload.emailedMs - upload.submittedMs, rule);
+        const elapsed = upload.emailedMs - upload.submittedMs;
+        const time = timeVerdict(elapsed, rule);
         if (time.status === 'fail') {
-          reasons.push(`time: ${where} ${((upload.emailedMs - upload.submittedMs) / 1000).toFixed(1)} s, ${timeLabel(time)}`);
+          reasons.push(`time: ${where} ${(elapsed / 1000).toFixed(1)} s, ${timeLabel(time)}`);
         }
+        reasons.push(...timeMetricProblems(upload, elapsed));
       }
     }
   }
@@ -365,13 +447,43 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
   return { pass: reasons.length === 0, time: rule.consumerDeclared ? 'enforced' : 'open, PR 6b', reasons };
 }
 
+/**
+ * The time metric's bounds (the design's §5.3): the consumer's logged elapsed_ms for the upload's run is never above the
+ * time from the browser's POST to the line itself (the metric starts at the web's received_at, after the POST, and ends
+ * before its line is written), and never more than TIME_METRIC_BELOW_MS below the harness's time (the transfer before
+ * received_at), so the metric covers the web's share and the send.
+ */
+export function timeMetricProblems(upload: UploadMeasure, harnessMs: number): string[] {
+  if (upload.logged === null) {
+    return [`time metric not logged: ${upload.id}`];
+  }
+  const ceiling = upload.submittedMs === null ? null : upload.logged.atMs - upload.submittedMs;
+  if ((ceiling !== null && upload.logged.elapsedMs > ceiling) || upload.logged.elapsedMs < harnessMs - TIME_METRIC_BELOW_MS) {
+    return [
+      `time metric out of bounds: ${upload.id} logged ${(upload.logged.elapsedMs / 1000).toFixed(3)} s against the harness's ${(harnessMs / 1000).toFixed(3)} s (at most ${ceiling === null ? '—' : (ceiling / 1000).toFixed(3)} s, at least ${((harnessMs - TIME_METRIC_BELOW_MS) / 1000).toFixed(3)} s)`,
+    ];
+  }
+  return [];
+}
+
 export interface Report extends Measurements {
   readonly format: typeof REPORT_FORMAT;
   readonly verdict: Verdict;
+  /**
+   * The slowest upload's time, and whether it is above SIZING_QUESTION_MS: a sizing question for the founder before
+   * merge (open item O9), which never changes the verdict.
+   */
+  readonly sizing: { readonly worstUpload: string | null; readonly worstMs: number | null; readonly question: boolean };
 }
 
 export function report(measured: Measurements, rule: TimeRule): Report {
-  return { format: REPORT_FORMAT, ...measured, verdict: verdict(measured, rule) };
+  const worst = worstTime(measured);
+  return {
+    format: REPORT_FORMAT,
+    ...measured,
+    verdict: verdict(measured, rule),
+    sizing: { worstUpload: worst?.id ?? null, worstMs: worst?.ms ?? null, question: worst !== null && worst.ms > SIZING_QUESTION_MS },
+  };
 }
 
 const seconds = (ms: number | null | undefined): string => (ms === null || ms === undefined ? '—' : (ms / 1000).toFixed(1));
@@ -381,21 +493,21 @@ export function markdown(full: Report, rule: TimeRule): string {
   const lines = [
     `## Screening capacity: ${full.verdict.pass ? 'pass' : 'fail'} (time ${full.verdict.time})`,
     '',
-    `Commit \`${full.commit}\`, ${full.runtime} runtime, runner ${String(full.runner.cpus)} CPUs and ${String(full.runner.memoryMiB)} MiB (${full.runner.cpuModel}), load average ${full.runner.loadAverage.map((value) => value.toFixed(2)).join(' ')}. Release ${String(full.release.releaseNo)} (${String(full.release.records)} records${
+    `Commit \`${full.commit}\`, ${full.runtime} runtime, runner ${String(full.runner.cpus)} CPUs and ${String(full.runner.memoryMiB)} MiB (${full.runner.cpuModel}), load average ${full.runner.loadAverage.map((value) => value.toFixed(2)).join(' ')}. ${consumerLine(full)} Images: web \`${full.images.web ?? 'none (process runtime)'}\`, worker \`${full.images.worker ?? 'none (process runtime)'}\`${full.staticAssetOrigin === null ? '' : `; static origin ${full.staticAssetOrigin} routed to the web container`}. Release ${String(full.release.releaseNo)} (${String(full.release.records)} records${
       full.release.zip9 === undefined
         ? ''
         : `; ZIP9: ${String(full.release.zip9.records)} records of ${String(full.release.zip9.rangesPerRecord)} ranges, ${String(full.release.zip9.linesPerYear)} lines and ${(full.release.zip9.bytesPerYear / MIB).toFixed(1)} MiB a year`
     }).`,
     '',
-    '| Upload | Shape | Rows | Seconds to email | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Upload | Shape | Rows | Seconds to email | Logged (TimeToEmailMs) | Tier | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const scenario of full.scenarios) {
     for (const upload of scenario.uploads) {
       const elapsed = upload.submittedMs !== null && upload.emailedMs !== null ? upload.emailedMs - upload.submittedMs : null;
       const shared = upload.phases.shared_load ?? upload.phases.shared_held;
       lines.push(
-        `| ${upload.id} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${seconds(upload.jobCreatedMs)}, ${seconds(upload.jobStartedMs)} | ${elapsed === null ? '—' : timeLabel(timeVerdict(elapsed, rule))} |`,
+        `| ${upload.id} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(upload.logged?.elapsedMs)} | ${upload.waitReason ?? upload.logged?.tier ?? '—'} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${seconds(upload.jobCreatedMs)}, ${seconds(upload.jobStartedMs)} | ${elapsed === null ? '—' : timeLabel(timeVerdict(elapsed, rule))} |`,
       );
     }
   }
@@ -407,6 +519,37 @@ export function markdown(full: Report, rule: TimeRule): string {
       );
     }
   }
-  lines.push('', full.verdict.reasons.length === 0 ? 'Every check PR 6 controls passed.' : 'Failing checks:', ...full.verdict.reasons.map((reason) => `- ${reason}`), '');
+  const worst = worstTime(full);
+  if (worst !== null && worst.ms > SIZING_QUESTION_MS) {
+    lines.push('', `Sizing question for the founder (open item O9): the worst time, ${worst.id}’s ${(worst.ms / 1000).toFixed(1)} s, is above ${String(SIZING_QUESTION_MS / 1000)} s, within 8% of the 48-s line. This is reported before merge as a question of the consumer's size, not a pass to rely on or a limit to widen.`);
+  }
+  lines.push('', full.verdict.reasons.length === 0 ? 'Every check the build controls passed.' : 'Failing checks:', ...full.verdict.reasons.map((reason) => `- ${reason}`), '');
   return lines.join('\n');
+}
+
+/** The consumer as the summary states it. */
+function consumerLine(full: Report): string {
+  const consumer = full.consumer;
+  return consumer === null
+    ? 'No screening consumer measured.'
+    : `Screening consumer: ${String(consumer.tasks)} task${consumer.tasks === 1 ? '' : 's'} of ${String(consumer.cpus)} vCPU and ${String(consumer.memoryMiB)} MiB, ${String(consumer.concurrency)} screenings at once each.`;
+}
+
+/**
+ * Above this, a passing worst time is within 8% of the 48-s allowance: the design's §2.4 and open item O9 send it to the
+ * founder as a sizing question before merge, never as a tuning or a wider limit.
+ */
+export const SIZING_QUESTION_MS = 44_000;
+
+/** The slowest upload's time to email across the run, or null when none was emailed. */
+export function worstTime(full: Pick<Measurements, 'scenarios'>): { readonly id: string; readonly ms: number } | null {
+  let worst: { readonly id: string; readonly ms: number } | null = null;
+  for (const scenario of full.scenarios) {
+    for (const upload of scenario.uploads) {
+      if (upload.submittedMs !== null && upload.emailedMs !== null && (worst === null || upload.emailedMs - upload.submittedMs > worst.ms)) {
+        worst = { id: upload.id, ms: upload.emailedMs - upload.submittedMs };
+      }
+    }
+  }
+  return worst;
 }

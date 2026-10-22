@@ -20,8 +20,10 @@ import { SCREENING_COLUMNS, type ScreeningRow } from '@tp/worker/screening-forma
  * The capacity test's uploads and scenarios (audit #53 part 1; docs/adr/0062, "Capacity under production limits"):
  * the SYNTHETIC rows packages/synth generates as the screening's own rows, as the CSV a prospect uploads (the
  * template's eight columns), and the five scenarios with each upload's ZIP, practice name and address, distinct across
- * scenarios so no screening replaces another. S1, S4 and S5 start from a cold Postgres (restarted, the page cache
- * dropped); S4's three worst uploads are worst-shape variants 1 to 3, so they differ from S1's rows and from each other
+ * scenarios so no screening replaces another, each address at a domain of its own, so each upload is its own rate-limit
+ * account (a different prospect, as audit #53 intends) and none crosses an account's daily share into the waiting tier
+ * (the founder's Q7 of 2026-10-21). S1, S4 and S5 start from a cold Postgres (restarted, the page cache dropped), and
+ * S1, S2, S4 and S5 from a fresh consumer (its threads' shared types cold); S4's three worst uploads are worst-shape variants 1 to 3, so they differ from S1's rows and from each other
  * in most of their codes, sharing the release's pooled and corrected codes, which every worst upload prices. S1's
  * second upload (S1-2, the small shape behind S1-1) is sent from a ZIP the release splits across localities, with a
  * ZIP+4 in the next locality's range (PR 6b, docs/adr/0064): its run's keyed read must hold the ZIP's ZIP9 record, and
@@ -87,9 +89,9 @@ export interface ScenarioSpec {
   readonly id: 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
   readonly what: string;
   readonly uploads: readonly UploadSpec[];
-  /** Start a fresh platform container before the scenario. */
-  readonly freshPlatform: boolean;
-  /** Restart Postgres and drop the page cache before it (web and platform start again after it). */
+  /** Start fresh screening consumer containers before the scenario, so its threads hold no shared types. */
+  readonly freshConsumer: boolean;
+  /** Restart Postgres and drop the page cache before it (every service starts again after it). */
   readonly freshPostgres: boolean;
 }
 
@@ -119,7 +121,15 @@ export function typedZip(upload: Pick<UploadSpec, 'zip' | 'zipPlusFour'>): strin
   return upload.zipPlusFour === null ? upload.zip : `${upload.zip}-${upload.zipPlusFour}`;
 }
 
-/** The five scenarios (the design's §3.4): each upload with its own ZIP in its own locality, name and address. */
+/**
+ * The rate-limit account an upload's address belongs to: its domain (synthetic.test is no free-mail provider, so the
+ * screening's limiter keys a business domain; apps/web/src/lib/screening/rate.ts).
+ */
+export function uploadAccountDomain(upload: Pick<UploadSpec, 'contactEmail'>): string {
+  return upload.contactEmail.slice(upload.contactEmail.indexOf('@') + 1);
+}
+
+/** The five scenarios (the design's §3.4): each upload with its own ZIP in its own locality, name, address and domain. */
 export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): ScenarioSpec[] {
   // Five ZIPs per scenario at most (three large, one small; S1 to S3 use one), each set in distinct localities.
   const zips = uploadZips(release, 5, 4);
@@ -129,7 +139,8 @@ export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): Sce
     zip: zips[Number.parseInt(scenario.slice(1), 10) - 1]?.[index] ?? '',
     zipPlusFour: null,
     practiceName: practiceName(scenario, index + 1),
-    contactEmail: `capacity.${scenario.toLowerCase()}.upload${String(index + 1)}@capacity-${scenario.toLowerCase()}.synthetic.test`,
+    // One domain per upload, so one rate-limit account each (the design's §3.4).
+    contactEmail: `capacity.${scenario.toLowerCase()}.upload${String(index + 1)}@capacity-${scenario.toLowerCase()}-upload${String(index + 1)}.synthetic.test`,
     behind,
     variant,
   });
@@ -137,25 +148,26 @@ export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): Sce
   return [
     {
       id: 'S1',
-      what: 'worst shape, one upload alone, then a small one behind it from a ZIP split across localities with its ZIP+4: fresh Postgres, fresh platform container',
+      what: 'worst shape, one upload alone, then a small one behind it from a ZIP split across localities with its ZIP+4: fresh Postgres, fresh consumer',
       uploads: [upload('S1', 0, 'worst'), { ...upload('S1', 1, 'small', true), ...split }],
-      freshPlatform: true,
+      freshConsumer: true,
       freshPostgres: true,
     },
-    { id: 'S2', what: 'practice shape, one upload alone: fresh platform container', uploads: [upload('S2', 0, 'practice')], freshPlatform: true, freshPostgres: false },
-    { id: 'S3', what: 'practice shape again in the same container (shared types held)', uploads: [upload('S3', 0, 'practice')], freshPlatform: false, freshPostgres: false },
+    { id: 'S2', what: 'practice shape, one upload alone: fresh consumer', uploads: [upload('S2', 0, 'practice')], freshConsumer: true, freshPostgres: false },
+    // The consumer hands a run to its first idle thread, so S3's run goes to the thread that priced S2's.
+    { id: 'S3', what: 'practice shape again in the same consumer (shared types held by the thread that priced S2)', uploads: [upload('S3', 0, 'practice')], freshConsumer: false, freshPostgres: false },
     {
       id: 'S4',
-      what: 'worst shape, three at once (variants 1 to 3), a small one behind them: fresh Postgres, fresh platform container',
+      what: 'worst shape, three at once (variants 1 to 3, three prospects), a small one behind them: fresh Postgres, fresh consumer',
       uploads: [upload('S4', 0, 'worst', false, 1), upload('S4', 1, 'worst', false, 2), upload('S4', 2, 'worst', false, 3), upload('S4', 3, 'small', true)],
-      freshPlatform: true,
+      freshConsumer: true,
       freshPostgres: true,
     },
     {
       id: 'S5',
-      what: 'practice shape, three at once, a small one behind them: fresh Postgres, fresh platform container',
+      what: 'practice shape, three at once (three prospects), a small one behind them: fresh Postgres, fresh consumer',
       uploads: [upload('S5', 0, 'practice'), upload('S5', 1, 'practice'), upload('S5', 2, 'practice'), upload('S5', 3, 'small', true)],
-      freshPlatform: true,
+      freshConsumer: true,
       freshPostgres: true,
     },
   ];

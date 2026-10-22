@@ -189,15 +189,15 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   },
   {
     id: 'SCR-08',
-    title: "The screening's capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16)",
+    title: "The screening's capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16, and of 2026-10-21, Q1 (a), Q7 and Q8)",
     assertion:
-      'The production images at production\'s task sizes, Postgres at db.t4g.medium\'s size or the runner\'s share with gp3\'s baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once (cold, the worst ones distinct) with a small one queued behind them; fails on an OOM kill (Postgres\'s included), a restart, anonymous memory above 90% of a limit, a limit or cold start not applied, a runner too small, a wrong, unfinished or stalled result, a result page that does not open (its first page of groups or its last), a small upload not queued behind the large ones, an oracle mismatch or an oracle short of an upload\'s Medicare rows (S1-1, S2-1 and S3-1 against the read and adapter frozen at 3c1b289, and S1-2, a ZIP the release splits across localities sent with its ZIP+4, against the whole-release oracle), or a run of fewer than S1 to S5; the time to email reported as "open, PR 6b" until environments.ts declares the screening\'s consumer, then failing above 48 s on the runner (60 s scaled by the runner-to-Fargate factor once staging measures it)',
+      "The production images at production's task sizes, the screening consumer among them (WORKER_JOBS=screening at 2 vCPU and 4 GiB, three threads, on its own login) beside a platform that prices none, Postgres at db.t4g.medium's 2 vCPU on the runner's first CPUs with gp3's baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once (cold, the worst ones distinct, each upload a prospect of its own) with a small one sent once the large uploads' jobs are queued; fails on an OOM kill (Postgres's included), a restart, anonymous memory above 90% of a limit (the consumer's included), a limit or cold start not applied, the consumer measured at another size than declared or its threads not pricing at once, a runner too small (fewer than 4 CPUs), a wrong, unfinished or stalled result, a result page that does not open (its first page of groups or its last), a small upload not queued behind the large ones, the platform pricing a screening, an upload in the waiting tier, the consumer's time to email not logged or out of its bounds (never above the time from the browser's POST to its own line, never more than 2 s below the harness's), a request that left for the static origin, an oracle mismatch or an oracle short of an upload's Medicare rows (S1-1, S2-1 and S3-1 against the read and adapter frozen at 3c1b289, and S1-2, a ZIP the release splits across localities sent with its ZIP+4, against the whole-release oracle), or a run of fewer than S1 to S5; time enforced: any upload above 48 s on the runner fails (60 s scaled by the runner-to-Fargate factor once staging measures it), and a worst time above 44 s goes to the founder as a sizing question; required on every pull request through a gate that measures when a watched path changed",
   },
   {
     id: 'SCR-09',
     title: 'The release read by key (audit #53 part 2)',
     assertion:
-      "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; the key set and its records read on one snapshot; a lookup outside the keys fetched, a row outside the key set or a code priced outside it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR; an attempt a stale claim overtook stops at its next call",
+      "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; the key set and its records read on one snapshot; a lookup outside the keys fetched, a row outside the key set or a code priced outside it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR; an attempt a stale claim overtook stops at its next call; the shared types read by the record-type index, never a sequential scan of rule_record, leaving out the six keyed types (locality_map_plus_four, keyed by the five-digit ZIP, among them)",
   },
   {
     id: 'SCR-10',
@@ -240,6 +240,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'A Medicare screening row in a quarter outside the loaded content',
     assertion:
       "Left out in the browser and counted, with the loaded quarters named, and the result says so. A bypassing request is refused on the server and in the database. Other products' rows are untouched, and a content with no records at all has an empty span",
+  },
+  {
+    id: 'SCR-17',
+    title: "Queue order by an account's share and the daily cap (the founder's Q7 of 2026-10-21)",
+    assertion:
+      "Every upload accepted; an account's k-th upload past its 100,000-row share of the UTC day waits at priority -k (at most -20), and an upload past the day's 1,000,000-row cap of normal-tier rows at -1; the account kept only as the rate limiter's keyed subject; the cap counts the normal tier only; the due runs, the queue gauge and the wait ordered by priority, then age; a waiting run's time to email logged apart from the promise's metric; no upload of the capacity test waits",
+  },
+  {
+    id: 'SCR-18',
+    title: 'The "sent" page\'s four wait states',
+    assertion:
+      "After an upload the page tells the prospect, in the founder's words, that the result usually comes within a minute, that it can take a few minutes when every slot is busy (runs pricing and queued ahead at least the consumer's slots), or one sentence each for an upload over its account's share and over the day's cap; the wait read from the database after the submission; an upload sent to wait logged by its code alone",
+  },
+  {
+    id: 'SCR-19',
+    title: 'A screening whose consumer died',
+    assertion:
+      "A run cut off while pricing (the consumer killed after a recorded batch, or a thread out of memory) is claimed again and emailed within about 3 minutes, its recorded batches kept and only its pending rows priced, at most three attempts: the job's 60-second heartbeat set on the existing queue and on every send, a run stale after 2 minutes without progress, and the sweep sending due runs again at their priority",
+  },
+  {
+    id: 'SCR-20',
+    title: "Production's screening opens only for the deployed tag's passing capacity report (decision 13)",
+    assertion:
+      "The launch check prints a launch value only for the tag's report from the Docker runtime that passes with time enforced, as recorded and as read again, measured at the tag's commit, on both image IDs as deployed and on the consumer production declares; anything else names its reason and the deploy passes closed; the web keeps production closed unless the value names the image tag it runs, so a value kept by omission closes it; staging and development are not gated",
   },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },
