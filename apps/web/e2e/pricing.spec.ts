@@ -37,8 +37,11 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
       // The pricing location has its own form since PR 6b (audit #33): the billing ZIP, set whole.
       await admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)').fill('00011');
       await admin.getByRole('button', { name: 'Save the location' }).click();
-      await expect(admin.locator('[data-notice="location"]')).toContainText('Medicare prices this location in locality 99999-01 under rule release 900001.');
+      await expect(admin.locator('[data-notice="location"]')).toBeVisible();
+      // The status the location has now, read from the database, and the stored location in the field (review of PR 6b-2, finding 14).
+      await expect(admin.locator('[data-location-status="ready"]')).toHaveText('Medicare prices this location in locality 99999-01 under rule release 900001.');
       await expect(admin.locator('[data-location-zip]')).toHaveText('00011');
+      await expect(admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)')).toHaveValue('00011');
       await admin.getByLabel('Places of service priced as facility').fill('22');
       await admin.getByLabel('Places of service priced as non-facility').fill('11');
       await admin.getByLabel('Default rounding when a contract is silent').selectOption('HALF_UP_CENT');

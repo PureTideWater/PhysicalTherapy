@@ -166,7 +166,8 @@ describe('organizations and practices', () => {
       throw new Error(`expected a new practice, got ${practice.status}`);
     }
     const practiceId = practice.data.objectId;
-    expect(practice.data.redirect).toBe(`/console/organizations/${organizationId}?created=${practiceId}&location=ready`);
+    // The link names the practice alone: its location's status is read from the database (review of PR 6b-2, finding 14).
+    expect(practice.data.redirect).toBe(`/console/organizations/${organizationId}?created=${practiceId}`);
     const { rows } = await owner.query<{ data_key_ref: string; npi: string | null; zip: string | null }>('SELECT data_key_ref, npi, zip FROM practice WHERE id = $1', [practiceId]);
     // practice.zip is deprecated and never written: the location is practice_site's.
     expect(rows[0]).toMatchObject({ npi: null, zip: null, data_key_ref: expect.stringMatching(/^local:v1:/) });
@@ -183,7 +184,7 @@ describe('organizations and practices', () => {
       { action: 'security_event', object_type: 'membership', purpose: 'role_escalation', object_id: membershipId, practice_id: null },
       { action: 'practice_created', object_type: 'practice', purpose: null, object_id: practiceId, practice_id: null },
     ]);
-    const page = await run(organizationPage, admin.token, undefined, { organizationId, created: practiceId, location: 'ready' });
+    const page = await run(organizationPage, admin.token, undefined, { organizationId, created: practiceId });
     expect(page).toMatchObject({
       status: 'ok',
       data: {
@@ -192,12 +193,15 @@ describe('organizations and practices', () => {
         members: [{ email: 'console-group-admin@synthetic.test', role: 'practice_admin' }],
         agreements: [],
         grants: [],
-        created: { practiceId, status: 'ready', text: 'Medicare prices this location in locality 99999-01 under rule release 900001.' },
+        created: { practiceId, zip: '00011', zipPlusFour: null, status: 'ready', text: 'Medicare prices this location in locality 99999-01 under rule release 900001.' },
       },
     });
-    // A status that is not on the closed list, or a practice not of the organization, shows nothing.
-    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: practiceId, location: 'nonsense' })).toMatchObject({ status: 'ok', data: { created: null } });
-    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: world.practiceId, location: 'ready' })).toMatchObject({ status: 'ok', data: { created: null } });
+    // A status a hand-edited link names is not read; a practice not of the organization shows nothing.
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: practiceId, location: 'zip_unknown' })).toMatchObject({
+      status: 'ok',
+      data: { created: { practiceId, status: 'ready' } },
+    });
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: world.practiceId })).toMatchObject({ status: 'ok', data: { created: null } });
   });
 
   it('accepts a ZIP that needs its ZIP+4, or one the release does not list, with its status, never refusing it (audit #33)', async () => {
@@ -208,14 +212,17 @@ describe('organizations and practices', () => {
     if (split.status !== 'ok' || split.data.objectId === undefined) {
       throw new Error(`expected a new practice, got ${split.status}`);
     }
-    expect(split.data.redirect).toBe(`/console/organizations/${organizationId}?created=${split.data.objectId}&location=zip_plus_four_needed`);
-    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: split.data.objectId, location: 'zip_plus_four_needed' })).toMatchObject({
+    expect(split.data.redirect).toBe(`/console/organizations/${organizationId}?created=${split.data.objectId}`);
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: split.data.objectId })).toMatchObject({
       status: 'ok',
       data: { created: { status: 'zip_plus_four_needed', text: 'Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.' } },
     });
     const unknown = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC UNLISTED ZIP PRACTICE', zip: '27601-1234' });
-    expect(unknown).toMatchObject({ status: 'ok', data: { redirect: expect.stringMatching(/&location=zip_unknown$/) } });
     const unknownId = unknown.status === 'ok' ? (unknown.data.objectId ?? '') : '';
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: unknownId })).toMatchObject({
+      status: 'ok',
+      data: { created: { zip: '27601', zipPlusFour: '1234', status: 'zip_unknown' } },
+    });
     // A ZIP+4 given for a ZIP the release does not list is kept as given.
     expect((await owner.query('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [unknownId])).rows).toEqual([{ zip: '27601', zip_plus_four: '1234' }]);
   });
@@ -391,9 +398,9 @@ describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
       status: 'ok',
       data: {
         practice: { id: practice.practiceId, organizationId: practice.organizationId, name: expect.any(String) },
-        // The console reads the location's five-digit ZIP, never its ZIP+4.
-        zip: '00012',
-        location: null,
+        // The console reads the location whole, its ZIP+4 too, with its status now.
+        location: { practiceId: practice.practiceId, zip: '00012', zipPlusFour: '0001', status: 'locality_not_loaded' },
+        locationSaved: false,
         form: {
           facilityPlaces: '21, 22',
           nonFacilityPlaces: '11',
@@ -459,20 +466,32 @@ describe('the console’s location form (audit #33; PR 6b)', () => {
     const saved = await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '00012-0001' });
     // Sent once the save had committed: another connection already read the saved ZIP (the world's was 00011).
     expect(queue.zipsSeen).toEqual(['00012']);
-    // 900001 has no ZIP+4 list: the content is not loaded, never "check the four digits".
-    expect(saved).toMatchObject({ status: 'ok', data: { objectId: practice.practiceId, redirect: `/console/practices/${practice.practiceId}?location=locality_not_loaded` } });
+    // The link says it was saved, never a status: the page reads the location's status from the database.
+    expect(saved).toMatchObject({ status: 'ok', data: { objectId: practice.practiceId, redirect: `/console/practices/${practice.practiceId}?location=saved` } });
     expect((await owner.query('SELECT zip, zip_plus_four, updated_by FROM practice_site WHERE practice_id = $1', [practice.practiceId])).rows).toEqual([{ zip: '00012', zip_plus_four: '0001', updated_by: admin.id }]);
     const audit = await owner.query<{ object_id: string; request_id: string }>("SELECT object_id, request_id FROM audit_event WHERE actor_id = $1 AND action = 'console_pricing_location_set' AND object_type = 'practice'", [admin.id]);
     expect(audit.rows).toEqual([{ object_id: practice.practiceId, request_id: expect.stringMatching(/^test-/) }]);
     // The monitor of that practice, keyed by the save's own request, so a daily plan already queued never swallows it.
     expect(queue.jobs.slice(queued)).toEqual([{ type: 'monitor', payload: { practice_id: practice.practiceId, request_id: audit.rows[0]?.request_id } }]);
-    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'locality_not_loaded' })).toMatchObject({
-      status: 'ok',
-      data: { zip: '00012', location: { status: 'locality_not_loaded', text: 'PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.' } },
-    });
+    // The page shows the stored ZIP and ZIP+4, and the status they have now (900001 has no ZIP+4 list: the content is
+    // not loaded, never "check the four digits"), whatever the link says (review of PR 6b-2, finding 14).
+    const stored = {
+      practiceId: practice.practiceId,
+      zip: '00012',
+      zipPlusFour: '0001',
+      status: 'locality_not_loaded',
+      text: 'PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.',
+    };
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'saved' })).toMatchObject({ status: 'ok', data: { location: stored, locationSaved: true } });
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId })).toMatchObject({ status: 'ok', data: { location: stored, locationSaved: false } });
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'ready' })).toMatchObject({ status: 'ok', data: { location: stored, locationSaved: false } });
     // Saved whole each time: five digits alone clear the ZIP+4.
-    expect(await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '00011' })).toMatchObject({ status: 'ok', data: { redirect: expect.stringMatching(/\?location=ready$/) } });
+    expect(await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '00011' })).toMatchObject({ status: 'ok', data: { redirect: `/console/practices/${practice.practiceId}?location=saved` } });
     expect((await owner.query('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [practice.practiceId])).rows).toEqual([{ zip: '00011', zip_plus_four: null }]);
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'saved' })).toMatchObject({
+      status: 'ok',
+      data: { location: { zip: '00011', zipPlusFour: null, status: 'ready', text: 'Medicare prices this location in locality 99999-01 under rule release 900001.' }, locationSaved: true },
+    });
     expect(await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '0001' })).toMatchObject({ status: 'invalid', issues: [{ field: 'zip' }] });
     expect(await run(setPracticeLocation, admin.token, { practiceId: randomUUID(), zip: '00011' })).toEqual({ status: 'not_found' });
   });

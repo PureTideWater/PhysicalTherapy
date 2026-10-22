@@ -7,6 +7,7 @@ import { Field, SelectField } from '../../../../components/field';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { practiceSettingsPage } from '../../../../lib/routes/console';
+import { zipCodeText } from '../../../../lib/zip';
 import { setPracticeLocationAction, setPracticeSettingsAction } from '../../actions';
 import { FormKeys } from '../../../../components/form-keys';
 
@@ -28,14 +29,16 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * gives the locality and has its own form; the place-of-service split decides the facility or non-facility practice
  * expense, the materiality thresholds decide what is actionable and what becomes a case, and the staff rate and
  * minutes give the pursuit-cost estimate. A blank field keeps the default. None of it is a patient's data; no
- * practice record is read here, and the location's ZIP+4 is set here but never read back.
+ * practice record is read here. The location is shown as stored, its ZIP+4 too, with its status now, and the form
+ * starts from it, so a save never drops a ZIP+4 it did not show (review of PR 6b-2, finding 14).
  */
 export default async function PracticeSettingsPage(props: Props) {
   const page = await loadPage(practiceSettingsPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="organizations" roles={page.roles} message={page.message} nextStep="The internal console is for platform administrators." />;
   }
-  const { practice, form, saved, zip, location } = page.data;
+  const { practice, form, saved, location, locationSaved } = page.data;
+  const stored = location.zip === null ? null : zipCodeText(location.zip, location.zipPlusFour);
   return (
     <AppShell shell={page.shell} section="organizations">
       <div className="flex flex-col gap-1">
@@ -57,15 +60,15 @@ export default async function PracticeSettingsPage(props: Props) {
           <CardDescription>The billing ZIP gives the Medicare locality every line is priced at; a ZIP that spans more than one locality needs its ZIP+4. Saving queues the practice’s monitoring, so months waiting on the location are priced once it is ready.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
-          <p>
-            Billing ZIP: <span className="font-mono tabular-nums" data-location-zip>{zip ?? 'none'}</span>
-          </p>
-          {location === null ? null : (
-            <Alert role="status" data-notice="location" data-location-status={location.status}>
+          {locationSaved ? (
+            <Alert role="status" data-notice="location">
               <AlertTitle>Location saved</AlertTitle>
-              <AlertDescription>{location.text}</AlertDescription>
             </Alert>
-          )}
+          ) : null}
+          <p>
+            Billing ZIP: <span className="font-mono tabular-nums" data-location-zip>{stored ?? 'none'}</span>
+          </p>
+          <p data-location-status={location.status}>{location.text}</p>
           <ActionForm action={setPracticeLocationAction} submit="Save the location" className="grid max-w-xl gap-3">
             <FormKeys />
             <input type="hidden" name="practiceId" value={practice.id} />
@@ -76,7 +79,8 @@ export default async function PracticeSettingsPage(props: Props) {
               inputMode="numeric"
               autoComplete="off"
               maxLength={10}
-              hint="Five digits, or ZIP+4 such as 27601-1234. Enter it whole: saving replaces the ZIP+4 too, which the console does not show."
+              defaultValue={stored ?? ''}
+              hint="Five digits, or ZIP+4 such as 27601-1234. Saving replaces the ZIP and the ZIP+4 together."
             />
           </ActionForm>
         </CardContent>
