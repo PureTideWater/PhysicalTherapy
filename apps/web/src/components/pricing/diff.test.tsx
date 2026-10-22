@@ -2,14 +2,18 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { MonthsWaitingOnLocation } from './location';
-import { SPLIT_CHANGE_TEXT, SplitChangeText } from './diff';
+import { splitChangeText, SplitChangeText } from './diff';
 
 /**
  * What a re-run's diff says when the runs pinned different place-of-service splits (docs/adr/0064), and the months
  * waiting on the billing ZIP as a table a keyboard reaches at a phone's width. SYNTHETIC values.
  */
 
-const split = (id: string | null) => ({ placeOfServiceSplitId: id });
+/** A run's pinned split: its ID, and when it was approved (null with no split). */
+const split = (id: string | null, approvedAt: string | null = id === null ? null : '2026-10-01T09:30:00Z') => ({
+  placeOfServiceSplitId: id,
+  placeOfServiceSplitApprovedAt: approvedAt === null ? null : new Date(approvedAt),
+});
 const text = (html: string) => html.replace(/<[^>]+>/g, '');
 
 describe('the split a re-run’s diff names', () => {
@@ -19,12 +23,28 @@ describe('the split a re-run’s diff names', () => {
   });
 
   it('never says the runs priced under different approvals when the earlier run had no split at all', () => {
-    const added = renderToStaticMarkup(<SplitChangeText before={split(null)} after={split('b')} />);
-    expect(text(added)).toBe(SPLIT_CHANGE_TEXT.added);
+    const added = renderToStaticMarkup(<SplitChangeText before={split(null)} after={split('b', '2026-10-20T14:05:00Z')} />);
+    expect(text(added)).toBe(splitChangeText('added', null, new Date('2026-10-20T14:05:00Z')));
     expect(added).toContain('data-split-change="added"');
     expect(text(added)).not.toContain('different approvals');
-    expect(text(renderToStaticMarkup(<SplitChangeText before={split('a')} after={split(null)} />))).toBe(SPLIT_CHANGE_TEXT.removed);
-    expect(text(renderToStaticMarkup(<SplitChangeText before={split('a')} after={split('b')} />))).toBe(SPLIT_CHANGE_TEXT.both);
+    expect(text(renderToStaticMarkup(<SplitChangeText before={split('a')} after={split(null)} />))).toBe(splitChangeText('removed', new Date('2026-10-01T09:30:00Z'), null));
+    expect(text(renderToStaticMarkup(<SplitChangeText before={split('a')} after={split('b', '2026-10-20T14:05:00Z')} />))).toBe(
+      splitChangeText('both', new Date('2026-10-01T09:30:00Z'), new Date('2026-10-20T14:05:00Z')),
+    );
+  });
+
+  it('names when each split was approved (review of PR 6b-2, finding 16)', () => {
+    const before = new Date('2026-10-01T09:30:00Z');
+    const after = new Date('2026-10-20T14:05:00Z');
+    expect(splitChangeText('both', before, after)).toBe(
+      'Places of service set from the approved split: the earlier run priced under the split approved 2026-10-01 09:30 UTC and this run under the one approved 2026-10-20 14:05 UTC, so a place the practice has not set may price at the other rate.',
+    );
+    expect(splitChangeText('added', null, after)).toBe(
+      'The earlier run priced with no approved split; this run takes the split approved 2026-10-20 14:05 UTC for every place the practice has not set, so such a place may now price, or price at the other rate.',
+    );
+    expect(splitChangeText('removed', before, null)).toBe(
+      'The earlier run took the split approved 2026-10-01 09:30 UTC for every place the practice had not set; this run priced with no approved split, so such a place may no longer price, or price at the other rate.',
+    );
   });
 });
 

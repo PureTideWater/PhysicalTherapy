@@ -58,3 +58,36 @@ describe('a re-run after the location and the release both changed', () => {
     }
   });
 });
+
+describe('a re-run under another approval of the place-of-service split (review of PR 6b-2, finding 16)', () => {
+  it('reads when each run’s split was approved, and none for a run that pinned none', async () => {
+    const target = await w.practice('diff-split');
+    await w.load(target, 'MAP-05/remit.835');
+    await w.mapped(target, await w.planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    const scope = <T>(work: Parameters<typeof withPracticeScope<typeof w.app, T>>[2]) => withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, work);
+    const rerun = async (of: string) => {
+      const created = (await scope((s) => createRerun(s, { practiceId: target.practiceId, pricingRunId: of, releaseNo: PLUS_FOUR_RELEASE, requestId: `test-${randomUUID()}` }))).pricingRunId;
+      await w.execute(target, created);
+      return created;
+    };
+    const compare = (before: string, after: string) => scope((s) => compareRuns(s, { practiceId: target.practiceId, beforeRunId: before, afterRunId: after, requestId: `test-${randomUUID()}` }));
+    const approvedAt = async (id: string) => (await w.one<{ approved_at: Date }>('SELECT approved_at FROM place_of_service_split WHERE id = $1', [id])).approved_at;
+    // Priced before any split was approved: it pinned none.
+    const first = await w.createRun(target, '2026-02-01', '2026-02-28', PLUS_FOUR_RELEASE);
+    await w.execute(target, first);
+    const earlier = await w.approveSplit({ '11': 'non_facility', '22': 'facility' });
+    const second = await rerun(first);
+    const later = await w.approveSplit({ '11': 'non_facility', '21': 'facility' });
+    const third = await rerun(second);
+    const added = await compare(first, second);
+    expect([added.before, added.after].map((run) => [run.placeOfServiceSplitId, run.placeOfServiceSplitApprovedAt])).toEqual([
+      [null, null],
+      [earlier, await approvedAt(earlier)],
+    ]);
+    const both = await compare(second, third);
+    expect([both.before, both.after].map((run) => [run.placeOfServiceSplitId, run.placeOfServiceSplitApprovedAt])).toEqual([
+      [earlier, await approvedAt(earlier)],
+      [later, await approvedAt(later)],
+    ]);
+  });
+});

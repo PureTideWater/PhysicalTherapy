@@ -49,6 +49,8 @@ export interface DiffRun {
   readonly completedAt: Date;
   /** The place-of-service split the run pinned when it was created (docs/adr/0064); null when none was approved then. */
   readonly placeOfServiceSplitId: string | null;
+  /** When that split was approved (pricing_run_split(), in the run's practice's scope), for the diff to name; null with no split. */
+  readonly placeOfServiceSplitApprovedAt: Date | null;
 }
 
 export interface DiffSummary {
@@ -158,6 +160,7 @@ interface RunRow {
   readonly accepted_at: Date | null;
   readonly completed_at: Date | null;
   readonly place_of_service_split_id: string | null;
+  readonly place_of_service_split_approved_at: Date | null;
 }
 
 async function runsOf(scope: PracticeScope<ScopeClient>, practiceId: string, ids: readonly string[], requestId: string): Promise<Map<string, RunRow>> {
@@ -167,9 +170,10 @@ async function runsOf(scope: PracticeScope<ScopeClient>, practiceId: string, ids
     async (client) =>
       (
         await client.query<RunRow>(
-          `SELECT id, practice_id, period_from::text AS period_from, period_to::text AS period_to, release_no, engine_version, status, rerun_of_id, accepted_at, completed_at,
-                  place_of_service_split_id
-             FROM pricing_run WHERE practice_id = $1 AND id = ANY ($2::uuid[])`,
+          `SELECT r.id, r.practice_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.engine_version, r.status, r.rerun_of_id, r.accepted_at,
+                  r.completed_at, r.place_of_service_split_id, s.approved_at AS place_of_service_split_approved_at
+             FROM pricing_run r LEFT JOIN LATERAL pricing_run_split(r.id) s ON true
+            WHERE r.practice_id = $1 AND r.id = ANY ($2::uuid[])`,
           [practiceId, ids],
         )
       ).rows,
@@ -195,6 +199,7 @@ function diffRun(row: RunRow | undefined): DiffRun {
     acceptedAt: row.accepted_at,
     completedAt: row.completed_at,
     placeOfServiceSplitId: row.place_of_service_split_id,
+    placeOfServiceSplitApprovedAt: row.place_of_service_split_approved_at,
   };
 }
 
