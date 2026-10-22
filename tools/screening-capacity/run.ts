@@ -57,7 +57,7 @@ import {
   report,
   timeRule,
 } from './report';
-import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
+import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
 
 /**
  * `pnpm screening:capacity`: the screening's capacity test under production limits (audit #53 part 1; docs/adr/0062,
@@ -527,7 +527,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     }
   })();
   const click = (entry: Prepared) => entry.page.getByRole('button', { name: 'Screen the file' }).click({ timeout: 60_000 });
-  const sentPage = (entry: Prepared) => entry.page.waitForURL(/\/screening\?sent=1$/, { timeout: Math.max(1_000, Math.min(600_000, capUntil - Date.now())) });
+  const sentPage = (entry: Prepared) => entry.page.waitForURL(SENT_PAGE, { timeout: Math.max(1_000, Math.min(600_000, capUntil - Date.now())) });
   const large = prepared.filter((entry) => !entry.upload.behind);
   const behind = prepared.filter((entry) => entry.upload.behind);
   await Promise.all(large.map(click));

@@ -1,8 +1,9 @@
 import { SCALE_RELEASE_SHAPE, scalePlusFourRanges, scaleZips } from '@tp/synth';
 import { describe, expect, it } from 'vitest';
 
+import { SCREENING_WAIT_STATES, screeningSentPath } from '../../apps/web/src/lib/screening/sent';
 import { ORACLE_UPLOADS, oracleKind } from './report';
-import { scenarios, splitZip, typedZip, uploadAccountDomain } from './uploads';
+import { SENT_PAGE, scenarios, splitZip, typedZip, uploadAccountDomain } from './uploads';
 
 /**
  * The capacity test's uploads (audit #53 part 1; PR 6b, docs/adr/0064): every upload from its own ZIP, the five-digit
@@ -44,6 +45,11 @@ describe('the capacity uploads', () => {
     expect(uploadAccountDomain(uploads.find((upload) => upload.id === 'S4-3') ?? { contactEmail: '' })).toBe('capacity-s4-upload3.synthetic.test');
     // No account sends more than one upload: S4's three worst files are three prospects, never one past its 100,000 rows.
     expect(scenarios().find((scenario) => scenario.id === 'S4')?.uploads.filter((upload) => upload.shape === 'worst')).toHaveLength(3);
+  });
+
+  it('waits for the "sent" page the web lands an accepted upload on, in each of its four states (Q12)', () => {
+    expect(SCREENING_WAIT_STATES.filter((wait) => !SENT_PAGE.test(`http://127.0.0.1:4931${screeningSentPath(wait)}`))).toEqual([]);
+    expect(SENT_PAGE.test('http://127.0.0.1:4931/screening')).toBe(false);
   });
 
   it('starts every cold scenario, and S2, from a fresh consumer, and S3 from the one that priced S2', () => {

@@ -8,6 +8,11 @@
 export const SCREENING_WAIT_STATES = ['soon', 'minutes', 'account', 'day'] as const;
 export type ScreeningWaitState = (typeof SCREENING_WAIT_STATES)[number];
 
+/** The page an accepted upload lands on (the capacity harness waits for it: tools/screening-capacity/uploads.ts). */
+export function screeningSentPath(wait: ScreeningWaitState): string {
+  return `/screening?sent=1&wait=${wait}`;
+}
+
 /** The "sent" alert's first words, by state. */
 export const SCREENING_SENT_WAIT: Readonly<Record<ScreeningWaitState, string>> = {
   soon: 'We are screening your file. The result is emailed to the address you gave as a link, usually within a minute.',

@@ -51,7 +51,7 @@ import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
-import { SCREENING_WAIT_STATES, type ScreeningWaitState } from './sent';
+import { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath } from './sent';
 
 /**
  * The free screening's routes (Change Order 001, CO-04; reconciliation-001 D18 to D21; docs/adr/0062):
@@ -641,8 +641,8 @@ export const screeningSubmit = publicRoute({
   },
 });
 
-/** The "sent" page's four states (src/lib/screening/sent.ts holds their words). */
-export { SCREENING_WAIT_STATES, type ScreeningWaitState };
+/** The "sent" page's four states and its path (src/lib/screening/sent.ts holds their words). */
+export { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath };
 
 /** Where a stored run stands (screening_wait()): its queue priority and tier, the runs pricing, and those ahead of it. */
 export interface ScreeningQueuePlace {
@@ -685,11 +685,6 @@ export function screeningWaitState(place: ScreeningQueuePlace, slots: number): S
     return 'day';
   }
   return place.pricing + place.queuedAhead >= slots ? 'minutes' : 'soon';
-}
-
-/** The page an accepted upload lands on. */
-export function screeningSentPath(wait: ScreeningWaitState): string {
-  return `/screening?sent=1&wait=${wait}`;
 }
 
 /**
