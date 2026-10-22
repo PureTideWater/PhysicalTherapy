@@ -7,7 +7,9 @@
  * release outside the repository; it loads only into a scratch database (release 900100, reserved).
  *
  * Nothing here is CMS data. Every value is invented and patterned; every file says SYNTHETIC on its first line but
- * the ZIP5 file, whose fixed-width layout has no room for a banner. The carriers (99901 up), the localities' names
+ * the ZIP5 and ZIP9 files, whose fixed-width layouts have no room for a banner. Each ZIP the ZIP5 file flags (one in
+ * plusFourEvery, split across localities) has its ZIP+4 codes on the year's ZIP9 file (PR 6b, docs/adr/0064): its
+ * ranges alternate between the ZIP's own locality and the next one, with codes no range lists between them. The carriers (99901 up), the localities' names
  * and the states (YA to ZY) are invented; the ZIPs are five-digit values from 00100 up, some of which are real ZIP
  * codes, with invented carriers, localities and values. Codes are five-character values: the twelve therapy codes
  * the practice-shaped upload uses, then 97000 to 97999 and 10000 up; some are real CPT codes, with invented values.
@@ -34,6 +36,10 @@ export interface ScaleReleaseShape {
   readonly zips: number;
   /** One ZIP in this many needs its ZIP+4 (split across localities). */
   readonly plusFourEvery: number;
+  /** The ranges of ZIP+4 codes each such ZIP has on the ZIP9 file, alternating between two localities. */
+  readonly plusFourRanges: number;
+  /** The codes each range lists (one ZIP9 line each). */
+  readonly plusFourRangeCodes: number;
   /** Codes on each year's therapy MPPR rate file (the twelve therapy codes' eight pooled ones among them). */
   readonly pooledCodes: number;
   /** Codes on each quarter's practitioner MUE table. */
@@ -61,6 +67,12 @@ export const SCALE_RELEASE_SHAPE: ScaleReleaseShape = {
   // The ZIP5 file's ZIP codes (about 42,000 five-digit ZIPs), 3% of them split across localities (ZIP+4 needed).
   zips: 42_000,
   plusFourEvery: 33,
+  // CMS's ZIP9 file lists every ZIP+4 of those ZIPs; its layout is open item O1 (docs/adr/0064). Forty ranges a ZIP,
+  // two codes each (a range's first and last line, as the record quotes them): a record per ZIP at least as long as a
+  // real split ZIP's, about 101,800 lines a year, so the keyed read of one ZIP's record is measured at size (open item
+  // O8).
+  plusFourRanges: 40,
+  plusFourRangeCodes: 2,
   // The therapy MPPR rate file's "always therapy" codes, rounded up to 150.
   pooledCodes: 150,
   // The practitioner services MUE table, about 15,000 codes a quarter.
@@ -88,6 +100,8 @@ export const SMALL_SCALE_RELEASE_SHAPE: ScaleReleaseShape = {
   localities: 5,
   zips: 300,
   plusFourEvery: 33,
+  plusFourRanges: 4,
+  plusFourRangeCodes: 3,
   pooledCodes: 20,
   mueCodes: 300,
   ptpPairs: 3_000,
@@ -104,7 +118,18 @@ export const SCALE_THERAPY_CODES = ['97110', '97112', '97116', '97140', '97530',
 export const SCALE_THERAPY_POOLED = ['97110', '97112', '97116', '97140', '97530', '97026', '97035', 'G0283'] as const;
 
 /** The record types the scale release's source files carry (the parsers' importable types). */
-export type ScaleSourceType = 'pfs_rvu' | 'pfs_gpci' | 'locality_map' | 'conversion_factor' | 'mppr_rate' | 'ncci_ptp' | 'ncci_mue' | 'carc' | 'rarc' | 'claim_status_code';
+export type ScaleSourceType =
+  | 'pfs_rvu'
+  | 'pfs_gpci'
+  | 'locality_map'
+  | 'locality_map_plus_four'
+  | 'conversion_factor'
+  | 'mppr_rate'
+  | 'ncci_ptp'
+  | 'ncci_mue'
+  | 'carc'
+  | 'rarc'
+  | 'claim_status_code';
 
 /** One generated source file: what parses it, the window it takes, and its text. */
 export interface ScaleSourceFile {
@@ -187,6 +212,40 @@ export interface ScaleZip {
 /** The ZIPs: 00100 up, round the localities, one in plusFourEvery split across localities. */
 export function scaleZips(shape: ScaleReleaseShape): ScaleZip[] {
   return Array.from({ length: shape.zips }, (_, index) => ({ zip: String(100 + index).padStart(5, '0'), localityIndex: index % shape.localities, plusFour: index % shape.plusFourEvery === 5 }));
+}
+
+/** One range of a split ZIP's ZIP+4 codes on the ZIP9 file: its first and last code and its locality. */
+export interface ScalePlusFourRange {
+  readonly from: string;
+  readonly to: string;
+  readonly localityIndex: number;
+}
+
+/**
+ * A split ZIP's ranges on the ZIP9 file: range r starts at code r x (10000 / plusFourRanges) and lists
+ * plusFourRangeCodes consecutive codes; even ranges are in the ZIP's own locality, odd ones in the next locality. The
+ * codes between ranges are on no line, so they are in no range.
+ */
+export function scalePlusFourRanges(shape: ScaleReleaseShape, zip: ScaleZip): ScalePlusFourRange[] {
+  const step = Math.floor(10_000 / shape.plusFourRanges);
+  return Array.from({ length: shape.plusFourRanges }, (_, range) => ({
+    from: String(range * step).padStart(4, '0'),
+    to: String(range * step + shape.plusFourRangeCodes - 1).padStart(4, '0'),
+    localityIndex: range % 2 === 0 ? zip.localityIndex : (zip.localityIndex + 1) % shape.localities,
+  }));
+}
+
+/** The ZIP9 line's length: the layout's 75 positions, the year and quarter, and the line feed. */
+const ZIP9_LINE_BYTES = 75 + 5 + 1;
+
+/**
+ * The ZIP9 files' size (open item O8, reported by the capacity test): a record per split ZIP and year, the ranges each
+ * holds, and each year's lines and bytes.
+ */
+export function scaleZip9Size(shape: ScaleReleaseShape): { readonly records: number; readonly rangesPerRecord: number; readonly linesPerYear: number; readonly bytesPerYear: number } {
+  const split = scaleZips(shape).filter((zip) => zip.plusFour).length;
+  const linesPerYear = split * shape.plusFourRanges * shape.plusFourRangeCodes;
+  return { records: shape.years.length * split, rangesPerRecord: shape.plusFourRanges, linesPerYear, bytesPerYear: linesPerYear * ZIP9_LINE_BYTES };
 }
 
 /** The codes on each quarter's MUE table: the first mueCodes codes. */
@@ -294,6 +353,25 @@ function zip5(shape: ScaleReleaseShape, year: number): string {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * The ZIP9 file: for each flagged ZIP, one fixed-width line per listed ZIP+4 code, as the ZIP9 parser reads it
+ * (packages/rules/src/parsers/locality-plus-four.ts): the ZIP5 positions 1-21 with the range's carrier and locality and
+ * the plus-four flag 1 at 21, the code at 22-25, padded to 75, then the year and quarter.
+ */
+function zip9(shape: ScaleReleaseShape, year: number): string {
+  const localities = scaleLocalities(shape);
+  const lines: string[] = [];
+  for (const zip of scaleZips(shape).filter((entry) => entry.plusFour)) {
+    for (const range of scalePlusFourRanges(shape, zip)) {
+      const { carrier, locality } = localities[range.localityIndex] as ScaleLocality;
+      for (let code = Number.parseInt(range.from, 10); code <= Number.parseInt(range.to, 10); code += 1) {
+        lines.push(`${`ZZ${zip.zip}${carrier}${locality} ${locality}   1${String(code).padStart(4, '0')}`.padEnd(75, ' ')}${String(year)}1`);
+      }
+    }
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 function conversionFactors(year: number): string {
   const factor = year === 2025 ? '19.5000' : '20.0000';
   const qualifying = year === 2025 ? '19.6000' : '20.1000';
@@ -389,8 +467,8 @@ const numbered = (count: number): string[] => Array.from({ length: count }, (_, 
 /**
  * Every source file of the scale release, in a fixed order, generated one at a time (the PTP files are large): for
  * each year its relative value files (the uncorrected codes for the year, the corrected codes before and after their
- * correction), GPCIs, ZIP5, conversion factors, MPPR rates and four quarterly MUE tables; then the PTP table's files
- * and the three code lists.
+ * correction), GPCIs, ZIP5, ZIP9, conversion factors, MPPR rates and four quarterly MUE tables; then the PTP table's
+ * files and the three code lists.
  */
 export function* scaleSourceFiles(shape: ScaleReleaseShape): Generator<ScaleSourceFile> {
   const codes = scaleCodes(shape).map((code, index) => ({ code, index }));
@@ -404,6 +482,8 @@ export function* scaleSourceFiles(shape: ScaleReleaseShape): Generator<ScaleSour
     yield { type: 'pfs_rvu', name: `PPRRVU${y}_SYNTHETIC_SCALE_CORRECTION.csv`, year, effectiveFrom: correction, effectiveTo: `${y}-12-31`, text: pprrvu(corrected, year, true, ' (mid-quarter correction)') };
     yield { type: 'pfs_gpci', name: `GPCI${y}_SYNTHETIC_SCALE.csv`, year, effectiveFrom: `${y}-01-01`, effectiveTo: `${y}-12-31`, text: gpci(shape, year) };
     yield { type: 'locality_map', name: `ZIP5_${y}_SYNTHETIC_SCALE.txt`, year, effectiveFrom: `${y}-01-01`, effectiveTo: `${y}-12-31`, text: zip5(shape, year) };
+    // The same window as the ZIP5 file's: every flagged ZIP's ZIP+4 codes are in force whenever its flag is.
+    yield { type: 'locality_map_plus_four', name: `ZIP9_${y}_SYNTHETIC_SCALE.txt`, year, effectiveFrom: `${y}-01-01`, effectiveTo: `${y}-12-31`, text: zip9(shape, year) };
     yield { type: 'conversion_factor', name: `conversion-factor-${y}-SYNTHETIC-SCALE.csv`, year, effectiveFrom: `${y}-01-01`, effectiveTo: `${y}-12-31`, text: conversionFactors(year) };
     yield { type: 'mppr_rate', name: `MPPR${y}_SYNTHETIC_SCALE.csv`, year, effectiveFrom: `${y}-01-01`, effectiveTo: `${y}-12-31`, text: mppr(shape, year) };
     for (let quarter = 1; quarter <= 4; quarter += 1) {
@@ -434,6 +514,7 @@ export function scaleRecordCounts(shape: ScaleReleaseShape): Readonly<Record<Sca
     pfs_rvu: shape.years.length * (shape.rvuCodes + corrected),
     pfs_gpci: shape.years.length * shape.localities,
     locality_map: shape.years.length * shape.zips,
+    locality_map_plus_four: shape.years.length * scaleZips(shape).filter((zip) => zip.plusFour).length,
     conversion_factor: shape.years.length * 2,
     mppr_rate: shape.years.length * shape.pooledCodes,
     ncci_mue: shape.years.length * 4 * shape.mueCodes,

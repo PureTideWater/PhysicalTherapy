@@ -7,7 +7,7 @@ import { parseArgs, promisify } from 'node:util';
 
 import { databaseClient, developmentMasterKey } from '@tp/db';
 import { addMembership, createOrganization, createUser } from '@tp/db/testing';
-import { SCALE_RELEASE_NUMBER, sha256 } from '@tp/synth';
+import { SCALE_RELEASE_NUMBER, SCALE_RELEASE_SHAPE, scaleZip9Size, sha256 } from '@tp/synth';
 import pg from 'pg';
 import { type Browser, type BrowserContext, type Page, chromium } from 'playwright-core';
 
@@ -28,8 +28,21 @@ import {
   runnerTooSmall,
 } from './limits';
 import { anonBytes, cpuThrottling, memoryEvents, peak, phaseLines, phasesByRun, workerStarted } from './measure';
-import { type AppliedLimits, type ContainerMeasure, type Measurements, ORACLE_UPLOADS, type OracleComparison, type ScenarioMeasure, type UploadMeasure, markdown, report, timeRule } from './report';
-import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, uploadCsv } from './uploads';
+import {
+  type AppliedLimits,
+  type ContainerMeasure,
+  type Measurements,
+  ORACLE_UPLOADS,
+  type OracleComparison,
+  type OracleKind,
+  type ScenarioMeasure,
+  type UploadMeasure,
+  markdown,
+  oracleKind,
+  report,
+  timeRule,
+} from './report';
+import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
 
 /**
  * `pnpm screening:capacity`: the screening's capacity test under production limits (audit #53 part 1; docs/adr/0062,
@@ -51,7 +64,8 @@ import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, u
  *     pricing job's place in the queue, the platform jobs that ran, the stored rows; the report is written after each;
  *     no scenario starts after 60 minutes, and one still running at 70 ends there (limits.ts);
  *  7. open every result link, then its last page of groups;  8. close the browsers, stop web and platform;
- *  9. compare S1-1, S2-1 and S3-1 with the oracle in a child process, against the running Postgres;
+ *  9. compare S1-1, S2-1 and S3-1 with the frozen oracle and S1-2 (a ZIP split across localities, with its ZIP+4)
+ *     with the whole-release oracle, in a child process, against the running Postgres (oracle.ts);
  * 10. remove Postgres; write screening-capacity.json and summary.md (and the job summary in CI); exit non-zero on any
  *     failing check.
  *
@@ -194,7 +208,10 @@ function withDatabase(url: string, database: string): string {
   return parsed.toString();
 }
 
-/** The split a contract specialist approves (synthetic, as the e2e suite's): 11 non-facility, 22 facility. */
+/**
+ * The place-of-service split a contract specialist approves (synthetic, as the e2e suite's): 11 non-facility, 22
+ * facility, through the console's function (place_of_service_split since PR 6b, docs/adr/0064).
+ */
 async function approveSplit(ownerUrl: string): Promise<void> {
   const owner = databaseClient(ownerUrl);
   await owner.connect();
@@ -205,7 +222,7 @@ async function approveSplit(ownerUrl: string): Promise<void> {
     await owner.query('BEGIN');
     await owner.query('SET LOCAL ROLE tp_app');
     await owner.query("SELECT set_config('app.actor_id', $1, true)", [specialist]);
-    await owner.query('SELECT console_approve_screening_split($1)', [JSON.stringify({ '11': 'non_facility', '22': 'facility' })]);
+    await owner.query('SELECT console_approve_place_of_service_split($1)', [JSON.stringify({ '11': 'non_facility', '22': 'facility' })]);
     await owner.query('COMMIT');
   } finally {
     await owner.end();
@@ -403,7 +420,8 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     await page.goto(`${runtime.webOrigin}/screening`, { timeout: 180_000 });
     await page.getByLabel('Practice name').fill(upload.practiceName);
     await page.getByLabel('State').selectOption('MN');
-    await page.getByLabel('ZIP code', { exact: true }).fill(upload.zip);
+    // Five digits, or ZIP+4 for a ZIP the release splits across localities (S1-2).
+    await page.getByLabel('ZIP code', { exact: true }).fill(typedZip(upload));
     await page.getByLabel('Work email').fill(upload.contactEmail);
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: uploadCsv(rows) });
     // The browser reads and screens the file in its own time, before anything is timed.
@@ -606,7 +624,8 @@ async function main(): Promise<number> {
   const oracle: OracleComparison[] = [];
   const notStarted: string[] = [];
   let applied: AppliedLimits = { containers: [], ioMax: null, roundTripMedianMs: null };
-  let release = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0 };
+  // The ZIP9 file's size (open item O8): the release is built at the production shape.
+  let release: Measurements['release'] = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0, zip9: scaleZip9Size(SCALE_RELEASE_SHAPE) };
   let aborted: string | null = null;
   // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
@@ -655,7 +674,7 @@ async function main(): Promise<number> {
       throw new HarnessStop('RUNNER_TOO_SMALL');
     }
     const built = await ensureRelease(opts.releaseDir ?? path.join(opts.out, 'release'));
-    release = { releaseNo: built.releaseNo, manifestSha256: built.manifestSha256, records: built.records };
+    release = { ...release, releaseNo: built.releaseNo, manifestSha256: built.manifestSha256, records: built.records };
     say(`release ${String(release.releaseNo)}: ${String(release.records)} records`);
     const urls = await runtime.startPostgres(pgLimit, expected.storage, NETWORK_DELAY_MS);
     let ownerService = urls.serviceUrl;
@@ -721,13 +740,19 @@ async function main(): Promise<number> {
     const uploads = new Map(specs.flatMap((spec) => spec.uploads).map((upload) => [upload.id, upload] as const));
     const compared = ORACLE_UPLOADS.filter((upload) => runIds.has(upload));
     if (compared.length > 0) {
-      say(`comparing ${compared.join(', ')} with the oracle`);
-      const results = JSON.parse(await child('tools/screening-capacity/oracle.ts', [ownerHarness, ...compared.map((upload) => runIds.get(upload) ?? '')], 8192)) as { runId: string; rows: number; storedSha256: string; oracleSha256: string }[];
+      say(`comparing ${compared.map((upload) => `${upload} (${oracleKind(upload)})`).join(', ')} with the oracles`);
+      const results = JSON.parse(await child('tools/screening-capacity/oracle.ts', [ownerHarness, ...compared.map((upload) => `${oracleKind(upload)}:${runIds.get(upload) ?? ''}`)], 8192)) as {
+        runId: string;
+        oracle: OracleKind;
+        rows: number;
+        storedSha256: string;
+        oracleSha256: string;
+      }[];
       results.forEach((result, at) => {
         const id = compared[at] ?? '';
         const spec = uploads.get(id);
         const expectedRows = spec === undefined ? 0 : shapeFacts(spec.shape, undefined, spec.variant).pricedRows;
-        oracle.push({ scenario: id.split('-')[0] ?? '', upload: id, rows: result.rows, expectedRows, storedSha256: result.storedSha256, oracleSha256: result.oracleSha256 });
+        oracle.push({ scenario: id.split('-')[0] ?? '', upload: id, oracle: result.oracle, rows: result.rows, expectedRows, storedSha256: result.storedSha256, oracleSha256: result.oracleSha256 });
       });
     }
   } catch (error) {

@@ -7,6 +7,8 @@ import {
   type SynthScreeningRow,
   type UploadShapeFacts,
   practiceShapeRows,
+  scalePlusFourRanges,
+  scaleZips,
   smallUploadRows,
   uploadShapeFacts,
   uploadZips,
@@ -20,8 +22,11 @@ import { SCREENING_COLUMNS, type ScreeningRow } from '@tp/worker/screening-forma
  * template's eight columns), and the five scenarios with each upload's ZIP, practice name and address, distinct across
  * scenarios so no screening replaces another. S1, S4 and S5 start from a cold Postgres (restarted, the page cache
  * dropped); S4's three worst uploads are worst-shape variants 1 to 3, so they differ from S1's rows and from each other
- * in most of their codes, sharing the release's pooled and corrected codes, which every worst upload prices. Synthetic
- * data only: invented practices at synthetic.test addresses.
+ * in most of their codes, sharing the release's pooled and corrected codes, which every worst upload prices. S1's
+ * second upload (S1-2, the small shape behind S1-1) is sent from a ZIP the release splits across localities, with a
+ * ZIP+4 in the next locality's range (PR 6b, docs/adr/0064): its run's keyed read must hold the ZIP's ZIP9 record, and
+ * its rows are compared with a whole-release oracle (oracle.ts), since the frozen 3c1b289 pricer takes a five-digit ZIP
+ * alone. Synthetic data only: invented practices at synthetic.test addresses.
  */
 
 export type UploadShape = 'practice' | 'worst' | 'small';
@@ -68,6 +73,8 @@ export interface UploadSpec {
   readonly id: string;
   readonly shape: UploadShape;
   readonly zip: string;
+  /** The ZIP+4's four digits, typed after the ZIP as 12345-6789, for a ZIP the release splits across localities; else null. */
+  readonly zipPlusFour: string | null;
   readonly practiceName: string;
   readonly contactEmail: string;
   /** Submitted behind the scenario's large uploads, once their runs exist. */
@@ -93,6 +100,25 @@ function practiceName(scenario: string, upload: number): string {
   return `Synthetic Capacity Therapy ${[...digits].map((digit) => LETTERS.charAt(Number.parseInt(digit, 10))).join('')}`;
 }
 
+/**
+ * The split ZIP S1-2 is sent from: the release's first ZIP whose locality needs its ZIP+4 (never one of the other
+ * uploads', which are drawn from the ZIPs that need none), with the first code of its second range, which the ZIP9 file
+ * puts in the next locality, so the range, not the ZIP's own record, decides the locality.
+ */
+export function splitZip(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): { readonly zip: string; readonly zipPlusFour: string } {
+  const zip = scaleZips(release).find((entry) => entry.plusFour);
+  const range = zip === undefined ? undefined : scalePlusFourRanges(release, zip)[1];
+  if (zip === undefined || range === undefined) {
+    throw new RangeError('the release splits no ZIP across localities');
+  }
+  return { zip: zip.zip, zipPlusFour: range.from };
+}
+
+/** The ZIP as a prospect types it: five digits, or ZIP+4 as 12345-6789. */
+export function typedZip(upload: Pick<UploadSpec, 'zip' | 'zipPlusFour'>): string {
+  return upload.zipPlusFour === null ? upload.zip : `${upload.zip}-${upload.zipPlusFour}`;
+}
+
 /** The five scenarios (the design's §3.4): each upload with its own ZIP in its own locality, name and address. */
 export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): ScenarioSpec[] {
   // Five ZIPs per scenario at most (three large, one small; S1 to S3 use one), each set in distinct localities.
@@ -101,13 +127,21 @@ export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): Sce
     id: `${scenario}-${String(index + 1)}`,
     shape,
     zip: zips[Number.parseInt(scenario.slice(1), 10) - 1]?.[index] ?? '',
+    zipPlusFour: null,
     practiceName: practiceName(scenario, index + 1),
     contactEmail: `capacity.${scenario.toLowerCase()}.upload${String(index + 1)}@capacity-${scenario.toLowerCase()}.synthetic.test`,
     behind,
     variant,
   });
+  const split = splitZip(release);
   return [
-    { id: 'S1', what: 'worst shape, one upload alone: fresh Postgres, fresh platform container', uploads: [upload('S1', 0, 'worst')], freshPlatform: true, freshPostgres: true },
+    {
+      id: 'S1',
+      what: 'worst shape, one upload alone, then a small one behind it from a ZIP split across localities with its ZIP+4: fresh Postgres, fresh platform container',
+      uploads: [upload('S1', 0, 'worst'), { ...upload('S1', 1, 'small', true), ...split }],
+      freshPlatform: true,
+      freshPostgres: true,
+    },
     { id: 'S2', what: 'practice shape, one upload alone: fresh platform container', uploads: [upload('S2', 0, 'practice')], freshPlatform: true, freshPostgres: false },
     { id: 'S3', what: 'practice shape again in the same container (shared types held)', uploads: [upload('S3', 0, 'practice')], freshPlatform: false, freshPostgres: false },
     {
