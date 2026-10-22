@@ -112,8 +112,14 @@ describe('importRuleFile', () => {
     const lines = ['0000', '0001', '0002'].map((code) => line(code, '01')).concat([line('0003', '02')]);
     const file = path.join(downloads, 'ZIP9_JUL2026.txt');
     writeFileSync(file, `${lines.join('\n')}\n`);
-    const result = importRuleFile(request({ type: 'locality_map_plus_four', file }));
-    expect(result).toMatchObject({ draft: 'content/drafts/locality_map_plus_four/2026/ZIP9_JUL2026.json', records: 1, notes: ['4 lines folded into 2 ranges of 1 ZIP codes'] });
+    // A July file, imported under the window of the quarter it is (the parser refuses another quarter's window).
+    const result = importRuleFile(request({ type: 'locality_map_plus_four', file, effectiveFrom: '2026-07-01', effectiveTo: '2026-09-30' }));
+    expect(result).toMatchObject({
+      draft: 'content/drafts/locality_map_plus_four/2026/ZIP9_JUL2026.json',
+      records: 1,
+      notes: ['4 lines folded into 2 ranges of 1 ZIP codes', 'year and quarter 20263 (positions 76-80), the quarter the window starts in'],
+    });
+    expect(() => importRuleFile(request({ type: 'locality_map_plus_four', file }))).toThrow(/the file is of year and quarter 20263, and the import window starts 2026-01-01, in 20261/);
     const [record] = readJson(result.draft) as Record<string, unknown>[];
     expect(record).toMatchObject({
       record_type: 'locality_map_plus_four',

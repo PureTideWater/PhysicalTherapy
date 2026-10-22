@@ -552,6 +552,14 @@ class PlusFour(unittest.TestCase):
         with self.assertRaisesRegex(gw.InputError, "line 4: lists 00012-5000 in state YY, but the ZIP's locality_map record is in state ZZ"):
             self.priced(self.split_release(), "00012", "5000")
 
+    def test_refuses_a_zip9_line_of_another_quarter_than_the_record_takes_effect_in(self):
+        self.write_zip9(ZIP9_ROWS[:3] + [zip9("00012", "5000", "02", quarter="20254")] + ZIP9_ROWS[4:])
+        with self.assertRaisesRegex(gw.InputError, "line 4: is of year and quarter 20254, but the locality_map_plus_four record of ZIP 00012 takes effect 2026-01-01, in 20261"):
+            self.priced(self.split_release(), "00012", "5000")
+        # A record taking effect later in the first quarter still reads the first quarter's file.
+        self.write_zip9(ZIP9_ROWS)
+        self.priced(self.split_release(plus_four=[self.plus_four_record("2026-02-15", None)]), "00012", "5000")
+
     def test_reads_only_the_source_file_the_record_names_by_path_and_hash(self):
         cases = [
             ({"path": ZIP9_NAME, "sha256": "0" * 64}, f"its source {ZIP9_NAME} does not match the SHA-256 the record gives"),

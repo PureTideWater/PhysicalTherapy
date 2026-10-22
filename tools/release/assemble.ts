@@ -10,8 +10,10 @@ import {
   recordLabel,
   secondPassPathFor,
   serializeManifest,
+  type RuleRecordOf,
   serializeRecords,
   sha256,
+  zipFileQuarter,
 } from '@tp/rules';
 import { fileSha256, isRecordFile, listContentFiles, readRecordFile, readSecondPassFile } from '@tp/rules/content';
 
@@ -169,16 +171,18 @@ function dayAfter(date: string): string {
  * (plus_four_required, the ZIP5 file's flag) has locality_map_plus_four records of that ZIP, from the same quarter's
  * ZIP9 file, in force on every date of the flagged record's window. Without them the engine stops each of the ZIP's
  * fee-schedule lines (ENGINE_ERROR no_locality_plus_four) though the practice gave its ZIP+4, so a release that would
- * do that is refused. One problem per flagged record, naming the first date left uncovered.
- * Only real releases are checked: the SYNTHETIC releases 900001 to 900005 flag 00012 with no ZIP9 file, on purpose.
+ * do that is refused. "The same quarter's" is read from the files themselves: the year and quarter (YYYYQ, positions
+ * 76-80) every line a record quotes carries must be the flagged ZIP5 line's, and the ZIP9 record's state the ZIP5
+ * record's; a plus-four record in force during the flagged window that is of another quarter or state is named and
+ * covers nothing, so a ZIP9 file of the wrong quarter never prices a split ZIP at another quarter's localities. One
+ * problem per record found wanting, naming the first date left uncovered. Only real releases are checked: the
+ * SYNTHETIC releases 900001 to 900005 flag 00012 with no ZIP9 file, on purpose.
  */
 export function plusFourGaps(records: readonly RuleRecord[]): string[] {
-  const windows = new Map<string, { from: string; to: string | null }[]>();
+  const splits = new Map<string, RuleRecordOf<'locality_map_plus_four'>[]>();
   for (const record of records) {
     if (record.record_type === 'locality_map_plus_four') {
-      const list = windows.get(record.key.zip) ?? [];
-      list.push({ from: record.effective_from, to: record.effective_to });
-      windows.set(record.key.zip, list);
+      splits.set(record.key.zip, [...(splits.get(record.key.zip) ?? []), record]);
     }
   }
   const problems: string[] = [];
@@ -187,8 +191,30 @@ export function plusFourGaps(records: readonly RuleRecord[]): string[] {
       continue;
     }
     const { zip } = record.key;
+    const flagged = `ZIP ${zip} needs its ZIP+4 (its locality_map record from ${record.effective_from}, ${record.source.path})`;
+    const quarter = quotedQuarter(record);
+    if (quarter === null) {
+      problems.push(`${flagged}, and that record quotes no one year and quarter at positions 76-80, so no ZIP9 file can be matched to its quarter`);
+      continue;
+    }
+    const overlapping = (splits.get(zip) ?? []).filter(
+      (split) => (record.effective_to === null || split.effective_from <= record.effective_to) && (split.effective_to === null || split.effective_to >= record.effective_from),
+    );
+    const matching: RuleRecordOf<'locality_map_plus_four'>[] = [];
+    for (const split of overlapping) {
+      const splitQuarter = quotedQuarter(split);
+      if (split.value.state !== record.value.state) {
+        problems.push(`${flagged}, in state ${record.value.state}, and its locality_map_plus_four record from ${split.effective_from} (${split.source.path}) is in state ${split.value.state}`);
+      } else if (splitQuarter !== quarter) {
+        problems.push(
+          `${flagged}, of year and quarter ${quarter}, and its locality_map_plus_four record from ${split.effective_from} (${split.source.path}) is of ${splitQuarter ?? 'no one year and quarter'}: import the same quarter's ZIP9 file`,
+        );
+      } else {
+        matching.push(split);
+      }
+    }
     // Walk the flagged window from its first day, each plus-four window that has started moving the walk past its end.
-    const ordered = [...(windows.get(zip) ?? [])].sort((a, b) => compareText(a.from, b.from));
+    const ordered = matching.map((split) => ({ from: split.effective_from, to: split.effective_to })).sort((a, b) => compareText(a.from, b.from));
     let uncovered: string | null = record.effective_from;
     for (const window of ordered) {
       if (uncovered === null || (record.effective_to !== null && uncovered > record.effective_to)) {
@@ -199,12 +225,17 @@ export function plusFourGaps(records: readonly RuleRecord[]): string[] {
       }
     }
     if (uncovered !== null && (record.effective_to === null || uncovered <= record.effective_to)) {
-      problems.push(
-        `ZIP ${zip} needs its ZIP+4 (its locality_map record from ${record.effective_from}, ${record.source.path}), and no locality_map_plus_four record of that ZIP is in force on ${uncovered}: import the same quarter's ZIP9 file`,
-      );
+      problems.push(`${flagged}, and no locality_map_plus_four record of that ZIP and quarter is in force on ${uncovered}: import the same quarter's ZIP9 file`);
     }
   }
   return problems;
+}
+
+/** The one year and quarter (YYYYQ) every line a record quotes carries at 76-80, or null when they carry none or several. */
+function quotedQuarter(record: RuleRecord): string | null {
+  const quarters = new Set(record.quotes.map((quote) => zipFileQuarter(quote)));
+  const [only] = [...quarters];
+  return quarters.size === 1 && only !== undefined ? only : null;
 }
 
 /** Writes RELEASE.md and MANIFEST.json for the files already in `dir`, and returns the manifest's hash. */

@@ -215,7 +215,7 @@ describe('release:assemble and the ZIP+4 file (docs/adr/0064)', () => {
   it('refuses a release whose ZIP5 file flags a ZIP that no ZIP9 record of the quarter covers, writing nothing', () => {
     draftFile('locality_map', [flaggedZip()]);
     expect(() => assembleRelease({ root, release: 1, today: '2026-10-21' })).toThrow(
-      `release 1 not assembled: the ZIP5 file flags ZIPs that its quarter's ZIP9 file does not cover:\n  ZIP 99912 needs its ZIP+4 (its locality_map record from 2026-07-01, ${ZIP5_PATH}), and no locality_map_plus_four record of that ZIP is in force on 2026-07-01: import the same quarter's ZIP9 file`,
+      `release 1 not assembled: the ZIP5 file flags ZIPs that its quarter's ZIP9 file does not cover:\n  ZIP 99912 needs its ZIP+4 (its locality_map record from 2026-07-01, ${ZIP5_PATH}), and no locality_map_plus_four record of that ZIP and quarter is in force on 2026-07-01: import the same quarter's ZIP9 file`,
     );
     expect(existsSync(path.join(root, 'content/outgoing/1'))).toBe(false);
     // A ZIP9 draft still at L1 is not in the release, so it covers nothing.
@@ -246,6 +246,29 @@ describe('release:assemble and the ZIP+4 file (docs/adr/0064)', () => {
     // A ZIP that does not need its ZIP+4 needs no ZIP9 record.
     expect(plusFourGaps([flaggedZip({ value: { state: 'YY', carrier: '99998', locality: '01', rural_indicator: '', plus_four_required: false } })])).toEqual([]);
     expect(plusFourGaps([flaggedZip({ value: { state: 'YY', carrier: '99998', locality: '01', rural_indicator: null, plus_four_required: null } })])).toEqual([]);
+  });
+
+  it('takes only a ZIP9 record of the ZIP5 line’s year and quarter and state, read from the lines each quotes', () => {
+    const flagged = flaggedZip();
+    const ofQuarter = (quarter: string) => ZIP9_LINES.map((line) => `${line.slice(0, 75)}${quarter}`);
+    // Last quarter's ZIP9 file under this quarter's window: named, and it covers nothing.
+    expect(plusFourGaps([flagged, plusFourOf({ quotes: ofQuarter('20262') })])).toEqual([
+      `ZIP 99912 needs its ZIP+4 (its locality_map record from 2026-07-01, ${ZIP5_PATH}), of year and quarter 20263, and its locality_map_plus_four record from 2026-07-01 (${ZIP9_PATH}) is of 20262: import the same quarter's ZIP9 file`,
+      `ZIP 99912 needs its ZIP+4 (its locality_map record from 2026-07-01, ${ZIP5_PATH}), and no locality_map_plus_four record of that ZIP and quarter is in force on 2026-07-01: import the same quarter's ZIP9 file`,
+    ]);
+    // Quotes of two quarters are of no one quarter.
+    expect(plusFourGaps([flagged, plusFourOf({ quotes: [...ZIP9_LINES.slice(0, 1), ...ofQuarter('20262').slice(1)] })])[0]).toContain('is of no one year and quarter');
+    // Another state's ZIP9 record of the ZIP.
+    expect(plusFourGaps([flagged, plusFourOf({ value: { state: 'YX', ranges: [{ from: '0000', to: '9999', carrier: '99998', locality: '01', rural_indicator: '' }] } })])).toEqual([
+      `ZIP 99912 needs its ZIP+4 (its locality_map record from 2026-07-01, ${ZIP5_PATH}), in state YY, and its locality_map_plus_four record from 2026-07-01 (${ZIP9_PATH}) is in state YX`,
+      expect.stringContaining('no locality_map_plus_four record of that ZIP and quarter is in force on 2026-07-01'),
+    ]);
+    // A ZIP5 line with no year and quarter cannot be matched to a ZIP9 file.
+    expect(plusFourGaps([flaggedZip({ quotes: [ZIP5_LINE.slice(0, 21)] }), plusFourOf()])).toEqual([
+      `ZIP 99912 needs its ZIP+4 (its locality_map record from 2026-07-01, ${ZIP5_PATH}), and that record quotes no one year and quarter at positions 76-80, so no ZIP9 file can be matched to its quarter`,
+    ]);
+    // Another quarter's ZIP9 record whose window does not meet the flagged one is not this quarter's business.
+    expect(plusFourGaps([flagged, plusFourOf(), plusFourOf({ effective_from: '2026-04-01', effective_to: '2026-06-30', quotes: ofQuarter('20262') })])).toEqual([]);
   });
 });
 
