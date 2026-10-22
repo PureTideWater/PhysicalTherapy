@@ -294,6 +294,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'tools/screening-capacity/limits.test.ts',
     'tools/screening-capacity/env.test.ts',
     'tools/screening-capacity/report.test.ts',
+    'tools/screening-capacity/uploads.test.ts',
     'tools/screening-capacity/measure.test.ts',
     'packages/synth/src/release/scale.test.ts',
     'packages/synth/src/screening/uploads.test.ts',

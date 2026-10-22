@@ -851,14 +851,18 @@ for these questions as long as it optimizes the app"). Those this record's scree
   that "ZIP code" reads as including it).
 - **Q12:** the recommended wording, for counsel to confirm before the screening opens. The new sentences a prospect
   reads, word for word:
-  - the ZIP code field's hint: "Five digits, or ZIP+4 if you know it. A few ZIP codes span two Medicare payment areas;
-    for those we ask for the ZIP+4.";
-  - a ZIP that needs its ZIP+4: "Medicare splits this ZIP code between two payment areas. Enter the full ZIP+4, such as
+  - the ZIP code field's hint: "Five digits, or ZIP+4 if you know it. A few ZIP codes span more than one Medicare
+    payment area; for those we ask for the ZIP+4.";
+  - a ZIP that needs its ZIP+4: "This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as
     27601-1234, so the screening uses the right one.";
-  - a ZIP+4 the list does not hold: "Medicare’s ZIP+4 list in force does not include this ZIP+4. Check the four digits
-    after the hyphen.";
-  - a ZIP whose ZIP+4 list is not loaded: "PaidWhole has not loaded Medicare’s locality list for this ZIP code yet, so a
+  - a ZIP+4 the list does not hold (right under either answer to Q37, so never "check the four digits"): "Medicare’s
+    ZIP+4 list in force does not list this ZIP+4. If the four digits after the hyphen are right, a screening cannot price
+    this ZIP+4 yet.";
+  - a ZIP whose ZIP+4 list is not loaded: "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a
     screening cannot price it. Try again later.";
+  - before a file is chosen: "Medicare rows of 2026-Q1 to 2026-Q4 are screened; rows of other quarters are left out and
+    counted." (no content loaded: "PaidWhole has no Medicare content loaded yet, so Medicare rows are left out and
+    counted."), and the two Medicare products' notes end "for the quarters PaidWhole has loaded";
   - the upload page, before sending: "12 rows (380 claim lines, $41,200.00) in quarters before 2026-Q1 were left out:
     PaidWhole has the Medicare content for 2026-Q1 to 2026-Q4 loaded." (one row: "1 row (12 claim lines, $500.00) in a
     quarter before 2026-Q1 was left out: ..."; quarters after the content: "in quarters after 2026-Q4"; quarters between
@@ -873,7 +877,7 @@ for these questions as long as it optimizes the app"). Those this record's scree
     around the browser: "Row 12, service band: PaidWhole has not loaded the Medicare content for that quarter, so a
     Medicare row in it cannot be screened." (the server's: "Row 12: the service band’s quarter is outside the Medicare
     content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out");
-  - the result's three engine details: "The ZIP spans two Medicare localities and no ZIP+4 was given", "Medicare’s
+  - the result's three engine details: "The ZIP spans more than one Medicare locality and no ZIP+4 was given", "Medicare’s
     ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day" and, for a row in a quarter with no ZIP+4
     list of the ZIP in force (`no_locality_plus_four`, a gap in PaidWhole's content that PR 6b-1's review split from the
     unlisted ZIP+4), "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day".

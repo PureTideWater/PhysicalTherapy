@@ -179,8 +179,12 @@ five-digit input's trace carries neither new key.
 - the specialist answers Q37 (a ZIP+4 the ZIP9 file does not list);
 - PR 6b-2 lands (the practice's location, settings at onboarding, the screening's ZIP+4), or the multi-site pull
   request gives each site its own location;
-- the founder rules on PR 5's trigger on `rule_release_withdrawal`, which PR 6b-1's rule-table check found and
-  reconciliation-001 records as a departure put to the founder: either way the catalog snapshot follows the ruling;
+- *(settled 2026-10-22)* PR 5's trigger on `rule_release_withdrawal`, which PR 6b-1's rule-table check found: the
+  founder, Tyler Williams, accepted it on 2026-10-22 as an exception to reconciliation-001's rule-table check (it only
+  takes the advisory lock `pricing_current:withdrawal`, writing nothing and changing no rule data, and serializes a
+  withdrawal with the approval, the export guard, the attestation and the submission's flag, so no packet goes out as
+  current under a release being withdrawn; ADR 0061, Owner ruling (2026-10-22)). The catalog snapshot keeps it as it
+  stands; any other DDL on a rule table still needs its own ruling;
 - a release of `@stryker-mutator/vitest-runner` supports Vitest 5, and the patch is dropped (the canary says whether
   it still works).
 
@@ -284,8 +288,63 @@ the result page's sentence needs them).
 `practice.zip` and no location), the split's console approval (renamed), the screening's submission (new signature;
 closed in production until release 1), a run created by one image and priced by the other (`engine_version_mismatch`;
 the month is planned again), the old image's strict trace schema refusing a trace with a ZIP+4, and the old image's
-price jobs reading the backfilled `practice.zip` rather than a location saved through the new image.
+price jobs reading the backfilled `practice.zip` rather than a location saved through the new image. And a seventh,
+found by the review round: a run the previous image's web or monitor inserts in the window is pinned by
+`pricing_run_rules()` to the split in force, but the previous image's price job prices it from `practice.settings`
+alone (it reads no split), so the run completes, immutable, naming a split its traces did not use, and a place the
+practice has not set stops as `ENGINE_ERROR place_of_service_unmapped`. It happens only where a split is approved
+before the new worker runs: approve no split until the new worker is running, or re-run each run pinned in the window.
+The migration's header lists six effects; this seventh is recorded here and in the pull request's deploy notes, and
+joins the header with the migration's next change.
 
 **The Data dictionary stays verbatim** (reconciliation-001, D2 (a)): the domain model records `practice_site` and the
 seventeenth record type, as it records every accepted divergence, in place of the edit to `data-dictionary.md` the
 design proposed.
+
+## Review round (PR 6b-2, 2026-10-22)
+
+Three adversarial reviews (security and tenancy, the security-reviewer method the founder's Q5 (a) asked for; pricing
+runs, waits, the split and the diff, the payment-engine method; the screening, its wording and accessibility) found 23
+items. What changed without the migration:
+
+- **A waiting month whose location became ready is always planned.** `waitingOnLocation()` (`apps/worker/src/monitor/
+  plan.ts`) keeps a month waiting only while the location's status over it is still one a line cannot price at
+  (`zip_missing` or `LOCATION_NOT_READY_STATUSES`). Its times alone could not prove a run read the saved location: a run
+  created while a save was still open had a `created_at` later than the save's `updated_at` (both their transaction's
+  start) yet priced with the old location, and the month then waited until a new line or release.
+- **The save's monitor job is sent after the save commits.** A route's handler hands it to `afterCommit`
+  (`apps/web/src/lib/http/route.ts`, run by `invoke.ts` once the transaction has committed, for practice and console
+  routes alike), so an idle worker never plans with the old location and spends the save's request key. A failure to
+  send is logged by code; the daily plan takes the month up. The other routes that queue jobs inside their transaction
+  are unchanged (a follow-up).
+- **The stops are judged from the location the run prices with.** `executePricingRun()` reads the location's status in
+  the pricing transaction, with `locality_status()` over the very ZIP and ZIP+4 `runSettings()` read there, not from the
+  run's first transaction; a location saved between the two is the one priced and the one judged.
+- **A re-run's causes name the new release's change to the new location's records.** When the ZIP and the release both
+  change, `lineCauses()` asks the other run's release for each location record a line read in one run only
+  (`OtherRelease`, looked up by `compareRuns()`); a record that release lacks, or holds with another value or window,
+  is a release cause beside the settings. The gap section 3.6 of the design gave up is closed.
+- **The screens.** Pricing settings words the save's notice by the location it leaves, offers "Confirm the billing ZIP"
+  only when nothing is left for the customer to change (the handler refuses it otherwise, with the status's sentence),
+  and Getting started then asks for the status's own step ("Add your billing ZIP+4"); a month whose run stopped on the
+  old location and whose location now prices reads "Being priced with the new location."; the months priced before the
+  location changed are the runs whose traces read another ZIP or ZIP+4, not the runs older than the last save; the
+  waiting months' table scrolls in a region the keyboard reaches; a refused field is marked invalid, described by its
+  error and focused; the re-run diff says when the earlier run had no split at all; the copy lint reads
+  `packages/contracts/src/location.ts`.
+- **Wording (for the founder and then counsel, Q12):** `zip_plus_four_unknown` no longer asks anyone to "check the four
+  digits" while Q37 is open; `locality_not_loaded` names the ZIP+4 list over the whole release and the month over a
+  month; "more than one" payment area, never "two"; months "are priced by themselves once it is set", never "priced
+  again"; "tell us" links the support form; the screening says which quarters' Medicare rows it screens before a file
+  is chosen.
+
+**Waiting on the migration.** Every other fix changes `20261105090000_pricing_location_and_zip_plus_four.sql`, which is
+edited only through the new-migration marker (`.claude/skills/new-migration`), and setting that marker was refused in
+this round's session. They are listed in the pull request as open items and land with the migration's next change, with
+the domain model regenerated and its new SHA-256 put to the founder: Postgres refusing the confirmation itself (a
+definer `practice_confirm_location()`, recorded on `practice_site.confirmed_by` and `confirmed_at`, which every role that
+opens the practice reads, by a non-internal person, refusing a location not settled); a deleted practice's location
+refused by `practice_set_location()` and the previous image's `console_set_practice_settings()`; a save of the same ZIP
+and ZIP+4 leaving `updated_at` as it was; the console's read of the stored ZIP+4 and the live status; the split's
+approval date for the re-run diff (`pricing_run_split()`); the screening result's ZIP+4; `submit_screening()` saying
+the ZIP+4 list is not loaded before asking a prospect for a ZIP+4; and the header's seventh deploy-window effect.
