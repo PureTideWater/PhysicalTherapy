@@ -68,10 +68,6 @@ function rowsText(rows: number): string {
 }
 
 /**
- * The email that carries a completed screening's link, which opens the result for 30 days from the upload, and what
- * this screening's summary is kept with, as the completion said (none by default).
- */
-/**
  * Why a waiting-tier upload waited (Q7; the founder's Q12 wording process: for the founder and then counsel), said in its
  * result's email, which reaches the mailbox's owner: the "sent" page says only that it waits, since nothing proves the
  * visitor owns the address typed there.
@@ -82,6 +78,11 @@ export const SCREENING_WAITED: Readonly<Record<ScreeningWaitReason, string>> = {
   daily_cap: 'It waited behind other screenings because the screening had reached its limit for that day.',
 };
 
+/**
+ * The email that carries a completed screening's link, which opens the result for 30 days from the upload, and what
+ * this screening's summary is kept with, as the completion said (none by default), with why it waited for a run of the
+ * waiting tier.
+ */
 export function screeningResultMessage({
   to,
   link,
