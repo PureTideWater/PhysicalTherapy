@@ -69,7 +69,8 @@ describe('the watched list', () => {
 
   it('is inside what a push to the build branch measures', () => {
     const workflow = parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as { on: { push: { paths: string[] } } };
-    const pushPaths = workflow.on.push.paths.map((glob) => new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\u0000/g, '.*')}$`));
+    // `**` matches across `/`, a lone `*` within one segment.
+    const pushPaths = workflow.on.push.paths.map((glob) => new RegExp(`^${glob.split('**').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*')).join('.*')}$`));
     for (const line of committed) {
       // A pattern line is checked by its fixed prefix: the push glob must cover what it can match.
       const probe = line.replace(/\*/g, 'x/y');
