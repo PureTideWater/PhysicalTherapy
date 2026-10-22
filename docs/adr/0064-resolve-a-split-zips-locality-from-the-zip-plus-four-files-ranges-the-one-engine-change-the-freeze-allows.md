@@ -215,12 +215,15 @@ recommended answer accepted):
 - **Q11 (a):** no wording change for the ZIP+4 in what the pages say is kept: the words already cover a ZIP+4 entered
   in the ZIP code field (counsel confirms).
 
-**The location.** `practice_site (practice_id, zip, zip_plus_four, updated_by)`: the ZIP five digits, the ZIP+4 four or
-null (`practice_site_zip`, `practice_site_zip_plus_four`), one per practice (`practice_site_one_per_practice`). It holds
-no PHI but has a NOT NULL `practice_id`, so it is registered and forced, with the tenant policy and the owner's for the
+**The location.** `practice_site (practice_id, zip, zip_plus_four, updated_by, confirmed_by, confirmed_at)`: the ZIP
+five digits, the ZIP+4 four or null (`practice_site_zip`, `practice_site_zip_plus_four`), one per practice
+(`practice_site_one_per_practice`); who last set the ZIP or ZIP+4 (null when backfilled), and the person of the
+practice who last saved or confirmed it and when, both or neither (`practice_site_confirmed`; below). It holds no PHI
+but has a NOT NULL `practice_id`, so it is registered and forced, with the tenant policy and the owner's for the
 definer functions. The application role holds SELECT alone; a location is never deleted or truncated and changes only
-its ZIP, ZIP+4 and who set them (`practice_site_rules`). A practice is created with its location in the same
-transaction, whoever inserts it: the deferred constraint trigger `practice_has_site` checks at commit. The migration
+its ZIP, ZIP+4, who set them and who confirmed them, and its `updated_at` and `updated_by` move only when the ZIP or
+ZIP+4 changes (`practice_site_rules`). A practice is created with its location in the same transaction, whoever
+inserts it: the deferred constraint trigger `practice_has_site` checks at commit. The migration
 backfills each practice's `practice.zip`; `practice.zip` is deprecated (never read or written; the application role
 may no longer insert or update it) and is dropped by the multi-site pull request.
 
@@ -247,10 +250,12 @@ row stopped on it "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP
 (`user_is_internal()`) who holds `pricing_settings.set` in an active practice of the transaction's scope, and a
 malformed ZIP or ZIP+4 by the constraint's name, upserts the row and returns its status under the release in force; it
 keeps the caller's scope. The save is the person's confirmation of the location (`practice_site.confirmed_by` and
-`confirmed_at`, both or neither, `practice_site_confirmed`). `practice_confirm_location(practice)` (definer, the same
-guard, granted to `tp_app` alone) confirms the location as it stands, only when it leaves nothing to change under the
-release in force (`ready` or `locality_not_loaded`; otherwise `practice_site_settled`), and records the person and the
-time on the row; Getting started's "Confirm your billing ZIP" reads `confirmed_at >= updated_at` there, under the
+`confirmed_at`, both or neither, `practice_site_confirmed`). `practice_confirm_location(practice, shown_zip,
+shown_zip_plus_four)` (definer, the same guard, granted to `tp_app` alone) confirms the location the person was shown:
+it locks the row and refuses it when the row no longer holds exactly that ZIP and ZIP+4 (`practice_site_changed`: a
+page loaded before a change, or a confirmation that waited on the console's change and reads the row once that
+commits), and when it leaves something to change under the release in force (`ready` or `locality_not_loaded` pass;
+otherwise `practice_site_settled`), and records the person and the time on the row; Getting started's "Confirm your billing ZIP" reads `confirmed_at >= updated_at` there, under the
 row's tenant policy, so every role that opens the practice reads the same answer. `practice_site_rules()` moves
 `updated_at` and `updated_by` only when the ZIP or ZIP+4 changes, whoever writes the row, so a save of the same
 location neither lists runs as priced before a change nor undoes a confirmation. `console_set_practice_location()` is
@@ -375,3 +380,26 @@ that failed on the migration before it:
 - **The screening result names the ZIP+4** (finding 21), "00012-5001" in its heading.
 - **The screening says the ZIP+4 list is not loaded before asking for a ZIP+4** (finding 22), as above.
 - **The header lists the seventh deploy-window effect** (finding 7).
+
+**The verification's two findings (the same day).** The fresh-clone verification of 98a5e49 passed and found two nits,
+both fixed in the pull request:
+
+- **A confirmation can be recorded against a location the person was never shown** (finding 1). Reproduced on
+  PostgreSQL 18 with two connections: `practice_confirm_location()` read the old location's status, waited on the
+  console's change's row lock, then stamped the confirmation on the new row; and without any race, the confirm form
+  posted only the box, so a page loaded before the console's change confirmed the new location unseen and Getting
+  started's step read done. The form now carries the ZIP and ZIP+4 its page shows (hidden fields, checked by the
+  route's schema); the handler refuses another location before it confirms, and `practice_confirm_location(practice,
+  shown_zip, shown_zip_plus_four)` locks the row (`SELECT ... FOR UPDATE`), compares it with those values and refuses
+  any difference (`practice_site_changed`), keeping every other guard, the definer's `search_path`, no PUBLIC EXECUTE
+  and the one grant to `tp_app`; the one-argument function is gone (the migration is unmerged, so there is one
+  signature). Either refusal confirms and audits nothing, and the page is read again with "The billing ZIP changed
+  since this page loaded. Review it, then confirm." (for the founder and then counsel, Q12). A confirmation that holds
+  the row first is of what its page showed, and the console's change that waits on it then clears it. The tests failed
+  on 98a5e49: the race on two connections and the stale values as the application role, the stale form and the change
+  committed while the confirmation waited through the route (on 98a5e49 both confirmed the new location), and the
+  existing refusals sent with the location as it stands. The onboarding journey now also confirms from a page whose
+  location changed after it loaded. The migration changed once more on the founder's permission of 2026-10-22 for this one
+  unmerged migration: the marker was set for the edits alone and removed before any test ran.
+- **The location paragraph above described `practice_site` before the review round** (finding 2): it now lists
+  `confirmed_by` and `confirmed_at` and says what `practice_site_rules()` lets change.
