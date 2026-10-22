@@ -11,11 +11,13 @@ import { canonicalJson } from '@tp/rules';
  * - release_record: a rule record the line read holds another value or window in the second run's
  *   release, or (with the same agreement) the line read a record in one release that the other lacks.
  *   A record read in one run only is not a release cause when the terms changed (the new terms read
- *   other records), nor, when the practice's ZIP or ZIP+4 changed, when it is one of the three types
- *   the location decides (locality_map, locality_map_plus_four, pfs_gpci; docs/adr/0064): the new
- *   location reads other ones. A rounding or place-of-service change skips no record, since neither
- *   changes which records are read. What this gives up: when the ZIP and the release both change, a
- *   GPCI the new release added for the new locality shows under the settings, not as a release record.
+ *   other records). When the practice's ZIP or ZIP+4 changed and it is one of the three types the
+ *   location decides (locality_map, locality_map_plus_four, pfs_gpci; docs/adr/0064), the new location
+ *   reads other ones: under one release that is the settings cause alone; under two releases the other
+ *   run's release is asked for the same rule (otherRelease), and the record is a release cause too when
+ *   that release lacks it or holds another value or window, which the new release added or changed for
+ *   the location. A rounding or place-of-service change skips no record, since neither changes which
+ *   records are read.
  * - claim: the claim's facts changed between the runs (a reversal or correction loaded since).
  * - settings: the practice's settings changed, naming the trace's settings keys that differ (its ZIP,
  *   ZIP+4, rounding or places of service, the approved split's among them) with both sides' values.
@@ -162,12 +164,27 @@ export function settingsFields(before: unknown, after: unknown): SettingsField[]
 }
 
 /**
+ * A record of the location's types that a line read in one run only, as the other run's release holds its rule:
+ * `same` when that release holds a record of the rule with the same value and window (the release did not change it
+ * for this location), and `other`, the version of the rule that release holds on the record's first day, or null.
+ * Undefined when the two runs priced under one release (nothing to ask).
+ */
+export type OtherRelease = (ref: TraceRecordRef, readIn: 'before' | 'after') => { readonly same: boolean; readonly other: RecordVersion | null } | undefined;
+
+/**
  * The causes of a line's difference, in CAUSE_KINDS order. `sameRule` says whether two records of one
  * rule with different hashes hold the same value and window. Records a line read in one run only are
- * a cause only when the line kept its mapping and contract terms, and, for the three types the location
- * decides, its ZIP and ZIP+4; otherwise they follow from the new terms or location, which are the cause.
+ * a cause only when the line kept its mapping and contract terms; for the three types the location
+ * decides, when its ZIP or ZIP+4 changed too, only when `otherRelease` says the other run's release
+ * does not hold the same record (a new release's change for the new location); otherwise they follow
+ * from the new terms or location, which are the cause.
  */
-export function lineCauses(before: CauseTrace, after: CauseTrace, sameRule: (before: TraceRecordRef, after: TraceRecordRef) => boolean): LineCause[] {
+export function lineCauses(
+  before: CauseTrace,
+  after: CauseTrace,
+  sameRule: (before: TraceRecordRef, after: TraceRecordRef) => boolean,
+  otherRelease: OtherRelease = () => undefined,
+): LineCause[] {
   const causes: LineCause[] = [];
   const mapping = (trace: CauseTrace): MappingPin => ({ mappingId: trace.agreement?.mapping_id ?? null, mappingKind: trace.agreement?.mapping_kind ?? null });
   const contract = (trace: CauseTrace): ContractPin => ({ contractVersionId: trace.agreement?.contract_version_id ?? null, rateRecordId: trace.agreement?.rate_record_id ?? null });
@@ -190,7 +207,22 @@ export function lineCauses(before: CauseTrace, after: CauseTrace, sameRule: (bef
       if (earlier.sha256 === later.sha256 || sameRule(earlier, later)) {
         continue;
       }
-    } else if (!sameTerms || (!sameLocation && LOCATION_RECORD_TYPES.has((earlier ?? later)?.record_type ?? ''))) {
+    } else if (!sameTerms) {
+      continue;
+    } else if (!sameLocation && LOCATION_RECORD_TYPES.has((earlier ?? later)?.record_type ?? '')) {
+      // The new location reads this record; it is the release's doing too only when the other release lacks it as read.
+      const read = (earlier ?? later) as TraceRecordRef;
+      const held = otherRelease(read, earlier === undefined ? 'after' : 'before');
+      if (held === undefined || held.same) {
+        continue;
+      }
+      causes.push({
+        kind: 'release_record',
+        recordType: read.record_type,
+        key: read.key,
+        before: earlier === undefined ? held.other : version(earlier),
+        after: later === undefined ? held.other : version(later),
+      });
       continue;
     }
     const ref = (earlier ?? later) as TraceRecordRef;

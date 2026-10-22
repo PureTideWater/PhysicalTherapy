@@ -75,6 +75,13 @@ const WINDOW_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900003');
 export const DEADLINE_RELEASE = 900005;
 const DEADLINE_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900005');
 
+/**
+ * SYNTHETIC release 900006: release 900001 with a second locality (99999-02, its GPCI) and a ZIP+4 file for the ZIP
+ * 00012 (0000-4999 in locality 01, 5000-8999 in 02). Loaded only by the tests that need it.
+ */
+export const PLUS_FOUR_RELEASE = 900006;
+const PLUS_FOUR_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900006');
+
 /** The SYNTHETIC place-of-service split and default rounding of a practice's settings. */
 export const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' };
 
@@ -355,6 +362,11 @@ export class PricingWorld {
   /** Loads SYNTHETIC release 900005 into the scratch database (once): from then on it is the release in force. */
   async loadDeadlineRelease(): Promise<void> {
     await loadRelease(this.owner, DEADLINE_RELEASE_DIR, { release: DEADLINE_RELEASE, allowSyntheticFixtureForTests: true });
+  }
+
+  /** Loads SYNTHETIC release 900006 into the scratch database (once): from then on it is the release in force. */
+  async loadPlusFourRelease(): Promise<void> {
+    await loadRelease(this.owner, PLUS_FOUR_RELEASE_DIR, { release: PLUS_FOUR_RELEASE, allowSyntheticFixtureForTests: true });
   }
 
   /** Loads SYNTHETIC release 900003 into the scratch database (once): from then on it is the release in force. */

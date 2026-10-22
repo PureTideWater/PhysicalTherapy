@@ -179,6 +179,35 @@ describe('lineCauses', () => {
     ]);
   });
 
+  it('when the ZIP and the release both change, names the location’s record the new release changed for the new location, and skips the ones it kept', () => {
+    const zip11 = ref('locality_map', { zip: '00011' }, 'j');
+    const zip13 = ref('locality_map', { zip: '00013' }, 'y');
+    const gpci02 = ref('pfs_gpci', { carrier: '99999', locality: '02' }, 'y');
+    const before = trace({ records: [rvu('a'), gpci, zip11] });
+    const after = trace({ settings: { zip: '00013', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } }, records: [rvu('a'), gpci02, zip13] });
+    const settings = { kind: 'settings', fields: ['zip'], before: { zip: '00011' }, after: { zip: '00013' } };
+    // One release (or the caller asks nothing): the new location reads other records, and the ZIP is the cause.
+    expect(lineCauses(before, after, never)).toEqual([settings]);
+    // Two releases: the earlier one held 00013's record as read, but its GPCI of locality 02 held another value (a
+    // GPCI update), and 00011's record is in the later release as read.
+    const earlierGpci02 = { sha256: 'x'.repeat(64), effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' };
+    const asked: string[] = [];
+    const otherRelease = (read: TraceRecordRef, readIn: 'before' | 'after') => {
+      asked.push(`${readIn}:${ruleLabel(read)}`);
+      return read.record_type === 'pfs_gpci' && readIn === 'after' ? { same: false, other: earlierGpci02 } : { same: true, other: null };
+    };
+    expect(lineCauses(before, after, never, otherRelease)).toEqual([
+      { kind: 'release_record', recordType: 'pfs_gpci', key: { carrier: '99999', locality: '02' }, before: earlierGpci02, after: { sha256: gpci02.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' } },
+      settings,
+    ]);
+    expect(asked.sort()).toEqual([`after:${ruleLabel(gpci02)}`, `after:${ruleLabel(zip13)}`, `before:${ruleLabel(gpci)}`, `before:${ruleLabel(zip11)}`].sort());
+    // A record the other release lacks altogether is named with no version on that side; one read only before, too.
+    expect(lineCauses(before, after, never, (read, readIn) => (readIn === 'before' && read.record_type === 'locality_map' ? { same: false, other: null } : { same: true, other: null }))).toEqual([
+      { kind: 'release_record', recordType: 'locality_map', key: { zip: '00011' }, before: { sha256: zip11.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' }, after: null },
+      settings,
+    ]);
+  });
+
   it('still names a record a new release added when the ZIP changed beside it, if the location does not decide that record', () => {
     const mppr = ref('mppr_rate', { hcpcs: '97110', modifier: '' }, 'f');
     const moved = trace({ settings: { zip: '00012', zip_plus_four: '0001', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } }, records: [rvu('a'), gpci, mppr] });
