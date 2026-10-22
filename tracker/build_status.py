@@ -220,7 +220,7 @@ MANUAL = {
   "You approve the consumer's monthly cost and the design questions": ("Done", "2026-10-21T22:00:00Z", "2026-10-21T22:31:00Z"),
   "PR 6b-1, ZIP+4 in the engine: build, draft PR, two reviews, fix, verify, merge": ("Done", "2026-10-21T22:55:00Z", "2026-10-22T05:20:00Z"),
   "PR 6b-2, pricing location and onboarding: build, reviews, fix, verify, your approval, merge": ("Done", "2026-10-21T23:55:00Z", "2026-10-22T16:31:00Z"),
-  "PR 6b-3, the screening's own consumer and the time check: build, reviews, fix, verify, your approval, merge": ("Running", "2026-10-22T17:00:00Z", None),
+  "PR 6b-3, the screening's own consumer and the time check: build, reviews, fix, verify, your approval, merge": ("Running", "2026-10-22T16:51:00Z", None),
 }
 # Steps whose label repeats across batches ("fix review findings"), kept by hand: (batch, label) -> (status, started, finished).
 BATCH_MANUAL = {
