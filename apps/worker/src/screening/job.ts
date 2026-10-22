@@ -309,7 +309,9 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
       if (done === null) {
         return null;
       }
-      await dependencies.mail.send(screeningResultMessage({ to: done.contactEmail, link: screeningResultLink(dependencies.appOrigin, token), rows: done.rowCount, keptWith: done.keptWith }));
+      await dependencies.mail.send(
+        screeningResultMessage({ to: done.contactEmail, link: screeningResultLink(dependencies.appOrigin, token), rows: done.rowCount, keptWith: done.keptWith, waited: done.waitReason }),
+      );
       return done;
     });
   } catch (error) {

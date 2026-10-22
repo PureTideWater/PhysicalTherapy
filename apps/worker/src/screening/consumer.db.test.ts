@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { enqueueScreeningRun } from '../jobs/enqueue';
 import { QUEUE_OPTIONS } from '../jobs/registry';
+import { type ScreeningJobs, createScreeningHandlers } from '../jobs/screening';
 import { startWorker } from '../worker';
 import { startScreeningConsumer } from './consumer';
 
@@ -233,10 +234,11 @@ describe('the screening consumer in one process', () => {
     const worker = await startWorker({ boss, logger, screening: consumer, heartbeatMs: 60_000, shutdownTimeoutMs: 30_000 });
     try {
       const queues = await owner.query<{ name: string; heartbeat_seconds: number }>(
-        "SELECT name, heartbeat_seconds FROM pgboss.queue WHERE name IN ('screening_price', 'screening_sweep') ORDER BY name",
+        "SELECT name, heartbeat_seconds FROM pgboss.queue WHERE name IN ('screening_price', 'screening_price_waiting', 'screening_sweep') ORDER BY name",
       );
       expect(queues.rows).toEqual([
         { name: 'screening_price', heartbeat_seconds: 60 },
+        { name: 'screening_price_waiting', heartbeat_seconds: 60 },
         { name: 'screening_sweep', heartbeat_seconds: 60 },
       ]);
       expect((await owner.query("SELECT name FROM pgboss.schedule WHERE name IN ('screening_price', 'screening_sweep') ORDER BY name")).rows).toEqual([{ name: 'screening_sweep' }]);
@@ -269,6 +271,59 @@ describe('the screening consumer in one process', () => {
       await worker.stop();
     }
     expect(lines.at(-1)).toMatchObject({ msg: 'worker stopped' });
+  });
+});
+
+describe('Q7: the waiting tier keeps a thread for the normal tier', () => {
+  it('works at most two waiting-tier runs of three threads at once, and starts a normal run that arrives meanwhile at once', { timeout: 90_000 }, async () => {
+    const boss = new PgBoss(database.url);
+    boss.on('error', () => undefined);
+    const started = new Map<string, number>();
+    const ended = new Map<string, number>();
+    // Stand-in pricing: each run takes 8 s, a worst-shape file's share of a thread, so nothing ends during the test.
+    const consumer: ScreeningJobs = {
+      concurrency: 3,
+      handlers: createScreeningHandlers({
+        price: async (runId) => {
+          started.set(runId, Date.now());
+          await new Promise((resolve) => setTimeout(resolve, 8_000));
+          ended.set(runId, Date.now());
+        },
+        sweep: () => Promise.resolve(),
+      }),
+      close: () => Promise.resolve(),
+    };
+    const worker = await startWorker({ boss, logger: createLogger({ sink: () => undefined }), screening: consumer, heartbeatMs: 60_000, shutdownTimeoutMs: 30_000 });
+    try {
+      // Three uploads past their accounts' shares, sent with nothing normal queued (the review's probe).
+      const waiting = [randomUUID(), randomUUID(), randomUUID()];
+      for (const [index, runId] of waiting.entries()) {
+        expect(await enqueueScreeningRun(boss, runId, { priority: -(index + 1) })).not.toBeNull();
+      }
+      await until(() => Promise.resolve(started.size), (count) => count >= 2, 15_000, 50);
+      // A poll later the third still waits: the third thread is the normal tier's.
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      expect(started.size).toBe(2);
+      // A normal upload then starts within pg-boss's poll, not after a waiting-tier run's 8 s.
+      const normal = randomUUID();
+      const sentAt = Date.now();
+      expect(await enqueueScreeningRun(boss, normal, { priority: 0 })).not.toBeNull();
+      await until(() => Promise.resolve(started.has(normal)), (has) => has, 15_000, 50);
+      expect((started.get(normal) ?? Number.POSITIVE_INFINITY) - sentAt).toBeLessThan(4_000);
+      expect(ended.size).toBe(0);
+      // The waiting-tier jobs went to their own queue, at their priorities; the normal one to the normal queue.
+      const jobs = await owner.query<{ name: string; priority: number }>('SELECT name, priority FROM pgboss.job WHERE singleton_key = ANY ($1) ORDER BY priority DESC', [
+        [...waiting, normal].map((runId) => `screening_price:${runId}`),
+      ]);
+      expect(jobs.rows).toEqual([
+        { name: 'screening_price', priority: 0 },
+        { name: 'screening_price_waiting', priority: -1 },
+        { name: 'screening_price_waiting', priority: -2 },
+        { name: 'screening_price_waiting', priority: -3 },
+      ]);
+    } finally {
+      await worker.stop();
+    }
   });
 });
 

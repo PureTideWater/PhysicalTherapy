@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
-import { SCREENING_PRICE_JOB, enqueueScreeningRun, screeningPriceKey } from './enqueue';
+import { SCREENING_PRICE_JOB, SCREENING_PRICE_WAITING_JOB, enqueueScreeningRun, screeningPriceKey } from './enqueue';
 import { QUEUE_OPTIONS, SCREENING_JOB_HEARTBEAT_SECONDS, SCREENING_QUEUE_OPTIONS } from './registry';
 
 const RUN = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
@@ -32,11 +32,15 @@ describe('enqueueScreeningRun', () => {
     expect(screeningPriceKey(RUN)).toBe(`screening_price:${RUN}`);
   });
 
-  it('sends a run of the waiting tier at its own priority, -1 to -20, and refuses any other', async () => {
+  it('sends a run of the waiting tier to its own queue at its own priority, -1 to -20, and refuses any other', async () => {
     const { sent, boss } = recorder();
     await enqueueScreeningRun(boss, RUN, { priority: -1 });
     await enqueueScreeningRun(boss, RUN, { priority: -20 });
     expect(sent.map((send) => (send.options as { priority: number }).priority)).toEqual([-1, -20]);
+    expect(sent.map((send) => send.name)).toEqual([SCREENING_PRICE_WAITING_JOB, SCREENING_PRICE_WAITING_JOB]);
+    expect(SCREENING_PRICE_WAITING_JOB).toBe('screening_price_waiting');
+    // Under the run's one singleton key, as a normal run's: a run's tier never changes.
+    expect(sent.map((send) => (send.options as { singletonKey: string }).singletonKey)).toEqual([screeningPriceKey(RUN), screeningPriceKey(RUN)]);
     for (const priority of [1, -21, 0.5, Number.NaN]) {
       await expect(enqueueScreeningRun(boss, RUN, { priority }), String(priority)).rejects.toThrow(ZodError);
     }

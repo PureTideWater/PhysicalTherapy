@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -65,13 +66,27 @@ afterAll(() => {
 });
 
 describe('the screening threads’ sizes (Q1 (a); #31’s explicit heap limit)', () => {
-  it('prices three at once, each thread under 1,024 MiB and the main thread under 512, together under 90% of the 4,096 MiB task', () => {
+  it('prices three at once, each thread and the main thread under 896 MiB, together under 90% of the 4,096 MiB task', () => {
     expect(SCREENING_THREADS).toBe(3);
-    expect(SCREENING_THREAD_HEAP_MB).toBe(1024);
-    expect(SCREENING_MAIN_HEAP_MB).toBe(512);
-    expect(SCREENING_MAIN_HEAP_FLAG).toBe('--max-old-space-size=512');
+    expect(SCREENING_THREAD_HEAP_MB).toBe(896);
+    expect(SCREENING_MAIN_HEAP_MB).toBe(896);
+    expect(SCREENING_MAIN_HEAP_FLAG).toBe('--max-old-space-size=896');
     expect(screeningHeapMib()).toBe(3584);
     expect(screeningHeapMib()).toBeLessThan(0.9 * 4096);
+  });
+
+  it('gives each thread the heap it declares under the container\'s own command, where Node applies the process\'s heap flag to every thread', () => {
+    // What V8 makes of a heap limit of SCREENING_THREAD_HEAP_MB for one isolate (heap_size_limit, young generation included).
+    const declared = Number(execFileSync(process.execPath, [`--max-old-space-size=${String(SCREENING_THREAD_HEAP_MB)}`, '-p', 'require("node:v8").getHeapStatistics().heap_size_limit'], { encoding: 'utf8' }));
+    // A thread as the pool starts it, in a process started with the screening container's flag: Node gives every worker
+    // thread the process's --max-old-space-size, whatever resourceLimits asks (measured on Node 24: a thread asking
+    // 1,024 MiB under --max-old-space-size=512 got 512).
+    const thread = `const { Worker } = require('node:worker_threads');
+      const worker = new Worker('require("node:worker_threads").parentPort.postMessage(require("node:v8").getHeapStatistics().heap_size_limit)',
+        { eval: true, resourceLimits: { maxOldGenerationSizeMb: ${String(SCREENING_THREAD_HEAP_MB)} } });
+      worker.on('message', (limit) => { process.stdout.write(String(limit)); worker.terminate(); });`;
+    const got = Number(execFileSync(process.execPath, [SCREENING_MAIN_HEAP_FLAG, '-e', thread], { encoding: 'utf8' }));
+    expect(got).toBe(declared);
   });
 
   it('runs the thread from TypeScript under tsx’s loader in the source tree', () => {
@@ -94,6 +109,33 @@ describe('ScreeningThreadPool', () => {
     expect(took).toBeGreaterThanOrEqual(750);
     expect(took).toBeLessThan(3_000);
     expect(threads.active).toBe(0);
+    await threads.close();
+  });
+
+  it('keeps a thread for the normal tier: a waiting-tier run takes one only while another stays idle, and a normal run goes first', async () => {
+    const { pool: threads } = pool();
+    await threads.start();
+    // Three uploads past their accounts' shares, nothing normal waiting (Q7): two are priced, the third thread kept.
+    const order: string[] = [];
+    const waiting = [1, 2, 3].map((index) =>
+      threads.price({ runId: 'wait:600', jobId: `waiting-${String(index)}` }, { waiting: true }).then((outcome) => {
+        order.push(`waiting-${String(index)}`);
+        return outcome;
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(threads.active).toBe(2);
+    // A normal upload then takes the kept thread at once, not after a waiting-tier run.
+    const started = Date.now();
+    expect(await threads.price({ runId: 'wait:50', jobId: 'normal' })).toBe('complete');
+    expect(Date.now() - started).toBeLessThan(400);
+    // Queued behind busy threads, a normal run goes before a waiting-tier run queued earlier.
+    const later = threads.price({ runId: 'wait:0', jobId: 'normal-later' }).then((outcome) => {
+      order.push('normal-later');
+      return outcome;
+    });
+    expect(await Promise.all([...waiting, later])).toEqual(['complete', 'complete', 'complete', 'complete']);
+    expect(order.indexOf('normal-later')).toBeLessThan(order.indexOf('waiting-3'));
     await threads.close();
   });
 
@@ -134,5 +176,16 @@ describe('ScreeningThreadPool', () => {
     await expect(threads.price({ runId: 'wait:0', jobId: 'never' })).rejects.toThrow('the screening threads could not be replaced');
     expect(lines.map((line) => line.error_code)).toContain('SCREENING_THREADS_BROKEN');
     await threads.close();
+  });
+});
+
+describe('a run that fails in its thread', () => {
+  it('is logged by a code, the error\'s own when it is shaped like one, never its text', async () => {
+    const { screeningRunFailureCode } = await import('./thread');
+    expect(screeningRunFailureCode(Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' }))).toBe('SCREENING_RUN_FAILED_57014');
+    expect(screeningRunFailureCode(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).toBe('SCREENING_RUN_FAILED_ECONNRESET');
+    expect(screeningRunFailureCode(Object.assign(new Error('x'), { code: 'jane@synthetic.test' }))).toBe('SCREENING_RUN_FAILED');
+    expect(screeningRunFailureCode(new Error('SELECT * FROM screening_prospect'))).toBe('SCREENING_RUN_FAILED');
+    expect(screeningRunFailureCode('text')).toBe('SCREENING_RUN_FAILED');
   });
 });

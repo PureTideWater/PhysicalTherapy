@@ -13,8 +13,9 @@ import type { ScreeningThreadReply, ScreeningThreadRequest } from './threads';
  * beside main.js (build.ts), run from thread.ts under tsx's loader in the source tree. It holds its own connections (two,
  * on the screening login, each transaction as tp_screening), mail sender, logger and release cache (job.ts's, one copy
  * of each release's shared types per thread), and prices the runs it is handed one at a time with priceScreeningRun(),
- * replying how each ended. A run whose pricing throws is replied `failed`, with nothing of the error: its job fails
- * and is retried, and the run is claimed again. Imported anywhere but as a worker thread, it starts nothing.
+ * replying how each ended. A run whose pricing throws is logged by its IDs and a code and replied `failed`, with
+ * nothing of the error's text: its job fails and is retried, and the run is claimed again. Imported anywhere but as a
+ * worker thread, it starts nothing.
  */
 
 /** What the main thread hands each thread when it starts it (workerData). */
@@ -42,6 +43,16 @@ function threadMail(notifications: NotificationConfig): MailSender {
   return notifications.mail.kind === 'ses' ? sesMailSender(notifications.mail.from, notifications.staticAssetOrigin) : new LocalMailSender(notifications.mail.dir, notifications.staticAssetOrigin);
 }
 
+/**
+ * The code a run's failure in its thread is logged by: SCREENING_RUN_FAILED, with the error's own code when it has one
+ * shaped like a code (PostgreSQL's SQLSTATE, such as 57014 for a cancelled statement, or Node's, such as ECONNRESET),
+ * never its text, which can carry SQL or an address.
+ */
+export function screeningRunFailureCode(error: unknown): string {
+  const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : '';
+  return /^[A-Z0-9_]{1,32}$/.test(code) ? `SCREENING_RUN_FAILED_${code}` : 'SCREENING_RUN_FAILED';
+}
+
 /** Starts answering the main thread; called once, as the thread's module loads. */
 export function serveScreeningThread(port: NonNullable<typeof parentPort>, settings: ScreeningThreadSettings): void {
   const operator = openPool(settings.databaseUrl, SCREENING_THREAD_CONNECTIONS);
@@ -55,7 +66,9 @@ export function serveScreeningThread(port: NonNullable<typeof parentPort>, setti
       (outcome) => {
         reply({ kind: 'priced', outcome });
       },
-      () => {
+      (error: unknown) => {
+        // Logged here, by the run's and the job's IDs and a code: the main thread fails the job with fixed text only.
+        logger.error('screening run failed in its thread', { job_id: request.jobId, screening_run_id: request.runId, error_code: screeningRunFailureCode(error) });
         reply({ kind: 'failed' });
       },
     );

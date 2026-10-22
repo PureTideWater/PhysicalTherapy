@@ -15,23 +15,34 @@ import type { Logger } from '@tp/observability';
  * Each thread is long-lived and prices one run at a time with priceScreeningRun(), unchanged, through its own
  * connections (two, on the screening login), mail sender, logger and release cache: one copy of each release's shared
  * types per thread (#31's "one copy per release" becomes three small copies, 2,184 records each in the scale release;
- * docs/adr/0062). Each runs under a V8 heap limit (SCREENING_THREAD_HEAP_MB; a worst-shape screening peaked at 341-446
- * MiB a process), so a thread out of memory fails alone: its job fails, it is replaced, and its run is claimed again
- * (the job's retry, or the sweep once its progress is 2 minutes old). The main thread's own limit is the container
- * command's --max-old-space-size=SCREENING_MAIN_HEAP_MB (#31's explicit heap limit), and the four together stay under
- * 90% of the task's 4,096 MiB (screeningHeapMib()).
+ * docs/adr/0062). Each runs under a V8 heap limit (a worst-shape screening's thread peaked at 308 MiB before a
+ * collection, measured on the scale release), so a thread out of memory fails alone: its job fails, it is replaced, and
+ * its run is claimed again (the job's retry, or the sweep once its progress is 2 minutes old).
+ *
+ * One limit serves every isolate of the process: the container runs node with --max-old-space-size=SCREENING_HEAP_MB
+ * (#31's explicit heap limit), and Node gives a worker thread its process's --max-old-space-size whatever
+ * resourceLimits asks (measured on Node 24: a thread asking 1,024 MiB under the flag at 512 got 512), so the main
+ * thread and each pricing thread hold at most SCREENING_HEAP_MB; resourceLimits asks the same, which holds where no
+ * flag is given (the tests, an in-process consumer). The four together stay under 90% of the task's 4,096 MiB
+ * (screeningHeapMib()).
  */
 
 /** Screenings priced at once by one consumer task, one thread each: compute.screening.concurrency (Q1 (a)). */
 export const SCREENING_THREADS = 3;
-/** Each pricing thread's old-generation heap, in MiB (resourceLimits.maxOldGenerationSizeMb). */
-export const SCREENING_THREAD_HEAP_MB = 1024;
-/** The main thread's old-generation heap, in MiB: the screening container runs node with --max-old-space-size=512. */
-export const SCREENING_MAIN_HEAP_MB = 512;
+/**
+ * The old-generation heap of every isolate in the consumer's process, in MiB: the main thread's and each pricing
+ * thread's. 4 x 896 = 3,584 MiB, the design's budget (three threads of 1,024 and a main thread of 512), under 90% of the
+ * 4,096 MiB task, now that Node gives every thread the process's flag.
+ */
+export const SCREENING_HEAP_MB = 896;
+/** Each pricing thread's old-generation heap, in MiB (resourceLimits.maxOldGenerationSizeMb): the process's own. */
+export const SCREENING_THREAD_HEAP_MB = SCREENING_HEAP_MB;
+/** The main thread's old-generation heap, in MiB: the process's own. */
+export const SCREENING_MAIN_HEAP_MB = SCREENING_HEAP_MB;
 /** The node flag that sets it, for the container's command and the capacity harness's process runtime. */
-export const SCREENING_MAIN_HEAP_FLAG = `--max-old-space-size=${String(SCREENING_MAIN_HEAP_MB)}`;
+export const SCREENING_MAIN_HEAP_FLAG = `--max-old-space-size=${String(SCREENING_HEAP_MB)}`;
 
-/** The heap one task may hold at most with `threads` threads: 3 x 1,024 + 512 = 3,584 MiB at three, under 90% of 4,096. */
+/** The heap one task may hold at most with `threads` threads and its main thread: 4 x 896 = 3,584 MiB at three, under 90% of 4,096. */
 export function screeningHeapMib(threads: number = SCREENING_THREADS): number {
   return threads * SCREENING_THREAD_HEAP_MB + SCREENING_MAIN_HEAP_MB;
 }
@@ -83,8 +94,15 @@ export function screeningThreadScript(): { readonly script: URL; readonly execAr
   return { script: new URL('./screening-thread.js', import.meta.url), execArgv: [] };
 }
 
+/** How a run is handed to the pool: in the waiting tier (Q7: past its account's share or the day's cap) or not. */
+export interface ScreeningPriceOptions {
+  readonly waiting?: boolean;
+}
+
 interface Pending {
   readonly request: ScreeningThreadRequest;
+  /** A waiting-tier run, which never takes the last idle thread. */
+  readonly waiting: boolean;
   readonly resolve: (outcome: Extract<ScreeningThreadReply, { kind: 'priced' }>['outcome']) => void;
   readonly reject: (error: Error) => void;
 }
@@ -99,10 +117,15 @@ interface Slot {
  * A fixed pool of pricing threads. price() hands a run to an idle ready thread or waits for one (pg-boss's local
  * concurrency equals the size, so it rarely waits); a thread that throws or exits fails only the run it held and is
  * replaced. close() stops taking runs, waits for the ones in hand, then ends every thread.
+ *
+ * The normal tier keeps a thread (Q7; the review of 2026-10-22): a waiting-tier run, an upload past its account's share
+ * or the day's cap, is handed a thread only while another ready thread stays idle, so a normal upload that arrives
+ * while the waiting tier is being priced starts at once instead of waiting a whole screening (pg-boss never preempts);
+ * and a normal run waiting for a thread goes before a waiting-tier one. A pool of one thread keeps none.
  */
 export class ScreeningThreadPool {
   private readonly slots: Slot[] = [];
-  private readonly waiting: Pending[] = [];
+  private readonly queued: Pending[] = [];
   private closing = false;
   private broken: ScreeningThreadError | null = null;
   private restarts = 0;
@@ -122,7 +145,7 @@ export class ScreeningThreadPool {
   }
 
   /** Prices one run in a thread: how it ended, or a ScreeningThreadError when its thread failed it. */
-  price(request: ScreeningThreadRequest): Promise<Extract<ScreeningThreadReply, { kind: 'priced' }>['outcome']> {
+  price(request: ScreeningThreadRequest, options: ScreeningPriceOptions = {}): Promise<Extract<ScreeningThreadReply, { kind: 'priced' }>['outcome']> {
     if (this.closing) {
       return Promise.reject(new ScreeningThreadError('the screening threads are stopping'));
     }
@@ -130,7 +153,7 @@ export class ScreeningThreadPool {
       return Promise.reject(this.broken);
     }
     return new Promise((resolve, reject) => {
-      this.waiting.push({ request, resolve, reject });
+      this.queued.push({ request, waiting: options.waiting === true, resolve, reject });
       this.dispatch();
     });
   }
@@ -138,7 +161,7 @@ export class ScreeningThreadPool {
   /** Stops taking runs, waits for those in hand, then ends every thread. */
   async close(): Promise<void> {
     this.closing = true;
-    for (const pending of this.waiting.splice(0)) {
+    for (const pending of this.queued.splice(0)) {
       pending.reject(new ScreeningThreadError('the screening threads are stopping'));
     }
     if (this.active > 0) {
@@ -235,7 +258,7 @@ export class ScreeningThreadPool {
     if (this.restarts > (this.options.maxRestarts ?? 3)) {
       this.broken = new ScreeningThreadError('the screening threads could not be replaced');
       this.options.logger.error('screening threads could not be replaced', { error_code: 'SCREENING_THREADS_BROKEN' });
-      for (const pending of this.waiting.splice(0)) {
+      for (const pending of this.queued.splice(0)) {
         pending.reject(this.broken);
       }
       return;
@@ -244,19 +267,30 @@ export class ScreeningThreadPool {
     this.spawn();
   }
 
-  /** Hands waiting runs to idle ready threads. */
+  /**
+   * Hands queued runs to idle ready threads: the normal tier first, in arrival order; a waiting-tier run only while
+   * another ready thread would stay idle (in a pool of more than one).
+   */
   private dispatch(): void {
-    for (const slot of this.slots) {
-      if (this.waiting.length === 0) {
+    for (;;) {
+      const idle = this.slots.filter((slot) => slot.ready && slot.busy === null);
+      const slot = idle[0];
+      if (slot === undefined || this.queued.length === 0) {
         return;
       }
-      if (slot.ready && slot.busy === null) {
-        const pending = this.waiting.shift();
-        if (pending !== undefined) {
-          slot.busy = pending;
-          slot.worker.postMessage(pending.request);
+      let next = this.queued.findIndex((pending) => !pending.waiting);
+      if (next < 0) {
+        if (this.options.size > 1 && idle.length < 2) {
+          return;
         }
+        next = 0;
       }
+      const [pending] = this.queued.splice(next, 1);
+      if (pending === undefined) {
+        return;
+      }
+      slot.busy = pending;
+      slot.worker.postMessage(pending.request);
     }
   }
 

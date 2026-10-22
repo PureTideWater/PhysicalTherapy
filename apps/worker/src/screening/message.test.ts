@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MemoryMailSender, mailBody, mailBodyHtml } from '../mail/mail';
 import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS } from '../mail/template';
-import { ScreeningMessageError, screeningFailedMessage, screeningResultLink, screeningResultMessage, screeningStartLink } from './message';
+import { SCREENING_WAITED, ScreeningMessageError, screeningFailedMessage, screeningResultLink, screeningResultMessage, screeningStartLink } from './message';
 import { KEPT_COUNTS, KEPT_SUMMARY, emailKept } from './wording';
 
 /**
@@ -55,6 +55,20 @@ describe('the screening result email', () => {
     for (const kept of ['kind of link', 'how soon the result was first opened', 'kinds of problem', 'followed a refused upload', 'later screening replaced it']) {
       expect(KEPT_COUNTS, kept).toContain(kept);
     }
+  });
+
+  it('tells the mailbox\'s owner why a waiting-tier upload waited, which the "sent" page leaves out (Q7; the review of 2026-10-22)', () => {
+    const share = screeningResultMessage({ to: TO, link: LINK, rows: 3, waited: 'account_share' });
+    const cap = screeningResultMessage({ to: TO, link: LINK, rows: 3, waited: 'daily_cap' });
+    expect(share.lines[1]).toBe(SCREENING_WAITED.account_share);
+    expect(cap.lines[1]).toBe(SCREENING_WAITED.daily_cap);
+    expect(SCREENING_WAITED.account_share).toBe(
+      'It waited behind other screenings because, with it, your email address or its organization had sent more than one day’s share of rows for screening that day.',
+    );
+    expect(SCREENING_WAITED.daily_cap).toBe('It waited behind other screenings because the screening had reached its limit for that day.');
+    // A normal-tier upload's email says nothing of waiting.
+    expect(screeningResultMessage({ to: TO, link: LINK, rows: 3 }).lines.join(' ')).not.toContain('waited');
+    expect(screeningResultMessage({ to: TO, link: LINK, rows: 3, waited: null }).lines).toEqual(screeningResultMessage({ to: TO, link: LINK, rows: 3 }).lines);
   });
 
   it('holds no dollar figure, no date, no code and none of the words screening never uses', () => {

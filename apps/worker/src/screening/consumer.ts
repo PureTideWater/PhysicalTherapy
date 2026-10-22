@@ -41,8 +41,8 @@ export async function startScreeningConsumer(config: ScreeningConfig, queue: Job
   return {
     concurrency: config.concurrency,
     handlers: createScreeningHandlers({
-      price: async (runId, context) => {
-        await pool.price({ runId, jobId: context.jobId });
+      price: async (runId, context, options) => {
+        await pool.price({ runId, jobId: context.jobId }, { waiting: options?.waiting === true });
       },
       sweep: async (context) => {
         await resendScreeningRuns({ operator: sweep, mail, appOrigin: config.notifications.appOrigin, logger: context.logger, jobId: context.jobId }, queue, {

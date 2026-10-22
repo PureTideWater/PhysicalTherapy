@@ -445,6 +445,7 @@ describe('startWorker', () => {
     const { boss, calls, handlers, client } = fakeBoss();
     const { lines, logger } = capture();
     const priced: string[] = [];
+    const waited: string[] = [];
     const swept: string[] = [];
     const closed: string[] = [];
     const screening: ScreeningJobs = {
@@ -456,6 +457,10 @@ describe('startWorker', () => {
           } else {
             priced.push(payload.screening_run_id);
           }
+          return Promise.resolve();
+        },
+        screening_price_waiting: (payload) => {
+          waited.push(payload.screening_run_id);
           return Promise.resolve();
         },
         screening_sweep: (_payload, context) => {
@@ -478,10 +483,12 @@ describe('startWorker', () => {
     expect(calls.filter((call) => !call.startsWith('createQueue:'))).toEqual([
       'start',
       'updateQueue:screening_price',
+      'updateQueue:screening_price_waiting',
       'updateQueue:screening_sweep',
       'unschedule:screening_price',
       'schedule:screening_sweep',
       'work:screening_price',
+      'work:screening_price_waiting',
       'work:screening_sweep',
     ]);
     for (const type of SCREENING_JOB_TYPES) {
@@ -489,13 +496,19 @@ describe('startWorker', () => {
     }
     expect(boss.schedule).toHaveBeenCalledWith('screening_sweep', '* * * * *', {}, { tz: 'UTC', singletonKey: 'screening_sweep' });
     expect(boss.work).toHaveBeenCalledWith('screening_price', { batchSize: 1, localConcurrency: 3 }, expect.any(Function));
+    // The waiting tier one thread fewer: never every thread (Q7).
+    expect(boss.work).toHaveBeenCalledWith('screening_price_waiting', { batchSize: 1, localConcurrency: 2 }, expect.any(Function));
     expect(boss.work).toHaveBeenCalledWith('screening_sweep', { batchSize: 1 }, expect.any(Function));
     await handlers.get('screening_price')?.([{ id: 'job-run', data: { screening_run_id: DOCUMENT } }]);
     // The platform's schedule fired before the consumer removed it: an empty screening_price is the sweep.
     await handlers.get('screening_price')?.([{ id: 'job-old-schedule', data: null }]);
     await handlers.get('screening_sweep')?.([{ id: 'job-sweep', data: {} }]);
+    await handlers.get('screening_price_waiting')?.([{ id: 'job-waiting', data: { screening_run_id: DOCUMENT } }]);
     expect(priced).toEqual([DOCUMENT]);
+    expect(waited).toEqual([DOCUMENT]);
     expect(swept).toEqual(['job-old-schedule', 'job-sweep']);
+    // A waiting-tier job always names its run: an empty one is refused, not taken for the sweep.
+    await expect(handlers.get('screening_price_waiting')?.([{ id: 'job-empty', data: {} }])).rejects.toThrow(JobPayloadError);
     // A payload with anything but the run's ID is refused, by code, and never echoed.
     await expect(handlers.get('screening_price')?.([{ id: 'job-bad', data: { screening_run_id: DOCUMENT, contact_email: 'someone@synthetic.test' } }])).rejects.toThrow(JobPayloadError);
     expect(lines.find((line) => line.job_id === 'job-bad')).toMatchObject({ error_code: 'JOB_PAYLOAD_INVALID', job_type: 'screening_price' });
@@ -511,7 +524,11 @@ describe('startWorker', () => {
     const { lines, logger } = capture();
     const screening: ScreeningJobs = {
       concurrency: 1,
-      handlers: { screening_price: () => Promise.reject(new Error('the screening run failed in its thread')), screening_sweep: () => Promise.resolve() },
+      handlers: {
+        screening_price: () => Promise.reject(new Error('the screening run failed in its thread')),
+        screening_price_waiting: () => Promise.resolve(),
+        screening_sweep: () => Promise.resolve(),
+      },
       close: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, logger, screening, heartbeatMs: 60_000 });

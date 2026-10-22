@@ -25,10 +25,16 @@ export async function enqueue<T extends JobType>(boss: JobSender, type: T, paylo
  * sweep). It never carries the result link's token or anything a prospect typed.
  */
 export const SCREENING_PRICE_JOB = 'screening_price';
+/**
+ * The waiting tier's own queue (Q7; the review of 2026-10-22): a run past its account's share or the day's cap, priced
+ * when no normal run waits. The consumer works it with one thread fewer than it has, so the waiting tier never holds
+ * every thread and a normal upload that arrives meanwhile starts at once (pg-boss never preempts a job it is working).
+ */
+export const SCREENING_PRICE_WAITING_JOB = 'screening_price_waiting';
 export const SCREENING_PRICE_PAYLOAD = z.strictObject({ screening_run_id: z.uuid().optional() });
 export type ScreeningPricePayload = z.infer<typeof SCREENING_PRICE_PAYLOAD>;
 
-/** The singleton key of a run's on-demand pricing job: one queued or active at a time. */
+/** The singleton key of a run's on-demand pricing job: one queued or active at a time (a run's tier never changes, so its queue never does). */
 export function screeningPriceKey(runId: string): string {
   return `${SCREENING_PRICE_JOB}:${runId}`;
 }
@@ -44,15 +50,20 @@ export interface ScreeningRunJobOptions {
 /** The priorities a run can carry (screening_run_priority: -20 to 0). */
 export const SCREENING_PRIORITY = z.number().int().min(-20).max(0);
 
+/** The queue a run's pricing goes to: the normal tier's at priority 0, the waiting tier's below it. */
+export function screeningPriceQueue(priority: number): typeof SCREENING_PRICE_JOB | typeof SCREENING_PRICE_WAITING_JOB {
+  return priority < 0 ? SCREENING_PRICE_WAITING_JOB : SCREENING_PRICE_JOB;
+}
+
 /**
  * Queues a run's pricing (the web app once the upload is stored, and the consumer's sweep for a run whose job is gone):
- * its singleton key, its priority (pg-boss takes higher first, then older), and the screening heartbeat, so a dead
- * consumer's job is failed and the run claimed again within minutes whatever the queue held when it was sent. Returns
- * the job ID, or null when that run's job is already queued or active. A send that fails is not fatal to the web: the
- * run stays queued and the minute's sweep sends it.
+ * on its tier's queue (screeningPriceQueue), with its singleton key, its priority (pg-boss takes higher first, then
+ * older), and the screening heartbeat, so a dead consumer's job is failed and the run claimed again within minutes
+ * whatever the queue held when it was sent. Returns the job ID, or null when that run's job is already queued or
+ * active. A send that fails is not fatal to the web: the run stays queued and the minute's sweep sends it.
  */
 export async function enqueueScreeningRun(boss: JobSender, runId: string, options: ScreeningRunJobOptions = {}): Promise<string | null> {
   const payload = SCREENING_PRICE_PAYLOAD.parse({ screening_run_id: runId });
   const priority = SCREENING_PRIORITY.parse(options.priority ?? 0);
-  return boss.send(SCREENING_PRICE_JOB, payload, { singletonKey: screeningPriceKey(runId), priority, heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS });
+  return boss.send(screeningPriceQueue(priority), payload, { singletonKey: screeningPriceKey(runId), priority, heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS });
 }

@@ -20,8 +20,17 @@ import {
   workOptions,
 } from './jobs/registry';
 import type { JobRunEnd, JobRunRecorder } from './jobs/runs';
-import { SCREENING_JOB_TYPES, SCREENING_SCHEDULES, SCREENING_SWEEP_JOB, type ScreeningHandlers, type ScreeningJobType, type ScreeningJobs, parseScreeningPayload } from './jobs/screening';
-import { SCREENING_PRICE_JOB } from './jobs/enqueue';
+import {
+  SCREENING_JOB_TYPES,
+  SCREENING_SCHEDULES,
+  SCREENING_SWEEP_JOB,
+  type ScreeningHandlers,
+  type ScreeningJobType,
+  type ScreeningJobs,
+  parseScreeningPayload,
+  screeningWaitingConcurrency,
+} from './jobs/screening';
+import { SCREENING_PRICE_JOB, SCREENING_PRICE_WAITING_JOB } from './jobs/enqueue';
 
 export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'updateQueue' | 'work' | 'schedule' | 'unschedule' | 'send'>;
 
@@ -192,8 +201,8 @@ async function runScreeningJob<T extends ScreeningJobType>(type: T, job: QueuedJ
  * With the screening jobs (the consumer, WORKER_JOBS=screening; PR 6b-3) it sets the job heartbeat on their queues
  * with updateQueue, since createQueue leaves a queue that already exists as it was (screening_price was the platform's,
  * with no heartbeat); removes the platform's old minute schedule of screening_price; schedules the sweep; and works
- * screening_price as many at once as it has threads and the sweep one at a time. Stopping, it waits for the runs in
- * hand, then ends the threads.
+ * screening_price as many at once as it has threads, screening_price_waiting one fewer (the waiting tier never holds
+ * every thread: Q7) and the sweep one at a time. Stopping, it waits for the runs in hand, then ends the threads.
  */
 export async function startWorker(options: WorkerOptions): Promise<RunningWorker> {
   const { boss, logger } = options;
@@ -235,8 +244,13 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
     }
     await boss.unschedule(SCREENING_PRICE_JOB);
     await boss.schedule(SCREENING_SWEEP_JOB, SCREENING_SCHEDULES[SCREENING_SWEEP_JOB], {}, { tz: 'UTC', singletonKey: SCREENING_SWEEP_JOB });
+    const screeningWork = {
+      [SCREENING_PRICE_JOB]: { batchSize: 1, localConcurrency: screening.concurrency },
+      [SCREENING_PRICE_WAITING_JOB]: { batchSize: 1, localConcurrency: screeningWaitingConcurrency(screening.concurrency) },
+      [SCREENING_SWEEP_JOB]: { batchSize: 1 },
+    } as const;
     for (const type of SCREENING_JOB_TYPES) {
-      await boss.work(type, type === SCREENING_PRICE_JOB ? { batchSize: 1, localConcurrency: screening.concurrency } : { batchSize: 1 }, async (jobs) => {
+      await boss.work(type, screeningWork[type], async (jobs) => {
         for (const job of jobs) {
           await attempt(type, job, logger, () => runScreeningJob(type, job, screening.handlers, logger));
         }

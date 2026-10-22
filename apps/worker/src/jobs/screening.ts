@@ -1,7 +1,7 @@
 import type { Logger } from '@tp/observability';
 import { z } from 'zod';
 
-import { SCREENING_PRICE_JOB, SCREENING_PRICE_PAYLOAD } from './enqueue';
+import { SCREENING_PRICE_JOB, SCREENING_PRICE_PAYLOAD, SCREENING_PRICE_WAITING_JOB } from './enqueue';
 
 /**
  * The free screening's own jobs (docs/adr/0062; PR 6b-3, audit #53 parts 3 and 4): the screening consumer
@@ -13,6 +13,10 @@ import { SCREENING_PRICE_JOB, SCREENING_PRICE_PAYLOAD } from './enqueue';
  * - screening_price: one run, by its opaque ID, sent by the web once the upload is stored and by the sweep for a run
  *   whose job is gone, at the run's priority (pg-boss takes higher first, then older). A job with no run (the
  *   platform's minute schedule before this pull request, fired before the consumer removed it) runs the sweep.
+ * - screening_price_waiting: the same for a run in the waiting tier (Q7: past its account's share or the day's cap, at
+ *   priority -k), on a queue of its own the consumer works with one thread fewer than it has, so the waiting tier never
+ *   holds every thread; its handler tells the pool it is waiting-tier, and the pool keeps a thread idle for the normal
+ *   tier.
  * - screening_sweep: every minute, on the consumer's main thread (it prices nothing): fails a stale run out of attempts,
  *   sends each due run's job again with its singleton key, priority and heartbeat (the exclusive policy refuses a
  *   duplicate), and logs the queue's gauge (`screening queue`).
@@ -20,11 +24,12 @@ import { SCREENING_PRICE_JOB, SCREENING_PRICE_PAYLOAD } from './enqueue';
  * Payloads are opaque IDs or nothing: never the link's token, an address, a practice's name or a row.
  */
 export const SCREENING_SWEEP_JOB = 'screening_sweep';
-export const SCREENING_JOB_TYPES = [SCREENING_PRICE_JOB, SCREENING_SWEEP_JOB] as const;
+export const SCREENING_JOB_TYPES = [SCREENING_PRICE_JOB, SCREENING_PRICE_WAITING_JOB, SCREENING_SWEEP_JOB] as const;
 export type ScreeningJobType = (typeof SCREENING_JOB_TYPES)[number];
 
 export const SCREENING_JOB_PAYLOADS = {
   screening_price: SCREENING_PRICE_PAYLOAD,
+  screening_price_waiting: z.strictObject({ screening_run_id: z.uuid() }),
   screening_sweep: z.strictObject({}),
 } satisfies Record<ScreeningJobType, z.ZodType>;
 
@@ -47,8 +52,11 @@ export type ScreeningHandlers = {
 };
 
 export interface ScreeningJobParts {
-  /** Prices one run in a worker thread; resolves once it is priced (or not there to claim), rejects when the thread failed. */
-  readonly price: (runId: string, context: ScreeningJobContext) => Promise<void>;
+  /**
+   * Prices one run in a worker thread; resolves once it is priced (or not there to claim), rejects when the thread
+   * failed. `waiting` marks a waiting-tier run, which never takes the last idle thread.
+   */
+  readonly price: (runId: string, context: ScreeningJobContext, options?: { readonly waiting?: boolean }) => Promise<void>;
   /** The minute's sweep, on the main thread. */
   readonly sweep: (context: ScreeningJobContext) => Promise<void>;
 }
@@ -57,6 +65,7 @@ export interface ScreeningJobParts {
 export function createScreeningHandlers(parts: ScreeningJobParts): ScreeningHandlers {
   return {
     screening_price: (payload, context) => (payload.screening_run_id === undefined ? parts.sweep(context) : parts.price(payload.screening_run_id, context)),
+    screening_price_waiting: (payload, context) => parts.price(payload.screening_run_id, context, { waiting: true }),
     screening_sweep: (_payload, context) => parts.sweep(context),
   };
 }
@@ -64,8 +73,16 @@ export function createScreeningHandlers(parts: ScreeningJobParts): ScreeningHand
 /** What a worker that works the screening jobs is given (worker.ts): their handlers, how many runs at once, and what to close once it stops. */
 export interface ScreeningJobs {
   readonly handlers: ScreeningHandlers;
-  /** Runs priced at once: pg-boss's local concurrency on screening_price, one thread each. */
+  /**
+   * Runs priced at once: pg-boss's local concurrency on screening_price, one thread each; screening_price_waiting's is
+   * one fewer (screeningWaitingConcurrency).
+   */
   readonly concurrency: number;
   /** Ends the threads and the sweep's connections, after pg-boss has stopped. */
   readonly close: () => Promise<void>;
+}
+
+/** How many waiting-tier runs the consumer works at once: one fewer than its threads, so one is always the normal tier's (none to spare with one). */
+export function screeningWaitingConcurrency(concurrency: number): number {
+  return Math.max(1, concurrency - 1);
 }
