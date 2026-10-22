@@ -23,14 +23,27 @@ rule for the security address is added first. An environment deployed before thi
 deploy: pass `SecurityEmail=…` once.
 
 `ImageTag` stays `none`: everything is created and no task runs (the heartbeat and uptime alarms stay in ALARM until the
-first release). Point the two DNS names at the `LoadBalancerDnsName` and `StaticAssetsDistributionDomain` outputs. Write
-the Stripe keys (docs/runbooks/billing.md) and set up support mail (docs/runbooks/support-mail.md).
+first release). `ScreeningLaunch` stays `closed` and `ScreeningConsumer` `held` (their defaults; ADR 0062, decision 13
+and the founder's Q1 (b) of 2026-10-21). Point the two DNS names at the `LoadBalancerDnsName` and
+`StaticAssetsDistributionDomain` outputs. Write the Stripe keys (docs/runbooks/billing.md) and set up support mail
+(docs/runbooks/support-mail.md).
+
+Once the environment's `StaticAssetsOrigin` output exists, set the repository variable the release builds its web image
+with (Settings, Secrets and variables, Actions, Variables): `STAGING_STATIC_ASSET_ORIGIN` or
+`PRODUCTION_STATIC_ASSET_ORIGIN`, the output's value. A release tagged before it is set builds that web image with no
+static host (its assets load from the application host), and says so in the build's log.
 
 ## A release
 
 1. **Tag.** Merge to main with CI green and the founder's approval, then the founder creates the tag
    `v<major>.<minor>.<patch>` on main's merged commit (docs/runbooks/github-governance.md, 4C: only the founder can).
-   The release workflow builds, scans and pushes both images with a software bill of materials. Before anything below,
+   The release workflow (`.github/workflows/release.yml`) builds the worker image and three web images (`web` with no
+   static host, `web-staging` and `web-production` with each environment's), scans each and writes its software bill of
+   materials, measures the screening's capacity with time enforced on exactly `web-production` and `worker` as built, and
+   pushes exactly the images it built and scanned, never a rebuild, to the repository's container registry under the
+   tag. It keeps the capacity report (`screening-capacity.json`), its SHA-256 and its summary as assets of the tag's
+   GitHub release (a draft release when the tag had none). A failed measurement does not stop the push; it keeps
+   production's screening closed (docs/runbooks/screening-capacity.md says how to read a red run). Before anything below,
    check that the tag names a commit on main; this must exit 0:
 
    ```
@@ -39,22 +52,89 @@ the Stripe keys (docs/runbooks/billing.md) and set up support mail (docs/runbook
 
    If it does not, stop: the tag is not a reviewed release, and the deploy waits for one that is (the change-management
    policy, rule 5).
-2. **Images for the environment.** Push both images to the environment's `WebRepositoryUri` and `WorkerRepositoryUri`
-   under the tag (immutable tags: a tag is never pushed twice). Build the web image for the environment with its static
-   host, so pages load their assets from CloudFront (Next writes the prefix into the build; ADR 0055):
-   `docker build -f apps/web/Dockerfile --build-arg STATIC_ASSET_ORIGIN=<StaticAssetsOrigin output> .` A web image built
-   without it still works: its assets load from the application host.
-3. **Deploy.** `cdk deploy tp-<env> --parameters ImageTag=<tag>`. The migration task runs first, as the owner login,
-   and creates any missing service login; no service moves to the new task definition until it has exited 0, so a failed
-   migration fails the deploy before traffic moves. Each service then rolls with its circuit breaker.
-4. **Smoke checks.** `GET https://<AppDomainName>/api/health` answers 200 (it touches the database); `/sign-in` and
+2. **Images for the environment.** Copy the release's images unchanged, never a local build, so the environment runs
+   what was scanned and, in production, what was measured (the copy keeps each image's ID):
+
+   ```
+   docker pull ghcr.io/puretidewater/physicaltherapy/web-<env>:<tag>
+   docker pull ghcr.io/puretidewater/physicaltherapy/worker:<tag>
+   docker tag ghcr.io/puretidewater/physicaltherapy/web-<env>:<tag> <WebRepositoryUri>:<tag>
+   docker tag ghcr.io/puretidewater/physicaltherapy/worker:<tag> <WorkerRepositoryUri>:<tag>
+   docker push <WebRepositoryUri>:<tag> && docker push <WorkerRepositoryUri>:<tag>
+   ```
+
+   `<env>` is `staging` or `production` (each built with its own static host, so pages load their assets from
+   CloudFront; ADR 0055); the plain `web` image, with none, is for an environment without CloudFront. The repositories'
+   tags are immutable: a tag is never pushed twice.
+3. **The launch check (production; decision 13, test matrix SCR-20).** Production's screening opens only for a passing
+   capacity report of the tag being deployed, with time enforced, on both image IDs. Download the release's report and
+   run the check on the images as pulled in step 2:
+
+   ```
+   gh release download <tag> --pattern screening-capacity.json --dir <dir>
+   pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-capacity.json --tag <tag> \
+     --web-image ghcr.io/puretidewater/physicaltherapy/web-production:<tag> \
+     --worker-image ghcr.io/puretidewater/physicaltherapy/worker:<tag>
+   ```
+
+   It prints `ScreeningLaunch=<tag>:<the report's SHA-256>`, or each reason it refuses and exits non-zero; the deploy
+   then passes `ScreeningLaunch=closed`. Staging needs no launch value: its screening is not gated, so the end-to-end
+   journey and staging's measurement of the runner-to-Fargate factor (decision 15) run there.
+4. **Deploy.** `cdk deploy tp-<env> --parameters ImageTag=<tag>`, and in production also
+   `ScreeningLaunch=<the launch check's value, or closed>` on every deploy: CloudFormation keeps a parameter's previous
+   value when a deploy leaves it out, and the web binds the value to the tag it runs, so a value kept from an earlier
+   tag closes the screening rather than vouching for a new image. On production's first launch deploy, also pass
+   `ScreeningConsumer=running`, which starts the screening consumer (held at no task until then; the founder's Q1 (b));
+   it stays `running` from then on. The migration task runs first, as the owner login, and creates any missing service
+   login (the screening's `tp_screening_login` among them); no service moves to the new task definition until it has
+   exited 0, so a failed migration fails the deploy before traffic moves. Each service then rolls with its circuit
+   breaker.
+5. **Smoke checks.** `GET https://<AppDomainName>/api/health` answers 200 (it touches the database); `/sign-in` and
    `/status` load; `/.well-known/security.txt` names the environment's `SecurityEmail` and links `/security`, which
    loads; in production, `/security` shows neither "What you can expect from us" nor "Research in good faith" while
    `docs/product/legal-surfaces.md` still lists them (a production server leaves out a legal text whose review is not
    recorded); a synthetic smoke account signs in; the platform log group shows each platform job's next scheduled run;
-   the uptime canaries go green within ten minutes. On an environment's first deploy, and whenever `SecurityEmail`
-   changes, send a test message to it and have the security official confirm it arrived. In staging, run `pnpm test:e2e`
-   against the release before tagging it for production.
+   the uptime canaries go green within ten minutes. In production, `/screening` shows the open form only when the deploy
+   passed a launch value for the tag (and counsel's review of the screening's wording is recorded); with `closed` it says
+   the screening is not open yet. Where the screening consumer runs (staging always; production once `ScreeningConsumer`
+   is `running`), its log group (`ScreeningLogGroup`) shows its heartbeat and the sweep's `screening queue` line every
+   minute, and its heartbeat alarm is OK. On an environment's first deploy, and whenever `SecurityEmail` changes, send a
+   test message to it and have the security official confirm it arrived. In staging, run `pnpm test:e2e` against the
+   release before tagging it for production.
+
+## The screening consumer (ADR 0062; PR 6b-3)
+
+**How the platform stops pricing screenings.** From PR 6b-3 the platform jobs no longer list `screening_price`: the new
+platform image neither schedules nor works it, and the screening consumer (`WORKER_JOBS=screening`, its own service)
+does, three at once. The queue keeps its name, so nothing is copied or renamed. At its start the consumer sets pg-boss's
+60-second job heartbeat on the existing queue, removes the platform's old minute schedule of `screening_price`, and
+schedules its own sweep (`screening_sweep`). `tp_operator` keeps the nine pricing functions for one release, so the
+previous image's platform task, still running while a deploy rolls, finishes or loses (to the fenced claim) what it holds
+without a permission error or a false job-failure alarm.
+
+**How a deploy moves queued jobs without loss.** The queue and every run live in Postgres, not in a task. ECS starts a
+service's new task before it stops the old one (minimum 100%, maximum 200%), and the new consumer works the jobs the
+previous one, or the previous web, queued; a job the previous web sent carries the normal priority and takes the
+queue's heartbeat. On SIGTERM a consumer stops fetching and waits up to 110 seconds for the runs its threads hold
+(exiting by itself at 115), inside its task's 120-second stop timeout. A run cut off anyway (a crash, a lost task or
+zone) keeps its recorded batches: its job's heartbeat stops, pg-boss fails the job, and its retry or the minute's sweep
+(once the run has made no progress for 2 minutes) claims it again, which prices only the rows still pending, at most
+three attempts in all. That prospect waits about 3 minutes; nothing is lost.
+
+**Rollback across PR 6b-3** runs from the previous tag's checkout (`git checkout <previous tag>`, then the rollback
+below), because the previous image does not know `WORKER_JOBS=screening` and the previous stack has no screening service.
+Its platform task prices screenings again, since `tp_operator`'s grants are kept for the release. If that rollback deletes
+`ScreeningLoginSecret`, redeploying PR 6b-3 first needs, as the owner login,
+`DROP ROLE tp_screening_login, tp_screening_login_clone;`, so that the migration task creates the login again from the
+new secret. No environment had been deployed before PR 6b-3, so its first deploy has no previous image; these rules hold
+for every later one.
+
+**Follow-up (open item O10).** The first schema pull request after PR 6b-3 is deployed to an environment revokes the nine
+screening pricing functions from `tp_operator` (add, then remove, below): `REVOKE EXECUTE ON FUNCTION
+operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
+operator_screening_run_keys(uuid), operator_screening_run_records(uuid), operator_screening_rows(...),
+operator_screening_record(...), operator_screening_complete(...), operator_screening_fail(...) FROM tp_operator`, with
+their exact signatures from the migration, once no platform task of an image before PR 6b-3 can run.
 
 ## Rollback
 

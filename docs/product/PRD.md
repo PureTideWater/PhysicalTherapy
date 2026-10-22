@@ -650,7 +650,7 @@ Browser to CloudFront (static) and the load balancer (dynamic); WAF; the Next.js
 
 ### Cost
 
-About $1,200 to $1,850 a month at ten customers and $2,200 to $3,400 at fifty, including the compliance platform and model calls; model spend is cents per document. Reserved capacity is not bought before fifty customers.
+About $1,371 to $2,021 a month at ten customers and $2,371 to $3,571 at fifty, including the compliance platform, model calls and the free screening's consumer (section 19); model spend is cents per document. Reserved capacity is not bought before fifty customers.
 
 ## 16. Security and compliance engineering
 
@@ -817,12 +817,13 @@ Remittances, claims, lines and ledger entries: retained for the contract term pl
 | Item | 10 customers | 50 customers |
 | --- | --- | --- |
 | Fargate web and worker | $55 | $150 to $200 |
+| Free screening's consumer: one 2 vCPU, 4 GiB Fargate task in production (from launch) and one in staging, about $74.50 each, and the 4-core CI runner its capacity check needs once the repository is private, about $22 (the founder's Q1 of 2026-10-21) | $171 | $171 |
 | RDS Postgres Multi-AZ, storage, backups | $155 | $420 to $470 |
 | Load balancer, VPC endpoints, WAF, GuardDuty, logs | $130 | $200 to $250 |
 | Textract, S3, KMS, Secrets Manager | $45 | $180 |
 | Model calls | $50 to $160 | $250 to $800 |
 | Compliance platform, workspace, tools | $750 to $1,300 | $1,000 to $1,500 |
-| **Total** | **$1,200 to $1,850** | **$2,200 to $3,400** |
+| **Total** | **$1,371 to $2,021** | **$2,371 to $3,571** |
 
 ## 20. Open decisions and assumptions
 
