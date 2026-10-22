@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readDatabaseUrl } from './config';
 import { POSTGRES_TYPES } from './domain-model/cross-check';
 import { MIGRATIONS_DIR, MigrationError, migrate, readMigrations } from './migrate';
-import { APP_DEV_LOGIN, APP_ROLE, OWNER_ROLE, appDevLoginUrl } from './roles';
-import { randomUUID } from 'node:crypto';
+import { APP_DEV_LOGIN, APP_ROLE, OWNER_ROLE, SCREENING_DEV_LOGIN, SCREENING_ROLE, appDevLoginUrl } from './roles';
+import { createHash, randomUUID } from 'node:crypto';
 import * as schema from './schema';
 import { withScratchDatabase } from './testing';
 
@@ -355,6 +355,82 @@ describe('the location migration (20261105090000) over practices, a split and a 
   });
 });
 
+describe('the screening consumer migration (20261106090000) over runs before it', () => {
+  it('gives each earlier run its creation as its receipt, an account of its own, the normal tier and its claim as its progress, and keeps the run’s rules on', async () => {
+    const consumer = '20261106090000_screening_consumer.sql';
+    const later = readMigrations(dir).filter((migration) => migration.name >= consumer);
+    for (const migration of later) {
+      unlinkSync(path.join(dir, migration.name));
+    }
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url, migrationsDir: dir });
+      const person = randomUUID();
+      const split = randomUUID();
+      const runs = { queued: randomUUID(), pricing: randomUUID(), complete: randomUUID(), failed: randomUUID() };
+      // The runs as the previous head held them, in each state, written with triggers off.
+      const client = new pg.Client({ connectionString: url });
+      await client.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL session_replication_role = replica');
+        await client.query('INSERT INTO "user" (id, cognito_sub, email, mfa_enrolled, status) VALUES ($1, $2, $3, true, \'active\')', [person, `synthetic-${person}`, `${person}@synthetic.test`]);
+        await client.query(`INSERT INTO place_of_service_split (id, settings, approved_by) VALUES ($1, '{"11": "non_facility"}', $2)`, [split, person]);
+        await client.query('INSERT INTO rule_release (release_no, manifest_sha256, published_at) VALUES (900001, $1, now())', ['a'.repeat(64)]);
+        for (const [state, run] of Object.entries(runs)) {
+          const prospect = randomUUID();
+          const upload = randomUUID();
+          await client.query("INSERT INTO screening_prospect (id, practice_name, state, zip, contact_email) VALUES ($1, 'SYNTHETIC PRACTICE', 'MN', '00011', $2)", [
+            prospect,
+            `${state}@synthetic.test`,
+          ]);
+          await client.query("INSERT INTO screening_upload (id, prospect_id, rows_sha256, row_count, status) VALUES ($1, $2, $3, 1, 'accepted')", [upload, prospect, 'b'.repeat(64)]);
+          await client.query(
+            `INSERT INTO screening_run (id, upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count, status, attempts, started_at, completed_at,
+                                        engine_version, result_token_sha256, failed_at, failure_code, created_at, expires_at)
+             VALUES ($1, $2, 900001, $3, $4, 1, $5, $6, $7, $8, $9, $10, $11, $12, now() - interval '5 minutes', now() - interval '5 minutes' + interval '30 days')`,
+            [
+              run,
+              upload,
+              'a'.repeat(64),
+              split,
+              state,
+              state === 'pricing' || state === 'complete' ? 1 : 0,
+              state === 'pricing' || state === 'complete' ? new Date(Date.now() - 60_000) : null,
+              state === 'complete' ? new Date() : null,
+              state === 'complete' ? 'phase-two/1' : null,
+              state === 'complete' ? 'c'.repeat(64) : null,
+              state === 'failed' ? new Date() : null,
+              state === 'failed' ? 'RELEASE_UNAVAILABLE' : null,
+            ],
+          );
+        }
+        await client.query('COMMIT');
+      } finally {
+        await client.end();
+      }
+      for (const migration of later) {
+        copyFileSync(path.join(MIGRATIONS_DIR, migration.name), path.join(dir, migration.name));
+      }
+      await migrate({ databaseUrl: url, migrationsDir: dir });
+      const migrated = await query<{ id: string; received: boolean; rate_subject: string; wait_reason: string | null; queue_priority: number; progress: boolean }>(
+        url,
+        'SELECT id, received_at = created_at AS received, rate_subject, wait_reason, queue_priority, progress_at IS NOT DISTINCT FROM started_at AS progress FROM screening_run ORDER BY id',
+      );
+      expect(migrated).toEqual(
+        Object.values(runs)
+          .sort()
+          .map((id) => ({ id, received: true, rate_subject: createHash('sha256').update(`run:${id}`).digest('hex'), wait_reason: null, queue_priority: 0, progress: true })),
+      );
+      expect(await query(url, 'SELECT progress_at IS NULL AS none FROM screening_run WHERE id = ANY ($1) ORDER BY status', [[runs.failed, runs.queued]])).toEqual([{ none: true }, { none: true }]);
+      // The run's rules are on again: a backfilled value is kept for good.
+      expect(await query(url, "SELECT tgenabled FROM pg_trigger WHERE tgname = 'screening_run_rules'")).toEqual([{ tgenabled: 'O' }]);
+      await expect(query(url, "UPDATE screening_run SET received_at = received_at - interval '1 second' WHERE id = $1", [runs.queued])).rejects.toMatchObject({ code: '23514' });
+      // The previous head's pricing run, claimed a minute ago, is stale only a minute from now.
+      expect(await query(url, 'SELECT run_id FROM operator_screening_due(0, 100)')).toEqual([{ run_id: runs.queued }]);
+    });
+  });
+});
+
 describe('migrate --dry-run', () => {
   it('applies the pending migrations to a database at the previous head, then leaves it exactly there', async () => {
     await withScratchDatabase(adminUrl, async (url) => {
@@ -467,13 +543,26 @@ describe('roles', () => {
       const roles = await query<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean; rolcanlogin: boolean; rolcreatedb: boolean; rolcreaterole: boolean }>(
         url,
         'SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = ANY($1) ORDER BY rolname',
-        [[APP_ROLE, APP_DEV_LOGIN, OWNER_ROLE]],
+        [[APP_ROLE, APP_DEV_LOGIN, OWNER_ROLE, SCREENING_ROLE, SCREENING_DEV_LOGIN]],
       );
       expect(roles).toEqual([
         { rolname: APP_ROLE, rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false },
         { rolname: APP_DEV_LOGIN, rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false },
         { rolname: OWNER_ROLE, rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false },
+        // The screening consumer's role and its dev login (migration 20261106090000): nothing but the login's sign-in.
+        { rolname: SCREENING_ROLE, rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false },
+        { rolname: SCREENING_DEV_LOGIN, rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false },
       ]);
+      // The consumer's role is a member of nothing, and its dev login only switches to it.
+      expect(
+        await query(
+          url,
+          `SELECT m.rolname AS member, r.rolname AS role, a.inherit_option AS inherits, a.set_option AS switches FROM pg_auth_members a
+             JOIN pg_roles m ON m.oid = a.member JOIN pg_roles r ON r.oid = a.roleid
+            WHERE m.rolname = ANY ($1) ORDER BY 1, 2`,
+          [[SCREENING_ROLE, SCREENING_DEV_LOGIN]],
+        ),
+      ).toEqual([{ member: SCREENING_DEV_LOGIN, role: SCREENING_ROLE, inherits: false, switches: true }]);
       const owned = await query<{ count: string }>(
         url,
         `SELECT (SELECT count(*) FROM pg_class WHERE relowner = $1::regrole)

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { catalogProblems } from './catalog';
 import { readDatabaseUrl } from './config';
-import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, OWNER_ROLE, SCREENING_ROLE } from './roles';
 import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrganization, createUser, endPool } from './testing';
 
 /**
@@ -173,6 +173,10 @@ interface SubmitOptions {
   /** The SHA-256 of the consent wording ticked (PR 6e), and of the screening terms accepted. */
   readonly consentSha256?: string | null;
   readonly termsSha256?: string | null;
+  /** When the web began receiving the upload (migration 20261106090000); null is the submission's own time. */
+  readonly received?: Date | null;
+  /** The rate limiter's keyed subject of the account: one of its own unless given, so no test's uploads share a share. */
+  readonly rateSubject?: string | null;
 }
 
 /** Every row sums at least 11 claim lines (the CMS small-cell standard). */
@@ -186,8 +190,11 @@ const ROWS: NonNullable<SubmitOptions['rows']> = [
   ['97116', 'GP', 1, '11', 'other', '2026-Q1', 600n, 11],
 ];
 
-/** submit_screening's 28 arguments (migration 20261105090000: the ZIP+4 after the ZIP, the three out-of-content counts after the left-out ones). */
-const SUBMIT_ARGUMENTS = 28;
+/**
+ * submit_screening's 30 arguments (migration 20261105090000: the ZIP+4 after the ZIP, the three out-of-content counts
+ * after the left-out ones; migration 20261106090000: the receipt and the account's keyed subject before the request).
+ */
+const SUBMIT_ARGUMENTS = 30;
 const placeholders = (count: number) => Array.from({ length: count }, (_, index) => `$${String(index + 1)}`).join(', ');
 const SUBMIT = `SELECT submit_screening(${placeholders(SUBMIT_ARGUMENTS)}) AS run_id`;
 
@@ -197,6 +204,8 @@ function canonicalRows(rows: NonNullable<SubmitOptions['rows']>): string {
 }
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+/** A keyed subject of an account of its own (the shape of the rate limiter's HMAC: 64 hex characters). */
+const accountSubject = () => sha256(`account:${randomUUID()}`);
 
 function submitValues(options: SubmitOptions = {}): unknown[] {
   const rows = options.rows ?? ROWS;
@@ -230,6 +239,8 @@ function submitValues(options: SubmitOptions = {}): unknown[] {
     options.attribution?.firm ?? null,
     options.consentSha256 ?? null,
     options.termsSha256 ?? null,
+    options.received ?? null,
+    options.rateSubject === undefined ? accountSubject() : options.rateSubject,
     `test-${randomUUID()}`,
   ];
 }
@@ -285,7 +296,8 @@ async function age(runId: string, days: number): Promise<void> {
       `WITH target AS (SELECT r.id AS run_id, u.id AS upload_id, u.prospect_id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = $1),
             a AS (UPDATE screening_prospect p SET created_at = p.created_at - $2::interval, expires_at = p.expires_at - $2::interval FROM target WHERE p.id = target.prospect_id),
             b AS (UPDATE screening_upload u SET created_at = u.created_at - $2::interval, expires_at = u.expires_at - $2::interval FROM target WHERE u.id = target.upload_id)
-       UPDATE screening_run r SET created_at = r.created_at - $2::interval, expires_at = r.expires_at - $2::interval FROM target WHERE r.id = target.run_id`,
+       UPDATE screening_run r SET created_at = r.created_at - $2::interval, expires_at = r.expires_at - $2::interval, received_at = r.received_at - $2::interval
+         FROM target WHERE r.id = target.run_id`,
       [runId, shift],
     );
     await client.query('COMMIT');
@@ -350,6 +362,9 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
         'screening_run.failed_at',
         'screening_run.first_opened_at',
         'screening_run.started_at',
+        // When the web received the upload, and when its pricing last progressed (migration 20261106090000).
+        'screening_run.received_at',
+        'screening_run.progress_at',
         'screening_upload.created_at',
         'screening_upload.expires_at',
       ].sort(),
@@ -521,15 +536,15 @@ describe('the roles reach the tables only through their functions', () => {
     await expect(app.query('SELECT count(*) FROM screening_result')).rejects.toMatchObject({ code: '42501' });
   });
 
-  it('grants each definer function to its one role, and none to PUBLIC', async () => {
-    const { rows } = await admin.query<{ name: string; definer: boolean; app: boolean; operator: boolean; billing: boolean; public: boolean }>(
+  it('grants each definer function to exactly its roles, and none to PUBLIC', async () => {
+    const { rows } = await admin.query<{ name: string; definer: boolean; app: boolean; operator: boolean; billing: boolean; screening: boolean; public: boolean }>(
       `SELECT p.oid::regprocedure::text AS name, p.prosecdef AS definer,
               has_function_privilege($1, p.oid, 'EXECUTE') AS app, has_function_privilege($2, p.oid, 'EXECUTE') AS operator,
-              has_function_privilege($3, p.oid, 'EXECUTE') AS billing,
+              has_function_privilege($3, p.oid, 'EXECUTE') AS billing, has_function_privilege($4, p.oid, 'EXECUTE') AS screening,
               EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE') AS public
          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public' AND (p.proname LIKE '%screening%' OR p.proname LIKE '%marketing%') ORDER BY 1`,
-      [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE],
+      [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, SCREENING_ROLE],
     );
     const byName = Object.fromEntries(rows.map((row) => [row.name.replace(/\(.*$/, ''), row]));
     // The split's console functions and the run guard's split are named without 'screening' since migration
@@ -547,7 +562,11 @@ describe('the roles reach the tables only through their functions', () => {
       'screening_result_opened',
       'screening_lead_withdraw',
       'console_register_marketing_campaign',
+      // The "sent" page's wait state (migration 20261106090000).
+      'screening_wait',
     ];
+    // The nine that price a screening stay the operator's for the one release the previous image's platform task may
+    // still price in (migration 20261106090000); the first schema pull request after it is deployed takes them away.
     const forOperator = [
       'operator_screening_due',
       'operator_screening_claim',
@@ -562,7 +581,23 @@ describe('the roles reach the tables only through their functions', () => {
       'operator_screening_reminders_due',
       'operator_screening_reminder_sent',
     ];
-    for (const name of [...forApp, ...forOperator]) {
+    // The screening consumer (WORKER_JOBS=screening): the nine that price a screening and the queue's gauge, and nothing
+    // else; not the expiry, which stays the platform's, nor the reminders, which PR 6e decides.
+    const forScreening = [
+      'operator_screening_due',
+      'operator_screening_claim',
+      'operator_screening_release',
+      'operator_screening_run_keys',
+      'operator_screening_run_records',
+      'operator_screening_rows',
+      'operator_screening_record',
+      'operator_screening_complete',
+      'operator_screening_fail',
+      'operator_screening_queue',
+    ];
+    // Read by submit_screening() as the owner alone: no role calls them, and they run as their caller.
+    const forNone = ['screening_wait_limits', 'screening_queue_tier'];
+    for (const name of [...forApp, ...forOperator, ...forScreening, ...forNone]) {
       expect(byName[name], name).toBeDefined();
     }
     for (const row of rows) {
@@ -571,9 +606,43 @@ describe('the roles reach the tables only through their functions', () => {
       expect(row.billing, name).toBe(false);
       expect(row.app, name).toBe(forApp.includes(name));
       expect(row.operator, name).toBe(forOperator.includes(name));
-      // Every function a role may call runs as the owner.
-      expect(row.definer, name).toBe(forApp.includes(name) || forOperator.includes(name));
+      expect(row.screening, name).toBe(forScreening.includes(name));
+      // Every function a role may call runs as the owner, and none other does.
+      expect(row.definer, name).toBe(forApp.includes(name) || forOperator.includes(name) || forScreening.includes(name));
     }
+    expect(rows.filter((row) => !row.definer && forNone.includes(row.name.replace(/\(.*$/, ''))).map((row) => row.name).sort()).toEqual([
+      'screening_queue_tier(text,integer)',
+      'screening_wait_limits()',
+    ]);
+    // By exact name: the new signature of submit_screening() and the consumer's ten.
+    const exact = Object.fromEntries(rows.map((row) => [row.name, row]));
+    expect(exact[
+      'submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)'
+    ]).toMatchObject({ app: true, operator: false, screening: false, definer: true });
+    expect(rows.filter((row) => row.screening).map((row) => row.name)).toEqual(
+      [
+        'operator_screening_claim(uuid)',
+        'operator_screening_complete(uuid,text,text,text,text,integer)',
+        'operator_screening_due(integer,integer)',
+        'operator_screening_fail(uuid,text,text,integer)',
+        'operator_screening_queue()',
+        'operator_screening_record(uuid,integer[],text[],bigint[],numeric[],bigint[],bigint[],boolean[],bigint[],numeric[],bigint[],bigint[],text[],text[],text[],text[],integer)',
+        'operator_screening_release(uuid)',
+        'operator_screening_rows(uuid,integer,integer,integer)',
+        'operator_screening_run_keys(uuid)',
+        'operator_screening_run_records(uuid)',
+      ].sort(),
+    );
+    // tp_screening holds nothing else anywhere: no table, sequence or other function of the schema.
+    const elsewhere = await admin.query<{ object: string }>(
+      `SELECT c.relname AS object FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND (has_table_privilege($1, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AND c.relkind IN ('r', 'v', 'm', 'p'))
+       UNION ALL
+       SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND has_function_privilege($1, p.oid, 'EXECUTE') AND left(p.proname, 19) <> 'operator_screening_'`,
+      [SCREENING_ROLE],
+    );
+    expect(elsewhere.rows).toEqual([]);
   });
 });
 
@@ -1007,13 +1076,15 @@ describe('the screening rules', () => {
     expect(release.find((row) => row.record_type === 'locality_map')?.sha256).toBe(hex('b'));
     // It completes only once nothing is pending.
     await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 1)', [runId, hex('2'), 'phase-two/1', 'x'])).rejects.toMatchObject({ code: '23514' });
-    // The trigger refuses moving started_at without a claim, so a stale run is aged as the superuser, triggers off.
-    await expect(admin.query("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId])).rejects.toMatchObject({ code: '23514' });
+    // The trigger refuses moving started_at without a claim, and progress backwards, so a stale run (no progress for 2
+    // minutes: migration 20261106090000) is aged as the superuser, triggers off.
+    await expect(admin.query("UPDATE screening_run SET started_at = started_at - interval '3 minutes' WHERE id = $1", [runId])).rejects.toMatchObject({ code: '23514' });
+    await expect(admin.query("UPDATE screening_run SET progress_at = progress_at - interval '3 minutes' WHERE id = $1", [runId])).rejects.toMatchObject({ code: '23514' });
     const client = await admin.connect();
     try {
       await client.query('BEGIN');
       await client.query('SET LOCAL session_replication_role = replica');
-      await client.query("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+      await client.query("UPDATE screening_run SET started_at = started_at - interval '3 minutes', progress_at = progress_at - interval '3 minutes' WHERE id = $1", [runId]);
       await client.query('COMMIT');
     } finally {
       client.release();
@@ -1073,7 +1144,8 @@ describe('the screening rules', () => {
       constraint: 'screening_run_result_token',
     });
     const done = await as<{ contact_email: string; row_count: number }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 2)', [runId, hex('2'), 'phase-two/1', 'x']);
-    expect(done).toEqual([{ contact_email: expect.stringMatching(/@synthetic\.test$/) as string, row_count: 6, kept_with: 'none' }]);
+    // With when the web received the upload and why it waited (it did not), for the time to email (migration 20261106090000).
+    expect(done).toEqual([{ contact_email: expect.stringMatching(/@synthetic\.test$/) as string, row_count: 6, kept_with: 'none', received_at: expect.any(Date) as Date, wait_reason: null }]);
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, 2)', [runId, hex('3'), 'phase-two/1', 'x'])).toEqual([]);
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3, NULL)', [runId, 'PRICING_FAILED', 'x'])).toEqual([]);
     await expect(admin.query('UPDATE screening_run SET result_token_sha256 = $2 WHERE id = $1', [runId, hex('4')])).rejects.toMatchObject({ code: '23514' });
@@ -1454,7 +1526,8 @@ async function constraintLiterals(table: string, name: string): Promise<string[]
 
 describe('audit #57: what a row may hold, and the bands and channel the database computes', () => {
   it('holds every closed list inline in each CHECK, never through a function, equal to the TypeScript lists', async () => {
-    const { MARKETING_CHANNELS, PAID_CLICKS, PROSPECT_DECLINED_REASONS, PROSPECT_SOURCES, SCREENING_COUNT_BANDS, SCREENING_DIFFERENCE_BANDS, SCREENING_OPEN_BANDS } = await import('./schema');
+    const { MARKETING_CHANNELS, PAID_CLICKS, PROSPECT_DECLINED_REASONS, PROSPECT_SOURCES, SCREENING_COUNT_BANDS, SCREENING_DIFFERENCE_BANDS, SCREENING_OPEN_BANDS, SCREENING_WAIT_REASONS } =
+      await import('./schema');
     for (const [table, name] of [
       ['screening_prospect', 'screening_prospect_source'],
       ['screening_outcome', 'screening_outcome_source'],
@@ -1477,6 +1550,8 @@ describe('audit #57: what a row may hold, and the bands and channel the database
     expect(await constraintLiterals('screening_outcome', 'screening_outcome_anomaly_band')).toEqual(SCREENING_COUNT_BANDS.filter((band) => band !== 'over_50k'));
     expect(await constraintLiterals('screening_outcome', 'screening_outcome_difference_band')).toEqual([...SCREENING_DIFFERENCE_BANDS]);
     expect(await constraintLiterals('screening_outcome', 'screening_outcome_open_band')).toEqual([...SCREENING_OPEN_BANDS]);
+    // Why a run waits behind the normal tier (migration 20261106090000; Q7).
+    expect(await constraintLiterals('screening_run', 'screening_run_wait_reason')).toEqual([...SCREENING_WAIT_REASONS]);
     // No CHECK on prospect_request calls a function but the one migration 20261030110000 granted (prospect_payers_valid):
     // the application role updates the table directly.
     const calls = await admin.query<{ conname: string; definition: string }>(

@@ -46,6 +46,14 @@ export const SCREENING_UPLOAD_STATUSES = ['accepted', 'rejected'] as const;
 export type ScreeningUploadStatus = (typeof SCREENING_UPLOAD_STATUSES)[number];
 export const SCREENING_RUN_STATUSES = ['queued', 'pricing', 'complete', 'failed'] as const;
 export type ScreeningRunStatus = (typeof SCREENING_RUN_STATUSES)[number];
+
+/**
+ * Why a run waits behind the normal tier (migration 20261106090000; the founder's Q7 of 2026-10-21): past its account's
+ * share of rows this UTC day, or past the day's cap of normal rows. Its job then runs at a negative pg-boss priority,
+ * outside the 60-second promise, and the prospect is told.
+ */
+export const SCREENING_WAIT_REASONS = ['account_share', 'daily_cap'] as const;
+export type ScreeningWaitReason = (typeof SCREENING_WAIT_REASONS)[number];
 /**
  * What became of a row: pending until priced; priced or unpriced by the engine; rates_change_in_band when a record
  * the trace names does not cover the whole band; contract_required for MA contracted and commercial rows (never
@@ -183,8 +191,24 @@ export const screeningRun = pgTable(
     firstOpenedAt: timestamp('first_opened_at', { withTimezone: true }),
     createdAt: createdAt(),
     expiresAt: expiresAt(),
+    /** When the web began receiving the upload (its clock, clamped into the ten minutes before created_at): the time to email starts here. */
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
+    /** The rate limiter's keyed HMAC of the screening bucket's account (64 hex); the account itself is never stored. */
+    rateSubject: text('rate_subject').notNull(),
+    waitReason: text('wait_reason', { enum: SCREENING_WAIT_REASONS }),
+    /** pg-boss's priority for the run's job: 0 normal, -k an account's k-th upload past its share today, -1 past the day's cap. */
+    queuePriority: smallint('queue_priority').notNull().default(0),
+    /** When the attempt pricing the run claimed it or last recorded a batch; stale 2 minutes after. */
+    progressAt: timestamp('progress_at', { withTimezone: true }),
   },
-  (table) => [index('screening_run_by_status').on(table.status, table.createdAt)],
+  (table) => [
+    index('screening_run_by_status').on(table.status, table.createdAt),
+    index('screening_run_created_at').on(table.createdAt),
+    index('screening_run_account_day').on(table.rateSubject, table.createdAt),
+    index('screening_run_waiting')
+      .on(table.queuePriority.desc(), table.createdAt)
+      .where(sql`status = 'queued'`),
+  ],
 );
 
 export const screeningResult = pgTable(

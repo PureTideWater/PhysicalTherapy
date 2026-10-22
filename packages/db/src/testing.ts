@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 
 import { migrate } from './migrate';
-import { appDevLoginUrl, billingDevLoginUrl, esignDevLoginUrl, workerDevLoginUrl } from './roles';
+import { appDevLoginUrl, billingDevLoginUrl, esignDevLoginUrl, screeningDevLoginUrl, workerDevLoginUrl } from './roles';
 
 export { type BuiltRow, RowFactory, RowFactoryError, type Row } from './row-factory';
 export {
@@ -99,6 +99,8 @@ export interface MigratedDatabase extends ScratchDatabase {
   readonly billingUrl: string;
   /** The e-signature webhook's dev login, which may SET ROLE tp_esign (tp_esign_dev). */
   readonly esignUrl: string;
+  /** The screening consumer's dev login, which may SET ROLE tp_screening (tp_screening_dev; migration 20261106090000). */
+  readonly screeningUrl: string;
 }
 
 /** A scratch database with every migration applied and the dev login for the application role. */
@@ -110,5 +112,12 @@ export async function createMigratedDatabase(adminUrl: string): Promise<Migrated
     await database.drop();
     throw error;
   }
-  return { ...database, appUrl: appDevLoginUrl(database.url), workerUrl: workerDevLoginUrl(database.url), billingUrl: billingDevLoginUrl(database.url), esignUrl: esignDevLoginUrl(database.url) };
+  return {
+    ...database,
+    appUrl: appDevLoginUrl(database.url),
+    workerUrl: workerDevLoginUrl(database.url),
+    billingUrl: billingDevLoginUrl(database.url),
+    esignUrl: esignDevLoginUrl(database.url),
+    screeningUrl: screeningDevLoginUrl(database.url),
+  };
 }
