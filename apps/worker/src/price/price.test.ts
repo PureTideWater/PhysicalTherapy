@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { AgreementRecords } from '@tp/contracts';
+import { type AgreementRecords, LOCATION_STATUSES } from '@tp/contracts';
 import type { Cents } from '@tp/money';
-import { UNPRICED_REASONS, price, recompute } from '@tp/pricing';
+import { ENGINE_ERROR_DETAILS, UNPRICED_REASONS, price, recompute } from '@tp/pricing';
 import { practiceSettings, syntheticRelease } from '@tp/pricing/testing';
 import { describe, expect, it } from 'vitest';
 
@@ -108,6 +108,13 @@ describe('the engine’s input from stored lines', () => {
     expect(locationStops('ready')).toBeNull();
     expect(locationStops('locality_not_loaded')).toBeNull();
     expect(locationStops('no_release')).toBeNull();
+    // No ZIP+4 file of the ZIP in force is a gap in the content, never the customer's step, at any status (PR 6b-1's
+    // review): its line stays ENGINE_ERROR for the operator. Every detail a status names is one the engine gives.
+    for (const status of LOCATION_STATUSES) {
+      const stops = [...(locationStops(status) ?? [])];
+      expect(stops, status).not.toContain('no_locality_plus_four');
+      expect(stops.filter((detail) => !(ENGINE_ERROR_DETAILS as readonly string[]).includes(detail)), status).toEqual([]);
+    }
   });
 });
 

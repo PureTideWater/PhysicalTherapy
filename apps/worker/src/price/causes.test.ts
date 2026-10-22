@@ -155,6 +155,30 @@ describe('lineCauses', () => {
     expect(lineCauses(trace(), placed, never).map((cause) => (cause.kind === 'release_record' ? `${cause.kind}:${cause.recordType}` : cause.kind))).toEqual(['release_record:pfs_gpci', 'settings']);
   });
 
+  it('names the ZIP+4 file a new release loaded as a release record, never the settings, when the same ZIP+4 had stopped on a gap in the content or on a file that did not list it', () => {
+    const settings = { zip: '00012', zip_plus_four: '9100', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } };
+    const zip12 = ref('locality_map', { zip: '00012' }, 'i');
+    const unlisted = ref('locality_map_plus_four', { zip: '00012' }, 'h');
+    const listed = ref('locality_map_plus_four', { zip: '00012' }, 'k');
+    const locality02 = ref('pfs_gpci', { carrier: '99999', locality: '02' }, 'g');
+    const located = (locality: Record<string, unknown>, gpciRecord: TraceRecordRef | null) => ({
+      ...trace({ settings }),
+      steps: { fee_schedule: { rvu: { record: rvu('a') }, locality: { record: zip12, carrier: '99999', locality: '01', plus_four_required: true, ...locality }, gpci: gpciRecord === null ? null : { record: gpciRecord } } },
+    });
+    const priced = located({ plus_four: { record: listed, zip_plus_four: '9100', from: '9000', to: '9999', carrier: '99999', locality: '02' } }, locality02);
+    const now = (record: TraceRecordRef) => ({ sha256: record.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' });
+    // ENGINE_ERROR no_locality_plus_four: no ZIP+4 file of the ZIP was in force, so the line read none.
+    expect(lineCauses(located({}, null), priced, never)).toEqual([
+      { kind: 'release_record', recordType: 'locality_map_plus_four', key: { zip: '00012' }, before: null, after: now(listed) },
+      { kind: 'release_record', recordType: 'pfs_gpci', key: { carrier: '99999', locality: '02' }, before: null, after: now(locality02) },
+    ]);
+    // ENGINE_ERROR zip_plus_four_not_in_locality_map: the trace names the file read (plus_four_unlisted), which changed.
+    expect(lineCauses(located({ plus_four_unlisted: unlisted }, null), priced, never)).toEqual([
+      { kind: 'release_record', recordType: 'locality_map_plus_four', key: { zip: '00012' }, before: now(unlisted), after: now(listed) },
+      { kind: 'release_record', recordType: 'pfs_gpci', key: { carrier: '99999', locality: '02' }, before: null, after: now(locality02) },
+    ]);
+  });
+
   it('still names a record a new release added when the ZIP changed beside it, if the location does not decide that record', () => {
     const mppr = ref('mppr_rate', { hcpcs: '97110', modifier: '' }, 'f');
     const moved = trace({ settings: { zip: '00012', zip_plus_four: '0001', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } }, records: [rvu('a'), gpci, mppr] });

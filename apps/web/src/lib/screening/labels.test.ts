@@ -32,18 +32,30 @@ function wording(): unknown {
 /** The labels of each version, by the SHA-256 of their JSON. */
 const VERSIONS: Readonly<Record<string, string>> = {
   'screening-labels/2026-10-18': 'd495535ac4e7fa0ef6c8f41d2365956ca6d81859be30df5e812cbbb53dff20fb',
-  // PR 6b: the ZIP+4's two engine details (locality_needs_zip_plus_four reworded, zip_plus_four_not_in_locality_map
-  // added) and the rows not screened for a quarter outside the loaded content (the founder's answers of 2026-10-21 to
-  // Q6 (a) and Q12).
-  'screening-labels/2026-11-05': 'a64c52579ae99b2b35cc7ad59f19f589196bbd5fc3aea165a646404356a0ab99',
+  // PR 6b: the ZIP+4's three engine details (locality_needs_zip_plus_four reworded; no_locality_plus_four, a gap in the
+  // content, and zip_plus_four_not_in_locality_map added) and the rows not screened for a quarter outside the loaded
+  // content (the founder's answers of 2026-10-21 to Q6 (a) and Q12). Unreleased until PR 6b merges, so the version
+  // keeps the name its migration's screening_labels_version() returns.
+  'screening-labels/2026-11-05': '52e4442605be100f67ce49a1fa1795f5c29d7a741abc671448ab76e62cfa32c5',
 };
 
 describe('the labels of PR 6b (docs/adr/0064)', () => {
-  it('labels both ZIP+4 details an engine gives a screening row, and labels no detail the engine does not have', () => {
+  it('labels the three ZIP+4 details an engine gives a screening row, and labels no detail the engine does not have', () => {
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'locality_needs_zip_plus_four')).toBe('The ZIP spans two Medicare localities and no ZIP+4 was given');
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'zip_plus_four_not_in_locality_map')).toBe('Medicare’s ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day');
+    // No ZIP+4 list of the ZIP in force is PaidWhole's content to load, never the prospect's ZIP+4 to check.
+    expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'no_locality_plus_four')).toBe('PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day');
     const meaning = labels.unpricedReasonLabel('ENGINE_ERROR', null);
-    for (const detail of ['place_of_service_unmapped', 'no_locality', 'no_gpci', 'no_conversion_factor', 'locality_needs_zip_plus_four', 'zip_plus_four_not_in_locality_map', 'units_above_limit']) {
+    for (const detail of [
+      'place_of_service_unmapped',
+      'no_locality',
+      'no_gpci',
+      'no_conversion_factor',
+      'locality_needs_zip_plus_four',
+      'no_locality_plus_four',
+      'zip_plus_four_not_in_locality_map',
+      'units_above_limit',
+    ]) {
       expect(labels.unpricedReasonLabel('ENGINE_ERROR', detail), detail).not.toBe(meaning);
     }
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'not_a_detail')).toBe(meaning);

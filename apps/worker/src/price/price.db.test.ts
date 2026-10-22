@@ -567,11 +567,12 @@ describe('PRC-23: a month whose pricing location is not ready (audit #33; docs/a
     expectTracesRecompute(lines);
   });
 
-  it('keeps a line ENGINE_ERROR for the operator when the location waits on content PaidWhole has not loaded (locality_not_loaded)', async () => {
+  it('keeps a line ENGINE_ERROR no_locality_plus_four for the operator when the location waits on content PaidWhole has not loaded (locality_not_loaded)', async () => {
     const target = await practice('plus-four-not-loaded');
     await load(target, 'MAP-05/remit.835');
     await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
-    // Release 900001 has no ZIP+4 file: nothing the customer can change, so the run completes and pages the operator.
+    // Release 900001 has no ZIP+4 file: nothing the customer can change, so the run completes and pages the operator,
+    // and the engine names the gap (no_locality_plus_four), never the practice's ZIP+4.
     expect(await w.setLocation(target, '00012', '0001')).toBe('locality_not_loaded');
     const runId = await createRun(target, '2026-02-01', '2026-02-28');
     const logs: Record<string, unknown>[] = [];
@@ -579,8 +580,8 @@ describe('PRC-23: a month whose pricing location is not ready (audit #33; docs/a
     expect(await runRow(runId)).toMatchObject({ status: 'complete' });
     const lines = await pricedLines(runId);
     expect(lines.map((line) => line.unpriced_reason)).toEqual(['ENGINE_ERROR', 'ENGINE_ERROR', 'ENGINE_ERROR']);
-    expect(parseTrace(lines[0]?.trace)).toMatchObject({ settings: { zip: '00012', zip_plus_four: '0001' }, outcome: { reason: 'ENGINE_ERROR', detail: 'zip_plus_four_not_in_locality_map' } });
-    expect(parseCoverage((await runRow(runId)).coverage).engine_errors).toEqual([{ detail: 'zip_plus_four_not_in_locality_map', lines: 3, pages_operator: true }]);
+    expect(parseTrace(lines[0]?.trace)).toMatchObject({ settings: { zip: '00012', zip_plus_four: '0001' }, outcome: { reason: 'ENGINE_ERROR', detail: 'no_locality_plus_four' } });
+    expect(parseCoverage((await runRow(runId)).coverage).engine_errors).toEqual([{ detail: 'no_locality_plus_four', lines: 3, pages_operator: true }]);
     expect(logs.filter((line) => line.msg === ENGINE_ERRORS_MESSAGE)).toHaveLength(1);
   });
 });

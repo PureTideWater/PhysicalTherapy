@@ -224,6 +224,15 @@ zip_plus_four_unknown`, with the carrier and locality when ready. One order diff
 match wins": a flagged ZIP with no ZIP+4 is `zip_plus_four_needed` before the release's missing ZIP+4 list is
 `locality_not_loaded`, so under 900001 the customer is first asked for the ZIP+4 and, once it is given, told the list
 is not loaded (the design's own journey, steps 5 and 6). A ZIP+4 that is not four digits is held by no range.
+`locality_not_loaded` is a gap in PaidWhole's content wherever a stop or a status is classified, as the engine's
+`ENGINE_ERROR no_locality_plus_four` is (PR 6b-1's review split it from `zip_plus_four_not_in_locality_map`): the
+price job never fails a run on it at any status (only `locality_needs_zip_plus_four` and
+`zip_plus_four_not_in_locality_map`, and `no_locality` for a ZIP on no list, are the customer's step), so the run
+completes and the line pages the operator; no month waits on the billing ZIP for it; Pricing settings says there is
+nothing to change; a re-run under a release that loads the ZIP+4 list names that record as the release's, not the
+settings; and the screening refuses such a ZIP+4 as `screening_locality_not_loaded` ("try again later") and labels a
+row stopped on it "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day" (under
+`screening-labels/2026-11-05`, unreleased until this pull request merges).
 
 **Who sets it.** `practice_set_location()` (definer) refuses anyone but a person who holds `pricing_settings.set` in
 a practice of the transaction's scope, and a malformed ZIP or ZIP+4 by the constraint's name, upserts the row and

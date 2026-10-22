@@ -9,7 +9,8 @@
  * - zip_missing: the practice has no location (its months wait with no run).
  * - zip_unknown: the release has no locality_map record of the ZIP in any window: the customer checks the ZIP.
  * - locality_not_loaded: the ZIP is known but the release has no window of it for the period, or the ZIP needs its
- *   ZIP+4 and the release's ZIP+4 list is not loaded for the period: a content gap, nothing for the customer to change.
+ *   ZIP+4 and the release's ZIP+4 list is not loaded for the period: a content gap, nothing for the customer to change
+ *   (the engine stops such a line as ENGINE_ERROR no_locality or no_locality_plus_four, which pages the operator).
  * - zip_plus_four_needed: the ZIP needs its ZIP+4 and none is set.
  * - zip_plus_four_unknown: the release's ZIP+4 list holds no range with the ZIP+4: the customer checks the four digits.
  */

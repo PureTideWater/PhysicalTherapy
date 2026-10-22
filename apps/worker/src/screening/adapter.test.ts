@@ -207,6 +207,8 @@ describe('the screening pricing adapter', () => {
     }
     expect(at('00012', null)).toMatchObject({ disposition: 'unpriced', reason: 'ENGINE_ERROR', detail: 'locality_needs_zip_plus_four' });
     expect(at('00012', '9100')).toMatchObject({ disposition: 'unpriced', reason: 'ENGINE_ERROR', detail: 'zip_plus_four_not_in_locality_map' });
+    // Release 900001 flags 00012 and has no ZIP+4 file: a gap in the content, whatever the ZIP+4 (PR 6b-1's review).
+    expect(new ScreeningPricer({ ...CONTEXT, zip: '00012', zipPlusFour: '0001' }).outcome(row())).toMatchObject({ disposition: 'unpriced', reason: 'ENGINE_ERROR', detail: 'no_locality_plus_four' });
   });
 
   it('passes the engine’s unpriced reasons through: a ZIP that needs its ZIP+4, a place of service outside the split, a band outside the release', () => {

@@ -167,7 +167,10 @@ itself.
   `location_not_ready` in a transaction of its own, with no line kept. It is the customer's step, which Coverage and
   Pricing settings name: the operator is not paged and triage is not queued. A month whose lines never read the
   locality (a fixed schedule, per visit) prices as before; with a ready location, or a content gap
-  (`locality_not_loaded`), a stopped line stays `ENGINE_ERROR` for the operator, as before.
+  (`locality_not_loaded`), a stopped line stays `ENGINE_ERROR` for the operator, as before. A line stopped as
+  `ENGINE_ERROR no_locality_plus_four` (PR 6b-1's review: the release has no ZIP+4 file of the ZIP in force on the
+  line's date) is a content gap at every status, never a location stop: the run completes, the line pages the
+  operator, and the practice is never asked to change its ZIP or ZIP+4.
 - **Such a month is not priced again every day.** A failed run never covers a month, so the plan would create one a
   day. It waits instead (`waitingOnLocation()`) while the newest run of exactly that month failed `location_not_ready`
   under the release in force, its cut-off at or after the month's newest line, and was created at or after the

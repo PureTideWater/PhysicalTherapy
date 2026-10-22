@@ -23,8 +23,10 @@ import { currentReleaseNo } from '../price/release';
  * 4. A month waits on the practice's pricing location (audit #33 and #7; docs/adr/0064), with no run
  *    created: while the practice has no location at all (createPricingRun refuses, PricingLocationWaiting),
  *    and while the newest run of that exact month failed location_not_ready (a line needed a ZIP+4, or a
- *    ZIP Medicare's list holds) under the release in force, covering the month's newest line, and was
- *    created at or after the location was last saved (waitingOnLocation). So such a month is not priced
+ *    ZIP or ZIP+4 Medicare's list does not hold; never a gap in the content such as no_locality_plus_four,
+ *    whose run completes with the line ENGINE_ERROR for the operator) under the release in force, covering
+ *    the month's newest line, and was created at or after the location was last saved
+ *    (waitingOnLocation). So such a month is not priced
  *    again every day: saving the location (which queues this step by its request) or a new release in force
  *    plans it again. Each waiting month is listed with its location's status.
  *

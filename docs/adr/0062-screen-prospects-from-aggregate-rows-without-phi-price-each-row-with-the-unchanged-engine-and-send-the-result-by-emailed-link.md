@@ -873,5 +873,7 @@ for these questions as long as it optimizes the app"). Those this record's scree
     around the browser: "Row 12, service band: PaidWhole has not loaded the Medicare content for that quarter, so a
     Medicare row in it cannot be screened." (the server's: "Row 12: the service band’s quarter is outside the Medicare
     content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out");
-  - the result's two engine details: "The ZIP spans two Medicare localities and no ZIP+4 was given" and "Medicare’s
-    ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day".
+  - the result's three engine details: "The ZIP spans two Medicare localities and no ZIP+4 was given", "Medicare’s
+    ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day" and, for a row in a quarter with no ZIP+4
+    list of the ZIP in force (`no_locality_plus_four`, a gap in PaidWhole's content that PR 6b-1's review split from the
+    unlisted ZIP+4), "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day".

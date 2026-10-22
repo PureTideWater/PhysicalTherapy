@@ -174,6 +174,8 @@ export const DISPOSITION_NOTES: Readonly<Record<ScreeningDisposition, string>> =
 const DETAIL_LABELS: Readonly<Record<string, string>> = {
   place_of_service_unmapped: 'The place of service is not in the approved place-of-service split',
   locality_needs_zip_plus_four: 'The ZIP spans two Medicare localities and no ZIP+4 was given',
+  // A gap in PaidWhole's content (no ZIP+4 list of the ZIP in force), never the prospect's ZIP+4 (PR 6b-1's review).
+  no_locality_plus_four: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day',
   zip_plus_four_not_in_locality_map: 'Medicare’s ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day',
   no_locality: 'The ZIP has no Medicare locality on the quarter’s first day',
   no_gpci: 'No geographic adjustment for the locality in the year',

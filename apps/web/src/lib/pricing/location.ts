@@ -122,8 +122,10 @@ export interface MonthWaitingOnLocation {
  * of service dates whose newest line no queued, running or complete run covers (the monitoring chain's own rule,
  * apps/worker/src/monitor/plan.ts), when the practice has no location (zip_missing: no run is created), or when the
  * newest run of exactly that month under the release in force failed location_not_ready (a line needed the ZIP+4, or a
- * ZIP Medicare's list holds). With their lines, claims, billed and paid totals, and the location's status over the
- * month. None while no release is in force (nothing is priced).
+ * ZIP or ZIP+4 Medicare's list does not hold). A gap in the content (locality_not_loaded; a line's ENGINE_ERROR
+ * no_locality_plus_four) is never such a month: its run completes and the operator is told. With their lines, claims,
+ * billed and paid totals, and the location's status over the month. None while no release is in force (nothing is
+ * priced).
  */
 export async function monthsWaitingOnLocation(client: ScopeClient, practiceId: string): Promise<MonthWaitingOnLocation[]> {
   const releaseNo = await releaseInForce(client);

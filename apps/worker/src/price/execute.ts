@@ -33,7 +33,9 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  *   run fails as location_not_ready with no line kept: the customer's step, which the screens name,
  *   never the operator's alert. The month waits for the location (../monitor/plan.ts). A month whose
  *   lines never read the locality (a fixed schedule, per visit) prices as usual; with a ready location
- *   (or a content gap, locality_not_loaded) a stopped line stays ENGINE_ERROR for the operator.
+ *   (or a content gap, locality_not_loaded) a stopped line stays ENGINE_ERROR for the operator. So does a
+ *   line stopped as no_locality_plus_four at any status: the release has no ZIP+4 file of the ZIP in force
+ *   on its date, a gap in PaidWhole's content that the customer cannot fix, so it never fails the run.
  */
 
 export type FailureCode = 'engine_version_mismatch' | 'unmapped_plan' | 'job_failed' | 'location_not_ready';
@@ -65,13 +67,18 @@ export const ENGINE_ERRORS_MESSAGE = 'pricing run recorded engine errors for the
 
 const CLAIMS_PER_BATCH = 500;
 
-/** The engine's details that stop a line on the practice's location, whatever its status. */
+/**
+ * The engine's details that stop a line on the practice's location, whatever its status: no ZIP+4 for a ZIP that needs
+ * one, and a ZIP+4 no range of the ZIP+4 file in force holds. Never no_locality_plus_four (no ZIP+4 file of the ZIP in
+ * force on the line's date): that is a gap in the content, the operator's to load, whatever the ZIP+4.
+ */
 const LOCATION_DETAILS: ReadonlySet<string> = new Set(['locality_needs_zip_plus_four', 'zip_plus_four_not_in_locality_map']);
 
 /**
  * The engine details that stop a line on the location at a status (null: none, the location prices or the gap is
  * content): the ZIP+4's two always; no_locality when the ZIP is on no Medicare list (zip_unknown); and
- * invalid_settings when the practice has no location at all (an empty ZIP).
+ * invalid_settings when the practice has no location at all (an empty ZIP). A content gap (no_locality_plus_four, or
+ * no_locality at a known ZIP) is never one: its line stays ENGINE_ERROR and pages the operator.
  */
 export function locationStops(status: string): ReadonlySet<string> | null {
   if ((LOCATION_NOT_READY_STATUSES as readonly string[]).includes(status)) {
