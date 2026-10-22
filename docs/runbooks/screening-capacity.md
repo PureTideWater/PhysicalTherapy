@@ -16,8 +16,9 @@ no credential is used.
 1. Builds both production images from their Dockerfiles and runs `pnpm screening:capacity`
    (`tools/screening-capacity/run.ts`) with the harness and Chromium on Postgres's CPUs, as
    `pnpm -s screening:capacity --print-harness-cpus` gives them (0-1 on a 4-CPU runner).
-2. Reads production's limits from `infra/lib/environments.ts` and `infra/lib/constructs/database.ts`: web and platform
-   a quarter vCPU and 512 MiB with no swap; the screening consumer (`compute.screening`, PR 6b-3) one task of 2 vCPU and
+2. Reads production's limits from `infra/lib/environments.ts` and `infra/lib/constructs/database.ts`: web half a vCPU
+   and 1 GiB (the founder's ruling of 2026-10-22 on the sizing question, O9) and platform a quarter vCPU and 512 MiB,
+   both with no swap; the screening consumer (`compute.screening`, PR 6b-3) one task of 2 vCPU and
    4 GiB pricing three screenings at once; Postgres db.t4g.medium's 2 vCPU and 4 GiB on gp3. Lays them out on the
    runner: Postgres on the class's 2 vCPU (CPUs 0-1, shared with the harness and Chromium), the consumer on the next
    2 (2-3), web and platform on the consumer's last (3); Postgres's memory is 4 GiB or what the runner leaves after
@@ -75,7 +76,10 @@ no credential is used.
   line): the run still passes, and the builders take it to the founder before merge as a question of the consumer's
   size (open item O9), never as a tuning or a wider limit. It also shows on the pull request's checks: the harness
   posts a warning annotation ("Sizing question (O9)", naming the upload and its time), and the capacity job passes it
-  to the gate, which prints it beside its pass.
+  to the gate, which prints it beside its pass. The founder answered it on 2026-10-22 for PR 6b-3: the web at half a
+  vCPU and 1 GiB in every environment, the consumer unchanged; only if CI's worst time is still above 44 s after that
+  do a consumer of 4 vCPU and 8 GiB and GitHub's 8-core runner go back to the founder. The 48-s line and the 44-s
+  question stay as they are.
 - `screening-capacity.json` adds the runner, the limits applied beside production's, the departures and which way each
   moves the result, the release's manifest hash, the shapes' counts, the jobs that ran by queue and the oracle's
   hashes. It holds no row, link or token.
@@ -187,27 +191,34 @@ matches a line of either; a line is a path, or a pattern whose `*` also matches 
 
 Production's screening opens only when the latest capacity report for the image being deployed passes with time
 enforced, on both image IDs. The release workflow measures the `web-production` and worker images exactly as built
-and keeps the report as an asset of the tag's GitHub release. Before a deploy that should open the screening:
+and keeps the report as an asset of the tag's GitHub release. The deploy names that report, and the CDK app runs the
+check at synthesis and sets the launch value itself (the founder's ruling of 2026-10-22;
+docs/runbooks/deploy-and-rollback.md, steps 3 and 4):
 
 ```
-gh release download <tag> --pattern screening-capacity.json
-docker image rm <WebRepositoryUri>:<tag> <WorkerRepositoryUri>:<tag>
-docker pull <WebRepositoryUri>:<tag> && docker pull <WorkerRepositoryUri>:<tag>
-pnpm exec tsx tools/screening-capacity/launch-check.ts --report screening-capacity.json --tag <tag> \
+gh release download <tag> --pattern screening-capacity.json --dir <dir>
+cdk deploy tp-production -c tp:launchReport=<dir>/screening-capacity.json -c tp:launchTag=<tag> --parameters ImageTag=<tag>
+```
+
+The app (`infra/lib/screening-launch.ts`) reads the images the stack deploys, `<WebRepositoryUri>:<tag>` and
+`<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each pulled from ECR first, so the IDs checked are
+those ECS runs. A passing report gives `<tag>:<the report's SHA-256>`, which the stack writes into the web's
+`SCREENING_LAUNCH`, with a rule that refuses the deploy unless `ImageTag` is that tag; a refused report stops the
+synthesis, naming decision 13 and each reason; no report keeps production's screening closed. The value is never a
+parameter, and context that sets it by hand stops the synthesis. To preview the check before the deploy:
+
+```
+pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-capacity.json --tag <tag> \
   --web-image <WebRepositoryUri>:<tag> --worker-image <WorkerRepositoryUri>:<tag>
 ```
 
-The images are the copies the deploy's step 2 pushed to ECR, pulled back from ECR, so the IDs checked are those ECS
-runs (docs/runbooks/deploy-and-rollback.md, step 3).
-
-It prints `ScreeningLaunch=<tag>:<the report's SHA-256>` for the deploy's `ScreeningLaunch` parameter, or each reason
-and a non-zero exit, and then the deploy passes `ScreeningLaunch=closed`. It checks the report's format, the Docker
-runtime, a pass with time enforced as recorded and as the checkout's own `verdict()` reads the measurements again, the
-tag's commit, both image IDs against the images pulled back from ECR (`docker image inspect -f {{.Id}}`), and the
-consumer measured against `compute.screening` for production. A note of the founder's sizing question (a worst time
-above 44 s) does not stop it: the merge settles that question. The web keeps production closed unless `SCREENING_LAUNCH`
-names the tag it runs, so a value a later deploy keeps by omission closes the screening rather than vouching for another
-image.
+It prints the value the deploy will compute, or each reason and a non-zero exit. It checks the report's format, the
+Docker runtime, a pass with time enforced as recorded and as the checkout's own `verdict()` reads the measurements again,
+the tag's commit, both image IDs against the images pulled from ECR (`docker image inspect -f {{.Id}}` after `docker
+pull`), the web and platform measured at production's declared sizes (the web's half vCPU and 1 GiB since 2026-10-22),
+and the consumer measured against `compute.screening` for production. A note of the founder's sizing question (a worst
+time above 44 s) does not stop it: the merge settles that question. The web keeps production closed unless
+`SCREENING_LAUNCH` names the tag it runs, so a deploy of another tag without its own report closes the screening.
 
 ## Running it elsewhere
 

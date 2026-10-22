@@ -295,8 +295,9 @@ what it still prices; the codes priced equal the key set on every attempt.
 **Capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16).**
 `.github/workflows/screening-capacity.yml` builds the production images and runs `pnpm screening:capacity`
 (`tools/screening-capacity`; docs/runbooks/screening-capacity.md). Web and platform run as containers at production's
-task sizes, read from `infra/lib/environments.ts` (a quarter vCPU and 512 MiB with no swap, sharing the runner's last
-CPU); Postgres 18 at db.t4g.medium's size or the runner's share of it, with gp3's I/O baseline on the device behind
+task sizes, read from `infra/lib/environments.ts` (with no swap, sharing the runner's last CPU: the web half a vCPU and
+1 GiB since the founder's ruling of 2026-10-22, a quarter vCPU and 512 MiB before it, the platform a quarter vCPU and
+512 MiB); Postgres 18 at db.t4g.medium's size or the runner's share of it, with gp3's I/O baseline on the device behind
 Docker's data root, a 1 GiB `/dev/shm` and a 1 ms delay each way on its link (netem on its own interface, which delays
 what it sends, and on the host's end of its veth pair, which delays what it receives: one alone delayed one direction
 and could never reach the 2 ms the check asks for); Postgres counts as ready once a client container on the services'
@@ -724,7 +725,9 @@ The founder, Tyler Williams, accepted on 2026-10-20 the recommended answer to ev
 13. **If the speed test is red at launch:** the screening does not open until the latest capacity run on the image
     being deployed passes with time enforced. *Built:* the capacity test; time becomes enforced with PR 6b's
     declaration of the screening's consumer. *Built in PR 6b-3:* bound to both images by the launch check
-    (`tools/screening-capacity/launch-check.ts`) and the web's `SCREENING_LAUNCH` (Amendment (PR 6b-3)).
+    (`tools/screening-capacity/launch-check.ts`) and the web's `SCREENING_LAUNCH` (Amendment (PR 6b-3)), a value the
+    CDK app computes at synthesis from the release's report, never one passed by hand (the founder's ruling of
+    2026-10-22).
 14. **Which file the promise covers:** any accepted 50,000-row file, the worst shape included. PR 6b sizes the
     screening's own consumer to that file and reports its size and monthly cost before building it, which may exceed
     the roughly $18 a month accepted. *Built:* the worst shape is measured alone and three at once, beside the
@@ -841,8 +844,9 @@ the linkage between an outcome and a kept request; the screening terms' wording 
 PR 6e builds consent capture on the columns here; or PR 7's funnel needs read functions over the outcomes. Since PR
 6b-3, also when: staging measures the runner-to-Fargate factor (decision 15's line moves to 60 s scaled by it); the
 images move to ARM (#136); the web's share of S4 on Fargate (10 to 18 s on one quarter-vCPU web in the design's
-stand-in) dominates there; accounts use their share or the day reaches its cap for days on end; or lone files near the
-line (then splitting one run across threads, considered and not built).
+stand-in; 6.9 s locally on the half vCPU the founder chose on 2026-10-22) dominates there; accounts use their share or
+the day reaches its cap for days on end; or lone files near the line (then splitting one run across threads, considered
+and not built).
 
 ## Amendment (PR 6b)
 
@@ -930,6 +934,43 @@ accepted). Those this record's consumer and its time check build:
   day's cap), each new sentence in PR 6b-3's description word for word, for the founder and then counsel before the
   screening opens.
 
+### Owner rulings (2026-10-22)
+
+The founder, Tyler Williams, answered what PR 6b-3's review round left open on 2026-10-22 (about 23:00 UTC; "Do the
+recommended for everything if it optimizes things"), recorded in reconciliation-001 and, for the service and its cost,
+ADR 0049:
+
+- **The size (open item O9):** the web task at half a vCPU and 1 GiB in every environment, from a quarter vCPU and 512
+  MiB, about $18.02 a month more in production (two web tasks) and $9.01 more in staging and in dev (us-east-1
+  on-demand Fargate prices, to be read again on AWS's pages before they are relied on, O12); the consumer stays one task
+  of 2 vCPU and 4 GiB with three threads. The review round found the web's quarter vCPU the largest share of the worst
+  time: three 11-MB uploads at once reached the queue after 14.6 to 16.0 s on it (CI 15.2 s) and after 6.9 s on half a
+  vCPU, and S4's three worst times fell from 46.2, 40.0 and 39.3 s to 38.0, 34.6 and 37.6 s (the process runtime,
+  indicative only). CI's run on 7abb99c (job 120130643798), before this size, measured a worst of 46.0 s (S4-1 and
+  S4-3). Only if CI's worst time is still above 44 s with the larger web do a consumer of 4 vCPU and 8 GiB and GitHub's
+  8-core runner go back to the founder; the 48-s line and the 44-s question do not change. *Built:* `compute.web` in
+  `infra/lib/environments.ts` (`cpu: 512, memoryMiB: 1024`), which the capacity harness reads for the web it measures,
+  and which the launch check holds a report's web to. The web's command sets no heap flag: Node 24 sizes V8's heap from
+  the container's memory limit (a 560 MiB heap limit at 1 GiB, 259 MiB at 512 MiB, measured), so the heap follows the
+  task.
+- **The launch value:** the CDK app computes `ScreeningLaunch` at synthesis from the release's capacity report with
+  `launchCheck()` against the ECR images the stack deploys, and refuses a value passed by hand (Decision 13, bound to
+  both images, below; docs/runbooks/deploy-and-rollback.md, steps 3 and 4).
+- **The wording (Q12):** approved by the founder as written; counsel confirms it before the screening opens (O4). The
+  "sent" alert (`apps/web/src/lib/screening/sent.ts`, `SCREENING_SENT_WAIT`):
+  - `soon`: "We have your file. The result is emailed to the address you gave as a link, usually within a minute of
+    when you sent it."
+  - `minutes`: "We have your file. Other screenings were ahead of it when it arrived, so the result, emailed to the
+    address you gave as a link, can take a few minutes."
+  - `waiting`: "We have your file. It is screened after the files sent within today’s limits, so the result, emailed to
+    the address you gave as a link, can take longer than usual."
+  - `sent`: "We have your file. The result is emailed to the address you gave as a link."
+
+  The result email (`apps/worker/src/screening/message.ts`, `SCREENING_WAITED`), one line for a waiting-tier upload:
+  - `account_share`: "It waited behind other screenings because, with it, your email address or its organization had
+    sent more than one day’s share of rows for screening that day."
+  - `daily_cap`: "It waited behind other screenings because the screening had reached its limit for that day."
+
 ### The consumer, as built
 
 `WORKER_JOBS=screening` (`apps/worker/src/main.ts`, `config.ts`) runs the screening's queues alone, with
@@ -972,7 +1013,8 @@ so a replaced upload still counts toward its account's share and the day's cap: 
 first built), one mailbox resubmitting 50,000-row files never passed its share and the cap never counted them (the
 review of 2026-10-22).
 
-**What the prospect is told (Q12, as changed by the review of 2026-10-22, for the founder and then counsel).** The
+**What the prospect is told (Q12, as changed by the review of 2026-10-22; approved by the founder on 2026-10-22, and
+for counsel to confirm before the screening opens).** The
 "sent" page has four states, read from the `wait` the web puts in the redirect: `soon` (a thread was free for it when it
 arrived), `minutes` (the runs being priced and those ahead of it filled every thread), `waiting` (the waiting tier, for
 either reason) and `sent` (no claim at all: the fallback for a missing or unknown `wait`, and what the web shows when
@@ -1012,7 +1054,8 @@ image with `WORKER_JOBS=screening`, `SCREENING_CONCURRENCY=3`, the screening and
 command with its 896 MiB heap, at `compute.screening`'s 2 vCPU and 4,096 MiB, beside a platform container that prices no
 screening (a run the platform's log shows priced fails the job). The layout gives Postgres db.t4g.medium's 2 vCPU on the
 runner's first CPUs (0-1, shared with the harness and Chromium), the consumer the next 2 (2-3) and web and platform the
-consumer's last (3), each a listed harsher departure; a runner with fewer than 4 CPUs is too small, since 3 would leave
+consumer's last (3), each a listed harsher departure, the web at production's half vCPU and 1 GiB read from
+`compute.web` (the founder's ruling of 2026-10-22); a runner with fewer than 4 CPUs is too small, since 3 would leave
 Postgres one CPU, which lands at the line (the design's run 9). Time is enforced (`HARNESS_RUNS_SCREENING_CONSUMER`):
 every upload of every scenario, the small ones included, fails above 48 s on the runner. The report
 (`tp-screening-capacity/4`) names the consumer as measured (tasks, vCPUs, MiB, threads) and both image IDs, and fails a
@@ -1040,12 +1083,25 @@ record.
 
 **Decision 13, bound to both images.** The release builds, scans and measures the worker image and the production web
 image (with production's static origin) exactly as it pushes them, and keeps the report, its SHA-256 and its summary as
-assets of the tag's release. `tools/screening-capacity/launch-check.ts` prints `ScreeningLaunch=<tag>:<the report's
-SHA-256>` only for a Docker-runtime report of the tag's commit that passes with time enforced (as recorded and as this
-checkout's `verdict()` reads its measurements again), on both image IDs as the deployer pulled them back from ECR (the
-copies ECS runs) and on the consumer production declares; anything else names its reason, and the deploy passes
-`closed`. The web opens production's screening only when `SCREENING_LAUNCH` names the image tag it runs, so a value a
-later deploy keeps by omission closes it. Staging and development are not gated.
+assets of the tag's release. The launch value is computed, never typed (the founder's ruling of 2026-10-22): production's
+deploy names the report and its tag as context (`cdk deploy tp-production -c tp:launchReport=<file> -c tp:launchTag=<tag>
+--parameters ImageTag=<tag>`), and the CDK app (`infra/lib/screening-launch.ts`) runs the launch check
+(`tools/screening-capacity/launch-check.ts`, `launchCheck()`) at synthesis on the images the stack deploys,
+`<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each pulled from ECR
+first (the copies ECS runs). It gives `<tag>:<the report's SHA-256>` only for a Docker-runtime report of the tag's
+commit that passes with time enforced (as recorded and as this checkout's `verdict()` reads its measurements again), on
+both image IDs, with the web and platform measured at production's declared sizes and the consumer production declares;
+the stack writes it into the web's `SCREENING_LAUNCH` and its `ScreeningLaunch` output, and its rule
+`ScreeningLaunchImageTag` refuses the deploy unless `ImageTag` is that tag. A refused report stops the synthesis, naming
+decision 13 and each reason; a deploy with no report closes the screening, since context holds for one invocation and
+nothing carries over. No stack declares a `ScreeningLaunch` parameter, so CloudFormation refuses one passed with
+`--parameters`, and the app stops on context that would set it by hand (`-c ScreeningLaunch`, `-c tp:screeningLaunch`),
+naming decision 13. The consumer runs whenever the deploy carries a launch value (the condition
+`ScreeningConsumerRunning`, now settled at synthesis: released, and either `ScreeningConsumer=running` or a launch
+value). Run on its own, `launch-check.ts` previews the value. The web opens production's screening only when
+`SCREENING_LAUNCH` names the image tag it runs. Staging and development are not gated. *As first built* the check
+printed the value for a `ScreeningLaunch` parameter the deployer passed; the stack checked its form and the web its tag,
+but neither could tell a printed value from one typed by hand.
 
 **The required check.** Every pull request runs the workflow; its `changes` job reads the changed file names, and the
 `screening-capacity gate` job passes at once when none is watched and otherwise only when the measurement passed; it

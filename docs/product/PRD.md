@@ -816,14 +816,14 @@ Remittances, claims, lines and ledger entries: retained for the contract term pl
 
 | Item | 10 customers | 50 customers |
 | --- | --- | --- |
-| Fargate web and worker | $55 | $150 to $200 |
+| Fargate web and worker, the web at 0.5 vCPU and 1 GiB in every environment (the founder's ruling of 2026-10-22: about $18.02 a task instead of $9.01, so about $18.02 more in production's two web tasks and $9.01 more in staging) | $82 | $177 to $227 |
 | Free screening's consumer: one 2 vCPU, 4 GiB Fargate task in production (from launch) and one in staging, about $74.50 each, and the 4-core CI runner its capacity check needs once the repository is private, about $22 (the founder's Q1 of 2026-10-21) | $171 | $171 |
 | RDS Postgres Multi-AZ, storage, backups | $155 | $420 to $470 |
 | Load balancer, VPC endpoints, WAF, GuardDuty, logs | $130 | $200 to $250 |
 | Textract, S3, KMS, Secrets Manager | $45 | $180 |
 | Model calls | $50 to $160 | $250 to $800 |
 | Compliance platform, workspace, tools | $750 to $1,300 | $1,000 to $1,500 |
-| **Total** | **$1,371 to $2,021** | **$2,371 to $3,571** |
+| **Total** | **$1,398 to $2,048** | **$2,398 to $3,598** |
 
 ## 20. Open decisions and assumptions
 

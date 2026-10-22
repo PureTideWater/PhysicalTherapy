@@ -23,9 +23,9 @@ rule for the security address is added first. An environment deployed before thi
 deploy: pass `SecurityEmail=…` once.
 
 `ImageTag` stays `none`: everything is created and no task runs (the heartbeat and uptime alarms stay in ALARM until the
-first release). `ScreeningLaunch` stays `closed` and `ScreeningConsumer` `held` (their defaults; ADR 0062, decision 13
-and the founder's Q1 (b) of 2026-10-21). Point the two DNS names at the `LoadBalancerDnsName` and
-`StaticAssetsDistributionDomain` outputs. Write the Stripe keys (docs/runbooks/billing.md) and set up support mail
+first release). Production's screening stays closed (no launch report is named; ADR 0062, decision 13) and
+`ScreeningConsumer` stays `held` (its default; the founder's Q1 (b) of 2026-10-21). Point the two DNS names at the
+`LoadBalancerDnsName` and `StaticAssetsDistributionDomain` outputs. Write the Stripe keys (docs/runbooks/billing.md) and set up support mail
 (docs/runbooks/support-mail.md).
 
 Once the environment's `StaticAssetsOrigin` output exists, set the repository variable the release builds its web image
@@ -66,47 +66,59 @@ static host (its assets load from the application host), and says so in the buil
    `<env>` is `staging` or `production` (each built with its own static host, so pages load their assets from
    CloudFront; ADR 0055); the plain `web` image, with none, is for an environment without CloudFront. The repositories'
    tags are immutable: a tag is never pushed twice.
-3. **The launch check (production; decision 13, test matrix SCR-20).** Production's screening opens only for a passing
-   capacity report of the tag being deployed, with time enforced, on both image IDs. Download the release's report and
-   run the check on the images ECS will run: the copies step 2 pushed to ECR, pulled back from it (removing the local
-   ECR tags first, so the pull reads ECR's manifest rather than the copy already on this machine):
+3. **The launch report (production; decision 13, test matrix SCR-20).** Production's screening opens only for a passing
+   capacity report of the tag being deployed, with time enforced, on both image IDs, and only the CDK app sets its
+   launch value (the founder's ruling of 2026-10-22): at synthesis it runs the launch check on the report the deploy
+   names and on the images the stack deploys, `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the
+   account and region of your credentials, each pulled from ECR first (a pull resolves the tag against ECR, so the IDs
+   checked are those of the copies step 2 pushed, the images ECS runs, never a copy already on this machine), with the
+   tag's commit in this checkout (step 1 fetched the tags) and production's sizes as `infra/lib/environments.ts`
+   declares them. Download the release's report and log Docker in to the environment's registry; you may preview the
+   check, which prints the value the deploy will compute or each reason it refuses:
 
    ```
    gh release download <tag> --pattern screening-capacity.json --dir <dir>
-   docker image rm <WebRepositoryUri>:<tag> <WorkerRepositoryUri>:<tag>
-   docker pull <WebRepositoryUri>:<tag> && docker pull <WorkerRepositoryUri>:<tag>
+   aws ecr get-login-password | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
    pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-capacity.json --tag <tag> \
      --web-image <WebRepositoryUri>:<tag> --worker-image <WorkerRepositoryUri>:<tag>
    ```
 
-   It prints `ScreeningLaunch=<tag>:<the report's SHA-256>`, or each reason it refuses and exits non-zero; the deploy
-   then passes `ScreeningLaunch=closed`. Pass only the value the check printed: the stack checks the value's form and
-   the web its tag, but neither can tell a value the check printed from one typed by hand, so the check run here is the
-   gate (the deployer, who holds production's credentials, is trusted with it). Staging needs no launch value: its
-   screening is not gated, so the end-to-end journey and staging's measurement of the runner-to-Fargate factor
-   (decision 15) run there.
-4. **Deploy.** `cdk deploy tp-<env> --parameters ImageTag=<tag>`, and in production also
-   `ScreeningLaunch=<the launch check's value, or closed>` on every deploy: CloudFormation keeps a parameter's previous
-   value when a deploy leaves it out, and the web binds the value to the tag it runs, so a value kept from an earlier
-   tag closes the screening rather than vouching for a new image. The screening consumer (held at no task until
-   launch; the founder's Q1 (b)) runs whenever a deploy passes a launch value, so no deploy opens the screening without
-   it. From production's first launch deploy on, also pass `ScreeningConsumer=running` on every deploy, so that a deploy
-   whose launch check refused (`ScreeningLaunch=closed`) keeps the consumer pricing what prospects already sent. A
-   rollback across PR 6b-3 removes the parameter, and the redeploy after it starts again from its default `held`: pass
-   `running` then too. The migration task runs first, as the owner login, and creates any missing service
-   login (the screening's `tp_screening_login` among them); no service moves to the new task definition until it has
-   exited 0, so a failed migration fails the deploy before traffic moves. Each service then rolls with its circuit
-   breaker.
+   Nothing the preview prints is passed to the deploy. No stack declares a `ScreeningLaunch` parameter, so
+   CloudFormation refuses `--parameters ScreeningLaunch=…`, and the CDK app stops on context that would set the value by
+   hand (`-c ScreeningLaunch=…`, `-c tp:screeningLaunch=…`), naming decision 13; a value typed by hand cannot open the
+   screening. Staging needs no report: its screening is not gated, so the end-to-end journey and staging's measurement
+   of the runner-to-Fargate factor (decision 15) run there.
+4. **Deploy.** `cdk deploy tp-<env> --parameters ImageTag=<tag>`. In production, to open the screening, or keep it open,
+   name the tag's report on every deploy, with an absolute path (cdk runs the app from `infra/`):
+
+   ```
+   cdk deploy tp-production -c tp:launchReport=<dir>/screening-capacity.json -c tp:launchTag=<tag> \
+     --parameters ImageTag=<tag>
+   ```
+
+   The app writes `<tag>:<the report's SHA-256>` into the web's `SCREENING_LAUNCH` (the stack's `ScreeningLaunch` output
+   shows it), and the stack's rule `ScreeningLaunchImageTag` refuses the deploy before any change unless `ImageTag` is
+   `<tag>`. A report the check refuses stops the synthesis, naming decision 13 and each reason, and nothing is deployed:
+   to ship the release with the screening closed, deploy again without the two `-c` values. A deploy without them closes
+   production's screening, since context holds for one invocation only and no launch value carries over from an
+   earlier deploy. The screening consumer (held at no task until launch; the founder's Q1 (b)) runs whenever the
+   deploy carries a launch value, so no deploy opens the screening without it. From production's first launch deploy
+   on, also pass `ScreeningConsumer=running` on every deploy, so that a deploy without a report (the screening closed)
+   keeps the consumer pricing what prospects already sent. A rollback across PR 6b-3 removes that parameter, and the
+   redeploy after it starts again from its default `held`: pass `running` then too. The migration task runs first, as
+   the owner login, and creates any missing service login (the screening's `tp_screening_login` among them); no service
+   moves to the new task definition until it has exited 0, so a failed migration fails the deploy before traffic moves.
+   Each service then rolls with its circuit breaker.
 5. **Smoke checks.** `GET https://<AppDomainName>/api/health` answers 200 (it touches the database); `/sign-in` and
    `/status` load; `/.well-known/security.txt` names the environment's `SecurityEmail` and links `/security`, which
    loads; in production, `/security` shows neither "What you can expect from us" nor "Research in good faith" while
    `docs/product/legal-surfaces.md` still lists them (a production server leaves out a legal text whose review is not
    recorded); a synthetic smoke account signs in; the platform log group shows each platform job's next scheduled run;
    the uptime canaries go green within ten minutes. In production, `/screening` shows the open form only when the deploy
-   passed a launch value for the tag (and counsel's review of the screening's wording is recorded); with `closed` it says
-   the screening is not open yet. Where the screening consumer runs (staging always; production once a deploy passes a
-   launch value or `ScreeningConsumer=running`), its log group (`ScreeningLogGroup`) shows its heartbeat and the
-   sweep's `screening queue` line every minute, and its heartbeat alarm is OK. On an environment's first deploy, and whenever `SecurityEmail` changes, send a
+   carried the tag's passing report (the `ScreeningLaunch` output is `<tag>:<SHA-256>`, not `closed`) and counsel's review
+   of the screening's wording is recorded; otherwise it says the screening is not open yet. Where the screening consumer
+   runs (staging always; production once a deploy carries a launch report or `ScreeningConsumer=running`), its log
+   group (`ScreeningLogGroup`) shows its heartbeat and the sweep's `screening queue` line every minute, and its heartbeat alarm is OK. On an environment's first deploy, and whenever `SecurityEmail` changes, send a
    test message to it and have the security official confirm it arrived. In staging, run `pnpm test:e2e` against the
    release before tagging it for production.
 
@@ -171,6 +183,12 @@ Redeploy the previous image, without migrating:
 ```
 cdk deploy tp-<env> -c tp:skipMigrations=true --parameters ImageTag=<previous tag>
 ```
+
+In production after launch, a rollback without a report closes the screening; to keep it open on the previous image,
+add that tag's own report, checked as in step 3 (`-c tp:launchReport=<dir>/screening-capacity.json -c
+tp:launchTag=<previous tag>`, the report downloaded from the previous tag's release). A report of the previous tag that
+the check refuses (one measured at other sizes than this checkout declares, for instance) stops the synthesis; roll
+back without it, with the screening closed.
 
 Migrations are add, backfill, remove (never a breaking change in one release), so the previous image runs on the newer
 schema. Never edit or revert an applied migration: a fix is a new, forward migration in the next release. The context
