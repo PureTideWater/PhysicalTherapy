@@ -33,7 +33,7 @@ MILESTONES = [
   ("M9", "Recovery ledger and reconciliation", "Monitoring v1", 60, 90, "Built", "Met", ""),
   ("M10", "Model gateway", "Monitoring v1", 50, 70, "Built", "Needs a person", "Evaluation gates need model access"),
   ("M11", "Sign-in, billing, production readiness", "Monitoring v1", 60, 90, "Built", "Needs a person", "Real Stripe test ACH; AWS deploy"),
-  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, PR 5b, governance and the screen fixes merged; PR 6b in design"),
+  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, 5b and 6b-1, governance and the screen fixes merged; PR 6b-2 in review"),
   ("M11b", "Firm grants and minimal portfolio (change order PR 17)", "Change order 001", 34, 60, "Queued", "Not yet", "Inserted by the change order before milestone 12"),
   ("M12", "Firm organizations and portfolio", "Firm v1.5", 60, 90, "Queued", "Not yet", "Starts after the change order's 17 pull requests"),
   ("M13", "Intelligence and hardening", "Intelligence v2", 70, 100, "Queued", "Not yet", "Pen test and SOC 2 Type II are outside work"),
@@ -218,7 +218,7 @@ MANUAL = {
   "PR 5b: the payer's copy prints the plan type in words (#34)": ("Done", "2026-10-21T13:15:00Z", "2026-10-21T19:01:28Z"),
   "Fresh session: setup script, handoff, machine rebuilt": ("Done", "2026-10-21T18:40:00Z", "2026-10-21T19:50:00Z"),
   "You approve the consumer's monthly cost and the design questions": ("Done", "2026-10-21T22:00:00Z", "2026-10-21T22:31:00Z"),
-  "PR 6b-1, ZIP+4 in the engine: build, draft PR, two reviews, fix, verify, merge": ("Running", "2026-10-21T22:55:00Z", None),
+  "PR 6b-1, ZIP+4 in the engine: build, draft PR, two reviews, fix, verify, merge": ("Done", "2026-10-21T22:55:00Z", "2026-10-22T05:20:00Z"),
   "PR 6b-2, pricing location and onboarding: build, reviews, fix, verify, your approval, merge": ("Running", "2026-10-21T23:55:00Z", None),
 }
 # Steps whose label repeats across batches ("fix review findings"), kept by hand: (batch, label) -> (status, started, finished).
@@ -262,7 +262,7 @@ BATCHES = [
 # Finished batches, for the history chart (wall-clock hours, measured).
 HISTORY = [
   ("Milestone 0", 3.1), ("Milestone 1", 4.0), ("Milestones 2-5", 9.4), ("Milestones 6-7", 8.7), ("Milestones 8-9", 13.0), ("Milestones 10-11", 14.5), ("Step 0: first CI run", 4.7), ("PR 1: brand and copy", 10.9), ("PaidWhole brand", 2.4), ("Change order review", 2.0), ("PR 2: domain model", 8.9), ("PR 3: EMR export files", 4.0), ("Screen-tour fixes", 5.9), ("PR 4: ERA exports as intake", 6.1),
-  ("PR 5b: plan type in words", 5.8),
+  ("PR 5b: plan type in words", 5.8), ("PR 6b-1: ZIP+4 in the engine", 6.4),
 ]
 # PR 5, PR 6 and governance ran across the weekly-limit pause of 2026-10-19 and several container restarts, and
 # their journals are gone with the old container, so their wall-clock hours are not measured here.
