@@ -306,6 +306,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/screening/screening.large.db.test.ts',
     'apps/web/src/lib/screening/result-page.large.db.test.ts',
     'apps/web/src/components/screening/result.test.tsx',
+    'apps/worker/src/screening/consumer.db.test.ts',
+    'apps/worker/src/worker.test.ts',
   ]),
   'SCR-09': none(6, 'The release read is tested on a release built in memory from SYNTHETIC release 900001; no file.', [
     'apps/worker/src/price/keyed-release.test.ts',
