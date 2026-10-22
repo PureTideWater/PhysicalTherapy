@@ -312,6 +312,8 @@ function readOutbox(dir: string, seen: Map<string, Mail>): void {
 }
 
 const RESULT_LINK = /https?:\/\/[^\s]+\/screening\/results\/[a-z]{32}/;
+/** How long the harness waits for the consumer's time-to-email line of a run already emailed. */
+const LOG_WAIT_MS = 30_000;
 /** How long the harness waits for a result page; one that takes longer counts as not opening. */
 const RESULT_PAGE_MS = 60_000;
 
@@ -634,6 +636,24 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       const first = await open(url);
       resultStatuses.set(entry.upload.id, { first, last: first === 200 ? await open(`${url}?groups=999999`) : null });
     }
+  }
+  // The consumer logs each run's time to email once its completion commits, a moment after the mail file is written
+  // (and a thread's lines reach the process's output through the main thread): wait for every emailed run's line, at
+  // most LOG_WAIT_MS, so a line still on its way is never read as missing.
+  const emailedRuns: string[] = [];
+  for (const entry of prepared.filter((item) => item.emailedAt !== null)) {
+    const facts = await runFacts(await owner.client(), entry.upload.contactEmail);
+    if (facts !== null) {
+      emailedRuns.push(facts.id);
+    }
+  }
+  const logsUntil = Date.now() + LOG_WAIT_MS;
+  for (;;) {
+    const logged = new Set(emailedLines((await Promise.all(context.consumers.map((consumer) => runtime.logs(consumer.name)))).flat()).map((line) => line.runId));
+    if (emailedRuns.every((run) => logged.has(run)) || Date.now() > logsUntil) {
+      break;
+    }
+    await sleep(250);
   }
   sampling = false;
   await sampler;

@@ -138,7 +138,7 @@ describe('the checks the build controls fail the run', () => {
     [
       'the consumer’s three slots not priced at once',
       measured({ scenarios: withUpload('S4-3', { jobStartedMs: 31_500 }) }),
-      /^slots not used: S4's first 3 large uploads were not priced at once \(3 declared\)$/,
+      /^slots not used: S4's first 3 large uploads were not priced at once \(3 declared; S4-3 waited\)$/,
     ],
     ['a request that left for the static origin', measured({ staticAssetOrigin: 'https://static.capacity.invalid', scenarios: withS1(scenario({ staticOrigin: { routed: 12, left: 1 } })) }), /^request left for the static origin: S1 \(1\)$/],
     ['a CPU quota not applied', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'platform' ? { ...item, nanoCpus: null } : item)) }) }), /^limit not applied: platform: CPU quota none/],
@@ -181,6 +181,12 @@ describe('the checks the build controls fail the run', () => {
       expect(result.pass).toBe(false);
       expect(result.reasons.some((line) => reason.test(line)), result.reasons.join('\n')).toBe(true);
     }
+  });
+
+  it('count no slot unused for a large upload queued only after another had been emailed', () => {
+    // A slow web queued S5's third upload after the first was emailed: it waited for no thread.
+    const late = withUpload('S4-3', { jobCreatedMs: 31_200, jobStartedMs: 31_400, submittedMs: 30_000, emailedMs: 55_000 });
+    expect(verdict(measured({ scenarios: late }), ENFORCED).reasons.filter((reason) => reason.startsWith('slots not used'))).toEqual([]);
   });
 
   it('read a waiting-tier upload as failing even where its time would pass, since no scenario upload may wait', () => {

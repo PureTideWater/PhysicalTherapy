@@ -364,12 +364,20 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     const slots = measured.consumer === null ? 0 : measured.consumer.tasks * measured.consumer.concurrency;
     const atOnce = Math.min(large.length, slots);
     if (atOnce > 1) {
-      // The consumer's slots, used at once: the first `atOnce` large uploads start before any large one is emailed, as
-      // they do with that many threads (the design's binding case: three worst uploads priced in parallel).
-      const firstEmail = Math.min(...large.map((item) => item.emailedMs ?? Number.POSITIVE_INFINITY));
+      // The consumer's slots, used at once (the design's binding case: three worst uploads priced in parallel): none of
+      // the first `atOnce` large uploads waits for another to finish, so each starts before the next email of the
+      // scenario's other large uploads after its job was queued. One queued after another had finished waited for none.
       const first = [...large].sort((a, b) => (a.jobCreatedMs ?? Number.POSITIVE_INFINITY) - (b.jobCreatedMs ?? Number.POSITIVE_INFINITY)).slice(0, atOnce);
-      if (first.some((item) => item.jobStartedMs === null || item.jobStartedMs >= firstEmail)) {
-        reasons.push(`slots not used: ${scenario.id}'s first ${String(atOnce)} large uploads were not priced at once (${String(slots)} declared)`);
+      const waited = first.filter((item) => {
+        if (item.jobCreatedMs === null || item.jobStartedMs === null) {
+          return true;
+        }
+        const queued = item.jobCreatedMs;
+        const nextEmail = Math.min(...large.filter((other) => other !== item && other.emailedMs !== null && other.emailedMs >= queued).map((other) => other.emailedMs ?? Number.POSITIVE_INFINITY));
+        return item.jobStartedMs >= nextEmail;
+      });
+      if (waited.length > 0) {
+        reasons.push(`slots not used: ${scenario.id}'s first ${String(atOnce)} large uploads were not priced at once (${String(slots)} declared; ${waited.map((item) => item.id).join(', ')} waited)`);
       }
     }
     if (scenario.platformPricedRuns > 0) {
