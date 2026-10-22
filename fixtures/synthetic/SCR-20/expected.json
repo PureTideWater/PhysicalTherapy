@@ -2,14 +2,15 @@
   "case": "SCR-20",
   "module": "SCR",
   "title": "Production's screening opens only for the deployed tag's passing capacity report (decision 13)",
-  "assertion": "The launch check prints a launch value only for the tag's report from the Docker runtime that passes with time enforced, as recorded and as read again, measured at the tag's commit, on both image IDs as deployed and on the consumer production declares; anything else names its reason and the deploy passes closed; the web keeps production closed unless the value names the image tag it runs, so a value kept by omission closes it; staging and development are not gated",
+  "assertion": "The launch check prints a launch value only for the tag's report from the Docker runtime that passes with time enforced, as recorded and as read again, measured at the tag's commit, on both image IDs as deployed (the ECR copies pulled back) and on the consumer production declares; anything else names its reason and the deploy passes closed; the consumer runs whenever a launch value is passed, so no deploy opens the screening without it; the web keeps production closed unless the value names the image tag it runs, so a value kept by omission closes it; staging and development are not gated",
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": [
     "tools/screening-capacity/launch-check.test.ts",
     "tools/screening-capacity/report.test.ts",
     "apps/web/src/lib/screening/routes.db.test.ts",
-    "infra/test/deploy-parameters.test.ts"
+    "infra/test/deploy-parameters.test.ts",
+    "infra/test/compute.test.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "The launch check reads synthetic capacity reports built in memory; no file.",

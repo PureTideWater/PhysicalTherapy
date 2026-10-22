@@ -211,13 +211,19 @@ the role.
   count, with no Application Auto Scaling target (asserted in `infra/test/compute.test.ts`). Three at once replaces audit
   #53's "two at a time": two measured 55.8 s against the 48-second line.
 - **When it runs** (`starts`): staging and development run it once released (`countOnceReleased`); production runs no
-  task until the `ScreeningConsumer` parameter is `running` (condition `ScreeningConsumerRunning`: released and
-  running), passed on the first launch deploy (Q1 (b)). Its heartbeat alarm counts a missing beat as missed only under
-  that condition, so it is OK while the consumer is rightly held and alarms if it does not beat once launched.
+  task until the `ScreeningConsumer` parameter is `running` or a deploy passes a launch value (condition
+  `ScreeningConsumerRunning`: released, and either running or `ScreeningLaunch` not `closed`; Q1 (b)), so no deploy can
+  open the screening with no consumer to price it (the review of 2026-10-22: a launch value with `ScreeningConsumer`
+  left at `held`, or reset to it by a rollback across PR 6b-3, would have opened the form with nothing pricing and no
+  alarm). Its heartbeat alarm counts a missing beat as missed only under that condition, so it is OK while the consumer
+  is rightly held and alarms if it does not beat whenever the screening can open.
 - **Heap** (#31's explicit limit; the plan's G3): the container runs `node --enable-source-maps
-  --max-old-space-size=512 dist/main.js` (`COMMANDS.screening`), each thread runs under a 1,024 MiB old-generation
-  limit (`apps/worker/src/screening/threads.ts`), and 3 x 1,024 + 512 = 3,584 MiB stays under 90% of 4,096
-  (`infra/test/screening.test.ts` reads the worker's own constants), so a thread out of memory fails alone.
+  --max-old-space-size=896 dist/main.js` (`COMMANDS.screening`), and the main thread and each pricing thread hold at
+  most 896 MiB of old generation (`apps/worker/src/screening/threads.ts`): Node gives a worker thread its process's
+  `--max-old-space-size` whatever its `resourceLimits` ask (measured on Node 24: a thread asking 1,024 MiB under a flag
+  of 512 got 512), so one limit serves every isolate, and the design's 512 for the main thread with 1,024 for each
+  thread could not hold. 4 x 896 = 3,584 MiB stays under 90% of 4,096 (`infra/test/screening.test.ts` reads the
+  worker's own constants), so a thread out of memory fails alone.
 - **Settings**: the common ones, `WORKER_JOBS=screening`, `WORKER_HEARTBEAT_SECONDS=60`, `SCREENING_CONCURRENCY`,
   `MAIL_FROM`, `APP_ORIGIN` and `STATIC_ASSET_ORIGIN`; `SCREENING_DATABASE_URL` (its own login) and `QUEUE_DATABASE_URL`
   (pg-boss's, role `tp_queue`). Stop timeout 120 seconds, Fargate's most: the consumer drains up to 110 and exits at 115.
@@ -251,8 +257,13 @@ the role.
 **Two parameters** (`deploy-parameters.ts`): `ScreeningLaunch`, default `closed`, pattern
 `^(closed|v[0-9A-Za-z.-]{1,60}:[0-9a-f]{64})$`: the launch check's value, the tag and the SHA-256 of its passing capacity
 report. A production web opens the screening only when it names the `IMAGE_TAG` it runs, so a value CloudFormation keeps
-from an earlier deploy closes the screening rather than vouching for a new image (decision 13); closing never stops the
-consumer. `ScreeningConsumer`, `held` (the default) or `running`, counts only where the consumer starts at launch.
+from an earlier deploy closes the screening rather than vouching for a new image (decision 13). A launch value starts the
+consumer, and closing stops it only while `ScreeningConsumer` is still `held` (from launch on, every deploy passes
+`running`). `ScreeningConsumer`, `held` (the default) or `running`, counts only where the
+consumer starts at launch. The stack checks the launch value's form and the web its tag; neither can tell a value the
+launch check printed from one typed by hand, so the check the deployer runs on the ECR copies of both images
+(docs/runbooks/deploy-and-rollback.md, step 3) is the gate, and the deployer, who holds production's credentials, is
+trusted with it.
 
 **The release's images** (`.github/workflows/release.yml`; decision 13 bound to both images). The release builds the
 worker image and the web image three times (`web` with no static host, `web-staging` and `web-production` with each

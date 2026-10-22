@@ -11,9 +11,8 @@ no credential is used.
 ## What the job does
 
 0. On a pull request, the `changes` job reads the changed file names (no install, no repository code) and measures
-   only when one is watched: the push list less `pnpm-lock.yaml` and the migrations whose name lacks `screening`,
-   which the push to the build branch measures after they merge. The `screening-capacity gate` job then passes at once
-   when nothing watched changed, and otherwise only when the measurement passed.
+   only when one is watched (see "What the gate watches"). The `screening-capacity gate` job then passes at once when
+   nothing watched changed, and otherwise only when the measurement passed.
 1. Builds both production images from their Dockerfiles and runs `pnpm screening:capacity`
    (`tools/screening-capacity/run.ts`) with the harness and Chromium on Postgres's CPUs, as
    `pnpm -s screening:capacity --print-harness-cpus` gives them (0-1 on a 4-CPU runner).
@@ -34,7 +33,7 @@ no credential is used.
    specialist.
 4. Starts web, platform (`WORKER_JOBS=platform`, which prices no screening since PR 6b-3) and the consumer
    (`screening-1`: the worker image with `WORKER_JOBS=screening`, `SCREENING_CONCURRENCY=3`, the screening and queue
-   logins only, and production's command with its 512 MiB main-thread heap), waits for each worker's start line, and
+   logins only, and production's command with its 896 MiB heap), waits for each worker's start line, and
    reads every limit back (docker inspect, io.max, the median of 50 `SELECT 1` round trips from a client container, at
    least 2 ms).
 5. Runs five scenarios: S1 the worst shape alone with a small upload behind it, S2 the practice shape alone (fresh
@@ -74,7 +73,9 @@ no credential is used.
   kills and CPU throttling.
 - A line headed "Sizing question for the founder" appears when the worst time is above 44 s (within 8% of the 48-s
   line): the run still passes, and the builders take it to the founder before merge as a question of the consumer's
-  size (open item O9), never as a tuning or a wider limit.
+  size (open item O9), never as a tuning or a wider limit. It also shows on the pull request's checks: the harness
+  posts a warning annotation ("Sizing question (O9)", naming the upload and its time), and the capacity job passes it
+  to the gate, which prints it beside its pass.
 - `screening-capacity.json` adds the runner, the limits applied beside production's, the departures and which way each
   moves the result, the release's manifest hash, the shapes' counts, the jobs that ran by queue and the oracle's
   hashes. It holds no row, link or token.
@@ -98,8 +99,9 @@ no credential is used.
    run the declared consumer as production will.
 3. `OOM kill`, `restart or exit`, `memory above 90%`: the screening does not fit its task. This is a defect of the
    screening or of the consumer's size: reproduce with the same shape (`--scenarios S1`), read the phases' record
-   counts, and fix before merging. The consumer's main thread has a 512 MiB heap and each of its three pricing threads
-   1,024 MiB, under 90% of its 4 GiB together; a thread out of memory logs `screening thread failed` with
+   counts, and fix before merging. The consumer's main thread and each of its three pricing threads hold at most
+   896 MiB of heap (Node gives every thread the process's `--max-old-space-size`), 3,584 MiB together, under 90% of its
+   4 GiB; a thread out of memory logs `screening thread failed` with
    `SCREENING_THREAD_OUT_OF_MEMORY` and is replaced (`screening thread replaced`), its run claimed again. `restart or
    exit` with "JavaScript heap out of memory" in web's or platform's log (the artifact's `logs/`) is Node's heap limit,
    which it sets from the task's memory (about half of 512 MiB), reached before the cgroup's: no OOM kill is counted. A
@@ -110,7 +112,11 @@ no credential is used.
    `result's last page of groups did not open`, `queue order`, `submission time not captured`: the result is wrong or
    unfinished, or the scenario did not have its shape. Read the consumer's log in the artifact (`screening-1`; IDs and
    codes only) for the run's `error_code`; `RELEASE_READ_OUTSIDE_FETCH` means a lookup outside the keys the run
-   fetched, a defect of the key set or the engine's reads (ADR 0062, The release read). A result page that does
+   fetched, a defect of the key set or the engine's reads (ADR 0062, The release read). `stalled` on the first scenario
+   after the load, with the consumer's log silent, is the keyed read planned as a hash join of the whole release: the
+   release loader analyzes and freezes `rule_record` once a load commits and `operator_screening_run_keys()` is
+   estimated at one row, so it should not recur; check that the load step's log ends with the loader's result, and
+   read the plan with `auto_explain` (`log_nested_statements`) on the kept database. A result page that does
    not open while web's log says "JavaScript heap out of memory" is the page holding more than its one page of groups:
    run `apps/web/src/lib/screening/result-page.large.db.test.ts`, which renders the worst shape under a 512 MiB heap
    (ADR 0062, The result page holds one page of groups).
@@ -155,10 +161,27 @@ check sound; the founder sets the rule:
 
 Why it is sound: every pull request runs the workflow (no path filter on the trigger), so the gate is always reported;
 the gate fails when the changed paths cannot be read, and when a watched change's measurement failed, timed out or was
-cancelled; it does not run when the whole run is cancelled by a newer push, whose own run reports for the new commit.
+cancelled. It runs whatever happened before it (`if: always()`), a cancelled run included: GitHub counts a job its own
+condition skipped as passing a required check, so a gate that did not run after a cancel would have let a pull request
+merge with no measurement. A run cancelled by a newer push fails its gate on the old commit, which no longer gates the
+pull request; the new commit's own run reports.
 Once the repository is private, its standard runner has 2 vCPU and every measurement stops as "runner too small" until
 the founder creates the 4-core larger runner and its label replaces `ubuntu-24.04` in this workflow's `capacity` job and
 in the release's capacity job (Q1 (d), open item O14).
+
+### What the gate watches
+
+`tools/screening-capacity/watched-paths.txt`, derived by `tools/screening-capacity/watched.ts` and never edited by hand:
+every file the measured images and the harness run, so no change on the screening's path merges with a green gate and
+no measurement. It is the import closure of the entry points (the worker bundle's `main.ts` and its pricing thread, the
+migration and login tasks, the web's screening pages, actions and routes with the proxy, the root layout and error
+pages, and the harness), each relative import and each workspace package's export followed to its file, and the files
+no import reaches that still change what is measured: the Dockerfiles, the web's Next config, the packages' manifests,
+the lockfile, the migrations, the settings the harness reads, the fixture release and the workflow. After a change
+that adds an import on that path, regenerate it (`pnpm exec tsx tools/screening-capacity/watched.ts --write`) and commit
+it: a unit test fails while the committed list differs from what the code derives. The `changes` job reads the list
+from the pull request's base and its head as data (it runs no repository code) and measures when a changed file
+matches a line of either; a line is a path, or a pattern whose `*` also matches across `/`.
 
 ## The launch check (decision 13)
 
@@ -168,18 +191,23 @@ and keeps the report as an asset of the tag's GitHub release. Before a deploy th
 
 ```
 gh release download <tag> --pattern screening-capacity.json
-docker pull <web-production:tag> && docker pull <worker:tag>
+docker image rm <WebRepositoryUri>:<tag> <WorkerRepositoryUri>:<tag>
+docker pull <WebRepositoryUri>:<tag> && docker pull <WorkerRepositoryUri>:<tag>
 pnpm exec tsx tools/screening-capacity/launch-check.ts --report screening-capacity.json --tag <tag> \
-  --web-image <web-production:tag> --worker-image <worker:tag>
+  --web-image <WebRepositoryUri>:<tag> --worker-image <WorkerRepositoryUri>:<tag>
 ```
+
+The images are the copies the deploy's step 2 pushed to ECR, pulled back from ECR, so the IDs checked are those ECS
+runs (docs/runbooks/deploy-and-rollback.md, step 3).
 
 It prints `ScreeningLaunch=<tag>:<the report's SHA-256>` for the deploy's `ScreeningLaunch` parameter, or each reason
 and a non-zero exit, and then the deploy passes `ScreeningLaunch=closed`. It checks the report's format, the Docker
 runtime, a pass with time enforced as recorded and as the checkout's own `verdict()` reads the measurements again, the
-tag's commit, both image IDs against the images pulled (`docker image inspect -f {{.Id}}`), and the consumer measured
-against `compute.screening` for production. A note of the founder's sizing question (a worst time above 44 s) does not
-stop it: the merge settles that question. The web keeps production closed unless `SCREENING_LAUNCH` names the tag it
-runs, so a value a later deploy keeps by omission closes the screening rather than vouching for another image.
+tag's commit, both image IDs against the images pulled back from ECR (`docker image inspect -f {{.Id}}`), and the
+consumer measured against `compute.screening` for production. A note of the founder's sizing question (a worst time
+above 44 s) does not stop it: the merge settles that question. The web keeps production closed unless `SCREENING_LAUNCH`
+names the tag it runs, so a value a later deploy keeps by omission closes the screening rather than vouching for another
+image.
 
 ## Running it elsewhere
 
@@ -188,8 +216,10 @@ runs, so a value a later deploy keeps by omission closes the screening rather th
   (add `--static-asset-origin https://<host>` for a web image built with `STATIC_ASSET_ORIGIN`).
 - Without Docker (a developer machine, cgroups under root): build the worker (`pnpm --filter @tp/worker build`) and the
   web app (`pnpm --filter @tp/web build`, then the static files and `public` beside the standalone server as
-  `apps/web/scripts/start-standalone.sh` does), lay them out as the images do (a directory with `worker`, holding `dist`
-  and `migrations`, and `web`, the standalone server), and run
+  `apps/web/scripts/start-standalone.sh` does), lay them out as the images do (a directory with `worker`, holding
+  `dist`, `migrations` and `node_modules/playwright-core` at the version `apps/worker/package.json` pins, which the
+  worker image installs beside its bundle: `npm install --no-save playwright-core@1.56.1` in `worker`; and `web`, the
+  standalone server), and run
   `pnpm screening:capacity --runtime process --images <dir> --admin-url <superuser URL> --database tp_capacity --out <dir>`.
   Pin the harness as the workflow does (`taskset -c "$(pnpm -s screening:capacity --print-harness-cpus)"`). The web,
   platform and consumer processes run in cgroups at production's limits, each exec'd under `taskset -c` with its own
@@ -199,4 +229,7 @@ runs, so a value a later deploy keeps by omission closes the screening rather th
   the run's six logins (the migration task's: the web's, the worker's, the operator's, the queue's, billing's and the
   screening consumer's) carry a suffix of its own and are dropped with its database (kept, and named, with
   `--keep-database`); while it runs, a test on the same server that lists a role's members (the billing test does)
-  sees them, so run it on a server no test suite is using.
+  sees them, so run it on a server no test suite is using. A layout that lacks what the images hold (the worker's
+  bundles, its migrations, `playwright-core` at the pinned version, the web's server) stops the run before anything
+  starts, as `PROCESS_IMAGES_INCOMPLETE`, each missing path named; without `playwright-core` every worker process would
+  stop as it loads its bundle and the run as `PLATFORM_NOT_READY`, which says nothing of why.
