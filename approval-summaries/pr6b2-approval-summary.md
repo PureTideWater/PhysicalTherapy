@@ -1,6 +1,6 @@
 ## PR 6b-2: what you are asked to approve
 
-**New domain model SHA-256: `495398f72551e4c4f8ad2c3a01ba8702427f2ebdd790e8b7db7cb2aef2c7b37e`.** It replaces `c3065bf9…`, which no longer matches the schema. Your approving GitHub review of head `98a5e49` (PR #36) is the approval of record. The approval line is yours to commit; the build never writes it.
+**New domain model SHA-256: `5614d0b0222c468d8814acf23312914f6dfbae5efb22614e34c26047bd7a5cac`.** It replaces `c3065bf9…`, which no longer matches the schema. Your approving GitHub review of head `98a5e49` (PR #36) is the approval of record. The approval line is yours to commit; the build never writes it.
 
 ### What 6b-2 changes
 - **For a practice:** each practice has one pricing location: its billing ZIP, plus the ZIP+4 where Medicare needs one. It is set at creation in the console and edited in Settings > Pricing settings.
@@ -57,3 +57,15 @@
    - The production-size keyed-read time comes from CI.
    - Other routes still queue jobs before their save commits.
    - The data dictionary is unchanged under your D2 (a) ruling.
+
+**Verification follow-up (2026-10-22, head `550c4f1`).** A fresh-clone check of `98a5e49` passed and found two minor issues. Both are now fixed.
+
+1. **A confirmation could land on a ZIP the person never saw.** If the platform changed a practice's billing ZIP while the practice administrator's Pricing settings page was open, or while their click was waiting to be saved, the click confirmed the new ZIP. Getting started then showed the step as done.
+   - The confirm button now sends the exact ZIP and ZIP+4 the page showed.
+   - The database confirms only if the stored location still matches, and it checks this with the row locked (`practice_confirm_location(practice, shown_zip, shown_zip_plus_four)`, refusal `practice_site_changed`). Every existing access check is unchanged.
+   - When the ZIP has changed, nothing is confirmed or recorded in the audit log. The page reloads with the current ZIP and one new sentence for you and then counsel (Q12): "The billing ZIP changed since this page loaded. Review it, then confirm."
+2. **ADR 0064 described the location table without its confirmation columns.** The paragraph now matches the code.
+
+This needed one more edit to the unmerged migration. It was made under your 2026-10-22 marker permission for that file only, and the marker was removed before any test, commit or push. Pricing, amounts and access are unaffected.
+
+Because the schema changed, the domain model has a new hash. Please approve `docs/product/domain-model.md` at SHA-256 `5614d0b0222c468d8814acf23312914f6dfbae5efb22614e34c26047bd7a5cac` ("Approved by:" is line 6792). It replaces `495398f7…`, which no longer describes the schema.
