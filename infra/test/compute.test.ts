@@ -7,7 +7,7 @@ import { SKIP_MIGRATIONS_CONTEXT } from '../lib/app';
 import { COMMANDS, LOGIN_SECRET_VARIABLES, SCREENING_STOP_TIMEOUT, WORKER_JOBS, WORKER_STOP_TIMEOUT } from '../lib/constructs/compute';
 import { WEB_PORT } from '../lib/constructs/edge';
 import { MIGRATION_POLL_INTERVAL, MIGRATION_RUN_TYPE, MIGRATION_TIMEOUT } from '../lib/constructs/migration-run';
-import { PARAMETER_NAMES } from '../lib/deploy-parameters';
+import { PARAMETER_NAMES, SCREENING_CLOSED } from '../lib/deploy-parameters';
 import { ENVIRONMENTS, type EnvironmentName, environmentSettings } from '../lib/environments';
 import { HEARTBEAT_INTERVAL_SECONDS } from '../lib/heartbeat';
 import { RDS_CA_BUNDLE_PATH, launchScript } from '../lib/launch';
@@ -150,6 +150,14 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       expect(propertiesOf(services[name]).DesiredCount, name).toEqual({ 'Fn::If': ['Released', settings.compute[name].desiredCount, 0] });
     }
     expect(settings.compute.web.desiredCount).toBe(environment === 'production' ? 2 : 1);
+  });
+
+  it('sizes the web task at half a vCPU and 1,024 MiB, as the founder ruled on the sizing question (O9, 2026-10-22), with no heap flag of its own', () => {
+    expect(settings.compute.web).toEqual({ cpu: 512, memoryMiB: 1024, desiredCount: environment === 'production' ? 2 : 1 });
+    expect(propertiesOf(tasks.web[1])).toMatchObject({ Cpu: '512', Memory: '1024', RuntimePlatform: { CpuArchitecture: 'X86_64', OperatingSystemFamily: 'LINUX' } });
+    // Node sizes V8's heap from the container's memory limit, so the heap follows the task's size (environments.ts).
+    expect(COMMANDS.web.some((word) => word.startsWith('--max-old-space-size'))).toBe(false);
+    expect(definitions.web.Environment?.some((entry) => entry.Name === 'NODE_OPTIONS')).toBe(false);
   });
 
   it('sizes the screening consumer as the founder ruled (Q1 (a)): one task of 2 vCPU and 4,096 MiB, three screenings at once', () => {
@@ -349,9 +357,10 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       TP_ENVIRONMENT: environment,
       MODEL_PROVIDER: 'bedrock',
       STATIC_ASSET_ORIGIN: { 'Fn::Join': ['', ['https://', ref(PARAMETER_NAMES.staticDomainName)]] },
-      // Decision 13: a production web opens the screening only for the launch value of the tag it runs.
+      // Decision 13: a production web opens the screening only for the launch value of the tag it runs, which the CDK
+      // app computes at synthesis from the release's capacity report; with no report, closed (deploy-parameters.test.ts).
       IMAGE_TAG: ref(PARAMETER_NAMES.imageTag),
-      SCREENING_LAUNCH: ref(PARAMETER_NAMES.screeningLaunch),
+      SCREENING_LAUNCH: SCREENING_CLOSED,
       // The "sent" page counts every slot busy at one task of three (Q12).
       SCREENING_SLOTS: '3',
     });

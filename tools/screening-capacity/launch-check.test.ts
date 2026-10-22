@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { environmentSettings } from '../../infra/lib/environments';
 import * as deployParameters from '../../infra/lib/deploy-parameters';
 import { type LaunchInput, RELEASE_TAG, launchCheck, reportSha256 } from './launch-check';
+import { MIB } from './limits';
 import { type Measurements, report } from './report';
-import { ENFORCED, OPEN, measured, scenario, upload, withS1, withoutConsumer } from './test-support/measurements';
+import { ENFORCED, OPEN, applied, expected, measured, scenario, upload, withS1, withoutConsumer } from './test-support/measurements';
 
 /**
  * Decision 13's launch check (docs/adr/0062; the design's §5.4; test matrix SCR-20), on synthetic reports: production's
@@ -37,7 +38,7 @@ describe('the launch check', () => {
     const text = kept();
     const result = launchCheck(input({ reportText: text }));
     expect(result).toEqual({ ok: true, value: `${TAG}:${reportSha256(text)}`, notes: [] });
-    // The value the deploy passes is one the ScreeningLaunch parameter accepts (infra/lib/deploy-parameters.ts).
+    // The value the CDK app sets is one the stack and the web accept (infra/lib/deploy-parameters.ts).
     const pattern = (deployParameters as Readonly<Record<string, unknown>>).SCREENING_LAUNCH_PATTERN;
     expect(typeof pattern).toBe('string');
     expect(result.ok && new RegExp(String(pattern)).test(result.value)).toBe(true);
@@ -84,6 +85,14 @@ describe('the launch check', () => {
     const result = reasons({ reportText: kept(smaller) });
     expect(result).toContain('consumer: the report measured 1 × 1 vCPU, 2048 MiB, 2 at once, and production declares 1 × 2 vCPU, 4096 MiB, 3 at once');
     expect(reasons({ settings: withoutConsumer() })).toContain('consumer: environments.ts declares no screening consumer for production');
+  });
+
+  it('fails a report that measured the web at another size than production declares (a report from before the founder’s ruling of 2026-10-22)', () => {
+    const quarter = applied({
+      containers: applied().containers.map((item) => (item.name === 'web' ? { ...item, nanoCpus: 250_000_000, memoryBytes: 512 * MIB, memorySwapBytes: 512 * MIB } : item)),
+    });
+    const older = measured({ expected: { ...expected, web: { cpus: 0.25, memoryMiB: 512 } }, applied: quarter });
+    expect(reasons({ reportText: kept(older) })).toEqual(['web: the report measured 0.25 vCPU and 512 MiB, and production declares 0.5 vCPU and 1024 MiB']);
   });
 
   it('fails a process-runtime report, whose Postgres was not limited', () => {

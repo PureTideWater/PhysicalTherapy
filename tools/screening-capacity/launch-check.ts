@@ -1,38 +1,48 @@
-import { execFile } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseArgs, promisify } from 'node:util';
+import { parseArgs } from 'node:util';
 
 import { type EnvironmentSettings, environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
-import { RUNNER_TO_FARGATE, screeningConsumer } from './limits';
+import { RUNNER_TO_FARGATE, screeningConsumer, taskLimit } from './limits';
 import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
 
 /**
- * Decision 13's launch check (the founder's rulings of 2026-10-20; docs/adr/0062; the design's §5.4; test matrix SCR-20):
- * production's screening opens only when the latest capacity report for the image being deployed passes with time
- * enforced, on both image IDs. The release workflow keeps each tag's report as an asset of its GitHub release; the
- * deployer copies the tag's web-production and worker images to the environment's ECR repositories, pulls those copies
- * back from ECR (the images ECS runs; docs/runbooks/deploy-and-rollback.md, step 3) and runs
+ * Decision 13's launch check (the founder's rulings of 2026-10-20 and 2026-10-22; docs/adr/0062; the design's §5.4; test
+ * matrix SCR-20): production's screening opens only when the latest capacity report for the image being deployed passes
+ * with time enforced, on both image IDs. The release workflow keeps each tag's report as an asset of its GitHub release;
+ * the deployer copies the tag's web-production and worker images to the environment's ECR repositories and deploys
+ * production with that report (docs/runbooks/deploy-and-rollback.md, steps 3 and 4):
+ *
+ *   cdk deploy tp-production -c tp:launchReport=<screening-capacity.json> -c tp:launchTag=<tag> --parameters ImageTag=<tag>
+ *
+ * The CDK app runs this check at synthesis (infra/lib/screening-launch.ts) on the images the stack deploys,
+ * `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>`, each pulled from ECR first (registryImageId), and sets the
+ * web's SCREENING_LAUNCH to `<tag>:<the report's SHA-256>` itself; a refused report stops the synthesis with each reason,
+ * and no report keeps the screening closed. No deploy takes the value as a parameter (the founder's ruling of
+ * 2026-10-22), so nothing typed by hand can open the screening. Run on its own,
  *
  *   pnpm exec tsx tools/screening-capacity/launch-check.ts --report <screening-capacity.json> --tag <tag> \
  *     --web-image <WebRepositoryUri>:<tag> --worker-image <WorkerRepositoryUri>:<tag>
  *
- * which prints `ScreeningLaunch=<tag>:<the report's SHA-256>` for the deploy's ScreeningLaunch parameter, or names each
- * reason and exits non-zero (the deploy then passes `closed`). It holds the report to:
+ * previews the same check: it prints the value the deploy will compute, or names each reason and exits non-zero. It
+ * holds the report to:
  *
  * - its format (tp-screening-capacity/4), the Docker runtime (the process runtime cannot limit Postgres), a passing
  *   verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again;
  * - the tag's commit;
- * - both images: the IDs the deployer pulled back from ECR equal the IDs measured (`docker image inspect -f {{.Id}}`),
+ * - both images: the IDs pulled from ECR equal the IDs measured (`docker image inspect -f {{.Id}}` after `docker pull`),
  *   so the web image measured, built with production's static origin, is the one deployed, and the worker image too;
- * - the consumer measured equal to environments.ts's compute.screening for production: its tasks, vCPUs, memory and
+ * - the web and platform measured at environments.ts's sizes for production (the web's half vCPU and 1,024 MiB since
+ *   the founder's ruling of 2026-10-22), and the consumer at its compute.screening: its tasks, vCPUs, memory and
  *   concurrency.
  *
  * The SHA-256 is of the report's bytes as kept, so the value names that one report. The web enforces the rest: it opens
- * production's screening only when SCREENING_LAUNCH is `${IMAGE_TAG}:<64 hex>` for the tag it runs, so a value a later
- * deploy keeps by omission closes the screening instead of vouching for another image. No row, address or token is read.
+ * production's screening only when SCREENING_LAUNCH is `${IMAGE_TAG}:<64 hex>` for the tag it runs, so a deploy of
+ * another tag without its own report closes the screening instead of vouching for another image. No row, address or
+ * token is read.
  */
 
 /** A release tag as the ScreeningLaunch parameter takes it (infra/lib/deploy-parameters.ts, SCREENING_LAUNCH_PATTERN). */
@@ -115,6 +125,13 @@ function check(input: LaunchInput): LaunchResult {
       reasons.push(`${image} image: the report measured ${String(measured)}, and the image being deployed is ${deployed}`);
     }
   }
+  for (const task of ['web', 'platform'] as const) {
+    const measured = parsed.expected[task];
+    const declaredTask = taskLimit(input.settings.compute[task]);
+    if (measured.cpus !== declaredTask.cpus || measured.memoryMiB !== declaredTask.memoryMiB) {
+      reasons.push(`${task}: the report measured ${String(measured.cpus)} vCPU and ${String(measured.memoryMiB)} MiB, and production declares ${String(declaredTask.cpus)} vCPU and ${String(declaredTask.memoryMiB)} MiB`);
+    }
+  }
   const declared = screeningConsumer(input.settings);
   const consumer = parsed.consumer;
   if (declared === null) {
@@ -131,15 +148,38 @@ function check(input: LaunchInput): LaunchResult {
   return { ok: true, value: `${input.tag}:${reportSha256(input.reportText)}`, notes };
 }
 
-const exec = promisify(execFile);
-
-/** An image's ID as Docker gives it, or the reason it could not be read. */
-async function imageId(reference: string): Promise<string> {
-  const { stdout } = await exec('docker', ['image', 'inspect', '-f', '{{.Id}}', reference]).catch(() => ({ stdout: `not found: ${reference}` }));
-  return stdout.trim();
+/**
+ * The ID of the image a registry reference names, as Docker gives it, or why it could not be read (which the check then
+ * refuses as no image ID). The image is pulled first: a pull resolves the tag against the registry and points the local
+ * tag at what the registry holds, so the ID read is that of the copy in ECR (whose tags are immutable), the image ECS
+ * runs, never a copy already on this machine under the same name.
+ */
+export function registryImageId(reference: string): string {
+  try {
+    execFileSync('docker', ['pull', '--quiet', reference], { stdio: ['ignore', 'ignore', 'ignore'] });
+  } catch {
+    return `not pulled from its registry: ${reference} (docker login to it first)`;
+  }
+  try {
+    return execFileSync('docker', ['image', 'inspect', '-f', '{{.Id}}', reference], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return `not found: ${reference}`;
+  }
 }
 
-async function main(argv: readonly string[]): Promise<number> {
+/** The commit a release tag names in this checkout (`git rev-list -n 1`), or why it could not be read. */
+export function tagCommitOf(tag: string): string {
+  if (!RELEASE_TAG.test(tag)) {
+    return '';
+  }
+  try {
+    return execFileSync('git', ['rev-list', '-n', '1', `refs/tags/${tag}`], { cwd: repositoryRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return `no tag ${tag} in this checkout (git fetch --tags)`;
+  }
+}
+
+function main(argv: readonly string[]): number {
   const { values } = parseArgs({
     args: [...argv],
     options: { report: { type: 'string' }, tag: { type: 'string' }, 'web-image': { type: 'string' }, 'worker-image': { type: 'string' } },
@@ -150,27 +190,25 @@ async function main(argv: readonly string[]): Promise<number> {
     return 2;
   }
   const tag = values.tag;
-  const tagCommit = RELEASE_TAG.test(tag)
-    ? (await exec('git', ['rev-list', '-n', '1', `refs/tags/${tag}`], { cwd: repositoryRoot }).catch(() => ({ stdout: `no tag ${tag} in this checkout (git fetch --tags)` }))).stdout.trim()
-    : '';
   const result = launchCheck({
     reportText: readFileSync(path.resolve(values.report), 'utf8'),
     tag,
-    tagCommit,
-    images: { web: await imageId(values['web-image']), worker: await imageId(values['worker-image']) },
+    tagCommit: tagCommitOf(tag),
+    images: { web: registryImageId(values['web-image']), worker: registryImageId(values['worker-image']) },
     settings: environmentSettings('production'),
   });
   if (!result.ok) {
-    process.stderr.write(`launch check failed; deploy with ScreeningLaunch=closed:\n${result.reasons.map((reason) => `- ${reason}`).join('\n')}\n`);
+    process.stderr.write(`launch check failed; the deploy would refuse this report (deploy without it to keep the screening closed):\n${result.reasons.map((reason) => `- ${reason}`).join('\n')}\n`);
     return 1;
   }
   for (const note of result.notes) {
     process.stderr.write(`note: ${note}\n`);
   }
+  // A preview: the CDK app computes this value itself from the same report and images (infra/lib/screening-launch.ts).
   process.stdout.write(`ScreeningLaunch=${result.value}\n`);
   return 0;
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  process.exitCode = await main(process.argv.slice(2));
+  process.exitCode = main(process.argv.slice(2));
 }

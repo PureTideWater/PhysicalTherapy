@@ -5,8 +5,9 @@ name: release
 # release) and describe it by a software bill of materials (SPDX JSON, kept with the run), measure the screening's
 # capacity with time enforced on exactly the production web image and the worker image that were built, then push exactly
 # the images that were built and scanned, never a rebuild. The capacity report, its SHA-256 and its summary are kept as
-# assets of the tag's GitHub release (release assets do not expire), where the launch check reads them
-# (tools/screening-capacity/launch-check.ts) before production's screening may open.
+# assets of the tag's GitHub release (release assets do not expire), where production's deploy reads the report: the
+# CDK app runs the launch check on it at synthesis (infra/lib/screening-launch.ts, tools/screening-capacity/launch-check.ts)
+# and opens production's screening only for a pass on the images the stack deploys.
 #
 # The web image is built three times, each with its own static host (Next writes the asset prefix into the build;
 # docs/adr/0055): `web` with none (its assets load from the application host), and `web-staging` and `web-production`

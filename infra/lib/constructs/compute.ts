@@ -238,7 +238,8 @@ export class Compute extends Construct {
         // The static host the image's assets load from (its assetPrefix, apps/web/Dockerfile), for the CSP.
         STATIC_ASSET_ORIGIN: staticAssetOrigin,
         // Decision 13: a production web opens the screening only when SCREENING_LAUNCH names this release's tag and
-        // its passing capacity report (apps/web/src/lib/screening/routes.ts, screeningLaunched).
+        // its passing capacity report (apps/web/src/lib/screening/routes.ts, screeningLaunched), a value the CDK app
+        // computes at synthesis from that report and the ECR images (infra/lib/screening-launch.ts), never a parameter.
         IMAGE_TAG: parameters.imageTag,
         SCREENING_LAUNCH: parameters.screeningLaunch,
         // Screenings priced at once across the consumer: more queued and pricing than this, and the "sent" page says

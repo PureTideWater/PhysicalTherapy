@@ -31,6 +31,11 @@ export interface PlatformStackProps extends StackProps {
    * refuse the newer history. Every other deploy runs the migration task first.
    */
   readonly runMigrations?: boolean;
+  /**
+   * The screening's launch value the CDK app computed from the release's capacity report (screening-launch.ts; decision
+   * 13): `<tag>:<SHA-256>` for production when a report passed, `closed` otherwise and by default.
+   */
+  readonly screeningLaunch?: string;
 }
 
 /**
@@ -70,7 +75,7 @@ export class PlatformStack extends Stack {
     Tags.of(this).add('environment', props.environmentName);
 
     const environmentName = this.environmentName;
-    this.parameters = new DeployParameters(this, 'Parameters');
+    this.parameters = new DeployParameters(this, 'Parameters', props.screeningLaunch === undefined ? {} : { screeningLaunch: props.screeningLaunch });
     const parameters = this.parameters;
     this.key = new EnvironmentKey(this, 'EnvironmentKey', { environmentName });
     const key = this.key.key;
@@ -213,6 +218,8 @@ export class PlatformStack extends Stack {
       StaticAssetsDistributionDomain: this.edge.distribution.distributionDomainName,
       AppOrigin: this.parameters.appOrigin,
       StaticAssetsOrigin: `https://${this.parameters.staticDomainName}`,
+      // The launch value this template carries: `closed`, or the tag and its capacity report's SHA-256 (decision 13).
+      ScreeningLaunch: this.parameters.screeningLaunch,
     };
     if (this.pullRequestDiff !== undefined) {
       values.PullRequestDiffRoleArn = this.pullRequestDiff.role.roleArn;
