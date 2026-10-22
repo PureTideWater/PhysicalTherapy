@@ -57,7 +57,7 @@ import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, t
  *  5. start web and platform and wait for the health route and the worker's start line; read the limits back;
  *  6. run S1 to S5: S1, S4 and S5 first stop web and platform, restart Postgres with the page cache dropped (recorded)
  *     and start both again; a fresh platform where a scenario says; each upload's page parses its file first (not
- *     timed), then the uploads are submitted (three at once in S4 and S5, and the small one once the three runs exist);
+ *     timed), then the uploads are submitted (three at once in S4 and S5, and the small one once the large runs' jobs are queued);
  *     memory sampled every 500 ms, the outbox polled every 250 ms, a run in pricing that records no batch for five
  *     minutes, or a run still queued while nothing in its scenario moved for five minutes, called stalled, a 30-minute
  *     cap; then the cgroups' peaks, events and throttling, Postgres's OOM kills and restarts, the phase lines, each
@@ -449,21 +449,23 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
   await Promise.all(large.map(click));
   const largeSent = Promise.allSettled(large.map(sentPage));
   if (behind.length > 0) {
-    // The small upload is sent once the large ones' runs exist, so its run is queued behind theirs: a run is queued
-    // only when the web has taken its upload in, and 25 rows are taken in long before 50,000.
-    const waitUntilRuns = Date.now();
+    // The small upload is sent once the large ones' pricing jobs are in pg-boss, so its job is queued behind theirs.
+    // A run's row is not enough: the web sends a run's job only after its transaction commits, and on a quarter-CPU
+    // web a small upload taken in after the large runs exist could still be queued before a large one's job.
+    const waitUntilQueued = Date.now();
     while (Date.now() < capUntil) {
       const client = await owner.client();
-      let found = 0;
+      let queued = 0;
       for (const entry of large) {
-        found += (await runFacts(client, entry.upload.contactEmail)) === null ? 0 : 1;
+        const facts = await runFacts(client, entry.upload.contactEmail);
+        queued += facts !== null && (await queueTimes(client, facts.id)).created !== null ? 1 : 0;
       }
-      if (found === large.length) {
+      if (queued === large.length) {
         break;
       }
       await sleep(500);
     }
-    say(`${spec.id}: the large uploads' runs exist after ${((Date.now() - waitUntilRuns) / 1000).toFixed(1)} s; sending the small one behind them`);
+    say(`${spec.id}: the large uploads' jobs are queued after ${((Date.now() - waitUntilQueued) / 1000).toFixed(1)} s; sending the small one behind them`);
     await Promise.all(behind.map(click));
   }
   const sent = [...(await largeSent), ...(await Promise.allSettled(behind.map(sentPage)))];
