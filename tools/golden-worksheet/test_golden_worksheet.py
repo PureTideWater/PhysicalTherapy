@@ -490,7 +490,7 @@ class PlusFour(unittest.TestCase):
 
     def test_a_release_with_no_plus_four_record_in_force_is_not_a_golden_line(self):
         for release in (self.base, self.split_release(plus_four=[self.plus_four_record("2027-01-01", None)])):
-            with self.subTest(release=release.number), self.assertRaisesRegex(gw.InputError, "holds no locality_map_plus_four record for ZIP 00012 in force on 2026-03-10.*zip_plus_four_not_in_locality_map"):
+            with self.subTest(release=release.number), self.assertRaisesRegex(gw.InputError, "holds no locality_map_plus_four record for ZIP 00012 in force on 2026-03-10.*no_locality_plus_four"):
                 self.priced(release, "00012", "0001")
         overlapping = self.split_release(plus_four=[self.plus_four_record(), self.plus_four_record("2026-03-01", None)])
         with self.assertRaisesRegex(gw.InputError, "two locality_map_plus_four records"):
@@ -551,6 +551,14 @@ class PlusFour(unittest.TestCase):
         self.write_zip9(ZIP9_ROWS[:3] + [zip9("00012", "5000", "02", state="YY")] + ZIP9_ROWS[4:])
         with self.assertRaisesRegex(gw.InputError, "line 4: lists 00012-5000 in state YY, but the ZIP's locality_map record is in state ZZ"):
             self.priced(self.split_release(), "00012", "5000")
+
+    def test_refuses_a_zip9_line_of_another_quarter_than_the_record_takes_effect_in(self):
+        self.write_zip9(ZIP9_ROWS[:3] + [zip9("00012", "5000", "02", quarter="20254")] + ZIP9_ROWS[4:])
+        with self.assertRaisesRegex(gw.InputError, "line 4: is of year and quarter 20254, but the locality_map_plus_four record of ZIP 00012 takes effect 2026-01-01, in 20261"):
+            self.priced(self.split_release(), "00012", "5000")
+        # A record taking effect later in the first quarter still reads the first quarter's file.
+        self.write_zip9(ZIP9_ROWS)
+        self.priced(self.split_release(plus_four=[self.plus_four_record("2026-02-15", None)]), "00012", "5000")
 
     def test_reads_only_the_source_file_the_record_names_by_path_and_hash(self):
         cases = [

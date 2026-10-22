@@ -65,8 +65,10 @@ export {
   type ParsedRow,
   type RuleFileParser,
   RuleImportError,
+  ZIP9_RECORD_LENGTH,
   compareConversionFactorPasses,
   isImportableType,
+  zipFileQuarter,
 } from './parsers';
 export {
   FIRST_SYNTHETIC_RELEASE,

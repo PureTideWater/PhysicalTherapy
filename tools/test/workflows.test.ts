@@ -534,6 +534,28 @@ describe('approval-of-record (docs/adr/0063)', () => {
   });
 });
 
+describe('mutation testing', () => {
+  it('runs on a label as well as a push, fails an engine change without the money label, and runs the canary first (docs/adr/0064)', () => {
+    const mutation = workflow('mutation.yml');
+    expect(mutation.on).toEqual({ pull_request: { types: ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'] }, schedule: [{ cron: expect.any(String) as unknown }] });
+    // ci.yml runs on pull_request's default types, which carry no label event, so it holds no mutation job.
+    expect(Object.keys(workflow('ci.yml').jobs)).toEqual(['check']);
+    const steps = mutation.jobs.mutation?.steps ?? [];
+    const gate = stepIndex(steps, (step) => step.name === 'The money label on an engine change');
+    const gateStep = steps[gate] as Step & { env?: Record<string, string> };
+    expect(gateStep.env?.MONEY).toBe("${{ contains(github.event.pull_request.labels.*.name, 'money') }}");
+    expect(gateStep.run).toContain("git diff --name-only \"$base\" HEAD -- packages/pricing/src ':!**/*.test.ts'");
+    expect(gateStep.run).toContain('exit 1');
+    const canary = stepIndex(steps, (step) => step.run === 'pnpm stryker run tools/stryker/canary/stryker.config.mjs');
+    const money = stepIndex(steps, (step) => step.run === 'pnpm stryker run');
+    expect(gate).toBeLessThan(canary);
+    expect(canary).toBeLessThan(money);
+    for (const step of steps.slice(gate + 1) as (Step & { if?: string })[]) {
+      expect(step.if, step.name ?? step.uses ?? step.run).toBe("steps.label.outputs.run == 'true'");
+    }
+  });
+});
+
 describe('dependabot', () => {
   it('updates the workspace, the actions and both base images weekly, grouped, a few pull requests at a time', () => {
     const config = parse(readFileSync(path.join(repositoryRoot, '.github/dependabot.yml'), 'utf8')) as {
@@ -563,12 +585,13 @@ describe('dependabot', () => {
 describe('job timeouts', () => {
   it('give every job of the pull-request workflows a timeout well under GitHub’s 360 minutes', () => {
     const limits: Record<string, Record<string, number>> = {};
-    for (const file of ['ci.yml', 'supply-chain.yml', 'approval-of-record.yml', 'screening-capacity.yml']) {
+    for (const file of ['ci.yml', 'mutation.yml', 'supply-chain.yml', 'approval-of-record.yml', 'screening-capacity.yml']) {
       const jobs = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows', file), 'utf8')) as { jobs: Record<string, { 'timeout-minutes'?: number }> }).jobs;
       limits[file] = Object.fromEntries(Object.entries(jobs).map(([name, job]) => [name, job['timeout-minutes'] ?? 360]));
     }
     expect(limits).toEqual({
-      'ci.yml': { check: 60, mutation: 120 },
+      'ci.yml': { check: 60 },
+      'mutation.yml': { mutation: 120 },
       'supply-chain.yml': { licenses: 15, images: 15 },
       'approval-of-record.yml': { 'approval-of-record': 5 },
       // A pull request that touches the screening, pricing, the harness or the images runs it (audit #53 part 1).

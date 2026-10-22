@@ -49,6 +49,11 @@ catalogs:
       specifier: ^4.6.7
       version: 4.6.7
 
+patchedDependencies:
+  '@stryker-mutator/vitest-runner@10.0.0':
+    hash: cc68c99c202fb0af78a354569537ace9fa60a28f9dd486a843069ba076ca11b6
+    path: patches/@stryker-mutator__vitest-runner@10.0.0.patch
+
 importers:
 
   .:
@@ -67,7 +72,7 @@ importers:
         version: 10.0.0(@types/node@24.19.2)
       '@stryker-mutator/vitest-runner':
         specifier: ^10.0.0
-        version: 10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.19.2))(vitest@5.0.4)
+        version: 10.0.0(patch_hash=cc68c99c202fb0af78a354569537ace9fa60a28f9dd486a843069ba076ca11b6)(@stryker-mutator/core@10.0.0(@types/node@24.19.2))(vitest@5.0.4)
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -5318,7 +5323,7 @@ snapshots:
 
   '@stryker-mutator/util@10.0.0': {}
 
-  '@stryker-mutator/vitest-runner@10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.19.2))(vitest@5.0.4)':
+  '@stryker-mutator/vitest-runner@10.0.0(patch_hash=cc68c99c202fb0af78a354569537ace9fa60a28f9dd486a843069ba076ca11b6)(@stryker-mutator/core@10.0.0(@types/node@24.19.2))(vitest@5.0.4)':
     dependencies:
       '@stryker-mutator/api': 10.0.0
       '@stryker-mutator/core': 10.0.0(@types/node@24.19.2)

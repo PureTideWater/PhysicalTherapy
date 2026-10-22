@@ -163,7 +163,18 @@ describe('the trace across engine versions', () => {
     expect(trace.steps.fee_schedule?.locality?.plus_four).toMatchObject({ zip_plus_four: '5000', from: '5000', to: '8999', carrier: '99999', locality: '02' });
   });
 
-  it('refuses a key neither version writes, and a ZIP+4 that is not text', () => {
+  it('parses the stop of a ZIP+4 no range holds, which names the plus-four record read, and of a ZIP with no plus-four record, which names none', () => {
+    const unlisted = traceOf(plusFour, { zip: '00012', zipPlusFour: '9100' });
+    expect(parseTrace(unlisted)).toEqual(unlisted);
+    expect(unlisted.outcome).toMatchObject({ detail: 'zip_plus_four_not_in_locality_map' });
+    expect(unlisted.steps.fee_schedule?.locality?.plus_four_unlisted).toMatchObject({ record_type: 'locality_map_plus_four', key: { zip: '00012' } });
+    const missing = traceOf(syntheticRelease(900001), { zip: '00012', zipPlusFour: '9100' });
+    expect(parseTrace(missing)).toEqual(missing);
+    expect(missing.outcome).toMatchObject({ detail: 'no_locality_plus_four' });
+    expect(Object.keys(missing.steps.fee_schedule?.locality ?? {})).toEqual(['record', 'carrier', 'locality', 'plus_four_required']);
+  });
+
+  it('refuses a key neither version writes, a ZIP+4 that is not text, and a ZIP+4 step whose codes are not four digits', () => {
     const stored = copy(STORED_PHASE_TWO_1);
     (stored.settings as Record<string, unknown>).zip_plus_five = '1234';
     expect(() => parseTrace(stored)).toThrow(/zip_plus_five/);
@@ -181,5 +192,16 @@ describe('the trace across engine versions', () => {
     const missingLocality = ((missing.steps as Record<string, Record<string, unknown>>).fee_schedule as Record<string, Record<string, unknown>>).locality as Record<string, Record<string, unknown>>;
     delete (missingLocality.plus_four as Record<string, unknown>).to;
     expect(() => parseTrace(missing)).toThrow(/to/);
+
+    for (const [field, value] of [['zip_plus_four', '50000'], ['zip_plus_four', 'undefined'], ['from', '500'], ['to', 'zzzz']] as const) {
+      const codes = copy(traceOf(plusFour, { zip: '00012', zipPlusFour: '5000' }));
+      const codesLocality = ((codes.steps as Record<string, Record<string, unknown>>).fee_schedule as Record<string, Record<string, unknown>>).locality as Record<string, Record<string, unknown>>;
+      (codesLocality.plus_four as Record<string, unknown>)[field] = value;
+      expect(() => parseTrace(codes), `${field} ${value}`).toThrow(/must be four digits/);
+    }
+    // The settings keep what was given, verbatim, so an invalid_settings stop's trace still parses.
+    const given = copy(STORED_PHASE_TWO_1);
+    (given.settings as Record<string, unknown>).zip_plus_four = '50000';
+    expect(parseTrace(given).settings.zip_plus_four).toBe('50000');
   });
 });

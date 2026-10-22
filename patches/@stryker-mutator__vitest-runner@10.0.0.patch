@@ -1,0 +1,38 @@
+diff --git a/dist/src/stryker-setup.js b/dist/src/stryker-setup.js
+index aecfacbe47b285c272c47e54b3d66a716adfdc41..7054089f699f7d60de1fbc1682954acf78aa991c 100644
+--- a/dist/src/stryker-setup.js
++++ b/dist/src/stryker-setup.js
+@@ -56,7 +56,13 @@ else {
+     }
+ }
+ // Stryker disable all: this file is copied to the sandbox dir
+-function collectTestName({ name, suite, }) {
++function collectTestName({ name, suite, fullTestName, }) {
++    // Vitest 5 matches testNamePattern against a test's fullTestName, its describe names and its own joined by ' > '
++    // (vitest/dist/task-utils.js, interpretTaskModes). A test is named as Vitest names it, so the filter Stryker
++    // builds from that name selects it; joined by ' ', it selected no test and every covered mutant survived.
++    if (typeof fullTestName === 'string' && fullTestName !== '') {
++        return fullTestName;
++    }
+     const nameParts = [name];
+     let currentSuite = suite;
+     while (currentSuite) {
+diff --git a/dist/src/test-helpers.js b/dist/src/test-helpers.js
+index 56cc786f30c524ae18ce87eef1a67fdf26b703c5..c9cb416fccc1580a537a24f4c02ec9726e37f884 100644
+--- a/dist/src/test-helpers.js
++++ b/dist/src/test-helpers.js
+@@ -1,7 +1,13 @@
+ // Don't merge this file into 'vitest-helpers.ts'!
+ // This file is used from the testing environment (via stryker-setup.js) and thus could be loaded into the browser (when using vitest with browser mode).
+ // Thus we should avoid unnecessary dependencies in this file.
+-export function collectTestName({ name, suite, }) {
++export function collectTestName({ name, suite, fullTestName, }) {
++    // Vitest 5 matches testNamePattern against a test's fullTestName, its describe names and its own joined by ' > '
++    // (vitest/dist/task-utils.js, interpretTaskModes). A test is named as Vitest names it, so the filter Stryker
++    // builds from that name selects it; joined by ' ', it selected no test and every covered mutant survived.
++    if (typeof fullTestName === 'string' && fullTestName !== '') {
++        return fullTestName;
++    }
+     const nameParts = [name];
+     let currentSuite = suite;
+     while (currentSuite) {

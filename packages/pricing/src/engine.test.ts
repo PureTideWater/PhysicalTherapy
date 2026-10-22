@@ -333,24 +333,54 @@ describe('step 2, the locality of a ZIP that needs its ZIP+4 (PRC-21; docs/adr/0
     }
   });
 
-  it('(d) stops a ZIP+4 no range holds with ENGINE_ERROR zip_plus_four_not_in_locality_map, never a neighbour’s locality', () => {
+  it('(d) stops a ZIP+4 no range holds with ENGINE_ERROR zip_plus_four_not_in_locality_map, never a neighbour’s locality, naming the plus-four record it read', () => {
     for (const zipPlusFour of ['9100', '9000', '9999']) {
       const line = unpricedLine(priceOne({ agreement: commercial }, at('00012', zipPlusFour), plusFourRelease));
       expect(reasonOf(line)).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
-      expect(line.trace.steps.fee_schedule?.locality).toMatchObject({ locality: '01', plus_four_required: true });
-      expect(line.trace.steps.fee_schedule?.locality).not.toHaveProperty('plus_four');
+      expect(line.trace.steps.fee_schedule?.locality).toEqual({
+        record: plusFourRelease.ref(plusFourBase.records.find((record) => record.record_type === 'locality_map' && keyOf(record).zip === '00012') as RuleRecord),
+        carrier: '99999',
+        locality: '01',
+        plus_four_required: true,
+        plus_four_unlisted: plusFourRelease.ref(split),
+      });
+      expect(parseTrace(JSON.parse(JSON.stringify(line.trace)))).toEqual(line.trace);
       expect(line.trace.steps.fee_schedule?.gpci).toBeNull();
       expect(line.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'zip_plus_four_not_in_locality_map', step: 'fee_schedule' });
     }
+    // A code below the first range's start is in no range either.
+    const fromOne = releaseVariant(plusFourBase, (records) =>
+      records.map((record) =>
+        record.record_type === 'locality_map_plus_four'
+          ? ruleRecordLike(record, { value: { ...(record.value as object), ranges: (record.value as { ranges: { from: string }[] }).ranges.map((range, index) => (index === 0 ? { ...range, from: '1000' } : range)) } })
+          : record,
+      ),
+    );
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0999'), fromOne))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '1000'), fromOne))).toBe('priced');
     // An operator looks at it: the detail is not one of the review details.
     expect(pagesOperator('zip_plus_four_not_in_locality_map')).toBe(true);
     expect(REVIEW_DETAILS).toEqual(['claim_status_not_priced', 'mppr_needs_fee_schedule']);
   });
 
-  it('(e) stops 00012-0001 under a release with no ZIP+4 record (900001), or one whose ZIP+4 record is not in force on the date', () => {
-    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0001')))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+  it('(e) stops 00012-0001 with ENGINE_ERROR no_locality_plus_four under a release with no ZIP+4 record (900001), or one whose ZIP+4 record is not in force on the date: a content gap, told apart from a ZIP+4 no range holds', () => {
+    const missing = unpricedLine(priceOne({ agreement: commercial }, at('00012', '0001')));
+    expect(reasonOf(missing)).toBe('ENGINE_ERROR no_locality_plus_four');
+    expect(missing.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'no_locality_plus_four', step: 'fee_schedule' });
+    expect(missing.trace.steps.fee_schedule?.locality).toEqual({ record: expect.objectContaining({ record_type: 'locality_map' }) as unknown, carrier: '99999', locality: '01', plus_four_required: true });
+    expect(missing.trace.steps.fee_schedule?.gpci).toBeNull();
+    expect(pagesOperator('no_locality_plus_four')).toBe(true);
     const ended = releaseVariant(plusFourBase, (records) => records.map((record) => (record.record_type === 'locality_map_plus_four' ? ruleRecordLike(record, { effective_to: '2026-03-09' }) : record)));
-    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0001'), ended))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+    expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0001'), ended))).toBe('ENGINE_ERROR no_locality_plus_four');
+    // A record that lists only 0000-4999 and no record at all stop 9100 apart, and their traces differ by the record read.
+    const firstRangeOnly = releaseVariant(plusFourBase, (records) =>
+      records.map((record) => (record.record_type === 'locality_map_plus_four' ? ruleRecordLike(record, { value: { ...(record.value as object), ranges: (record.value as { ranges: unknown[] }).ranges.slice(0, 1) } }) : record)),
+    );
+    const unlisted = unpricedLine(priceOne({ agreement: commercial }, at('00012', '9100'), firstRangeOnly));
+    const noRecord = unpricedLine(priceOne({ agreement: commercial }, at('00012', '9100')));
+    expect([reasonOf(unlisted), reasonOf(noRecord)]).toEqual(['ENGINE_ERROR zip_plus_four_not_in_locality_map', 'ENGINE_ERROR no_locality_plus_four']);
+    expect(unlisted.trace.steps.fee_schedule?.locality?.plus_four_unlisted).toMatchObject({ record_type: 'locality_map_plus_four', key: { zip: '00012' } });
+    expect(noRecord.trace.steps.fee_schedule?.locality).not.toHaveProperty('plus_four_unlisted');
     expect(reasonOf(priceOne({ agreement: commercial, serviceDate: '2026-03-09' }, at('00012', '0001'), ended))).toBe('priced');
     const twice = releaseVariant(plusFourBase, (records) => [...records, ruleRecordLike(split, { effective_from: '2026-03-01' })]);
     expect(reasonOf(priceOne({ agreement: commercial }, at('00012', '0001'), twice))).toBe('ENGINE_ERROR release_records_overlap');
@@ -388,7 +418,7 @@ describe('step 2, the locality of a ZIP that needs its ZIP+4 (PRC-21; docs/adr/0
     expect(line.trace.steps.fee_schedule?.locality?.plus_four?.record).toMatchObject({ effective_from: '2026-01-01' });
     expect(line.trace.steps.fee_schedule?.gpci?.record).toMatchObject({ key: { carrier: '99999', locality: '02' }, effective_from: '2025-01-01' });
     // A ZIP+4 record of 2025 alone is the latest of the basis year, and is not read: it is not in force on the service date.
-    expect(reasonOf(priceOne(facts, at('00012', '5000'), withSplit({ effective_from: '2025-01-01', effective_to: '2025-12-31' })))).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+    expect(reasonOf(priceOne(facts, at('00012', '5000'), withSplit({ effective_from: '2025-01-01', effective_to: '2025-12-31' })))).toBe('ENGINE_ERROR no_locality_plus_four');
   });
 
   it('(i) prices a fixed-schedule line for 00012 without a ZIP+4: the locality is never read', () => {
@@ -842,7 +872,14 @@ describe('step 8, the dispute window', () => {
 
 describe('inputs the engine refuses', () => {
   it('is ENGINE_ERROR for settings it cannot read', () => {
-    const settings = [practiceSettings({ zip: '1234' }), practiceSettings({ defaultRounding: 'NEAREST' as never }), practiceSettings({ placeOfServiceSettings: { '1': 'facility' } }), practiceSettings({ placeOfServiceSettings: { '11': 'clinic' as never } })];
+    const settings = [
+      practiceSettings({ zip: '1234' }),
+      practiceSettings({ defaultRounding: 'NEAREST' as never }),
+      practiceSettings({ placeOfServiceSettings: { '1': 'facility' } }),
+      practiceSettings({ placeOfServiceSettings: { '11': 'clinic' as never } }),
+      // One bad place among good ones.
+      practiceSettings({ placeOfServiceSettings: { '11': 'non_facility', '22': 'clinic' as never } }),
+    ];
     for (const setting of settings) {
       expect(reasonOf(priceOne({}, { settings: setting }))).toBe('ENGINE_ERROR invalid_settings');
     }

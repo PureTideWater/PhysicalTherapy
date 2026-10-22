@@ -1,0 +1,908 @@
+{
+  "rule_release": {
+    "table": {
+      "kind": "r",
+      "persistence": "p",
+      "row_security": false,
+      "force_row_security": false,
+      "replica_identity": "d",
+      "partition": false,
+      "options": [],
+      "comment": null
+    },
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "not_null": true,
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "release_no",
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "published_at",
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "manifest_sha256",
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "not_null": true,
+        "default": "''::text",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      }
+    ],
+    "constraints": [
+      {
+        "name": "rule_release_created_at_not_null",
+        "kind": "n",
+        "definition": "NOT NULL created_at",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_id_not_null",
+        "kind": "n",
+        "definition": "NOT NULL id",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_manifest_sha256_check",
+        "kind": "c",
+        "definition": "CHECK ((manifest_sha256 ~ '^[0-9a-f]{64}$'::text))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_manifest_sha256_not_null",
+        "kind": "n",
+        "definition": "NOT NULL manifest_sha256",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_notes_not_null",
+        "kind": "n",
+        "definition": "NOT NULL notes",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_pkey",
+        "kind": "p",
+        "definition": "PRIMARY KEY (id)",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_release_no_check",
+        "kind": "c",
+        "definition": "CHECK ((release_no > 0))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_release_no_key",
+        "kind": "u",
+        "definition": "UNIQUE (release_no)",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_release_no_not_null",
+        "kind": "n",
+        "definition": "NOT NULL release_no",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_updated_at_not_null",
+        "kind": "n",
+        "definition": "NOT NULL updated_at",
+        "deferrable": false,
+        "deferred": false
+      }
+    ],
+    "referenced_by": [
+      {
+        "from_table": "pricing_run",
+        "name": "pricing_run_release_no_fkey",
+        "definition": "FOREIGN KEY (release_no) REFERENCES rule_release(release_no)"
+      },
+      {
+        "from_table": "rule_record",
+        "name": "rule_record_release_no_fkey",
+        "definition": "FOREIGN KEY (release_no) REFERENCES rule_release(release_no)"
+      },
+      {
+        "from_table": "rule_release_withdrawal",
+        "name": "rule_release_withdrawal_reinstated_release_no_fkey",
+        "definition": "FOREIGN KEY (reinstated_release_no) REFERENCES rule_release(release_no)"
+      },
+      {
+        "from_table": "rule_release_withdrawal",
+        "name": "rule_release_withdrawal_release_no_fkey",
+        "definition": "FOREIGN KEY (release_no) REFERENCES rule_release(release_no)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "rule_release_pkey",
+        "definition": "CREATE UNIQUE INDEX rule_release_pkey ON public.rule_release USING btree (id)"
+      },
+      {
+        "name": "rule_release_release_no_key",
+        "definition": "CREATE UNIQUE INDEX rule_release_release_no_key ON public.rule_release USING btree (release_no)"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "rule_release_immutable",
+        "definition": "CREATE TRIGGER rule_release_immutable BEFORE DELETE OR UPDATE ON public.rule_release FOR EACH ROW EXECUTE FUNCTION rule_release_immutable()",
+        "enabled": "O",
+        "function": "rule_release_immutable()",
+        "function_source_md5": "33708b1154e0bd69fa659ed53eeb3029",
+        "function_settings": [],
+        "function_security_definer": false,
+        "function_volatility": "v",
+        "function_owner": "(owner)"
+      },
+      {
+        "name": "rule_release_no_truncate",
+        "definition": "CREATE TRIGGER rule_release_no_truncate BEFORE TRUNCATE ON public.rule_release FOR EACH STATEMENT EXECUTE FUNCTION rule_content_no_truncate()",
+        "enabled": "O",
+        "function": "rule_content_no_truncate()",
+        "function_source_md5": "3412078d5bf0f83dbb3ca92897ef5f8e",
+        "function_settings": [],
+        "function_security_definer": false,
+        "function_volatility": "v",
+        "function_owner": "(owner)"
+      }
+    ],
+    "policies": [],
+    "grants": [
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "DELETE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "INSERT",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "MAINTAIN",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "REFERENCES",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "SELECT",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "TRIGGER",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "TRUNCATE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "UPDATE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "tp_app",
+        "privilege": "SELECT",
+        "grantable": false
+      }
+    ],
+    "inherits": [],
+    "rules": [],
+    "writable_views": []
+  },
+  "rule_record": {
+    "table": {
+      "kind": "r",
+      "persistence": "p",
+      "row_security": false,
+      "force_row_security": false,
+      "replica_identity": "d",
+      "partition": false,
+      "options": [],
+      "comment": null
+    },
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "not_null": true,
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "release_no",
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "record_type",
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "key",
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "value",
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "effective_from",
+        "type": "date",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "effective_to",
+        "type": "date",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "source",
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "verification",
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "sha256",
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      }
+    ],
+    "constraints": [
+      {
+        "name": "rule_record_check",
+        "kind": "c",
+        "definition": "CHECK (((effective_to IS NULL) OR (effective_to >= effective_from)))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_created_at_not_null",
+        "kind": "n",
+        "definition": "NOT NULL created_at",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_effective_from_not_null",
+        "kind": "n",
+        "definition": "NOT NULL effective_from",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_id_not_null",
+        "kind": "n",
+        "definition": "NOT NULL id",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_key_check",
+        "kind": "c",
+        "definition": "CHECK ((jsonb_typeof(key) = 'object'::text))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_key_not_null",
+        "kind": "n",
+        "definition": "NOT NULL key",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_pkey",
+        "kind": "p",
+        "definition": "PRIMARY KEY (id)",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_record_type_check",
+        "kind": "c",
+        "definition": "CHECK ((record_type = ANY (ARRAY['pfs_rvu'::text, 'pfs_gpci'::text, 'conversion_factor'::text, 'mppr_rate'::text, 'therapy_threshold'::text, 'assistant_modifier'::text, 'sequestration'::text, 'ncci_ptp'::text, 'ncci_mue'::text, 'carc'::text, 'rarc'::text, 'claim_status_code'::text, 'state_prompt_pay'::text, 'dispute_window'::text, 'locality_map'::text, 'denial_category'::text])))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_record_type_not_null",
+        "kind": "n",
+        "definition": "NOT NULL record_type",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_release_no_fkey",
+        "kind": "f",
+        "definition": "FOREIGN KEY (release_no) REFERENCES rule_release(release_no)",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_release_no_not_null",
+        "kind": "n",
+        "definition": "NOT NULL release_no",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_sha256_check",
+        "kind": "c",
+        "definition": "CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_sha256_not_null",
+        "kind": "n",
+        "definition": "NOT NULL sha256",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_source_check",
+        "kind": "c",
+        "definition": "CHECK ((jsonb_typeof(source) = 'object'::text))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_source_not_null",
+        "kind": "n",
+        "definition": "NOT NULL source",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_updated_at_not_null",
+        "kind": "n",
+        "definition": "NOT NULL updated_at",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_value_check",
+        "kind": "c",
+        "definition": "CHECK ((jsonb_typeof(value) = 'object'::text))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_value_not_null",
+        "kind": "n",
+        "definition": "NOT NULL value",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_verification_check",
+        "kind": "c",
+        "definition": "CHECK ((verification = ANY (ARRAY['L1'::text, 'L2'::text, 'L3'::text])))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_record_verification_not_null",
+        "kind": "n",
+        "definition": "NOT NULL verification",
+        "deferrable": false,
+        "deferred": false
+      }
+    ],
+    "referenced_by": [],
+    "indexes": [
+      {
+        "name": "rule_record_by_type",
+        "definition": "CREATE INDEX rule_record_by_type ON public.rule_record USING btree (release_no, record_type)"
+      },
+      {
+        "name": "rule_record_identity",
+        "definition": "CREATE UNIQUE INDEX rule_record_identity ON public.rule_record USING btree (release_no, record_type, key, effective_from)"
+      },
+      {
+        "name": "rule_record_pkey",
+        "definition": "CREATE UNIQUE INDEX rule_record_pkey ON public.rule_record USING btree (id)"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "rule_record_immutable",
+        "definition": "CREATE TRIGGER rule_record_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rule_record FOR EACH ROW EXECUTE FUNCTION rule_record_immutable()",
+        "enabled": "O",
+        "function": "rule_record_immutable()",
+        "function_source_md5": "2ecb505921fd211a549782247bca75a2",
+        "function_settings": [],
+        "function_security_definer": false,
+        "function_volatility": "v",
+        "function_owner": "(owner)"
+      },
+      {
+        "name": "rule_record_no_truncate",
+        "definition": "CREATE TRIGGER rule_record_no_truncate BEFORE TRUNCATE ON public.rule_record FOR EACH STATEMENT EXECUTE FUNCTION rule_content_no_truncate()",
+        "enabled": "O",
+        "function": "rule_content_no_truncate()",
+        "function_source_md5": "3412078d5bf0f83dbb3ca92897ef5f8e",
+        "function_settings": [],
+        "function_security_definer": false,
+        "function_volatility": "v",
+        "function_owner": "(owner)"
+      }
+    ],
+    "policies": [],
+    "grants": [
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "DELETE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "INSERT",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "MAINTAIN",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "REFERENCES",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "SELECT",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "TRIGGER",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "TRUNCATE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "UPDATE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "tp_app",
+        "privilege": "SELECT",
+        "grantable": false
+      }
+    ],
+    "inherits": [],
+    "rules": [],
+    "writable_views": []
+  },
+  "rule_release_withdrawal": {
+    "table": {
+      "kind": "r",
+      "persistence": "p",
+      "row_security": false,
+      "force_row_security": false,
+      "replica_identity": "d",
+      "partition": false,
+      "options": [],
+      "comment": null
+    },
+    "columns": [
+      {
+        "name": "release_no",
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "reinstated_release_no",
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "withdrawn_at",
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": "",
+        "comment": null,
+        "grants": []
+      }
+    ],
+    "constraints": [
+      {
+        "name": "rule_release_withdrawal_created_at_not_null",
+        "kind": "n",
+        "definition": "NOT NULL created_at",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_pkey",
+        "kind": "p",
+        "definition": "PRIMARY KEY (release_no)",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_reason_check",
+        "kind": "c",
+        "definition": "CHECK (((reason ~ '^[ -~]+$'::text) AND ((length(reason) >= 8) AND (length(reason) <= 500))))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_reason_not_null",
+        "kind": "n",
+        "definition": "NOT NULL reason",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_reinstated_release_no_fkey",
+        "kind": "f",
+        "definition": "FOREIGN KEY (reinstated_release_no) REFERENCES rule_release(release_no)",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_reinstated_release_no_not_null",
+        "kind": "n",
+        "definition": "NOT NULL reinstated_release_no",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_reinstates_earlier",
+        "kind": "c",
+        "definition": "CHECK ((reinstated_release_no < release_no))",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_release_no_fkey",
+        "kind": "f",
+        "definition": "FOREIGN KEY (release_no) REFERENCES rule_release(release_no)",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_release_no_not_null",
+        "kind": "n",
+        "definition": "NOT NULL release_no",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_updated_at_not_null",
+        "kind": "n",
+        "definition": "NOT NULL updated_at",
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "rule_release_withdrawal_withdrawn_at_not_null",
+        "kind": "n",
+        "definition": "NOT NULL withdrawn_at",
+        "deferrable": false,
+        "deferred": false
+      }
+    ],
+    "referenced_by": [],
+    "indexes": [
+      {
+        "name": "rule_release_withdrawal_pkey",
+        "definition": "CREATE UNIQUE INDEX rule_release_withdrawal_pkey ON public.rule_release_withdrawal USING btree (release_no)"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "rule_release_withdrawal_no_truncate",
+        "definition": "CREATE TRIGGER rule_release_withdrawal_no_truncate BEFORE TRUNCATE ON public.rule_release_withdrawal FOR EACH STATEMENT EXECUTE FUNCTION rule_content_no_truncate()",
+        "enabled": "O",
+        "function": "rule_content_no_truncate()",
+        "function_source_md5": "3412078d5bf0f83dbb3ca92897ef5f8e",
+        "function_settings": [],
+        "function_security_definer": false,
+        "function_volatility": "v",
+        "function_owner": "(owner)"
+      },
+      {
+        "name": "rule_release_withdrawal_pricing_current_lock",
+        "definition": "CREATE TRIGGER rule_release_withdrawal_pricing_current_lock BEFORE INSERT ON public.rule_release_withdrawal FOR EACH ROW EXECUTE FUNCTION pricing_current_change_lock()",
+        "enabled": "O",
+        "function": "pricing_current_change_lock()",
+        "function_source_md5": "cefabc70dcebd2be44fdec8449880788",
+        "function_settings": [
+          "search_path=pg_catalog, public, pg_temp"
+        ],
+        "function_security_definer": false,
+        "function_volatility": "v",
+        "function_owner": "(owner)"
+      },
+      {
+        "name": "rule_release_withdrawal_rules",
+        "definition": "CREATE TRIGGER rule_release_withdrawal_rules BEFORE INSERT OR DELETE OR UPDATE ON public.rule_release_withdrawal FOR EACH ROW EXECUTE FUNCTION rule_release_withdrawal_rules()",
+        "enabled": "O",
+        "function": "rule_release_withdrawal_rules()",
+        "function_source_md5": "1b7fd4c436e1a9b225ee1f3f8e397242",
+        "function_settings": [
+          "search_path=pg_catalog, public, pg_temp"
+        ],
+        "function_security_definer": false,
+        "function_volatility": "v",
+        "function_owner": "(owner)"
+      }
+    ],
+    "policies": [],
+    "grants": [
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "DELETE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "INSERT",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "MAINTAIN",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "REFERENCES",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "SELECT",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "TRIGGER",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "TRUNCATE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "(owner)",
+        "privilege": "UPDATE",
+        "grantable": false
+      },
+      {
+        "grantor": "(owner)",
+        "grantee": "tp_app",
+        "privilege": "SELECT",
+        "grantable": false
+      }
+    ],
+    "inherits": [],
+    "rules": [],
+    "writable_views": []
+  }
+}

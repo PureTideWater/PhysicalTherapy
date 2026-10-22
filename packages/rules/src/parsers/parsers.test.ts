@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeSourceText } from '../records';
 import { compareConversionFactorPasses } from './conversion-factor';
 import { RuleImportError, dateCell, dayBefore, decimalCell, parseDelimited, textLines } from './delimited';
-import { PARSERS } from './index';
+import { PARSERS, zipFileQuarter } from './index';
 import { IMPORTABLE_TYPES, type ImportWindow, type ImportableType, type ParsedRow, isImportableType } from './types';
 
 const CMS = path.resolve(import.meta.dirname, '../../../../fixtures/synthetic/cms');
@@ -280,8 +280,8 @@ describe('ZIP5 (locality_map)', () => {
 
 describe('ZIP9 (locality_map_plus_four)', () => {
   /** A ZIP9 line as the layout docs/adr/0064 records puts it: ZIP5's positions 1-21, the code at 22-25, year and quarter at 76-80. */
-  const line = (code: string, { zip = '00012', locality = '01', state = 'ZZ', rural = 'R', flag = '1' } = {}) =>
-    `${`${state}${zip}99999${locality}${rural}${locality}   ${flag}${code}`.padEnd(75, ' ')}20261`;
+  const line = (code: string, { zip = '00012', locality = '01', state = 'ZZ', rural = 'R', flag = '1', quarter = '20261' } = {}) =>
+    `${`${state}${zip}99999${locality}${rural}${locality}   ${flag}${code}`.padEnd(75, ' ')}${quarter}`;
   const file = (...lines: string[]) => `${lines.join('\n')}\n`;
 
   it('folds the synthetic file into one record of 00012 with two ranges, quoting the first and last line of each', () => {
@@ -305,7 +305,7 @@ describe('ZIP9 (locality_map_plus_four)', () => {
     const lines = text.split('\n');
     expect(outcome.rows[0]?.quotes).toEqual([lines[0], lines[4999], lines[5000], lines[8999]]);
     expect(outcome.rows[0]?.quote).toBe(lines[0]);
-    expect(outcome.notes).toEqual(['9000 lines folded into 2 ranges of 1 ZIP codes']);
+    expect(outcome.notes).toEqual(['9000 lines folded into 2 ranges of 1 ZIP codes', 'year and quarter 20261 (positions 76-80), the quarter the window starts in']);
   });
 
   it('folds only consecutive codes of one carrier, locality and rural indicator, in code order whatever the line order', () => {
@@ -320,7 +320,7 @@ describe('ZIP9 (locality_map_plus_four)', () => {
     expect(rows[0]?.locator).toBe('line 7');
     expect(rows[1]?.quotes).toEqual([line('0000'), line('0001'), line('0002', { locality: '02' }), line('0003'), line('0004', { rural: ' ' }), line('0005')]);
     expect(rows[1]?.locator).toBe('lines 1-6');
-    expect(notes).toEqual(['7 lines folded into 6 ranges of 2 ZIP codes']);
+    expect(notes).toEqual(['7 lines folded into 6 ranges of 2 ZIP codes', 'year and quarter 20261 (positions 76-80), the quarter the window starts in']);
   });
 
   it('leaves a code the file does not list out of every range', () => {
@@ -335,8 +335,24 @@ describe('ZIP9 (locality_map_plus_four)', () => {
     expect(parse('locality_map_plus_four', `${line('0000')}\r\n\r\n${line('0001')}\r\n`).rows[0]?.value.ranges).toEqual([{ from: '0000', to: '0001', carrier: '99999', locality: '01', rural_indicator: 'R' }]);
   });
 
+  it('reads a file of the quarter its window starts in, and names the quarter', () => {
+    const window = { year: 2026, effectiveFrom: '2026-05-15', effectiveTo: '2026-06-30' };
+    const outcome = parse('locality_map_plus_four', file(line('0000', { quarter: '20262' })), window);
+    expect(outcome.rows[0]?.effective_from).toBe('2026-05-15');
+    expect(outcome.notes[1]).toBe('year and quarter 20262 (positions 76-80), the quarter the window starts in');
+    expect(zipFileQuarter(line('0000', { quarter: '20262' }))).toBe('20262');
+    expect([zipFileQuarter(line('0000').slice(0, 79)), zipFileQuarter(line('0000', { quarter: '2026X' }))]).toEqual([null, null]);
+  });
+
   it.each([
-    ['a line too short for the plus-four code', file(line('0000').slice(0, 24)), /line 1: 24 characters is too short for the ZIP9 layout/],
+    ['a line too short for the plus-four code', file(line('0000').slice(0, 24)), /line 1: 24 characters; a ZIP9 record is 80/],
+    ['a line one character short of the record', file(line('0000').slice(0, 79)), /line 1: 79 characters; a ZIP9 record is 80/],
+    ['a line longer than the record', file(`${line('0000')} `), /line 1: 81 characters; a ZIP9 record is 80/],
+    ['a file of another quarter', file(line('0000', { quarter: '20254' })), /line 1: the file is of year and quarter 20254, and the import window starts 2026-01-01, in 20261/],
+    ['a file of two quarters', file(line('0000'), line('0001', { quarter: '20262' })), /line 2: the file is of year and quarter 20262/],
+    ['a year and quarter that is not YYYYQ', file(line('0000', { quarter: 'XXXXX' })), /line 1: year and quarter "XXXXX" at 76-80 is not YYYYQ/],
+    ['a quarter 5', file(line('0000', { quarter: '20265' })), /line 1: year and quarter "20265" at 76-80 is not YYYYQ/],
+    ['a low and high code on one line (open item O1)', file(line('00014999')), /line 1: positions 26-29 hold a second four-digit code, 4999/],
     ['letters in the ZIP', file(line('0000', { zip: '0001A' })), /line 1: does not fit the ZIP9 layout/],
     ['a state of digits', file(line('0000', { state: '12' })), /line 1: does not fit the ZIP9 layout/],
     ['a bad rural indicator', file(line('0000', { rural: 'X' })), /line 1: rural indicator "X"/],

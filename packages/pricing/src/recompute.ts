@@ -465,9 +465,11 @@ function checkFeeSchedule(trace: PricingTrace, check: Comparison): void {
     locality.plus_four_required === true ? 'decided by the ZIP+4' : 'not required',
     split !== undefined ? 'decided by the ZIP+4' : locality.plus_four_required === true ? 'required' : 'not required',
   );
+  check.same('ZIP+4 range not listed', 'none recorded', locality.plus_four_unlisted === undefined ? 'none recorded' : 'recorded on a priced line');
   if (split !== undefined) {
+    check.same('ZIP+4 record type', 'locality_map_plus_four', split.record.record_type);
     check.same('ZIP+4 record key', trace.settings.zip, String(split.record.key.zip));
-    check.same('ZIP+4 against the settings', String(trace.settings.zip_plus_four), split.zip_plus_four);
+    check.same('ZIP+4 against the settings', trace.settings.zip_plus_four ?? '(none)', split.zip_plus_four);
     check.same('ZIP+4 in its range', 'inside', split.from <= split.zip_plus_four && split.zip_plus_four <= split.to ? 'inside' : 'outside');
     check.same('ZIP+4 record window', 'covers the service date', covers(split.record, line.service_date) ? 'covers the service date' : 'does not');
   }

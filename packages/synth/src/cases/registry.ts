@@ -128,7 +128,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
       'packages/db/src/location.db.test.ts',
     ],
   },
-  'PRC-22': none(6, 'A differential test over generated claims and the golden lines; no fixture.', ['tools/engine-freeze/differential.test.ts', 'tools/engine-freeze/check.test.ts']),
+  'PRC-22': none(6, 'A differential test over generated claims and the golden lines; no fixture.', ['tools/engine-freeze/differential.test.ts', 'tools/engine-freeze/check.test.ts', 'tools/engine-freeze/rule-tables.db.test.ts']),
   'PRC-23': none(6, 'Practices and their locations are set by the tests; the 835 is the monitoring fixture.', [
     'apps/worker/src/monitor/monitor.db.test.ts',
     'apps/worker/src/price/price.db.test.ts',

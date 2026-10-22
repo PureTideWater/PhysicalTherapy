@@ -975,7 +975,7 @@ def plus_four_locality(release, locality, zip_code, plus_four, line):
     if split is None:
         raise InputError(
             f"release {release.number} holds no locality_map_plus_four record for ZIP {zip_code} in force on {line.date}: the engine stops the line "
-            "with ENGINE_ERROR (zip_plus_four_not_in_locality_map), so it is not a golden line"
+            "with ENGINE_ERROR (no_locality_plus_four), a gap in the content, so it is not a golden line"
         )
     name, listed = zip9_file(split, f"release {release.number}: the locality_map_plus_four record of ZIP {zip_code}")
     found = listed.get((zip_code, plus_four))
@@ -988,6 +988,13 @@ def plus_four_locality(release, locality, zip_code, plus_four, line):
     state = locality["value"].get("state")
     if fields["state"] != state:
         raise InputError(f"{name} line {number_}: lists {zip_code}-{plus_four} in state {fields['state']}, but the ZIP's locality_map record is in state {state}")
+    starts = split["effective_from"]
+    quarter = f"{starts[:4]}{(int(starts[5:7]) - 1) // 3 + 1}"
+    if fields["year and quarter"] != quarter:
+        raise InputError(
+            f"{name} line {number_}: is of year and quarter {fields['year and quarter']}, but the locality_map_plus_four record of ZIP {zip_code} "
+            f"takes effect {starts}, in {quarter}; a quarter's ZIP9 file names that quarter's localities"
+        )
     carrier, locality_no = fields["carrier"], fields["pricing locality"]
     line.say(
         f"- ZIP+4 {zip_code}-{plus_four}: the locality_map_plus_four record of ZIP {zip_code} in force on {line.date} "

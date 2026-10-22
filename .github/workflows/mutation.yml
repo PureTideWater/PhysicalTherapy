@@ -1,0 +1,65 @@
+name: mutation
+
+# Mutation testing on the money paths (stryker.config.mjs; PRD section 18): the pricing engine, the ledger and the
+# packet verifier, on every pull request labelled "money" and weekly. A workflow of its own because ci.yml runs on a
+# push and never on a label: here adding or removing a label starts a run, so a pull request labelled after its last
+# push is measured without another push. A pull request that changes the engine (a non-test file under
+# packages/pricing/src, which the engine freeze opens only by the founder's exception; docs/adr/0064) and lacks the label
+# fails the job instead of skipping it. The canary runs first (tools/stryker/canary): a mutant its tests kill must be
+# killed, so a runner that runs no test for a covered mutant stops the job before it reports a score. Synthetic data
+# only, no credentials, no GitHub API call (docs/adr/0063): the labels are the event's own.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  schedule:
+    # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflow (audit #54).
+    - cron: "23 5 * * 1"
+
+permissions:
+  contents: read
+
+# A newer push or label change on the same pull request supersedes the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-24.04
+    # The money paths' mutants run their covering tests; a hung run stops at 120 minutes instead of GitHub's 360.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: The money label on an engine change
+        id: label
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MONEY: ${{ contains(github.event.pull_request.labels.*.name, 'money') }}
+        run: |
+          if [ "$EVENT" != pull_request ] || [ "$MONEY" = true ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          engine="$(git diff --name-only "$base" HEAD -- packages/pricing/src ':!**/*.test.ts')"
+          if [ -n "$engine" ]; then
+            echo "::error::This pull request changes the engine without the money label, so its mutation score is never measured. Add the label; adding it starts this run. Changed: $(echo "$engine" | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          echo "No money label and no engine change: no mutation run." >> "$GITHUB_STEP_SUMMARY"
+      - uses: pnpm/action-setup@v4
+        if: steps.label.outputs.run == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.label.outputs.run == 'true'
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+        if: steps.label.outputs.run == 'true'
+      - name: The canary
+        if: steps.label.outputs.run == 'true'
+        run: pnpm stryker run tools/stryker/canary/stryker.config.mjs
+      - name: The money paths
+        if: steps.label.outputs.run == 'true'
+        run: pnpm stryker run

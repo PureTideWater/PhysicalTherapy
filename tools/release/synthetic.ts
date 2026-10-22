@@ -216,7 +216,7 @@ export function renderDeadlineRelease(root: string = repositoryRoot): Map<string
  * second one, 02), and a ZIP+4 file, fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt, for the ZIP 00012 that the ZIP5 file
  * flags: codes 0000-4999 in locality 01 and 5000-8999 in locality 02, while 9000-9999 are not listed (the gap the
  * tests of an unlisted ZIP+4 use). Releases 900001 to 900005 stay as they are, without a ZIP+4 record: there, 00012
- * with any ZIP+4 is ENGINE_ERROR zip_plus_four_not_in_locality_map. No database loads 900006 before PR 6b-2, whose
+ * with any ZIP+4 is ENGINE_ERROR no_locality_plus_four. No database loads 900006 before PR 6b-2, whose
  * migration lets rule_record hold the new record type (the founder's answer to PR 6b's Q3 (a)).
  */
 export const PLUS_FOUR_RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900006';
