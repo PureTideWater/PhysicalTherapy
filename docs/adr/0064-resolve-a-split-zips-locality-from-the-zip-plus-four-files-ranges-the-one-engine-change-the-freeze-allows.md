@@ -230,7 +230,9 @@ the closed list `ready | no_release | zip_missing | zip_unknown | locality_not_l
 zip_plus_four_unknown`, with the carrier and locality when ready. One order differs from the design's literal "first
 match wins": a flagged ZIP with no ZIP+4 is `zip_plus_four_needed` before the release's missing ZIP+4 list is
 `locality_not_loaded`, so under 900001 the customer is first asked for the ZIP+4 and, once it is given, told the list
-is not loaded (the design's own journey, steps 5 and 6). A ZIP+4 that is not four digits is held by no range.
+is not loaded (the design's own journey, steps 5 and 6): a practice needs its ZIP+4 anyway. The screening does not
+follow it: a prospect is told the ZIP+4 list is not loaded before being asked for a ZIP+4 the screening could not use
+(`submit_screening()`, below; the review round's finding 22). A ZIP+4 that is not four digits is held by no range.
 `locality_not_loaded` is a gap in PaidWhole's content wherever a stop or a status is classified, as the engine's
 `ENGINE_ERROR no_locality_plus_four` is (PR 6b-1's review split it from `zip_plus_four_not_in_locality_map`): the
 price job never fails a run on it at any status (only `locality_needs_zip_plus_four` and
@@ -241,14 +243,25 @@ settings; and the screening refuses such a ZIP+4 as `screening_locality_not_load
 row stopped on it "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day" (under
 `screening-labels/2026-11-05`, unreleased until this pull request merges).
 
-**Who sets it.** `practice_set_location()` (definer) refuses anyone but a person who holds `pricing_settings.set` in
-a practice of the transaction's scope, and a malformed ZIP or ZIP+4 by the constraint's name, upserts the row and
-returns its status under the release in force; it keeps the caller's scope. `console_set_practice_location()` is the
-platform administrator's (`organization.manage`), runs in the one practice's scope and restores the caller's (a
-reviewed scope function in `packages/db/src/catalog.ts`), and returns null for a practice that does not exist.
-`console_set_practice_settings()` keeps its signature, so the previous image's save works: a ZIP that differs from the
-location's sets it and clears its ZIP+4, the same ZIP or none leaves it, and `practice.zip` is never written.
-`console_practice_settings()` reads the location's ZIP.
+**Who sets it.** `practice_set_location()` (definer) refuses anyone but a person outside the platform's staff
+(`user_is_internal()`) who holds `pricing_settings.set` in an active practice of the transaction's scope, and a
+malformed ZIP or ZIP+4 by the constraint's name, upserts the row and returns its status under the release in force; it
+keeps the caller's scope. The save is the person's confirmation of the location (`practice_site.confirmed_by` and
+`confirmed_at`, both or neither, `practice_site_confirmed`). `practice_confirm_location(practice)` (definer, the same
+guard, granted to `tp_app` alone) confirms the location as it stands, only when it leaves nothing to change under the
+release in force (`ready` or `locality_not_loaded`; otherwise `practice_site_settled`), and records the person and the
+time on the row; Getting started's "Confirm your billing ZIP" reads `confirmed_at >= updated_at` there, under the
+row's tenant policy, so every role that opens the practice reads the same answer. `practice_site_rules()` moves
+`updated_at` and `updated_by` only when the ZIP or ZIP+4 changes, whoever writes the row, so a save of the same
+location neither lists runs as priced before a change nor undoes a confirmation. `console_set_practice_location()` is
+the platform administrator's (`organization.manage`), runs in the one practice's scope and restores the caller's (a
+reviewed scope function in `packages/db/src/catalog.ts`), clears the confirmation when the ZIP or ZIP+4 changes, and
+returns null for a practice that does not exist or is deleted. `console_set_practice_settings()` keeps its signature,
+so the previous image's save works: a ZIP that differs from the location's sets it and clears its ZIP+4 and the
+confirmation, for a person and an active practice alone; the same ZIP or none leaves it, and `practice.zip` is never
+written (that branch is dropped once the previous image is gone, a follow-up). `console_practice_settings()` (dropped
+and recreated for its new column, its grant restated) reads the location's ZIP and ZIP+4, so the console shows the
+stored location and its status now and starts its form from it.
 
 **No run without a location.** `pricing_run_rules()` (still invoker) refuses a run, a re-run included, of a practice
 of the caller's scope that has no location (`pricing_run_location_missing`). A run of a practice outside the scope is
@@ -264,13 +277,16 @@ constraint, index, triggers, policy, primary key and foreign key renamed; `scree
 pins the split in force (`pricing_run.place_of_service_split_id`, set by `pricing_run_rules()` through the definer
 `place_of_service_split_in_force()`; another value is refused, `pricing_run_split_pinned`; fixed once inserted; null
 on every earlier run and when none is approved), and the price job reads it through the definer
-`pricing_run_split(run)`, which answers only in the run's own practice's scope. `console_place_of_service_splits()` and
+`pricing_run_split(run)`, which answers only in the run's own practice's scope, with the split's settings and when it
+was approved (the re-run's diff names both approvals). `console_place_of_service_splits()` and
 `console_approve_place_of_service_split()` replace the screening's console functions.
 
 **The screening's ZIP+4.** `screening_prospect.zip_plus_four` is kept only when the ZIP's `locality_map` record needs
 it, and deleted with the prospect. `submit_screening()` takes it after the ZIP and refuses `screening_zip_unknown`,
 `screening_zip_plus_four` (enter the ZIP+4), `screening_zip_plus_four_unknown` and `screening_locality_not_loaded`
-from `locality_status()`; `screening_zip_status()` is dropped. `operator_screening_claim()` returns the ZIP+4, and the
+from `locality_status()`, the last first, before any ZIP+4 is asked for, when the release in force holds no
+`locality_map_plus_four` record of the ZIP; `screening_zip_status()` is dropped. `screening_result_summary()` returns
+the prospect's ZIP+4 (kept as before), and the result's heading names it. `operator_screening_claim()` returns the ZIP+4, and the
 keyed read holds the ZIP's `locality_map_plus_four` record (the sixth keyed type, left out of
 `operator_screening_release()`). The labels move to `screening-labels/2026-11-05` (`screening_labels_version()`).
 
@@ -294,8 +310,7 @@ found by the review round: a run the previous image's web or monitor inserts in 
 alone (it reads no split), so the run completes, immutable, naming a split its traces did not use, and a place the
 practice has not set stops as `ENGINE_ERROR place_of_service_unmapped`. It happens only where a split is approved
 before the new worker runs: approve no split until the new worker is running, or re-run each run pinned in the window.
-The migration's header lists six effects; this seventh is recorded here and in the pull request's deploy notes, and
-joins the header with the migration's next change.
+The migration's header lists it as its seventh effect.
 
 **The Data dictionary stays verbatim** (reconciliation-001, D2 (a)): the domain model records `practice_site` and the
 seventeenth record type, as it records every accepted divergence, in place of the edit to `data-dictionary.md` the
@@ -338,13 +353,25 @@ items. What changed without the migration:
   again"; "tell us" links the support form; the screening says which quarters' Medicare rows it screens before a file
   is chosen.
 
-**Waiting on the migration.** Every other fix changes `20261105090000_pricing_location_and_zip_plus_four.sql`, which is
-edited only through the new-migration marker (`.claude/skills/new-migration`), and setting that marker was refused in
-this round's session. They are listed in the pull request as open items and land with the migration's next change, with
-the domain model regenerated and its new SHA-256 put to the founder: Postgres refusing the confirmation itself (a
-definer `practice_confirm_location()`, recorded on `practice_site.confirmed_by` and `confirmed_at`, which every role that
-opens the practice reads, by a non-internal person, refusing a location not settled); a deleted practice's location
-refused by `practice_set_location()` and the previous image's `console_set_practice_settings()`; a save of the same ZIP
-and ZIP+4 leaving `updated_at` as it was; the console's read of the stored ZIP+4 and the live status; the split's
-approval date for the re-run diff (`pricing_run_split()`); the screening result's ZIP+4; `submit_screening()` saying
-the ZIP+4 list is not loaded before asking a prospect for a ZIP+4; and the header's seventh deploy-window effect.
+**The migration's part (the same day).** The fixes that change `20261105090000_pricing_location_and_zip_plus_four.sql`
+waited for the new-migration marker, which this round's first session could not set. They landed on the founder's
+permission, relayed to the build on 2026-10-22, to use the marker route for this one unmerged migration: the marker was
+set for the edits alone and removed before any test ran, no other migration changed, and every fix landed with a test
+that failed on the migration before it:
+
+- **Postgres refuses the confirmation itself, and every role that opens the practice reads it** (findings 1, 8 and 9).
+  `practice_confirm_location()` and `practice_site.confirmed_by` and `confirmed_at`, above. A viewer, an analyst, a
+  support engineer, a reviewer, another practice's administrator, a platform administrator and a job are refused as
+  the application role; the billing manager and the firm principal confirm and then see their own confirmation; a
+  location that still asks the customer for something is refused (`practice_site_settled`). The audit events stay.
+- **A deleted practice's location is never set** (finding 2), by `practice_set_location()`,
+  `practice_confirm_location()` or the previous image's `console_set_practice_settings()`, whose ZIP branch also
+  requires a person.
+- **A save of the same ZIP and ZIP+4 changes nothing but the confirmation** (finding 11), whoever writes the row.
+- **The console shows the stored ZIP+4 and the status now** (finding 14): the form starts from the stored location;
+  the links back carry `?location=saved` and `?created=<practice>` alone, and the pages read the status from the
+  database, so a reload or an edited link never shows a status the location does not have.
+- **The re-run diff names when each split was approved** (finding 16), read through `pricing_run_split()`.
+- **The screening result names the ZIP+4** (finding 21), "00012-5001" in its heading.
+- **The screening says the ZIP+4 list is not loaded before asking for a ZIP+4** (finding 22), as above.
+- **The header lists the seventh deploy-window effect** (finding 7).

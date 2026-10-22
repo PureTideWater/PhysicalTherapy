@@ -48,7 +48,9 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   after it). The ZIP+4 is asked for only when the ZIP's `locality_map` record needs it, and is kept only then
   (`zip_plus_four`, deleted with the prospect at 30 days). A ZIP that needs one and lacks it is refused as
   `screening_zip_plus_four` ('enter the ZIP+4'), one the ZIP+4 file does not list as `screening_zip_plus_four_unknown`,
-  and one whose ZIP+4 list is not loaded as `screening_locality_not_loaded` (PR 6b, ADR 0064).
+  and one whose ZIP+4 list is not loaded as `screening_locality_not_loaded`, with or without a ZIP+4, so a prospect is
+  never asked for a ZIP+4 the screening cannot use (PR 6b, ADR 0064; its review round's finding 22). The result's
+  heading names the ZIP+4 kept (finding 21).
 - `screening_upload`: its row count, accepted or rejected, and the rejection reasons, which
   `screening_rejections_valid()` holds to at most 20 objects of a code, a column position, a row, a first row, a
   field and a PHI kind: never a header's text or a cell's value. No byte of the file is stored, and no hash of it.
@@ -858,8 +860,8 @@ for these questions as long as it optimizes the app"). Those this record's scree
   - a ZIP+4 the list does not hold (right under either answer to Q37, so never "check the four digits"): "Medicare’s
     ZIP+4 list in force does not list this ZIP+4. If the four digits after the hyphen are right, a screening cannot price
     this ZIP+4 yet.";
-  - a ZIP whose ZIP+4 list is not loaded: "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a
-    screening cannot price it. Try again later.";
+  - a ZIP whose ZIP+4 list is not loaded, with or without its ZIP+4 (said before any ZIP+4 is asked for): "PaidWhole has
+    not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.";
   - before a file is chosen: "Medicare rows of 2026-Q1 to 2026-Q4 are screened; rows of other quarters are left out and
     counted." (no content loaded: "PaidWhole has no Medicare content loaded yet, so Medicare rows are left out and
     counted."), and the two Medicare products' notes end "for the quarters PaidWhole has loaded";
