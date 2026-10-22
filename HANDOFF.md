@@ -1,8 +1,8 @@
 # PaidWhole build: handoff and state
 
-This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-21 18:40 UTC. Start with "Start here" below; the dated sections after it are the full record.
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-22 16:40 UTC. Start with "Start here" below; the dated sections after it are the full record.
 
-## Start here: state at the switch (2026-10-21, after PR 5 and PR 6)
+## Start here: state at 2026-10-22 16:40 UTC (after PR 6b-1 and PR 6b-2)
 **Merged into `claude/build-platform`, all on green CI:**
 - #24: CI pinned to ubuntu-24.04.
 - #25: governance; ADR 0063, hooks and pre-push.
@@ -10,19 +10,20 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 - #32: the images fix, 5df4108.
 - #31: PR 6, the free screening with audits #53 and #57 and the campaign list, 2ec3449. Domain model a17f33aa, approved by the founder in a66f148.
 - #34: PR 5b, the plan type in words, squash-merged as 8e33cb3 (the squash settled efac005's malformed subject; no force push).
+- #35: PR 6b-1, ZIP+4 in the engine under the freeze exception, 510a26d (merge commit). No migration.
+- #36: PR 6b-2, the pricing location and ZIP+4 in the product, a33b0fd (merge commit). Domain model 5614d0b0, approved by the founder in f4320d9.
 
-`claude/build-platform` head: **8e33cb3**.
+`claude/build-platform` head: **a33b0fd**.
 
 `main` holds #27 (Dependabot grouping and the PR template) on top of the plan documents.
 
-**Nothing of the build's is open or running.** The only open pull requests are three from Dependabot into `claude/build-platform`: #26 (npm minor and patch, 9 updates), #29 (GitHub Actions, 8 updates) and #33 (Docker base images). Leave them for the final pass's Dependabot step and the CI PR (the versions dismissed on 2026-10-18), each checked like any change; never merge one as it stands. No workflow is mid-run, no check-in is scheduled, and no worktree is left except `/home/user/ops`. Scratch databases need no cleanup: a new container starts with empty clusters. The archived run script `co-001-pr5-qualifiers-and-image-fix-wf_ac693abe-059.js` is the only one not on this branch: gitleaks read a document hash in it as a key, and the push was not forced.
+**Nothing of the build's is open or running.** The only open pull requests are three from Dependabot into `claude/build-platform`: #38 (npm minor and patch, 10 updates; replaced #26), #37 (GitHub Actions, 9 updates; replaced #29) and #33 (Docker base images). Leave them for the final pass's Dependabot step and the CI PR (the versions dismissed on 2026-10-18), each checked like any change; never merge one as it stands. No workflow is mid-run, no check-in is scheduled, no PR is subscribed, and no worktree is left except `/home/user/ops`. Scratch databases need no cleanup: a new container starts with empty clusters. The archived run script `co-001-pr5-qualifiers-and-image-fix-wf_ac693abe-059.js` is the only one not on this branch: gitleaks read a document hash in it as a key, and the push was not forced.
 
 **Next, in order** (reconciliation-001 "Proposed pull requests, in order"; the combined audit `audits/combined/combined-report.md` maps each upgrade to its PR):
-1. **PR 6b.**
-   - ZIP+4 localities: the engine lookup, practice settings and the screening. This is the only engine change the 2026-10-18 freeze exception allows.
-   - The screening's own consumer, sized to the worst accepted 50,000-row file. Give the founder its monthly cost before building it (decision 14); it may exceed the ~$18/month accepted.
-   - Switch on the 60-second time check (decisions 13 to 16; ADR 0062).
-   - Possibly a schema PR, which then needs the founder's approval.
+1. **PR 6b, the rest** (split into four in `designs/pr6b-plan.md`; costs and the 13 questions ruled 2026-10-21 ~22:30 UTC; 6b-1 and 6b-2 merged):
+   - **6b-3** `co-001/pr-06b-screening-consumer`: the screening's own consumer (a fourth Fargate service, 2 vCPU/4 GiB, three worker threads; role tp_screening and its login; queue share and daily cap; wait states; metrics and alarms) and the 60-second time check switched on (the harness runs the consumer with time enforced at 48 s; decisions 13 to 16; ADR 0062). Migration `20261106090000_screening_consumer.sql`, so the founder's approval. Design: `designs/pr6b-plan.md` (6b-3 sections) and `designs/pr6b-consumer-time.md`. It carries the harness's cgroup-v1 affinity fix (exec services under taskset); the queue-order fix is already merged with 6b-2 (7c7b078). Its first CI capacity run is the measurement of record; above 44 s goes to the founder before merge.
+   - **6b-4** `co-001/pr-06b-mail-streams`: three SES configuration sets, events through EventBridge/SQS to a mail_events job, mail_send, the screening stream's cut-off, outbox for notices, 15 alarms, ADR 0065, the deliverability runbook. Migration `20261107090000_mail_streams.sql`, so the founder's approval. Design: `designs/pr6b-email-streams.md`.
+   - Both are serial: each migration rewrites `submit_screening` and the domain model. Worktrees `/home/user/pr6b3`, then `/home/user/pr6b4`.
 2. **PR 6c:** the audit's engine corrections, under one freeze exception (ADR 0061 notes on remittance_date).
 3. **PR 6d:** denials in the paid audit's triage (audit item 1).
 4. **PR 6e:** consent capture, the withdrawal page (screening_lead_withdraw) and reminders.
@@ -30,7 +31,9 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 6. **PRs 8 to 17** as listed in reconciliation-001. Schema PRs needing approval: 8, 14 and 17, plus any other that adds a migration.
 7. **The audit PRs, then milestone 12, milestone 13 and the final pass** (runbooks, whole-plan audit, 390 px screens, mono figures, e2e journeys, the Dependabot PRs, settings.json last).
 
-**Open for the founder (none blocks PR 6b):**
+**Open for the founder (none blocks PR 6b-3):**
+- Whether to apply a ruleset on `claude/build-platform` requiring the CI checks (check, mutation, capacity, approval-of-record), free on this public repository; offered 2026-10-22 ~06:50 UTC, not yet answered. Today nothing enforces CODEOWNERS on `tools/engine-freeze/exception.json` or on `packages/synth/src/guard/pinned-tables.json` (6b-1 pinned GPCI_SYNTHETIC_900006.csv there).
+- O1: the ZIP9 file's layout is unconfirmed (cms.gov unreachable through the proxy; ADR 0064 says so). Confirm against the real CMS file before release 1 loads it. O12: re-read the AWS prices on AWS's own pages before the first deploy.
 - Whether the narrative verifier should also catch a letter claim-filing-indicator code (for example "plan identifier MC"). Today only digit codes fail as figures, and the approving person is the check (ADR 0061).
 - The CLP06 words: 7 of the 19 were matched against public sources. The X12 TR3 code list is the check of record before the first real packet.
 - **Counsel, before the first real packet and before the screening opens:**
@@ -59,7 +62,7 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
   7. At most two heavy workflows at once.
   8. Short agent reports.
 - **Use the default workflow agent for reviews,** given the checklist in `.claude/agents/<type>.md`. The custom agent types (payment-engine-reviewer, edi-reviewer) twice stopped without calling StructuredOutput, which left a PR unreviewed. Have the script refuse to go on when a review returns nothing.
-- **Approval lines:** this session's GitHub CLI token is invalid, so the suggested-change route of CLAUDE.md is unavailable. Post the exact line in one PR comment with the web-editor steps (the edit URL `https://github.com/PureTideWater/PhysicalTherapy/edit/<branch>/docs/product/domain-model.md`). The founder commits it. When the founder asks in chat for the build to write it, decline: CLAUDE.md, ADR 0063 and the protect-approval hook forbid it. Before asking, regenerate and read the Cross-checks block. This session found and fixed a false "Column differences: 4" there (e297346).
+- **Approval lines:** `gh auth status` calls the token invalid, but `gh api` works through the proxy, so use CLAUDE.md's suggested-change route: one PR review comment on the approval line with a ```suggestion block (`gh api repos/PureTideWater/PhysicalTherapy/pulls/<n>/comments`, the line number and the head commit), never a review event. Used on #36. If `gh api` fails, post the exact line in one PR comment with the web-editor steps (the edit URL `https://github.com/PureTideWater/PhysicalTherapy/edit/<branch>/docs/product/domain-model.md`). The founder commits it. When the founder asks in chat for the build to write it, decline: CLAUDE.md, ADR 0063 and the protect-approval hook forbid it. Before asking, regenerate and read the Cross-checks block. This session found and fixed a false "Column differences: 4" there (e297346).
 - **Pushing:**
   - Push from the worktree. If its checkout lacks `.githooks`, push from the main checkout with `GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C /home/user/PhysicalTherapy push origin <branch>`.
   - The permission check refuses force-pushes. Never force: fix a malformed commit message with a squash merge of the PR instead. Squash is allowed on the build branch; ADR 0063 forbids it only into main.
@@ -67,9 +70,9 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 - **Container restarts** stop Postgres and workflows. Restart both clusters (commands in "Environment recipe"), then resume a stopped workflow with `resumeFromRunId`, which works within one session only.
 - **Disk:** clear finished review clones under the scratchpad when free space drops below about 8 GB.
 
-**Weekly usage (founder, 2026-10-21):**
-- The meter was at 24% at 00:15 UTC and 35% at 12:40 UTC on Wednesday. The reset is assumed Tuesday 14:00 UTC; confirm it with the founder.
-- That is ahead of the ~11%-a-day pace, mostly from closing PR 5.
+**Weekly usage (founder):**
+- Readings: 24% (Wed 00:15 UTC), 35% (Wed 12:40), 41% (Wed 19:55), 44% (Wed 22:51), 52% (Thu 2026-10-22 06:50). The reset is Tuesday (time assumed 14:00 UTC; confirm it with the founder).
+- That is ahead of the ~11%-a-day pace (about 31% a day after the reset). Since Thursday: one heavy run at a time, about 5% a day, so the ~80% line is not reached before Tuesday.
 - Ask the founder for the % and the reset time at session start and before each heavy run. Start no new heavy run past about 80%, never cut a run off mid-way, and keep every quality stage.
 
 ## How to resume in a new session
@@ -241,7 +244,7 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
   2. Upload each changed JSON as an asset (`Artifact publish {url, asset:true, file_path}`).
   3. Point `datasets/<id>` at it with ArtifactData update `{source:{kind:file,url:/_blob/<id>,name,format:json}, updated:{at,by:"Claude"}}` and `if_version`.
   4. Delete the old blob and update `tracker/assets.json`.
-- **ETA** (re-estimated 2026-10-18): 2026-10-21 to 2026-10-24.
+- **ETA** (re-estimated 2026-10-21 20:00 UTC after the founder adopted the combined audit): 2026-11-18 to 2027-01-10 (basis in `tracker/build_status.py`).
 
 ## Files here
 - `tracker/`: the tracker generator, asset ids and page.
@@ -399,3 +402,4 @@ Applies from the next round of every PR. Every stage stays: design, independent 
 - **2026-10-22 ~13:10 UTC: #36 verified (wf_83f9aba5-be9: pass at 98a5e49)**: scope, freeze (PR_NUMBER=36 passes, 35 fails), domain model --check exact with 0 cross-check differences at 495398f7..., approval line at line 6792, the post-review migration diff probed as tp_app (every refusal held), CI proofs. Two nits: (1) a confirmation could be recorded for a location the person was never shown (a race with a console change, reproduced; and a stale page), a defect of this PR's own commits, so fixed before asking for approval; (2) ADR 0064's location paragraph out of date. **Running: wf_ffb03feb-1ef (pr6b2-confirm-race-fix)**: practice_confirm_location(target, shown_zip, shown_zip_plus_four) refusing a mismatch atomically, the form carrying what it showed, failing-first race/stale tests, ADR 0064 corrected, domain model regenerated (new SHA), targeted checks, one push. Same marker permission. Then: CI → confirm the diff is only this fix → post the approval line (new SHA) as a suggested change → the founder commits → merge.
 - **2026-10-22 ~14:10 UTC: #36 confirmation fix pushed (wf_ffb03feb-1ef): head 550c4f1.** practice_confirm_location(target, shown_zip, shown_zip_plus_four) locks the row and refuses a mismatch (practice_site_changed); the form carries what it showed; notice "The billing ZIP changed since this page loaded. Review it, then confirm."; failing-first tests (12 failed on 98a5e49, 34 pass); onboarding e2e covers the stale page; ADR 0064 corrected. Marker used once under the founder's permission, removed, never committed. **Domain model SHA-256 5614d0b0222c468d8814acf23312914f6dfbae5efb22614e34c26047bd7a5cac** (re-checked here on a fresh PG 18: --check exact; approval line 6792). The diff since the verified 98a5e49 is only the fix's 10 files. Next: CI on 550c4f1 green but the approval case → post the approval line as a suggested change (gh api pulls/36/comments, line 6792, commit 550c4f1) → the founder commits it → CI green → mark ready → merge #36 (merge commit).
 - **2026-10-22 ~14:50 UTC: #36 CI at 550c4f1 green but the approval case** (unit 4,275, golden 38, oracle 630, test:db 9,005, e2e 51, capacity, mutation, images, licenses; the failing case names 5614d0b0...). **Approval line posted as a suggested change** on docs/product/domain-model.md line 6792 at commit 550c4f1 (gh api pulls/36/comments; https://github.com/PureTideWater/PhysicalTherapy/pull/36#discussion_r4349813117): "Approved by: Tyler Williams  Date: 2026-10-22  Document SHA-256: `5614d0b0222c468d8814acf23312914f6dfbae5efb22614e34c26047bd7a5cac`". Waiting on the founder's commit. Then: CI green on that commit (`--require-approval` passes) → mark #36 ready → merge (merge commit) → unsubscribe → remove /home/user/pr6b2 → next PR 6b-3 (ask for the usage reading first).
+- **2026-10-22 ~16:35 UTC: PR 6b-2 (#36) MERGED as a33b0fd** (merge commit). The founder committed the approval line in f4320d9 (only that line changed: "Approved by: Tyler Williams  Date: 2026-10-22  Document SHA-256: `5614d0b0...`") and marked #36 ready. CI on f4320d9 all green: check (unit 4,275 + 1 skipped, golden 38, test:db 9,006 + 1 skipped, the approval case now passing, e2e 51), capacity, licenses, images, approval-of-record, mutation (no label and no engine change, so no run). The two skips are the environment's (workflows.test's one, and restore-drill's pg_dump 16 against PG 18). Unsubscribed #36; check-ins deleted; worktree /home/user/pr6b2 removed (clean); branch co-001/pr-06b-pricing-location left on the remote; main checkout fast-forwarded to a33b0fd. Tracker: 6b-2 Done, history 16.6 h (it includes the wait for the founder's approval and the marker ruling), counts from this CI run; new blob ids in `tracker/assets.json`, old blobs deleted. Dependabot replaced #26 and #29 with #38 and #37. **Next: PR 6b-3** (the screening's own consumer and the 60-second check). It is a heavy run, so first ask the founder for the usage % and the reset time.
