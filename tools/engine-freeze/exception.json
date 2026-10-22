@@ -1,5 +1,5 @@
 {
-  "ruling": "The founder's answer of 2026-10-21 (about 22:30 UTC) to PR 6b's Q3 (a), recorded in docs/adr/0064: widen rule_record's record-type CHECK by locality_map_plus_four in PR 6b-2's migration, a granted exception to reconciliation-001's rule-table check (no DDL on rule_release, rule_record or rule_release_withdrawal). No engine file and no golden file changes in PR 6b-2.",
+  "ruling": "The founder's ruling of 2026-10-18 11:47 UTC (docs/product/reconciliation-001.md, the engine freeze and Approval; ADR 0062, owner ruling 3): PR 6b fixes ZIP+4 localities before launch; and the founder's answer of 2026-10-21 (about 22:30 UTC) to PR 6b's Q3 (a), recorded in docs/adr/0064: widen rule_record's record-type CHECK by locality_map_plus_four in PR 6b-2's migration, a granted exception to reconciliation-001's rule-table check (no DDL on rule_release, rule_record or rule_release_withdrawal). No engine file and no golden file changes in PR 6b-2.",
   "engine_files": [],
   "golden_added": [],
   "golden_edited": [],
