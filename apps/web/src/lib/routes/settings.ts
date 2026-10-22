@@ -7,7 +7,7 @@ import { LedgerSettingsRefused, setLedgerSettings } from '@tp/worker/ledger';
 import { CorrespondenceContactError, type CorrespondenceContact, USPS_STATE_CODES, correspondenceText } from '@tp/packets';
 import { CorrespondenceContactRefused, practiceCorrespondenceContact, setCorrespondenceContact } from '@tp/worker/packets';
 import { organizationBilling } from '@tp/worker/billing';
-import { type MembershipRole, PermissionDeniedError, rolesPermit } from '@tp/db/runtime';
+import { type MembershipRole, rolesPermit } from '@tp/db/runtime';
 import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
@@ -155,7 +155,7 @@ export const settingsPage = practiceRoute({
       ]);
       const uploads = await scope.client.query<{ count: string }>('SELECT count(*) AS count FROM source_document WHERE practice_id = $1', [practiceId]);
       const billing = rolesPermit(access.roles, 'organization.billing') ? await organizationBilling(scope.client, organizationId) : null;
-      const { location, reading } = await practiceLocationReading(scope.client, practiceId);
+      const { reading } = await practiceLocationReading(scope.client, practiceId);
       checklist = [
         { key: 'mfa', done: true, href: '/account/devices' },
         { key: 'terms', done: true, href: '/terms' },
@@ -166,7 +166,7 @@ export const settingsPage = practiceRoute({
         // for the customer to change (audit #33; docs/adr/0064). Pricing never waits for the confirmation.
         {
           key: 'billing_zip',
-          done: billingZipDone(reading, await locationConfirmed(scope.client, practiceId, location)),
+          done: billingZipDone(reading, await locationConfirmed(scope.client, practiceId)),
           href: pricingSettingsPath(practiceId),
           ...(billingZipStep(reading) ?? {}),
         },
@@ -553,7 +553,7 @@ export interface PricingSettingsPageData {
   readonly locationText: string | null;
   /** Its status in the release in force over the whole release, and the sentence for it. */
   readonly reading: LocationReading;
-  /** Whether a person of the practice set or confirmed it since it last changed (read by the administrators). */
+  /** Whether a person of the practice set or confirmed it since it last changed (everyone who opens the practice reads it). */
   readonly confirmed: boolean;
   readonly places: readonly PlaceInEffect[];
   /** shown: the split in force's places are listed; not_read: a split is approved but no run of the practice has pinned it yet; none: none is approved. */
@@ -636,7 +636,7 @@ export const pricingSettingsPage = practiceRoute({
       location,
       locationText: location === null ? null : zipCodeText(location.zip, location.zipPlusFour),
       reading,
-      confirmed: await locationConfirmed(scope.client, practiceId, location),
+      confirmed: await locationConfirmed(scope.client, practiceId),
       places,
       split,
       waiting: await monthsWaitingOnLocation(scope.client, practiceId),
@@ -704,9 +704,12 @@ export const setPricingLocationAction = practiceRoute({
 });
 
 /**
- * Confirms the location as it stands (Getting started's "Confirm your billing ZIP"), recorded as an audit event: a
- * location the platform administrator entered, or changed, waits for a person of the practice to confirm it. The
- * role check here and in Postgres (app_actor_permitted, the database's answer for the transaction's actor).
+ * Confirms the location as it stands (Getting started's "Confirm your billing ZIP"): a location the platform
+ * administrator entered, or changed, waits for a person of the practice to confirm it. The role check here and in
+ * Postgres: practice_confirm_location() refuses anyone but a person outside the platform's staff who holds
+ * pricing_settings.set in the active practice (42501), and a location that still asks the customer for something
+ * (practice_site_settled), and records the confirmation on the location, which everyone who opens the practice reads
+ * (review of PR 6b-2, findings 1, 8 and 9). Audited as pricing_location_confirmed.
  */
 export const confirmPricingLocationAction = practiceRoute({
   id: 'practice.settings.pricing_confirm',
@@ -718,10 +721,6 @@ export const confirmPricingLocationAction = practiceRoute({
   input: z.object({ confirm: z.literal('on', { message: 'confirm the billing ZIP above' }) }),
   audit: { action: 'pricing_location_confirmed', objectType: 'practice' },
   handle: async ({ scope, practiceId }): Promise<MutationResult> => {
-    const permitted = (await scope.client.query<{ permitted: boolean | null }>("SELECT app_actor_permitted($1, 'pricing_settings.set') AS permitted", [practiceId])).rows[0]?.permitted;
-    if (permitted !== true) {
-      throw new PermissionDeniedError('pricing_settings.set', 'no_role', []);
-    }
     const { location, reading } = await practiceLocationReading(scope.client, practiceId);
     if (location === null) {
       throw new InputError([{ field: 'zip', message: 'add the billing ZIP first' }]);
@@ -731,6 +730,7 @@ export const confirmPricingLocationAction = practiceRoute({
     if (!locationSettled(reading)) {
       throw new InputError([{ field: 'zip', message: reading.text }]);
     }
+    await scope.client.query('SELECT practice_confirm_location($1)', [practiceId]);
     return { objectId: practiceId, redirect: `${pricingSettingsPath(practiceId)}?notice=confirmed` };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ confirm: 'on' }) },

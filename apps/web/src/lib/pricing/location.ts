@@ -78,22 +78,18 @@ export async function practiceLocationReading(client: ScopeClient, practiceId: s
 }
 
 /**
- * Whether a person of the practice has set or confirmed the location since it last changed: its latest
- * pricing_location_set or pricing_location_confirmed event is at or after the location's updated_at. A location the
- * platform administrator entered at creation, or changed from the console, therefore waits for the practice's
- * confirmation; pricing never waits for it. The events are read under audit_event's own policy (the practice's
- * administrators), so for anyone else it reads as unconfirmed.
+ * Whether a person of the practice has set or confirmed the location since it last changed: the confirmation
+ * practice_set_location() and practice_confirm_location() record on the location (by a person outside the platform's
+ * staff who holds pricing_settings.set, checked there) is at or after its updated_at, compared in Postgres. A location
+ * the platform administrator entered at creation, or changed, therefore waits for the practice's confirmation (the
+ * console's change clears it); pricing never waits for it. Read under practice_site's tenant policy, so everyone who
+ * opens the practice reads the same answer (review of PR 6b-2, findings 1 and 8). False when the practice has no
+ * location.
  */
-export async function locationConfirmed(client: ScopeClient, practiceId: string, location: PracticeLocation | null): Promise<boolean> {
-  if (location === null) {
-    return false;
-  }
+export async function locationConfirmed(client: ScopeClient, practiceId: string): Promise<boolean> {
   const { rows } = await client.query<{ confirmed: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM audit_event e
-        WHERE e.practice_id = $1 AND e.actor_kind = 'user' AND e.action IN ('pricing_location_set', 'pricing_location_confirmed') AND e.at >= $2
-     ) AS confirmed`,
-    [practiceId, location.updatedAt],
+    'SELECT (s.confirmed_at IS NOT NULL AND s.confirmed_at >= s.updated_at) AS confirmed FROM practice_site s WHERE s.practice_id = $1',
+    [practiceId],
   );
   return rows[0]?.confirmed === true;
 }
