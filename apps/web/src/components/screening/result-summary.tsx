@@ -16,6 +16,7 @@ import {
   outsideContentNote,
 } from '../../lib/screening/labels';
 import { type KeptWith, resultRetention } from '../../lib/screening/retention';
+import { zipCodeText } from '../../lib/zip';
 import { utc, utcDate } from '../format';
 
 /**
@@ -53,6 +54,8 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly practiceName: string;
   readonly state: string;
   readonly zip: string;
+  /** The ZIP+4's four digits, kept only when the ZIP's locality needs them; null otherwise. */
+  readonly zipPlusFour: string | null;
   readonly releaseNo: number;
   readonly engineVersion: string;
   readonly createdAt: Date | string;
@@ -138,7 +141,7 @@ export function ScreeningHeading({ summary, converted = false }: { readonly summ
     <div className="flex flex-col gap-1">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Your free screening</h1>
       <p className="text-base text-muted-foreground">
-        <span data-copy="practice">{summary.practiceName}</span>, {summary.state} <span className="font-mono tabular-nums">{summary.zip}</span>. Screened {utc(summary.createdAt)} under rule release{' '}
+        <span data-copy="practice">{summary.practiceName}</span>, {summary.state} <span className="font-mono tabular-nums">{zipCodeText(summary.zip, summary.zipPlusFour)}</span>. Screened {utc(summary.createdAt)} under rule release{' '}
         <span className="font-mono tabular-nums">{summary.releaseNo}</span> (engine <span className="font-mono">{summary.engineVersion}</span>).
       </p>
       <p className="text-sm text-muted-foreground" data-copy={converted ? 'kept-converted' : 'kept'} data-kept-with={summary.keptWith} data-legal-surface="screening-kept-result">

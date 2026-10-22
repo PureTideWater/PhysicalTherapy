@@ -233,7 +233,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SCR-15',
     title: 'A screening of a ZIP split across localities',
     assertion:
-      'The ZIP+4 is asked for, and kept only when needed and only for 30 days. Rows are priced at its locality, and the keyed read holds the plus-four record',
+      'The ZIP+4 is asked for, and kept only when needed and only for 30 days; under a release with no ZIP+4 list of the ZIP, the list is said not loaded before any ZIP+4 is asked for. Rows are priced at its locality, the keyed read holds the plus-four record, and the result names the ZIP+4',
   },
   {
     id: 'SCR-16',

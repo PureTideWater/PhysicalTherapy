@@ -640,6 +640,8 @@ export interface ScreeningSummary extends ScreeningGroupTotals {
   readonly practiceName: string;
   readonly state: string;
   readonly zip: string;
+  /** The ZIP+4's four digits, kept only when the ZIP's locality needs them (the heading names it); null otherwise. */
+  readonly zipPlusFour: string | null;
   readonly releaseNo: number;
   readonly engineVersion: string;
   readonly createdAt: Date;
@@ -819,6 +821,7 @@ type SummaryRow = Record<
   readonly practice_name: string;
   readonly state: string;
   readonly zip: string;
+  readonly zip_plus_four: string | null;
   readonly release_no: number;
   readonly engine_version: string;
   readonly created_at: Date;
@@ -937,6 +940,7 @@ export const screeningResult = publicRoute({
           practiceName: summary.practice_name,
           state: summary.state,
           zip: summary.zip,
+          zipPlusFour: summary.zip_plus_four,
           releaseNo: summary.release_no,
           engineVersion: summary.engine_version,
           createdAt: summary.created_at,

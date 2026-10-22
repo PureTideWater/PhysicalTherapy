@@ -42,6 +42,7 @@ const SUMMARY: ScreeningSummaryData = {
   practiceName: 'SYNTHETIC SCREENING CLINIC',
   state: 'ZZ',
   zip: '00011',
+  zipPlusFour: null,
   releaseNo: 900001,
   engineVersion: 'engine/1',
   createdAt: '2026-10-18T12:00:00.000Z',
@@ -546,6 +547,16 @@ describe('the coverage', () => {
     expect(html).toMatch(/data-coverage="medicaid:not_screened"[\s\S]*?Not screened/);
     expect(text(html)).toContain('33% of the rows (2 of 6) cannot be priced without a contract');
     expect(html).not.toContain('data-tone="whole"');
+  });
+});
+
+describe('the screening’s heading', () => {
+  /** The location the heading names, in its mono span before "Screened". */
+  const location = (summary: ScreeningSummaryData) => /, ZZ <span class="font-mono tabular-nums">([^<]*)<\/span>\. Screened/.exec(renderToStaticMarkup(<ScreeningHeading summary={summary} />))?.[1];
+
+  it('names the ZIP+4 that chose the locality, and the five digits alone when none was kept (review of PR 6b-2, finding 21)', () => {
+    expect(location({ ...SUMMARY, zip: '00012', zipPlusFour: '5001' })).toBe('00012-5001');
+    expect(location(SUMMARY)).toBe('00011');
   });
 });
 

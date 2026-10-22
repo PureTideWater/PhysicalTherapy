@@ -34,7 +34,8 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screening
  * - SCR-15, a ZIP split across localities (PR 6b; the founder's ruling of 2026-10-18, 11:47 UTC, superseding ruling 3):
  *   the ZIP code field takes five digits or ZIP+4; a ZIP that needs its ZIP+4 is refused until it is given ("enter the
  *   ZIP+4"), one the ZIP+4 list does not hold is refused, and one whose ZIP+4 list is not loaded is refused as not
- *   loaded; the ZIP+4 is kept only for a ZIP that needs it.
+ *   loaded, with or without a ZIP+4, before any ZIP+4 is asked for; the ZIP+4 is kept only for a ZIP that needs it, and
+ *   the result names it.
  * - SCR-16, a Medicare row in a quarter outside the release's loaded content (the founder's answer of 2026-10-21 to
  *   Q6 (a)): the browser leaves it out and counts it, a request that sends one anyway is refused by its row, and the
  *   result says how many rows were not screened and that PaidWhole has not loaded the content for them.
@@ -387,12 +388,13 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
   const kept = async (email: string) =>
     (await world.owner.query<{ zip: string; zip_plus_four: string | null }>('SELECT zip, zip_plus_four FROM screening_prospect WHERE contact_email = $1', [email])).rows;
 
-  it('asks for the ZIP+4 of a ZIP that needs one, and says the ZIP+4 list is not loaded under a release without one, never "check the digits"', async () => {
+  it('says the ZIP+4 list is not loaded under a release without one, before asking for a ZIP+4 it could not use, and never "check the digits"', async () => {
     const email = 'prospect.plusfour@clinic-plusfour.synthetic.test';
+    // 900001 flags 00012 and has no ZIP+4 list: PaidWhole has not loaded it, so the prospect is not sent to look up a
+    // ZIP+4 first (review of PR 6b-2, finding 22); a ZIP+4 given changes nothing.
     expect(issuesOf(await submitted(submitInput({ zip: '00012', contactEmail: email })))).toEqual([
-      { field: 'zip', message: 'This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.' },
+      { field: 'zip', message: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.' },
     ]);
-    // 900001 has no ZIP+4 list: PaidWhole has not loaded it.
     expect(issuesOf(await submitted(submitInput({ zip: '00012-0001', contactEmail: email })))).toEqual([
       { field: 'zip', message: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.' },
     ]);
@@ -424,6 +426,10 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
       const email = 'prospect.zip9.split@clinic-zip9-split.synthetic.test';
       expect(await send('00012-5000', email)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
       expect((await split.owner.query('SELECT zip, zip_plus_four FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ zip: '00012', zip_plus_four: '5000' }]);
+      // The result names the ZIP+4 that chose the locality (review of PR 6b-2, finding 21).
+      await split.price();
+      const result = ok(await split.call(screeningResult, { params: { resultId: split.tokenFor(email) } }));
+      expect(result.summary).toMatchObject({ zip: '00012', zipPlusFour: '5000' });
       // The gap between the list's ranges: the digits may be right (Q37 is open), so never "check the four digits".
       expect(issuesOf(await send('00012-9100', 'prospect.zip9.gap@clinic-zip9-gap.synthetic.test'))).toEqual([
         { field: 'zip', message: 'Medicare’s ZIP+4 list in force does not list this ZIP+4. If the four digits after the hyphen are right, a screening cannot price this ZIP+4 yet.' },

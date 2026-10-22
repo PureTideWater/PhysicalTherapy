@@ -344,6 +344,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/screening/screening.db.test.ts',
     'tools/screening-capacity/oracle.db.test.ts',
     'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
     'apps/web/e2e/screening.spec.ts',
   ]),
   'SCR-16': none(6, 'A row with an earlier quarter; no file.', [

@@ -53,7 +53,8 @@ import {
  * PR 6b (docs/adr/0064; SCR-15, SCR-16): the split the specialist approves is the one prepare.ts approved before any
  * spec (every practice's default for a place it has not set); a Medicare row in a quarter outside the loaded content
  * is left out in the browser and counted, with the loaded quarters named, and the result says so; and a ZIP that
- * needs its ZIP+4 is asked for it, while one whose ZIP+4 list is not loaded is told so, never to check the digits.
+ * needs its ZIP+4, under a release that has not loaded its ZIP+4 list, is told so before any ZIP+4 is asked for, and
+ * never to check the digits.
  *
  * Audit #57 (the founder's rulings of 2026-10-20; SCR-10 to SCR-13, the screens' side): the prospect lands with
  * campaign codes and a paid click in the URL, and the proxy sets the first-party attribution cookie (the codes and the
@@ -633,7 +634,7 @@ test('a specialist approves the split; a file with patient information is refuse
   await context.close();
 });
 
-test('a ZIP that spans more than one Medicare payment area is asked for its ZIP+4, and one whose ZIP+4 list is not loaded is told so, never to check the digits; the file stays chosen (SCR-15)', async ({ page }) => {
+test('a ZIP that spans more than one Medicare payment area, whose ZIP+4 list is not loaded, is told so before any ZIP+4 is asked for, and never to check the digits; the file stays chosen (SCR-15)', async ({ page }) => {
   const contact = `screening-zip4-${randomBytes(4).toString('hex')}@clinic-zip4.synthetic.test`;
   await page.goto('/screening');
   await page.getByLabel('Practice name').fill('SYNTHETIC SPLIT ZIP CLINIC');
@@ -650,19 +651,23 @@ test('a ZIP that spans more than one Medicare payment area is asked for its ZIP+
   await expect(page.getByRole('status').locator('[data-state="file-ready"]')).toBeVisible();
   await page.getByRole('button', { name: 'Screen the file' }).click();
   const error = page.locator('[data-state="error"]');
-  const asked = 'This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.';
+  // Release 900001 flags the ZIP and has not loaded its ZIP+4 list: the prospect is told so, never sent to look up a
+  // ZIP+4 the screening could not use (review of PR 6b-2, finding 22).
+  const notLoaded = 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.';
   await expect(error).toHaveAttribute('role', 'alert');
-  await expect(error).toContainText(`ZIP code: ${asked}`);
+  await expect(error).toContainText(`ZIP code: ${notLoaded}`);
+  await expect(error).not.toContainText('Enter the full ZIP+4');
   // The refusal is the ZIP field's: shown under it, marked invalid, described by it, and the focus is on it.
   await expect(zip).toHaveAttribute('aria-invalid', 'true');
   await expect(zip).toHaveAttribute('aria-describedby', 'field-zip-error field-zip-hint');
-  await expect(page.locator('#field-zip-error')).toHaveText(asked);
+  await expect(page.locator('#field-zip-error')).toHaveText(notLoaded);
   await expect(zip).toBeFocused();
-  // The file is still chosen: the ZIP+4 is all that changes. Under release 900001 its ZIP+4 list is not loaded.
+  // The file is still chosen, and a ZIP+4 given changes nothing while the list is not loaded.
   await expect(page.locator('[data-state="file-ready"]')).toBeVisible();
   await zip.fill(`${SCREENING_ZIP_PLUS_FOUR}-0001`);
   await page.getByRole('button', { name: 'Screen the file' }).click();
-  await expect(error).toContainText('ZIP code: PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.');
+  await expect(page.locator('#field-zip-error')).toHaveText(notLoaded);
+  await expect(error).toContainText(`ZIP code: ${notLoaded}`);
   await expect(error).not.toContainText('Check the four digits');
   await expectAccessible(page, 'the screening page with a ZIP refused');
   await noSidewaysScroll(page, 390, 'the screening page with a ZIP refused');
