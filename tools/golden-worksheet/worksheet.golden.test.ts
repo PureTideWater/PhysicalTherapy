@@ -89,6 +89,9 @@ interface GoldenClaim {
   readonly id: string;
   readonly covers: readonly string[];
   readonly inputs: {
+    readonly release: { readonly number: number; readonly dir: string };
+    /** `zip_plus_four` is absent unless the claim gives one (PR 6b; docs/adr/0064). */
+    readonly practice_settings: { readonly zip: string; readonly zip_plus_four?: string; readonly default_rounding: string | null };
     readonly place_of_service_settings: Record<string, string>;
     readonly claim: {
       readonly claim_status_code: string;
@@ -335,5 +338,26 @@ describe('golden lines', () => {
     for (const id of ['PRC-05', 'PRC-06', 'PRC-07', 'PRC-10', 'PRC-11', 'PRC-14', 'PRC-15', 'claim status 19', 'claim status 20', 'UNITS_RULE_UNKNOWN', 'suspended sequestration', 'MPPR general rate']) {
       expect(covered.has(id), id).toBe(true);
     }
+  });
+
+  it('give a ZIP+4 only in G196-G199, under release 900006: a code opening each range, the last code of one, and a ZIP that needs none (PRC-21)', () => {
+    // The founder's answer of 2026-10-21 to PR 6b's Q4 (a): the four claims are added under SYNTHETIC release 900006 and
+    // no existing claim changes, so every other claim gives no ZIP+4 (docs/adr/0064).
+    const given = claims.filter((claim) => claim.inputs.practice_settings.zip_plus_four !== undefined);
+    expect(given.map((claim) => [claim.id, claim.inputs.practice_settings.zip, claim.inputs.practice_settings.zip_plus_four])).toEqual([
+      ['G196', '00012', '0001'],
+      ['G197', '00012', '5000'],
+      ['G198', '00011', '1234'],
+      ['G199', '00012', '8999'],
+    ]);
+    for (const claim of given) {
+      expect(claim.inputs.release, claim.id).toMatchObject({ number: 900006, dir: 'fixtures/synthetic/rules/release-synth-900006' });
+      expect(claim.covers, claim.id).toContain('PRC-21');
+    }
+    expect(claims.filter((claim) => claim.inputs.release.number === 900006).map((claim) => claim.id)).toEqual(given.map((claim) => claim.id));
+    // The ZIP+4 changes the amount: 00012-5000 (locality 02) and 00012-0001 (locality 01) price one line differently.
+    const allowed = (id: string) => given.find((claim) => claim.id === id)?.expected.lines[0]?.expected_unrounded_cents;
+    expect(allowed('G197')).not.toBe(allowed('G196'));
+    expect(allowed('G198')).toBe(allowed('G196'));
   });
 });

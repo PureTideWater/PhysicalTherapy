@@ -10,7 +10,9 @@ stops it, a procedure-to-procedure edit raises a review flag and leaves the pric
 adjustments (multiple procedure reduction, assistant reduction, sequestration, then the rate record's
 own percentage or cap), report the patient share and stop secondary and reversed claims, round once
 at the end under the record's rule keeping the unrounded value, compare with observed allowed (the
-variance), and work out the dispute deadline from the remittance date. It writes a human-readable
+variance), and work out the dispute deadline from the remittance date. The fee schedule's locality is the practice
+ZIP's, or, for a ZIP that spans localities, the one its ZIP+4 names in the CMS ZIP9 file, which this program reads
+itself by the CMS record layout (PR 6b). It writes a human-readable
 worksheet per claim: every input value, every intermediate amount, each adjustment's before and
 after, each edit, the rounding, the variance and the window.
 
@@ -251,8 +253,13 @@ def validate(case):
         raise InputError("inputs.release.dir: must stay inside the repository")
     text(release["manifest_sha256"], "inputs.release.manifest_sha256", r"^[0-9a-f]{64}$")
     iso_date(inputs["as_of"], "inputs.as_of")
-    practice = strict(inputs["practice_settings"], "inputs.practice_settings", ["zip", "default_rounding"])
+    # The ZIP+4 is optional: absent when the practice gives none, and then the file is as it was before PR 6b.
+    practice = inputs["practice_settings"]
+    has_plus_four = isinstance(practice, dict) and "zip_plus_four" in practice
+    strict(practice, "inputs.practice_settings", ["zip", "default_rounding"] + (["zip_plus_four"] if has_plus_four else []))
     text(practice["zip"], "inputs.practice_settings.zip", r"^\d{5}$")
+    if has_plus_four:
+        text(practice["zip_plus_four"], "inputs.practice_settings.zip_plus_four", r"^[0-9]{4}\Z")
     if practice["default_rounding"] is not None:
         choice(practice["default_rounding"], "inputs.practice_settings.default_rounding", tuple(ROUNDING_RULES))
     places = inputs["place_of_service_settings"]
@@ -837,16 +844,24 @@ def fee_schedule(case, line, release):
     if value[na_field]:
         line.stop("NO_PFS_VALUE", f"The {setting.replace('_', '-')} practice-expense value of {code} is NA in {basis_year}: the code has no relative value for this setting (fixtures/golden/QUESTIONS.md).")
         return
-    zip_code = case["inputs"]["practice_settings"]["zip"]
+    practice = case["inputs"]["practice_settings"]
+    zip_code = practice["zip"]
+    plus_four = practice.get("zip_plus_four")
     locality = release.in_force("locality_map", {"zip": zip_code}, line.date)
     if locality is None:
         raise InputError(f"release {release.number} maps no locality for ZIP {zip_code} on {line.date}; that is an engine error, not a golden line")
-    if locality["value"].get("plus_four_required") is True:
-        raise InputError(
-            f"release {release.number}: ZIP {zip_code} needs its ZIP+4 to name a locality; the engine stops the line with ENGINE_ERROR, so it is not a golden line"
-        )
     carrier, locality_no = locality["value"]["carrier"], locality["value"]["locality"]
-    line.say(f"- Locality: practice ZIP {zip_code} maps to carrier {carrier} locality {locality_no} (locality_map in force on {line.date}, {window_text(locality['effective_from'], locality['effective_to'])}).")
+    if locality["value"].get("plus_four_required") is True:
+        if plus_four is None:
+            raise InputError(
+                f"release {release.number}: ZIP {zip_code} needs its ZIP+4 to name a locality and the settings give none; the engine stops the line "
+                "with ENGINE_ERROR (locality_needs_zip_plus_four), so it is not a golden line"
+            )
+        carrier, locality_no = plus_four_locality(release, locality, zip_code, plus_four, line)
+    else:
+        line.say(f"- Locality: practice ZIP {zip_code} maps to carrier {carrier} locality {locality_no} (locality_map in force on {line.date}, {window_text(locality['effective_from'], locality['effective_to'])}).")
+        if plus_four is not None:
+            line.say(f"- ZIP+4 {plus_four}: not read. The ZIP's locality_map record does not flag it as spanning localities, so the five-digit ZIP names the locality.")
     gpci = lookup("pfs_gpci", {"carrier": carrier, "locality": locality_no})
     if gpci is None:
         raise InputError(f"release {release.number} has no GPCI for {carrier}-{locality_no} in {basis_year}; that is an engine error, not a golden line")
@@ -871,6 +886,124 @@ def fee_schedule(case, line, release):
     )
     line.unit_parts = parts
     line.unit_total = total
+
+
+# ---------------------------------------------------------------------------------------------
+# A ZIP that spans localities: the CMS ZIP9 file names the locality of each of its ZIP+4 codes
+#
+# CMS publishes the ZIP code to carrier locality file as two fixed-width text files of 80-character records. The ZIP5
+# file flags, at position 21, a ZIP whose five digits do not name one locality; the ZIP9 file then lists the nine-digit
+# codes of those ZIPs only (transmittal R1249CP, CR 5578), one ZIP+4 per record, under this layout. The founder's rule
+# (2026-10-18 11:47 UTC; reconciliation-001): the locality of such a ZIP is the one its ZIP+4 names, read in force on the
+# date of service whatever the year basis; without a ZIP+4, or with one the file does not list, the line is not priced.
+# The worksheet reads the ZIP9 file itself, never the ranges a release builds from it, so it checks them independently.
+
+ZIP9_RECORD_LENGTH = 80
+ZIP9_LAYOUT = (
+    # (field, first position, last position, what it holds), counted from 1 as the CMS record layout counts.
+    ("state", 1, 2, r"[A-Z]{2}"),
+    ("ZIP", 3, 7, r"[0-9]{5}"),
+    ("carrier", 8, 12, r"[0-9]{5}"),
+    ("pricing locality", 13, 14, r"[0-9]{2}"),
+    ("rural indicator", 15, 15, r"[ RB]"),
+    ("plus-four flag", 21, 21, r"1"),
+    ("plus-four", 22, 25, r"[0-9]{4}"),
+    ("year and quarter", 76, 80, r"[0-9]{4}[1-4]"),
+)
+
+
+def positions(first, last):
+    return str(first) if first == last else f"{first}-{last}"
+
+
+ZIP9_LAYOUT_TEXT = ", ".join(f"{field} {positions(first, last)}" for field, first, last, _ in ZIP9_LAYOUT)
+ZIP9_FILES = {}
+
+
+def zip9_file(record, where):
+    """The records of the ZIP9 file a locality_map_plus_four record was read from, by (ZIP, plus-four): (line number,
+    the record as written, its fields). The file must be the one the record names, by path and SHA-256, and every
+    record of it must fit the layout; a ZIP+4 listed twice is refused, since it would name two localities."""
+    source = record.get("source")
+    name = source.get("path") if isinstance(source, dict) else None
+    digest = source.get("sha256") if isinstance(source, dict) else None
+    if not isinstance(name, str) or not isinstance(digest, str):
+        raise InputError(f"{where}: names no source file and SHA-256; the worksheet reads the ZIP9 file itself, so it cannot price the ZIP+4")
+    path = (REPOSITORY / name).resolve()
+    if REPOSITORY not in path.parents or not path.is_file():
+        raise InputError(f"{where}: its source {name} is not a file inside the repository")
+    key = (str(path), digest)
+    if key in ZIP9_FILES:
+        return name, ZIP9_FILES[key]
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise InputError(f"{where}: its source {name} does not match the SHA-256 the record gives, {digest}")
+    try:
+        rows = data.decode("ascii").split("\n")
+    except UnicodeDecodeError:
+        raise InputError(f"{name}: is not ASCII text, as the CMS fixed-width layout is") from None
+    if rows[-1] == "":
+        rows.pop()
+    listed = {}
+    for number_, row in enumerate(rows, start=1):
+        row = row.removesuffix("\r")
+        if len(row) != ZIP9_RECORD_LENGTH:
+            raise InputError(f"{name} line {number_}: is {len(row)} characters long; a ZIP9 record is {ZIP9_RECORD_LENGTH} ({ZIP9_LAYOUT_TEXT})")
+        fields = {}
+        for field, first, last, pattern in ZIP9_LAYOUT:
+            value = row[first - 1:last]
+            if not re.fullmatch(pattern, value):
+                raise InputError(f"{name} line {number_}: the {field} at {positions(first, last)} is {json.dumps(value)}, which does not fit the CMS ZIP9 layout ({pattern})")
+            fields[field] = value
+        code = (fields["ZIP"], fields["plus-four"])
+        if code in listed:
+            raise InputError(f"{name} line {number_}: lists {code[0]}-{code[1]} again (first at line {listed[code][0]}); a ZIP+4 names one locality")
+        listed[code] = (number_, row, fields)
+    ZIP9_FILES[key] = listed
+    return name, listed
+
+
+def plus_four_locality(release, locality, zip_code, plus_four, line):
+    """Step 2, the locality of a ZIP whose locality_map record is flagged: the ZIP9 record of its ZIP+4, from the file of
+    the release's locality_map_plus_four record of the ZIP in force on the date of service. Returns (carrier, locality)."""
+    line.say(
+        f"- Locality: practice ZIP {zip_code} spans localities. Its locality_map record (in force on {line.date}, "
+        f"{window_text(locality['effective_from'], locality['effective_to'])}) names carrier {locality['value']['carrier']} locality "
+        f"{locality['value']['locality']} with the plus-four flag on, so its ZIP+4, {plus_four}, names the locality from the ZIP9 file."
+    )
+    split = release.in_force("locality_map_plus_four", {"zip": zip_code}, line.date)
+    if split is None:
+        raise InputError(
+            f"release {release.number} holds no locality_map_plus_four record for ZIP {zip_code} in force on {line.date}: the engine stops the line "
+            "with ENGINE_ERROR (no_locality_plus_four), a gap in the content, so it is not a golden line"
+        )
+    name, listed = zip9_file(split, f"release {release.number}: the locality_map_plus_four record of ZIP {zip_code}")
+    found = listed.get((zip_code, plus_four))
+    if found is None:
+        raise InputError(
+            f"release {release.number}: {name}, the ZIP9 file of ZIP {zip_code} in force on {line.date}, does not list {zip_code}-{plus_four}: the engine "
+            "stops the line with ENGINE_ERROR (zip_plus_four_not_in_locality_map), so it is not a golden line (fixtures/golden/QUESTIONS.md Q37)"
+        )
+    number_, row, fields = found
+    state = locality["value"].get("state")
+    if fields["state"] != state:
+        raise InputError(f"{name} line {number_}: lists {zip_code}-{plus_four} in state {fields['state']}, but the ZIP's locality_map record is in state {state}")
+    starts = split["effective_from"]
+    quarter = f"{starts[:4]}{(int(starts[5:7]) - 1) // 3 + 1}"
+    if fields["year and quarter"] != quarter:
+        raise InputError(
+            f"{name} line {number_}: is of year and quarter {fields['year and quarter']}, but the locality_map_plus_four record of ZIP {zip_code} "
+            f"takes effect {starts}, in {quarter}; a quarter's ZIP9 file names that quarter's localities"
+        )
+    carrier, locality_no = fields["carrier"], fields["pricing locality"]
+    line.say(
+        f"- ZIP+4 {zip_code}-{plus_four}: the locality_map_plus_four record of ZIP {zip_code} in force on {line.date} "
+        f"({window_text(split['effective_from'], split['effective_to'])}) was read from {name}, whose SHA-256 {split['source']['sha256']} matched. "
+        f"Its line {number_}, `{row}`, read by the CMS ZIP9 layout ({ZIP9_LAYOUT_TEXT}), gives state {fields['state']}, carrier {carrier}, "
+        f"pricing locality {locality_no}, rural indicator {fields['rural indicator'].strip() or 'blank'}, year and quarter {fields['year and quarter']}."
+    )
+    line.say(f"- Locality: practice ZIP {zip_code}-{plus_four} maps to carrier {carrier} locality {locality_no}.")
+    return carrier, locality_no
 
 
 def apply_units(case, line, release):
@@ -1286,7 +1419,8 @@ def render_worksheet(case, release, lines, visit_log, day_log):
         "## Inputs",
         "",
         f"- Release {release.number} at {release.directory}; its MANIFEST.json has SHA-256 {release.manifest_sha256} and every file matched it.",
-        f"- Practice settings: ZIP {practice['zip']}; default rounding {practice['default_rounding'] or 'not set (the plan default HALF_UP_CENT applies)'}.",
+        f"- Practice settings: ZIP {practice['zip']}{'; ZIP+4 ' + practice['zip_plus_four'] if 'zip_plus_four' in practice else ''}; "
+        f"default rounding {practice['default_rounding'] or 'not set (the plan default HALF_UP_CENT applies)'}.",
         "- Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): "
         + "; ".join(f"{code} {setting.replace('_', '-')}" for code, setting in sorted(inputs["place_of_service_settings"].items())) + ".",
         f"- Claim {claim['claim_id']}: status {claim['claim_status_code']} ({CLAIM_STATUSES[claim['claim_status_code']]}); "

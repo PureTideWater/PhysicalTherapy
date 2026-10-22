@@ -1,8 +1,10 @@
 // @ts-check
 /**
  * Mutation testing on the money paths (PRD section 18): the pricing engine, the ledger and the
- * packet verifier. Gate: a mutation score above 85% before Monitoring v1. CI runs `pnpm stryker run`
- * on pull requests labelled "money" and on schedule.
+ * packet verifier. Gate: a mutation score above 85% before Monitoring v1. .github/workflows/mutation.yml runs
+ * `pnpm stryker run` on pull requests labelled "money" (a label added after a push starts it) and weekly, after the
+ * canary (tools/stryker/canary). The vitest runner selects a mutant's covering tests by name, as Vitest 5 names them
+ * through patches/@stryker-mutator__vitest-runner@10.0.0.patch (docs/adr/0064).
  *
  * @type {import('@stryker-mutator/api/core').PartialStrykerOptions}
  */

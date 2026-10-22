@@ -75,6 +75,11 @@ export interface ClaimFacts {
 export interface PracticeSettings {
   /** The billing ZIP; the locality is the release's locality_map record for it on the service date. */
   readonly zip: string;
+  /**
+   * The ZIP+4's four digits, or null or absent. Read only when the ZIP's locality_map record needs its ZIP+4: the
+   * range of the ZIP's locality_map_plus_four record holding it then names the locality (docs/adr/0064).
+   */
+  readonly zipPlusFour?: string | null;
   /** The rounding when a contract is silent; null leaves the engine's default, HALF_UP_CENT. */
   readonly defaultRounding: RoundingRule | null;
   /**

@@ -75,6 +75,16 @@ const BODIES: { [T in RuleRecordType]: Pick<Extract<RuleRecord, { record_type: T
     key: { zip: '00011' },
     value: { state: 'ZZ', carrier: '99999', locality: '01', rural_indicator: '', plus_four_required: false },
   },
+  locality_map_plus_four: {
+    key: { zip: '00012' },
+    value: {
+      state: 'ZZ',
+      ranges: [
+        { from: '0000', to: '4999', carrier: '99999', locality: '01', rural_indicator: 'R' },
+        { from: '5000', to: '8999', carrier: '99999', locality: '02', rural_indicator: 'R' },
+      ],
+    },
+  },
   denial_category: { key: { group_code: 'CO', carc: '9001', rarc: null }, value: { category: 'timely_filing' } },
 };
 

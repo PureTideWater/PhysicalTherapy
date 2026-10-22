@@ -53,7 +53,7 @@ export function buildParsedRecords(request: BuildRequest): RuleRecord[] {
         synthetic: source.synthetic,
       },
       verification: { level: 'L1', by: request.checkedBy, on: request.checkedOn, questions: [] },
-      quotes: [row.quote],
+      quotes: row.quotes === undefined ? [row.quote] : [...row.quotes],
       notes: row.note ?? '',
     });
     if (result.ok) {

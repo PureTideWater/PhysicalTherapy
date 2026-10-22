@@ -94,6 +94,7 @@ const PROCEDURE_CODE = /^[0-9A-Z]{5}$/;
 const MODIFIER = /^[0-9A-Z]{2}$/;
 const PLACE_OF_SERVICE = /^\d{2}$/;
 const ZIP = /^\d{5}$/;
+const PLUS_FOUR = /^\d{4}$/;
 const UNITS_TEXT = /^\d+(?:\.\d+)?$/;
 const LOCKED_YEAR = /^LOCKED:(\d{4})$/;
 
@@ -184,12 +185,18 @@ export function price(input: PricingInput): LinePricing[] {
 
 function newContext(input: PricingInput, facts: LineFacts): LineContext {
   const { claim, release, settings, asOf } = input;
+  const zipPlusFour = settings.zipPlusFour ?? null;
   const trace: PricingTrace = {
     format: TRACE_FORMAT,
     engine: ENGINE_VERSION,
     release: { number: release.releaseNo, manifest_sha256: release.manifestSha256 },
     as_of: asOf,
-    settings: { zip: settings.zip, default_rounding: settings.defaultRounding, place_of_service_settings: { ...settings.placeOfServiceSettings } },
+    settings: {
+      zip: settings.zip,
+      ...(zipPlusFour === null ? {} : { zip_plus_four: zipPlusFour }),
+      default_rounding: settings.defaultRounding,
+      place_of_service_settings: { ...settings.placeOfServiceSettings },
+    },
     claim: {
       claim_status_code: claim.claimStatusCode,
       reversed: claim.reversed,
@@ -250,8 +257,10 @@ function attempt<T>(context: LineContext, steps: () => T | Stopped): T | Stopped
 
 function validSettings(settings: PracticeSettings): boolean {
   const rule = settings.defaultRounding;
+  const zipPlusFour = settings.zipPlusFour ?? null;
   return (
     ZIP.test(settings.zip) &&
+    (zipPlusFour === null || PLUS_FOUR.test(zipPlusFour)) &&
     (rule === null || ROUNDING_RULES.includes(rule)) &&
     Object.entries(settings.placeOfServiceSettings).every(([place, setting]) => PLACE_OF_SERVICE.test(place) && (setting === 'facility' || setting === 'non_facility'))
   );
@@ -601,12 +610,31 @@ function feeSchedule(context: LineContext, terms: PricedTerms, parameters: Perce
   if (locality === null) {
     throw new EngineInputError('no_locality');
   }
-  const { carrier, locality: localityNo } = locality.value;
   const plusFour = locality.value.plus_four_required;
-  schedule.locality = { record: release.ref(locality), carrier, locality: localityNo, plus_four_required: plusFour };
+  const traced = { record: release.ref(locality), carrier: locality.value.carrier, locality: locality.value.locality, plus_four_required: plusFour };
+  schedule.locality = traced;
+  let { carrier, locality: localityNo } = locality.value;
   if (plusFour === true) {
-    // The five-digit ZIP does not name the locality; nothing in the settings gives its ZIP+4.
-    throw new EngineInputError('locality_needs_zip_plus_four');
+    // The five-digit ZIP does not name the locality: the plus-four record's range holding the ZIP+4 does, in force on
+    // the service date (Q07, as the locality_map record), whatever the basis year. A ZIP+4 no range holds is never
+    // given a neighbour's locality (docs/adr/0064).
+    const given = settings.zipPlusFour ?? null;
+    if (given === null) {
+      throw new EngineInputError('locality_needs_zip_plus_four');
+    }
+    const split = release.inForce('locality_map_plus_four', { zip: settings.zip }, date);
+    if (split === null) {
+      // No ZIP+4 file of the ZIP is in force: the content lacks it, whatever the ZIP+4 (never blamed on the practice).
+      throw new EngineInputError('no_locality_plus_four');
+    }
+    const range = split.value.ranges.find((item) => item.from <= given && given <= item.to);
+    if (range === undefined) {
+      // The file in force lists no range holding the ZIP+4: the trace names that file, so its version is on record.
+      schedule.locality = { ...traced, plus_four_unlisted: release.ref(split) };
+      throw new EngineInputError('zip_plus_four_not_in_locality_map');
+    }
+    ({ carrier, locality: localityNo } = range);
+    schedule.locality = { ...traced, plus_four: { record: release.ref(split), zip_plus_four: given, from: range.from, to: range.to, carrier, locality: localityNo } };
   }
   const gpci = lookup('pfs_gpci', { carrier, locality: localityNo });
   if (gpci === null) {

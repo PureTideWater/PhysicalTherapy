@@ -7,6 +7,7 @@ import { addDays } from './dates';
 import { price } from './engine';
 import { UNPRICED_REASONS } from './reasons';
 import { recompute } from './recompute';
+import { indexRelease } from './release';
 import {
   type AdjustmentOption,
   SYNTHETIC_RELEASES,
@@ -22,6 +23,7 @@ import {
   pricingInput,
   readRuleRelease,
   releaseVariant,
+  ruleRecordLike,
   syntheticRelease,
   versionRecord,
 } from './testing';
@@ -333,6 +335,90 @@ describe('properties of the engine (PRD 11)', () => {
         expect(json(price(inputOf(claim)))).toBe(json(price(inputOf(claim))));
       }),
       { numRuns: 100 },
+    );
+  });
+});
+
+describe('properties of the ZIP+4 (PRC-21; docs/adr/0064)', () => {
+  const plusFourBase = readRuleRelease('fixtures/synthetic/rules/release-synth-900006');
+  const releases = { 900002: release, 900006: indexRelease(plusFourBase) } as const;
+  /** 900006 with 00011 placed in locality 02: what 00012 with a ZIP+4 of 5000-8999 must price as. */
+  const inLocality02 = releaseVariant(plusFourBase, (records) =>
+    records.map((record) => (record.record_type === 'locality_map' && record.key.zip === '00011' ? ruleRecordLike(record, { value: { ...record.value, locality: '02' } }) : record)),
+  );
+  const code = fc.integer({ min: 0, max: 9999 }).map((value) => String(value).padStart(4, '0'));
+  const settingsOf = (claim: GeneratedClaim, zip: string, zipPlusFour?: string) =>
+    practiceSettings({ zip, defaultRounding: claim.defaultRounding, ...(zipPlusFour === undefined ? {} : { zipPlusFour }) });
+  const outcomes = (results: readonly LinePricing[]) =>
+    json(results.map((line) => (line.outcome === 'priced' ? [line.expectedAllowedCents, line.expectedUnroundedCents.toString(), line.adjustments, line.reviewFlags] : [line.reason, line.detail])));
+
+  it('prices a ZIP that does not need its ZIP+4 the same with no ZIP+4 and with any four digits; the traces differ only by the settings’ ZIP+4', () => {
+    fc.assert(
+      fc.property(generatedClaim, fc.constantFrom(900002 as const, 900006 as const), fc.constantFrom('00011', '00099'), code, (claim, number, zip, plusFour) => {
+        const input = inputOf(claim);
+        const without = price({ ...input, release: releases[number], settings: settingsOf(claim, zip) });
+        const given = price({ ...input, release: releases[number], settings: settingsOf(claim, zip, plusFour) });
+        expect(outcomes(given)).toBe(outcomes(without));
+        given.forEach((line, index) => {
+          const other = without[index];
+          expect(line.trace.settings.zip_plus_four).toBe(plusFour);
+          expect(json({ ...line.trace, settings: other?.trace.settings })).toBe(json(other?.trace));
+          expect('zip_plus_four' in (other?.trace.settings ?? {})).toBe(false);
+        });
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it('prices 00012 with a ZIP+4 at the locality of the range holding it, and stops a code no range holds, never a neighbour’s locality', () => {
+    let listed = 0;
+    let unlisted = 0;
+    fc.assert(
+      fc.property(generatedClaim, code, (claim, plusFour) => {
+        const input = { ...inputOf(claim), release: releases[900006] };
+        const split = price({ ...input, settings: settingsOf(claim, '00012', plusFour) });
+        if (plusFour >= '9000') {
+          unlisted += 1;
+          // Every line that reads the fee schedule stops there; the others price as for any ZIP.
+          const whole = price({ ...input, settings: settingsOf(claim, '00011') });
+          split.forEach((line, index) => {
+            const other = whole[index] as LinePricing;
+            if ((other.trace.steps.fee_schedule?.locality ?? null) !== null) {
+              expect(line.outcome === 'unpriced' && `${line.reason} ${String(line.detail)}`).toBe('ENGINE_ERROR zip_plus_four_not_in_locality_map');
+            } else {
+              expect(outcomes([line])).toBe(outcomes([other]));
+            }
+          });
+          return;
+        }
+        listed += 1;
+        const expected = price({ ...input, release: plusFour < '5000' ? releases[900006] : inLocality02, settings: settingsOf(claim, '00011') });
+        expect(outcomes(split)).toBe(outcomes(expected));
+        for (const line of split) {
+          expect(recompute(JSON.parse(JSON.stringify(line.trace))).differences).toEqual([]);
+        }
+      }),
+      { numRuns: 300 },
+    );
+    expect(listed).toBeGreaterThan(100);
+    expect(unlisted).toBeGreaterThan(0);
+  });
+
+  it('keeps every five-digit input on phase-two/1’s path: no ZIP+4 key in the settings and no ZIP+4 step, and 00012 stops as before', () => {
+    fc.assert(
+      fc.property(generatedClaim, fc.constantFrom('00011', '00012', '00099'), (claim, zip) => {
+        for (const line of price({ ...inputOf(claim), release: releases[900006], settings: settingsOf(claim, zip) })) {
+          expect(Object.keys(line.trace.settings)).toEqual(['zip', 'default_rounding', 'place_of_service_settings']);
+          const locality = line.trace.steps.fee_schedule?.locality ?? null;
+          if (locality !== null) {
+            expect(Object.keys(locality)).toEqual(['record', 'carrier', 'locality', 'plus_four_required']);
+          }
+          if (zip === '00012' && locality !== null) {
+            expect(line.outcome === 'unpriced' && line.detail).toBe('locality_needs_zip_plus_four');
+          }
+        }
+      }),
+      { numRuns: 150 },
     );
   });
 });

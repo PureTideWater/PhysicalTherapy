@@ -12,7 +12,10 @@ import { z } from 'zod';
 /**
  * Global rule record types: the fifteen of the data dictionary's `rule_record.record_type`, plus
  * `denial_category`, the denial-classification lookup the rules reference says is "maintained as a
- * rule record" (docs/adr/0008-rule-records-and-releases.md).
+ * rule record" (docs/adr/0008-rule-records-and-releases.md), and `locality_map_plus_four`, the ZIP+4
+ * file's localities of a ZIP that spans more than one (the founder's answer to PR 6b's Q3 (a), 2026-10-21;
+ * docs/adr/0064). The database's record-type CHECK takes the new type in PR 6b-2's migration, the
+ * first that loads a release holding it.
  */
 export const RULE_RECORD_TYPES = [
   'pfs_rvu',
@@ -30,6 +33,7 @@ export const RULE_RECORD_TYPES = [
   'state_prompt_pay',
   'dispute_window',
   'locality_map',
+  'locality_map_plus_four',
   'denial_category',
 ] as const;
 export type RuleRecordType = (typeof RULE_RECORD_TYPES)[number];
@@ -161,6 +165,12 @@ const modifierOrNone = z.string().regex(/^(?:[0-9A-Z]{2})?$/, 'must be a two-cha
 const carrier = z.string().regex(/^\d{5}$/, 'must be a five-digit carrier (MAC) number');
 const locality = z.string().regex(/^\d{2}$/, 'must be a two-digit locality number');
 const stateCode = z.string().regex(/^[A-Z]{2}$/, 'must be a two-letter state code');
+const zipCode = z.string().regex(/^\d{5}$/, 'must be a five-digit ZIP code');
+const PLUS_FOUR = /^\d{4}$/;
+const plusFour = z.string().regex(PLUS_FOUR, 'must be the four digits of a ZIP+4');
+const ruralIndicator = z.enum(['', 'R', 'B']).nullable();
+/** The most ranges one ZIP can need: one per four-digit code. */
+const MAX_PLUS_FOUR_RANGES = 10_000;
 const listCode = z.string().regex(/^[0-9A-Z]{1,6}$/, 'must be a code of one to six letters or digits');
 const text = z.string().min(1, 'must not be empty');
 
@@ -308,15 +318,52 @@ const BODIES = {
       path: ['value', 'length'],
     }),
   locality_map: z.strictObject({
-    key: z.strictObject({ zip: z.string().regex(/^\d{5}$/, 'must be a five-digit ZIP code') }),
+    key: z.strictObject({ zip: zipCode }),
     value: z.strictObject({
       state: stateCode,
       carrier,
       locality,
-      rural_indicator: z.enum(['', 'R', 'B']).nullable(),
+      rural_indicator: ruralIndicator,
       plus_four_required: z.boolean().nullable(),
     }),
   }),
+  /**
+   * A ZIP whose locality_map record needs its ZIP+4 (plus_four_required): the ZIP+4 file's codes of the ZIP,
+   * compressed into ranges of contiguous codes with one carrier, locality and rural indicator (docs/adr/0064).
+   * Inclusive bounds, sorted by `from`, never overlapping; a code no range holds is not in the file.
+   */
+  locality_map_plus_four: z
+    .strictObject({
+      key: z.strictObject({ zip: zipCode }),
+      value: z.strictObject({
+        state: stateCode,
+        ranges: z
+          .array(z.strictObject({ from: plusFour, to: plusFour, carrier, locality, rural_indicator: ruralIndicator }))
+          .min(1, 'must hold at least one range')
+          .max(MAX_PLUS_FOUR_RANGES, `must hold at most ${String(MAX_PLUS_FOUR_RANGES)} ranges, one per four-digit code`),
+      }),
+    })
+    .superRefine((body, context) => {
+      // Four-digit codes compare as text; a bound the pattern refused is left to its own message.
+      let previousTo: string | null = null;
+      body.value.ranges.forEach((range, index) => {
+        if (!PLUS_FOUR.test(range.from) || !PLUS_FOUR.test(range.to)) {
+          previousTo = null;
+          return;
+        }
+        if (range.from > range.to) {
+          context.addIssue({ code: 'custom', message: `is out of range: a range ends at ${range.to}, before its start ${range.from}`, path: ['value', 'ranges', index, 'to'] });
+        }
+        if (previousTo !== null && range.from <= previousTo) {
+          context.addIssue({
+            code: 'custom',
+            message: `must start after the range before it ends (${previousTo}): ranges are sorted by their start and never overlap`,
+            path: ['value', 'ranges', index, 'from'],
+          });
+        }
+        previousTo = range.to > (previousTo ?? '') ? range.to : previousTo;
+      });
+    }),
   denial_category: z.strictObject({
     key: z.strictObject({
       group_code: z.enum(['CO', 'PR', 'OA', 'PI']).nullable(),

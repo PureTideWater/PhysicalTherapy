@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { price } from './engine';
 import { TraceRecomputeError, recompute } from './recompute';
+import { indexRelease } from './release';
 import {
   SYNTHETIC_RELEASES,
   contractAgreement,
@@ -200,6 +201,83 @@ describe('recompute(trace)', () => {
     expect(tampered((trace) => ((schedule(trace).conversion_factor as NonNullable<ReturnType<typeof schedule>['conversion_factor']>).record.effective_from = '2027-01-01'))).toEqual(['conversion factor record window']);
     expect(tampered((trace) => (schedule(trace).locality = null))).toEqual(['fee schedule records']);
     expect(tampered((trace) => ((trace.terms as NonNullable<PricingTrace['terms']>).percent_of_medicare = null))).toEqual(['percent-of-Medicare terms']);
+  });
+
+  it('reproduces a ZIP+4 line from its trace, and finds the ZIP+4 step changed after the fact (PRC-21; docs/adr/0064)', () => {
+    const plusFour = indexRelease(readRuleRelease('fixtures/synthetic/rules/release-synth-900006'));
+    const settings = (zip: string, zipPlusFour?: string) => ({ settings: { zip, ...(zipPlusFour === undefined ? {} : { zipPlusFour }), defaultRounding: null, placeOfServiceSettings: { '11': 'non_facility' as const } } });
+    // (a) locality 02, (b) locality 01, (f) a ZIP+4 the ZIP does not need, the stops of (c) and (d), each under every method's lines.
+    for (const [zip, zipPlusFour] of [['00012', '5000'], ['00012', '0001'], ['00012', '8999'], ['00011', '1234'], ['00012', undefined], ['00012', '9100']] as const) {
+      expectReproduced(priceLines(day(), settings(zip, zipPlusFour), plusFour));
+      expectReproduced(priceLines([lineFacts()], settings(zip, zipPlusFour), plusFour));
+    }
+    // The stop of (e): no ZIP+4 record in force (release 900001).
+    expectReproduced(priceLines(day(), settings('00012', '0001')));
+    const [first] = priceLines(day(), settings('00012', '5000'), plusFour);
+    expect(first?.outcome).toBe('priced');
+    const tampered = (change: (trace: PricingTrace) => void): string[] => {
+      const trace = stored(first);
+      change(trace);
+      return recompute(trace).differences.map((item) => item.slice(0, item.indexOf(':')));
+    };
+    const locality = (trace: PricingTrace) => trace.steps.fee_schedule?.locality as NonNullable<NonNullable<PricingTrace['steps']['fee_schedule']>['locality']>;
+    const split = (trace: PricingTrace) => locality(trace).plus_four as NonNullable<ReturnType<typeof locality>['plus_four']>;
+    expect(tampered(() => undefined)).toEqual([]);
+    expect(tampered((trace) => (trace.settings.zip_plus_four = '5001'))).toEqual(['ZIP+4 against the settings']);
+    expect(tampered((trace) => delete trace.settings.zip_plus_four)).toEqual(['ZIP+4 against the settings']);
+    expect(tampered((trace) => (split(trace).from = '5001'))).toEqual(['ZIP+4 in its range']);
+    expect(tampered((trace) => (split(trace).to = '4999'))).toEqual(['ZIP+4 in its range']);
+    expect(tampered((trace) => (split(trace).record.key = { zip: '00011' }))).toEqual(['ZIP+4 record key']);
+    expect(tampered((trace) => (split(trace).locality = '01'))).toEqual(['GPCI record key']);
+    expect(tampered((trace) => (split(trace).record.effective_to = '2026-01-31'))).toEqual(['ZIP+4 record window']);
+    expect(tampered((trace) => (split(trace).record.effective_from = '2026-03-11'))).toEqual(['ZIP+4 record window']);
+    // Without the ZIP+4 step a flagged ZIP's line has no locality, and the GPCI no longer follows from the ZIP5 record.
+    expect(tampered((trace) => delete locality(trace).plus_four)).toEqual(['locality ZIP+4', 'GPCI record key']);
+    expect(tampered((trace) => (locality(trace).plus_four_required = false))).toEqual(['locality ZIP+4']);
+    // What each check says, in full.
+    const said = (change: (trace: PricingTrace) => void): string[] => {
+      const trace = stored(first);
+      change(trace);
+      return [...recompute(trace).differences];
+    };
+    expect(said((trace) => delete locality(trace).plus_four)).toContain('locality ZIP+4: the trace records decided by the ZIP+4, the recomputation gives required');
+    expect(said((trace) => delete trace.settings.zip_plus_four)).toEqual(['ZIP+4 against the settings: the trace records (none), the recomputation gives 5000']);
+    expect(said((trace) => (split(trace).to = '4999'))).toEqual(['ZIP+4 in its range: the trace records inside, the recomputation gives outside']);
+    expect(said((trace) => (split(trace).record.effective_to = '2026-01-31'))).toEqual(['ZIP+4 record window: the trace records covers the service date, the recomputation gives does not']);
+    expect(said((trace) => (locality(trace).plus_four_unlisted = split(trace).record))).toEqual(['ZIP+4 range not listed: the trace records none recorded, the recomputation gives recorded on a priced line']);
+    expect(said((trace) => (locality(trace).record.effective_to = '2026-01-31'))).toEqual(['locality record window: the trace records covers the service date, the recomputation gives does not']);
+    // Only the plus-four record decides, and a priced line never records a ZIP+4 file without its range.
+    expect(tampered((trace) => (split(trace).record.record_type = 'locality_map'))).toEqual(['ZIP+4 record type']);
+    expect(tampered((trace) => (locality(trace).plus_four_unlisted = split(trace).record))).toEqual(['ZIP+4 range not listed']);
+    expect(tampered((trace) => (trace.settings.zip_plus_four = '50000'))).toEqual(['ZIP+4 against the settings']);
+    // A ZIP+4 step the engine never writes is not a trace at all: text that is not four digits, whatever sorts inside
+    // the range ('undefined' and '50000' both fall between '5000' and '8999' as text).
+    const malformed = (change: (trace: PricingTrace) => void) => () => {
+      const trace = stored(first);
+      change(trace);
+      return recompute(trace);
+    };
+    expect(
+      malformed((trace) => {
+        delete trace.settings.zip_plus_four;
+        split(trace).zip_plus_four = 'undefined';
+        split(trace).to = 'zzzz';
+      }),
+    ).toThrow(new TraceRecomputeError('the value is not a pricing trace'));
+    expect(
+      malformed((trace) => {
+        trace.settings.zip_plus_four = '50000';
+        split(trace).zip_plus_four = '50000';
+      }),
+    ).toThrow(TraceRecomputeError);
+    for (const field of ['from', 'to'] as const) {
+      expect(malformed((trace) => (split(trace)[field] = `${split(trace)[field]}0`))).toThrow(TraceRecomputeError);
+    }
+    // A ZIP+4 step on a ZIP that does not need one.
+    const [unflagged] = priceLines(day(), settings('00011', '1234'), plusFour);
+    const added = stored(unflagged);
+    locality(added).plus_four = split(stored(first));
+    expect(recompute(added).differences.map((item) => item.slice(0, item.indexOf(':')))).toEqual(['locality ZIP+4', 'ZIP+4 record key', 'ZIP+4 against the settings', 'GPCI record key']);
   });
 
   it('derives UNITS_RULE_UNKNOWN only once the units are recorded, and the new claim statuses', () => {

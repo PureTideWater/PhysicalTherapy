@@ -24,7 +24,7 @@ import { repositoryRoot } from '../content-files';
  * read from its directory and its manifest hash checked; the mappings, contract versions and rate
  * records become the records @tp/contracts loads, and its pure resolver resolves each line; the line
  * facts, claim context (its remittance date), the version windows, the triage date and practice
- * settings are copied across. The golden format writes windows inclusively and a rate record's codes as
+ * settings (with the ZIP+4 when the claim gives one) are copied across. The golden format writes windows inclusively and a rate record's codes as
  * null for any code; the contract records are half-open and leave codes out for any code, so an
  * inclusive end becomes the next day's exclusive end and a null code list is left out (the general
  * term the product stores, ADR 0033); a rate record's `contract_adjustment` of null is left out (a
@@ -115,7 +115,8 @@ export interface GoldenClaim {
     readonly release: { readonly number: number; readonly dir: string; readonly manifest_sha256: string };
     /** The triage date the dispute windows are judged on. */
     readonly as_of: string;
-    readonly practice_settings: { readonly zip: string; readonly default_rounding: RoundingRule | null };
+    /** `zip_plus_four` is absent unless the practice gives one: four digits, read for a ZIP that spans localities (PRC-21). */
+    readonly practice_settings: { readonly zip: string; readonly zip_plus_four?: string; readonly default_rounding: RoundingRule | null };
     readonly place_of_service_settings: Readonly<Record<string, PlaceOfServiceSetting>>;
     readonly claim: {
       readonly claim_status_code: string;
@@ -320,7 +321,13 @@ export function goldenPricingInput(claim: GoldenClaim, root = repositoryRoot): P
       lines,
     },
     release: goldenRelease(inputs.release, root),
-    settings: { zip: inputs.practice_settings.zip, defaultRounding: inputs.practice_settings.default_rounding, placeOfServiceSettings: inputs.place_of_service_settings },
+    settings: {
+      zip: inputs.practice_settings.zip,
+      // Only a claim that gives a ZIP+4 passes one, so every other claim's input is what it was before PR 6b.
+      ...(inputs.practice_settings.zip_plus_four === undefined ? {} : { zipPlusFour: inputs.practice_settings.zip_plus_four }),
+      defaultRounding: inputs.practice_settings.default_rounding,
+      placeOfServiceSettings: inputs.place_of_service_settings,
+    },
     asOf: inputs.as_of,
   };
 }

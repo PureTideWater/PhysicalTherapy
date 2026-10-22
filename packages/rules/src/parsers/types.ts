@@ -5,6 +5,7 @@ export const IMPORTABLE_TYPES = [
   'pfs_rvu',
   'pfs_gpci',
   'locality_map',
+  'locality_map_plus_four',
   'conversion_factor',
   'mppr_rate',
   'ncci_ptp',
@@ -47,6 +48,11 @@ export interface ParsedRow {
   readonly effective_to: string | null;
   /** The row exactly as it appears in the file. */
   readonly quote: string;
+  /**
+   * Every line the record quotes, when it folds more than one line of the file (the ZIP+4 file's ranges quote the
+   * first and last line of each); the record then quotes these in place of `quote`, which is the first of them.
+   */
+  readonly quotes?: readonly string[];
   /** Where in the file: "line 12". */
   readonly locator: string;
   readonly note?: string;

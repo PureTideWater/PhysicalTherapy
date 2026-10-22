@@ -68,6 +68,11 @@
       "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
     },
     {
+      "path": "fixtures/synthetic/cms/GPCI_SYNTHETIC_900006.csv",
+      "sha256": "4cde77917614034084523c082e75ed0577bac2d4dfff8293be79db60bcbf7cc0",
+      "reason": "A SYNTHETIC reference table: the release-synth-900006 manifest pins its sha256 through its GPCI records' source (the ZIP+4 tests' second locality, docs/adr/0064; fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
       "path": "fixtures/synthetic/cms/MPPR_SYNTHETIC.csv",
       "sha256": "be8068eec0ee6543be4258ac9ffb58f91f483a8c2c0d7320e2fd084e2eea46d5",
       "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."

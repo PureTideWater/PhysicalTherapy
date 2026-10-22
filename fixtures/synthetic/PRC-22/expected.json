@@ -1,0 +1,21 @@
+{
+  "case": "PRC-22",
+  "module": "PRC",
+  "title": "The engine freeze outside the ZIP+4 lookup",
+  "assertion": "The base and head engines, each on its own money, rules and contracts packages, price and recompute alike every golden claim and generated five-digit claims. Nothing under `packages/pricing` but tests changes beyond the exception's files, and no existing golden file or release a golden claim pins changes",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "tools/engine-freeze/differential.test.ts",
+    "tools/engine-freeze/check.test.ts",
+    "tools/engine-freeze/rule-tables.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A differential test over generated claims and the golden lines; no fixture.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

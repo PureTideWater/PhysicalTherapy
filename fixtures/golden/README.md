@@ -29,11 +29,14 @@ a changed answer goes through `/golden-diff`, never a regeneration.
 | `.report/` | Written by `pnpm test:golden --report` (`pending.md` lists the golden diffs); ignored by git |
 
 Golden lines are claims, not single lines, because the multiple procedure reduction ranks every unit of a day and a
-per-visit amount is paid once per claim and date. 150 claims hold 326 lines: G01 to G53 (the first 100), G54 to G64
+per-visit amount is paid once per claim and date. 154 claims hold 330 lines: G01 to G53 (the first 100), G54 to G64
 (claim statuses 19, 20 and 21, a timed-units rule of `UNKNOWN`, the dispute windows and the variance, a suspended
-sequestration and the general reduction rate), and G101 to G195, 86 claims and 207 lines against the five fixture
+sequestration and the general reduction rate), G101 to G195, 86 claims and 207 lines against the five fixture
 payers below (milestone 7: the fixed-schedule, lesser-of and per-visit methods, NCCI procedure-to-procedure and
-medically unlikely edits, the timed-units rules and contract-specific adjustments).
+medically unlikely edits, the timed-units rules and contract-specific adjustments), and G196 to G199, four claims and
+four lines under release 900006 that give the practice's ZIP+4: three on a ZIP that spans two localities, whose ZIP+4
+names the locality, and one on a ZIP with one locality, whose ZIP+4 is not read (PR 6b, docs/adr/0064; the founder's
+answer of 2026-10-21 to its Q4 (a), with every earlier golden file unchanged).
 
 ## The five fixture payers
 
@@ -126,6 +129,7 @@ are integer cents as strings (`"2112"`); rates, percentages, units and unrounded
 | `release.number`, `release.dir`, `release.manifest_sha256` | The rule release the line prices under: its number, its directory, and the SHA-256 of its `MANIFEST.json` bytes. The worksheet refuses a release whose manifest hash, number or any file hash differs | Rule release |
 | `as_of` | The triage date the dispute window is judged on | The run's triage date |
 | `practice_settings.zip` | The practice's billing ZIP; the locality is the `locality_map` record for it in force on the service date | Practice settings: locality |
+| `practice_settings.zip_plus_four` | Optional, and absent when the practice gives none: the four digits of its ZIP+4. Read only when the ZIP's `locality_map` record flags a ZIP that spans localities; the locality is then the one the release's ZIP+4 file lists for the ZIP+4, read in force on the service date (QUESTIONS Q37) | Practice settings: ZIP+4 |
 | `practice_settings.default_rounding` | `HALF_UP_CENT`, `HALF_EVEN_CENT`, `TRUNCATE`, or `null` (then `HALF_UP_CENT`) | Practice settings: default rounding |
 | `place_of_service_settings` | `{ "<POS>": "facility" \| "non_facility" }` for every place of service the claim uses. A **SYNTHETIC test assumption** (the plan names no source for the split; QUESTIONS Q08): `11` non-facility, `22` facility | Which practice-expense value applies |
 | `claim.claim_id` | A synthetic pseudonymous identifier (`SYNTH-...`) | |
@@ -255,11 +259,16 @@ Percentages come from the release. In the SYNTHETIC releases they are deliberate
 77%, sequestration 3%, MPPR 40%; `fixtures/synthetic/cms/synthetic-rules.md`), so an engine that hard-codes 85%,
 2% or 50% fails the golden lines. Release 900003 (`fixtures/golden/sources/synthetic-rules-900003.md`) suspends
 sequestration from 2026-07-01, sets the general reduction at 45% for 97112, which its MPPR file lists without a share,
-and adds a commercial default dispute window of 4 months from the date of service.
+and adds a commercial default dispute window of 4 months from the date of service. Release 900006
+(`tools/release/synthetic.ts`) is 900001 with a second locality, 99999-02 (GPCI work 1.000, PE 1.050, MP 0.700), and
+the SYNTHETIC ZIP+4 file (`fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt`) of ZIP 00012, which its ZIP5 record flags:
+0000 to 4999 in locality 01, 5000 to 8999 in locality 02, 9000 to 9999 not listed. The worksheet reads a ZIP+4's
+locality from that file itself, by the CMS ZIP9 record layout and the SHA-256 the release's `locality_map_plus_four`
+record gives, never from the ranges the release built from it.
 
 A release that lacks a record the line needs (a locality, a GPCI or a conversion factor for the basis year, an
-assistant or sequestration record on the service date), a ZIP that needs its ZIP+4 to name a locality, more than 999
-units, claim status 23 or 25, and `apply_mppr` on a fixed, per-visit or lesser-of term (Q39) are not golden lines: the
+assistant or sequestration record on the service date), a ZIP that needs its ZIP+4 to name a locality when the
+settings give none or one the release's ZIP+4 file does not list (Q37), more than 999 units, claim status 23 or 25, and `apply_mppr` on a fixed, per-visit or lesser-of term (Q39) are not golden lines: the
 worksheet refuses them, as the engine raises `ENGINE_ERROR`.
 
 ## Consuming the format

@@ -37,7 +37,9 @@ const FIXTURE_TYPES: Readonly<Record<string, ImportableType>> = {
   'PPRRVU_SYNTHETIC.csv': 'pfs_rvu',
   'PPRRVU_SYNTHETIC_900004.csv': 'pfs_rvu',
   'GPCI_SYNTHETIC.csv': 'pfs_gpci',
+  'GPCI_SYNTHETIC_900006.csv': 'pfs_gpci',
   'ZIP5_SYNTHETIC.txt': 'locality_map',
+  'ZIP9_SYNTHETIC.txt': 'locality_map_plus_four',
   'conversion-factor-SYNTHETIC-pass-1.csv': 'conversion_factor',
   'conversion-factor-SYNTHETIC-pass-2.csv': 'conversion_factor',
   'MPPR_SYNTHETIC.csv': 'mppr_rate',
@@ -102,6 +104,39 @@ describe('importRuleFile', () => {
     expect(review).toContain('# Review: CMS physician fee schedule relative value file (PPRRVU)');
     expect(review).toContain('1. Do the columns the parser checked');
     expect(result.questions).toHaveLength(3);
+  });
+
+  it('drafts one ZIP+4 record per ZIP that quotes the first and last line of each range, all in the stored source', () => {
+    // Invented identifiers outside the reserved SYNTHETIC ones (the importer refuses those), written to a temporary download.
+    const line = (code: string, locality: string) => `${`YY9991299998${locality} ${locality}   1${code}`.padEnd(75, ' ')}20263`;
+    const lines = ['0000', '0001', '0002'].map((code) => line(code, '01')).concat([line('0003', '02')]);
+    const file = path.join(downloads, 'ZIP9_JUL2026.txt');
+    writeFileSync(file, `${lines.join('\n')}\n`);
+    // A July file, imported under the window of the quarter it is (the parser refuses another quarter's window).
+    const result = importRuleFile(request({ type: 'locality_map_plus_four', file, effectiveFrom: '2026-07-01', effectiveTo: '2026-09-30' }));
+    expect(result).toMatchObject({
+      draft: 'content/drafts/locality_map_plus_four/2026/ZIP9_JUL2026.json',
+      records: 1,
+      notes: ['4 lines folded into 2 ranges of 1 ZIP codes', 'year and quarter 20263 (positions 76-80), the quarter the window starts in'],
+    });
+    expect(() => importRuleFile(request({ type: 'locality_map_plus_four', file }))).toThrow(/the file is of year and quarter 20263, and the import window starts 2026-01-01, in 20261/);
+    const [record] = readJson(result.draft) as Record<string, unknown>[];
+    expect(record).toMatchObject({
+      record_type: 'locality_map_plus_four',
+      key: { zip: '99912' },
+      value: {
+        state: 'YY',
+        ranges: [
+          { from: '0000', to: '0002', carrier: '99998', locality: '01', rural_indicator: '' },
+          { from: '0003', to: '0003', carrier: '99998', locality: '02', rural_indicator: '' },
+        ],
+      },
+      source: { parser: 'cms_zip9_locality', locator: 'lines 1-4' },
+      quotes: [lines[0], lines[2], lines[3]],
+    });
+    expect(parseRuleRecord(record).ok).toBe(true);
+    const stored = readFileSync(path.join(root, result.source), 'utf8').split('\n');
+    expect((record?.quotes as string[]).every((quote) => stored.includes(quote))).toBe(true);
   });
 
   it('writes import notes into the review file', () => {

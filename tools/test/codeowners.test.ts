@@ -9,7 +9,8 @@ import { repositoryRoot } from '../content-files';
 
 /**
  * .github/CODEOWNERS (docs/adr/0063): the founder's review on every path (the ruling of 2026-10-20), and by name on
- * the schema and its approval, the code that decides an approval, the releases, CLAUDE.md, .claude and .github, once
+ * the schema and its approval, the code that decides an approval, the engine freeze (docs/adr/0064), the releases,
+ * CLAUDE.md, .claude and .github, once
  * the ruleset requires code owners' review. GitHub reads the first CODEOWNERS it finds (.github/, the root, docs/),
  * and a line it cannot read is ignored, so these tests hold the file to what GitHub reads.
  */
@@ -65,6 +66,7 @@ describe('.github/CODEOWNERS', () => {
       '/packages/db/package.json',
       '/packages/synth/src/guard/',
       '/tools/check-releases-immutable.sh',
+      '/tools/engine-freeze/',
       '/content/releases/',
       '/fixtures/synthetic/rules/release-*/',
       '/CLAUDE.md',
@@ -106,6 +108,15 @@ describe('.github/CODEOWNERS', () => {
       '.github/workflows/ci.yml',
       '.claude/hooks/fixture-guard.sh',
     ]) {
+      expect(owned(file), file).toBe(true);
+    }
+  });
+
+  it('covers the engine freeze: its check, its differential test and the exception a pull request declares (docs/adr/0064)', () => {
+    // Held by a named line, so declaring an exception, or changing the check that reads it, takes the founder's review.
+    const owned = (file: string): boolean => rules().some(({ pattern }) => pattern !== EVERY_PATH && matcher(pattern).test(file));
+    for (const file of ['tools/engine-freeze/exception.json', 'tools/engine-freeze/check.ts', 'tools/engine-freeze/check.test.ts', 'tools/engine-freeze/differential.test.ts']) {
+      expect(existsSync(path.join(repositoryRoot, file)), file).toBe(true);
       expect(owned(file), file).toBe(true);
     }
   });

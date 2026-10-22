@@ -1,6 +1,7 @@
 import { conversionFactorParser } from './conversion-factor';
 import { gpciParser } from './gpci';
 import { localityParser } from './locality';
+import { localityPlusFourParser } from './locality-plus-four';
 import { mpprParser } from './mppr';
 import { ncciMueParser, ncciPtpParser } from './ncci';
 import { pprrvuParser } from './pprrvu';
@@ -12,6 +13,7 @@ export const PARSERS: Readonly<Record<ImportableType, RuleFileParser>> = {
   pfs_rvu: pprrvuParser,
   pfs_gpci: gpciParser,
   locality_map: localityParser,
+  locality_map_plus_four: localityPlusFourParser,
   conversion_factor: conversionFactorParser,
   mppr_rate: mpprParser,
   ncci_ptp: ncciPtpParser,
@@ -23,4 +25,5 @@ export const PARSERS: Readonly<Record<ImportableType, RuleFileParser>> = {
 
 export { compareConversionFactorPasses, CONVERSION_FACTOR_HEADINGS } from './conversion-factor';
 export { RuleImportError } from './delimited';
+export { ZIP9_RECORD_LENGTH, zipFileQuarter } from './locality-plus-four';
 export { IMPORTABLE_TYPES, type ImportWindow, type ImportableType, type ParseOptions, type ParseOutcome, type ParsedRow, type RuleFileParser, isImportableType } from './types';

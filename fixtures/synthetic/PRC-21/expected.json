@@ -1,0 +1,398 @@
+{
+  "case": "PRC-21",
+  "module": "PRC",
+  "title": "A ZIP whose locality needs its ZIP+4",
+  "assertion": "With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. With no ZIP+4 file of the ZIP in force, `ENGINE_ERROR no_locality_plus_four`, a gap in the content. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`, the trace naming the file read. Never a guessed locality",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "packages/pricing/src/engine.test.ts",
+    "packages/pricing/src/recompute.test.ts",
+    "packages/pricing/src/properties.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "tools/release/release.test.ts"
+  ],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "remit.835",
+      "sha256": "ed2778ed4d17106c459631ad52a56e17eac09687dda54aabe28209d281ef3e14",
+      "bytes": 1049,
+      "kind": "x12",
+      "description": "The worked visit of a practice whose billing ZIP spans two localities; its ZIP+4 is a practice setting.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260504",
+                "isa12": "00501",
+                "isa13": "040210001",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "040210001",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-05-04",
+                    "gs06": "40210001",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "40210001",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "31",
+                        "se02": "0001",
+                        "segmentCount": 31,
+                        "bpr": {
+                          "handling": "C",
+                          "amountCents": "16444",
+                          "creditDebit": "C",
+                          "method": "ACH",
+                          "format": "CCP",
+                          "date": "2026-05-04"
+                        },
+                        "trn": {"trace":"SYNEFTPRC21001","originator":"1SYN00000P","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": "2026-05-03",
+                        "payer": {
+                          "name": "SYNTHETIC PAYER P",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERP"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9974921568",
+                          "refs": [["TJ","990970974"]]
+                        },
+                        "claims": [
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNPRC21001",
+                            "clp02": "1",
+                            "chargeCents": "28400",
+                            "paidCents": "16444",
+                            "patientResponsibilityCents": "4110",
+                            "clp06": "16",
+                            "clp07": "SYNCCNPRC210001",
+                            "clp08": "11",
+                            "clp09": "1",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-MA-NC"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "14200",
+                                "paidCents": "8520",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-31",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"3550","PR-2":"2130"},
+                                "refs": [],
+                                "amounts": [],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              },
+                              {
+                                "procedure": "HC:97140",
+                                "chargeCents": "8000",
+                                "paidCents": "4352",
+                                "revenueCode": null,
+                                "units": "1",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-31",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"2560","PR-2":"1088"},
+                                "refs": [],
+                                "amounts": [],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              },
+                              {
+                                "procedure": "HC:97530",
+                                "chargeCents": "6200",
+                                "paidCents": "3572",
+                                "revenueCode": null,
+                                "units": "1",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-03-31",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"1736","PR-2":"892"},
+                                "refs": [],
+                                "amounts": [],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          }
+                        ],
+                        "plb": [],
+                        "balance": {
+                          "claimsPaidCents": "16444",
+                          "plbTotalCents": "0",
+                          "paymentCents": "16444",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "040210001",
+              "gs06": "40210001",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9974921568",
+                "isa13": "040210001",
+                "trn02": "SYNEFTPRC21001",
+                "bpr02Cents": "16444"
+              },
+              "bprMethod": "ACH",
+              "bprHandling": "C",
+              "bpr16Date": "2026-05-04",
+              "payerName": "SYNTHETIC PAYER P",
+              "payerIds": [["2U","SYNPAYERP"],["TRN03","1SYN00000P"]],
+              "balance": {
+                "claimsPaidCents": "16444",
+                "plbTotalCents": "0",
+                "paymentCents": "16444",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":1,"lines":3,"reversals":0,"plbItems":0},
+              "claims": [
+                {
+                  "index": 0,
+                  "segmentIndex": 17,
+                  "patientControlNumber": "SYNPCNPRC21001",
+                  "payerClaimControlNumber": "SYNCCNPRC210001",
+                  "status": "1",
+                  "chargeCents": "28400",
+                  "paidCents": "16444",
+                  "patientResponsibilityCents": "4110",
+                  "filingIndicator": "16",
+                  "facilityCode": "11",
+                  "frequencyCode": "1",
+                  "planRef": "SYNPLAN-MA-NC",
+                  "serviceFrom": "2026-03-31",
+                  "serviceTo": "2026-03-31",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 21,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "14200",
+                      "paidCents": "8520",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-31",
+                      "serviceTo": "2026-03-31",
+                      "lineAllowedCents": null,
+                      "observedAllowed": {"cents":"10650","basis":"paid_plus_pr","allocatedFromClaim":false},
+                      "patientShareCents": "2130",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "3550",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 23
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "2130",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 24
+                        }
+                      ]
+                    },
+                    {
+                      "lineNo": 2,
+                      "segmentIndex": 25,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97140",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "8000",
+                      "paidCents": "4352",
+                      "units": "1",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-31",
+                      "serviceTo": "2026-03-31",
+                      "lineAllowedCents": null,
+                      "observedAllowed": {"cents":"5440","basis":"paid_plus_pr","allocatedFromClaim":false},
+                      "patientShareCents": "1088",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "2560",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 27
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "1088",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 28
+                        }
+                      ]
+                    },
+                    {
+                      "lineNo": 3,
+                      "segmentIndex": 29,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97530",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "6200",
+                      "paidCents": "3572",
+                      "units": "1",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-03-31",
+                      "serviceTo": "2026-03-31",
+                      "lineAllowedCents": null,
+                      "observedAllowed": {"cents":"4464","basis":"paid_plus_pr","allocatedFromClaim":false},
+                      "patientShareCents": "892",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "1736",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 31
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "892",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 32
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "plb": [],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 1,
+            "lines": 3,
+            "reversals": 0,
+            "plbTotalCents": "0",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":1,"lines":3}
+          }
+        }
+      }
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": {
+    "release": 900006,
+    "placeOfService": "11",
+    "locality": "02, from the ZIP+4 file range 5000-8999 (the ZIP5 record names 01 and flags the ZIP)",
+    "mapping": "ma_noncontracted",
+    "method": "PERCENT_OF_MEDICARE",
+    "percentage": "100",
+    "basis": "CURRENT",
+    "conversionFactor": "non_qualifying_apm",
+    "flags": {
+      "apply_mppr": true,
+      "apply_assistant_reduction": true,
+      "apply_sequestration": true,
+      "apply_ncci": true
+    },
+    "practice": {"zip":"00012","zipPlusFour":"5000"},
+    "needs": "the SYNTHETIC ZIP+4 file and a second GPCI locality: release-synth-900006 adds them to release 900001"
+  },
+  "outcome": {
+    "expectedAllowed": "the golden lines in fixtures/golden (the pricing oracle) state the cents",
+    "locality": "02, with the plus-four record and its range in the trace; recompute(trace) holds",
+    "withZipPlusFour0001": "locality 01, the amount of the ZIP 00011",
+    "withoutZipPlusFour": "ENGINE_ERROR locality_needs_zip_plus_four",
+    "withZipPlusFour9100": "ENGINE_ERROR zip_plus_four_not_in_locality_map (no range lists it; never a guessed locality), the trace naming the plus-four record read",
+    "withNoZipPlusFourRecord": "ENGINE_ERROR no_locality_plus_four (release 900001: no ZIP+4 file of the ZIP in force, a gap in the content, never the practice ZIP+4)"
+  },
+  "notes": []
+}

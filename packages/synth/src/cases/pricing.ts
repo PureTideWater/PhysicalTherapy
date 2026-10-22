@@ -219,6 +219,33 @@ export function prc15(b: CaseBuilder): void {
   b.scenario({ release: RELEASE, mapping: 'contract', method: 'FIXED_SCHEDULE', schedule: [{ code: '97110', amountCents: '4250' }], flags: COMMERCIAL_OFF });
   b.outcome({ expectedAllowedCents: '4250', observedAllowedCents: '6000', varianceCents: '-1750', case: 'none' });
 }
+/**
+ * PRC-21 (docs/adr/0064): a Medicare Advantage visit of a practice whose billing ZIP, 00012, needs its ZIP+4 under the
+ * SYNTHETIC release 900006 (its ZIP+4 file: 0000-4999 in locality 01, 5000-8999 in locality 02, 9000-9999 not listed).
+ * The ZIP+4 is the practice's setting, not in the 835. The golden claims G196-G199 state the cents.
+ */
+export const prc21 = (b: CaseBuilder) =>
+  prc(b, {
+    plan: 'SYNPLAN-MA-NC',
+    filingIndicator: '16',
+    visits: [WORKED_VISIT],
+    description: 'The worked visit of a practice whose billing ZIP spans two localities; its ZIP+4 is a practice setting.',
+    scenario: {
+      ...MA,
+      release: 900006,
+      practice: { zip: '00012', zipPlusFour: '5000' },
+      locality: '02, from the ZIP+4 file range 5000-8999 (the ZIP5 record names 01 and flags the ZIP)',
+      needs: 'the SYNTHETIC ZIP+4 file and a second GPCI locality: release-synth-900006 adds them to release 900001',
+    },
+    outcome: {
+      locality: '02, with the plus-four record and its range in the trace; recompute(trace) holds',
+      withZipPlusFour0001: 'locality 01, the amount of the ZIP 00011',
+      withoutZipPlusFour: 'ENGINE_ERROR locality_needs_zip_plus_four',
+      withZipPlusFour9100: 'ENGINE_ERROR zip_plus_four_not_in_locality_map (no range lists it; never a guessed locality), the trace naming the plus-four record read',
+      withNoZipPlusFourRecord: 'ENGINE_ERROR no_locality_plus_four (release 900001: no ZIP+4 file of the ZIP in force, a gap in the content, never the practice ZIP+4)',
+    },
+  });
+
 export function prc19(b: CaseBuilder): void {
   const base = basics(b, 'P');
   remitWith(b, claimsOn(b, base, 'SYNPLAN-MA-NC', [[{ code: '97110', units: 2 }, { code: '97140' }], [{ code: '97530' }], [{ code: '97110' }]], '16'), 'Lines on the code whose relative value release 2 changes (97110) and on codes it does not.', base);

@@ -46,7 +46,8 @@ import { type PricingTrace, type TraceAdjustment, type TraceContractAdjustment, 
  *   basis and conversion factor are the terms', its setting the practice's for the line's place of
  *   service, its basis year the service date's (CURRENT) or the locked year, and each rule record it
  *   names has the key the line looks up and a window that covers the service date (CURRENT) or the
- *   basis year (LOCKED); the locality's record is the practice ZIP's, in force on the service date.
+ *   basis year (LOCKED); the locality's record is the practice ZIP's, in force on the service date, and, where it
+ *   needs its ZIP+4, the plus-four record's range holding the settings' ZIP+4 names the GPCI's locality.
  *
  * It returns what it computed and every difference from what the trace recorded. A trace that cannot
  * be recomputed (malformed, or priced without a step its amount needs) raises TraceRecomputeError.
@@ -458,8 +459,22 @@ function checkFeeSchedule(trace: PricingTrace, check: Comparison): void {
   }
   check.same('relative value record key', `${line.procedure_code} `, `${String(rvu.record.key.hcpcs)} ${String(rvu.record.key.modifier)}`);
   check.same('locality record key', trace.settings.zip, String(locality.record.key.zip));
-  check.same('locality ZIP+4', 'not required', locality.plus_four_required === true ? 'required' : 'not required');
-  check.same('GPCI record key', `${locality.carrier} ${locality.locality}`, `${String(gpci.record.key.carrier)} ${String(gpci.record.key.locality)}`);
+  const split = locality.plus_four;
+  check.same(
+    'locality ZIP+4',
+    locality.plus_four_required === true ? 'decided by the ZIP+4' : 'not required',
+    split !== undefined ? 'decided by the ZIP+4' : locality.plus_four_required === true ? 'required' : 'not required',
+  );
+  check.same('ZIP+4 range not listed', 'none recorded', locality.plus_four_unlisted === undefined ? 'none recorded' : 'recorded on a priced line');
+  if (split !== undefined) {
+    check.same('ZIP+4 record type', 'locality_map_plus_four', split.record.record_type);
+    check.same('ZIP+4 record key', trace.settings.zip, String(split.record.key.zip));
+    check.same('ZIP+4 against the settings', trace.settings.zip_plus_four ?? '(none)', split.zip_plus_four);
+    check.same('ZIP+4 in its range', 'inside', split.from <= split.zip_plus_four && split.zip_plus_four <= split.to ? 'inside' : 'outside');
+    check.same('ZIP+4 record window', 'covers the service date', covers(split.record, line.service_date) ? 'covers the service date' : 'does not');
+  }
+  const named = split ?? locality;
+  check.same('GPCI record key', `${named.carrier} ${named.locality}`, `${String(gpci.record.key.carrier)} ${String(gpci.record.key.locality)}`);
   check.same('conversion factor against the terms', terms.conversion_factor, factor.applicability);
   check.same('conversion factor record key', terms.conversion_factor, String(factor.record.key.applicability));
   check.same('locality record window', 'covers the service date', covers(locality.record, line.service_date) ? 'covers the service date' : 'does not');
