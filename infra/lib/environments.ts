@@ -54,10 +54,10 @@ export interface ScreeningServiceSettings extends ServiceSettings {
 }
 
 /**
- * The compute (PRD 15, Stack: compute; PRD 19, Monthly costs: about $55 a month of Fargate at ten
- * customers, and about $74.50 for the screening consumer once it runs). The web app runs two tasks in
- * production, one per availability zone; the worker's practice jobs, its platform jobs and the
- * screening consumer run one task each (docs/adr/0049).
+ * The compute (PRD 15, Stack: compute; PRD 19, Monthly costs: about $82 a month of Fargate for the web and worker at
+ * ten customers, the web's larger task of 2026-10-22 included, and about $74.50 for the screening consumer once it
+ * runs). The web app runs two tasks in production, one per availability zone; the worker's practice jobs, its platform
+ * jobs and the screening consumer run one task each (docs/adr/0049).
  */
 export interface ComputeSettings {
   readonly web: ServiceSettings;
@@ -97,12 +97,17 @@ export interface EnvironmentSettings {
 const burstable = (size: ec2.InstanceSize) => ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE4_GRAVITON, size);
 
 /**
- * Quarter-vCPU web and platform tasks, a half-vCPU worker (Chromium prints its PDFs) and the screening consumer at 2
- * vCPU and 4,096 MiB (Fargate's least memory at 2 vCPU), three screenings at once (Q1 (a): three worst-shape uploads at
- * once priced in 37.5 to 41.1 s against the 48-s line, where two at a time left the third at 55.8 s).
+ * The web at half a vCPU and 1,024 MiB in every environment (the founder's ruling of 2026-10-22 on the sizing question,
+ * O9: on a quarter vCPU, three 11-MB uploads at once reached the queue after 14.6 to 16.0 s, against 6.9 s on half a
+ * vCPU, the largest share of the worst time), a quarter-vCPU platform task, a half-vCPU worker (Chromium prints its
+ * PDFs) and the screening consumer at 2 vCPU and 4,096 MiB (Fargate's least memory at 2 vCPU), three screenings at once
+ * (Q1 (a): three worst-shape uploads at once priced in 37.5 to 41.1 s against the 48-s line, where two at a time left
+ * the third at 55.8 s). The web's command sets no heap flag: Node 24 sizes V8's heap from the container's memory limit
+ * (a 560 MiB heap limit at 1,024 MiB, 259 MiB at 512, measured), so the heap follows this size, and the capacity test
+ * runs the web under the same limit, read from here (tools/screening-capacity/limits.ts).
  */
 const compute = (webTasks: number, natGateways: number, screeningStarts: ScreeningServiceSettings['starts']): ComputeSettings => ({
-  web: { cpu: 256, memoryMiB: 512, desiredCount: webTasks },
+  web: { cpu: 512, memoryMiB: 1024, desiredCount: webTasks },
   worker: { cpu: 512, memoryMiB: 1024, desiredCount: 1 },
   platform: { cpu: 256, memoryMiB: 512, desiredCount: 1 },
   screening: { cpu: 2048, memoryMiB: 4096, desiredCount: 1, concurrency: 3, starts: screeningStarts },

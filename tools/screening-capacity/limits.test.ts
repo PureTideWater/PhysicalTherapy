@@ -18,11 +18,13 @@ import { withoutConsumer } from './test-support/measurements';
 const runner = (cpus: number, memoryMiB: number) => ({ cpus, memoryMiB, cpuModel: '', kernel: '' });
 
 describe('production’s limits', () => {
-  it('are a quarter vCPU and 512 MiB for web and platform, from environments.ts', () => {
+  it('are half a vCPU and 1,024 MiB for web (the founder’s ruling of 2026-10-22, O9) and a quarter vCPU and 512 MiB for platform, read from environments.ts', () => {
     const settings = environmentSettings('production');
-    expect([settings.compute.web.cpu, settings.compute.web.memoryMiB, settings.compute.platform.cpu, settings.compute.platform.memoryMiB]).toEqual([256, 512, 256, 512]);
+    expect([settings.compute.web.cpu, settings.compute.web.memoryMiB, settings.compute.platform.cpu, settings.compute.platform.memoryMiB]).toEqual([512, 1024, 256, 512]);
     const limits = productionLimits();
-    expect(limits.web).toEqual({ cpus: 0.25, memoryMiB: 512 });
+    // The very declaration the stacks deploy, never a copy: the harness measures the web at production's size.
+    expect(limits.web).toEqual(taskLimit(settings.compute.web));
+    expect(limits.web).toEqual({ cpus: 0.5, memoryMiB: 1024 });
     // The platform no longer prices a screening and keeps its own size.
     expect(limits.platform).toEqual({ cpus: 0.25, memoryMiB: 512 });
     expect(taskLimit({ cpu: 1024, memoryMiB: 2048 })).toEqual({ cpus: 1, memoryMiB: 2048 });
@@ -73,8 +75,8 @@ describe('the layout on the runner', () => {
   });
 
   it('takes Postgres’s memory from what the runner leaves after every task, the consumer’s 4 GiB included, and the reserve', () => {
-    // 10,000 MiB less web, platform and the consumer (5,120 MiB) and the 2,560 MiB reserve.
-    expect(postgresLimit(runner(4, 10_000), limits).memoryMiB).toBe(2320);
+    // 10,000 MiB less web, platform and the consumer (5,632 MiB) and the 2,560 MiB reserve.
+    expect(postgresLimit(runner(4, 10_000), limits).memoryMiB).toBe(1808);
   });
 
   it('calls a runner too small with fewer CPUs than the class’s and the consumer’s, or one that leaves Postgres under 2 GiB', () => {
@@ -82,11 +84,11 @@ describe('the layout on the runner', () => {
     // A private repository's standard runner, 2 vCPU and 7 GB, until the founder sets the 4-core larger runner (Q1 (d)).
     expect(runnerTooSmall(runner(2, 7_168), limits)).toEqual([
       'the runner has 2 CPUs; the test needs 4 (2 for Postgres, db.t4g.medium’s, and 2 for the screening consumer)',
-      'Postgres would have -512 MiB; the test needs 2048 MiB',
+      'Postgres would have -1024 MiB; the test needs 2048 MiB',
     ]);
     // Three CPUs would leave Postgres one, which lands at the line (the design's run 9).
     expect(runnerTooSmall(runner(3, 16_000), limits)).toEqual(['the runner has 3 CPUs; the test needs 4 (2 for Postgres, db.t4g.medium’s, and 2 for the screening consumer)']);
-    expect(runnerTooSmall(runner(4, 9_000), limits)).toEqual(['Postgres would have 1320 MiB; the test needs 2048 MiB']);
+    expect(runnerTooSmall(runner(4, 9_000), limits)).toEqual(['Postgres would have 808 MiB; the test needs 2048 MiB']);
     // The workflow still starts the harness on a runner too small, which then reports it.
     expect(harnessCpus(runner(1, 16_000), limits)).toBe('0');
   });

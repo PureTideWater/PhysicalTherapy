@@ -35,7 +35,8 @@ export function applied(overrides: Partial<AppliedLimits> = {}): AppliedLimits {
   const container = (name: string, cpus: number, memoryMiB: number, cpuset: string) => ({ name, nanoCpus: Math.round(cpus * 1e9), memoryBytes: memoryMiB * MIB, memorySwapBytes: memoryMiB * MIB, cpuset });
   return {
     containers: [
-      container('web', 0.25, 512, postgres.taskCpuset),
+      // The web as production declares it (environments.ts; half a vCPU and 1,024 MiB since the founder's ruling of 2026-10-22).
+      container('web', limits.web.cpus, limits.web.memoryMiB, postgres.taskCpuset),
       container('platform', 0.25, 512, postgres.taskCpuset),
       container('screening-1', 2, 4096, postgres.consumerCpuset),
       container('postgres', postgres.cpus, postgres.memoryMiB, postgres.cpuset),
@@ -93,7 +94,7 @@ export function scenario(overrides: Partial<ScenarioMeasure> = {}, uploads: read
     postgres: { oomKills: 0, restarts: 0, running: true },
     uploads,
     containers: [
-      { name: 'web', limitBytes: 512 * MIB, anonPeakBytes: 200 * MIB, anonSamples: 120, memoryPeakBytes: 260 * MIB, events: { max: 0, oomKill: 0 }, oomKilled: false, restarts: 0, exitedUnexpectedly: false, throttling: { periods: 10, throttledPeriods: 4, throttledUs: 1000 } },
+      { name: 'web', limitBytes: limits.web.memoryMiB * MIB, anonPeakBytes: 200 * MIB, anonSamples: 120, memoryPeakBytes: 260 * MIB, events: { max: 0, oomKill: 0 }, oomKilled: false, restarts: 0, exitedUnexpectedly: false, throttling: { periods: 10, throttledPeriods: 4, throttledUs: 1000 } },
       { name: 'platform', limitBytes: 512 * MIB, anonPeakBytes: 150 * MIB, anonSamples: 120, memoryPeakBytes: 200 * MIB, events: { max: 0, oomKill: 0 }, oomKilled: false, restarts: 0, exitedUnexpectedly: false, throttling: null },
       { name: 'screening-1', limitBytes: 4096 * MIB, anonPeakBytes: 1_150 * MIB, anonSamples: 120, memoryPeakBytes: 1_300 * MIB, events: { max: 0, oomKill: 0 }, oomKilled: false, restarts: 0, exitedUnexpectedly: false, throttling: null },
     ],

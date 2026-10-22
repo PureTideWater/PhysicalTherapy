@@ -2,10 +2,10 @@ name: screening-capacity
 
 # The free screening's capacity test under production limits (audit #53 part 1; docs/adr/0062, "Capacity under
 # production limits"; docs/runbooks/screening-capacity.md): the production images run as containers under production's
-# task sizes (a quarter vCPU and 512 MiB for web and platform; the screening consumer, WORKER_JOBS=screening, at 2 vCPU
-# and 4 GiB pricing three at once), Postgres at db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms
-# delay each way, the SYNTHETIC scale release 900100 and the practice and worst 50,000-row uploads, alone and three at
-# once with a small one behind them. Time is enforced: above 48 s on the runner fails (decisions 13 to 16, the founder's
+# task sizes (half a vCPU and 1 GiB for web, the founder's ruling of 2026-10-22, and a quarter vCPU and 512 MiB for
+# platform; the screening consumer, WORKER_JOBS=screening, at 2 vCPU and 4 GiB pricing three at once), Postgres at
+# db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms delay each way, the SYNTHETIC scale release
+# 900100 and the practice and worst 50,000-row uploads, alone and three at once with a small one behind them. Time is enforced: above 48 s on the runner fails (decisions 13 to 16, the founder's
 # rulings of 2026-10-20; PR 6b-3). Synthetic data only, no credentials.
 #
 # A required check from PR 6b-3 on (the founder's Q8 of 2026-10-21; the founder sets the ruleset, runbook
