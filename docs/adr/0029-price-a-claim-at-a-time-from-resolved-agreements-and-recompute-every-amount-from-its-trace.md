@@ -1,6 +1,6 @@
 # 0029. Price a claim at a time from resolved agreements, and recompute every amount from its trace
 
-- **Status:** accepted; amended by [0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md) (claim statuses 19 to 25, `UNITS_RULE_UNKNOWN` for a timed-units rule of `UNKNOWN`, the units bound, ZIP+4 localities, general terms, golden format 2) and [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (2026-10-21: the ZIP+4 in the settings, a split ZIP's locality from the ZIP+4 file, the trace's two optional keys, `ENGINE_VERSION` `phase-two/2`)
+- **Status:** accepted; amended by [0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md) (claim statuses 19 to 25, `UNITS_RULE_UNKNOWN` for a timed-units rule of `UNKNOWN`, the units bound, ZIP+4 localities, general terms, golden format 2) and [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (2026-10-21: the ZIP+4 in the settings, a split ZIP's locality from the ZIP+4 file, the trace's three optional keys, `ENGINE_VERSION` `phase-two/2`)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering); the reimbursement specialist reviews the questions below before milestone 5 closes
 - **PRD sections:** 2 (what the engine must get right), 9 (contract rate records), 11 (the expected-payment engine), 18 (the pricing oracle and the gates); test matrix PRC-01 to PRC-18 and PRC-20
@@ -78,9 +78,10 @@ nothing from the network". Several facts shape how:
   the trace recorded, and refuses a trace that is malformed or priced without a step its amount needs.
 - *Amended by ADR 0064 (2026-10-21):* the settings may carry the ZIP+4, read only for a ZIP whose `locality_map` record
   needs it; the range of the ZIP's `locality_map_plus_four` record holding it, in force on the service date, names the
-  locality. The trace, `tp-pricing-trace/2` since ADR 0034, gains two optional keys: the settings' `zip_plus_four`
-  (only when one is given) and the locality's `plus_four` step (the record, the ZIP+4 and the range, only when the
-  ZIP+4 decided the locality). `ENGINE_VERSION` is `phase-two/2`. A trace of a five-digit input is phase-two/1's key
+  locality. The trace, `tp-pricing-trace/2` since ADR 0034, gains three optional keys: the settings' `zip_plus_four`
+  (only when one is given), the locality's `plus_four` step (the record, the ZIP+4 and the range, only when the
+  ZIP+4 decided the locality) and `plus_four_unlisted` (the plus-four record read, only when no range in it holds
+  the ZIP+4 and the line stops). `ENGINE_VERSION` is `phase-two/2`. A trace of a five-digit input is phase-two/1's key
   for key but for the engine, and `recompute` holds the new step to the settings, its range and the service date.
 - **The unrounded amount is exact.** The engine and the trace keep every digit. The migration that creates
   `priced_line` (milestone 7, pricing runs) should declare `expected_unrounded` as `numeric` without a scale, so the

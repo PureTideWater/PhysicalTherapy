@@ -56,8 +56,9 @@ The review of milestones 3 to 5 found, among smaller things:
   fee-schedule value and before the reduction ranks it, whatever the code (no rule record says which codes are timed);
   more than `MAX_UNITS` (999) on a line is `ENGINE_ERROR units_above_limit`; a practice ZIP whose locality record
   needs its ZIP+4 is `ENGINE_ERROR locality_needs_zip_plus_four`, with the flag in the trace; since PR 6b (ADR 0064),
-  only when the settings give no ZIP+4, and a ZIP+4 the plus-four file does not list is `ENGINE_ERROR
-  zip_plus_four_not_in_locality_map`. The reduction of a day
+  only when the settings give no ZIP+4; a ZIP whose plus-four record is not in force on the service date is
+  `ENGINE_ERROR no_locality_plus_four` (a gap in PaidWhole's content, never the practice's), and a ZIP+4 the
+  plus-four record does not list is `ENGINE_ERROR zip_plus_four_not_in_locality_map`. The reduction of a day
   runs inside the per-line guard, and each line's trace records only the day's first unit and its own units.
   `ENGINE_VERSION` is `phase-one/2`.
 - **`recompute` holds the fee schedule to what it was computed for**: the percentage, year basis and conversion factor
