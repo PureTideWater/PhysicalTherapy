@@ -1,0 +1,25 @@
+{
+  "case": "SCR-15",
+  "module": "SCR",
+  "title": "A screening of a ZIP split across localities",
+  "assertion": "The ZIP+4 is asked for, and kept only when needed and only for 30 days. Rows are priced at its locality, and the keyed read holds the plus-four record",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "packages/db/src/screening.db.test.ts",
+    "apps/worker/src/price/keyed-release.test.ts",
+    "apps/worker/src/screening/adapter.test.ts",
+    "apps/worker/src/screening/screening.db.test.ts",
+    "tools/screening-capacity/oracle.db.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The prospect’s ZIP+4 is set by the tests under release 900006 and the scale release’s small shape.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

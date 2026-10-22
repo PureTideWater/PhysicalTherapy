@@ -87,8 +87,11 @@ Every case the suites must contain, by module, with the fixture that exercises i
 | PRC-20 | 100,000 lines | Under two minutes on one vCPU |
 | PRC-21 | A ZIP whose locality needs its ZIP+4 | With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`. Never a guessed locality |
 | PRC-22 | The engine freeze outside the ZIP+4 lookup | The base and head engines give equal results on every golden claim and on generated five-digit claims. The diff under `packages/pricing/src` holds only the exception's files, and no existing golden file changes |
+| PRC-23 | A month whose pricing location is not ready | With no ZIP, no run is created (refused in the worker and in Postgres). When a line needs a ZIP+4, or a ZIP Medicare's list does not hold, the run fails with no lines kept, and the month is not re-created daily. A fixed-fee month prices. Coverage and Pricing settings name the month as waiting on the billing ZIP, with its dollars. Saving the location prices it with no hand re-run |
+| PRC-24 | A place of service the practice has not set | Priced with the approved split's setting, read as `tp_app`. The run records the split, and the practice's own setting wins |
 
 PRC-21 and PRC-22 were added by Change Order 001 in its pull request 6b-1, under the founder's ruling of 2026-10-18 11:47 UTC (reconciliation-001 line 428, the ZIP+4 lookup the only engine change) and the founder's answers of 2026-10-21 to PR 6b's Q3 (the record type `locality_map_plus_four`) and Q4 (golden claims G196-G199 under release 900006); docs/adr/0064.
+PRC-23 and PRC-24 were added in its pull request 6b-2 (audit #33 and #16's minimal record), under the founder's answers of 2026-10-21 to PR 6b's Q2 (the practice's one pricing location) and Q5 (`pricing_settings.set`); docs/adr/0064 and 0039.
 
 ## Triage, cases and packets (CAS)
 
@@ -153,7 +156,7 @@ PRC-21 and PRC-22 were added by Change Order 001 in its pull request 6b-1, under
 
 ## Free screening (SCR)
 
-Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the founder's ruling of 2026-10-18 on the best-option audit's item 6 (the CMS small-cell standard); SCR-08 and SCR-09 by the founder's rulings of 2026-10-20 on audit #53 (the 60-second promise at production size and the release read); SCR-10 to SCR-14 by the founder's rulings of 2026-10-20 on audit #57 (what outlives a screening, attribution and the opened signal); docs/adr/0062.
+Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the founder's ruling of 2026-10-18 on the best-option audit's item 6 (the CMS small-cell standard); SCR-08 and SCR-09 by the founder's rulings of 2026-10-20 on audit #53 (the 60-second promise at production size and the release read); SCR-10 to SCR-14 by the founder's rulings of 2026-10-20 on audit #57 (what outlives a screening, attribution and the opened signal); docs/adr/0062. SCR-15 and SCR-16 by its pull request 6b-2 (audit #31's ZIP+4 key and #7's screening part) under the founder's answers of 2026-10-21 to PR 6b's Q6 and Q11; docs/adr/0064.
 
 | ID | Case | Assertion |
 | --- | --- | --- |
@@ -171,6 +174,8 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 | SCR-12 | Attribution on the screening and the audit request | The proxy sets pw_first_touch once from a landing URL's campaign codes and paid click (HttpOnly, SameSite=Lax, 30 days, never the click ID, never on /api or Next's assets); a code with an identifier's shape (a member ID, a date, a phone number, a Medicare Beneficiary Identifier, digits alone) dropped; a production server neither sets nor reads it until its legal review is recorded; both forms keep how the prospect heard of us (closed list, optional), the cookie's source and medium codes and click kind, its campaign code only when the founder lists it as the row is written and other otherwise (a database trigger on every table that keeps one, whoever writes; a code listed later changes no row), and a screened referring firm; conversion carries them with from_screening; the console declines a request with a reason from the closed list |
 | SCR-13 | A screening result opened by a person | The page's GET records nothing; the signal goes once, after two visible seconds and a first interaction (focusin among them), and records the run's first open, the outcome's band and the summary's; it answers alike for any link; a conversion records the open when no signal came |
 | SCR-14 | A later screening of a practice with a kept summary | The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), an audit event naming it; its request is carried over only by the same ZIP and practice name, and an address-only match leaves the request without a summary; the result page and email of a screening that took a request over say its details are kept with it; a failed, abandoned or refused resend deletes nothing, and a completion after expiry is refused |
+| SCR-15 | A screening of a ZIP split across localities | The ZIP+4 is asked for, and kept only when needed and only for 30 days. Rows are priced at its locality, and the keyed read holds the plus-four record |
+| SCR-16 | A Medicare screening row in a quarter outside the loaded content | Left out in the browser and counted, with the loaded quarters named, and the result says so. A bypassing request is refused on the server and in the database. Other products' rows are untouched, and a content with no records at all has an empty span |
 
 ## Jobs and monitoring (JOB)
 

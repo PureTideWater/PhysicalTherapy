@@ -82,6 +82,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "The base and head engines give equal results on every golden claim and on generated five-digit claims. The diff under `packages/pricing/src` holds only the exception's files, and no existing golden file changes",
   },
+  {
+    id: 'PRC-23',
+    title: 'A month whose pricing location is not ready',
+    assertion:
+      "With no ZIP, no run is created (refused in the worker and in Postgres). When a line needs a ZIP+4, or a ZIP Medicare's list does not hold, the run fails with no lines kept, and the month is not re-created daily. A fixed-fee month prices. Coverage and Pricing settings name the month as waiting on the billing ZIP, with its dollars. Saving the location prices it with no hand re-run",
+  },
+  {
+    id: 'PRC-24',
+    title: 'A place of service the practice has not set',
+    assertion:
+      "Priced with the approved split's setting, read as `tp_app`. The run records the split, and the practice's own setting wins",
+  },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
   { id: 'CAS-03', title: 'Lines grouped by payer pattern from traces', assertion: 'One case per pattern' },
@@ -216,6 +228,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'A later screening of a practice with a kept summary',
     assertion:
       "The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), an audit event naming it; its request is carried over only by the same ZIP and practice name, and an address-only match leaves the request without a summary; the result page and email of a screening that took a request over say its details are kept with it; a failed, abandoned or refused resend deletes nothing, and a completion after expiry is refused",
+  },
+  {
+    id: 'SCR-15',
+    title: 'A screening of a ZIP split across localities',
+    assertion:
+      'The ZIP+4 is asked for, and kept only when needed and only for 30 days. Rows are priced at its locality, and the keyed read holds the plus-four record',
+  },
+  {
+    id: 'SCR-16',
+    title: 'A Medicare screening row in a quarter outside the loaded content',
+    assertion:
+      "Left out in the browser and counted, with the loaded quarters named, and the result says so. A bypassing request is refused on the server and in the database. Other products' rows are untouched, and a content with no records at all has an empty span",
   },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },
