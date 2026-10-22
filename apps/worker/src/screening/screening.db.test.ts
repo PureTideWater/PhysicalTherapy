@@ -331,9 +331,10 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     }
   });
 
-  it('asks for the ZIP+4 of a ZIP whose locality needs one, and refuses one whose ZIP+4 list release 900001 has not loaded (SCR-15; docs/adr/0064)', async () => {
-    await expect(submit({ zip: '00012', rows: [ROWS[0] as Row] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
-    // 900001 flags 00012 but has no ZIP+4 file: nothing the prospect can change, never "check the four digits".
+  it('refuses a ZIP whose locality needs its ZIP+4 while release 900001 has not loaded its ZIP+4 list, with or without the ZIP+4 (SCR-15; docs/adr/0064)', async () => {
+    // 900001 flags 00012 but has no ZIP+4 file: nothing the prospect can change, so the list is said not loaded before
+    // any ZIP+4 is asked for (review of PR 6b-2, finding 22), and never "check the four digits".
+    await expect(submit({ zip: '00012', rows: [ROWS[0] as Row] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_locality_not_loaded' });
     await expect(submit({ zip: '00012', plusFour: '0001', rows: [ROWS[0] as Row] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_locality_not_loaded' });
     // A ZIP+4 given for a ZIP that needs none is not kept, and the run's claim returns none.
     const runId = await submit({ zip: '00011', plusFour: '1234', rows: [ROWS[0] as Row] });

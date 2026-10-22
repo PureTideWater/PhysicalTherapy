@@ -106,7 +106,9 @@ export const practice = pgTable(
  * practice, undated (the founder's answer to PR 6b's Q2 (a)); a practice is created with it in the same transaction
  * (the deferred check practice_has_site), and it is never deleted. Registered and forced like every table with a NOT
  * NULL practice_id, though it holds no PHI. The application role reads it in a practice's scope and writes it only
- * through practice_set_location() and the console's console_set_practice_location().
+ * through practice_set_location(), practice_confirm_location() and the console's console_set_practice_location().
+ * Its updated_at and updated_by move only when the ZIP or ZIP+4 changes; a person of the practice's save or
+ * confirmation is recorded on it (confirmed_by and confirmed_at, both or neither), and the console's change clears it.
  */
 export const practiceSite = pgTable(
   'practice_site',
@@ -119,8 +121,14 @@ export const practiceSite = pgTable(
     zip: text('zip').notNull(),
     /** Four digits, for a ZIP whose locality_map record needs them; null otherwise. */
     zipPlusFour: text('zip_plus_four'),
-    /** The person who last set it; null when backfilled from practice.zip. */
+    /** The person who last set its ZIP or ZIP+4; null when backfilled from practice.zip. */
     updatedBy: uuid('updated_by').references(() => user.id),
+    /**
+     * The person of the practice who last saved or confirmed it as it stands, and when; both null until then, and again
+     * once the console changes its ZIP or ZIP+4. The practice's confirmation while confirmedAt is at or after updatedAt.
+     */
+    confirmedBy: uuid('confirmed_by').references(() => user.id),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

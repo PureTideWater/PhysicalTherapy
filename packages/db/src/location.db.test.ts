@@ -18,7 +18,9 @@ import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, create
  * PRC-21, PRC-23 and PRC-24): rule_record's closed list of record types; every status of locality_status() under the
  * SYNTHETIC releases 900001 and 900006 as committed; the practice's status under the caller's row-level security; who
  * may set the location (pricing_settings.set, the founder's answer to PR 6b's Q5 (a)) and what the setters refuse with
- * the handler bypassed; the record's rules and a practice that cannot be created without one; the run guard and the
+ * the handler bypassed; who may confirm it, recorded on the location for every role that opens the practice, only
+ * while nothing is left to change, a save that changes nothing, and a deleted practice (the review of 2026-10-22,
+ * findings 1, 2, 8, 9 and 11); the record's rules and a practice that cannot be created without one; the run guard and the
  * split pin as the application role, a person's request and the worker's job alike, and the split's read; and every
  * function's privileges by its exact name. Synthetic data only.
  */
@@ -97,7 +99,7 @@ async function memberOf(organizationId: string, role: MembershipRole): Promise<s
   return person;
 }
 
-async function internalUser(role: 'platform_admin' | 'contract_specialist' | 'reviewer'): Promise<string> {
+async function internalUser(role: 'platform_admin' | 'contract_specialist' | 'reviewer' | 'support'): Promise<string> {
   const internal = await createOrganization(owner, 'internal');
   const person = await createUser(owner, { hardwareKeyRequired: true });
   await addMembership(owner, internal, person, role);
@@ -389,12 +391,13 @@ describe('who sets the location (pricing_settings.set, the founder’s answer to
     await expect(console_(platformAdmin, target.practiceId, '00012', '1')).rejects.toMatchObject({ constraint: 'practice_site_zip_plus_four' });
   });
 
-  it('serves the console’s settings from the location: its ZIP read, a changed ZIP set (its ZIP+4 cleared), the same or none left, and practice.zip never written', async () => {
+  it('serves the console’s settings from the location: its ZIP and ZIP+4 read, a changed ZIP set (its ZIP+4 cleared), the same or none left, and practice.zip never written', async () => {
     const settings = (actorId: string) =>
-      withActor(app, actorId, async (scope) => (await scope.client.query<{ zip: string | null }>('SELECT zip FROM console_practice_settings($1)', [target.practiceId])).rows);
+      withActor(app, actorId, async (scope) => (await scope.client.query<{ zip: string | null; zip_plus_four: string | null }>('SELECT zip, zip_plus_four FROM console_practice_settings($1)', [target.practiceId])).rows);
     const save = (zip: string | null) =>
       withActor(app, platformAdmin, async (scope) => (await scope.client.query<{ changed: boolean }>("SELECT console_set_practice_settings($1, $2, '{}') AS changed", [target.practiceId, zip])).rows[0]?.changed);
-    expect(await settings(platformAdmin)).toEqual([{ zip: '00012' }]);
+    // The stored ZIP+4 too, so the console shows it and a save never replaces it unseen (review of PR 6b-2, finding 14).
+    expect(await settings(platformAdmin)).toEqual([{ zip: '00012', zip_plus_four: '0001' }]);
     expect(await settings(target.adminUserId)).toEqual([]);
     const stamped = (await siteOf(target.practiceId))[0]?.updated_at;
     // The same ZIP (the previous image's save sends the form's): the location, its ZIP+4 and its time are as they were.
@@ -406,8 +409,161 @@ describe('who sets the location (pricing_settings.set, the founder’s answer to
     // Another ZIP: set, and the ZIP+4 of the old one cleared.
     expect(await save('00011')).toBe(true);
     expect(await siteOf(target.practiceId)).toEqual([expect.objectContaining({ zip: '00011', zip_plus_four: null, updated_by: platformAdmin })]);
+    expect(await settings(platformAdmin)).toEqual([{ zip: '00011', zip_plus_four: null }]);
     await expect(save('0001')).rejects.toMatchObject({ constraint: 'practice_site_zip' });
     expect((await owner.query('SELECT zip FROM practice WHERE id = $1', [target.practiceId])).rows).toEqual([{ zip: null }]);
+  });
+});
+
+describe('the practice’s confirmation of its location, and a save that changes nothing (review of PR 6b-2, findings 1, 2, 8, 9 and 11)', () => {
+  let target: TenantWorld;
+  let billingManager: string;
+  let viewer: string;
+  let analyst: string;
+  let firmPrincipal: string;
+  let reviewer: string;
+  let engineer: string;
+
+  /** practice_confirm_location() as `actorId` in a request's scope of `practiceIds`, for `practiceId`. */
+  const confirm = (actorId: string, practiceIds: readonly string[], practiceId: string) =>
+    withPracticeScope(app, { actorId, practiceIds }, async (scope) => (await scope.client.query<{ status: string }>('SELECT practice_confirm_location($1) AS status', [practiceId])).rows[0]?.status);
+  /** A statement as `actorId` with app.practice_ids set by hand, as a handler bug or another route could set it. */
+  const asActorIn = (actorId: string, practiceIds: readonly string[], statement: string, values: unknown[]) =>
+    withActor(app, actorId, async (scope) => {
+      await scope.client.query("SELECT set_config('app.practice_ids', $1, true)", [`{${practiceIds.join(',')}}`]);
+      return scope.client.query(statement, values);
+    });
+  const consoleSet = (zip: string, plusFour: string | null) =>
+    withActor(app, platformAdmin, async (scope) => (await scope.client.query<{ status: string | null }>('SELECT console_set_practice_location($1, $2, $3) AS status', [target.practiceId, zip, plusFour])).rows[0]?.status);
+  /** The location as the owner reads it: who set it and when, who confirmed it, and whether that confirmation still holds. */
+  const stateOf = async (practiceId: string) =>
+    (
+      await owner.query<{ zip: string; zip_plus_four: string | null; updated_by: string | null; updated_at: Date; confirmed_by: string | null; confirmed: boolean }>(
+        'SELECT zip, zip_plus_four, updated_by, updated_at, confirmed_by, (confirmed_at IS NOT NULL AND confirmed_at >= updated_at) AS confirmed FROM practice_site WHERE practice_id = $1',
+        [practiceId],
+      )
+    ).rows[0];
+
+  beforeAll(async () => {
+    target = await createTenantWorld(owner, 'confirmation');
+    billingManager = await memberOf(target.organizationId, 'billing_manager');
+    viewer = await memberOf(target.organizationId, 'viewer');
+    analyst = await memberOf(target.organizationId, 'analyst');
+    firmPrincipal = await memberOf(await firmGrant(target, ['firm_principal']), 'firm_principal');
+    reviewer = await internalUser('reviewer');
+    engineer = await internalUser('support');
+    for (const [person, ticket] of [
+      [reviewer, 'LOC-2'],
+      [engineer, 'LOC-3'],
+    ] as const) {
+      await asOwner(owner, [target.practiceId], () =>
+        owner.query("INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, $3, 'SYNTHETIC REVIEW', now() + interval '1 hour')", [target.practiceId, person, ticket]),
+      );
+    }
+  });
+
+  it('records who confirmed it and when beside the location, both or neither, read by every role that opens the practice', async () => {
+    await expect(owner.query('UPDATE practice_site SET confirmed_by = $2 WHERE practice_id = $1', [target.practiceId, billingManager])).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'practice_site_confirmed',
+    });
+    await expect(owner.query('UPDATE practice_site SET confirmed_at = now() WHERE practice_id = $1', [target.practiceId])).rejects.toMatchObject({ code: '23514', constraint: 'practice_site_confirmed' });
+    for (const person of [viewer, analyst, engineer]) {
+      const read = await withPracticeScope(app, { actorId: person, practiceIds: [target.practiceId] }, async (scope) =>
+        (await scope.client.query<{ confirmed_by: string | null; confirmed_at: Date | null }>('SELECT confirmed_by, confirmed_at FROM practice_site WHERE practice_id = $1', [target.practiceId])).rows,
+      );
+      expect(read, person).toEqual([{ confirmed_by: null, confirmed_at: null }]);
+    }
+  });
+
+  it('refuses the confirmation, as the application role, to a viewer, an analyst, a support engineer, a reviewer, another practice’s administrator, a platform administrator and a job, and writes nothing', async () => {
+    for (const person of [viewer, analyst, engineer, reviewer]) {
+      await expect(confirm(person, [target.practiceId], target.practiceId), person).rejects.toMatchObject({ code: '42501' });
+    }
+    // Another practice's administrator, even with this practice put in the scope by hand.
+    await expect(asActorIn(other.adminUserId, [other.practiceId, target.practiceId], 'SELECT practice_confirm_location($1)', [target.practiceId])).rejects.toMatchObject({ code: '42501' });
+    // This practice's administrator with only another practice in scope.
+    await expect(confirm(target.adminUserId, [other.practiceId], target.practiceId)).rejects.toMatchObject({ code: '42501' });
+    // A platform administrator holds no practice role, whatever its scope says; a job is no person.
+    await expect(asActorIn(platformAdmin, [target.practiceId], 'SELECT practice_confirm_location($1)', [target.practiceId])).rejects.toMatchObject({ code: '42501' });
+    await expect(withJobScope(worker, { jobId: randomUUID(), practiceId: target.practiceId }, (scope) => scope.client.query('SELECT practice_confirm_location($1)', [target.practiceId]))).rejects.toMatchObject({
+      code: '42501',
+    });
+    // Nor is the confirmation written around the function: the application role holds no write on the location.
+    await expect(
+      asActorIn(viewer, [target.practiceId], 'UPDATE practice_site SET confirmed_by = app_actor_id(), confirmed_at = now() WHERE practice_id = $1', [target.practiceId]),
+    ).rejects.toMatchObject({ code: '42501' });
+    expect(await stateOf(target.practiceId)).toMatchObject({ confirmed_by: null, confirmed: false });
+  });
+
+  it('takes the confirmation of the billing manager, the firm principal and the practice administrator only while nothing is left to change (practice_site_settled), keeping the location’s time', async () => {
+    const before = await stateOf(target.practiceId);
+    expect(before).toMatchObject({ zip: '00011', zip_plus_four: null, updated_by: null });
+    expect(await confirm(billingManager, [target.practiceId], target.practiceId)).toBe('ready');
+    expect(await stateOf(target.practiceId)).toEqual({ ...before, confirmed_by: billingManager, confirmed: true });
+    expect(await confirm(firmPrincipal, [target.practiceId], target.practiceId)).toBe('ready');
+    expect(await stateOf(target.practiceId)).toEqual({ ...before, confirmed_by: firmPrincipal, confirmed: true });
+    // A location that still asks the customer for something is never confirmed as it stands; a console change clears the confirmation.
+    for (const [zip, plusFour, status] of [
+      ['00012', null, 'zip_plus_four_needed'],
+      ['00012', '9100', 'zip_plus_four_unknown'],
+      ['00099', null, 'zip_unknown'],
+    ] as const) {
+      expect(await consoleSet(zip, plusFour)).toBe(status);
+      await expect(confirm(target.adminUserId, [target.practiceId], target.practiceId), status).rejects.toMatchObject({ code: '23514', constraint: 'practice_site_settled' });
+      expect(await stateOf(target.practiceId), status).toMatchObject({ confirmed_by: null, confirmed: false });
+    }
+    // A practice with no location at all (zip_missing) by the same rule.
+    const legacy = await legacyPracticeWithoutLocation(target.organizationId);
+    await expect(confirm(target.adminUserId, [legacy], legacy)).rejects.toMatchObject({ code: '23514', constraint: 'practice_site_settled' });
+    expect(await consoleSet('00012', '5000')).toBe('ready');
+    expect(await stateOf(target.practiceId)).toMatchObject({ zip: '00012', zip_plus_four: '5000', updated_by: platformAdmin, confirmed_by: null, confirmed: false });
+    expect(await confirm(target.adminUserId, [target.practiceId], target.practiceId)).toBe('ready');
+    expect(await stateOf(target.practiceId)).toMatchObject({ updated_by: platformAdmin, confirmed_by: target.adminUserId, confirmed: true });
+  });
+
+  it('moves updated_at and updated_by only when the ZIP or ZIP+4 changes, whoever writes it; a person’s save is their confirmation, and a console change clears it', async () => {
+    const before = await stateOf(target.practiceId);
+    // The same location saved by a person of the practice: their confirmation; the location's time and setter kept.
+    expect(await setLocation(billingManager, [target.practiceId], target.practiceId, '00012', '5000')).toBe('ready');
+    expect(await stateOf(target.practiceId)).toEqual({ ...before, confirmed_by: billingManager });
+    // The same location from the console, or by the owner: nothing moves, and the confirmation stays.
+    expect(await consoleSet('00012', '5000')).toBe('ready');
+    await owner.query("UPDATE practice_site SET zip = '00012', zip_plus_four = '5000' WHERE practice_id = $1", [target.practiceId]);
+    expect(await stateOf(target.practiceId)).toEqual({ ...before, confirmed_by: billingManager });
+    // A person's change: stamped, theirs, and confirmed by the save itself.
+    expect(await setLocation(firmPrincipal, [target.practiceId], target.practiceId, '00012', '0001')).toBe('ready');
+    const changed = await stateOf(target.practiceId);
+    expect(changed).toMatchObject({ zip_plus_four: '0001', updated_by: firmPrincipal, confirmed_by: firmPrincipal, confirmed: true });
+    expect(changed?.updated_at.getTime()).toBeGreaterThan(before?.updated_at.getTime() ?? Infinity);
+    // The previous image's console save: the same ZIP leaves everything; another ZIP sets it and clears the confirmation.
+    const save = (zip: string) =>
+      withActor(app, platformAdmin, async (scope) => (await scope.client.query<{ changed: boolean }>("SELECT console_set_practice_settings($1, $2, '{}') AS changed", [target.practiceId, zip])).rows[0]?.changed);
+    expect(await save('00012')).toBe(true);
+    expect(await stateOf(target.practiceId)).toEqual(changed);
+    expect(await save('00011')).toBe(true);
+    expect(await stateOf(target.practiceId)).toMatchObject({ zip: '00011', zip_plus_four: null, updated_by: platformAdmin, confirmed_by: null, confirmed: false });
+  });
+
+  it('never sets or confirms the location of a deleted practice, from the practice or the console', async () => {
+    const gone = await createTenantWorld(owner, 'deleted');
+    const kept = await stateOf(gone.practiceId);
+    await owner.query('BEGIN');
+    try {
+      await owner.query('SET LOCAL session_replication_role = replica');
+      await owner.query("UPDATE practice SET status = 'deleted', deleted_at = now() WHERE id = $1", [gone.practiceId]);
+      await owner.query('COMMIT');
+    } catch (error) {
+      await owner.query('ROLLBACK');
+      throw error;
+    }
+    // Its administrator, with the practice put in the scope by hand (effective_practice_access() does not read a practice's status).
+    await expect(asActorIn(gone.adminUserId, [gone.practiceId], "SELECT practice_set_location($1, '00099', NULL)", [gone.practiceId])).rejects.toMatchObject({ code: '42501' });
+    await expect(asActorIn(gone.adminUserId, [gone.practiceId], 'SELECT practice_confirm_location($1)', [gone.practiceId])).rejects.toMatchObject({ code: '42501' });
+    // The console's setter answers null; the previous image's settings save leaves the location as it is.
+    expect((await asActorIn(platformAdmin, [], "SELECT console_set_practice_location($1, '00099', NULL) AS status", [gone.practiceId])).rows).toEqual([{ status: null }]);
+    await asActorIn(platformAdmin, [], "SELECT console_set_practice_settings($1, '00099', '{}')", [gone.practiceId]);
+    expect(await stateOf(gone.practiceId)).toEqual(kept);
   });
 });
 
@@ -515,6 +671,11 @@ describe('the run guard and the split, as the application role (PRC-23, PRC-24)'
     const readAs = (practiceIds: readonly string[], actorId: string, run: string | undefined) =>
       withPracticeScope(app, { actorId, practiceIds }, async (scope) => (await scope.client.query<{ place_of_service_split_id: string; settings: object }>('SELECT place_of_service_split_id, settings FROM pricing_run_split($1)', [run])).rows);
     expect(await readAs([world.practiceId], manager, person?.id)).toEqual([{ place_of_service_split_id: first, settings: SPLIT }]);
+    // With the time it was approved, which the re-run's diff names (review of PR 6b-2, finding 16).
+    const approvedAt = (await owner.query<{ approved_at: Date }>('SELECT approved_at FROM place_of_service_split WHERE id = $1', [first])).rows[0]?.approved_at;
+    expect(
+      await withPracticeScope(app, { actorId: manager, practiceIds: [world.practiceId] }, async (scope) => (await scope.client.query<{ approved_at: Date }>('SELECT approved_at FROM pricing_run_split($1)', [person?.id])).rows),
+    ).toEqual([{ approved_at: approvedAt }]);
     // The worker's read, in the job's scope.
     expect(
       (await withJobScope(worker, { jobId: randomUUID(), practiceId: world.practiceId }, (scope) => scope.client.query('SELECT place_of_service_split_id FROM pricing_run_split($1)', [job?.id]))).rows,
@@ -620,6 +781,7 @@ describe('every function of the migration, by its exact name: the definer flag, 
       'locality_status(integer,text,text,date,date)': { definer: false, grantees: [APP_ROLE] },
       'practice_location_status(uuid,integer,date,date)': { definer: false, grantees: [APP_ROLE] },
       'practice_set_location(uuid,text,text)': { definer: true, grantees: [APP_ROLE] },
+      'practice_confirm_location(uuid)': { definer: true, grantees: [APP_ROLE] },
       'console_set_practice_location(uuid,text,text)': { definer: true, grantees: [APP_ROLE] },
       'console_practice_settings(uuid)': { definer: true, grantees: [APP_ROLE] },
       'console_set_practice_settings(uuid,text,jsonb)': { definer: true, grantees: [APP_ROLE] },

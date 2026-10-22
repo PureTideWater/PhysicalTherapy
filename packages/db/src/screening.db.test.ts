@@ -588,7 +588,7 @@ describe('the screening rules', () => {
     await approveSplit();
   }, 60_000);
 
-  it('opens with the release and the split in force, and refuses a ZIP the release does not map, one that needs its ZIP+4 without it, and one whose ZIP+4 list is not loaded', async () => {
+  it('opens with the release and the split in force, and refuses a ZIP the release does not map, and one whose ZIP+4 list is not loaded with or without a ZIP+4', async () => {
     const [status] = await as<{ release_no: number; place_of_service_split_id: string }>(APP_ROLE, 'SELECT * FROM screening_status()');
     expect(status?.release_no).toBe(900001);
     // The location's status in the release in force (locality_status(), migration 20261105090000), as the web reads it.
@@ -598,8 +598,10 @@ describe('the screening rules', () => {
     expect(await location('00012', '0001')).toBe('locality_not_loaded');
     expect(await location('00099', null)).toBe('zip_unknown');
     await expect(submit({ zip: '00099' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_unknown' });
-    // A ZIP whose locality needs its ZIP+4 asks for it ("enter the ZIP+4"); this release loads no ZIP+4 list, so one given cannot be priced yet.
-    await expect(submit({ zip: '00012' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
+    // A ZIP whose locality needs its ZIP+4, under a release that loads no ZIP+4 list of it: the list is not loaded, said
+    // before the prospect is asked for digits the screening could not use (review of PR 6b-2, finding 22), and again
+    // when one is given. The practice's own status keeps asking for the ZIP+4 first (locality_status() above).
+    await expect(submit({ zip: '00012' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_locality_not_loaded' });
     await expect(submit({ zip: '00012', plusFour: '0001' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_locality_not_loaded' });
     // A ZIP+4 given for a ZIP that needs none is not kept (minimisation).
     const withoutNeed = await submit({ zip: '00011', plusFour: '1234' });
