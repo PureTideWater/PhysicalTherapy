@@ -21,7 +21,6 @@ import {
   type ScreeningRejection,
   type ScreeningRow,
   checkHeaders,
-  currentQuarter,
   decodeScreeningRows,
   leftOutPlausible,
   outsideContentPlausible,
@@ -38,7 +37,7 @@ import { InputError, type Issue, type MutationResult, NotFoundError } from '../h
 import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
 import { optionalText } from '../routes/schemas';
 import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
-import { contentQuarters } from './content-span';
+import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
 
@@ -580,9 +579,10 @@ export const screeningSubmit = publicRoute({
  * screening opens).
  */
 export const SCREENING_ZIP_MESSAGES = {
-  screening_zip_plus_four: 'Medicare splits this ZIP code between two payment areas. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.',
-  screening_zip_plus_four_unknown: 'Medicare’s ZIP+4 list in force does not include this ZIP+4. Check the four digits after the hyphen.',
-  screening_locality_not_loaded: 'PaidWhole has not loaded Medicare’s locality list for this ZIP code yet, so a screening cannot price it. Try again later.',
+  screening_zip_plus_four: 'This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.',
+  // Right under either answer to Q37 (a ZIP+4 the ZIP9 file does not list): the digits may be right.
+  screening_zip_plus_four_unknown: 'Medicare’s ZIP+4 list in force does not list this ZIP+4. If the four digits after the hyphen are right, a screening cannot price this ZIP+4 yet.',
+  screening_locality_not_loaded: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.',
 } as const;
 
 /** What a refusal of submit_screening() says, by the rule it names. */
@@ -922,10 +922,8 @@ export const screeningResult = publicRoute({
         standing: string;
       }>('SELECT * FROM screening_result_rows($1, $2)', [hash, SCREENING_TOP_ROWS]);
       // The quarters the run's release had the Medicare content for, up to the screening's own quarter: when they are one
-      // run that reaches it, every row left out for its quarter lay before the first (no row may lie after the current
-      // quarter), and the result says so.
+      // run that reaches it, every row left out for its quarter lay before the first (quarterRowsLayBefore).
       const quarters = await contentQuarters(client, summary.release_no, summary.created_at);
-      const reaches = quarters.length === 1 && quarters[0]?.to === currentQuarter(summary.created_at);
       const totals = (rowsKey: keyof SummaryRow, claimsKey: keyof SummaryRow, observedKey: keyof SummaryRow): ScreeningGroupTotals => ({
         rows: count(summary[rowsKey] as number),
         claimLines: count(summary[claimsKey] as string),
@@ -959,7 +957,7 @@ export const screeningResult = publicRoute({
           couldNotPrice: totals('unpriced_rows', 'unpriced_claim_lines', 'unpriced_observed_cents'),
           leftOut: totals('left_out_rows', 'left_out_claim_lines', 'left_out_observed_cents'),
           outsideContent: totals('outside_content_rows', 'outside_content_claim_lines', 'outside_content_observed_cents'),
-          outsideContentBefore: reaches ? (quarters[0]?.from ?? null) : null,
+          outsideContentBefore: quarterRowsLayBefore(quarters, summary.created_at),
         },
         groups: groups.rows.map((group) => ({
           groupNo: group.group_no,

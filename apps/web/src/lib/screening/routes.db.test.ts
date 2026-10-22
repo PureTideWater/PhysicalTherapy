@@ -3,13 +3,13 @@ import path from 'node:path';
 
 import { tagline } from '@paidwhole/brand';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
-import { SCREENING_REJECTION_CODES, currentQuarter, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
+import { SCREENING_REJECTION_CODES, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ATTRIBUTION_COOKIE } from '../http/attribution';
 import { RATE_LIMITS } from '../http/rate-limit';
 import type { MutationResult, Outcome } from '../http/route';
-import { contentQuarters } from './content-span';
+import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_LABELS_VERSION } from './labels';
 import { NO_PATIENT_INFORMATION, SCREENING_ZIP_MESSAGES, screeningConvert, screeningOpened, screeningPage, screeningReasonMessage, screeningResult, screeningSubmit } from './routes';
 import { parseScreeningBytes } from './parse';
@@ -390,13 +390,13 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
   it('asks for the ZIP+4 of a ZIP that needs one, and says the ZIP+4 list is not loaded under a release without one, never "check the digits"', async () => {
     const email = 'prospect.plusfour@clinic-plusfour.synthetic.test';
     expect(issuesOf(await submitted(submitInput({ zip: '00012', contactEmail: email })))).toEqual([
-      { field: 'zip', message: 'Medicare splits this ZIP code between two payment areas. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.' },
+      { field: 'zip', message: 'This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.' },
     ]);
     // 900001 has no ZIP+4 list: PaidWhole has not loaded it.
     expect(issuesOf(await submitted(submitInput({ zip: '00012-0001', contactEmail: email })))).toEqual([
-      { field: 'zip', message: 'PaidWhole has not loaded Medicare’s locality list for this ZIP code yet, so a screening cannot price it. Try again later.' },
+      { field: 'zip', message: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.' },
     ]);
-    expect(SCREENING_ZIP_MESSAGES.screening_locality_not_loaded).toBe('PaidWhole has not loaded Medicare’s locality list for this ZIP code yet, so a screening cannot price it. Try again later.');
+    expect(SCREENING_ZIP_MESSAGES.screening_locality_not_loaded).toBe('PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.');
     // A field the route does not read is ignored; nothing is kept of a refused ZIP.
     expect(issuesOf(await submitted({ ...submitInput({ zip: '00012', contactEmail: email }), zipPlusFour: '0001' })).map((issue) => issue.field)).toEqual(['zip']);
     expect(await kept(email)).toEqual([]);
@@ -424,9 +424,9 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
       const email = 'prospect.zip9.split@clinic-zip9-split.synthetic.test';
       expect(await send('00012-5000', email)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
       expect((await split.owner.query('SELECT zip, zip_plus_four FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ zip: '00012', zip_plus_four: '5000' }]);
-      // The gap between the list's ranges: "check the four digits".
+      // The gap between the list's ranges: the digits may be right (Q37 is open), so never "check the four digits".
       expect(issuesOf(await send('00012-9100', 'prospect.zip9.gap@clinic-zip9-gap.synthetic.test'))).toEqual([
-        { field: 'zip', message: 'Medicare’s ZIP+4 list in force does not include this ZIP+4. Check the four digits after the hyphen.' },
+        { field: 'zip', message: 'Medicare’s ZIP+4 list in force does not list this ZIP+4. If the four digits after the hyphen are right, a screening cannot price this ZIP+4 yet.' },
       ]);
       expect(issuesOf(await send('00012', 'prospect.zip9.none@clinic-zip9-none.synthetic.test'))).toEqual([{ field: 'zip', message: SCREENING_ZIP_MESSAGES.screening_zip_plus_four }]);
     } finally {
@@ -466,9 +466,19 @@ describe('SCR-16: a Medicare row in a quarter outside the loaded content (Q6 (a)
     await world.price();
     const result = ok(await world.call(screeningResult, { params: { resultId: world.tokenFor(email) } }));
     expect(result.summary.outsideContent).toEqual({ rows: 12, claimLines: 380, observedCents: 4_120_000n });
-    // 900001's content runs through 2026: while 2026 is the current year, every row left out lay before 2026-Q1.
-    const quarters = await contentQuarters(world.owner, 900001, result.summary.createdAt);
-    expect(result.summary.outsideContentBefore).toBe(quarters.length === 1 && quarters[0]?.to === currentQuarter(result.summary.createdAt) ? '2026-Q1' : null);
+    // Where the rows left out lay is the run's own quarter's inference (quarterRowsLayBefore, pinned at fixed dates in
+    // content-span.test.ts) over the release's content as of the run.
+    expect(result.summary.outsideContentBefore).toBe(quarterRowsLayBefore(await contentQuarters(world.owner, 900001, result.summary.createdAt), result.summary.createdAt));
+    // And pinned here at a fixed time: a screening made after 900001's content ends (2027-Q2; its link opens until 30
+    // days later, so the run's time is never in the past) cannot say where its rows lay. Set as the test's superuser,
+    // its triggers off.
+    const run = (await world.owner.query<{ id: string }>('SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email])).rows[0]?.id;
+    const after = new Date(Math.max(Date.now(), Date.parse('2027-05-15T12:00:00Z')));
+    await world.owner.query('BEGIN');
+    await world.owner.query("SET LOCAL session_replication_role = 'replica'");
+    await world.owner.query("UPDATE screening_run SET created_at = $2, expires_at = $2::timestamptz + interval '30 days' WHERE id = $1", [run, after]);
+    await world.owner.query('COMMIT');
+    expect(ok(await world.call(screeningResult, { params: { resultId: world.tokenFor(email) } })).summary.outsideContentBefore).toBeNull();
     // Counted apart from every figure: the file's own totals are the rows sent.
     expect(result.summary).toMatchObject({ rows: 7, claimLines: 79 });
   });

@@ -633,27 +633,36 @@ test('a specialist approves the split; a file with patient information is refuse
   await context.close();
 });
 
-test('a ZIP that spans two Medicare payment areas is asked for its ZIP+4, and one whose ZIP+4 list is not loaded is told so, never to check the digits; the file stays chosen (SCR-15)', async ({ page }) => {
+test('a ZIP that spans more than one Medicare payment area is asked for its ZIP+4, and one whose ZIP+4 list is not loaded is told so, never to check the digits; the file stays chosen (SCR-15)', async ({ page }) => {
   const contact = `screening-zip4-${randomBytes(4).toString('hex')}@clinic-zip4.synthetic.test`;
   await page.goto('/screening');
   await page.getByLabel('Practice name').fill('SYNTHETIC SPLIT ZIP CLINIC');
   await page.getByLabel('State').selectOption('MN');
   const zip = page.getByLabel('ZIP code', { exact: true });
   await expect(zip).toHaveAttribute('maxlength', '10');
-  await expect(page.locator('#field-zip-hint')).toHaveText('Five digits, or ZIP+4 if you know it. A few ZIP codes span two Medicare payment areas; for those we ask for the ZIP+4.');
+  await expect(page.locator('#field-zip-hint')).toHaveText('Five digits, or ZIP+4 if you know it. A few ZIP codes span more than one Medicare payment area; for those we ask for the ZIP+4.');
+  // Which quarters' Medicare rows are screened, said before a file is chosen.
+  await expect(page.locator('[data-slot="screened-quarters"]')).toHaveText('Medicare rows of 2026-Q1 to 2026-Q4 are screened; rows of other quarters are left out and counted.');
   await zip.fill(SCREENING_ZIP_PLUS_FOUR);
   await page.getByLabel('Work email').fill(contact);
   await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: screeningRowsCsv([SCREENING_HEADER, ...CLEAN_ROWS]) });
-  await expect(page.locator('[data-state="file-ready"]')).toBeVisible();
+  // What the page says of the chosen file is in a live region, so it is announced.
+  await expect(page.getByRole('status').locator('[data-state="file-ready"]')).toBeVisible();
   await page.getByRole('button', { name: 'Screen the file' }).click();
   const error = page.locator('[data-state="error"]');
+  const asked = 'This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.';
   await expect(error).toHaveAttribute('role', 'alert');
-  await expect(error).toContainText('ZIP code: Medicare splits this ZIP code between two payment areas. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.');
+  await expect(error).toContainText(`ZIP code: ${asked}`);
+  // The refusal is the ZIP field's: shown under it, marked invalid, described by it, and the focus is on it.
+  await expect(zip).toHaveAttribute('aria-invalid', 'true');
+  await expect(zip).toHaveAttribute('aria-describedby', 'field-zip-error field-zip-hint');
+  await expect(page.locator('#field-zip-error')).toHaveText(asked);
+  await expect(zip).toBeFocused();
   // The file is still chosen: the ZIP+4 is all that changes. Under release 900001 its ZIP+4 list is not loaded.
   await expect(page.locator('[data-state="file-ready"]')).toBeVisible();
   await zip.fill(`${SCREENING_ZIP_PLUS_FOUR}-0001`);
   await page.getByRole('button', { name: 'Screen the file' }).click();
-  await expect(error).toContainText('ZIP code: PaidWhole has not loaded Medicare’s locality list for this ZIP code yet, so a screening cannot price it. Try again later.');
+  await expect(error).toContainText('ZIP code: PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.');
   await expect(error).not.toContainText('Check the four digits');
   await expectAccessible(page, 'the screening page with a ZIP refused');
   await noSidewaysScroll(page, 390, 'the screening page with a ZIP refused');

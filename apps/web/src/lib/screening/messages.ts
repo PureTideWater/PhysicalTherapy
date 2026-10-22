@@ -171,6 +171,17 @@ export function outsideContentMessage(outside: ScreeningLeftOut, bands: readonly
 }
 
 /**
+ * Which quarters' Medicare rows a screening screens, said before a file is chosen (the founder's answer of 2026-10-21
+ * to PR 6b's Q6 (a)): the quarters the release in force has the Medicare content for, and that rows of other quarters
+ * are left out and counted, so a prospect builds the file for those quarters.
+ */
+export function screenedQuartersMessage(quarters: ContentQuarters): string {
+  return quarters.length === 0
+    ? 'PaidWhole has no Medicare content loaded yet, so Medicare rows are left out and counted.'
+    : `Medicare rows of ${contentQuartersText(quarters)} are screened; rows of other quarters are left out and counted.`;
+}
+
+/**
  * The messages a refusal shows: at most 20. `total` is how many reasons there were (the format keeps 20, patient
  * information first); when there were more than are shown, the last message says how many more.
  */

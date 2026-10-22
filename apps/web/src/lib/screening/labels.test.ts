@@ -35,13 +35,15 @@ const VERSIONS: Readonly<Record<string, string>> = {
   // PR 6b: the ZIP+4's three engine details (locality_needs_zip_plus_four reworded; no_locality_plus_four, a gap in the
   // content, and zip_plus_four_not_in_locality_map added) and the rows not screened for a quarter outside the loaded
   // content (the founder's answers of 2026-10-21 to Q6 (a) and Q12). Unreleased until PR 6b merges, so the version
-  // keeps the name its migration's screening_labels_version() returns.
-  'screening-labels/2026-11-05': '52e4442605be100f67ce49a1fa1795f5c29d7a741abc671448ab76e62cfa32c5',
+  // keeps the name its migration's screening_labels_version() returns. PR 6b-2's review round reworded two of them
+  // (a ZIP that spans "more than one" locality, not "two"; the Medicare products priced "for the quarters PaidWhole has
+  // loaded"), still unreleased.
+  'screening-labels/2026-11-05': '831c2772c6b20ef9aeda827d592568daee46020af78b71e641c140a787c1f6d0',
 };
 
 describe('the labels of PR 6b (docs/adr/0064)', () => {
   it('labels the three ZIP+4 details an engine gives a screening row, and labels no detail the engine does not have', () => {
-    expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'locality_needs_zip_plus_four')).toBe('The ZIP spans two Medicare localities and no ZIP+4 was given');
+    expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'locality_needs_zip_plus_four')).toBe('The ZIP spans more than one Medicare locality and no ZIP+4 was given');
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'zip_plus_four_not_in_locality_map')).toBe('Medicare’s ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day');
     // No ZIP+4 list of the ZIP in force is PaidWhole's content to load, never the prospect's ZIP+4 to check.
     expect(labels.unpricedReasonLabel('ENGINE_ERROR', 'no_locality_plus_four')).toBe('PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day');

@@ -51,8 +51,12 @@ describe('the screening upload form', () => {
     expect(zip).toContain('maxLength="10"');
     expect(zip).toContain('pattern="[0-9]{5}(-?[0-9]{4})?"');
     expect(zip).toContain('aria-describedby="field-zip-hint"');
-    expect(ZIP_HINT).toBe('Five digits, or ZIP+4 if you know it. A few ZIP codes span two Medicare payment areas; for those we ask for the ZIP+4.');
+    expect(ZIP_HINT).toBe('Five digits, or ZIP+4 if you know it. A few ZIP codes span more than one Medicare payment area; for those we ask for the ZIP+4.');
     expect(plain).toContain(ZIP_HINT);
+    // Which quarters' Medicare rows are screened, before a file is chosen (Q6 (a)).
+    expect(plain).toContain('Medicare rows of 2026-Q1 to 2026-Q4 are screened; rows of other quarters are left out and counted.');
+    // What the page says of a chosen file is announced: its live region is there before any file is.
+    expect(html).toContain('<div role="status" data-slot="file-status"></div>');
     expect(plain).not.toContain('cannot be screened yet');
     // One screening a practice: a later one replaces it, so two are never held to be subtracted.
     expect(html).toContain('A practice keeps one screening at a time: a later one for the same practice name and ZIP code, or from the same email address, replaces it, and the earlier link stops opening it.');

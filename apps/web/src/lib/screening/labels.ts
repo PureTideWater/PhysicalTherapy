@@ -128,8 +128,8 @@ export const PRODUCT_LABELS: Readonly<Record<ScreeningProduct, string>> = {
 
 /** What each product's rows are in a screening (decision D20 a). */
 export const PRODUCT_NOTES: Readonly<Record<ScreeningProduct, string>> = {
-  medicare_ffs: 'Priced under the Medicare physician fee schedule.',
-  ma_noncontracted: 'Priced under the Medicare Advantage non-contracted rule: the Medicare fee schedule.',
+  medicare_ffs: 'Priced under the Medicare physician fee schedule, for the quarters PaidWhole has loaded.',
+  ma_noncontracted: 'Priced under the Medicare Advantage non-contracted rule: the Medicare fee schedule, for the quarters PaidWhole has loaded.',
   ma_contracted: 'Cannot be priced without a contract.',
   commercial: 'Cannot be priced without a contract.',
   medicaid: 'Not screened: state Medicaid rates are not in a screening.',
@@ -173,7 +173,7 @@ export const DISPOSITION_NOTES: Readonly<Record<ScreeningDisposition, string>> =
  */
 const DETAIL_LABELS: Readonly<Record<string, string>> = {
   place_of_service_unmapped: 'The place of service is not in the approved place-of-service split',
-  locality_needs_zip_plus_four: 'The ZIP spans two Medicare localities and no ZIP+4 was given',
+  locality_needs_zip_plus_four: 'The ZIP spans more than one Medicare locality and no ZIP+4 was given',
   // A gap in PaidWhole's content (no ZIP+4 list of the ZIP in force), never the prospect's ZIP+4 (PR 6b-1's review).
   no_locality_plus_four: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day',
   zip_plus_four_not_in_locality_map: 'Medicare’s ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day',

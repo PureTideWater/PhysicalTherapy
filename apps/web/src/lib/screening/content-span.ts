@@ -1,5 +1,5 @@
 import type { ScopeClient } from '@tp/db/runtime';
-import { type ContentQuarterRun, type ContentSpan, contentQuartersOf } from '@tp/worker/screening-format';
+import { type ContentQuarterRun, type ContentSpan, contentQuartersOf, currentQuarter } from '@tp/worker/screening-format';
 
 /**
  * The quarters a rule release's silently read Medicare content is loaded for (audit #7, the screening's part; the
@@ -43,6 +43,16 @@ export async function releaseContentSpans(client: Queryable, releaseNo: number):
   }
   spans.set(key, read);
   return read;
+}
+
+/**
+ * Where a screening's Medicare rows left out for their quarter lay, as its result says it: before the first quarter of
+ * the loaded content when that content (`quarters`, as of the screening) is one run reaching the screening's own quarter,
+ * since no row may lie after the current quarter; null otherwise, when the result says only "outside the loaded content".
+ */
+export function quarterRowsLayBefore(quarters: readonly ContentQuarterRun[], createdAt: Date): string | null {
+  const [only] = quarters;
+  return quarters.length === 1 && only !== undefined && only.to === currentQuarter(createdAt) ? only.from : null;
 }
 
 /** The quarters of a release's loaded content up to the current quarter, as sorted runs; none for a release not published. */
