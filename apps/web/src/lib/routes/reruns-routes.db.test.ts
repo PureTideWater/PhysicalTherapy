@@ -193,11 +193,13 @@ beforeAll(async () => {
   world = await createTenantWorld(owner, 'rerun routes');
   practiceId = world.practiceId;
   const key = await provisionPracticeKey(keys, practiceId);
-  await owner.query("UPDATE practice SET data_key_ref = $1, zip = '00011', settings = $3 WHERE id = $2", [
+  await owner.query('UPDATE practice SET data_key_ref = $1, settings = $3 WHERE id = $2', [
     key.dataKeyRef,
     practiceId,
     JSON.stringify({ place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' }),
   ]);
+  // The pricing location (practice_site, PR 6b) the lines price at: ZIP 00011, no ZIP+4, as practice.zip was.
+  await owner.query("UPDATE practice_site SET zip = '00011', zip_plus_four = NULL WHERE practice_id = $1", [practiceId]);
   manager = await createUser(owner);
   await addMembership(owner, world.organizationId, manager, 'billing_manager');
   viewer = await createUser(owner);

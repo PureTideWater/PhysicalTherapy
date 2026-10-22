@@ -1,8 +1,9 @@
-import { PricingRefusedError } from '@tp/contracts';
+import { PricingRefusedError, locationStatusText } from '@tp/contracts';
 import { rolesPermit } from '@tp/db/runtime';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import {
   DIFF_KINDS,
+  PricingLocationWaiting,
   PricingRunInputError,
   type RunDiff,
   RunComparisonError,
@@ -213,7 +214,13 @@ export const comparePricingRunsPage = practiceRoute({
 });
 
 /** A refusal of the re-run services, as the field a form shows it against. */
+/** A run of a practice with no pricing location (audit #33): no run is created until its billing ZIP is set. */
+const LOCATION_WAITING = `${locationStatusText('zip_missing')} A run waits until it is set in Pricing settings.`;
+
 function refusal(error: unknown): InputError | undefined {
+  if (error instanceof PricingLocationWaiting) {
+    return new InputError([{ field: 'releaseNo', message: LOCATION_WAITING }]);
+  }
   if (error instanceof RuleReleaseMismatchError) {
     return new InputError([{ field: 'releaseNo', message: `${error.message}; reload the page to price under the release in force` }]);
   }
@@ -313,6 +320,9 @@ export const createPricingRunAction = practiceRoute({
     } catch (error) {
       if (error instanceof RuleReleaseMismatchError) {
         throw new InputError([{ field: 'releaseNo', message: `${error.message}; reload the page to price under the current release` }]);
+      }
+      if (error instanceof PricingLocationWaiting) {
+        throw new InputError([{ field: 'fromMonth', message: LOCATION_WAITING }]);
       }
       if (error instanceof PricingRefusedError) {
         throw new InputError([{ field: 'fromMonth', message: `${error.message}; map them on the Payer and plan mapping screen` }]);

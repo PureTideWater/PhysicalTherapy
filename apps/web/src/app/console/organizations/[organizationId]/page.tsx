@@ -40,7 +40,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="organizations" roles={page.roles} message={page.message} nextStep="The internal console is for platform administrators." />;
   }
-  const { organization, roles, practices, members, agreements, grants, invitations } = page.data;
+  const { organization, roles, practices, members, agreements, grants, invitations, created } = page.data;
   const practiceName = new Map(practices.map((practice) => [practice.id, practice.name]));
   return (
     <AppShell shell={page.shell} section="organizations">
@@ -87,11 +87,16 @@ export default async function OrganizationPage(props: { readonly params: Promise
             ) : (
               <ul className="flex flex-col gap-1 text-sm" aria-label="Practices">
                 {practices.map((practice) => (
-                  <li key={practice.id}>
+                  <li key={practice.id} data-practice={practice.id}>
                     {practice.name} <span className="text-muted-foreground">· {practice.status}</span> ·{' '}
                     <Link className="underline" href={`/console/practices/${practice.id}`}>
                       Pricing and triage settings
                     </Link>
+                    {created?.practiceId === practice.id ? (
+                      <span className="block" role="status" data-created-location={created.status}>
+                        Created. {created.text}
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -102,7 +107,15 @@ export default async function OrganizationPage(props: { readonly params: Promise
               <Field label="Practice name" name="name" required maxLength={200} />
               <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" />
               <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" />
-              <Field label="ZIP (optional)" name="zip" inputMode="numeric" pattern="[0-9]{5}" />
+              <Field
+                label="Billing ZIP (ZIP+4 if Medicare needs one)"
+                name="zip"
+                required
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={10}
+                hint="Five digits, or ZIP+4 such as 27601-1234. A ZIP that needs its ZIP+4, or one the release in force does not list, is accepted and its status shown."
+              />
             </ActionForm>
           </CardContent>
         </Card>

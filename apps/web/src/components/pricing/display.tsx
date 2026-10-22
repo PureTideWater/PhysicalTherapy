@@ -1,4 +1,4 @@
-import type { RerunReason, RunCoverage } from '@tp/worker/pricing';
+import type { FailureCode, RerunReason, RunCoverage } from '@tp/worker/pricing';
 import { Badge, EmptyState } from '@tp/ui';
 import Link from 'next/link';
 
@@ -28,12 +28,14 @@ export function RunStatusBadge({ status }: { readonly status: RunStatus }) {
   );
 }
 
-/** Why a run failed, in words, from its fixed code. */
+/** Why a run failed, in words, from its fixed code (every FailureCode the price job records). */
 export const FAILURE_TEXT: Readonly<Record<string, string>> = {
   engine_version_mismatch: 'The run was created for another version of the pricing engine; create a new run.',
   unmapped_plan: 'A plan of the period’s lines has no mapping: map it, then create a new run.',
   job_failed: 'The price job failed three times and the operator was alerted; create a new run once it is fixed.',
-};
+  // Audit #33 (docs/adr/0064): a line needed the location, so no line was kept and the month waits for it.
+  location_not_ready: 'A line of the period needs the practice’s billing ZIP or ZIP+4: fix it in Pricing settings. Waiting months price again by themselves.',
+} satisfies Readonly<Record<FailureCode, string>>;
 
 export const RERUN_TEXT: Readonly<Record<RerunReason, string>> = {
   mapping_changed: 'a plan’s mapping changed',

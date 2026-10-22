@@ -26,7 +26,9 @@ interface PracticeRecord {
   readonly name: string;
   readonly npi: string | null;
   readonly taxIdLast4: string | null;
+  /** The pricing location's billing ZIP and ZIP+4 (practice_site, PR 6b; practice.zip is deprecated). */
   readonly zip: string | null;
+  readonly zipPlusFour: string | null;
   readonly localityCode: string | null;
   readonly status: string;
 }
@@ -135,7 +137,8 @@ export const practiceHome = practiceRoute({
       async (client) =>
         (
           await client.query<PracticeRecord>(
-            'SELECT id, id AS "practiceId", name, npi, tax_id_last4 AS "taxIdLast4", zip, locality_code AS "localityCode", status FROM practice WHERE id = $1',
+            `SELECT p.id, p.id AS "practiceId", p.name, p.npi, p.tax_id_last4 AS "taxIdLast4", s.zip, s.zip_plus_four AS "zipPlusFour", p.locality_code AS "localityCode", p.status
+               FROM practice p LEFT JOIN practice_site s ON s.practice_id = p.id WHERE p.id = $1`,
             [practiceId],
           )
         ).rows,
@@ -153,7 +156,7 @@ export const practiceHome = practiceRoute({
       ? (await scope.client.query<SupportGrantRow>(`SELECT ${SUPPORT_GRANT_COLUMNS} FROM support_grant WHERE practice_id = $1 ORDER BY created_at DESC, id LIMIT 20`, [practiceId])).rows.map(supportGrant)
       : null;
     return {
-      practice: { id: practice.id, name: practice.name, npi: practice.npi, taxIdLast4: practice.taxIdLast4, zip: practice.zip, localityCode: practice.localityCode, status: practice.status },
+      practice: { id: practice.id, name: practice.name, npi: practice.npi, taxIdLast4: practice.taxIdLast4, zip: practice.zip, zipPlusFour: practice.zipPlusFour, localityCode: practice.localityCode, status: practice.status },
       agreements: agreements.rows.map(
         (row): AgreementSummary => ({ id: row.id, kind: row.kind, version: row.version, signer: row.signer, signedAt: row.signed_at, sha256: row.sha256, documentRef: row.document_ref }),
       ),

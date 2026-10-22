@@ -11,7 +11,6 @@ describe('a practice’s pricing and triage settings from the console', () => {
   it('stores the places, rounding, materiality, anomaly and pursuit settings as the readers read them', () => {
     const document = settingsDocument(
       parse({
-        zip: '00011',
         facilityPlaces: '22, 19',
         nonFacilityPlaces: '11',
         defaultRounding: 'HALF_UP_CENT',
@@ -25,7 +24,6 @@ describe('a practice’s pricing and triage settings from the console', () => {
       }),
     );
     expect(document).toEqual({
-      zip: '00011',
       settings: {
         place_of_service_settings: { '11': 'non_facility', '19': 'facility', '22': 'facility' },
         default_rounding: 'HALF_UP_CENT',
@@ -41,8 +39,7 @@ describe('a practice’s pricing and triage settings from the console', () => {
     expect(Object.keys(document.settings).every((key) => (PRACTICE_SETTING_KEYS as readonly string[]).includes(key))).toBe(true);
     expect(triageSettings(document.settings)).toMatchObject({ lineMaterialityCents: 500n, caseMaterialityCents: 25000n, pursuit: { staffRateCentsPerHour: 6000n, minutesPerPacket: 45, minutesPerFollowUp: 30 } });
     // And back to the form, as the console shows it.
-    expect(settingsForm(document.zip, document.settings)).toEqual({
-      zip: '00011',
+    expect(settingsForm(document.settings)).toEqual({
       facilityPlaces: '19, 22',
       nonFacilityPlaces: '11',
       defaultRounding: 'HALF_UP_CENT',
@@ -57,14 +54,19 @@ describe('a practice’s pricing and triage settings from the console', () => {
   });
 
   it('leaves a blank field to its default, and reads an empty or odd document as blank', () => {
-    expect(settingsDocument(parse({ zip: '', lineMateriality: ' ' }))).toEqual({ zip: null, settings: {} });
-    expect(settingsForm(null, {})).toMatchObject({ zip: '', facilityPlaces: '', lineMateriality: '', minutesPerPacket: '' });
-    expect(settingsForm(null, 'not an object')).toMatchObject({ defaultRounding: '', caseMateriality: '' });
-    expect(settingsForm(null, { line_materiality_cents: 500, minutes_per_packet: '45', place_of_service_settings: [] })).toMatchObject({ lineMateriality: '', minutesPerPacket: '', facilityPlaces: '' });
+    expect(settingsDocument(parse({ lineMateriality: ' ' }))).toEqual({ settings: {} });
+    expect(settingsForm({})).toMatchObject({ facilityPlaces: '', lineMateriality: '', minutesPerPacket: '' });
+    expect(settingsForm('not an object')).toMatchObject({ defaultRounding: '', caseMateriality: '' });
+    expect(settingsForm({ line_materiality_cents: 500, minutes_per_packet: '45', place_of_service_settings: [] })).toMatchObject({ lineMateriality: '', minutesPerPacket: '', facilityPlaces: '' });
+  });
+
+  it('takes no billing ZIP: the location has its own form and setter (PR 6b)', () => {
+    expect(Object.keys(practiceSettingsInput.shape)).not.toContain('zip');
+    expect(Object.keys(settingsDocument(parse({ zip: '00011' })))).toEqual(['settings']);
   });
 
   it('refuses what a run or triage would refuse', () => {
-    for (const form of [{ zip: '1234' }, { facilityPlaces: '1' }, { defaultRounding: 'HALF_UP' }, { lineMateriality: '5.001' }, { caseMateriality: '-1' }, { anomalyMinimumCohort: '0' }, { minutesPerPacket: '10001' }]) {
+    for (const form of [{ facilityPlaces: '1' }, { defaultRounding: 'HALF_UP' }, { lineMateriality: '5.001' }, { caseMateriality: '-1' }, { anomalyMinimumCohort: '0' }, { minutesPerPacket: '10001' }]) {
       expect(practiceSettingsInput.safeParse(form).success, JSON.stringify(form)).toBe(false);
     }
     expect(() => settingsDocument(parse({ facilityPlaces: '11', nonFacilityPlaces: '11' }))).toThrow(PracticeSettingsError);

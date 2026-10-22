@@ -44,7 +44,12 @@ describe('the cause of a changed line, in words', () => {
     expect(causeText({ kind: 'contract_version', before: { contractVersionId: 'v', rateRecordId: 'r' }, after: { contractVersionId: null, rateRecordId: null } })).toBe('No contract version prices the line now');
     expect(causeText({ kind: 'contract_version', before: { contractVersionId: 'v', rateRecordId: 'r' }, after: { contractVersionId: 'w', rateRecordId: 's' } })).toBe('Another contract version or rate record');
     expect(causeText({ kind: 'claim' })).toMatch(/claim's facts/);
-    expect(causeText({ kind: 'settings' })).toMatch(/settings/);
+    // The fields that differ, the billing ZIP and ZIP+4 with their values (docs/adr/0064).
+    expect(causeText({ kind: 'settings', fields: ['zip_plus_four'], before: { zip_plus_four: '1234' }, after: { zip_plus_four: '5678' } })).toBe("The practice's pricing settings: the billing ZIP+4 (1234 → 5678)");
+    expect(causeText({ kind: 'settings', fields: ['zip', 'zip_plus_four'], before: { zip: '00011', zip_plus_four: null }, after: { zip: '00012', zip_plus_four: '5000' } })).toBe(
+      "The practice's pricing settings: the billing ZIP (00011 → 00012), the billing ZIP+4 (none → 5000)",
+    );
+    expect(causeText({ kind: 'settings', fields: ['default_rounding', 'place_of_service_settings'], before: {}, after: {} })).toBe("The practice's pricing settings: the default rounding, the places of service");
     expect(causeText({ kind: 'engine', before: 'phase-two/1', after: 'phase-three/1' })).toBe('The engine, phase-two/1 to phase-three/1');
     expect(causeText({ kind: 'claim_lines' })).toMatch(/Another line of the same claim/);
   });

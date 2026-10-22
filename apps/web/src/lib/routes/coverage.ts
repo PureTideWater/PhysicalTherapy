@@ -5,6 +5,7 @@ import { type ContractOption, type QuestionView, contractOptions, listQuestions 
 import { OBTAIN_TOPICS } from '../contracts/display';
 import { type UnconfirmedFormatSource, unconfirmedFormatSources } from '../contracts/format-sources';
 import { letterCodes, requestToPayerLetter } from '../contracts/letter';
+import { type MonthWaitingOnLocation, monthsWaitingOnLocation } from '../pricing/location';
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
 import { coverageInEffect } from '../coverage/in-effect';
@@ -64,6 +65,8 @@ export interface CoveragePageData {
   readonly reasons: readonly ReasonCount[];
   readonly waiting: Totals;
   readonly waitingPlans: WaitingPage;
+  /** The months waiting on the practice's pricing location (audit #33; docs/adr/0064), with their lines' totals and the location's status. */
+  readonly waitingOnLocation: readonly MonthWaitingOnLocation[];
   readonly readiness: PricingReadiness;
   /** For each unconfirmed ERA export format the practice has loaded remittances from: its counts, billed dollars and payers (CO-03). */
   readonly unconfirmedFormats: readonly UnconfirmedFormatSource[];
@@ -106,6 +109,7 @@ export const coveragePage = practiceRoute({
       reasons: UNPRICED_REASON_TEXT.map((reason) => ({ ...reason, lines: counts.get(reason.reason) ?? 0 })),
       waiting: await waitingTotals(scope, practiceId),
       waitingPlans: await waitingPlans(scope, practiceId, params.page, request.requestId),
+      waitingOnLocation: await monthsWaitingOnLocation(scope.client, practiceId),
       readiness: await pricingReadiness(scope, practiceId, request.requestId),
       unconfirmedFormats: await unconfirmedFormatSources(scope, practiceId),
       obtain: await listQuestions(scope, practiceId, cipher, request.requestId, { openOnly: true, topics: OBTAIN_TOPICS }),

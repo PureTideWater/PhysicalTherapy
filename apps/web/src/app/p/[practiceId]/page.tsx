@@ -416,8 +416,10 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
             <dd>{practice.npi ?? '—'}</dd>
             <dt className="text-muted-foreground">Tax ID (last four)</dt>
             <dd>{practice.taxIdLast4 ?? '—'}</dd>
-            <dt className="text-muted-foreground">ZIP</dt>
-            <dd>{practice.zip ?? '—'}</dd>
+            <dt className="text-muted-foreground">Billing ZIP</dt>
+            <dd className="font-mono tabular-nums" data-location-zip>
+              {practice.zip === null ? '—' : practice.zipPlusFour === null ? practice.zip : `${practice.zip}-${practice.zipPlusFour}`}
+            </dd>
             <dt className="text-muted-foreground">Status</dt>
             <dd>{practice.status}</dd>
           </dl>

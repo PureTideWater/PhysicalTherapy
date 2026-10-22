@@ -1,4 +1,4 @@
-import type { DiffChange, DiffLine, DiffSide, DiffSummary } from '@tp/worker/pricing';
+import type { DiffChange, DiffLine, DiffRun, DiffSide, DiffSummary } from '@tp/worker/pricing';
 import Link from 'next/link';
 
 import { causeText } from '../../lib/pricing/causes';
@@ -60,6 +60,22 @@ export function DiffSummaryText({ summary }: { readonly summary: DiffSummary }) 
       {summary.onlyAfter === 0 ? '' : `; ${String(summary.onlyAfter)} only in the second`}. Expected allowed over the lines both priced: <Money value={summary.beforeExpectedCents} /> before,{' '}
       <Money value={summary.afterExpectedCents} /> after.
     </span>
+  );
+}
+
+/**
+ * When the two runs pinned different approvals of the place-of-service split (docs/adr/0064): every place a practice
+ * has not set prices as the split it pinned says, so a line's place of service may price at the other rate. Null when
+ * both pinned the same one (or none).
+ */
+export function SplitChangeText({ before, after }: { readonly before: Pick<DiffRun, 'placeOfServiceSplitId'>; readonly after: Pick<DiffRun, 'placeOfServiceSplitId'> }) {
+  if (before.placeOfServiceSplitId === after.placeOfServiceSplitId) {
+    return null;
+  }
+  return (
+    <p className="text-sm" data-state="split-changed">
+      Places of service set from the approved split: the two runs priced under different approvals of the split, so a place the practice has not set may price at the other rate.
+    </p>
   );
 }
 

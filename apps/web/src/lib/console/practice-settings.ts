@@ -4,13 +4,14 @@ import { z } from 'zod';
 
 /**
  * A practice's pricing and triage settings as the internal console edits them (PRD 5, J8: "materiality
- * thresholds (per line and per case) are practice settings with defaults"; PRD 11, Inputs: the billing
- * address ZIP and "default rounding when a contract is silent"; PRD 12, Deadlines and pursuit cost:
+ * thresholds (per line and per case) are practice settings with defaults"; PRD 11, Inputs: "default rounding
+ * when a contract is silent"; PRD 12, Deadlines and pursuit cost:
  * "the practice's settings (staff rate, minutes per packet, minutes per follow-up)"; docs/adr/0029 and
  * 0038; ADR 0040). Pure: the form's fields to the stored document (cents as integer text, as every
  * amount in stored JSON) and back. Every value is checked here and by the readers that use it
  * (@tp/triage triageSettings, the engine's settings check), so a setting is never stored that a run
- * or triage would refuse. A field left blank returns the setting to its default.
+ * or triage would refuse. A field left blank returns the setting to its default. The billing ZIP is not here: it
+ * is the practice's pricing location (practice_site, PR 6b; docs/adr/0064), set by its own form and setter.
  */
 
 /** The keys the console sets; the database's practice_setting_keys() names the same. */
@@ -45,7 +46,6 @@ const places = z
   .pipe(z.array(z.string().regex(/^\d{2}$/, 'two-digit place-of-service codes, separated by commas')));
 
 export const practiceSettingsInput = z.object({
-  zip: optional(z.string().regex(/^\d{5}$/, 'five digits')),
   facilityPlaces: optional(places),
   nonFacilityPlaces: optional(places),
   defaultRounding: optional(z.enum(ROUNDING_RULES)),
@@ -71,9 +71,8 @@ export class PracticeSettingsError extends Error {
   }
 }
 
-/** The stored document: the billing ZIP and the settings keys the console sets (the rest of practice.settings is left as it is). */
+/** The stored document: the settings keys the console sets (the rest of practice.settings is left as it is). */
 export interface PracticeSettingsDocument {
-  readonly zip: string | null;
   readonly settings: Readonly<Record<string, unknown>>;
 }
 
@@ -117,12 +116,11 @@ export function settingsDocument(input: PracticeSettingsInput): PracticeSettings
     }
     throw error;
   }
-  return { zip: input.zip ?? null, settings };
+  return { settings };
 }
 
-/** The form's fields for a practice's stored ZIP and settings (blank where the default applies). */
+/** The form's fields for a practice's stored settings (blank where the default applies). */
 export interface PracticeSettingsForm {
-  readonly zip: string;
   readonly facilityPlaces: string;
   readonly nonFacilityPlaces: string;
   readonly defaultRounding: string;
@@ -142,7 +140,7 @@ function record(value: unknown): Readonly<Record<string, unknown>> {
 const asDollars = (value: unknown) => (typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value) ? formatCents(parseCents(value)) : '');
 const asNumber = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : '');
 
-export function settingsForm(zip: string | null, stored: unknown): PracticeSettingsForm {
+export function settingsForm(stored: unknown): PracticeSettingsForm {
   const settings = record(stored);
   const placesOf = (kind: string) =>
     Object.entries(record(settings.place_of_service_settings))
@@ -151,7 +149,6 @@ export function settingsForm(zip: string | null, stored: unknown): PracticeSetti
       .sort()
       .join(', ');
   return {
-    zip: zip ?? '',
     facilityPlaces: placesOf('facility'),
     nonFacilityPlaces: placesOf('non_facility'),
     defaultRounding: typeof settings.default_rounding === 'string' ? settings.default_rounding : '',

@@ -1,7 +1,7 @@
 import { Badge, cn } from '@tp/ui';
 import Link from 'next/link';
 
-export type SettingsSection = 'overview' | 'users' | 'agreements' | 'defaults' | 'proof_level' | 'correspondence' | 'access_log' | 'data' | 'notifications' | 'billing';
+export type SettingsSection = 'overview' | 'users' | 'agreements' | 'defaults' | 'pricing' | 'proof_level' | 'correspondence' | 'access_log' | 'data' | 'notifications' | 'billing';
 
 /**
  * The Settings screen's sections (PRD 7, Settings), each its own page and route. Sections only an administrator
@@ -24,6 +24,7 @@ export function SettingsNav({
     { key: 'agreements', href: `/p/${practiceId}/settings/agreements`, label: 'Grants and agreements', admin: true },
     { key: 'notifications', href: '/account/notifications', label: 'Notification preferences', admin: false },
     { key: 'defaults', href: `/p/${practiceId}/settings/defaults`, label: 'Materiality and pursuit', admin: false },
+    { key: 'pricing', href: `/p/${practiceId}/settings/pricing`, label: 'Pricing settings', admin: false },
     { key: 'proof_level', href: `/p/${practiceId}/settings/proof-level`, label: 'Proof level', admin: true },
     { key: 'correspondence', href: `/p/${practiceId}/settings/correspondence`, label: 'Correspondence', admin: true },
     { key: 'access_log', href: `/p/${practiceId}/settings/access-log`, label: 'Access log', admin: true },

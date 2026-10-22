@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
-import { DiffSummaryText, DiffTable } from '../../../../../components/pricing/diff';
+import { DiffSummaryText, DiffTable, SplitChangeText } from '../../../../../components/pricing/diff';
 import { CoverageShares, FAILURE_TEXT, PatternTable, RERUN_TEXT, RunStateBadges, RunStatusBadge, UnpricedReasons } from '../../../../../components/pricing/display';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
@@ -82,6 +82,7 @@ export default async function PricingRunPage(props: Props) {
                 <p className="text-sm" data-state="diff-summary">
                   <DiffSummaryText summary={diff.summary} />
                 </p>
+                <SplitChangeText before={diff.before} after={diff.after} />
                 <DiffTable practiceId={practiceId} lines={diff.lines} beforeRunId={diff.before.id} afterRunId={diff.after.id} />
                 {diff.total > diff.lines.length ? (
                   <Link className="text-sm underline" href={`${pricingRuns}/compare?before=${diff.before.id}&after=${diff.after.id}`}>

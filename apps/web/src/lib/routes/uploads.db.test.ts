@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 
 import { S3Client } from '@aws-sdk/client-s3';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, documentObjectKey, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createPracticeWithLocation, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from '@tp/db/testing';
 import { assertNoPhi, createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type JobContext, intakeHandler, intakeServices, parseHandler } from '@tp/worker/runtime';
@@ -75,9 +75,8 @@ beforeAll(async () => {
   const key = await provisionPracticeKey(keys, world.practiceId);
   await owner.query('UPDATE practice SET data_key_ref = $1 WHERE id = $2', [key.dataKeyRef, world.practiceId]);
   unsigned = randomUUID();
-  await asOwner(owner, [unsigned], () =>
-    owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [unsigned, world.organizationId, 'SYNTHETIC UNSIGNED PRACTICE', placeholderDataKeyRef()]),
-  );
+  // Created with its pricing location, as every practice is (practice_has_site, PR 6b).
+  await asOwner(owner, [unsigned], () => createPracticeWithLocation(owner, { id: unsigned, organizationId: world.organizationId, name: 'SYNTHETIC UNSIGNED PRACTICE', dataKeyRef: placeholderDataKeyRef() }));
   manager = await createUser(owner);
   await addMembership(owner, world.organizationId, manager, 'billing_manager');
   viewer = await createUser(owner);
