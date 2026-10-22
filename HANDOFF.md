@@ -244,7 +244,7 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
   2. Upload each changed JSON as an asset (`Artifact publish {url, asset:true, file_path}`).
   3. Point `datasets/<id>` at it with ArtifactData update `{source:{kind:file,url:/_blob/<id>,name,format:json}, updated:{at,by:"Claude"}}` and `if_version`.
   4. Delete the old blob and update `tracker/assets.json`.
-- **ETA** (re-estimated 2026-10-21 20:00 UTC after the founder adopted the combined audit): 2026-11-18 to 2027-01-10 (basis in `tracker/build_status.py`).
+- **ETA** (re-estimated 2026-10-22 17:00 UTC from the weekly usage allowance, now the binding limit): 2026-12-03 to 2027-01-07, most likely mid-December (about 47 PR-sized pieces left at about 7 a week; basis in `tracker/build_status.py`). It covers the code only, not the outside items (release 1's real content, the specialist, counsel, AWS, Stripe, model access, SOC 2, the pen test).
 
 ## Files here
 - `tracker/`: the tracker generator, asset ids and page.

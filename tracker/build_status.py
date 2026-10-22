@@ -276,7 +276,12 @@ HISTORY = [
 # hours), so about 5,000-8,100 plan hours remain (PRs 6b-17, the audit's new PRs, 11b, 12, 13, final pass). At the
 # measured 8-15 plan hours per wall-clock hour and about 12 build hours a day under the ~11%-a-day usage pace:
 # about 28 to 81 days.
-ETA = {"low": "2026-11-18T18:00:00Z", "high": "2027-01-10T18:00:00Z"}
+# Re-estimated 2026-10-22T17:00Z from the weekly usage allowance, now the binding limit: about 47 PR-sized pieces remain
+# (6b-3 and 6b-4; 6c, 6d, 6e, 4b, first-finding, release-operations, contract-integrity, CI, alerts; PR 7 and 7b; PRs 8-17
+# and 15b; four security, about eight infrastructure, billing 2 and legal-surfaces PRs; milestones 12 and 13; the final
+# pass). The week of 2026-10-20 bought about 7 such pieces with about 80% of the allowance (design, build, two reviews,
+# fix rounds, verification each), so 6 to 9 weeks, the later PRs (7, M12, M13, final pass) being the larger.
+ETA = {"low": "2026-12-03T18:00:00Z", "high": "2027-01-07T18:00:00Z"}
 
 # ---- Things only a person can do (the README holds the detail).
 BLOCKERS = [
