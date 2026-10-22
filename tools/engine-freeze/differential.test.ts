@@ -1,12 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readdirSync, rmSync, rmdirSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { ContractVersionRecord, PlanMappingRecord, RateRecordTerms } from '@tp/contracts';
-import { type Cents, ROUNDING_RULES } from '@tp/money';
+import { type Cents, ROUNDING_RULES, isDecimal } from '@tp/money';
+import type * as Money from '@tp/money';
 import type * as Pricing from '@tp/pricing';
-import { type AgreementInput, type IndexedRelease, type LineFacts, type LinePricing, type PricingInput, addDays, indexRelease, price } from '@tp/pricing';
+import { type AgreementInput, type IndexedRelease, type LineFacts, type LinePricing, type PricingInput, addDays, indexRelease, price, recompute } from '@tp/pricing';
 import {
   type AdjustmentOption,
   contractAgreement,
@@ -30,10 +31,15 @@ import { type GoldenClaim, GOLDEN_CLAIMS_DIR, goldenPricingInput } from '../gold
 
 /**
  * The engine freeze's proof that nothing but PR 6b's ZIP+4 lookup changed (reconciliation-001; docs/adr/0064; PRC-22).
- * The base's packages/pricing/src is extracted at ENGINE_FREEZE_BASE (CI sets it to the merge base) into
- * packages/pricing/.freeze-base/, beside the package so its workspace dependencies resolve through
- * packages/pricing/node_modules, with its tests deleted; it is ignored by git, the test runner and the linter. Both
- * engines then price, and every LinePricing must be deeply equal once `trace.engine` is set aside:
+ * The base engine is extracted at ENGINE_FREEZE_BASE (CI sets it to the merge base) into packages/pricing/.freeze-base/,
+ * with the base's copy of every workspace package it depends on (@tp/money, @tp/rules, @tp/contracts and theirs, each
+ * its src and package.json), linked to one another in node_modules as pnpm links them, so the base engine runs on its
+ * own base arithmetic, rules and contracts, never the head's: a change to @tp/money's rounding shows here as a change
+ * to the engine. Third-party packages (decimal.js, zod) resolve to the versions the head's lockfile installs. Every
+ * test file of the extract is deleted, and the extract is ignored by git, the test runner and the linter. Both engines
+ * then price, and every LinePricing must be deeply equal once `trace.engine` is set aside; for every line, the head's
+ * recompute of the head's trace must equal the base's recompute of the base's trace, and the head's recompute must
+ * read the base's stored trace alike (recompute.ts is one of the five files the exception opens):
  *
  * 1. every golden claim the base holds, under the release it pins (150 claims and 326 lines at PR 6b-1's base);
  * 2. 20,000 generated claims under releases 900001 to 900005, with the settings' ZIP 00011 (one locality), 00012
@@ -51,20 +57,66 @@ const EXTRACT_ROOT = path.join(repositoryRoot, 'packages/pricing/.freeze-base');
 const GOLDEN_FLOOR = { claims: 150, lines: 326 };
 const GENERATED_CLAIMS = 20_000;
 
-type Engine = Pick<typeof Pricing, 'price' | 'indexRelease'>;
+type Engine = Pick<typeof Pricing, 'price' | 'indexRelease' | 'recompute'>;
 
 function git(args: readonly string[]): string {
   return execFileSync('git', args, { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 }
 
-/** The base's packages/pricing/src, extracted under its own directory, its tests removed so none is collected. */
+/** The workspace packages under packages/ at a commit, by name: their directories. */
+function workspacePackagesAt(commit: string): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const dir of git(['ls-tree', '-d', '--name-only', commit, 'packages/']).split('\n').filter((line) => line !== '')) {
+    try {
+      const manifest = JSON.parse(git(['show', `${commit}:${dir}/package.json`])) as { name?: string };
+      if (typeof manifest.name === 'string') found.set(manifest.name, dir);
+    } catch {
+      // A directory without a package.json is not a workspace package.
+    }
+  }
+  return found;
+}
+
+/** The workspace packages a package depends on (its dependencies on `workspace:` versions), as the commit declares them. */
+function workspaceDependencies(commit: string, dir: string): string[] {
+  const manifest = JSON.parse(git(['show', `${commit}:${dir}/package.json`])) as { dependencies?: Record<string, string> };
+  return Object.entries(manifest.dependencies ?? {})
+    .filter(([, version]) => version.startsWith('workspace:'))
+    .map(([name]) => name);
+}
+
+/** Links `at` to `target`, its parent directory made. */
+function link(target: string, at: string): void {
+  mkdirSync(path.dirname(at), { recursive: true });
+  symlinkSync(target, at);
+}
+
+/**
+ * The base engine and the base's copy of every workspace package it reaches through its dependencies, extracted under
+ * one directory with their tests removed so none is collected. Each package's node_modules links a workspace
+ * dependency to its extracted copy, and a third-party one to where the head installs it.
+ */
 function extractBase(base: string): string {
   const commit = git(['rev-parse', '--verify', `${base}^{commit}`]).trim();
   const dir = path.join(EXTRACT_ROOT, `${commit.slice(0, 12)}-${String(process.pid)}`);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  const archive = execFileSync('git', ['archive', '--format=tar', commit, '--', 'packages/pricing/src'], { cwd: repositoryRoot, maxBuffer: 256 * 1024 * 1024 });
-  execFileSync('tar', ['-x', '-f', '-', '-C', dir, '--strip-components=2'], { input: archive });
+  const packages = workspacePackagesAt(commit);
+  const extracted = new Map<string, string>();
+  const pending = ['@tp/pricing'];
+  while (pending.length > 0) {
+    const name = pending.shift() ?? '';
+    if (extracted.has(name)) continue;
+    const packageDir = packages.get(name);
+    if (packageDir === undefined) throw new Error(`the base engine depends on ${name}, which is no package under packages/ at ${commit}`);
+    extracted.set(name, packageDir);
+    pending.push(...workspaceDependencies(commit, packageDir));
+  }
+  const archive = execFileSync('git', ['archive', '--format=tar', commit, '--', ...[...extracted.values()].flatMap((packageDir) => [`${packageDir}/src`, `${packageDir}/package.json`])], {
+    cwd: repositoryRoot,
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  execFileSync('tar', ['-x', '-f', '-', '-C', dir], { input: archive });
   const walk = (at: string) => {
     for (const entry of readdirSync(at, { withFileTypes: true })) {
       const full = path.join(at, entry.name);
@@ -72,13 +124,56 @@ function extractBase(base: string): string {
       else if (/\.test\.tsx?$/.test(entry.name)) unlinkSync(full);
     }
   };
-  walk(path.join(dir, 'src'));
+  walk(dir);
+  for (const packageDir of extracted.values()) {
+    const installed = path.join(repositoryRoot, packageDir, 'node_modules');
+    if (!existsSync(installed)) throw new Error(`${packageDir} is not installed in the head (no node_modules), so the base's copy cannot resolve its third-party packages`);
+    const entries = readdirSync(installed, { withFileTypes: true }).flatMap((entry) =>
+      entry.name.startsWith('@') ? readdirSync(path.join(installed, entry.name)).map((inner) => `${entry.name}/${inner}`) : entry.name === '.bin' ? [] : [entry.name],
+    );
+    for (const name of entries) {
+      const target = extracted.get(name);
+      link(target === undefined ? realpathSync(path.join(installed, name)) : path.join(dir, target), path.join(dir, packageDir, 'node_modules', name));
+    }
+    for (const name of workspaceDependencies(commit, packageDir)) {
+      if (!entries.includes(name)) link(path.join(dir, extracted.get(name) ?? ''), path.join(dir, packageDir, 'node_modules', name));
+    }
+  }
   return dir;
 }
 
+/**
+ * A copy of a head-built input for the base engine: each decimal rebuilt by the base's @tp/money (its own class, which
+ * the base engine's arithmetic requires), plain objects and arrays copied, anything else refused rather than handed
+ * across. The release is not copied: the base indexes its own.
+ */
+function forBase(value: unknown, money: Pick<typeof Money, 'decimal'>): unknown {
+  if (isDecimal(value)) return money.decimal(value.toString());
+  if (Array.isArray(value)) return value.map((item: unknown) => forBase(item, money));
+  if (value !== null && typeof value === 'object') {
+    const prototype: unknown = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw new Error(`a ${String(value.constructor.name)} in a pricing input cannot be handed to the base engine`);
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, forBase(item, money)]));
+  }
+  return value;
+}
+
+/**
+ * A value as plain data: each decimal as its text (toJSON) and each bigint as its digits and "n". The base engine's
+ * decimals are its own @tp/money's class, so two equal amounts compare by their text, never by the class that holds it.
+ */
+function plain(value: unknown): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item: unknown) => {
+      if (item instanceof Map || item instanceof Set) throw new Error('a Map or Set in a result would compare as {}');
+      return typeof item === 'bigint' ? `${item.toString()}n` : item;
+    }),
+  ) as unknown;
+}
+
 /** A result as the freeze compares it: everything but the engine version its trace names. */
-function comparable(results: readonly LinePricing[]): unknown[] {
-  return results.map((result) => ({ ...result, trace: { ...result.trace, engine: '(set aside)' } }));
+function comparable(results: readonly LinePricing[]): unknown {
+  return plain(results.map((result) => ({ ...result, trace: { ...result.trace, engine: '(set aside)' } })));
 }
 
 /** What pricing gave: the comparable results, or the error it threw, by its name and message. */
@@ -88,6 +183,31 @@ function outcome(run: () => readonly LinePricing[]): unknown {
   } catch (error) {
     return { threw: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
   }
+}
+
+/** What recompute gave for a trace as stored (read back from JSON), or the error it threw. */
+function recomputed(engine: Pick<Engine, 'recompute'>, trace: unknown): unknown {
+  try {
+    return { recomputed: plain(engine.recompute(JSON.parse(JSON.stringify(trace)))) };
+  } catch (error) {
+    return { threw: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
+  }
+}
+
+const HEAD_ENGINE: Pick<Engine, 'recompute'> = { recompute };
+
+/**
+ * Each line's recomputation alike: the head's of its own trace, the base's of its own, and the head's of the base's
+ * stored trace (a trace phase-two/1 wrote, which the head must still read). Returns how many lines it compared.
+ */
+function expectRecomputedAlike(base: Engine, head: readonly LinePricing[], baseResults: readonly LinePricing[], where: string): number {
+  head.forEach((line, index) => {
+    const before = baseResults[index];
+    const expected = recomputed(base, before?.trace);
+    expect(recomputed(HEAD_ENGINE, line.trace), `${where} line ${String(index + 1)}: the head's recompute of its trace`).toEqual(expected);
+    expect(recomputed(HEAD_ENGINE, before?.trace), `${where} line ${String(index + 1)}: the head's recompute of the base's trace`).toEqual(expected);
+  });
+  return head.length;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -263,6 +383,9 @@ if (SKIPPED) {
 describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere but the ZIP+4 lookup (skipped without ENGINE_FREEZE_BASE outside CI)', () => {
   let extracted = '';
   let base: Engine;
+  let baseMoney: Pick<typeof Money, 'decimal'>;
+  /** The head's input as the base engine takes it, under the base's own index of the release. */
+  const baseInputOf = (input: PricingInput, release: IndexedRelease): PricingInput => ({ ...(forBase({ ...input, release: null }, baseMoney) as PricingInput), release });
   const baseReleases = new Map<string, IndexedRelease>();
   const headReleases = new Map<string, IndexedRelease>();
 
@@ -288,7 +411,8 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
     try {
       if (BASE === '') throw new Error('ENGINE_FREEZE_BASE is not set: CI sets it to the merge base (.github/workflows/ci.yml)');
       extracted = extractBase(BASE);
-      base = (await import(/* @vite-ignore */ pathToFileURL(path.join(extracted, 'src/index.ts')).href)) as Engine;
+      base = (await import(/* @vite-ignore */ pathToFileURL(path.join(extracted, 'packages/pricing/src/index.ts')).href)) as Engine;
+      baseMoney = (await import(/* @vite-ignore */ pathToFileURL(path.join(extracted, 'packages/money/src/index.ts')).href)) as typeof Money;
       for (const number of RELEASES) headReleases.set(RELEASE_DIRS[number], indexRelease(readRuleRelease(RELEASE_DIRS[number])));
     } catch (error) {
       setupError = error instanceof Error ? error : new Error(String(error));
@@ -304,13 +428,24 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
     }
   });
 
-  it('extracts the base engine without its tests, beside the package', () => {
+  it('extracts the base engine and the base’s own money, rules and contracts packages, without their tests, beside the package', () => {
     ready();
     expect(path.dirname(path.dirname(extracted))).toBe(path.join(repositoryRoot, 'packages/pricing'));
-    const files = readdirSync(path.join(extracted, 'src'), { recursive: true }).map(String);
-    expect(files).toContain('engine.ts');
-    expect(files.filter((file) => file.endsWith('.test.ts'))).toEqual([]);
+    const files = readdirSync(extracted, { recursive: true })
+      .map(String)
+      .filter((file) => !file.split(path.sep).includes('node_modules'));
+    expect(files).toContain(path.join('packages/pricing/src/engine.ts'));
+    for (const dependency of ['money', 'rules', 'contracts']) {
+      expect(files).toContain(path.join(`packages/${dependency}/package.json`));
+      // The base engine resolves each to the base's copy, never to the head's package.
+      expect(realpathSync(path.join(extracted, `packages/pricing/node_modules/@tp/${dependency}`))).toBe(realpathSync(path.join(extracted, `packages/${dependency}`)));
+    }
+    expect(realpathSync(path.join(extracted, 'packages/rules/node_modules/@tp/money'))).toBe(realpathSync(path.join(extracted, 'packages/money')));
+    expect(files.filter((file) => /\.test\.tsx?$/.test(file))).toEqual([]);
     expect(base.price).not.toBe(price);
+    expect(base.recompute).not.toBe(recompute);
+    // The base's own decimals: the head's are another class, which the base's arithmetic refuses.
+    expect(isDecimal(baseMoney.decimal('1.5'))).toBe(false);
   });
 
   it(`prices every golden claim the base holds as the base engine does (at least ${String(GOLDEN_FLOOR.claims)} claims and ${String(GOLDEN_FLOOR.lines)} lines)`, async ({ annotate }) => {
@@ -322,16 +457,17 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
     for (const file of names) {
       const claim = JSON.parse(git(['show', `${BASE}:${file}`])) as GoldenClaim;
       const input = goldenPricingInput(claim);
-      const baseInput: PricingInput = { ...input, release: baseRelease(claim.inputs.release.dir, claim.inputs.release.manifest_sha256) };
-      const head = outcome(() => price(input));
-      expect(head, file).toEqual(outcome(() => base.price(baseInput)));
-      expect(head, file).toHaveProperty('results');
+      const baseInput = baseInputOf(input, baseRelease(claim.inputs.release.dir, claim.inputs.release.manifest_sha256));
+      const headResults = price(input);
+      const baseResults = base.price(baseInput);
+      expect(outcome(() => headResults), file).toEqual(outcome(() => baseResults));
+      expectRecomputedAlike(base, headResults, baseResults, file);
       lines += claim.inputs.claim.lines.length;
     }
     expect(names.length).toBeGreaterThanOrEqual(GOLDEN_FLOOR.claims);
     expect(lines).toBeGreaterThanOrEqual(GOLDEN_FLOOR.lines);
     // The counts compared, in the reporter's output and CI's log.
-    await annotate(`base equals head on ${String(names.length)} golden claims and ${String(lines)} lines`);
+    await annotate(`base equals head, priced and recomputed, on ${String(names.length)} golden claims and ${String(lines)} lines`);
   });
 
   it(`prices ${String(GENERATED_CLAIMS)} generated claims with five-digit ZIPs as the base engine does`, async ({ annotate }) => {
@@ -345,7 +481,9 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
         const head = headReleases.get(dir);
         if (head === undefined) throw new Error(`release ${dir} was not read`);
         const results = price(inputOf(claim, head));
-        expect(outcome(() => results)).toEqual(outcome(() => base.price(inputOf(claim, baseRelease(dir)))));
+        const baseResults = base.price(baseInputOf(inputOf(claim, head), baseRelease(dir)));
+        expect(outcome(() => results)).toEqual(outcome(() => baseResults));
+        expectRecomputedAlike(base, results, baseResults, 'a generated claim');
         for (const result of results) {
           if (result.outcome === 'priced') priced += 1;
           else stopped += 1;
@@ -357,6 +495,6 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
     // covers prices as well as stops.
     expect(priced, `${String(priced)} priced and ${String(stopped)} stopped lines`).toBeGreaterThan(GENERATED_CLAIMS / 2);
     expect(stopped, `${String(priced)} priced and ${String(stopped)} stopped lines`).toBeGreaterThan(GENERATED_CLAIMS / 2);
-    await annotate(`base equals head on ${String(GENERATED_CLAIMS)} generated claims: ${String(priced)} priced and ${String(stopped)} stopped lines`);
+    await annotate(`base equals head, priced and recomputed, on ${String(GENERATED_CLAIMS)} generated claims: ${String(priced)} priced and ${String(stopped)} stopped lines`);
   }, 900_000);
 });

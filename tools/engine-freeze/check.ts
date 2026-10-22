@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { z } from 'zod';
@@ -12,33 +13,50 @@ import { repositoryRoot } from '../content-files';
  * - **Engine.** No non-test file under packages/pricing/src changes (`git diff --stat <base> HEAD -- packages/pricing/src
  *   ':!**\/*.test.ts'`, written to the job summary under "Engine freeze"), unless the applicable exception lists it
  *   under `engine_files`. The founder's ruling of 2026-10-18 11:47 UTC opened five files for PR 6b's ZIP+4 lookup
- *   alone, so `engine_files` can name no other.
- * - **Golden files and frozen releases.** No existing file under fixtures/golden/{claims,diffs,sources} and no file of
- *   synthetic releases 900001-900005 changes, exception or not. A file added under fixtures/golden must match
- *   `golden_added`; one edited outside those three directories must be listed in `golden_edited`. With no applicable
- *   exception, fixtures/golden does not change at all (the change order's check, verbatim).
+ *   alone, so `engine_files` can name no other. Nothing else under packages/pricing but tests changes either (its
+ *   package.json, tsconfig.json or a file beside src, exception or not), and every workspace package that depends on
+ *   @tp/pricing resolves it, and @tp/pricing/testing, to packages/pricing/src: so no pull request swaps the engine its
+ *   consumers run by pointing the package elsewhere.
+ * - **Golden files and frozen releases.** No existing file under fixtures/golden/{claims,diffs,sources} changes, and no
+ *   file of a synthetic release a golden claim at the base pins by its manifest's hash (900001-900005 at least),
+ *   exception or not. A file added under fixtures/golden must match `golden_added`; one edited outside those three
+ *   directories must be listed in `golden_edited`. With no applicable exception, fixtures/golden does not change at
+ *   all (the change order's check, verbatim).
  * - **Rule tables.** No migration the pull request adds or changes touches rule_release, rule_record or
  *   rule_release_withdrawal: DDL on them (a table, column, constraint, trigger, policy, index, grant or comment of
- *   theirs, or a foreign key that references them) or a write to their rows, also from a routine's or DO block's body
- *   and from dynamic SQL. A statement is let through only when the applicable exception names it under
- *   `rule_table_ddl`, by its migration and its text exactly as this check prints it (for PR 6b-2's one CHECK, under
- *   the founder's answer to Q3 (a) of 2026-10-21).
+ *   theirs, or a foreign key that references them), a write to their rows, also from a routine's or DO block's body
+ *   and from dynamic SQL, a replacement, change or drop of a function a trigger on them executes, a grant on every
+ *   table of a schema, a write privilege on a view that reads them, and dynamic SQL that builds DDL or a write from
+ *   values read at run time (which the check cannot read). A statement is let through only when the applicable
+ *   exception names it under `rule_table_ddl`, by its migration and its text exactly as this check prints it (for PR
+ *   6b-2's one CHECK, under the founder's answer to Q3 (a) of 2026-10-21). The migrated catalog of the three tables is
+ *   held to tools/engine-freeze/rule-tables.catalog.json by rule-tables.db.test.ts, and that file changes only under
+ *   an exception that lists rule_table_ddl.
  *
- * The exception (tools/engine-freeze/exception.json) applies only in the pull request that adds or edits it: when the
- * diff from the base does not hold the file, it is stale and ignored. So a base merge into the pull request needs no
- * edit, and every later pull request runs with no exception until it declares its own, which CODEOWNERS sends to the
- * founder (docs/adr/0063).
+ * The exception (tools/engine-freeze/exception.json) applies only in the pull request it names (`pull_request`, read
+ * against PR_NUMBER, which CI sets), and only when that pull request adds or edits it: when the diff from the base does
+ * not hold the file, it is stale and ignored. So a base merge into the pull request needs no edit, and a later pull
+ * request runs with no exception until it declares its own, naming itself, which CODEOWNERS sends to the founder
+ * (docs/adr/0063). An applicable exception lists exactly its pull request's changes: an entry nothing uses is a
+ * problem, so an exception carried into another pull request never lets anything through.
  */
 
 export const EXCEPTION_FILE = 'tools/engine-freeze/exception.json';
+/** The rule tables' migrated catalog, which tools/engine-freeze/rule-tables.db.test.ts holds the database to. */
+export const RULE_TABLE_CATALOG = 'tools/engine-freeze/rule-tables.catalog.json';
 export const ENGINE_DIR = 'packages/pricing/src/';
+/** The engine's package: nothing in it but tests changes outside ENGINE_DIR. */
+export const ENGINE_PACKAGE = 'packages/pricing/';
+/** The files the engine's consumers must resolve @tp/pricing and @tp/pricing/testing to. */
+export const ENGINE_ENTRY_POINTS = { '@tp/pricing': 'packages/pricing/src/index.ts', '@tp/pricing/testing': 'packages/pricing/src/testing.ts' } as const;
 /** The engine files the founder's ruling of 2026-10-18 11:47 UTC opened, for PR 6b's ZIP+4 locality lookup alone. */
 export const RULING_ENGINE_FILES = ['engine.ts', 'reasons.ts', 'recompute.ts', 'trace.ts', 'types.ts'] as const;
 export const GOLDEN_DIR = 'fixtures/golden/';
 /** The golden directories whose existing files never change, exception or not. */
 export const GOLDEN_FROZEN_DIRS = ['fixtures/golden/claims/', 'fixtures/golden/diffs/', 'fixtures/golden/sources/'] as const;
-/** The synthetic releases the golden claims pin by their manifests' hashes. */
+/** The synthetic releases the golden claims pinned when the freeze began; the base's own pins are added to them. */
 const FROZEN_RELEASE = /^fixtures\/synthetic\/rules\/release-synth-90000[1-5]\//;
+export const GOLDEN_CLAIMS_DIR = 'fixtures/golden/claims/';
 export const MIGRATIONS_DIR = 'packages/db/migrations/';
 export const RULE_TABLES = ['rule_release', 'rule_record', 'rule_release_withdrawal'] as const;
 /** The engine diff's pathspec, as the change order writes it. */
@@ -58,6 +76,8 @@ const repositoryPath = (pattern: RegExp, what: string) =>
 /** exception.json: every key required, none unknown. */
 export const exceptionSchema = z.strictObject({
   ruling: z.string().trim().min(1, 'names the ruling that grants the exception'),
+  /** The pull request the exception is declared in, and the only one it applies in. */
+  pull_request: z.number().int().positive('names the pull request it is declared in'),
   engine_files: unique(z.enum(RULING_ENGINE_FILES, { message: `the founder's ruling of 2026-10-18 opened only ${RULING_ENGINE_FILES.join(', ')}` })),
   golden_added: unique(repositoryPath(/^fixtures\/golden\/(?:[A-Za-z0-9_.*-]+\/)*[A-Za-z0-9_.*-]+$/, 'a path or pattern under fixtures/golden/, where * stands for any characters but /')),
   golden_edited: unique(
@@ -75,7 +95,7 @@ export const exceptionSchema = z.strictObject({
 
 export type FreezeException = z.infer<typeof exceptionSchema>;
 
-const NO_EXCEPTION: FreezeException = { ruling: '', engine_files: [], golden_added: [], golden_edited: [], rule_table_ddl: [] };
+const NO_EXCEPTION: FreezeException = { ruling: '', pull_request: 1, engine_files: [], golden_added: [], golden_edited: [], rule_table_ddl: [] };
 
 /** One path the pull request changes, by git's status letter (A, M, D, T; renames are read as a deletion and an addition). */
 export interface Change {
@@ -92,9 +112,15 @@ export interface FreezeInput {
   readonly exceptionChanged: boolean;
   /** HEAD's text of a migration the pull request adds or changes. */
   readonly migrationText: (file: string) => string;
+  /** The pull request's number (PR_NUMBER), or null where it is not known (a local run); the exception must name it. */
+  readonly pullRequest?: number | null;
+  /** The synthetic release directories the base's golden claims pin (inputs.release.dir), frozen beside 900001-900005. */
+  readonly pinnedReleases?: readonly string[];
+  /** What every migration at HEAD makes of the rule tables: the functions their triggers execute and the views that read them. */
+  readonly ruleTableObjects?: RuleTableObjects;
 }
 
-export type ExceptionState = 'applies' | 'stale' | 'none';
+export type ExceptionState = 'applies' | 'stale' | 'none' | 'another pull request';
 
 export interface FreezeReport {
   readonly exception: ExceptionState;
@@ -121,6 +147,8 @@ function notListed(state: ExceptionState, list: string): string {
       return `${EXCEPTION_FILE} is unchanged in this pull request, so it is stale and does not apply (an exception applies only in the pull request that adds or edits it)`;
     case 'applies':
       return `the exception does not list it under ${list}`;
+    case 'another pull request':
+      return `${EXCEPTION_FILE} names another pull request, so it does not apply here`;
   }
 }
 
@@ -146,6 +174,13 @@ function readException(input: FreezeInput, problems: string[]): { readonly state
     }
     return { state: 'applies', exception: NO_EXCEPTION };
   }
+  const pullRequest = input.pullRequest ?? null;
+  if (pullRequest !== null && result.data.pull_request !== pullRequest) {
+    problems.push(
+      `${EXCEPTION_FILE}: names pull request ${String(result.data.pull_request)}, and this is pull request ${String(pullRequest)}: an exception applies only in the pull request it names, which adds or edits it`,
+    );
+    return { state: 'another pull request', exception: NO_EXCEPTION };
+  }
   return { state: 'applies', exception: result.data };
 }
 
@@ -155,8 +190,14 @@ export function checkFreeze(input: FreezeInput): FreezeReport {
   const allowed: string[] = [];
   const { state, exception } = readException(input, problems);
   const used = new Set<string>();
+  const pinned = (input.pinnedReleases ?? []).map((dir) => `${dir.replace(/\/+$/, '')}/`);
   for (const { status, path: file } of input.changes) {
     const change = `${file} (${statusWord(status)})`;
+    if (file.startsWith(ENGINE_PACKAGE) && !file.startsWith(ENGINE_DIR) && !TEST_FILE.test(file)) {
+      problems.push(
+        `${change}: a file of packages/pricing outside src changes; the engine's package (its manifest, its TypeScript settings and anything beside src) is frozen with the engine, exception or not, so its consumers keep running packages/pricing/src`,
+      );
+    }
     if (file.startsWith(ENGINE_DIR) && !TEST_FILE.test(file)) {
       const name = file.slice(ENGINE_DIR.length);
       if ((exception.engine_files as readonly string[]).includes(name)) {
@@ -168,6 +209,17 @@ export function checkFreeze(input: FreezeInput): FreezeReport {
     }
     if (FROZEN_RELEASE.test(file)) {
       problems.push(`${change}: synthetic releases 900001 to 900005 never change, exception or not (the golden claims pin their manifests); a new release takes a new number`);
+    } else if (pinned.some((dir) => file.startsWith(dir))) {
+      problems.push(`${change}: a release a golden claim at the base pins by its manifest's hash never changes, exception or not; a new release takes a new number`);
+    }
+    if (file === RULE_TABLE_CATALOG && status !== 'A') {
+      if (status === 'D') {
+        problems.push(`${change}: the rule tables' catalog snapshot is never deleted; rule-tables.db.test.ts holds the migrated database to it`);
+      } else if (state === 'applies' && exception.rule_table_ddl.length > 0) {
+        allowed.push(`${change}: rule_table_ddl (the snapshot of the catalog the listed statements change)`);
+      } else {
+        problems.push(`${change}: the rule tables' catalog snapshot changes, and ${state === 'applies' ? 'the exception lists no rule_table_ddl' : notListed(state, 'rule_table_ddl')}`);
+      }
     }
     if (file.startsWith(GOLDEN_DIR)) {
       const frozen = GOLDEN_FROZEN_DIRS.some((dir) => file.startsWith(dir));
@@ -191,7 +243,7 @@ export function checkFreeze(input: FreezeInput): FreezeReport {
       }
     }
     if (file.startsWith(MIGRATIONS_DIR) && status !== 'D') {
-      checkMigration(file, input.migrationText, exception, state, problems, allowed, used);
+      checkMigration(file, input.migrationText, input.ruleTableObjects ?? NO_OBJECTS, exception, state, problems, allowed, used);
     }
   }
   const unused = [
@@ -199,6 +251,9 @@ export function checkFreeze(input: FreezeInput): FreezeReport {
     ...exception.golden_added.map((pattern) => `golden_added ${pattern}`),
     ...exception.golden_edited.map((file) => `golden_edited ${file}`),
   ].filter((entry) => !used.has(entry));
+  for (const entry of unused) {
+    problems.push(`${EXCEPTION_FILE}: lists ${entry}, which nothing in this pull request uses; an exception lists exactly the changes of the pull request it names`);
+  }
   for (const { migration, statement } of exception.rule_table_ddl) {
     if (!used.has(`rule_table_ddl ${migration} ${statement}`)) {
       problems.push(`${EXCEPTION_FILE}: rule_table_ddl names a statement that no migration this pull request adds holds, exactly as written (${migration}): ${statement}`);
@@ -210,6 +265,7 @@ export function checkFreeze(input: FreezeInput): FreezeReport {
 function checkMigration(
   file: string,
   migrationText: (file: string) => string,
+  objects: RuleTableObjects,
   exception: FreezeException,
   state: ExceptionState,
   problems: string[],
@@ -218,7 +274,7 @@ function checkMigration(
 ): void {
   let touching: RuleTableStatement[];
   try {
-    touching = ruleTableStatements(migrationText(file));
+    touching = ruleTableStatements(migrationText(file), objects);
   } catch (error) {
     problems.push(`${file}: cannot be read as SQL, so the rule tables cannot be checked (${error instanceof Error ? error.message : String(error)})`);
     return;
@@ -341,7 +397,17 @@ export function splitSql(sql: string): SqlStatement[] {
       let end = at + 1;
       while (end < sql.length && WORD_PART.test(sql.charAt(end))) end += 1;
       const word = sql.slice(at, end);
-      if (word.toLowerCase() === 'e' && sql.charAt(end) === "'") {
+      if (word.toLowerCase() === 'u' && sql.charAt(end) === '&' && (sql.charAt(end + 1) === '"' || sql.charAt(end + 1) === "'")) {
+        // A Unicode escape, U&"rule\005frecord" or U&'...': read as the name or text it spells, so no spelling of a rule
+        // table slips past. With UESCAPE (another escape character) it is not read, and the migration fails the check.
+        const quote = sql.charAt(end + 1);
+        const close = quoted(end + 1, quote, false);
+        if (/^\s*uescape\b/i.test(sql.slice(close, close + 64))) throw new SqlReadError('a Unicode escape with UESCAPE, which this check does not read');
+        const value = unicodeEscapes(sql.slice(end + 2, close - 1).replaceAll(quote + quote, quote));
+        emit(sql.slice(at, close));
+        tokens.push(quote === '"' ? { kind: 'quoted', value } : { kind: 'literal', value, dollar: false });
+        at = close;
+      } else if (word.toLowerCase() === 'e' && sql.charAt(end) === "'") {
         // An escape string, E'...', whose backslashes escape the quote.
         const close = quoted(end, "'", true);
         emit(sql.slice(at, close));
@@ -360,6 +426,15 @@ export function splitSql(sql: string): SqlStatement[] {
   }
   finish();
   return statements;
+}
+
+/** The text a U& string or identifier spells: \\XXXX and \\+XXXXXX are code points, \\\\ a backslash. */
+function unicodeEscapes(text: string): string {
+  return text.replace(/\\(\\|\+[0-9A-Fa-f]{6}|[0-9A-Fa-f]{4}|)/g, (_match, code: string) => {
+    if (code === '\\') return '\\';
+    if (code === '') throw new SqlReadError('a Unicode escape that is not \\XXXX, \\+XXXXXX or \\\\');
+    return String.fromCodePoint(Number.parseInt(code.replace('+', ''), 16));
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -485,18 +560,22 @@ function literalStatements(text: string): SqlStatement[] {
 const WHERE = ['', ' in its body', ' in a nested body'];
 
 /** What one statement does to the rule tables, its routine and DO bodies and its dynamic SQL included. */
-function statementFindings(tokens: readonly Token[], depth: number): string[] {
+function statementFindings(tokens: readonly Token[], depth: number, objects: RuleTableObjects): string[] {
   const start = ddlStart(tokens);
   const slice = start === -1 ? [] : tokens.slice(start);
   const where = WHERE[Math.min(depth, WHERE.length - 1)] ?? '';
-  const found = [...writeFindings(tokens), ...(start === -1 ? [] : ddlFindings(slice))].map((finding) => `${finding}${where}`);
+  const found = [
+    ...writeFindings(tokens),
+    ...(start === -1 ? [] : [...ddlFindings(slice), ...routineFindings(slice, objects), ...grantFindings(slice, objects)]),
+    ...(depth > 0 ? computedExecuteFindings(tokens) : []),
+  ].map((finding) => `${finding}${where}`);
   if (depth >= MAX_DEPTH) return found;
   const routine = (isWord(slice[0], 'create') && ROUTINES.has(objectKind(slice).kind)) || isWord(tokens[0], 'do');
   // EXECUTE in a body is PL/pgSQL's dynamic SQL; at the top level it is GRANT EXECUTE or a trigger's EXECUTE FUNCTION.
   const dynamic = depth > 0 && tokens.some((token) => isWord(token, 'execute'));
   for (const token of tokens) {
     if (token.kind === 'literal' && (token.dollar || routine || dynamic)) {
-      for (const inner of literalStatements(token.value)) found.push(...statementFindings(inner.tokens, depth + 1));
+      for (const inner of literalStatements(token.value)) found.push(...statementFindings(inner.tokens, depth + 1, objects));
     }
   }
   if (dynamic) {
@@ -513,6 +592,132 @@ function statementFindings(tokens: readonly Token[], depth: number): string[] {
   return found;
 }
 
+/** What the migrations make of the rule tables, which a later statement can change without naming a rule table. */
+export interface RuleTableObjects {
+  /** Each function a trigger on a rule table executes, by its name in lower case, with those tables. */
+  readonly triggerFunctions: ReadonlyMap<string, readonly string[]>;
+  /** Each view whose query reads a rule table, with those tables: a write granted on an updatable view writes them. */
+  readonly views: ReadonlyMap<string, readonly string[]>;
+}
+
+const NO_OBJECTS: RuleTableObjects = { triggerFunctions: new Map(), views: new Map() };
+
+const ROUTINE_KINDS = new Set(['function', 'procedure', 'routine']);
+const WRITE_PRIVILEGES = new Set(['insert', 'update', 'delete', 'truncate', 'all']);
+const WRITE_VERBS = ['insert', 'update', 'delete', 'merge', 'copy'];
+
+/** The trigger functions and views of the rule tables that the given migrations create. */
+export function ruleTableObjects(migrations: readonly string[]): RuleTableObjects {
+  const triggerFunctions = new Map<string, string[]>();
+  const views = new Map<string, string[]>();
+  const add = (map: Map<string, string[]>, name: string, table: string) => {
+    const list = map.get(name) ?? [];
+    if (!list.includes(table)) map.set(name, [...list, table].sort());
+  };
+  for (const sql of migrations) {
+    for (const statement of splitSql(sql)) {
+      const start = ddlStart(statement.tokens);
+      const slice = start === -1 ? [] : statement.tokens.slice(start);
+      if (!isWord(slice[0], 'create')) continue;
+      const { kind, at } = objectKind(slice);
+      if (kind === 'trigger') {
+        const table = tableAfter(slice, 'on', at);
+        const execute = slice.findIndex((token, index) => isWord(token, 'execute') && isWord(slice[index + 1], 'function', 'procedure'));
+        const routine = execute === -1 ? undefined : nameAt(slice, execute + 2);
+        if (table !== undefined && isRuleTable(table) && routine !== undefined) add(triggerFunctions, routine.value, table.value);
+      } else if (kind === 'view') {
+        let named = at + 1;
+        while (isWord(slice[named], 'if', 'not', 'exists')) named += 1;
+        const view = nameAt(slice, named);
+        if (view === undefined) continue;
+        for (const table of RULE_TABLES) {
+          if (slice.some((token, index) => index > named && isRuleTable(token) && token.value === table)) add(views, view.value, table);
+        }
+      }
+    }
+  }
+  return { triggerFunctions, views };
+}
+
+/** The names a statement lists after `from`, at the top level and separated by commas, until one of `until`. */
+function listedNames(slice: readonly Token[], from: number, until: readonly string[]): Token[] {
+  const names: Token[] = [];
+  let depth = 0;
+  let expecting = true;
+  for (let index = from; index < slice.length; index += 1) {
+    const token = slice[index];
+    if (token?.kind === 'punct' && token.value === '(') depth += 1;
+    else if (token?.kind === 'punct' && token.value === ')') depth -= 1;
+    else if (depth === 0 && token?.kind === 'punct' && token.value === ',') expecting = true;
+    else if (depth === 0 && isWord(token, ...until)) break;
+    else if (depth === 0 && expecting && (token?.kind === 'word' || token?.kind === 'quoted')) {
+      const name = nameAt(slice, index);
+      if (name !== undefined) names.push(name);
+      expecting = false;
+    }
+  }
+  return names;
+}
+
+/** CREATE OR REPLACE, ALTER or DROP of a function that a trigger on a rule table executes: it changes that table's behaviour. */
+function routineFindings(slice: readonly Token[], objects: RuleTableObjects): string[] {
+  const verb = slice[0]?.value ?? '';
+  if (!['create', 'alter', 'drop'].includes(verb)) return [];
+  const { kind, at } = objectKind(slice);
+  if (!ROUTINE_KINDS.has(kind)) return [];
+  if (verb === 'create' && !slice.slice(1, at).some((token) => isWord(token, 'replace'))) return [];
+  let first = at + 1;
+  while (isWord(slice[first], 'if', 'exists')) first += 1;
+  const names = verb === 'drop' ? listedNames(slice, first, ['cascade', 'restrict']) : [nameAt(slice, first)].filter((name): name is Token => name !== undefined);
+  return names.flatMap((name) => {
+    const tables = objects.triggerFunctions.get(name.value);
+    return tables === undefined ? [] : [`${verb.toUpperCase()} ${kind.toUpperCase()} ${name.value}, which a trigger on ${tables.join(', ')} executes`];
+  });
+}
+
+/** A GRANT or REVOKE on every table of a schema, or of a write on a view that reads a rule table. */
+function grantFindings(slice: readonly Token[], objects: RuleTableObjects): string[] {
+  const verb = slice[0]?.value ?? '';
+  if (verb !== 'grant' && verb !== 'revoke') return [];
+  const on = slice.findIndex((token) => isWord(token, 'on'));
+  if (on === -1) return [];
+  if (isWord(slice[on + 1], 'all') && isWord(slice[on + 2], 'tables') && isWord(slice[on + 3], 'in') && isWord(slice[on + 4], 'schema')) {
+    return [`${verb.toUpperCase()} on every table of a schema, the rule tables among them`];
+  }
+  const privileges = slice.slice(1, on).filter((token) => token.kind === 'word' && WRITE_PRIVILEGES.has(token.value)).map((token) => token.value.toUpperCase());
+  if (privileges.length === 0) return [];
+  const targets = listedNames(slice, isWord(slice[on + 1], 'table') ? on + 2 : on + 1, ['to', 'from']);
+  return targets.flatMap((target) => {
+    const tables = objects.views.get(target.value);
+    return tables === undefined ? [] : [`${verb.toUpperCase()} ${privileges.join(', ')} on ${target.value}, a view that reads ${tables.join(', ')} (an updatable view writes through to them)`];
+  });
+}
+
+/**
+ * EXECUTE in a body whose SQL is built from values read at run time (a variable, a concatenation or a format's
+ * arguments) and holds DDL or a write, or whose SQL is wholly built elsewhere: the objects it reaches cannot be read
+ * here, and may be rule tables or their trigger functions, so it fails closed. EXECUTE of one literal is read as SQL
+ * (statementFindings), and a format whose own text only reads is let through.
+ */
+function computedExecuteFindings(tokens: readonly Token[]): string[] {
+  const found: string[] = [];
+  tokens.forEach((token, index) => {
+    if (!isWord(token, 'execute') || isWord(tokens[index + 1], 'function', 'procedure', 'on') || isWord(tokens[index - 1], 'grant', 'revoke')) return;
+    const rest = tokens.slice(index + 1);
+    const using = rest.findIndex((item) => isWord(item, 'using', 'into'));
+    const argument = using === -1 ? rest : rest.slice(0, using);
+    if (argument.length === 1 && argument[0]?.kind === 'literal') return;
+    const literals = argument.filter((item): item is Extract<Token, { kind: 'literal' }> => item.kind === 'literal');
+    const verbs = [...new Set(literals.flatMap((literal) => literalStatements(literal.value).flatMap((inner) => inner.tokens)).filter((item) => item.kind === 'word' && (DDL_VERBS.has(item.value) || WRITE_VERBS.includes(item.value))).map((item) => item.value.toUpperCase()))];
+    if (literals.length === 0) {
+      found.push('dynamic SQL (EXECUTE) runs SQL built elsewhere, which this check cannot read');
+    } else if (verbs.length > 0) {
+      found.push(`dynamic SQL (EXECUTE) builds ${verbs.join(', ')} from values read at run time, so the objects it reaches cannot be read`);
+    }
+  });
+  return found;
+}
+
 export interface RuleTableStatement {
   /** The statement's position in its file, from 1. */
   readonly index: number;
@@ -521,9 +726,9 @@ export interface RuleTableStatement {
 }
 
 /** The statements of a migration that touch a rule table, each with what it does to it. */
-export function ruleTableStatements(sql: string): RuleTableStatement[] {
+export function ruleTableStatements(sql: string, objects: RuleTableObjects = NO_OBJECTS): RuleTableStatement[] {
   return splitSql(sql).flatMap((statement, index) => {
-    const findings = [...new Set(statementFindings(statement.tokens, 0))];
+    const findings = [...new Set(statementFindings(statement.tokens, 0, objects))];
     return findings.length === 0 ? [] : [{ index: index + 1, text: statement.text, findings }];
   });
 }
@@ -543,6 +748,32 @@ function headFile(root: string, file: string): string | null {
 export interface RepositoryInput extends FreezeInput {
   /** `git diff --stat` of the engine's non-test files, for the job summary. */
   readonly engineStat: string;
+  /** What could not be read from the repository, each a problem. */
+  readonly readProblems: readonly string[];
+}
+
+/** The files a commit holds under a directory, by path. */
+function filesAt(root: string, commit: string, dir: string): string[] {
+  return git(root, ['ls-tree', '-r', '--name-only', '-z', commit, '--', dir])
+    .split('\0')
+    .filter((file) => file !== '');
+}
+
+/** The release directories the golden claims at `base` pin (inputs.release.dir); a claim that cannot be read is a problem. */
+export function pinnedReleaseDirs(root: string, base: string): { readonly dirs: readonly string[]; readonly problems: readonly string[] } {
+  const dirs = new Set<string>();
+  const problems: string[] = [];
+  for (const file of filesAt(root, base, GOLDEN_CLAIMS_DIR).filter((name) => name.endsWith('.json'))) {
+    try {
+      const claim = JSON.parse(git(root, ['show', `${base}:${file}`])) as { inputs?: { release?: { dir?: unknown } } };
+      const dir = claim.inputs?.release?.dir;
+      if (typeof dir !== 'string' || dir === '') throw new Error('it names no inputs.release.dir');
+      dirs.add(dir.replace(/\/+$/, ''));
+    } catch (error) {
+      problems.push(`${file} at the base: cannot read the release it pins (${error instanceof Error ? error.message : String(error)}), so the releases the golden claims pin cannot be held`);
+    }
+  }
+  return { dirs: [...dirs].sort(), problems };
 }
 
 /** The pull request's changes from `base` to HEAD, as the freeze reads them. */
@@ -552,19 +783,64 @@ export function readRepository(root: string, base: string): RepositoryInput {
   for (let index = 0; index + 1 < listed.length; index += 2) {
     changes.push({ status: listed[index] ?? '', path: listed[index + 1] ?? '' });
   }
+  const pinned = pinnedReleaseDirs(root, base);
+  const migrations = filesAt(root, 'HEAD', MIGRATIONS_DIR).filter((file) => file.endsWith('.sql'));
+  let objects: RuleTableObjects = NO_OBJECTS;
+  const readProblems = [...pinned.problems];
+  try {
+    objects = ruleTableObjects(migrations.map((file) => git(root, ['show', `HEAD:${file}`])));
+  } catch (error) {
+    readProblems.push(`the migrations cannot be read as SQL, so the rule tables' trigger functions and views cannot be found (${error instanceof Error ? error.message : String(error)})`);
+  }
   return {
     changes,
     exceptionText: headFile(root, EXCEPTION_FILE),
     exceptionChanged: git(root, ['diff', '--name-only', '--no-renames', base, 'HEAD', '--', EXCEPTION_FILE]).trim() !== '',
     migrationText: (file) => git(root, ['show', `HEAD:${file}`]),
+    pinnedReleases: pinned.dirs,
+    ruleTableObjects: objects,
     engineStat: git(root, ['diff', '--stat', base, 'HEAD', '--', ...ENGINE_PATHSPEC]),
+    readProblems,
   };
+}
+
+/**
+ * Where each workspace package that depends on @tp/pricing resolves it and @tp/pricing/testing: a problem unless that
+ * is packages/pricing/src, as installed (CI runs the check after pnpm install). A package that redirects the engine (an
+ * export, a link or an override pointing elsewhere) would run another engine than the one this freeze holds.
+ */
+export function engineResolutionProblems(root: string): string[] {
+  const problems: string[] = [];
+  const packageDirs = ['apps', 'packages']
+    .flatMap((group) => (existsSync(path.join(root, group)) ? readdirSync(path.join(root, group)).map((name) => path.join(group, name)) : []))
+    .concat(['infra', 'tools'])
+    .filter((dir) => existsSync(path.join(root, dir, 'package.json')))
+    .sort();
+  for (const dir of packageDirs) {
+    const manifest = JSON.parse(readFileSync(path.join(root, dir, 'package.json'), 'utf8')) as { name?: string; dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    if (manifest.name === '@tp/pricing' || (manifest.dependencies?.['@tp/pricing'] ?? manifest.devDependencies?.['@tp/pricing']) === undefined) continue;
+    const require = createRequire(path.join(root, dir, 'package.json'));
+    for (const [specifier, file] of Object.entries(ENGINE_ENTRY_POINTS)) {
+      let resolved: string;
+      try {
+        resolved = realpathSync(require.resolve(specifier));
+      } catch (error) {
+        problems.push(`${dir} cannot resolve ${specifier} (${error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error)}); run pnpm install`);
+        continue;
+      }
+      if (resolved !== realpathSync(path.join(root, file))) {
+        problems.push(`${dir} resolves ${specifier} to ${path.relative(root, resolved)}, not ${file}: every consumer of the engine runs packages/pricing/src`);
+      }
+    }
+  }
+  return problems;
 }
 
 const EXCEPTION_WORDS: Readonly<Record<ExceptionState, string>> = {
   applies: 'applies: this pull request adds or edits it',
   stale: 'stale and ignored: this pull request does not change it',
   none: 'none declared',
+  'another pull request': 'does not apply: it names another pull request',
 };
 
 /** The job summary's "Engine freeze" section. */
@@ -579,13 +855,15 @@ export function summary(base: string, engineStat: string, report: FreezeReport):
     '```\n\n',
     '### Let through by the exception\n\n',
     list(report.allowed, 'Nothing.'),
-    ...(report.unused.length === 0 ? [] : ['\n### Listed by the exception and unused\n\n', list(report.unused, '')]),
     '\n### Problems\n\n',
     list(report.problems, 'None.'),
   ].join('');
 }
 
-/** `tsx tools/engine-freeze/check.ts [<base>]`: the base defaults to ENGINE_FREEZE_BASE. Exits 1 on a problem. */
+/**
+ * `tsx tools/engine-freeze/check.ts [<base>]`: the base defaults to ENGINE_FREEZE_BASE, and PR_NUMBER names the pull
+ * request the exception must name (CI sets both; in CI a missing PR_NUMBER is refused). Exits 1 on a problem.
+ */
 export function main(argv: readonly string[], env: NodeJS.ProcessEnv, root = repositoryRoot): number {
   const base = argv[0] ?? env.ENGINE_FREEZE_BASE ?? '';
   if (base === '') {
@@ -598,8 +876,16 @@ export function main(argv: readonly string[], env: NodeJS.ProcessEnv, root = rep
     process.stderr.write(`engine-freeze: ${base} is not a commit in this repository (CI checks out with fetch-depth 0)\n`);
     return 2;
   }
-  const input = readRepository(root, base);
-  const report = checkFreeze(input);
+  const number = (env.PR_NUMBER ?? '').trim();
+  const inCi = env.CI !== undefined && env.CI !== '' && env.CI !== 'false';
+  if (number === '' ? inCi : !/^[1-9]\d*$/.test(number)) {
+    process.stderr.write(`engine-freeze: PR_NUMBER is ${number === '' ? 'not set' : `"${number}", not a pull request number`}; CI sets it to the pull request's number, which the exception must name\n`);
+    return 2;
+  }
+  const repository = readRepository(root, base);
+  const input: RepositoryInput = { ...repository, pullRequest: number === '' ? null : Number(number) };
+  const checked = checkFreeze(input);
+  const report: FreezeReport = { ...checked, problems: [...input.readProblems, ...checked.problems, ...engineResolutionProblems(root)] };
   const text = summary(base, input.engineStat, report);
   process.stdout.write(text);
   if (env.GITHUB_STEP_SUMMARY !== undefined && env.GITHUB_STEP_SUMMARY !== '') {

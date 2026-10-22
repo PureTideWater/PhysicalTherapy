@@ -121,7 +121,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     build: pricing.prc21,
     assertedBy: ['packages/pricing/src/engine.test.ts', 'packages/pricing/src/recompute.test.ts', 'packages/pricing/src/properties.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'tools/release/release.test.ts'],
   },
-  'PRC-22': none(6, 'A differential test over generated claims and the golden lines; no fixture.', ['tools/engine-freeze/differential.test.ts', 'tools/engine-freeze/check.test.ts']),
+  'PRC-22': none(6, 'A differential test over generated claims and the golden lines; no fixture.', ['tools/engine-freeze/differential.test.ts', 'tools/engine-freeze/check.test.ts', 'tools/engine-freeze/rule-tables.db.test.ts']),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
   'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },

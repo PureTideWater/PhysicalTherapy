@@ -62,12 +62,12 @@ jobs:
       - run: pnpm verify-content
       - run: tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"
       # The engine freeze (reconciliation-001's change order; docs/adr/0064): against the merge base, no non-test engine
-      # file, existing golden file, synthetic release 900001-900005 or rule table changes, but what
-      # tools/engine-freeze/exception.json lets through in the pull request that adds or edits it; the engine's diff stat
-      # goes to the job summary. The merge base is kept for the unit tests, whose differential test prices the golden
+      # file, file of the engine's package, existing golden file, synthetic release a golden claim pins or rule table
+      # changes, but what tools/engine-freeze/exception.json lets through in the pull request it names (PR_NUMBER) and
+      # that adds or edits it; the engine's diff stat goes to the job summary. The merge base is kept for the unit tests, whose differential test prices the golden
       # claims and 20,000 generated claims with the base engine and this one, and fails without it.
       - name: Engine freeze
-        env: { BASE_REF: "${{ github.base_ref }}" }
+        env: { BASE_REF: "${{ github.base_ref }}", PR_NUMBER: "${{ github.event.pull_request.number }}" }
         run: |
           base="$(git merge-base "origin/$BASE_REF" HEAD)"
           echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"

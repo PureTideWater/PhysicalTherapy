@@ -80,7 +80,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'PRC-22',
     title: 'The engine freeze outside the ZIP+4 lookup',
     assertion:
-      "The base and head engines give equal results on every golden claim and on generated five-digit claims. The diff under `packages/pricing/src` holds only the exception's files, and no existing golden file changes",
+      "The base and head engines, each on its own money, rules and contracts packages, price and recompute alike every golden claim and generated five-digit claims. Nothing under `packages/pricing` but tests changes beyond the exception's files, and no existing golden file or release a golden claim pins changes",
   },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
