@@ -1018,21 +1018,25 @@ every upload of every scenario, the small ones included, fails above 48 s on the
 (`tp-screening-capacity/4`) names the consumer as measured (tasks, vCPUs, MiB, threads) and both image IDs, and fails a
 consumer measured at another size, its three threads not pricing S4's and S5's large uploads at once, an upload in the
 waiting tier (every scenario upload is a prospect of its own, at a domain of its own, so none crosses a share), and the
-consumer's time-to-email line missing or out of its bounds: never above the time from the browser's POST to the line
-itself (the metric starts at the web's receipt, as the proxy stamps it, after the POST, and is logged once the
-completion commits), never more than 2 s below the harness's time (the transfer before the receipt), which proves the
-metric covers the web's share and the send. The process runtime's layout holds what the worker image installs beside its
-bundle (`node_modules/playwright-core` at the pinned version), and the harness stops with `PROCESS_IMAGES_INCOMPLETE`
-when it is missing. With a web image built for a static host, the harness's browser is served `/_next/static/` from the
-web container and fails any other request for that host. Two harness defects found by the design are fixed: the small
-upload is sent once the large uploads' pg-boss jobs exist, not their runs (a quarter-CPU web could queue the small one
-first), and the process runtime execs every service under `taskset -c <its cpuset>`, because under cgroup v1 a process
-that joins a cpuset keeps only the overlap with the affinity it inherited from the pinned harness (three pricing
-processes ran on one CPU). A worst time above 44 s, within 8% of the line, is reported in the summary and the report as
-a sizing question for the founder before merge (O9), never as a pass to rely on or a wider limit. The design's
-measurements on a 4-CPU machine (S4's worst 41.1 s with three processes in a 2-vCPU pool; memory 1,119 MiB of 4,096) are
-indicative: they used a process stand-in for the threads whose hooks were not kept, and the queue-order race made their
-verdicts fail. PR 6b-3's first CI capacity run, with the real threads, is the measurement of record.
+consumer's time-to-email line missing or out of its bounds: never above the time from the harness's click on "Screen the
+file" to the line itself (the metric starts at the web's receipt, as the proxy stamps it, after the click and the POST,
+and is logged once the completion commits), never more than 2 s below the harness's time (the browser's send and the
+transfer before the receipt), which proves the metric covers the web's share and the send. The harness times each upload
+from that click, not from Playwright's request event, which reaches the harness after the POST has left: with the
+receipt stamped at the POST's headers, the web received S1-1's POST in the local smoke run 81 ms before the harness
+heard of it, and the logged time came out above the harness's. The process runtime's layout holds what the worker image
+installs beside its bundle (`node_modules/playwright-core` at the pinned version), and the harness stops with
+`PROCESS_IMAGES_INCOMPLETE` when it is missing. With a web image built for a static host, the harness's browser is
+served `/_next/static/` from the web container and fails any other request for that host. Two harness defects found by
+the design are fixed: the small upload is sent once the large uploads' pg-boss jobs exist, not their runs (a quarter-CPU
+web could queue the small one first), and the process runtime execs every service under `taskset -c <its cpuset>`,
+because under cgroup v1 a process that joins a cpuset keeps only the overlap with the affinity it inherited from the
+pinned harness (three pricing processes ran on one CPU). A worst time above 44 s, within 8% of the line, is reported in
+the summary and the report as a sizing question for the founder before merge (O9), never as a pass to rely on or a wider
+limit. The design's measurements on a 4-CPU machine (S4's worst 41.1 s with three processes in a 2-vCPU pool; memory
+1,119 MiB of 4,096) are indicative: they used a process stand-in for the threads whose hooks were not kept, and the
+queue-order race made their verdicts fail. PR 6b-3's first CI capacity run, with the real threads, is the measurement of
+record.
 
 **Decision 13, bound to both images.** The release builds, scans and measures the worker image and the production web
 image (with production's static origin) exactly as it pushes them, and keeps the report, its SHA-256 and its summary as

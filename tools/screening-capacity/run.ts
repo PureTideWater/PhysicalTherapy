@@ -58,6 +58,7 @@ import {
   report,
   sizingQuestion,
   timeRule,
+  uploadStart,
 } from './report';
 import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
 
@@ -324,7 +325,16 @@ interface Prepared {
   readonly rows: number;
   readonly context: BrowserContext;
   readonly page: Page;
-  submittedAt: number | null;
+  /**
+   * When the harness clicked "Screen the file", by the host's clock: the start of the upload's time. It is no later than
+   * the web's receipt, which the proxy stamps when the POST's headers arrive, so the consumer's logged time can never
+   * exceed the harness's for a reason of the harness's own. Playwright's request event, which the harness used before,
+   * reaches it after the POST has left (the browser reports it over its debugging protocol): under S1 and S4 the web
+   * received the POST up to 81 ms before the harness heard of it, and the logged time came out above the harness's.
+   */
+  clickedAt: number | null;
+  /** Whether the page sent its POST to /screening at all (an upload whose page never did has no submission time). */
+  posted: boolean;
   emailedAt: number | null;
   link: string | null;
   failedNotice: boolean;
@@ -496,10 +506,10 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       await routeStaticOrigin(browserContext, context.staticAssetOrigin, runtime.webOrigin, staticCounts);
     }
     const page = await browserContext.newPage();
-    const entry: Prepared = { upload, rows: rows.length, context: browserContext, page, submittedAt: null, emailedAt: null, link: null, failedNotice: false, accepted: true };
+    const entry: Prepared = { upload, rows: rows.length, context: browserContext, page, clickedAt: null, posted: false, emailedAt: null, link: null, failedNotice: false, accepted: true };
     page.on('request', (request) => {
-      if (entry.submittedAt === null && request.method() === 'POST' && new URL(request.url()).pathname === '/screening') {
-        entry.submittedAt = Date.now();
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/screening') {
+        entry.posted = true;
       }
     });
     await page.goto(`${runtime.webOrigin}/screening`, { timeout: 180_000 });
@@ -528,7 +538,10 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       await sleep(500);
     }
   })();
-  const click = (entry: Prepared) => entry.page.getByRole('button', { name: 'Screen the file' }).click({ timeout: 60_000 });
+  const click = (entry: Prepared) => {
+    entry.clickedAt = Date.now();
+    return entry.page.getByRole('button', { name: 'Screen the file' }).click({ timeout: 60_000 });
+  };
   const sentPage = (entry: Prepared) => entry.page.waitForURL(SENT_PAGE, { timeout: Math.max(1_000, Math.min(600_000, capUntil - Date.now())) });
   const large = prepared.filter((entry) => !entry.upload.behind);
   const behind = prepared.filter((entry) => entry.upload.behind);
@@ -684,6 +697,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     const phaseLog = consumerPhases.filter((line) => line.runId === facts?.id);
     const firstPhase = phaseLog[0] === undefined ? null : Date.parse(phaseLog[0].at);
     const logged = facts === null ? undefined : emailed.find((line) => line.runId === facts.id);
+    const start = uploadStart(entry.clickedAt, entry.posted);
     uploads.push({
       id: entry.upload.id,
       shape: entry.upload.shape,
@@ -691,9 +705,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       behind: entry.upload.behind,
       jobCreatedMs: queue.created === null ? null : queue.created - scenarioStart,
       jobStartedMs: queue.started === null ? null : queue.started - scenarioStart,
-      submittedMs: entry.submittedAt === null ? null : entry.submittedAt - scenarioStart,
+      submittedMs: start === null ? null : start - scenarioStart,
       emailedMs: entry.emailedAt === null ? null : entry.emailedAt - scenarioStart,
-      queueWaitMs: firstPhase === null || entry.submittedAt === null ? null : Math.max(0, firstPhase - entry.submittedAt),
+      queueWaitMs: firstPhase === null || start === null ? null : Math.max(0, firstPhase - start),
       phases: lines ?? {},
       resultStatus: opened?.first ?? null,
       lastPageStatus: opened?.last ?? null,

@@ -456,10 +456,21 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
 }
 
 /**
+ * When an upload's time starts for the harness: the moment it clicked "Screen the file", once the page has sent its POST
+ * (null when it never did: the submission was not captured). The click comes before the POST leaves the browser, so the
+ * start is never later than the web's receipt, which the proxy stamps when the POST's headers arrive. The request event
+ * Playwright raises is not: it reaches the harness after the POST has left, and the web received S1-1's 81 ms before
+ * the harness heard of it.
+ */
+export function uploadStart(clickedAt: number | null, posted: boolean): number | null {
+  return posted ? clickedAt : null;
+}
+
+/**
  * The time metric's bounds (the design's §5.3): the consumer's logged elapsed_ms for the upload's run is never above the
- * time from the browser's POST to the line itself (the metric starts at the web's received_at, after the POST, and ends
- * before its line is written), and never more than TIME_METRIC_BELOW_MS below the harness's time (the transfer before
- * received_at), so the metric covers the web's share and the send.
+ * time from the harness's click to the line itself (the metric starts at the web's received_at, after the click and the
+ * POST, and ends before its line is written), and never more than TIME_METRIC_BELOW_MS below the harness's time (the
+ * browser's send and the transfer before received_at), so the metric covers the web's share and the send.
  */
 export function timeMetricProblems(upload: UploadMeasure, harnessMs: number): string[] {
   if (upload.logged === null) {

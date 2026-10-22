@@ -2,7 +2,24 @@ import { describe, expect, it } from 'vitest';
 
 import { environmentSettings } from '../../infra/lib/environments';
 import { HARNESS_RUNS_SCREENING_CONSUMER, MIB, RUNNER_TO_FARGATE, TIME_ALLOWANCE_MS, TIME_METRIC_BELOW_MS, TIME_PROMISE_MS } from './limits';
-import { type Measurements, ORACLE_UPLOADS, REPORT_FORMAT, SIZING_QUESTION_MS, type TimeRule, limitProblems, markdown, oracleKind, report, timeLabel, timeRule, timeVerdict, verdict, worstTime } from './report';
+import {
+  type Measurements,
+  ORACLE_UPLOADS,
+  REPORT_FORMAT,
+  SIZING_QUESTION_MS,
+  type TimeRule,
+  limitProblems,
+  markdown,
+  oracleKind,
+  report,
+  timeLabel,
+  timeMetricProblems,
+  timeRule,
+  timeVerdict,
+  uploadStart,
+  verdict,
+  worstTime,
+} from './report';
 import { ENFORCED, OPEN, applied, expected, measured, scenario, scenarios, upload, withS1, withUpload, withoutConsumer } from './test-support/measurements';
 
 /**
@@ -91,6 +108,25 @@ describe('a worst time above 44 s', () => {
   });
 });
 
+describe('when an upload’s time starts', () => {
+  it('starts at the harness’s click, never after the web’s receipt, and is not captured when no POST was sent', () => {
+    expect(uploadStart(1_000, true)).toBe(1_000);
+    expect(uploadStart(1_000, false)).toBeNull();
+    expect(uploadStart(null, true)).toBeNull();
+  });
+
+  it('keeps the logged time within its ceiling when the web receives the POST before Playwright reports it (S1-1, 81 ms)', () => {
+    // The local smoke run of 2026-10-22: the click at 0, the web's receipt (the proxy's stamp) at 120 ms, Playwright's
+    // request event at 201 ms, the consumer's line at 35,748 ms with 35,628 ms logged from the receipt.
+    const line = { elapsedMs: 35_628, atMs: 35_748, tier: 'normal' as const };
+    const fromClick = upload({ id: 'S1-1', submittedMs: uploadStart(0, true), emailedMs: 35_749, logged: line });
+    expect(timeMetricProblems(fromClick, 35_749)).toEqual([]);
+    // Timed from the request event instead, as the harness was, the ceiling is 81 ms short of what the web logged.
+    const fromEvent = upload({ id: 'S1-1', submittedMs: 201, emailedMs: 35_749, logged: line });
+    expect(timeMetricProblems(fromEvent, 35_548)).toEqual(['time metric out of bounds: S1-1 logged 35.628 s against the harness\'s 35.548 s (at most 35.547 s, at least 33.548 s)']);
+  });
+});
+
 describe('the checks the build controls fail the run', () => {
   it('pass when everything holds, with time enforced', () => {
     expect(verdict(measured(), ENFORCED)).toEqual({ pass: true, time: 'enforced', reasons: [] });
@@ -126,7 +162,7 @@ describe('the checks the build controls fail the run', () => {
     ['an upload the consumer logged as waiting', measured({ scenarios: withUpload('S2-1', { logged: { elapsedMs: 29_800, atMs: 31_010, tier: 'waiting' } }) }), /^waiting tier: S2-1 \(logged as waiting, priority 0\)$/],
     ['no time-to-email line for an emailed upload', measured({ scenarios: withUpload('S2-1', { logged: null }) }), /^time metric not logged: S2-1$/],
     [
-      'a logged time above the time from the browser’s POST to its line',
+      'a logged time above the time from the harness’s click to its line',
       measured({ scenarios: withUpload('S1-1', { logged: { elapsedMs: 30_011, atMs: 31_010, tier: 'normal' } }) }),
       /^time metric out of bounds: S1-1 logged 30\.011 s against the harness's 30\.000 s \(at most 30\.010 s, at least 28\.000 s\)$/,
     ],

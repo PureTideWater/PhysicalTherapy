@@ -43,8 +43,8 @@ no credential is used.
    every service, restart Postgres with the page cache dropped, and start them again (both recorded). Every upload is
    a different prospect at a domain of its own, so none crosses an account's daily share (Q7). The small upload is
    sent once the large uploads' pricing jobs are in pg-boss, and each pricing job's queue and start times are recorded.
-   Each upload's page reads its file first (not timed); the time runs from the browser's POST to the email in the
-   outbox. Each run's tier is read from the database, and the consumer's own time-to-email line (TimeToEmailMs) from
+   Each upload's page reads its file first (not timed); the time runs from the harness's click on "Screen the file"
+   (before the browser sends the POST, so never after the web's receipt) to the email in the outbox. Each run's tier is read from the database, and the consumer's own time-to-email line (TimeToEmailMs) from
    its log. With `--static-asset-origin`, the pages' requests to that host are served from the web container's own
    `/_next/static/`. No scenario starts after 60 minutes of the harness, and one still running at 70 ends there.
 6. Stops every service and compares S1-1, S2-1 and S3-1 (the last priced from the shared types the thread held) with the
@@ -136,8 +136,8 @@ no credential is used.
    day, or the day past its 1,000,000-row cap). Every scenario upload is its own account and the run is far under the
    cap, so this is a defect of the tier (`screening_queue_tier()`) or of the uploads' domains (`uploads.ts`).
 9. `time metric not logged` or `time metric out of bounds`: the consumer's TimeToEmailMs for the run is missing, above
-   the time from the browser's POST to its own line, or more than 2 s below the harness's time. The metric must start at
-   the web's receipt of the upload (`screening_run.received_at`) and end once the send returned and the completion
+   the time from the harness's click to its own line, or more than 2 s below the harness's time. The metric must start
+   at the web's receipt of the upload (`screening_run.received_at`, the proxy's stamp) and end once the send returned and the completion
    committed; a value far below the harness's time leaves out the web's share, which the production alarm would then
    miss.
 10. `request left for the static origin`: with `--static-asset-origin`, a page asked the static host for something the
