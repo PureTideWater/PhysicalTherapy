@@ -546,8 +546,12 @@ export function organizationRoute<P extends { readonly organizationId: string },
         return refused;
       }
       const organizationId = parsed.params.organizationId;
+      const committed: (() => Promise<unknown>)[] = [];
+      const afterCommit = (work: () => Promise<unknown>) => {
+        committed.push(work);
+      };
       try {
-        return await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+        const outcome = await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
           await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
           if ((await organizationRoles(scope, organizationId)).length === 0) {
             throw new NotFoundError();
@@ -555,9 +559,11 @@ export function organizationRoute<P extends { readonly organizationId: string },
           const held = await requireOrganizationPermission(scope, organizationId, spec.permission);
           const roles = await platformRoles(scope);
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
-            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held }),
+            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held, afterCommit }),
           );
         });
+        await runCommitted(committed, services);
+        return outcome;
       } catch (error) {
         return refusal(error, spec.kind, services, actor, null);
       }
