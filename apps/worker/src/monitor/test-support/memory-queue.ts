@@ -50,6 +50,9 @@ export class MemoryQueue {
       return Promise.resolve(name);
     }) as QueueClient['work'],
     send: ((name: string, data: object | null, options?: { singletonKey?: string; startAfter?: unknown }) => this.send(name, data, options)) as QueueClient['send'],
+    // No polling workers to list or wake: drain() hands each job to its handler.
+    getWipData: () => [],
+    notifyWorker: () => undefined,
   };
 
   send(name: string, data: unknown, options: { singletonKey?: string; startAfter?: unknown } = {}): Promise<string | null> {

@@ -121,8 +121,12 @@ export const QUEUE_OPTIONS = {
  */
 export const SCREENING_JOB_HEARTBEAT_SECONDS = 60;
 
-/** The screening queues' settings: the shared ones and the heartbeat. */
-export const SCREENING_QUEUE_OPTIONS = { ...QUEUE_OPTIONS, heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS } as const;
+/**
+ * The screening queues' settings: the shared ones, the heartbeat, and pg-boss's notify, so every send to them (the
+ * web's, the sweep's, the schedule's) commits a NOTIFY with the job and wakes the consumer's idle workers at once
+ * instead of at their next poll (SCREENING_BOSS_OPTIONS; CI's S5 on 7abb99c). The NOTIFY carries the queue's name only.
+ */
+export const SCREENING_QUEUE_OPTIONS = { ...QUEUE_OPTIONS, heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS, notify: true } as const;
 
 /**
  * Each queue's settings: the shared ones, and for intake an hour before pg-boss expires an attempt

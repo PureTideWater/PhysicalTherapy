@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { enqueueScreeningRun } from '../jobs/enqueue';
 import { QUEUE_OPTIONS } from '../jobs/registry';
-import { type ScreeningJobs, createScreeningHandlers } from '../jobs/screening';
+import { SCREENING_BOSS_OPTIONS, type ScreeningJobs, createScreeningHandlers } from '../jobs/screening';
 import { startWorker } from '../worker';
 import { startScreeningConsumer } from './consumer';
 
@@ -23,8 +23,11 @@ import { startScreeningConsumer } from './consumer';
  * The screening consumer against PostgreSQL (docs/adr/0062; PR 6b-3), with SYNTHETIC release 900001 loaded and a split
  * a contract specialist approved:
  *
- * - the job heartbeat reaches a queue that already existed without one (PR 6's screening_price), through updateQueue,
- *   and every job the web sends carries it; the platform's old minute schedule is gone and the sweep's is there;
+ * - the job heartbeat and notify reach a queue that already existed without them (PR 6's screening_price), through
+ *   updateQueue, and every job the web sends carries the heartbeat; the platform's old minute schedule is gone and the
+ *   sweep's is there;
+ * - SCR-08: a free thread takes the next normal run at once, whether it was sent while the threads were idle (the send's
+ *   NOTIFY) or queued behind busy ones (a run's end wakes the workers), never a poll later (CI's S5 on 7abb99c);
  * - the consumer prices a run in one of its threads as tp_screening, through its own login, and emails the link;
  * - at most one copy of a release's shared types per thread;
  * - SCR-19: a consumer killed mid-run (after a recorded batch) leaves the run to another, which claims it again at
@@ -36,6 +39,15 @@ const MAIN = path.resolve(import.meta.dirname, '../main.ts');
 const TSX = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 const SPLIT = { '11': 'non_facility', '22': 'facility' } as const;
 const ORIGIN = 'https://app.synthetic.test';
+/** "At once": well under pg-boss's 2-s poll, which a job sent to sleeping workers waited out before (CI's S5 on 7abb99c). */
+const AT_ONCE_MS = 750;
+
+/** pg-boss as the consumer's process starts it (main.ts): listening, so a send wakes its workers. */
+function consumerBoss(): PgBoss {
+  const boss = new PgBoss({ connectionString: database.url, ...SCREENING_BOSS_OPTIONS });
+  boss.on('error', () => undefined);
+  return boss;
+}
 
 type Row = readonly [code: string, modifiers: string, units: number, place: string, product: string, band: string, allowedCents: bigint, claims: number];
 
@@ -199,7 +211,7 @@ describe('the screening consumer in one process', () => {
     await previous.createQueue('screening_price', QUEUE_OPTIONS);
     await previous.schedule('screening_price', '* * * * *', {}, { tz: 'UTC', singletonKey: 'screening_price' });
     await previous.stop({ graceful: false });
-    expect((await owner.query("SELECT heartbeat_seconds FROM pgboss.queue WHERE name = 'screening_price'")).rows).toEqual([{ heartbeat_seconds: null }]);
+    expect((await owner.query("SELECT heartbeat_seconds, notify FROM pgboss.queue WHERE name = 'screening_price'")).rows).toEqual([{ heartbeat_seconds: null, notify: false }]);
 
     const lines: Record<string, unknown>[] = [];
     const logger = createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) });
@@ -223,8 +235,7 @@ describe('the screening consumer in one process', () => {
       }
       return (write as (...args: unknown[]) => boolean)(chunk, ...rest);
     });
-    const boss = new PgBoss(database.url);
-    boss.on('error', () => undefined);
+    const boss = consumerBoss();
     const consumer = await startScreeningConsumer(
       { databaseUrl: database.screeningUrl, concurrency: 2, notifications: { mail: { kind: 'local', dir: outbox }, appOrigin: ORIGIN, staticAssetOrigin: null } },
       boss,
@@ -233,13 +244,14 @@ describe('the screening consumer in one process', () => {
     );
     const worker = await startWorker({ boss, logger, screening: consumer, heartbeatMs: 60_000, shutdownTimeoutMs: 30_000 });
     try {
-      const queues = await owner.query<{ name: string; heartbeat_seconds: number }>(
-        "SELECT name, heartbeat_seconds FROM pgboss.queue WHERE name IN ('screening_price', 'screening_price_waiting', 'screening_sweep') ORDER BY name",
+      // The heartbeat and the send's NOTIFY, on PR 6's queue too.
+      const queues = await owner.query<{ name: string; heartbeat_seconds: number; notify: boolean }>(
+        "SELECT name, heartbeat_seconds, notify FROM pgboss.queue WHERE name IN ('screening_price', 'screening_price_waiting', 'screening_sweep') ORDER BY name",
       );
       expect(queues.rows).toEqual([
-        { name: 'screening_price', heartbeat_seconds: 60 },
-        { name: 'screening_price_waiting', heartbeat_seconds: 60 },
-        { name: 'screening_sweep', heartbeat_seconds: 60 },
+        { name: 'screening_price', heartbeat_seconds: 60, notify: true },
+        { name: 'screening_price_waiting', heartbeat_seconds: 60, notify: true },
+        { name: 'screening_sweep', heartbeat_seconds: 60, notify: true },
       ]);
       expect((await owner.query("SELECT name FROM pgboss.schedule WHERE name IN ('screening_price', 'screening_sweep') ORDER BY name")).rows).toEqual([{ name: 'screening_sweep' }]);
 
@@ -276,8 +288,7 @@ describe('the screening consumer in one process', () => {
 
 describe('Q7: the waiting tier keeps a thread for the normal tier', () => {
   it('works at most two waiting-tier runs of three threads at once, and starts a normal run that arrives meanwhile at once', { timeout: 90_000 }, async () => {
-    const boss = new PgBoss(database.url);
-    boss.on('error', () => undefined);
+    const boss = consumerBoss();
     const started = new Map<string, number>();
     const ended = new Map<string, number>();
     // Stand-in pricing: each run takes 8 s, a worst-shape file's share of a thread, so nothing ends during the test.
@@ -304,12 +315,12 @@ describe('Q7: the waiting tier keeps a thread for the normal tier', () => {
       // A poll later the third still waits: the third thread is the normal tier's.
       await new Promise((resolve) => setTimeout(resolve, 3_000));
       expect(started.size).toBe(2);
-      // A normal upload then starts within pg-boss's poll, not after a waiting-tier run's 8 s.
+      // A normal upload then starts at once on the kept thread, not after a waiting-tier run's 8 s nor a poll.
       const normal = randomUUID();
       const sentAt = Date.now();
       expect(await enqueueScreeningRun(boss, normal, { priority: 0 })).not.toBeNull();
-      await until(() => Promise.resolve(started.has(normal)), (has) => has, 15_000, 50);
-      expect((started.get(normal) ?? Number.POSITIVE_INFINITY) - sentAt).toBeLessThan(4_000);
+      await until(() => Promise.resolve(started.has(normal)), (has) => has, 15_000, 20);
+      expect((started.get(normal) ?? Number.POSITIVE_INFINITY) - sentAt).toBeLessThan(AT_ONCE_MS);
       expect(ended.size).toBe(0);
       // The waiting-tier jobs went to their own queue, at their priorities; the normal one to the normal queue.
       const jobs = await owner.query<{ name: string; priority: number }>('SELECT name, priority FROM pgboss.job WHERE singleton_key = ANY ($1) ORDER BY priority DESC', [
@@ -323,6 +334,131 @@ describe('Q7: the waiting tier keeps a thread for the normal tier', () => {
       ]);
     } finally {
       await worker.stop();
+    }
+  });
+});
+
+/**
+ * A stand-in pricing thread for the consumer's own pool (threads.ts): it prices nothing, holds each run for the
+ * milliseconds its ID ends with (none for an ID that does not end in digits), and writes when it took and ended each
+ * run, on which thread, to `<mail dir>/runs.log`.
+ */
+const TIMED_THREAD = `
+import { appendFileSync } from 'node:fs';
+import { parentPort, threadId, workerData } from 'node:worker_threads';
+const log = workerData.notifications.mail.dir + '/runs.log';
+parentPort.on('message', async (request) => {
+  appendFileSync(log, 'start ' + request.runId + ' ' + String(threadId) + ' ' + String(Date.now()) + '\\n');
+  const ms = Number(request.runId.slice(-12));
+  await new Promise((resolve) => setTimeout(resolve, Number.isFinite(ms) ? ms : 0));
+  appendFileSync(log, 'end ' + request.runId + ' ' + String(threadId) + ' ' + String(Date.now()) + '\\n');
+  parentPort.postMessage({ kind: 'priced', outcome: 'complete' });
+});
+parentPort.postMessage({ kind: 'ready' });
+`;
+
+/** A run's ID that the stand-in thread holds for `ms` milliseconds. */
+function timedRun(ms: number): string {
+  return `${randomUUID().slice(0, 8)}-0000-4000-8000-${String(ms).padStart(12, '0')}`;
+}
+
+/** The stand-in threads' log: when each run started and ended, and on which thread. */
+function timedRuns(dir: string): Map<string, { thread: string; start: number; end: number | null }> {
+  const runs = new Map<string, { thread: string; start: number; end: number | null }>();
+  let text: string;
+  try {
+    text = readFileSync(path.join(dir, 'runs.log'), 'utf8');
+  } catch {
+    return runs;
+  }
+  for (const line of text.split('\n').filter((entry) => entry !== '')) {
+    const [what, runId = '', thread = '', at = '0'] = line.split(' ');
+    if (what === 'start') {
+      runs.set(runId, { thread, start: Number(at), end: null });
+    } else {
+      const run = runs.get(runId);
+      if (run !== undefined) {
+        run.end = Number(at);
+      }
+    }
+  }
+  return runs;
+}
+
+/** The consumer as the screening service starts it (its own pool of three threads, pg-boss's work), with stand-in threads. */
+async function timedConsumer(): Promise<{ readonly dir: string; readonly boss: PgBoss; readonly worker: Awaited<ReturnType<typeof startWorker>> }> {
+  const dir = mkdtempSync(path.join(tmpdir(), 'screening-timed-'));
+  writeFileSync(path.join(dir, 'thread.mjs'), TIMED_THREAD);
+  const boss = consumerBoss();
+  const logger = createLogger({ sink: () => undefined });
+  const consumer = await startScreeningConsumer(
+    { databaseUrl: database.screeningUrl, concurrency: 3, notifications: { mail: { kind: 'local', dir }, appOrigin: ORIGIN, staticAssetOrigin: null } },
+    boss,
+    logger,
+    { workerId: randomUUID(), thread: { script: pathToFileURL(path.join(dir, 'thread.mjs')), execArgv: [] } },
+  );
+  const worker = await startWorker({ boss, logger, screening: consumer, heartbeatMs: 60_000, shutdownTimeoutMs: 30_000 });
+  // Settled into its idle polling, as S5's fresh consumer was by the time the pages had loaded.
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
+  return { dir, boss, worker };
+}
+
+describe('SCR-08: a free thread takes the next normal run at once (CI’s S5 on 7abb99c: two of three practice uploads queued as the first was emailed waited for a poll)', () => {
+  it('starts three normal runs queued within a second on three threads at once', { timeout: 60_000 }, async () => {
+    const { dir, boss, worker } = await timedConsumer();
+    try {
+      // Three practice-shaped uploads, as a web slowed by three at once queues them: 400 ms apart.
+      const sent = new Map<string, number>();
+      for (const runId of [timedRun(6_000), timedRun(6_000), timedRun(6_000)]) {
+        expect(await enqueueScreeningRun(boss, runId, { priority: 0 })).not.toBeNull();
+        sent.set(runId, Date.now());
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      // (Its own runs only: the Q7 test leaves its third waiting-tier job queued, which this consumer works too.)
+      const runs = await until(() => Promise.resolve(timedRuns(dir)), (seen) => [...sent.keys()].every((runId) => seen.has(runId)), 15_000, 20);
+      const own = [...sent.keys()].map((runId) => runs.get(runId));
+      const waits = [...sent].map(([runId, at]) => (runs.get(runId)?.start ?? Number.POSITIVE_INFINITY) - at);
+      expect(waits.every((wait) => wait < AT_ONCE_MS), `each run's wait from its send to its thread: ${waits.join(', ')} ms`).toBe(true);
+      // On three threads, all three priced together: none ended before the last began.
+      expect(new Set(own.map((run) => run?.thread)).size).toBe(3);
+      expect(own.every((run) => run !== undefined && run.end === null)).toBe(true);
+      // And as the capacity report reads it, from pg-boss's own times.
+      const jobs = await owner.query<{ waited_ms: number }>("SELECT (extract(epoch FROM started_on - created_on) * 1000)::int AS waited_ms FROM pgboss.job WHERE name = 'screening_price' AND singleton_key = ANY ($1)", [
+        [...sent.keys()].map((runId) => `screening_price:${runId}`),
+      ]);
+      expect(jobs.rows).toHaveLength(3);
+      expect(jobs.rows.every((row) => row.waited_ms < AT_ONCE_MS), `pg-boss's waits: ${jobs.rows.map((row) => String(row.waited_ms)).join(', ')} ms`).toBe(true);
+    } finally {
+      await worker.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts a normal run queued behind busy threads as soon as a thread frees, even after a run shorter than the poll', { timeout: 60_000 }, async () => {
+    const { dir, boss, worker } = await timedConsumer();
+    try {
+      // Every thread busy: one for 1.5 s, two for 10 s.
+      const first = timedRun(1_500);
+      const busy = [first, timedRun(10_000), timedRun(10_000)];
+      for (const runId of busy) {
+        expect(await enqueueScreeningRun(boss, runId, { priority: 0 })).not.toBeNull();
+      }
+      await until(() => Promise.resolve(timedRuns(dir)), (seen) => busy.every((runId) => seen.has(runId)), 15_000, 20);
+      // Two small uploads queued meanwhile: the first takes the freed thread and ends inside pg-boss's poll.
+      const small = timedRun(300);
+      const next = timedRun(300);
+      expect(await enqueueScreeningRun(boss, small, { priority: 0 })).not.toBeNull();
+      expect(await enqueueScreeningRun(boss, next, { priority: 0 })).not.toBeNull();
+      const runs = await until(() => Promise.resolve(timedRuns(dir)), (seen) => typeof seen.get(next)?.end === 'number', 20_000, 20);
+      const freed = runs.get(first)?.end ?? Number.POSITIVE_INFINITY;
+      const smallRun = runs.get(small);
+      const nextRun = runs.get(next);
+      expect((smallRun?.start ?? Number.POSITIVE_INFINITY) - freed, 'the first small run, from the first thread freed').toBeLessThan(AT_ONCE_MS);
+      expect((nextRun?.start ?? Number.POSITIVE_INFINITY) - (smallRun?.end ?? Number.POSITIVE_INFINITY), 'the next, from the small run’s thread freed').toBeLessThan(AT_ONCE_MS);
+      expect(nextRun?.thread).toBe(smallRun?.thread);
+    } finally {
+      await worker.stop();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

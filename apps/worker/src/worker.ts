@@ -22,17 +22,18 @@ import {
 import type { JobRunEnd, JobRunRecorder } from './jobs/runs';
 import {
   SCREENING_JOB_TYPES,
+  SCREENING_PRICING_JOB_TYPES,
   SCREENING_SCHEDULES,
   SCREENING_SWEEP_JOB,
   type ScreeningHandlers,
   type ScreeningJobType,
   type ScreeningJobs,
   parseScreeningPayload,
-  screeningWaitingConcurrency,
+  screeningWorkOptions,
 } from './jobs/screening';
-import { SCREENING_PRICE_JOB, SCREENING_PRICE_WAITING_JOB } from './jobs/enqueue';
+import { SCREENING_PRICE_JOB } from './jobs/enqueue';
 
-export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'updateQueue' | 'work' | 'schedule' | 'unschedule' | 'send'>;
+export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'updateQueue' | 'work' | 'schedule' | 'unschedule' | 'send' | 'getWipData' | 'notifyWorker'>;
 
 export interface WorkerOptions {
   readonly boss: QueueClient;
@@ -198,11 +199,13 @@ async function runScreeningJob<T extends ScreeningJobType>(type: T, job: QueuedJ
  * (UTC schedules, one job of each queued or active at a time). Without practice handlers (a platform-only or
  * screening-only worker) it creates the practice queues and works none of them.
  *
- * With the screening jobs (the consumer, WORKER_JOBS=screening; PR 6b-3) it sets the job heartbeat on their queues
- * with updateQueue, since createQueue leaves a queue that already exists as it was (screening_price was the platform's,
- * with no heartbeat); removes the platform's old minute schedule of screening_price; schedules the sweep; and works
- * screening_price as many at once as it has threads, screening_price_waiting one fewer (the waiting tier never holds
- * every thread: Q7) and the sweep one at a time. Stopping, it waits for the runs in hand, then ends the threads.
+ * With the screening jobs (the consumer, WORKER_JOBS=screening; PR 6b-3) it sets the job heartbeat and notify on their
+ * queues with updateQueue, since createQueue leaves a queue that already exists as it was (screening_price was the
+ * platform's, with neither); removes the platform's old minute schedule of screening_price; schedules the sweep; and
+ * works screening_price as many at once as it has threads, screening_price_waiting one fewer (the waiting tier never
+ * holds every thread: Q7) and the sweep one at a time (screeningWorkOptions). When a pricing job ends with its run
+ * priced, its thread is free, so it wakes the pricing queues' workers to fetch at once (wakePricing). Stopping, it waits
+ * for the runs in hand, then ends the threads.
  */
 export async function startWorker(options: WorkerOptions): Promise<RunningWorker> {
   const { boss, logger } = options;
@@ -240,19 +243,31 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
   const { screening } = options;
   if (screening !== undefined) {
     for (const type of SCREENING_JOB_TYPES) {
-      await boss.updateQueue(type, { heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS });
+      await boss.updateQueue(type, { heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS, notify: SCREENING_QUEUE_OPTIONS.notify });
     }
     await boss.unschedule(SCREENING_PRICE_JOB);
     await boss.schedule(SCREENING_SWEEP_JOB, SCREENING_SCHEDULES[SCREENING_SWEEP_JOB], {}, { tz: 'UTC', singletonKey: SCREENING_SWEEP_JOB });
-    const screeningWork = {
-      [SCREENING_PRICE_JOB]: { batchSize: 1, localConcurrency: screening.concurrency },
-      [SCREENING_PRICE_WAITING_JOB]: { batchSize: 1, localConcurrency: screeningWaitingConcurrency(screening.concurrency) },
-      [SCREENING_SWEEP_JOB]: { batchSize: 1 },
-    } as const;
+    // A pricing job that ends with its run priced frees its thread: every pricing worker fetches now rather than at its
+    // next poll, so a worker whose run took less than the poll does not sleep out the rest of it while a job waits (a
+    // NOTIFY wakes workers on a send, not on a thread freed). A busy worker so woken fetches as soon as its own run
+    // ends. A failed attempt wakes nothing, so threads that cannot price (a pool past its restarts) fail queued jobs one
+    // poll at a time, never in a burst. The pool still decides which run a free thread takes: the normal tier first,
+    // the waiting tier only while another thread stays idle.
+    const wakePricing = () => {
+      for (const worker of boss.getWipData()) {
+        if ((SCREENING_PRICING_JOB_TYPES as readonly string[]).includes(worker.name)) {
+          boss.notifyWorker(worker.id);
+        }
+      }
+    };
     for (const type of SCREENING_JOB_TYPES) {
-      await boss.work(type, screeningWork[type], async (jobs) => {
+      const pricing = SCREENING_PRICING_JOB_TYPES.includes(type);
+      await boss.work(type, screeningWorkOptions(type, screening.concurrency), async (jobs) => {
         for (const job of jobs) {
           await attempt(type, job, logger, () => runScreeningJob(type, job, screening.handlers, logger));
+          if (pricing) {
+            wakePricing();
+          }
         }
       });
     }

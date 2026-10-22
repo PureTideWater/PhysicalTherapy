@@ -21,6 +21,10 @@ import { SCREENING_PRICE_JOB, SCREENING_PRICE_PAYLOAD, SCREENING_PRICE_WAITING_J
  *   sends each due run's job again with its singleton key, priority and heartbeat (the exclusive policy refuses a
  *   duplicate), and logs the queue's gauge (`screening queue`).
  *
+ * A free thread takes the next job at once: a send wakes the consumer's idle workers through LISTEN/NOTIFY
+ * (SCREENING_BOSS_OPTIONS), and a run's end wakes the pricing queues' workers (worker.ts), so neither waits out
+ * pg-boss's poll, which stays as the fallback (SCREENING_POLL_SECONDS).
+ *
  * Payloads are opaque IDs or nothing: never the link's token, an address, a practice's name or a row.
  */
 export const SCREENING_SWEEP_JOB = 'screening_sweep';
@@ -86,3 +90,41 @@ export interface ScreeningJobs {
 export function screeningWaitingConcurrency(concurrency: number): number {
   return Math.max(1, concurrency - 1);
 }
+
+/**
+ * The pg-boss instance of a worker that works the screening jobs (main.ts): it LISTENs on one connection of its own on
+ * the queue login, so a send to a screening queue (each notifies: SCREENING_QUEUE_OPTIONS) wakes the queue's idle workers
+ * the moment it commits. Without it a job sent while every worker slept between polls waited out up to pg-boss's 2-s
+ * poll with threads free: on CI's S5 at 7abb99c, two of three practice uploads queued as the first was emailed started
+ * after that email (the capacity report's "slots not used"). Should the listener drop, pg-boss polls alone until it
+ * is back, then has every worker fetch once.
+ */
+export const SCREENING_BOSS_OPTIONS = { useListenNotify: true } as const;
+
+/**
+ * How often an idle screening worker fetches when nothing has woken it, in seconds: pg-boss's own 2-s poll, kept while
+ * LISTEN/NOTIFY is up (pg-boss would relax it to 30 s), so a job no NOTIFY announces, such as a retry coming due after
+ * its backoff, still starts within it, and a worker never waits longer after a run than it did before.
+ */
+export const SCREENING_POLL_SECONDS = 2;
+
+/** How the consumer works each screening queue: one job per fetch, pg-boss's poll kept under NOTIFY, as many at once as each tier may hold. */
+export function screeningWorkOptions(type: ScreeningJobType, concurrency: number): {
+  readonly batchSize: 1;
+  readonly pollingIntervalSeconds: number;
+  readonly notifyPollingIntervalSeconds: number;
+  readonly localConcurrency?: number;
+} {
+  const poll = { batchSize: 1, pollingIntervalSeconds: SCREENING_POLL_SECONDS, notifyPollingIntervalSeconds: SCREENING_POLL_SECONDS } as const;
+  switch (type) {
+    case SCREENING_PRICE_JOB:
+      return { ...poll, localConcurrency: concurrency };
+    case SCREENING_PRICE_WAITING_JOB:
+      return { ...poll, localConcurrency: screeningWaitingConcurrency(concurrency) };
+    case SCREENING_SWEEP_JOB:
+      return poll;
+  }
+}
+
+/** The queues whose jobs hold a pricing thread: when one ends, its thread is free for the next (worker.ts wakes their workers). */
+export const SCREENING_PRICING_JOB_TYPES: readonly ScreeningJobType[] = [SCREENING_PRICE_JOB, SCREENING_PRICE_WAITING_JOB];

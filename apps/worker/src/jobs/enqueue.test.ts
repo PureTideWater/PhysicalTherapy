@@ -48,8 +48,8 @@ describe('enqueueScreeningRun', () => {
     expect(sent).toHaveLength(2);
   });
 
-  it('puts the same heartbeat on the screening queues, beside the shared settings', () => {
+  it('puts the same heartbeat on the screening queues, beside the shared settings, and has each send to them notify the consumer', () => {
     expect(SCREENING_JOB_HEARTBEAT_SECONDS).toBe(60);
-    expect(SCREENING_QUEUE_OPTIONS).toEqual({ ...QUEUE_OPTIONS, heartbeatSeconds: 60 });
+    expect(SCREENING_QUEUE_OPTIONS).toEqual({ ...QUEUE_OPTIONS, heartbeatSeconds: 60, notify: true });
   });
 });

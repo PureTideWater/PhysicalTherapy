@@ -52,6 +52,16 @@ function fakeBoss() {
       calls.push(`send:${name}:${options.singletonKey}`);
       return Promise.resolve(`sent-${name}`);
     }),
+    // pg-boss's workers, as work() spawns them: one per unit of local concurrency (1 when none is given).
+    getWipData: vi.fn((): { id: string; name: string }[] =>
+      [...handlers.keys()].flatMap((name) => {
+        const options = boss.work.mock.calls.find(([called]) => called === name)?.[1] as { localConcurrency?: number } | undefined;
+        return Array.from({ length: options?.localConcurrency ?? 1 }, (_, index) => ({ id: `${name}-${String(index)}`, name }));
+      }),
+    ),
+    notifyWorker: vi.fn((id: string) => {
+      calls.push(`notifyWorker:${id}`);
+    }),
   };
   return { boss, handlers, calls, client: boss as unknown as QueueClient };
 }
@@ -492,13 +502,16 @@ describe('startWorker', () => {
       'work:screening_sweep',
     ]);
     for (const type of SCREENING_JOB_TYPES) {
-      expect(boss.updateQueue).toHaveBeenCalledWith(type, { heartbeatSeconds: 60 });
+      // The heartbeat, and a NOTIFY with each send, on queues created before either.
+      expect(boss.updateQueue).toHaveBeenCalledWith(type, { heartbeatSeconds: 60, notify: true });
     }
     expect(boss.schedule).toHaveBeenCalledWith('screening_sweep', '* * * * *', {}, { tz: 'UTC', singletonKey: 'screening_sweep' });
-    expect(boss.work).toHaveBeenCalledWith('screening_price', { batchSize: 1, localConcurrency: 3 }, expect.any(Function));
+    // pg-boss's 2-s poll kept beside the NOTIFY, never relaxed to its 30 s.
+    const poll = { batchSize: 1, pollingIntervalSeconds: 2, notifyPollingIntervalSeconds: 2 };
+    expect(boss.work).toHaveBeenCalledWith('screening_price', { ...poll, localConcurrency: 3 }, expect.any(Function));
     // The waiting tier one thread fewer: never every thread (Q7).
-    expect(boss.work).toHaveBeenCalledWith('screening_price_waiting', { batchSize: 1, localConcurrency: 2 }, expect.any(Function));
-    expect(boss.work).toHaveBeenCalledWith('screening_sweep', { batchSize: 1 }, expect.any(Function));
+    expect(boss.work).toHaveBeenCalledWith('screening_price_waiting', { ...poll, localConcurrency: 2 }, expect.any(Function));
+    expect(boss.work).toHaveBeenCalledWith('screening_sweep', poll, expect.any(Function));
     await handlers.get('screening_price')?.([{ id: 'job-run', data: { screening_run_id: DOCUMENT } }]);
     // The platform's schedule fired before the consumer removed it: an empty screening_price is the sweep.
     await handlers.get('screening_price')?.([{ id: 'job-old-schedule', data: null }]);
@@ -536,6 +549,44 @@ describe('startWorker', () => {
     expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([]);
     await expect(handlers.get('screening_price')?.([{ id: 'job-2', retryCount: QUEUE_OPTIONS.retryLimit, data: { screening_run_id: DOCUMENT } }])).rejects.toThrow();
     expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([expect.objectContaining({ job_id: 'job-2', job_type: 'screening_price', error_code: 'JOB_FAILED' })]);
+    await worker.stop();
+  });
+
+  it('wakes every pricing worker once a pricing job ends with its run priced, its thread free, and not after a failure or a sweep', async () => {
+    const { boss, handlers, client } = fakeBoss();
+    const wokenWhilePricing: number[] = [];
+    let failing = false;
+    const screening: ScreeningJobs = {
+      concurrency: 3,
+      handlers: {
+        screening_price: () => {
+          wokenWhilePricing.push(boss.notifyWorker.mock.calls.length);
+          return failing ? Promise.reject(new Error('the screening threads could not be replaced')) : Promise.resolve();
+        },
+        screening_price_waiting: () => Promise.resolve(),
+        screening_sweep: () => Promise.resolve(),
+      },
+      close: () => Promise.resolve(),
+    };
+    const worker = await startWorker({ boss: client, logger: capture().logger, screening, heartbeatMs: 60_000 });
+    const woken = () => boss.notifyWorker.mock.calls.map(([id]) => id);
+    // The three normal workers and the waiting tier's two; the sweep's worker is never woken by a run's end.
+    const pricing = ['screening_price-0', 'screening_price-1', 'screening_price-2', 'screening_price_waiting-0', 'screening_price_waiting-1'];
+    await handlers.get('screening_sweep')?.([{ id: 'job-sweep', data: {} }]);
+    expect(woken()).toEqual([]);
+    await handlers.get('screening_price')?.([{ id: 'job-run', data: { screening_run_id: DOCUMENT } }]);
+    // After the run, not while it held its thread.
+    expect(wokenWhilePricing).toEqual([0]);
+    expect(woken()).toEqual(pricing);
+    boss.notifyWorker.mockClear();
+    await handlers.get('screening_price_waiting')?.([{ id: 'job-waiting', data: { screening_run_id: DOCUMENT } }]);
+    expect(woken()).toEqual(pricing);
+    boss.notifyWorker.mockClear();
+    // A failed attempt wakes nothing: threads that cannot price fail queued jobs one poll at a time, never in a burst.
+    failing = true;
+    await expect(handlers.get('screening_price')?.([{ id: 'job-failed', data: { screening_run_id: DOCUMENT } }])).rejects.toThrow();
+    await expect(handlers.get('screening_price_waiting')?.([{ id: 'job-bad', data: {} }])).rejects.toThrow(JobPayloadError);
+    expect(woken()).toEqual([]);
     await worker.stop();
   });
 });

@@ -25,7 +25,7 @@ import {
 import { digestHandler } from './digest/job';
 import { type JobHandlers, placeholderHandlers } from './jobs/handlers';
 import { databaseJobRuns } from './jobs/runs';
-import type { ScreeningJobs } from './jobs/screening';
+import { SCREENING_BOSS_OPTIONS, type ScreeningJobs } from './jobs/screening';
 import { intakeHandler } from './intake/intake';
 import { intakeServices } from './intake/wiring';
 import { monitorHandler } from './monitor/job';
@@ -106,7 +106,8 @@ if (platformWorker !== undefined && platform !== null) {
 if (screeningWorker !== undefined) {
   let consumer: ScreeningJobs | undefined;
   try {
-    const boss = new PgBoss({ connectionString: screeningWorker.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
+    // LISTEN/NOTIFY: a send to a screening queue wakes a free thread's worker at once, not at its next poll.
+    const boss = new PgBoss({ connectionString: screeningWorker.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...SCREENING_BOSS_OPTIONS });
     boss.on('error', () => {
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });
     });
@@ -124,7 +125,8 @@ if (screeningWorker !== undefined) {
 if (config !== undefined && intake !== undefined && notifications !== undefined) {
   let consumer: ScreeningJobs | undefined;
   try {
-    const boss = new PgBoss({ connectionString: config.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
+    // Where this worker prices screenings too (development, the tests), it listens as the consumer does.
+    const boss = new PgBoss({ connectionString: config.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...(screening === null ? {} : SCREENING_BOSS_OPTIONS) });
     boss.on('error', () => {
       // pg-boss errors are logged by code only; their text can carry SQL and connection details.
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });

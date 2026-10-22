@@ -4,7 +4,18 @@ import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
 import { PLATFORM_JOB_TYPES } from './platform';
-import { SCREENING_JOB_TYPES, SCREENING_SCHEDULES, SCREENING_SWEEP_JOB, createScreeningHandlers, parseScreeningPayload, screeningWaitingConcurrency } from './screening';
+import {
+  SCREENING_BOSS_OPTIONS,
+  SCREENING_JOB_TYPES,
+  SCREENING_POLL_SECONDS,
+  SCREENING_PRICING_JOB_TYPES,
+  SCREENING_SCHEDULES,
+  SCREENING_SWEEP_JOB,
+  createScreeningHandlers,
+  parseScreeningPayload,
+  screeningWaitingConcurrency,
+  screeningWorkOptions,
+} from './screening';
 
 const RUN = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
 
@@ -40,6 +51,19 @@ describe('the screening jobs', () => {
 
   it('work the waiting tier one thread fewer than the consumer has, so it never holds every thread', () => {
     expect([1, 2, 3, 8].map(screeningWaitingConcurrency)).toEqual([1, 1, 2, 7]);
+  });
+
+  it('are fetched at once on a send (LISTEN/NOTIFY), with pg-boss’s 2-s poll kept as the fallback, never relaxed to its 30 s', () => {
+    expect(SCREENING_BOSS_OPTIONS).toEqual({ useListenNotify: true });
+    expect(SCREENING_POLL_SECONDS).toBe(2);
+    const poll = { batchSize: 1, pollingIntervalSeconds: 2, notifyPollingIntervalSeconds: 2 };
+    expect(screeningWorkOptions('screening_price', 3)).toEqual({ ...poll, localConcurrency: 3 });
+    expect(screeningWorkOptions('screening_price_waiting', 3)).toEqual({ ...poll, localConcurrency: 2 });
+    expect(screeningWorkOptions('screening_sweep', 3)).toEqual(poll);
+    // The jobs that hold a thread, whose end wakes the workers that fetch them (worker.ts).
+    expect(SCREENING_PRICING_JOB_TYPES).toEqual(['screening_price', 'screening_price_waiting']);
+    // pg-boss takes the instance's options as they are.
+    expect(() => new PgBoss({ connectionString: 'postgres://nobody@localhost:1/none', ...SCREENING_BOSS_OPTIONS })).not.toThrow();
   });
 
   it('sweep every minute, in UTC', () => {
