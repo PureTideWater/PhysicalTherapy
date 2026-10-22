@@ -94,6 +94,11 @@ vitest runner reports most of these mutants as survived without running a test (
 fails the packets suite), so the verifier's configuration uses Stryker's command runner over the packets unit suite.
 Run on 2026-10-16, it scored 86.17%: 1,377 of 1,598 mutants killed or timed out, against the 85% PRD 18 asks before
 Monitoring v1 (the first measurement, before `facts.test.ts` and the scanner's table tests, was 70.34%).
+*Amended 2026-10-22 (PR 6b-1; ADR 0064):* the cause was the vitest runner's test names, joined by spaces where Vitest 5
+filters by `fullTestName` (joined by " > "), so a mutant run selected no test. `patches/@stryker-mutator__vitest-runner@10.0.0.patch`
+fixes it, a canary in `.github/workflows/mutation.yml` checks it on every run, and `stryker.config.mjs`'s vitest runner
+now scores the pricing engine, the ledger and the verifier; the verifier's own configuration keeps the command runner
+its score above was measured with.
 
 ## Alternatives considered
 

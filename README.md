@@ -672,7 +672,7 @@ included line carries the visit whatever its outcome) changes what golden line G
 may do; `packages/pricing/src/properties.test.ts` compares every other claim and states the exception as an example.
 
 **Milestone 5 is not complete.** Its done check rests on "the specialist's 100 golden lines", and PRD 20 says milestone 5
-cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (326 lines in 150 claims, 207 of
+cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (330 lines in 154 claims, 207 of
 them milestone 7's across five fixture payers, whose done check needs the specialist too) was
 computed by the independent worksheet, not by the specialist, and says `"specialist_verified": false`: the engine
 matching them to the cent shows that two readings of the plan agree, not that either is right. A specialist finishes it
