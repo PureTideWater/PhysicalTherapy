@@ -1,7 +1,7 @@
 import type { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 
-import { type JobPayload, type JobType, parsePayload, singletonKey } from './registry';
+import { type JobPayload, type JobType, SCREENING_JOB_HEARTBEAT_SECONDS, parsePayload, singletonKey } from './registry';
 
 export type JobSender = Pick<PgBoss, 'send'>;
 
@@ -20,8 +20,9 @@ export async function enqueue<T extends JobType>(boss: JobSender, type: T, paylo
 }
 
 /**
- * The free screening's pricing job (a platform job: docs/adr/0062): the run to price, by its opaque ID, or nothing
- * for the minute's sweep. It never carries the result link's token or anything a prospect typed.
+ * The free screening's pricing job (the screening consumer's, WORKER_JOBS=screening: docs/adr/0062): the run to price,
+ * by its opaque ID, or nothing (a minute's schedule of the platform's before PR 6b-3, which the consumer runs as its
+ * sweep). It never carries the result link's token or anything a prospect typed.
  */
 export const SCREENING_PRICE_JOB = 'screening_price';
 export const SCREENING_PRICE_PAYLOAD = z.strictObject({ screening_run_id: z.uuid().optional() });
@@ -33,11 +34,25 @@ export function screeningPriceKey(runId: string): string {
 }
 
 /**
- * Queues a run's pricing now (the web app, once the upload is stored). Returns the job ID, or null when that run's
- * job is already queued or active. A send that fails is not fatal to the caller: the run stays queued and the
- * minute's sweep prices it.
+ * A run's place in pg-boss's queue: its queue_priority as submit_screening() set it (0, the normal tier; -k for an
+ * account's k-th upload past its share today, -1 past the day's cap; the founder's Q7), which screening_wait() returns.
  */
-export async function enqueueScreeningRun(boss: JobSender, runId: string): Promise<string | null> {
+export interface ScreeningRunJobOptions {
+  readonly priority?: number;
+}
+
+/** The priorities a run can carry (screening_run_priority: -20 to 0). */
+export const SCREENING_PRIORITY = z.number().int().min(-20).max(0);
+
+/**
+ * Queues a run's pricing (the web app once the upload is stored, and the consumer's sweep for a run whose job is gone):
+ * its singleton key, its priority (pg-boss takes higher first, then older), and the screening heartbeat, so a dead
+ * consumer's job is failed and the run claimed again within minutes whatever the queue held when it was sent. Returns
+ * the job ID, or null when that run's job is already queued or active. A send that fails is not fatal to the web: the
+ * run stays queued and the minute's sweep sends it.
+ */
+export async function enqueueScreeningRun(boss: JobSender, runId: string, options: ScreeningRunJobOptions = {}): Promise<string | null> {
   const payload = SCREENING_PRICE_PAYLOAD.parse({ screening_run_id: runId });
-  return boss.send(SCREENING_PRICE_JOB, payload, { singletonKey: screeningPriceKey(runId) });
+  const priority = SCREENING_PRIORITY.parse(options.priority ?? 0);
+  return boss.send(SCREENING_PRICE_JOB, payload, { singletonKey: screeningPriceKey(runId), priority, heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS });
 }

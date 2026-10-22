@@ -17,6 +17,8 @@ import {
   OWNER_ROLE,
   type RoleAttributes,
   RoleBootstrapError,
+  SCREENING_DEV_LOGIN,
+  SCREENING_ROLE,
   WANTED_ROLES,
   WORKER_DEV_LOGIN,
   appDevLoginUrl,
@@ -91,9 +93,23 @@ describe('roles', () => {
   const owner = WANTED_ROLES[OWNER_ROLE] as RoleAttributes;
 
   it('creates the dev logins only when asked', () => {
-    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE]);
-    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]);
-    for (const login of [APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]) {
+    // The screening consumer's role and its dev login too (migration 20261106090000; roles.test.ts).
+    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, SCREENING_ROLE]);
+    expect(managedRoles({ devLogin: true })).toEqual([
+      OWNER_ROLE,
+      APP_ROLE,
+      OPERATOR_ROLE,
+      BILLING_ROLE,
+      ESIGN_ROLE,
+      JOB_ROLE,
+      SCREENING_ROLE,
+      APP_DEV_LOGIN,
+      WORKER_DEV_LOGIN,
+      BILLING_DEV_LOGIN,
+      ESIGN_DEV_LOGIN,
+      SCREENING_DEV_LOGIN,
+    ]);
+    for (const login of [APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN, SCREENING_DEV_LOGIN]) {
       expect(grantStatements({ devLogin: false }).join('\n')).not.toContain(login);
     }
     expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN};`);

@@ -1,4 +1,4 @@
-import { APP_ROLE, BILLING_ROLE, JOB_ROLE, OPERATOR_ROLE } from '@tp/db';
+import { APP_ROLE, BILLING_ROLE, JOB_ROLE, OPERATOR_ROLE, SCREENING_ROLE } from '@tp/db';
 
 /**
  * The deploy job's logins (docs/adr/0019: "the deploy job creates tp_operator_login from its secret as
@@ -20,6 +20,10 @@ import { APP_ROLE, BILLING_ROLE, JOB_ROLE, OPERATOR_ROLE } from '@tp/db';
  * - Billing's login (the webhook route and the organization's billing screens; docs/adr/0055), which may
  *   SET ROLE tp_billing without inheriting it and holds nothing else: the application's login may not
  *   switch to billing, so no other route can write an invoice.
+ * - The screening consumer's login (WORKER_JOBS=screening; docs/adr/0062), which may SET ROLE tp_screening
+ *   without inheriting it and holds nothing of its own until it switches, as billing's does: every one of its
+ *   transactions switches (apps/worker/src/screening/operator.ts), and tp_screening holds EXECUTE on the
+ *   screening's pricing functions alone. Its rotation's `_clone` is granted the original, so it is the same.
  *
  * Every statement can run again safely; nothing here reads a table.
  */
@@ -38,6 +42,8 @@ export interface DeployLogins {
   readonly operator: Login;
   readonly queue: Login;
   readonly billing: Login;
+  /** The screening consumer's login: it may SET ROLE tp_screening and holds nothing else. */
+  readonly screening: Login;
 }
 
 /** The SQL surface the step needs: pg's Client. */
@@ -76,9 +82,9 @@ const GRANT_OPTIONS: Readonly<Record<Membership, string>> = {
   mark: ' WITH INHERIT FALSE, SET FALSE',
 };
 
-/** Creates the queue role and schema and the five logins; returns the logins it created. */
+/** Creates the queue role and schema and the six logins; returns the logins it created. */
 export async function provisionLogins(client: LoginClient, logins: DeployLogins): Promise<{ readonly created: string[] }> {
-  const all = [logins.app, logins.worker, logins.operator, logins.queue, logins.billing];
+  const all = [logins.app, logins.worker, logins.operator, logins.queue, logins.billing, logins.screening];
   const members: [Login, string, Membership][] = [
     [logins.app, APP_ROLE, 'inherit'],
     [logins.worker, APP_ROLE, 'inherit'],
@@ -86,6 +92,7 @@ export async function provisionLogins(client: LoginClient, logins: DeployLogins)
     [logins.operator, OPERATOR_ROLE, 'inherit'],
     [logins.queue, QUEUE_ROLE, 'inherit'],
     [logins.billing, BILLING_ROLE, 'switch'],
+    [logins.screening, SCREENING_ROLE, 'switch'],
   ];
   for (const login of all) {
     if (!LOGIN_NAME.test(login.username)) {
@@ -96,9 +103,9 @@ export async function provisionLogins(client: LoginClient, logins: DeployLogins)
     }
   }
   if (new Set(all.map((login) => login.username)).size !== all.length) {
-    throw new LoginProvisionError('the five logins have five different names');
+    throw new LoginProvisionError('the six logins have six different names');
   }
-  for (const role of [APP_ROLE, JOB_ROLE, OPERATOR_ROLE, BILLING_ROLE]) {
+  for (const role of [APP_ROLE, JOB_ROLE, OPERATOR_ROLE, BILLING_ROLE, SCREENING_ROLE]) {
     if (!(await roleExists(client, role))) {
       throw new LoginProvisionError(`role ${role} does not exist; the migrations run first`);
     }
@@ -131,16 +138,17 @@ END $$`);
   return { created };
 }
 
-/** The ten secret fields the migration task is given (infra/lib/constructs/compute.ts). */
+/** The twelve secret fields the migration task is given (infra/lib/constructs/compute.ts). */
 export const LOGIN_VARIABLES = {
   app: { username: 'TP_APP_LOGIN_USERNAME', password: 'TP_APP_LOGIN_PASSWORD' },
   worker: { username: 'TP_WORKER_LOGIN_USERNAME', password: 'TP_WORKER_LOGIN_PASSWORD' },
   operator: { username: 'TP_OPERATOR_LOGIN_USERNAME', password: 'TP_OPERATOR_LOGIN_PASSWORD' },
   queue: { username: 'TP_QUEUE_LOGIN_USERNAME', password: 'TP_QUEUE_LOGIN_PASSWORD' },
   billing: { username: 'TP_BILLING_LOGIN_USERNAME', password: 'TP_BILLING_LOGIN_PASSWORD' },
+  screening: { username: 'TP_SCREENING_LOGIN_USERNAME', password: 'TP_SCREENING_LOGIN_PASSWORD' },
 } as const;
 
-/** Reads the five logins from the environment; a missing field is named, never a value. */
+/** Reads the six logins from the environment; a missing field is named, never a value. */
 export function readDeployLogins(env: Readonly<Record<string, string | undefined>> = process.env): DeployLogins {
   const read = (name: string): string => {
     const value = env[name];
@@ -156,5 +164,6 @@ export function readDeployLogins(env: Readonly<Record<string, string | undefined
     operator: login(LOGIN_VARIABLES.operator),
     queue: login(LOGIN_VARIABLES.queue),
     billing: login(LOGIN_VARIABLES.billing),
+    screening: login(LOGIN_VARIABLES.screening),
   };
 }

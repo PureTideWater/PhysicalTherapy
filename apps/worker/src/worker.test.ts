@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
-import { JOB_TYPES, PARSE_CONCURRENCY, QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
+import { JOB_TYPES, PARSE_CONCURRENCY, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
+import { SCREENING_JOB_TYPES, type ScreeningHandlers, type ScreeningJobs } from './jobs/screening';
 import type { JobRunRecorder } from './jobs/runs';
 import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
 
@@ -28,6 +29,14 @@ function fakeBoss() {
     }),
     createQueue: vi.fn((name: string) => {
       calls.push(`createQueue:${name}`);
+      return Promise.resolve();
+    }),
+    updateQueue: vi.fn((name: string) => {
+      calls.push(`updateQueue:${name}`);
+      return Promise.resolve();
+    }),
+    unschedule: vi.fn((name: string) => {
+      calls.push(`unschedule:${name}`);
       return Promise.resolve();
     }),
     work: vi.fn((name: string, _options: unknown, handler: Handler) => {
@@ -83,10 +92,14 @@ describe('startWorker', () => {
     expect(calls).toEqual([
       'start',
       ...JOB_TYPES.map((type) => `createQueue:${type}`),
-      // Every worker creates the platform queues, so a producer's send never meets a missing queue (docs/adr/0062).
+      // Every worker creates the platform and screening queues, so a producer's send never meets a missing queue (docs/adr/0062).
       ...PLATFORM_JOB_TYPES.map((type) => `createQueue:${type}`),
+      ...SCREENING_JOB_TYPES.map((type) => `createQueue:${type}`),
       ...JOB_TYPES.map((type) => `work:${type}`),
     ]);
+    for (const type of SCREENING_JOB_TYPES) {
+      expect(boss.createQueue).toHaveBeenCalledWith(type, SCREENING_QUEUE_OPTIONS);
+    }
     for (const type of JOB_TYPES) {
       expect(boss.createQueue).toHaveBeenCalledWith(type, queueOptions(type));
       expect(boss.work).toHaveBeenCalledWith(type, workOptions(type), expect.any(Function));
@@ -194,7 +207,6 @@ describe('startWorker', () => {
         billing_dunning: failing,
         usage_snapshot: failing,
         support_mail: failing,
-        screening_price: failing,
         screening_expiry: failing,
       },
       heartbeatMs: 60_000,
@@ -379,7 +391,6 @@ describe('startWorker', () => {
       billing_dunning: () => Promise.resolve(),
       usage_snapshot: () => Promise.resolve(),
       support_mail: () => Promise.resolve(),
-      screening_price: () => Promise.resolve(),
       screening_expiry: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
@@ -407,7 +418,6 @@ describe('startWorker', () => {
       billing_dunning: () => Promise.resolve(),
       usage_snapshot: () => Promise.resolve(),
       support_mail: () => Promise.resolve(),
-      screening_price: () => Promise.resolve(),
       screening_expiry: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, logger: capture().logger, platform, heartbeatMs: 60_000 });
@@ -423,11 +433,92 @@ describe('startWorker', () => {
 
   it('refuses to start with neither kind of job, or with practice handlers but no pool', async () => {
     const { boss, client } = fakeBoss();
-    await expect(startWorker({ boss: client, logger: capture().logger, heartbeatMs: 60_000 })).rejects.toThrow(/practice jobs, the platform jobs or both/);
+    await expect(startWorker({ boss: client, logger: capture().logger, heartbeatMs: 60_000 })).rejects.toThrow(/practice jobs, the platform jobs, the screening jobs or more than one/);
     await expect(startWorker({ boss: client, logger: capture().logger, handlers: placeholderHandlers, heartbeatMs: 60_000 })).rejects.toThrow(
       /both their handlers and the application login pool/,
     );
     await expect(startWorker({ boss: client, logger: capture().logger, pool, heartbeatMs: 60_000 })).rejects.toThrow(/both their handlers and the application login pool/);
     expect(boss.start).not.toHaveBeenCalled();
+  });
+
+  it('works the screening queues alone (WORKER_JOBS=screening): the heartbeat set on queues that exist, the platform’s old schedule gone, the sweep each minute, three runs at once', async () => {
+    const { boss, calls, handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const priced: string[] = [];
+    const swept: string[] = [];
+    const closed: string[] = [];
+    const screening: ScreeningJobs = {
+      concurrency: 3,
+      handlers: {
+        screening_price: (payload, context) => {
+          if (payload.screening_run_id === undefined) {
+            swept.push(context.jobId);
+          } else {
+            priced.push(payload.screening_run_id);
+          }
+          return Promise.resolve();
+        },
+        screening_sweep: (_payload, context) => {
+          swept.push(context.jobId);
+          return Promise.resolve();
+        },
+      } satisfies ScreeningHandlers,
+      close: () => {
+        closed.push('closed');
+        return Promise.resolve();
+      },
+    };
+    const worker = await startWorker({ boss: client, logger, screening, heartbeatMs: 60_000, shutdownTimeoutMs: 110_000 });
+    // The practice and platform queues exist for their producers, and none of them is worked here.
+    for (const type of [...JOB_TYPES, ...PLATFORM_JOB_TYPES]) {
+      expect(calls).toContain(`createQueue:${type}`);
+      expect(calls).not.toContain(`work:${type}`);
+    }
+    expect(boss.schedule).toHaveBeenCalledTimes(1);
+    expect(calls.filter((call) => !call.startsWith('createQueue:'))).toEqual([
+      'start',
+      'updateQueue:screening_price',
+      'updateQueue:screening_sweep',
+      'unschedule:screening_price',
+      'schedule:screening_sweep',
+      'work:screening_price',
+      'work:screening_sweep',
+    ]);
+    for (const type of SCREENING_JOB_TYPES) {
+      expect(boss.updateQueue).toHaveBeenCalledWith(type, { heartbeatSeconds: 60 });
+    }
+    expect(boss.schedule).toHaveBeenCalledWith('screening_sweep', '* * * * *', {}, { tz: 'UTC', singletonKey: 'screening_sweep' });
+    expect(boss.work).toHaveBeenCalledWith('screening_price', { batchSize: 1, localConcurrency: 3 }, expect.any(Function));
+    expect(boss.work).toHaveBeenCalledWith('screening_sweep', { batchSize: 1 }, expect.any(Function));
+    await handlers.get('screening_price')?.([{ id: 'job-run', data: { screening_run_id: DOCUMENT } }]);
+    // The platform's schedule fired before the consumer removed it: an empty screening_price is the sweep.
+    await handlers.get('screening_price')?.([{ id: 'job-old-schedule', data: null }]);
+    await handlers.get('screening_sweep')?.([{ id: 'job-sweep', data: {} }]);
+    expect(priced).toEqual([DOCUMENT]);
+    expect(swept).toEqual(['job-old-schedule', 'job-sweep']);
+    // A payload with anything but the run's ID is refused, by code, and never echoed.
+    await expect(handlers.get('screening_price')?.([{ id: 'job-bad', data: { screening_run_id: DOCUMENT, contact_email: 'someone@synthetic.test' } }])).rejects.toThrow(JobPayloadError);
+    expect(lines.find((line) => line.job_id === 'job-bad')).toMatchObject({ error_code: 'JOB_PAYLOAD_INVALID', job_type: 'screening_price' });
+    expect(JSON.stringify(lines)).not.toContain('someone@synthetic.test');
+    // Stopping waits for pg-boss's runs in hand, up to 110 seconds, then ends the threads.
+    await worker.stop();
+    expect(boss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 110_000 });
+    expect(closed).toEqual(['closed']);
+  });
+
+  it('logs a screening job’s failure on its last attempt for the operator alarm, as every job’s', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const screening: ScreeningJobs = {
+      concurrency: 1,
+      handlers: { screening_price: () => Promise.reject(new Error('the screening run failed in its thread')), screening_sweep: () => Promise.resolve() },
+      close: () => Promise.resolve(),
+    };
+    const worker = await startWorker({ boss: client, logger, screening, heartbeatMs: 60_000 });
+    await expect(handlers.get('screening_price')?.([{ id: 'job-0', retryCount: 0, data: { screening_run_id: DOCUMENT } }])).rejects.toThrow();
+    expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([]);
+    await expect(handlers.get('screening_price')?.([{ id: 'job-2', retryCount: QUEUE_OPTIONS.retryLimit, data: { screening_run_id: DOCUMENT } }])).rejects.toThrow();
+    expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([expect.objectContaining({ job_id: 'job-2', job_type: 'screening_price', error_code: 'JOB_FAILED' })]);
+    await worker.stop();
   });
 });

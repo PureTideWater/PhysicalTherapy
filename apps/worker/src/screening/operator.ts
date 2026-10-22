@@ -1,4 +1,4 @@
-import { OPERATOR_ROLE } from '@tp/db';
+import { type OPERATOR_ROLE, SCREENING_ROLE, SCREENING_WAIT_REASONS, type ScreeningWaitReason } from '@tp/db';
 import { type Cents, cents } from '@tp/money';
 import type { PlaceOfServiceSetting } from '@tp/pricing';
 
@@ -7,11 +7,16 @@ import type { ScreeningPayerProduct } from './format';
 import type { StoredRecordRow } from '../price/release';
 
 /**
- * The screening jobs' database calls (docs/adr/0062): every one a SECURITY DEFINER function granted to tp_operator
- * alone (migration 20261104090000), each in a transaction as the operator role (which owns nothing, reads no table of
- * the screening's and cannot bypass row-level security) with no practice in scope. Nothing here reads a prospect's
- * name; the contact address comes back only from complete and fail, for the one email each sends.
+ * The screening jobs' database calls (docs/adr/0062): every one a SECURITY DEFINER function, each in a transaction as
+ * the role that may call it (which owns nothing, reads no table of the screening's and cannot bypass row-level
+ * security) with no practice in scope. Pricing runs as tp_screening, the consumer's role, which holds EXECUTE on the
+ * nine pricing functions and the queue's gauge alone (migration 20261106090000; tp_operator keeps the nine for one
+ * release, for the previous image); the expiry stays tp_operator's. Nothing here reads a prospect's name; the contact
+ * address comes back only from complete and fail, for the one email each sends.
  */
+
+/** The roles a screening transaction runs as: the consumer's for pricing, the operator's for the expiry. */
+export type ScreeningDatabaseRole = typeof SCREENING_ROLE | typeof OPERATOR_ROLE;
 
 export interface OperatorClient {
   query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
@@ -21,23 +26,28 @@ export interface OperatorConnection extends OperatorClient {
   release(destroy?: boolean): void;
 }
 
-/** Operator connections to the platform database (a login that can SET ROLE to tp_operator). */
+/** Connections to the platform database: a login that can SET ROLE to the transaction's role (tp_screening or tp_operator). */
 export interface OperatorPool {
   connect(): Promise<OperatorConnection>;
 }
 
 /**
- * One transaction as the operator role, committed when `run` returns and rolled back when it throws. With `snapshot`,
- * a read-only transaction at REPEATABLE READ: every statement in it reads one snapshot, so two reads that check the
- * same thing (the release's key set and its keyed records) cannot see a change made between them.
+ * One transaction as `role` (the consumer's tp_screening unless named), committed when `run` returns and rolled back
+ * when it throws. With `snapshot`, a read-only transaction at REPEATABLE READ: every statement in it reads one
+ * snapshot, so two reads that check the same thing (the release's key set and its keyed records) cannot see a change
+ * made between them.
  */
-export async function asOperator<T>(pool: OperatorPool, run: (client: OperatorClient) => Promise<T>, options: { readonly snapshot?: boolean } = {}): Promise<T> {
+export async function asOperator<T>(
+  pool: OperatorPool,
+  run: (client: OperatorClient) => Promise<T>,
+  options: { readonly snapshot?: boolean; readonly role?: ScreeningDatabaseRole } = {},
+): Promise<T> {
   const client = await pool.connect();
   let broken = false;
   try {
     await client.query(options.snapshot === true ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
     try {
-      await client.query(`SET LOCAL ROLE ${OPERATOR_ROLE}`);
+      await client.query(`SET LOCAL ROLE ${options.role ?? SCREENING_ROLE}`);
       await client.query("SELECT set_config('app.practice_ids', '{}', true)");
       const result = await run(client);
       await client.query('COMMIT');
@@ -58,11 +68,34 @@ export interface DueRun {
   readonly runId: string;
   readonly status: 'queued' | 'pricing';
   readonly attempts: number;
+  /** pg-boss's priority for its job: 0 normal, negative in the waiting tier (Q7). */
+  readonly queuePriority: number;
 }
 
+/** The runs due, in pg-boss's order: the higher priority first, then the older. */
 export async function dueRuns(client: OperatorClient, minQueuedAgeSeconds: number, atMost: number): Promise<DueRun[]> {
-  const { rows } = await client.query('SELECT run_id, status, attempts FROM operator_screening_due($1, $2)', [minQueuedAgeSeconds, atMost]);
-  return (rows as { run_id: string; status: 'queued' | 'pricing'; attempts: number }[]).map((row) => ({ runId: row.run_id, status: row.status, attempts: row.attempts }));
+  const { rows } = await client.query('SELECT run_id, status, attempts, queue_priority FROM operator_screening_due($1, $2)', [minQueuedAgeSeconds, atMost]);
+  return (rows as { run_id: string; status: 'queued' | 'pricing'; attempts: number; queue_priority: number }[]).map((row) => ({
+    runId: row.run_id,
+    status: row.status,
+    attempts: row.attempts,
+    queuePriority: row.queue_priority,
+  }));
+}
+
+/** The queue, counts only (operator_screening_queue()): the normal tier's queued runs and its oldest one's wait, the waiting tier's, and the runs being priced. */
+export interface QueueGauge {
+  readonly queued: number;
+  readonly queuedWaiting: number;
+  readonly pricing: number;
+  /** How long the oldest normal-tier queued run has waited since the web received it; 0 when none. */
+  readonly oldestQueuedMs: number;
+}
+
+export async function queueGauge(client: OperatorClient): Promise<QueueGauge> {
+  const { rows } = await client.query('SELECT queued, queued_waiting, pricing, oldest_queued_ms::text AS oldest_queued_ms FROM operator_screening_queue()');
+  const row = rows[0] as { queued: number; queued_waiting: number; pricing: number; oldest_queued_ms: string } | undefined;
+  return { queued: row?.queued ?? 0, queuedWaiting: row?.queued_waiting ?? 0, pricing: row?.pricing ?? 0, oldestQueuedMs: Number(row?.oldest_queued_ms ?? '0') };
 }
 
 export interface ClaimedRun {
@@ -231,16 +264,43 @@ export async function completeRun(
   requestId: string,
   attempt: number,
   withdrawalTokenSha256: string | null = null,
-): Promise<{ readonly contactEmail: string; readonly rowCount: number; readonly keptWith: CompletedKeptWith } | null> {
-  const { rows } = await client.query('SELECT contact_email, row_count, kept_with FROM operator_screening_complete($1, $2, $3, $4, $5, $6)', [runId, tokenSha256, withdrawalTokenSha256, engine, requestId, attempt]);
-  const row = rows[0] as { contact_email: string; row_count: number; kept_with: string } | undefined;
+): Promise<CompletedRun | null> {
+  const { rows } = await client.query('SELECT contact_email, row_count, kept_with, received_at, wait_reason FROM operator_screening_complete($1, $2, $3, $4, $5, $6)', [
+    runId,
+    tokenSha256,
+    withdrawalTokenSha256,
+    engine,
+    requestId,
+    attempt,
+  ]);
+  const row = rows[0] as { contact_email: string; row_count: number; kept_with: string; received_at: Date; wait_reason: string | null } | undefined;
   if (row === undefined) {
     return null;
   }
   if (!(COMPLETED_KEPT_WITH as readonly string[]).includes(row.kept_with)) {
     throw new Error('the database gave a kept summary basis the worker does not know');
   }
-  return { contactEmail: row.contact_email, rowCount: row.row_count, keptWith: row.kept_with as CompletedKeptWith };
+  if (row.wait_reason !== null && !(SCREENING_WAIT_REASONS as readonly string[]).includes(row.wait_reason)) {
+    throw new Error('the database gave a wait reason the worker does not know');
+  }
+  return {
+    contactEmail: row.contact_email,
+    rowCount: row.row_count,
+    keptWith: row.kept_with as CompletedKeptWith,
+    receivedAt: row.received_at,
+    waitReason: row.wait_reason as ScreeningWaitReason | null,
+  };
+}
+
+/** A completed run: where its email goes, its row count, what its summary is kept with, when the web received it and why it waited, if it did. */
+export interface CompletedRun {
+  readonly contactEmail: string;
+  readonly rowCount: number;
+  readonly keptWith: CompletedKeptWith;
+  /** When the web began receiving the upload: the time to email is measured from it. */
+  readonly receivedAt: Date;
+  /** Why the run waited behind the normal tier (Q7), or null: a waiting run is outside the 60-second promise. */
+  readonly waitReason: ScreeningWaitReason | null;
 }
 
 /** What a completed run's summary can be kept with (operator_screening_complete's kept_with). */

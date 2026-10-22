@@ -33,7 +33,10 @@ export { type TriageJobContext, type TriageOptions, type TriageOutcome, executeT
 export { triageHandler } from './triage/job';
 export { type QueueClient, type RunningWorker, startWorker } from './worker';
 export {
+  type ResendResult,
   SCREENING_BATCH,
+  SCREENING_STALE_SECONDS,
+  SCREENING_WAIT_CODES,
   type ScreeningJobDependencies,
   type ScreeningPriceOutcome,
   type SweepOptions,
@@ -41,7 +44,20 @@ export {
   failScreeningRun,
   forgetScreeningReleases,
   priceScreeningRun,
+  resendScreeningRuns,
   sweepScreeningRuns,
 } from './screening/job';
+export { type ScreeningConfig, readScreeningConfig } from './config';
+export { type ScreeningConsumerOptions, startScreeningConsumer } from './screening/consumer';
+export { type ScreeningJobs, createScreeningHandlers } from './jobs/screening';
+export {
+  SCREENING_MAIN_HEAP_FLAG,
+  SCREENING_MAIN_HEAP_MB,
+  SCREENING_THREAD_HEAP_MB,
+  SCREENING_THREADS,
+  ScreeningThreadError,
+  ScreeningThreadPool,
+  screeningHeapMib,
+} from './screening/threads';
 export { type ExpiryDependencies, type ExpiryResult, expireScreenings } from './screening/expiry';
 export type { OperatorPool as ScreeningOperatorPool } from './screening/operator';

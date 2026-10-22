@@ -1,0 +1,60 @@
+import { assertNoPhi, createLogger } from '@tp/observability';
+import { PgBoss } from 'pg-boss';
+import { describe, expect, it } from 'vitest';
+import { ZodError } from 'zod';
+
+import { PLATFORM_JOB_TYPES } from './platform';
+import { SCREENING_JOB_TYPES, SCREENING_SCHEDULES, SCREENING_SWEEP_JOB, createScreeningHandlers, parseScreeningPayload } from './screening';
+
+const RUN = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
+
+/**
+ * The screening consumer's two jobs (jobs/screening.ts; docs/adr/0062, PR 6b-3): screening_price under its old name, so
+ * jobs queued before a deploy move to the consumer, and the minute's sweep; payloads of opaque IDs or nothing.
+ */
+describe('the screening jobs', () => {
+  it('are the consumer’s two, neither of them the platform’s', () => {
+    expect(SCREENING_JOB_TYPES).toEqual(['screening_price', 'screening_sweep']);
+    expect(SCREENING_SWEEP_JOB).toBe('screening_sweep');
+    for (const type of SCREENING_JOB_TYPES) {
+      expect(PLATFORM_JOB_TYPES as readonly string[]).not.toContain(type);
+    }
+  });
+
+  it('carry a run by its opaque ID, or nothing, and refuse anything else', () => {
+    assertNoPhi('job_payload', parseScreeningPayload('screening_price', { screening_run_id: RUN }));
+    assertNoPhi('job_payload', parseScreeningPayload('screening_sweep', {}));
+    expect(parseScreeningPayload('screening_price', {})).toEqual({});
+    expect(parseScreeningPayload('screening_price', null)).toEqual({});
+    expect(parseScreeningPayload('screening_sweep', undefined)).toEqual({});
+    expect(() => parseScreeningPayload('screening_price', { screening_run_id: 'abcdefghijklmnopqrstuvwxyzabcdef' })).toThrow(ZodError);
+    expect(() => parseScreeningPayload('screening_price', { screening_run_id: RUN, token: 'abcdefghijklmnopqrstuvwxyzabcdef' })).toThrow(ZodError);
+    expect(() => parseScreeningPayload('screening_price', { screening_run_id: RUN, contact_email: 'someone@synthetic.test' })).toThrow(ZodError);
+    expect(() => parseScreeningPayload('screening_sweep', { screening_run_id: RUN })).toThrow(ZodError);
+  });
+
+  it('sweep every minute, in UTC', () => {
+    const boss = new PgBoss('postgres://nobody@localhost:1/none');
+    const from = new Date('2026-10-15T00:00:30Z');
+    expect(boss.previewSchedule(SCREENING_SCHEDULES.screening_sweep, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T00:01:00Z'), new Date('2026-10-15T00:02:00Z')]);
+  });
+
+  it('price a named run in a thread, and sweep on a sweep or an empty screening_price (the platform’s old schedule)', async () => {
+    const calls: string[] = [];
+    const handlers = createScreeningHandlers({
+      price: (runId, context) => {
+        calls.push(`price:${runId}:${context.jobId}`);
+        return Promise.resolve();
+      },
+      sweep: (context) => {
+        calls.push(`sweep:${context.jobId}`);
+        return Promise.resolve();
+      },
+    });
+    const logger = createLogger({ sink: () => undefined });
+    await handlers.screening_price({ screening_run_id: RUN }, { jobId: 'job-1', logger });
+    await handlers.screening_price({}, { jobId: 'job-2', logger });
+    await handlers.screening_sweep({}, { jobId: 'job-3', logger });
+    expect(calls).toEqual([`price:${RUN}:job-1`, 'sweep:job-2', 'sweep:job-3']);
+  });
+});

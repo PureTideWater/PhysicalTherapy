@@ -1,3 +1,5 @@
+import { OPERATOR_ROLE } from '@tp/db';
+
 import { type OperatorPool, asOperator, expireBatch } from './operator';
 
 /**
@@ -30,7 +32,8 @@ export async function expireScreenings(dependencies: ExpiryDependencies): Promis
   let runs = 0;
   let leads = 0;
   for (;;) {
-    const batch = await asOperator(dependencies.operator, (client) => expireBatch(client, EXPIRY_BATCH, dependencies.jobId));
+    // The platform's job, as tp_operator: the screening consumer's role may not expire screenings.
+    const batch = await asOperator(dependencies.operator, (client) => expireBatch(client, EXPIRY_BATCH, dependencies.jobId), { role: OPERATOR_ROLE });
     prospects += batch.prospects;
     runs += batch.runs;
     leads += batch.leads;

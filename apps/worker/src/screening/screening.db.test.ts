@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
@@ -13,7 +13,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type MailMessage, type MailSender, MemoryMailSender } from '../mail/mail';
 import { ScreeningPricer, beforeSequestration, releaseChangeDays, screeningClaim } from './adapter';
 import { expireScreenings } from './expiry';
-import { type ScreeningJobDependencies, forgetScreeningReleases, priceScreeningRun, sweepScreeningRuns } from './job';
+import { type JobSender } from '../jobs/enqueue';
+import {
+  SCREENING_STALE_SECONDS,
+  type ScreeningJobDependencies,
+  forgetScreeningReleases,
+  priceScreeningRun,
+  resendScreeningRuns,
+  sweepScreeningRuns,
+} from './job';
 import { asOperator, claimRun, failRun, runKeys, runRecords } from './operator';
 import { SCREENING_TOKEN, screeningTokenHash } from './token';
 import { emailKept } from './wording';
@@ -97,11 +105,19 @@ function practiceName(): string {
 }
 
 async function submit(
-  options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly plusFour?: string | null; readonly email?: string; readonly practice?: string } = {},
+  options: {
+    readonly rows?: readonly Row[];
+    readonly zip?: string;
+    readonly plusFour?: string | null;
+    readonly email?: string;
+    readonly practice?: string;
+    readonly received?: Date;
+    readonly subject?: string;
+  } = {},
 ): Promise<string> {
   const rows = options.rows ?? ROWS;
   const [created] = await asApp<{ id: string }>(
-    'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) AS id',
+    'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30) AS id',
     [
     options.practice ?? practiceName(),
     'MN',
@@ -132,6 +148,9 @@ async function submit(
     null,
     null,
     null,
+    // Received when submitted, or as given; an account of its own unless given (migration 20261106090000).
+    options.received ?? null,
+    options.subject ?? createHash('sha256').update(`account:${randomUUID()}`).digest('hex'),
     `test-${randomUUID()}`,
     ],
   );
@@ -162,13 +181,22 @@ async function rewind(sql: string, values: unknown[]): Promise<void> {
   }
 }
 
+/**
+ * Makes a run being priced stale: nothing has moved its progress for more than 2 minutes (migration 20261106090000), its
+ * claim and its progress moved back together as the superuser.
+ */
+async function stale(runId: string): Promise<void> {
+  await rewind("UPDATE screening_run SET started_at = started_at - interval '3 minutes', progress_at = progress_at - interval '3 minutes' WHERE id = $1", [runId]);
+}
+
 /** Moves a screening's dates back by `days`, prospect, upload and run together. */
 async function age(runId: string, days: number): Promise<void> {
   await rewind(
     `WITH target AS (SELECT r.id AS run_id, u.id AS upload_id, u.prospect_id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = $1),
           a AS (UPDATE screening_prospect p SET created_at = p.created_at - $2::interval, expires_at = p.expires_at - $2::interval FROM target WHERE p.id = target.prospect_id),
           b AS (UPDATE screening_upload u SET created_at = u.created_at - $2::interval, expires_at = u.expires_at - $2::interval FROM target WHERE u.id = target.upload_id)
-     UPDATE screening_run r SET created_at = r.created_at - $2::interval, expires_at = r.expires_at - $2::interval FROM target WHERE r.id = target.run_id`,
+     UPDATE screening_run r SET created_at = r.created_at - $2::interval, expires_at = r.expires_at - $2::interval, received_at = r.received_at - $2::interval
+       FROM target WHERE r.id = target.run_id`,
     [runId, `${String(days)} days`],
   );
 }
@@ -518,7 +546,7 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     // A retry while the pricing is fresh claims nothing; once it is stale the sweep claims it again and sends.
     const mail = new MemoryMailSender();
     expect(await priceScreeningRun(dependencies(mail), runId)).toBe('not_claimed');
-    await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+    await stale(runId);
     expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 1, failed: 0, skipped: 0 });
     expect(mail.sent).toHaveLength(1);
     expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'complete', attempts: 2 }]);
@@ -529,7 +557,7 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     const mail = new MemoryMailSender();
     // While attempt 1 is past its keyed read, its pricing turns stale and a second claim takes the run over.
     const overtake = async () => {
-      await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+      await stale(runId);
       const client = await admin.connect();
       try {
         await client.query('BEGIN');
@@ -546,7 +574,7 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'pricing', attempts: 2 }]);
     expect((await results(runId)).filter((row) => row.disposition === 'pending').length).toBeGreaterThan(0);
     // The claim that took it over stops in turn (here, by going stale), and the next one prices and sends once.
-    await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+    await stale(runId);
     expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 1, failed: 0, skipped: 0 });
     expect(mail.sent.map((message) => message.subject)).toEqual(['Your screening is ready']);
     expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'complete', attempts: 3 }]);
@@ -609,11 +637,11 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     expect(JSON.stringify(lines)).not.toContain(poison);
     // Claimed again on each stale sweep, it runs out of attempts and ends failed, its notice refused and logged.
     for (let attempt = 2; attempt <= 3; attempt += 1) {
-      await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [poisonRun]);
+      await stale(poisonRun);
       await sweepScreeningRuns(dependencies(refusing), { minQueuedAgeSeconds: 0 });
     }
     expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [poisonRun])).rows).toEqual([{ status: 'pricing', attempts: 3 }]);
-    await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [poisonRun]);
+    await stale(poisonRun);
     lines = [];
     expect(await sweepScreeningRuns(dependencies(refusing), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 0, failed: 1, skipped: 0 });
     expect((await owner.query('SELECT status, failure_code FROM screening_run WHERE id = $1', [poisonRun])).rows).toEqual([{ status: 'failed', failure_code: 'PRICING_ATTEMPTS_EXHAUSTED' }]);
@@ -625,7 +653,7 @@ describe('a run is priced once, retried after a failed send, and failed when it 
   it('fails a run out of attempts, and one whose release is not there as pinned, and tells the contact with a link to start again', async () => {
     const exhausted = await submit({ email: 'prospect.exhausted@synthetic.test' });
     const unavailable = await submit({ email: 'prospect.unavailable@synthetic.test' });
-    await rewind("UPDATE screening_run SET status = 'pricing', attempts = 3, started_at = now() - interval '11 minutes' WHERE id = $1", [exhausted]);
+    await rewind("UPDATE screening_run SET status = 'pricing', attempts = 3, started_at = now() - interval '3 minutes', progress_at = now() - interval '3 minutes' WHERE id = $1", [exhausted]);
     await rewind('UPDATE screening_run SET release_manifest_sha256 = $2 WHERE id = $1', [unavailable, '0'.repeat(64)]);
     const mail = new MemoryMailSender();
     const swept = await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 });
@@ -644,6 +672,129 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     const audit = await owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_failed' AND object_id = ANY ($1)", [[exhausted, unavailable]]);
     expect(audit.rows).toEqual([{ n: 2 }]);
     expect(lines.filter((line) => line.error_code !== undefined).map((line) => line.error_code).sort()).toEqual(['PRICING_ATTEMPTS_EXHAUSTED', 'RELEASE_UNAVAILABLE']);
+  });
+});
+
+describe('the consumer’s pricing (migration 20261106090000; PR 6b-3)', () => {
+  /** A pool that records the role each transaction switches to. */
+  function recordingRoles(): { readonly pool: DatabasePool; readonly roles: Set<string> } {
+    const roles = new Set<string>();
+    const pool = {
+      connect: async () => {
+        const client = await admin.connect();
+        const query = client.query.bind(client) as (text: string, values?: unknown[]) => Promise<{ rows: unknown[] }>;
+        return Object.assign(client, {
+          query: (text: string, values?: unknown[]) => {
+            if (text.startsWith('SET LOCAL ROLE')) {
+              roles.add(text);
+            }
+            return query(text, values);
+          },
+        });
+      },
+    } as unknown as DatabasePool;
+    return { pool, roles };
+  }
+
+  it('prices as tp_screening and logs the time to email from when the web received the upload', async () => {
+    const runId = await submit({ received: new Date(Date.now() - 5_000) });
+    const { pool, roles } = recordingRoles();
+    const mail = new MemoryMailSender();
+    expect(await priceScreeningRun(dependencies(mail, { operator: pool }), runId)).toBe('complete');
+    expect([...roles]).toEqual(['SET LOCAL ROLE tp_screening']);
+    const emailed = lines.filter((line) => line.msg === 'screening result emailed');
+    expect(emailed).toEqual([expect.objectContaining({ screening_run_id: runId, elapsed_ms: expect.any(Number) as number })]);
+    const elapsed = Number(emailed[0]?.elapsed_ms);
+    expect(elapsed).toBeGreaterThanOrEqual(5_000);
+    expect(elapsed).toBeLessThan(60_000);
+    expect(lines.some((line) => line.msg === 'screening result emailed after waiting')).toBe(false);
+    // The clock it reads is the one it is given: the elapsed time is that clock's less the stored receipt.
+    const timed = await submit();
+    const received = (await owner.query<{ received_at: Date }>('SELECT received_at FROM screening_run WHERE id = $1', [timed])).rows[0]?.received_at ?? new Date();
+    lines = [];
+    expect(await priceScreeningRun(dependencies(new MemoryMailSender(), { now: () => received.getTime() + 42_000 }), timed)).toBe('complete');
+    expect(lines.find((line) => line.msg === 'screening result emailed')).toMatchObject({ elapsed_ms: 42_000 });
+  });
+
+  it('logs a run of the waiting tier apart, with its reason’s code, so the promise’s alarm never counts it', async () => {
+    const subject = createHash('sha256').update(`account:${randomUUID()}`).digest('hex');
+    const earlier = [await submit({ subject }), await submit({ subject })];
+    await rewind('UPDATE screening_run SET row_count = 50000 WHERE id = ANY ($1)', [earlier]);
+    const waiting = await submit({ subject });
+    expect((await owner.query('SELECT wait_reason, queue_priority FROM screening_run WHERE id = $1', [waiting])).rows).toEqual([{ wait_reason: 'account_share', queue_priority: -1 }]);
+    lines = [];
+    expect(await priceScreeningRun(dependencies(new MemoryMailSender()), waiting)).toBe('complete');
+    expect(lines.filter((line) => String(line.msg).startsWith('screening result emailed'))).toEqual([
+      expect.objectContaining({ msg: 'screening result emailed after waiting', screening_run_id: waiting, error_code: 'SCREENING_ACCOUNT_SHARE' }),
+    ]);
+    for (const runId of earlier) {
+      expect(await priceScreeningRun(dependencies(new MemoryMailSender()), runId)).toBe('complete');
+    }
+  });
+
+  it('sends each due run’s job again at its priority with the heartbeat, fails a stale one out of attempts, and logs the queue’s gauge', async () => {
+    const sent: { name: string; data: unknown; options: { singletonKey: string; priority: number; heartbeatSeconds: number } }[] = [];
+    const held = new Set<string>();
+    const queue = {
+      send: (name: string, data: unknown, options: { singletonKey: string; priority: number; heartbeatSeconds: number }) => {
+        sent.push({ name, data, options });
+        if (held.has(options.singletonKey)) {
+          return Promise.resolve(null);
+        }
+        held.add(options.singletonKey);
+        return Promise.resolve(`job-${String(sent.length)}`);
+      },
+    } as unknown as JobSender;
+    const subject = createHash('sha256').update(`account:${randomUUID()}`).digest('hex');
+    const normal = await submit({ subject, received: new Date(Date.now() - 30_000) });
+    await rewind('UPDATE screening_run SET row_count = 50000 WHERE id = $1', [normal]);
+    const second = await submit({ subject });
+    await rewind('UPDATE screening_run SET row_count = 50000 WHERE id = $1', [second]);
+    const waiting = await submit({ subject });
+    const exhausted = await submit({ email: 'prospect.sweep.exhausted@synthetic.test' });
+    await rewind("UPDATE screening_run SET status = 'pricing', attempts = 3, started_at = now() - interval '3 minutes', progress_at = now() - interval '3 minutes' WHERE id = $1", [exhausted]);
+    lines = [];
+    const mail = new MemoryMailSender();
+    const first = await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 });
+    const mine = (runIds: readonly string[]) => sent.filter((send) => runIds.includes((send.data as { screening_run_id: string }).screening_run_id));
+    // In pg-boss's order: the normal tier first, oldest first, then the waiting tier.
+    expect(mine([normal, second, waiting]).map((send) => [(send.data as { screening_run_id: string }).screening_run_id, send.options])).toEqual([
+      [normal, { singletonKey: `screening_price:${normal}`, priority: 0, heartbeatSeconds: 60 }],
+      [second, { singletonKey: `screening_price:${second}`, priority: 0, heartbeatSeconds: 60 }],
+      [waiting, { singletonKey: `screening_price:${waiting}`, priority: -1, heartbeatSeconds: 60 }],
+    ]);
+    expect(first.failed).toBe(1);
+    expect((await owner.query('SELECT status, failure_code FROM screening_run WHERE id = $1', [exhausted])).rows).toEqual([{ status: 'failed', failure_code: 'PRICING_ATTEMPTS_EXHAUSTED' }]);
+    expect(mail.sent.map((message) => message.to)).toEqual([['prospect.sweep.exhausted@synthetic.test']]);
+    // The gauge: the normal tier's queued runs and its oldest one's wait since the web received it, numbers only.
+    const gauge = lines.find((line) => line.msg === 'screening queue');
+    expect(gauge).toMatchObject({ record_count: first.gauge.queued, elapsed_ms: first.gauge.oldestQueuedMs });
+    expect(first.gauge.queued).toBeGreaterThanOrEqual(2);
+    expect(first.gauge.queuedWaiting).toBeGreaterThanOrEqual(1);
+    expect(first.gauge.oldestQueuedMs).toBeGreaterThanOrEqual(30_000);
+    expect(Object.keys(gauge ?? {}).sort()).toEqual(['elapsed_ms', 'job_id', 'level', 'msg', 'record_count', 'time']);
+    // Their jobs still queued: the next sweep's sends are refused under the same keys, and nothing is duplicated.
+    const again = await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 });
+    expect(again.held).toBeGreaterThanOrEqual(3);
+    expect(again.sent).toBe(0);
+    // A send that fails is logged by the run's ID and the sweep goes on.
+    const failing = { send: () => Promise.reject(new Error('SYNTHETIC queue outage')) } as unknown as JobSender;
+    lines = [];
+    await resendScreeningRuns(dependencies(mail), failing, { minQueuedAgeSeconds: 0 });
+    expect(lines.filter((line) => line.error_code === 'SCREENING_NOT_QUEUED').map((line) => line.screening_run_id)).toEqual(expect.arrayContaining([normal, second, waiting]));
+    expect(JSON.stringify(lines)).not.toContain('SYNTHETIC queue outage');
+    for (const runId of [normal, second, waiting]) {
+      expect(await priceScreeningRun(dependencies(new MemoryMailSender()), runId)).toBe('complete');
+    }
+  });
+
+  it('holds the stale interval equal to the database’s: 2 minutes without progress', async () => {
+    expect(SCREENING_STALE_SECONDS).toBe(120);
+    const bodies = (await owner.query<{ body: string }>("SELECT prosrc AS body FROM pg_proc WHERE proname IN ('operator_screening_claim', 'operator_screening_due')")).rows;
+    expect(bodies).toHaveLength(2);
+    for (const { body } of bodies) {
+      expect(body).toContain(`interval '${String(SCREENING_STALE_SECONDS / 60)} minutes'`);
+    }
   });
 });
 

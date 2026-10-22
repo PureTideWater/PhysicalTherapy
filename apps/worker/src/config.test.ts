@@ -6,11 +6,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_HEARTBEAT_SECONDS,
+  DEFAULT_SCREENING_CONCURRENCY,
+  SCREENING_WORKER_JOBS,
   WorkerConfigError,
   readIntakeConfig,
   readNotificationConfig,
   readPlatformConfig,
   readPlatformWorkerConfig,
+  readScreeningConfig,
+  readScreeningWorkerConfig,
   readWorkerConfig,
   readWorkerJobs,
 } from './config';
@@ -52,20 +56,88 @@ describe('readWorkerJobs (docs/adr/0049)', () => {
     expect(readWorkerJobs({ WORKER_JOBS: '', DATABASE_URL, OPERATOR_DATABASE_URL: OPERATOR })).toBe('all');
   });
 
-  it('runs the practice jobs without the operator login', () => {
+  const SCREENING = 'postgres://screening@localhost:5432/d';
+  const QUEUE = 'postgres://queue@localhost:5432/d';
+
+  it('runs the practice jobs without the operator login or the screening login', () => {
     expect(readWorkerJobs({ WORKER_JOBS: 'practice', DATABASE_URL })).toBe('practice');
     expect(() => readWorkerJobs({ WORKER_JOBS: 'practice', DATABASE_URL, OPERATOR_DATABASE_URL: OPERATOR })).toThrow(/OPERATOR_DATABASE_URL is refused when WORKER_JOBS is practice/);
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'practice', DATABASE_URL, SCREENING_DATABASE_URL: SCREENING })).toThrow(/SCREENING_DATABASE_URL is refused when WORKER_JOBS is practice/);
   });
 
-  it('runs the platform jobs with the operator login and never the application login', () => {
+  it('runs the platform jobs with the operator login and never the application or screening login', () => {
     expect(readWorkerJobs({ WORKER_JOBS: 'platform', OPERATOR_DATABASE_URL: OPERATOR })).toBe('platform');
     expect(() => readWorkerJobs({ WORKER_JOBS: 'platform' })).toThrow(/OPERATOR_DATABASE_URL is required when WORKER_JOBS is platform/);
     expect(() => readWorkerJobs({ WORKER_JOBS: 'platform', OPERATOR_DATABASE_URL: OPERATOR, DATABASE_URL })).toThrow(/DATABASE_URL is refused when WORKER_JOBS is platform/);
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'platform', OPERATOR_DATABASE_URL: OPERATOR, SCREENING_DATABASE_URL: SCREENING })).toThrow(
+      /SCREENING_DATABASE_URL is refused when WORKER_JOBS is platform/,
+    );
+  });
+
+  it('runs the screening consumer with the screening and queue logins alone (docs/adr/0062)', () => {
+    expect(SCREENING_WORKER_JOBS).toBe('screening');
+    expect(readWorkerJobs({ WORKER_JOBS: 'screening', SCREENING_DATABASE_URL: SCREENING, QUEUE_DATABASE_URL: QUEUE })).toBe('screening');
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'screening', QUEUE_DATABASE_URL: QUEUE })).toThrow(/SCREENING_DATABASE_URL is required when WORKER_JOBS is screening/);
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'screening', SCREENING_DATABASE_URL: SCREENING })).toThrow(/QUEUE_DATABASE_URL is required when WORKER_JOBS is screening/);
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'screening', SCREENING_DATABASE_URL: SCREENING, QUEUE_DATABASE_URL: QUEUE, DATABASE_URL })).toThrow(
+      /DATABASE_URL is refused when WORKER_JOBS is screening/,
+    );
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'screening', SCREENING_DATABASE_URL: SCREENING, QUEUE_DATABASE_URL: QUEUE, OPERATOR_DATABASE_URL: OPERATOR })).toThrow(
+      /OPERATOR_DATABASE_URL is refused when WORKER_JOBS is screening/,
+    );
   });
 
   it('refuses any other value', () => {
     expect(() => readWorkerJobs({ WORKER_JOBS: 'both' })).toThrow(WorkerConfigError);
-    expect(() => readWorkerJobs({ WORKER_JOBS: 'both' })).toThrow(/WORKER_JOBS is practice or platform/);
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'both' })).toThrow(/WORKER_JOBS is practice, platform or screening/);
+  });
+});
+
+describe('readScreeningWorkerConfig and readScreeningConfig (docs/adr/0062)', () => {
+  const SCREENING = 'postgres://screening@localhost:5432/d';
+  const QUEUE = 'postgres://queue@localhost:5432/d';
+
+  it('reads the two logins, three runs at once by default, the heartbeat and the email settings', () => {
+    const config = readScreeningWorkerConfig({ SCREENING_DATABASE_URL: SCREENING, QUEUE_DATABASE_URL: QUEUE, MAIL_OUTBOX_DIR: '/tmp/outbox', APP_ORIGIN: 'http://localhost:3000' });
+    expect(config).toEqual({
+      production: false,
+      queueDatabaseUrl: QUEUE,
+      heartbeatMs: DEFAULT_HEARTBEAT_SECONDS * 1000,
+      screening: {
+        databaseUrl: SCREENING,
+        concurrency: DEFAULT_SCREENING_CONCURRENCY,
+        notifications: { mail: { kind: 'local', dir: '/tmp/outbox' }, appOrigin: 'http://localhost:3000', staticAssetOrigin: null },
+      },
+    });
+    expect(DEFAULT_SCREENING_CONCURRENCY).toBe(3);
+    expect(() => readScreeningWorkerConfig({ QUEUE_DATABASE_URL: QUEUE })).toThrow(/SCREENING_DATABASE_URL is required when WORKER_JOBS is screening/);
+    expect(() => readScreeningWorkerConfig({ SCREENING_DATABASE_URL: SCREENING })).toThrow(/QUEUE_DATABASE_URL is required when WORKER_JOBS is screening/);
+  });
+
+  it('takes SCREENING_CONCURRENCY from 1 to 8 and nothing else', () => {
+    for (const concurrency of ['1', '3', '8']) {
+      expect(readScreeningConfig({ SCREENING_DATABASE_URL: SCREENING, SCREENING_CONCURRENCY: concurrency })?.concurrency).toBe(Number(concurrency));
+    }
+    for (const concurrency of ['0', '9', '-1', '2.5', 'three', '03']) {
+      expect(() => readScreeningConfig({ SCREENING_DATABASE_URL: SCREENING, SCREENING_CONCURRENCY: concurrency }), concurrency).toThrow(/SCREENING_CONCURRENCY is a whole number from 1 to 8/);
+    }
+  });
+
+  it('sends through SES from MAIL_FROM to an https application in production, and prices no screening without its login in development', () => {
+    expect(
+      readScreeningWorkerConfig({
+        NODE_ENV: 'production',
+        SCREENING_DATABASE_URL: SCREENING,
+        QUEUE_DATABASE_URL: QUEUE,
+        MAIL_FROM: 'results@synthetic.test',
+        APP_ORIGIN: 'https://app.synthetic.test',
+        STATIC_ASSET_ORIGIN: 'https://static.synthetic.test',
+      }).screening.notifications,
+    ).toEqual({ mail: { kind: 'ses', from: 'results@synthetic.test' }, appOrigin: 'https://app.synthetic.test', staticAssetOrigin: 'https://static.synthetic.test' });
+    expect(() => readScreeningWorkerConfig({ NODE_ENV: 'production', SCREENING_DATABASE_URL: SCREENING, QUEUE_DATABASE_URL: QUEUE, APP_ORIGIN: 'https://app.synthetic.test' })).toThrow(
+      /MAIL_FROM is required/,
+    );
+    expect(readScreeningConfig({})).toBeNull();
   });
 });
 

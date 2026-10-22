@@ -7,7 +7,9 @@ import { brandFileSources } from './src/report/brand-files';
 /**
  * Bundles the worker and every workspace package it imports into one ESM file for the container
  * image, and beside it the page reader's thread (@tp/contracts, page-thread.ts), which the worker
- * starts from dist/page-thread.js for every contract document it reads (docs/adr/0033), and the
+ * starts from dist/page-thread.js for every contract document it reads (docs/adr/0033), the screening
+ * consumer's pricing thread (src/screening/thread.ts), which the consumer (WORKER_JOBS=screening) starts
+ * from dist/screening-thread.js, one per run it prices at once (src/screening/threads.ts; docs/adr/0062), and the
  * migrator (`pnpm db:migrate`'s CLI), which the one-off migration task runs from the same image as
  * dist/migrate.js before a release receives traffic; it reads the migrations from ../migrations,
  * where the image puts them, and then dist/logins.js, which creates the logins from their secrets
@@ -40,6 +42,7 @@ await build({
   entryPoints: {
     main: 'src/main.ts',
     'page-thread': '../../packages/contracts/src/evidence/page-thread.ts',
+    'screening-thread': 'src/screening/thread.ts',
     migrate: '../../packages/db/src/cli/migrate.ts',
     logins: 'src/deploy/logins-cli.ts',
     'evaluate-permitted': 'src/models/permitted-cli.ts',

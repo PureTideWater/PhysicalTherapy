@@ -4,8 +4,8 @@ import { LoginProvisionError, provisionLogins, readDeployLogins } from './logins
 
 /**
  * The migration task's second step (dist/logins.js; docs/adr/0049): after the migrations, as the owner
- * login (DATABASE_URL), creates the queue role and schema and the application, worker, operator, queue
- * and billing logins from their secrets (src/deploy/logins.ts). It prints login names only.
+ * login (DATABASE_URL), creates the queue role and schema and the application, worker, operator, queue,
+ * billing and screening logins from their secrets (src/deploy/logins.ts). It prints login names only.
  */
 let client;
 try {

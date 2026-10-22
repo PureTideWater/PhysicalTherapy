@@ -42,7 +42,9 @@ export class MemoryQueue {
     start: () => Promise.resolve(this.client as never),
     stop: () => Promise.resolve(),
     createQueue: () => Promise.resolve(),
+    updateQueue: () => Promise.resolve(),
     schedule: () => Promise.resolve(),
+    unschedule: () => Promise.resolve(),
     work: ((name: string, _options: unknown, handler: WorkHandler) => {
       this.handlers.set(name, handler);
       return Promise.resolve(name);

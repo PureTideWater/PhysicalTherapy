@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { ENGINE_VERSION, type IndexedRelease, type IsoDate } from '@tp/pricing';
 import type { Logger } from '@tp/observability';
 
+import { type JobSender, enqueueScreeningRun } from '../jobs/enqueue';
 import type { MailSender } from '../mail/mail';
 import { ReleaseReadOutsideFetch, type RequestedKeys, keyedRelease, screeningRequestedKeys } from '../price/keyed-release';
 import { indexStoredRelease } from '../price/release';
@@ -14,10 +15,13 @@ import {
   asOperator,
   attemptSuperseded,
   claimRun,
+  type CompletedRun,
   completeRun,
   dueRuns,
   failRun,
   pendingRows,
+  type QueueGauge,
+  queueGauge,
   recordRows,
   releaseRecords,
   runKeys,
@@ -27,9 +31,12 @@ import {
 import { newScreeningToken, screeningTokenHash } from './token';
 
 /**
- * The screening_price platform job (Change Order 001, CO-04; docs/adr/0062). The web app sends it for a run once the
- * upload is stored; every minute it also runs as a sweep for runs queued longer than half a minute (a send that
- * failed) and for runs whose pricing started over ten minutes ago (a worker that stopped).
+ * The screening consumer's jobs (Change Order 001, CO-04; docs/adr/0062; PR 6b-3): screening_price prices one run, in
+ * one of the consumer's worker threads, as tp_screening; the web app sends it for a run once the upload is stored, at
+ * the run's priority. Every minute the sweep (screening_sweep, on the consumer's main thread, which prices nothing)
+ * sends the job again for runs queued longer than half a minute (a send that failed) and for runs whose pricing has
+ * made no progress for 2 minutes (a consumer that stopped), and fails those out of attempts; pg-boss then takes them
+ * in its order, the higher priority first, through the consumer's three slots.
  *
  * One run: claim it (queued to pricing, or a stale one again, at most three attempts); fail it when its pinned
  * release is no longer there as pinned (unpublished, its manifest changed, or withdrawn); read the release (audit #53
@@ -72,6 +79,15 @@ export const SCREENING_BATCH = 5000;
 export const SWEEP_MIN_QUEUED_AGE_SECONDS = 30;
 /** The most attempts a run is claimed for. */
 export const SCREENING_MAX_ATTEMPTS = 3;
+/**
+ * A run being priced is stale, and claimed again, once nothing has moved its progress (the claim, or a recorded batch)
+ * for this long: operator_screening_claim() and operator_screening_due() say interval '2 minutes', and a db test holds
+ * the three equal.
+ */
+export const SCREENING_STALE_SECONDS = 120;
+
+/** The codes a run's wait reason is logged by, as the web logs an upload it sends to wait. */
+export const SCREENING_WAIT_CODES = { account_share: 'SCREENING_ACCOUNT_SHARE', daily_cap: 'SCREENING_DAILY_CAP' } as const;
 
 export interface ScreeningJobDependencies {
   readonly operator: OperatorPool;
@@ -93,6 +109,8 @@ export interface ScreeningJobDependencies {
    * stale claim or replace the run there, as a slow attempt meets either. Production never sets it.
    */
   readonly afterKeyedRead?: () => Promise<void>;
+  /** The clock the time to email is read from (tests give their own); Date.now otherwise. */
+  readonly now?: () => number;
 }
 
 export type ScreeningPriceOutcome = 'complete' | 'already_complete' | 'not_claimed' | 'failed';
@@ -284,15 +302,15 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
   logger.info('screening run rows priced', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(pricingMs), record_count: pricedRows });
   logger.info('screening run rows recorded', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(recordingMs), record_count: recordedRows });
   const token = (dependencies.newToken ?? newScreeningToken)();
-  let sent: boolean;
+  let sent: CompletedRun | null;
   try {
     sent = await asOperator(operator, async (client) => {
       const done = await completeRun(client, runId, screeningTokenHash(token), ENGINE_VERSION, dependencies.jobId, attempt);
       if (done === null) {
-        return false;
+        return null;
       }
       await dependencies.mail.send(screeningResultMessage({ to: done.contactEmail, link: screeningResultLink(dependencies.appOrigin, token), rows: done.rowCount, keptWith: done.keptWith }));
-      return true;
+      return done;
     });
   } catch (error) {
     if (attemptSuperseded(error)) {
@@ -307,11 +325,24 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
     }
     throw error;
   }
-  if (!sent) {
+  if (sent === null) {
     logger.info('screening run was complete already', { job_id: dependencies.jobId, screening_run_id: runId });
     return 'already_complete';
   }
-  logger.info('screening run priced and its link sent', { job_id: dependencies.jobId, screening_run_id: runId });
+  // The time to email (decision 14's 60 seconds; TimeToEmailMs): from when the web began receiving the upload until the
+  // send returned and the completion committed. A run that waited behind the normal tier is outside the promise and is
+  // logged apart, with its reason's code, so it never breaches the promise's alarm.
+  const elapsedMs = Math.max(0, Math.round((dependencies.now ?? Date.now)() - sent.receivedAt.getTime()));
+  if (sent.waitReason === null) {
+    logger.info('screening result emailed', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: elapsedMs });
+  } else {
+    logger.info('screening result emailed after waiting', {
+      job_id: dependencies.jobId,
+      screening_run_id: runId,
+      elapsed_ms: elapsedMs,
+      error_code: SCREENING_WAIT_CODES[sent.waitReason],
+    });
+  }
   return 'complete';
 }
 
@@ -339,8 +370,11 @@ async function sweepOne(dependencies: ScreeningJobDependencies, run: { readonly 
 }
 
 /**
- * The minute's sweep: prices each due run, and fails each stale one out of attempts. Each run is taken on its own: one
- * that throws is logged (SCREENING_RUN_FAILED, by its ID) and counted as skipped, and the sweep goes on.
+ * Prices each due run inline, one after another, and fails each stale one out of attempts: for a caller with no queue
+ * to send to (the database tests, the web's tests and the end-to-end suite's own sweep). The consumer's minute sweep
+ * sends their jobs instead (resendScreeningRuns), so every pricing goes through pg-boss's order and the threads. Each
+ * run is taken on its own: one that throws is logged (SCREENING_RUN_FAILED, by its ID) and counted as skipped, and the
+ * sweep goes on.
  */
 export async function sweepScreeningRuns(dependencies: ScreeningJobDependencies, options: SweepOptions): Promise<SweepResult> {
   const due = await asOperator(dependencies.operator, (client) => dueRuns(client, options.minQueuedAgeSeconds, 100));
@@ -368,4 +402,51 @@ export async function sweepScreeningRuns(dependencies: ScreeningJobDependencies,
     }
   }
   return { complete, failed, skipped };
+}
+
+export interface ResendResult {
+  /** Due runs whose job was sent again (none was queued or active under its key). */
+  readonly sent: number;
+  /** Due runs whose job was still queued or active: the exclusive policy refused the duplicate. */
+  readonly held: number;
+  /** Stale runs out of attempts, failed and told. */
+  readonly failed: number;
+  readonly gauge: QueueGauge;
+}
+
+/**
+ * The consumer's minute sweep (screening_sweep; it prices nothing, on the main thread): fails each stale run out of
+ * attempts, and sends each other due run's job again with its singleton key, its priority and the screening heartbeat
+ * (enqueueScreeningRun), which pg-boss refuses while the run's job is queued, waiting to retry or active; then logs the
+ * queue's gauge, `screening queue`, with the normal tier's queued runs (record_count) and its oldest one's wait since
+ * the web received it (elapsed_ms; OldestQueuedMs). Each run on its own: one whose send throws is logged by its ID
+ * (SCREENING_NOT_QUEUED) and the sweep goes on, the next minute's trying it again.
+ */
+export async function resendScreeningRuns(dependencies: ScreeningJobDependencies, queue: JobSender, options: SweepOptions): Promise<ResendResult> {
+  const { logger, jobId } = dependencies;
+  const due = await asOperator(dependencies.operator, (client) => dueRuns(client, options.minQueuedAgeSeconds, 100));
+  let sent = 0;
+  let held = 0;
+  let failed = 0;
+  for (const run of due) {
+    try {
+      if (run.status === 'pricing' && run.attempts >= SCREENING_MAX_ATTEMPTS) {
+        if (await failScreeningRun(dependencies, run.runId, 'PRICING_ATTEMPTS_EXHAUSTED')) {
+          logger.warn('screening run failed after its last attempt', { job_id: jobId, screening_run_id: run.runId, error_code: 'PRICING_ATTEMPTS_EXHAUSTED' });
+          failed += 1;
+        }
+        continue;
+      }
+      if ((await enqueueScreeningRun(queue, run.runId, { priority: run.queuePriority })) === null) {
+        held += 1;
+      } else {
+        sent += 1;
+      }
+    } catch {
+      logger.error('screening run could not be sent again in this sweep; the next sweep tries it', { job_id: jobId, screening_run_id: run.runId, error_code: 'SCREENING_NOT_QUEUED' });
+    }
+  }
+  const gauge = await asOperator(dependencies.operator, (client) => queueGauge(client));
+  logger.info('screening queue', { job_id: jobId, record_count: gauge.queued, elapsed_ms: gauge.oldestQueuedMs });
+  return { sent, held, failed, gauge };
 }
