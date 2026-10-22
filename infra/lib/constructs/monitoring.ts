@@ -1,5 +1,7 @@
 import {
+  type CfnCondition,
   Duration,
+  Fn,
   RemovalPolicy,
   Stack,
   aws_cloudwatch as cloudwatch,
@@ -24,6 +26,24 @@ import {
 } from '../heartbeat';
 import { logGroupName } from '../log-groups';
 import { MODEL_BUDGET_ERROR_CODES, MODEL_BUDGET_METRIC, MODEL_BUDGET_PERIOD_SECONDS } from '../models';
+import {
+  OLDEST_QUEUED_LIMIT_MS,
+  OLDEST_QUEUED_METRIC,
+  OLDEST_QUEUED_PERIODS,
+  OLDEST_QUEUED_PERIOD_SECONDS,
+  QUEUE_MESSAGE,
+  RUN_FAILED_ERROR_CODES,
+  RUN_FAILED_METRIC,
+  RUN_FAILED_PERIOD_SECONDS,
+  SCREENING_HEARTBEAT_METRIC,
+  TIME_TO_EMAIL_LIMIT_MS,
+  TIME_TO_EMAIL_MESSAGE,
+  TIME_TO_EMAIL_METRIC,
+  TIME_TO_EMAIL_PERIOD_SECONDS,
+  UPLOADS_SENT_TO_WAIT_METRIC,
+  UPLOADS_SENT_TO_WAIT_PERIOD_SECONDS,
+  UPLOAD_SENT_TO_WAIT_MESSAGE,
+} from '../screening';
 import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../security-events';
 
 /** Where operator alerts are delivered; both optional, set at deploy time (never in the repository). */
@@ -36,6 +56,13 @@ export interface MonitoringProps {
   readonly environmentName: EnvironmentName;
   readonly key: kms.Key;
   readonly operator: OperatorEndpoints;
+  /**
+   * Where the screening consumer starts at launch (production; Q1 (b)), the condition under which it runs: its
+   * heartbeat counts a missing beat as missed only then, so the alarm is OK while the consumer is rightly held at no task
+   * and goes to ALARM, and tells the operator, if it does not beat once launched. Elsewhere it runs once released, and
+   * a missing beat counts as missed, as the worker's does.
+   */
+  readonly screeningRuns?: CfnCondition;
 }
 
 /**
@@ -66,6 +93,13 @@ export interface MonitoringProps {
  * matrix MOD-05: "calls refused; alert") is counted from the web app's and the worker's log groups,
  * both of which call the model gateway, and alarms at once. Alarm text is fixed: an alarm name, the
  * environment and a reason, never a value from a log line.
+ *
+ * The screening consumer (docs/adr/0062; PR 6b-3, decisions 13 to 16) logs to its own group (/tp/<env>/screening). Its
+ * heartbeat is its own metric and alarm, and its final job failures count toward the job-failure alarm. Three metrics
+ * of its own (infra/lib/screening.ts): the time from the web's receipt of an upload to its result's email, which alarms
+ * above the 60-second promise; the oldest normal-tier run's wait in the queue, which alarms above two minutes, two
+ * minutes in a row; and its failed runs (any error line, or a run out of attempts). The web app's uploads sent to wait
+ * (over an account's share or the day's cap, Q7) are counted from the web's group. No metric has a dimension.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
@@ -73,12 +107,18 @@ export class Monitoring extends Construct {
   readonly webLogGroup: logs.LogGroup;
   readonly platformLogGroup: logs.LogGroup;
   readonly migrationLogGroup: logs.LogGroup;
+  readonly screeningLogGroup: logs.LogGroup;
   readonly heartbeatAlarm: cloudwatch.Alarm;
   readonly platformHeartbeatAlarm: cloudwatch.Alarm;
   readonly jobFailedAlarm: cloudwatch.Alarm;
   readonly pricingEngineErrorsAlarm: cloudwatch.Alarm;
   readonly failedSignInBurstAlarm: cloudwatch.Alarm;
   readonly modelBudgetAlarm: cloudwatch.Alarm;
+  readonly screeningHeartbeatAlarm: cloudwatch.Alarm;
+  readonly screeningTimeToEmailAlarm: cloudwatch.Alarm;
+  readonly screeningQueueAlarm: cloudwatch.Alarm;
+  readonly screeningRunFailedAlarm: cloudwatch.Alarm;
+  readonly screeningUploadsSentToWaitAlarm: cloudwatch.Alarm;
   /** Notifies the operator topic; every alarm in the stack uses it. */
   readonly notify: cloudwatchActions.SnsAction;
 
@@ -141,6 +181,7 @@ export class Monitoring extends Construct {
     this.webLogGroup = logGroup('WebLogs', logGroupName(props.environmentName, 'web'));
     this.platformLogGroup = logGroup('PlatformLogs', logGroupName(props.environmentName, 'platform'));
     this.migrationLogGroup = logGroup('MigrationLogs', logGroupName(props.environmentName, 'migration'));
+    this.screeningLogGroup = logGroup('ScreeningLogs', logGroupName(props.environmentName, 'screening'));
 
     const heartbeats = this.workerLogGroup.addMetricFilter('Heartbeat', {
       filterPattern: logs.FilterPattern.stringValue('$.msg', '=', HEARTBEAT_MESSAGE),
@@ -192,6 +233,14 @@ export class Monitoring extends Construct {
     });
     // The platform jobs' final failures (the restore drill, the audit copy) count toward the same metric.
     this.platformLogGroup.addMetricFilter('JobFailedOnLastAttempt', {
+      filterPattern: logs.FilterPattern.stringValue('$.msg', '=', JOB_FAILED_MESSAGE),
+      metricNamespace: JOB_FAILED_METRIC.namespace,
+      metricName: JOB_FAILED_METRIC.metricName,
+      metricValue: '1',
+      unit: cloudwatch.Unit.COUNT,
+    });
+    // The screening consumer's final failures (a screening_price or sweep job out of attempts) count toward it too.
+    this.screeningLogGroup.addMetricFilter('JobFailedOnLastAttempt', {
       filterPattern: logs.FilterPattern.stringValue('$.msg', '=', JOB_FAILED_MESSAGE),
       metricNamespace: JOB_FAILED_METRIC.namespace,
       metricName: JOB_FAILED_METRIC.metricName,
@@ -262,5 +311,86 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.modelBudgetAlarm.addAlarmAction(notify);
+
+    const counted = (group: logs.LogGroup, id: string, metric: { readonly namespace: string; readonly metricName: string }, pattern: logs.IFilterPattern) =>
+      group.addMetricFilter(id, { filterPattern: pattern, metricNamespace: metric.namespace, metricName: metric.metricName, metricValue: '1', unit: cloudwatch.Unit.COUNT });
+    const measured = (group: logs.LogGroup, id: string, metric: { readonly namespace: string; readonly metricName: string }, message: string) =>
+      group.addMetricFilter(id, {
+        filterPattern: logs.FilterPattern.stringValue('$.msg', '=', message),
+        metricNamespace: metric.namespace,
+        metricName: metric.metricName,
+        metricValue: '$.elapsed_ms',
+        unit: cloudwatch.Unit.MILLISECONDS,
+      });
+
+    const screeningBeats = counted(this.screeningLogGroup, 'Heartbeat', SCREENING_HEARTBEAT_METRIC, logs.FilterPattern.stringValue('$.msg', '=', HEARTBEAT_MESSAGE));
+    this.screeningHeartbeatAlarm = new cloudwatch.Alarm(this, 'ScreeningHeartbeatMissed', {
+      alarmDescription: `The ${props.environmentName} screening consumer missed ${String(MISSED_HEARTBEATS_TO_ALARM)} consecutive heartbeats.`,
+      metric: screeningBeats.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(HEARTBEAT_INTERVAL_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: MISSED_HEARTBEATS_TO_ALARM,
+      datapointsToAlarm: MISSED_HEARTBEATS_TO_ALARM,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+    });
+    if (props.screeningRuns !== undefined) {
+      (this.screeningHeartbeatAlarm.node.defaultChild as cloudwatch.CfnAlarm).treatMissingData = Fn.conditionIf(
+        props.screeningRuns.logicalId,
+        cloudwatch.TreatMissingData.BREACHING,
+        cloudwatch.TreatMissingData.NOT_BREACHING,
+      ).toString();
+    }
+    this.screeningHeartbeatAlarm.addAlarmAction(notify);
+    this.screeningHeartbeatAlarm.addOkAction(notify);
+
+    const timeToEmail = measured(this.screeningLogGroup, 'TimeToEmail', TIME_TO_EMAIL_METRIC, TIME_TO_EMAIL_MESSAGE);
+    this.screeningTimeToEmailAlarm = new cloudwatch.Alarm(this, 'ScreeningTimeToEmail', {
+      alarmDescription: `A ${props.environmentName} screening result was emailed more than ${String(TIME_TO_EMAIL_LIMIT_MS / 1000)} seconds after its upload was received (the promise, decision 14).`,
+      metric: timeToEmail.metric({ statistic: cloudwatch.Stats.MAXIMUM, period: Duration.seconds(TIME_TO_EMAIL_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: TIME_TO_EMAIL_LIMIT_MS,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.screeningTimeToEmailAlarm.addAlarmAction(notify);
+
+    const oldestQueued = measured(this.screeningLogGroup, 'OldestQueued', OLDEST_QUEUED_METRIC, QUEUE_MESSAGE);
+    this.screeningQueueAlarm = new cloudwatch.Alarm(this, 'ScreeningQueueWaiting', {
+      alarmDescription: `A ${props.environmentName} screening upload of the normal tier has waited in the queue more than ${String(OLDEST_QUEUED_LIMIT_MS / 60_000)} minutes.`,
+      metric: oldestQueued.metric({ statistic: cloudwatch.Stats.MAXIMUM, period: Duration.seconds(OLDEST_QUEUED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: OLDEST_QUEUED_LIMIT_MS,
+      evaluationPeriods: OLDEST_QUEUED_PERIODS,
+      datapointsToAlarm: OLDEST_QUEUED_PERIODS,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.screeningQueueAlarm.addAlarmAction(notify);
+
+    const runFailed = counted(
+      this.screeningLogGroup,
+      'RunFailed',
+      RUN_FAILED_METRIC,
+      logs.FilterPattern.any(logs.FilterPattern.stringValue('$.level', '=', 'error'), ...RUN_FAILED_ERROR_CODES.map((code) => logs.FilterPattern.stringValue('$.error_code', '=', code))),
+    );
+    this.screeningRunFailedAlarm = new cloudwatch.Alarm(this, 'ScreeningRunFailed', {
+      alarmDescription: `A ${props.environmentName} screening failed: the consumer logged an error, or a run used its last attempt.`,
+      metric: runFailed.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(RUN_FAILED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.screeningRunFailedAlarm.addAlarmAction(notify);
+
+    const sentToWait = counted(this.webLogGroup, 'ScreeningUploadsSentToWait', UPLOADS_SENT_TO_WAIT_METRIC, logs.FilterPattern.stringValue('$.msg', '=', UPLOAD_SENT_TO_WAIT_MESSAGE));
+    this.screeningUploadsSentToWaitAlarm = new cloudwatch.Alarm(this, 'ScreeningUploadsSentToWait', {
+      alarmDescription: `A ${props.environmentName} screening upload was over its account's daily share or the day's cap, and waits behind the normal uploads.`,
+      metric: sentToWait.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(UPLOADS_SENT_TO_WAIT_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.screeningUploadsSentToWaitAlarm.addAlarmAction(notify);
   }
 }

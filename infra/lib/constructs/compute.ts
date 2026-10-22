@@ -19,6 +19,7 @@ import type { EnvironmentName, EnvironmentSettings, ServiceSettings, TaskSize } 
 import { HEARTBEAT_INTERVAL_SECONDS } from '../heartbeat';
 import { type ConnectionUrl, DATABASE_SETTINGS, RDS_CA_BUNDLE_PATH, launchScript, secretVariables } from '../launch';
 import { logGroupName } from '../log-groups';
+import { SCREENING_MAIN_HEAP_FLAG, SCREENING_STOP_TIMEOUT_SECONDS, screeningSlots } from '../screening';
 import { DATABASE_NAME, QUEUE_ROLE } from './database';
 import type { Database } from './database';
 import { WEB_KEEP_ALIVE_MS, WEB_PORT } from './edge';
@@ -30,6 +31,8 @@ import type { Network } from './network';
 export const COMMANDS = {
   web: ['node', 'apps/web/server.js'],
   worker: ['node', '--enable-source-maps', 'dist/main.js'],
+  /** The worker image's own command with the main thread's heap limit (the plan's G3); the threads have their own. */
+  screening: ['node', '--enable-source-maps', SCREENING_MAIN_HEAP_FLAG, 'dist/main.js'],
   migrate: ['node', '--enable-source-maps', 'dist/migrate.js'],
   logins: ['node', '--enable-source-maps', 'dist/logins.js'],
 } as const;
@@ -44,13 +47,17 @@ export const LOGIN_SECRET_VARIABLES = {
   operator: { username: 'TP_OPERATOR_LOGIN_USERNAME', password: 'TP_OPERATOR_LOGIN_PASSWORD' },
   queue: { username: 'TP_QUEUE_LOGIN_USERNAME', password: 'TP_QUEUE_LOGIN_PASSWORD' },
   billing: { username: 'TP_BILLING_LOGIN_USERNAME', password: 'TP_BILLING_LOGIN_PASSWORD' },
+  screening: { username: 'TP_SCREENING_LOGIN_USERNAME', password: 'TP_SCREENING_LOGIN_PASSWORD' },
 } as const;
 
-/** The worker's job split (apps/worker/src/config.ts readWorkerJobs): practice jobs, or platform jobs. */
-export const WORKER_JOBS = { worker: 'practice', platform: 'platform' } as const;
+/** The worker's job split (apps/worker/src/config.ts readWorkerJobs): practice jobs, platform jobs, or the screening's. */
+export const WORKER_JOBS = { worker: 'practice', platform: 'platform', screening: 'screening' } as const;
 
 /** How long ECS waits after SIGTERM: the worker drains its active jobs (apps/worker/src/shutdown.ts). */
 export const WORKER_STOP_TIMEOUT = Duration.seconds(60);
+
+/** How long ECS waits after SIGTERM for the screening consumer: Fargate's most (infra/lib/screening.ts). */
+export const SCREENING_STOP_TIMEOUT = Duration.seconds(SCREENING_STOP_TIMEOUT_SECONDS);
 
 /** The queue connection: pg-boss's login, every session as the role that owns its schema. */
 const QUEUE: ConnectionUrl = { variable: 'QUEUE_DATABASE_URL', role: QUEUE_ROLE };
@@ -70,7 +77,15 @@ export interface ComputeProps {
   readonly repositories: { readonly web: ecr.IRepository; readonly worker: ecr.IRepository };
   readonly applicationRole: iam.IRole;
   readonly operatorRole: iam.IRole;
-  readonly logGroups: { readonly web: logs.ILogGroup; readonly worker: logs.ILogGroup; readonly platform: logs.ILogGroup; readonly migration: logs.ILogGroup };
+  /** The screening consumer's task role: it sends the result email from MailFromAddress, and nothing else (ScreeningRole). */
+  readonly screeningRole: iam.IRole;
+  readonly logGroups: {
+    readonly web: logs.ILogGroup;
+    readonly worker: logs.ILogGroup;
+    readonly platform: logs.ILogGroup;
+    readonly screening: logs.ILogGroup;
+    readonly migration: logs.ILogGroup;
+  };
   readonly targetGroup: elbv2.ApplicationTargetGroup;
   /** False only for a deploy that redeploys a previous image (`-c tp:skipMigrations=true`). */
   readonly runMigrations: boolean;
@@ -92,7 +107,7 @@ interface ContainerSpec {
 
 /**
  * The compute (PRD 15, Stack: compute, Environments; PRD 18, Releases; docs/adr/0049): one ECS
- * cluster, three Fargate services and a one-off migration task, all in the app subnets with no
+ * cluster, four Fargate services and a one-off migration task, all in the app subnets with no
  * public address, each under its own security group, its own log group (kept a year, under the
  * environment key) and the existing task roles:
  *
@@ -104,6 +119,11 @@ interface ContainerSpec {
  * - platform: the platform jobs (WORKER_JOBS=platform: the audit copy, the restore drill, the support
  *   notices, the monitoring schedule, billing's two and support mail), as OperatorRole, with the operator and queue logins; the only
  *   task with the operator login, and without the application login.
+ * - screening: the free screening's own consumer (WORKER_JOBS=screening; docs/adr/0062, PR 6b-3), from the worker
+ *   image, as ScreeningRole, with the screening and queue logins alone: it prices three screenings at once, one worker
+ *   thread each, under heap limits that sum under 90% of its memory, at a fixed count with no scaling target (the
+ *   founder's Q1 of 2026-10-21). Where its settings say it starts at launch (production), it runs no task until the
+ *   ScreeningConsumer parameter is `running`. Its security group reaches the AWS endpoints, S3 and the database only.
  * - migration: the worker image's migrator with the owner login, the only task with it, then the
  *   logins the services connect as, created from their secrets when missing (it reads their current
  *   username and password, and sets a password only when it creates the login); run by the
@@ -123,6 +143,7 @@ export class Compute extends Construct {
   readonly web: ecs.FargateService;
   readonly worker: ecs.FargateService;
   readonly platform: ecs.FargateService;
+  readonly screening: ecs.FargateService;
   readonly migrationTask: ecs.FargateTaskDefinition;
   readonly migrationRun: MigrationRun;
   private readonly props: ComputeProps;
@@ -216,6 +237,13 @@ export class Compute extends Construct {
         ...modelPath,
         // The static host the image's assets load from (its assetPrefix, apps/web/Dockerfile), for the CSP.
         STATIC_ASSET_ORIGIN: staticAssetOrigin,
+        // Decision 13: a production web opens the screening only when SCREENING_LAUNCH names this release's tag and
+        // its passing capacity report (apps/web/src/lib/screening/routes.ts, screeningLaunched).
+        IMAGE_TAG: parameters.imageTag,
+        SCREENING_LAUNCH: parameters.screeningLaunch,
+        // Screenings priced at once across the consumer: more queued and pricing than this, and the "sent" page says
+        // it can take a few minutes (Q12).
+        SCREENING_SLOTS: String(screeningSlots(compute.screening)),
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
@@ -286,6 +314,30 @@ export class Compute extends Construct {
       stopTimeout: WORKER_STOP_TIMEOUT,
     });
 
+    const screeningTask = this.taskDefinition('Screening', `tp-${environmentName}-screening`, compute.screening, props.screeningRole);
+    this.container(screeningTask, {
+      name: 'screening',
+      image: workerImage,
+      logGroup: props.logGroups.screening,
+      command: COMMANDS.screening,
+      urls: [
+        // The screening login switches to tp_screening in each transaction and holds nothing of its own (docs/adr/0062).
+        { url: { variable: 'SCREENING_DATABASE_URL' }, secret: database.screeningSecret },
+        { url: QUEUE, secret: database.queueSecret },
+      ],
+      environment: {
+        ...common,
+        WORKER_JOBS: WORKER_JOBS.screening,
+        WORKER_HEARTBEAT_SECONDS: String(HEARTBEAT_INTERVAL_SECONDS),
+        SCREENING_CONCURRENCY: String(compute.screening.concurrency),
+        MAIL_FROM: parameters.mailFromAddress,
+        APP_ORIGIN: appOrigin,
+        // The result email's header embeds the prospect lockup from the static host.
+        STATIC_ASSET_ORIGIN: staticAssetOrigin,
+      },
+      stopTimeout: SCREENING_STOP_TIMEOUT,
+    });
+
     this.migrationTask = this.taskDefinition('Migration', `tp-${environmentName}-migration`, compute.migration);
     const loginField = (secret: secretsmanager.ISecret, variables: { readonly username: string; readonly password: string }) => ({
       [variables.username]: ecs.Secret.fromSecretsManager(secret, 'username'),
@@ -306,6 +358,7 @@ export class Compute extends Construct {
         ...loginField(database.operatorSecret, LOGIN_SECRET_VARIABLES.operator),
         ...loginField(database.queueSecret, LOGIN_SECRET_VARIABLES.queue),
         ...loginField(database.billingSecret, LOGIN_SECRET_VARIABLES.billing),
+        ...loginField(database.screeningSecret, LOGIN_SECRET_VARIABLES.screening),
       },
     });
     const appSubnets = network.vpc.selectSubnets(network.appSubnets).subnets;
@@ -325,7 +378,17 @@ export class Compute extends Construct {
     this.web.attachToApplicationTargetGroup(props.targetGroup);
     this.worker = this.service('Worker', workerTask, compute.worker, network.workerSecurityGroup, `tp-${environmentName}-worker`, false);
     this.platform = this.service('Platform', platformTask, compute.platform, network.operatorSecurityGroup, `tp-${environmentName}-platform`, false);
-    for (const service of [this.web, this.worker, this.platform]) {
+    // A fixed count and no Application Auto Scaling target (decision 14's size is one task of three slots).
+    this.screening = this.service(
+      'Screening',
+      screeningTask,
+      compute.screening,
+      network.screeningSecurityGroup,
+      `tp-${environmentName}-screening`,
+      false,
+      compute.screening.starts === 'launch' ? parameters.countOnceLaunched(compute.screening.desiredCount) : undefined,
+    );
+    for (const service of [this.web, this.worker, this.platform, this.screening]) {
       service.node.addDependency(this.migrationRun.resource);
     }
   }
@@ -367,12 +430,21 @@ export class Compute extends Construct {
     });
   }
 
-  private service(id: string, task: ecs.FargateTaskDefinition, settings: ServiceSettings, securityGroup: ec2.ISecurityGroup, serviceName: string, behindLoadBalancer: boolean): ecs.FargateService {
+  /** A service; its count is the settings' once released, unless `desiredCount` says otherwise (the screening's at launch). */
+  private service(
+    id: string,
+    task: ecs.FargateTaskDefinition,
+    settings: ServiceSettings,
+    securityGroup: ec2.ISecurityGroup,
+    serviceName: string,
+    behindLoadBalancer: boolean,
+    desiredCount: number = this.props.parameters.countOnceReleased(settings.desiredCount),
+  ): ecs.FargateService {
     return new ecs.FargateService(this, `${id}Service`, {
       serviceName,
       cluster: this.cluster,
       taskDefinition: task,
-      desiredCount: this.props.parameters.countOnceReleased(settings.desiredCount),
+      desiredCount,
       assignPublicIp: false,
       vpcSubnets: this.props.network.appSubnets,
       securityGroups: [securityGroup],

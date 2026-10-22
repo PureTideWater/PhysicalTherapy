@@ -39,14 +39,32 @@ export interface ServiceSettings extends TaskSize {
 }
 
 /**
+ * The free screening's own consumer (WORKER_JOBS=screening; docs/adr/0062; PR 6b-3, the founder's Q1 of 2026-10-21):
+ * one task of 2 vCPU and 4,096 MiB pricing three screenings at once, each in its own worker thread, at a fixed count
+ * with no scaling. Declaring it switches the capacity test's time verdict on (tools/screening-capacity/limits.ts).
+ */
+export interface ScreeningServiceSettings extends ServiceSettings {
+  /** Screenings one task prices at once, one worker thread each (SCREENING_CONCURRENCY). */
+  readonly concurrency: number;
+  /**
+   * 'deploy': runs from the first released deploy; 'launch': held at no task until the ScreeningConsumer parameter is
+   * 'running' (Q1 (b): production's consumer waits for launch, staging's always runs).
+   */
+  readonly starts: 'deploy' | 'launch';
+}
+
+/**
  * The compute (PRD 15, Stack: compute; PRD 19, Monthly costs: about $55 a month of Fargate at ten
- * customers). The web app runs two tasks in production, one per availability zone; the worker's
- * practice jobs and its platform jobs run one task each (docs/adr/0049).
+ * customers, and about $74.50 for the screening consumer once it runs). The web app runs two tasks in
+ * production, one per availability zone; the worker's practice jobs, its platform jobs and the
+ * screening consumer run one task each (docs/adr/0049).
  */
 export interface ComputeSettings {
   readonly web: ServiceSettings;
   readonly worker: ServiceSettings;
   readonly platform: ServiceSettings;
+  /** The screening consumer: the same size everywhere, so staging measures production's task (decision 15). */
+  readonly screening: ScreeningServiceSettings;
   readonly migration: TaskSize;
   /**
    * NAT gateways for the app subnets' internet egress (Cognito, Stripe, the compliance platform;
@@ -78,11 +96,16 @@ export interface EnvironmentSettings {
 
 const burstable = (size: ec2.InstanceSize) => ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE4_GRAVITON, size);
 
-/** Quarter-vCPU web and platform tasks and a half-vCPU worker (Chromium prints its PDFs). */
-const compute = (webTasks: number, natGateways: number): ComputeSettings => ({
+/**
+ * Quarter-vCPU web and platform tasks, a half-vCPU worker (Chromium prints its PDFs) and the screening consumer at 2
+ * vCPU and 4,096 MiB (Fargate's least memory at 2 vCPU), three screenings at once (Q1 (a): three worst-shape uploads at
+ * once priced in 37.5 to 41.1 s against the 48-s line, where two at a time left the third at 55.8 s).
+ */
+const compute = (webTasks: number, natGateways: number, screeningStarts: ScreeningServiceSettings['starts']): ComputeSettings => ({
   web: { cpu: 256, memoryMiB: 512, desiredCount: webTasks },
   worker: { cpu: 512, memoryMiB: 1024, desiredCount: 1 },
   platform: { cpu: 256, memoryMiB: 512, desiredCount: 1 },
+  screening: { cpu: 2048, memoryMiB: 4096, desiredCount: 1, concurrency: 3, starts: screeningStarts },
   migration: { cpu: 256, memoryMiB: 512 },
   natGateways,
 });
@@ -102,7 +125,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     objectLockMode: 'GOVERNANCE',
     protectFromDeletion: false,
     pullRequestDiffRole: false,
-    compute: compute(1, 1),
+    compute: compute(1, 1, 'deploy'),
   },
   staging: {
     name: 'staging',
@@ -118,7 +141,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     objectLockMode: 'GOVERNANCE',
     protectFromDeletion: false,
     pullRequestDiffRole: true,
-    compute: compute(1, 1),
+    compute: compute(1, 1, 'deploy'),
   },
   production: {
     name: 'production',
@@ -134,7 +157,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     objectLockMode: 'COMPLIANCE',
     protectFromDeletion: true,
     pullRequestDiffRole: false,
-    compute: compute(2, 2),
+    compute: compute(2, 2, 'launch'),
   },
 };
 

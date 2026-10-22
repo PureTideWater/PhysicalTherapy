@@ -1,5 +1,5 @@
 /** Every log group the stack creates, by the service that writes it (PRD 15, Observability). */
-export const LOG_GROUPS = ['web', 'worker', 'platform', 'migration', 'migration-runner'] as const;
+export const LOG_GROUPS = ['web', 'worker', 'platform', 'screening', 'migration', 'migration-runner', 'network-lookup'] as const;
 export type LogGroupName = (typeof LOG_GROUPS)[number];
 
 /** `/tp/<environment>/<name>`: the environment key admits CloudWatch Logs for these names only. */

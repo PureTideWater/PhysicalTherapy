@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { SKIP_MIGRATIONS_CONTEXT } from '../lib/app';
-import { COMMANDS, LOGIN_SECRET_VARIABLES, WORKER_JOBS, WORKER_STOP_TIMEOUT } from '../lib/constructs/compute';
+import { COMMANDS, LOGIN_SECRET_VARIABLES, SCREENING_STOP_TIMEOUT, WORKER_JOBS, WORKER_STOP_TIMEOUT } from '../lib/constructs/compute';
 import { WEB_PORT } from '../lib/constructs/edge';
 import { MIGRATION_POLL_INTERVAL, MIGRATION_RUN_TYPE, MIGRATION_TIMEOUT } from '../lib/constructs/migration-run';
 import { PARAMETER_NAMES } from '../lib/deploy-parameters';
@@ -46,7 +46,7 @@ interface ContainerDefinition {
 }
 
 /** The services' task families, the container each runs and the role it runs as. */
-const TASKS = ['web', 'worker', 'platform', 'migration'] as const;
+const TASKS = ['web', 'worker', 'platform', 'screening', 'migration'] as const;
 type TaskName = (typeof TASKS)[number];
 
 function container(task: CfnResource): ContainerDefinition {
@@ -68,7 +68,7 @@ function field(secretLogicalId: string, name: string): unknown {
   return { 'Fn::Join': ['', [ref(secretLogicalId), `:${name}::`]] };
 }
 
-/** The six logins' secrets (the attachments their tasks reference). */
+/** The seven logins' secrets (the attachments their tasks reference). */
 function logins(stack: PlatformStack) {
   return {
     owner: logicalIdOf(stack, stack.database.ownerSecret),
@@ -77,6 +77,7 @@ function logins(stack: PlatformStack) {
     operator: logicalIdOf(stack, stack.database.operatorSecret),
     queue: logicalIdOf(stack, stack.database.queueSecret),
     billing: logicalIdOf(stack, stack.database.billingSecret),
+    screening: logicalIdOf(stack, stack.database.screeningSecret),
   };
 }
 
@@ -97,14 +98,15 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     web: resourceById(template, 'AWS::ECS::Service', logicalIdOf(stack, stack.compute.web)),
     worker: resourceById(template, 'AWS::ECS::Service', logicalIdOf(stack, stack.compute.worker)),
     platform: resourceById(template, 'AWS::ECS::Service', logicalIdOf(stack, stack.compute.platform)),
+    screening: resourceById(template, 'AWS::ECS::Service', logicalIdOf(stack, stack.compute.screening)),
   };
   const secret = logins(stack);
   const appSubnets = stack.network.vpc.selectSubnets(stack.network.appSubnets).subnets.map((subnet) => ref(logicalIdOf(stack, subnet as never)));
 
-  it('runs one cluster with three services and four task definitions, nothing on EC2', () => {
+  it('runs one cluster with four services and five task definitions, nothing on EC2', () => {
     expect(propertiesOf(onlyResource(template, 'AWS::ECS::Cluster')[1]).ClusterName).toBe(`tp-${environment}`);
-    expect(resourcesOf(template, 'AWS::ECS::Service')).toHaveLength(3);
-    expect(resourcesOf(template, 'AWS::ECS::TaskDefinition')).toHaveLength(4);
+    expect(resourcesOf(template, 'AWS::ECS::Service')).toHaveLength(4);
+    expect(resourcesOf(template, 'AWS::ECS::TaskDefinition')).toHaveLength(5);
     expect(resourcesOf(template, 'AWS::AutoScaling::AutoScalingGroup')).toEqual([]);
     expect(resourcesOf(template, 'AWS::EC2::Instance')).toEqual([]);
     for (const [id, task] of resourcesOf(template, 'AWS::ECS::TaskDefinition')) {
@@ -126,6 +128,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       web: stack.network.webSecurityGroup,
       worker: stack.network.workerSecurityGroup,
       platform: stack.network.operatorSecurityGroup,
+      screening: stack.network.screeningSecurityGroup,
     };
     for (const [name, service] of Object.entries(services) as [keyof typeof services, CfnResource][]) {
       expect(propertiesOf(service).NetworkConfiguration, name).toEqual({
@@ -143,10 +146,27 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
   });
 
   it('runs no task until ImageTag names a release, then the environment\'s count', () => {
-    for (const [name, service] of Object.entries(services) as [keyof typeof services, CfnResource][]) {
-      expect(propertiesOf(service).DesiredCount, name).toEqual({ 'Fn::If': ['Released', settings.compute[name].desiredCount, 0] });
+    for (const name of ['web', 'worker', 'platform'] as const) {
+      expect(propertiesOf(services[name]).DesiredCount, name).toEqual({ 'Fn::If': ['Released', settings.compute[name].desiredCount, 0] });
     }
     expect(settings.compute.web.desiredCount).toBe(environment === 'production' ? 2 : 1);
+  });
+
+  it('sizes the screening consumer as the founder ruled (Q1 (a)): one task of 2 vCPU and 4,096 MiB, three screenings at once', () => {
+    expect(settings.compute.screening).toEqual({ cpu: 2048, memoryMiB: 4096, desiredCount: 1, concurrency: 3, starts: environment === 'production' ? 'launch' : 'deploy' });
+    expect(propertiesOf(tasks.screening[1])).toMatchObject({ Cpu: '2048', Memory: '4096', RuntimePlatform: { CpuArchitecture: 'X86_64', OperatingSystemFamily: 'LINUX' } });
+  });
+
+  it('runs the screening consumer once released where it starts at deploy (staging always on), and in production only once ScreeningConsumer is running (Q1 (b))', () => {
+    const condition = settings.compute.screening.starts === 'launch' ? 'ScreeningConsumerRunning' : 'Released';
+    expect(propertiesOf(services.screening).DesiredCount).toEqual({ 'Fn::If': [condition, 1, 0] });
+    expect(settings.compute.screening.starts).toBe(environment === 'production' ? 'launch' : 'deploy');
+  });
+
+  it('gives the screening consumer a fixed count: no Application Auto Scaling target or policy names it, or any service', () => {
+    expect(resourcesOf(template, 'AWS::ApplicationAutoScaling::ScalableTarget')).toEqual([]);
+    expect(resourcesOf(template, 'AWS::ApplicationAutoScaling::ScalingPolicy')).toEqual([]);
+    expect(JSON.stringify(template.toJSON())).not.toMatch(/ScalableTarget|service\/tp-[a-z]+\/tp-[a-z]+-screening/);
   });
 
   it('puts only the web service behind the load balancer, on the web port, with a health-check grace period', () => {
@@ -154,8 +174,9 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(propertiesOf(services.web).HealthCheckGracePeriodSeconds).toBe(60);
     expect(propertiesOf(services.worker).LoadBalancers).toBeUndefined();
     expect(propertiesOf(services.platform).LoadBalancers).toBeUndefined();
+    expect(propertiesOf(services.screening).LoadBalancers).toBeUndefined();
     expect(definitions.web.PortMappings).toEqual([{ ContainerPort: WEB_PORT, Protocol: 'tcp' }]);
-    for (const name of ['worker', 'platform', 'migration'] as const) {
+    for (const name of ['worker', 'platform', 'screening', 'migration'] as const) {
       expect(definitions[name].PortMappings, name).toBeUndefined();
     }
   });
@@ -164,6 +185,8 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(propertiesOf(tasks.web[1]).TaskRoleArn).toEqual(getAtt(logicalIdOf(stack, stack.application.role), 'Arn'));
     expect(propertiesOf(tasks.worker[1]).TaskRoleArn).toEqual(getAtt(logicalIdOf(stack, stack.application.role), 'Arn'));
     expect(propertiesOf(tasks.platform[1]).TaskRoleArn).toEqual(getAtt(logicalIdOf(stack, stack.operator.role), 'Arn'));
+    // The screening consumer runs as its own role, which sends its email and nothing else (screening-role.test.ts).
+    expect(propertiesOf(tasks.screening[1]).TaskRoleArn).toEqual(getAtt(logicalIdOf(stack, stack.screeningRole.role), 'Arn'));
   });
 
   it('gives the migration task a role with no permission at all (it talks to PostgreSQL only)', () => {
@@ -193,7 +216,9 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     // The practice jobs connect as the worker's own login, never the application login (docs/adr/0061).
     expect(secretsOf(definitions.worker)).toEqual({ ...urlSecrets('DATABASE_URL', secret.worker), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
     expect(secretsOf(definitions.platform)).toEqual({ ...urlSecrets('OPERATOR_DATABASE_URL', secret.operator), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
-    // The migration also reads the five service logins, which it creates when they are missing.
+    // The screening consumer holds its own login and the queue's, and neither the application's nor the operator's.
+    expect(secretsOf(definitions.screening)).toEqual({ ...urlSecrets('SCREENING_DATABASE_URL', secret.screening), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
+    // The migration also reads the six service logins, which it creates when they are missing.
     expect(secretsOf(definitions.migration)).toEqual({
       ...urlSecrets('DATABASE_URL', secret.owner),
       ...loginFields(LOGIN_SECRET_VARIABLES.app, secret.app),
@@ -201,6 +226,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       ...loginFields(LOGIN_SECRET_VARIABLES.operator, secret.operator),
       ...loginFields(LOGIN_SECRET_VARIABLES.queue, secret.queue),
       ...loginFields(LOGIN_SECRET_VARIABLES.billing, secret.billing),
+      ...loginFields(LOGIN_SECRET_VARIABLES.screening, secret.screening),
     });
   });
 
@@ -209,7 +235,8 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       web: [secret.app, secret.queue, secret.billing, logicalIdOf(stack, stack.compute.cookieSecret), logicalIdOf(stack, stack.compute.stripeSecret)],
       worker: [secret.worker, secret.queue],
       platform: [secret.operator, secret.queue],
-      migration: [secret.owner, secret.app, secret.worker, secret.operator, secret.queue, secret.billing],
+      screening: [secret.screening, secret.queue],
+      migration: [secret.owner, secret.app, secret.worker, secret.operator, secret.queue, secret.billing, secret.screening],
     };
     for (const name of TASKS) {
       const roleId = (propertiesOf(tasks[name][1]).ExecutionRoleArn as { 'Fn::GetAtt': [string] })['Fn::GetAtt'][0];
@@ -249,6 +276,9 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(definitions.platform.Command).toEqual([
       launchScript([{ variable: 'OPERATOR_DATABASE_URL' }, { variable: 'QUEUE_DATABASE_URL', role: 'tp_queue' }], COMMANDS.worker),
     ]);
+    expect(definitions.screening.Command).toEqual([
+      launchScript([{ variable: 'SCREENING_DATABASE_URL' }, { variable: 'QUEUE_DATABASE_URL', role: 'tp_queue' }], COMMANDS.screening),
+    ]);
     expect(definitions.migration.Command).toEqual([launchScript([{ variable: 'DATABASE_URL' }], COMMANDS.logins, [COMMANDS.migrate])]);
   });
 
@@ -258,7 +288,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       expect(image(name), name).toContain(`{"Ref":"${PARAMETER_NAMES.imageTag}"}`);
     }
     expect(image('web')).toContain(logicalIdOf(stack, stack.images.repositories.web));
-    for (const name of ['worker', 'platform', 'migration'] as const) {
+    for (const name of ['worker', 'platform', 'screening', 'migration'] as const) {
       expect(image(name), name).toContain(logicalIdOf(stack, stack.images.repositories.worker));
     }
   });
@@ -272,6 +302,23 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       expect(definitions[name].StopTimeout, name).toBe(WORKER_STOP_TIMEOUT.toSeconds());
     }
     expect(HEARTBEAT_INTERVAL_SECONDS).toBe(60);
+  });
+
+  it('runs the screening jobs alone on the screening task, three at once, draining for Fargate\'s longest stop', () => {
+    expect(environmentOf(definitions.screening)).toMatchObject({
+      WORKER_JOBS: WORKER_JOBS.screening,
+      WORKER_HEARTBEAT_SECONDS: String(HEARTBEAT_INTERVAL_SECONDS),
+      SCREENING_CONCURRENCY: String(settings.compute.screening.concurrency),
+      MAIL_FROM: ref(PARAMETER_NAMES.mailFromAddress),
+      APP_ORIGIN: { 'Fn::Join': ['', ['https://', ref(PARAMETER_NAMES.appDomainName)]] },
+    });
+    expect(WORKER_JOBS.screening).toBe('screening');
+    expect(definitions.screening.StopTimeout).toBe(120);
+    expect(SCREENING_STOP_TIMEOUT.toSeconds()).toBe(120);
+    // Nothing of the practice jobs or the platform jobs: no documents, keys, audit copies, drill or model path.
+    for (const name of ['DOCUMENTS_BUCKET', 'KMS_KEY_ID', 'TP_KEY_PROVIDER', 'AUDIT_COPY_BUCKET', 'RESTORE_DRILL_MODE', 'SUPPORT_MAIL_BUCKET', 'MODEL_PROVIDER', 'DATABASE_URL', 'OPERATOR_DATABASE_URL']) {
+      expect(environmentOf(definitions.screening), name).not.toHaveProperty(name);
+    }
   });
 
   it('runs every container in production mode, trusting the RDS certificate bundle, with an init process', () => {
@@ -302,6 +349,11 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       TP_ENVIRONMENT: environment,
       MODEL_PROVIDER: 'bedrock',
       STATIC_ASSET_ORIGIN: { 'Fn::Join': ['', ['https://', ref(PARAMETER_NAMES.staticDomainName)]] },
+      // Decision 13: a production web opens the screening only for the launch value of the tag it runs.
+      IMAGE_TAG: ref(PARAMETER_NAMES.imageTag),
+      SCREENING_LAUNCH: ref(PARAMETER_NAMES.screeningLaunch),
+      // The "sent" page counts every slot busy at one task of three (Q12).
+      SCREENING_SLOTS: '3',
     });
     expect(plain.BEDROCK_REGION).toEqual(plain.AWS_REGION);
     expect(plain.KMS_KEY_ID).toEqual(getAtt(logicalIdOf(stack, stack.key.key), 'Arn'));
@@ -327,10 +379,10 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
   it('names the static host to every task that sends email, the same host the web image loads its assets from', () => {
     // Email embeds the brand's lockup from CloudFront's /brand/*, never from the application (reconciliation-001, D7).
     const staticHost = { 'Fn::Join': ['', ['https://', ref(PARAMETER_NAMES.staticDomainName)]] };
-    for (const name of ['web', 'worker', 'platform'] as const) {
+    for (const name of ['web', 'worker', 'platform', 'screening'] as const) {
       expect(environmentOf(definitions[name]).STATIC_ASSET_ORIGIN, name).toEqual(staticHost);
     }
-    for (const name of ['worker', 'platform'] as const) {
+    for (const name of ['worker', 'platform', 'screening'] as const) {
       expect(environmentOf(definitions[name]).MAIL_FROM, name).toBeDefined();
     }
     expect(environmentOf(definitions.migration).STATIC_ASSET_ORIGIN).toBeUndefined();
@@ -341,7 +393,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       expect(environmentOf(definitions[name]), name).toMatchObject({ MODEL_PROVIDER: 'bedrock' });
       expect(environmentOf(definitions[name]).BEDROCK_REGION, name).toEqual(environmentOf(definitions[name]).AWS_REGION);
     }
-    for (const name of ['platform', 'migration'] as const) {
+    for (const name of ['platform', 'screening', 'migration'] as const) {
       expect(environmentOf(definitions[name]).MODEL_PROVIDER, name).toBeUndefined();
     }
   });
@@ -351,6 +403,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       web: ref(logicalIdOf(stack, stack.monitoring.webLogGroup)),
       worker: ref(logicalIdOf(stack, stack.monitoring.workerLogGroup)),
       platform: ref(logicalIdOf(stack, stack.monitoring.platformLogGroup)),
+      screening: ref(logicalIdOf(stack, stack.monitoring.screeningLogGroup)),
       migration: ref(logicalIdOf(stack, stack.monitoring.migrationLogGroup)),
     };
     for (const name of TASKS) {
@@ -496,8 +549,8 @@ describe('the compute contract with the applications', () => {
 
   it('sets only settings the worker reads (apps/worker/src/config.ts, and the gateway\'s for evaluate-permitted)', () => {
     const config = source('apps/worker/src/config.ts');
-    for (const family of ['tp-staging-worker', 'tp-staging-platform']) {
-      for (const name of [...configured(definitionOf(family)).filter((name) => !gatewaySettings.includes(name)), 'QUEUE_DATABASE_URL', 'OPERATOR_DATABASE_URL']) {
+    for (const family of ['tp-staging-worker', 'tp-staging-platform', 'tp-staging-screening']) {
+      for (const name of [...configured(definitionOf(family)).filter((name) => !gatewaySettings.includes(name)), 'QUEUE_DATABASE_URL', 'OPERATOR_DATABASE_URL', 'SCREENING_DATABASE_URL']) {
         expect(config, `${family} ${name}`).toMatch(new RegExp(`'${name}'|env\\.${name}\\b`));
       }
     }
@@ -513,6 +566,10 @@ describe('the compute contract with the applications', () => {
     expect(source('apps/worker/Dockerfile')).toContain('CMD ["node", "--enable-source-maps", "dist/main.js"]');
     expect(COMMANDS.web).toEqual(['node', 'apps/web/server.js']);
     expect(COMMANDS.worker).toEqual(['node', '--enable-source-maps', 'dist/main.js']);
+    // The screening consumer runs the same bundle with its main thread's heap limit (the plan's G3).
+    expect(COMMANDS.screening).toEqual(['node', '--enable-source-maps', '--max-old-space-size=512', 'dist/main.js']);
+    // Its threads load the bundle's own thread file beside main.js.
+    expect(source('apps/worker/build.ts')).toContain("'screening-thread'");
     // The worker bundle carries the migrator beside main.js, and the image the migrations it applies
     // (packages/db's MIGRATIONS_DIR is ../migrations from the bundle).
     expect(source('apps/worker/build.ts')).toMatch(/migrate: '\.\.\/\.\.\/packages\/db\/src\/cli\/migrate\.ts'/);

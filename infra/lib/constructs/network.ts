@@ -1,8 +1,16 @@
-import { aws_ec2 as ec2 } from 'aws-cdk-lib';
+import { RemovalPolicy, Stack, aws_ec2 as ec2, type aws_kms as kms, aws_logs as logs, custom_resources as cr } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+
+import { logGroupName } from '../log-groups';
 
 /** Subnet groups: `edge` for the load balancer and the NAT gateways, `app` for the tasks, `data` for RDS. */
 export const SUBNET_GROUPS = { edge: 'edge', app: 'app', data: 'data' } as const;
+
+/** The custom resource type of the deploy-time S3 prefix-list lookup. */
+export const S3_PREFIX_LIST_LOOKUP_TYPE = 'Custom::S3PrefixList';
+
+/** Where the lookup's answer holds the prefix list's ID. */
+export const S3_PREFIX_LIST_ID_PATH = 'PrefixLists.0.PrefixListId';
 
 /**
  * Interface endpoints, so the private subnets reach AWS without an internet path (PRD 16, network:
@@ -39,6 +47,12 @@ export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEn
  * Database construct adds: web, worker (practice jobs), operator (the platform jobs: the audit copy,
  * the restore drill, the support notices and the monitoring schedule) and migration (the one-off
  * migration task, the only one holding the owner login).
+ *
+ * The screening consumer's group (WORKER_JOBS=screening; docs/adr/0049, 0062) is narrower still, a deliberate exception
+ * to the app tier's "HTTPS anywhere": the service that prices what strangers upload reaches no host but AWS's. Its
+ * egress is HTTPS to the interface endpoints (Secrets Manager, CloudWatch Logs, ECR and SES) and to S3 through the
+ * gateway (the image layers), by the region's S3 prefix list, which a deploy-time lookup reads (no CloudFormation value
+ * names it), and PostgreSQL to the database, which the Database construct adds. No rule reaches the NAT gateways.
  */
 export class Network extends Construct {
   readonly vpc: ec2.Vpc;
@@ -49,8 +63,13 @@ export class Network extends Construct {
   readonly workerSecurityGroup: ec2.SecurityGroup;
   readonly operatorSecurityGroup: ec2.SecurityGroup;
   readonly migrationSecurityGroup: ec2.SecurityGroup;
+  readonly screeningSecurityGroup: ec2.SecurityGroup;
+  /** The region's S3 prefix list (com.amazonaws.<region>.s3), read at deploy time for the screening group's egress. */
+  readonly s3PrefixListId: string;
+  /** Where the lookup's function logs, under the environment key. */
+  readonly lookupLogGroup: logs.LogGroup;
 
-  constructor(scope: Construct, id: string, props: { readonly cidr: string; readonly natGateways: number }) {
+  constructor(scope: Construct, id: string, props: { readonly cidr: string; readonly natGateways: number; readonly key: kms.IKey; readonly environmentName: string }) {
     super(scope, id);
     this.vpc = new ec2.Vpc(this, 'Vpc', {
       ipAddresses: ec2.IpAddresses.cidr(props.cidr),
@@ -88,8 +107,43 @@ export class Network extends Construct {
     this.workerSecurityGroup = appTierSecurityGroup(this, 'WorkerSecurityGroup', this.vpc, 'Worker tasks (milestone 11)');
     this.operatorSecurityGroup = appTierSecurityGroup(this, 'OperatorSecurityGroup', this.vpc, 'Platform jobs: audit copy, restore drill, support notices (milestone 11)');
     this.migrationSecurityGroup = appTierSecurityGroup(this, 'MigrationSecurityGroup', this.vpc, 'The one-off migration task before each release');
+
+    // The S3 gateway's prefix list has a different ID in each region and no CloudFormation attribute, so a deploy-time
+    // call reads it by its fixed name (ec2:DescribeManagedPrefixLists, which takes no resource-level permission).
+    this.lookupLogGroup = new logs.LogGroup(this, 'LookupLogs', {
+      logGroupName: logGroupName(props.environmentName, 'network-lookup'),
+      encryptionKey: props.key,
+      retention: logs.RetentionDays.ONE_YEAR,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+    const s3PrefixListName = `com.amazonaws.${Stack.of(this).region}.s3`;
+    const describe: cr.AwsSdkCall = {
+      service: 'EC2',
+      action: 'DescribeManagedPrefixLists',
+      parameters: { Filters: [{ Name: 'prefix-list-name', Values: [s3PrefixListName] }] },
+      physicalResourceId: cr.PhysicalResourceId.of(s3PrefixListName),
+      outputPaths: [S3_PREFIX_LIST_ID_PATH],
+    };
+    const lookup = new cr.AwsCustomResource(this, 'S3PrefixList', {
+      resourceType: S3_PREFIX_LIST_LOOKUP_TYPE,
+      onCreate: describe,
+      onUpdate: describe,
+      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({ resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE }),
+      installLatestAwsSdk: false,
+      logGroup: this.lookupLogGroup,
+    });
+    this.s3PrefixListId = lookup.getResponseField(S3_PREFIX_LIST_ID_PATH);
+
+    this.screeningSecurityGroup = new ec2.SecurityGroup(this, 'ScreeningSecurityGroup', {
+      vpc: this.vpc,
+      description: 'The screening consumer: HTTPS to the VPC endpoints and S3 only (no internet), PostgreSQL to the database',
+      allowAllOutbound: false,
+    });
+    this.screeningSecurityGroup.addEgressRule(this.endpointSecurityGroup, ec2.Port.tcp(443), 'HTTPS to the interface endpoints');
+    this.screeningSecurityGroup.addEgressRule(ec2.Peer.prefixList(this.s3PrefixListId), ec2.Port.tcp(443), 'HTTPS to S3 through the gateway (image layers)');
   }
 }
+
 
 /**
  * A security group for something in the app subnets: no ingress, HTTPS egress only: the endpoints,

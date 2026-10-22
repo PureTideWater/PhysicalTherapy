@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { S3_PREFIX_LIST_ID_PATH, S3_PREFIX_LIST_LOOKUP_TYPE } from '../lib/constructs/network';
 import { ENVIRONMENTS, environmentSettings } from '../lib/environments';
-import { type CfnResource, getAtt, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
+import { logGroupName } from '../lib/log-groups';
+import { type CfnResource, type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, roleStatements, synthesized } from './synth';
 
 /**
  * PRD 16, network: "Private subnets for database and worker; VPC endpoints for S3, KMS, Bedrock ...;
@@ -119,10 +121,14 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     const ingress = resourcesOf(template, 'AWS::EC2::SecurityGroupIngress')
       .map(([, rule]) => propertiesOf(rule))
       .filter((rule) => JSON.stringify(rule.GroupId) === JSON.stringify(databaseGroup));
-    const clients = [stack.network.webSecurityGroup, stack.network.workerSecurityGroup, stack.network.operatorSecurityGroup, stack.network.migrationSecurityGroup].map(
-      (group) => getAtt(logicalIdOf(stack, group), 'GroupId'),
-    );
-    expect(ingress).toHaveLength(5);
+    const clients = [
+      stack.network.webSecurityGroup,
+      stack.network.workerSecurityGroup,
+      stack.network.operatorSecurityGroup,
+      stack.network.screeningSecurityGroup,
+      stack.network.migrationSecurityGroup,
+    ].map((group) => getAtt(logicalIdOf(stack, group), 'GroupId'));
+    expect(ingress).toHaveLength(6);
     for (const rule of ingress) {
       expect(rule).toMatchObject({ IpProtocol: 'tcp', FromPort: 5432, ToPort: 5432 });
       expect(rule.SourceSecurityGroupId).toBeDefined();
@@ -158,5 +164,50 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
         .filter((rule) => JSON.stringify(rule.GroupId) === JSON.stringify(getAtt(id, 'GroupId')));
       expect(egress).toEqual([expect.objectContaining({ IpProtocol: 'tcp', FromPort: 5432, ToPort: 5432 })]);
     }
+  });
+
+  describe('the screening consumer reaches no host but AWS\'s (docs/adr/0049, 0062)', () => {
+    const id = logicalIdOf(stack, stack.network.screeningSecurityGroup);
+    const group = resourceById(template, 'AWS::EC2::SecurityGroup', id);
+    const egress = resourcesOf(template, 'AWS::EC2::SecurityGroupEgress')
+      .map(([, rule]) => propertiesOf(rule))
+      .filter((rule) => JSON.stringify(rule.GroupId) === JSON.stringify(getAtt(id, 'GroupId')));
+    const lookupId = onlyResource(template, S3_PREFIX_LIST_LOOKUP_TYPE)[0];
+
+    it('admits nothing and sends HTTPS only to the interface endpoints and to S3 by its prefix list, and PostgreSQL only to the database', () => {
+      expect(propertiesOf(group).SecurityGroupIngress).toBeUndefined();
+      // No rule to an address range: the NAT gateways, and the internet behind them, are out of reach.
+      expect(propertiesOf(group).SecurityGroupEgress).toBeUndefined();
+      expect(JSON.stringify(egress)).not.toMatch(/CidrIp/);
+      expect(egress).toHaveLength(3);
+      expect(egress).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ IpProtocol: 'tcp', FromPort: 443, ToPort: 443, DestinationSecurityGroupId: getAtt(logicalIdOf(stack, stack.network.endpointSecurityGroup), 'GroupId') }),
+          expect.objectContaining({ IpProtocol: 'tcp', FromPort: 443, ToPort: 443, DestinationPrefixListId: getAtt(lookupId, S3_PREFIX_LIST_ID_PATH) }),
+          expect.objectContaining({ IpProtocol: 'tcp', FromPort: 5432, ToPort: 5432, DestinationSecurityGroupId: getAtt(logicalIdOf(stack, stack.database.securityGroup), 'GroupId') }),
+        ]),
+      );
+    });
+
+    it('reads the region\'s S3 prefix list at deploy time by its name, with the one read-only call, logging under the environment key', () => {
+      const lookup = propertiesOf(resourceById(template, S3_PREFIX_LIST_LOOKUP_TYPE, lookupId));
+      for (const phase of ['Create', 'Update']) {
+        const call = JSON.parse(JSON.stringify(lookup[phase])) as unknown;
+        expect(JSON.stringify(call), phase).toContain('DescribeManagedPrefixLists');
+        expect(JSON.stringify(call), phase).toContain('prefix-list-name');
+        expect(JSON.stringify(call), phase).toContain('.s3');
+      }
+      expect(lookup.Delete).toBeUndefined();
+      const fn = resourcesOf(template, 'AWS::Lambda::Function').find(([, candidate]) => JSON.stringify(propertiesOf(candidate).LoggingConfig) === JSON.stringify({ LogGroup: ref(logicalIdOf(stack, stack.network.lookupLogGroup)) }));
+      expect(fn).toBeDefined();
+      const roleId = (propertiesOf((fn as [string, CfnResource])[1]).Role as { 'Fn::GetAtt': [string] })['Fn::GetAtt'][0];
+      const statements: CfnStatement[] = roleStatements(template, roleId);
+      expect(statements.map((statement) => [statement.Action, statement.Resource])).toEqual([['ec2:DescribeManagedPrefixLists', '*']]);
+      expect(propertiesOf(resourceById(template, 'AWS::Logs::LogGroup', logicalIdOf(stack, stack.network.lookupLogGroup)))).toMatchObject({
+        LogGroupName: logGroupName(environment, 'network-lookup'),
+        KmsKeyId: getAtt(keyId(template), 'Arn'),
+        RetentionInDays: 365,
+      });
+    });
   });
 });

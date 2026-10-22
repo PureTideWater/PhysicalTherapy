@@ -8,6 +8,25 @@ import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED
 import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS, PRICING_ENGINE_ERRORS_MESSAGE, PRICING_ENGINE_ERRORS_METRIC } from '../lib/jobs';
 import { LOG_GROUPS, LOG_RETENTION_DAYS, logGroupName } from '../lib/log-groups';
 import { MODEL_BUDGET_ERROR_CODES, MODEL_BUDGET_METRIC, MODEL_BUDGET_PERIOD_SECONDS } from '../lib/models';
+import {
+  OLDEST_QUEUED_LIMIT_MS,
+  OLDEST_QUEUED_METRIC,
+  OLDEST_QUEUED_PERIOD_SECONDS,
+  QUEUE_MESSAGE,
+  RUN_FAILED_ERROR_CODES,
+  RUN_FAILED_METRIC,
+  RUN_FAILED_PERIOD_SECONDS,
+  SCREENING_HEARTBEAT_METRIC,
+  SCREENING_NAMESPACE,
+  TIME_TO_EMAIL_AFTER_WAITING_MESSAGE,
+  TIME_TO_EMAIL_LIMIT_MS,
+  TIME_TO_EMAIL_MESSAGE,
+  TIME_TO_EMAIL_METRIC,
+  TIME_TO_EMAIL_PERIOD_SECONDS,
+  UPLOADS_SENT_TO_WAIT_METRIC,
+  UPLOADS_SENT_TO_WAIT_PERIOD_SECONDS,
+  UPLOAD_SENT_TO_WAIT_MESSAGE,
+} from '../lib/screening';
 import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../lib/security-events';
 import { type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
 
@@ -48,6 +67,33 @@ describe('the model budget alert contract with the gateway (MOD-05: calls refuse
     expect(gateway).toContain(`error_code: '${MODEL_BUDGET_ERROR_CODES[1]}'`);
     // error_code is a field the logger keeps (packages/observability's allowlist).
     expect(readFileSync(path.resolve(import.meta.dirname, '../../packages/observability/src/fields.ts'), 'utf8')).toContain("'error_code'");
+  });
+});
+
+describe('the screening consumer\'s metric contract with the worker and the web app (docs/adr/0062; PR 6b-3)', () => {
+  const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
+
+  it('matches the lines the consumer logs: the time to email, after waiting apart, the queue gauge and a run out of attempts', () => {
+    const job = source('apps/worker/src/screening/job.ts');
+    expect(job).toContain(`logger.info('${TIME_TO_EMAIL_MESSAGE}', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: elapsedMs });`);
+    expect(job).toContain(`logger.info('${TIME_TO_EMAIL_AFTER_WAITING_MESSAGE}', {`);
+    expect(job).toContain(`logger.info('${QUEUE_MESSAGE}', { job_id: jobId, record_count: gauge.queued, elapsed_ms: gauge.oldestQueuedMs });`);
+    for (const code of RUN_FAILED_ERROR_CODES) {
+      expect(job).toContain(`error_code: '${code}'`);
+    }
+    // The waiting tier's line is not the promise's, so the promise's alarm never counts it.
+    expect(TIME_TO_EMAIL_AFTER_WAITING_MESSAGE).not.toBe(TIME_TO_EMAIL_MESSAGE);
+  });
+
+  it('matches the line the web app logs for an upload sent to wait', () => {
+    expect(source('apps/web/src/lib/screening/routes.ts')).toContain(`services.logger.info('${UPLOAD_SENT_TO_WAIT_MESSAGE}'`);
+  });
+
+  it('measures in milliseconds, against the 60-second promise and two minutes in the queue, from numeric fields alone', () => {
+    expect(TIME_TO_EMAIL_LIMIT_MS).toBe(60_000);
+    expect(OLDEST_QUEUED_LIMIT_MS).toBe(120_000);
+    // elapsed_ms is a field the logger keeps only as a finite number (packages/observability's allowlist).
+    expect(source('packages/observability/src/fields.ts')).toContain("export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count'] as const;");
   });
 });
 
@@ -101,9 +147,15 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
 
   it('has the worker, platform and web metric filters and the stack\'s alarms, and no other', () => {
     // Worker: heartbeat, final job failures, pricing engine errors, model budget events. Platform:
-    // heartbeat, final job failures. Web: failed sign-in bursts, model budget events.
-    expect(filters).toHaveLength(8);
+    // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
+    // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait.
+    expect(filters).toHaveLength(14);
     const alarms = [
+      stack.monitoring.screeningHeartbeatAlarm,
+      stack.monitoring.screeningTimeToEmailAlarm,
+      stack.monitoring.screeningQueueAlarm,
+      stack.monitoring.screeningRunFailedAlarm,
+      stack.monitoring.screeningUploadsSentToWaitAlarm,
       stack.monitoring.heartbeatAlarm,
       stack.monitoring.platformHeartbeatAlarm,
       stack.monitoring.jobFailedAlarm,
@@ -152,11 +204,124 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     });
   });
 
-  it('counts the platform jobs\' final failures toward the same job-failure alarm', () => {
-    expect(propertiesOf(filterFor(JOB_FAILED_METRIC.metricName, stack.monitoring.platformLogGroup))).toEqual({
-      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.platformLogGroup)),
-      FilterPattern: `{ $.msg = "${JOB_FAILED_MESSAGE}" }`,
-      MetricTransformations: [{ MetricNamespace: JOB_FAILED_METRIC.namespace, MetricName: JOB_FAILED_METRIC.metricName, MetricValue: '1', Unit: 'Count' }],
+  it('counts the platform jobs\' and the screening consumer\'s final failures toward the same job-failure alarm', () => {
+    for (const group of [stack.monitoring.platformLogGroup, stack.monitoring.screeningLogGroup]) {
+      expect(propertiesOf(filterFor(JOB_FAILED_METRIC.metricName, group))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, group)),
+        FilterPattern: `{ $.msg = "${JOB_FAILED_MESSAGE}" }`,
+        MetricTransformations: [{ MetricNamespace: JOB_FAILED_METRIC.namespace, MetricName: JOB_FAILED_METRIC.metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+    }
+  });
+
+  describe('the screening consumer (docs/adr/0062; PR 6b-3, decisions 14 and 16)', () => {
+    const alarm = (construct: Parameters<typeof logicalIdOf>[1]) => propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, construct)));
+    const screening = stack.monitoring.screeningLogGroup;
+
+    it('logs to its own group, /tp/<environment>/screening', () => {
+      expect(propertiesOf(resourceById(template, 'AWS::Logs::LogGroup', logicalIdOf(stack, screening))).LogGroupName).toBe(logGroupName(environment, 'screening'));
+    });
+
+    it('counts its heartbeats as its own metric and alarms after two missed beats, and on recovery; in production only once the consumer is launched', () => {
+      expect(propertiesOf(filterFor(SCREENING_HEARTBEAT_METRIC.metricName, screening))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, screening)),
+        FilterPattern: `{ $.msg = "${HEARTBEAT_MESSAGE}" }`,
+        MetricTransformations: [{ MetricNamespace: SCREENING_NAMESPACE, MetricName: SCREENING_HEARTBEAT_METRIC.metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const beats = alarm(stack.monitoring.screeningHeartbeatAlarm);
+      expect(beats).toMatchObject({
+        Namespace: SCREENING_NAMESPACE,
+        MetricName: 'Heartbeat',
+        Statistic: 'Sum',
+        Period: HEARTBEAT_INTERVAL_SECONDS,
+        EvaluationPeriods: 2,
+        DatapointsToAlarm: 2,
+        ComparisonOperator: 'LessThanThreshold',
+        Threshold: 1,
+        AlarmActions: [topic],
+        OKActions: [topic],
+      });
+      // Held at no task until launch, the consumer's silence is right: the alarm stays OK until ScreeningConsumer is
+      // running, and then alarms (and tells the operator) if it does not beat.
+      expect(beats.TreatMissingData).toEqual(
+        environment === 'production' ? { 'Fn::If': ['ScreeningConsumerRunning', 'breaching', 'notBreaching'] } : 'breaching',
+      );
+    });
+
+    it('measures the time from the web\'s receipt to the email in milliseconds, and alarms on any normal-tier upload over 60 seconds in five minutes', () => {
+      expect(propertiesOf(filterFor(TIME_TO_EMAIL_METRIC.metricName, screening))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, screening)),
+        FilterPattern: `{ $.msg = "${TIME_TO_EMAIL_MESSAGE}" }`,
+        MetricTransformations: [{ MetricNamespace: SCREENING_NAMESPACE, MetricName: 'TimeToEmailMs', MetricValue: '$.elapsed_ms', Unit: 'Milliseconds' }],
+      });
+      expect(alarm(stack.monitoring.screeningTimeToEmailAlarm)).toMatchObject({
+        Namespace: SCREENING_NAMESPACE,
+        MetricName: 'TimeToEmailMs',
+        Statistic: 'Maximum',
+        Period: TIME_TO_EMAIL_PERIOD_SECONDS,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanThreshold',
+        Threshold: 60_000,
+        TreatMissingData: 'notBreaching',
+      });
+    });
+
+    it('alarms when the oldest normal-tier run has waited more than two minutes, two minutes in a row', () => {
+      expect(propertiesOf(filterFor(OLDEST_QUEUED_METRIC.metricName, screening))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, screening)),
+        FilterPattern: `{ $.msg = "${QUEUE_MESSAGE}" }`,
+        MetricTransformations: [{ MetricNamespace: SCREENING_NAMESPACE, MetricName: 'OldestQueuedMs', MetricValue: '$.elapsed_ms', Unit: 'Milliseconds' }],
+      });
+      expect(alarm(stack.monitoring.screeningQueueAlarm)).toMatchObject({
+        Statistic: 'Maximum',
+        Period: OLDEST_QUEUED_PERIOD_SECONDS,
+        EvaluationPeriods: 2,
+        DatapointsToAlarm: 2,
+        ComparisonOperator: 'GreaterThanThreshold',
+        Threshold: 120_000,
+        TreatMissingData: 'notBreaching',
+      });
+    });
+
+    it('counts every error line and every run out of attempts as a failed run, and alarms within five minutes', () => {
+      expect(propertiesOf(filterFor(RUN_FAILED_METRIC.metricName, screening))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, screening)),
+        FilterPattern: '{ ($.level = "error") || ($.error_code = "PRICING_ATTEMPTS_EXHAUSTED") }',
+        MetricTransformations: [{ MetricNamespace: SCREENING_NAMESPACE, MetricName: 'RunFailed', MetricValue: '1', Unit: 'Count' }],
+      });
+      expect(alarm(stack.monitoring.screeningRunFailedAlarm)).toMatchObject({
+        Statistic: 'Sum',
+        Period: RUN_FAILED_PERIOD_SECONDS,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 1,
+        TreatMissingData: 'notBreaching',
+      });
+    });
+
+    it('counts the web app\'s uploads sent to wait, and alarms on any in an hour', () => {
+      expect(propertiesOf(filterFor(UPLOADS_SENT_TO_WAIT_METRIC.metricName, stack.monitoring.webLogGroup))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, stack.monitoring.webLogGroup)),
+        FilterPattern: `{ $.msg = "${UPLOAD_SENT_TO_WAIT_MESSAGE}" }`,
+        MetricTransformations: [{ MetricNamespace: SCREENING_NAMESPACE, MetricName: 'UploadsSentToWait', MetricValue: '1', Unit: 'Count' }],
+      });
+      expect(alarm(stack.monitoring.screeningUploadsSentToWaitAlarm)).toMatchObject({
+        Statistic: 'Sum',
+        Period: UPLOADS_SENT_TO_WAIT_PERIOD_SECONDS,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 1,
+        TreatMissingData: 'notBreaching',
+      });
+    });
+
+    it('names no metric by a value from a log line: no filter and no alarm has a dimension', () => {
+      for (const [id, filter] of filters) {
+        for (const transformation of propertiesOf(filter).MetricTransformations as Record<string, unknown>[]) {
+          expect(transformation.Dimensions, id).toBeUndefined();
+        }
+      }
+      for (const [id, found] of resourcesOf(template, 'AWS::CloudWatch::Alarm').filter(([, candidate]) => propertiesOf(candidate).Namespace === SCREENING_NAMESPACE)) {
+        expect(propertiesOf(found).Dimensions, id).toBeUndefined();
+      }
     });
   });
 
