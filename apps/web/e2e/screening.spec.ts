@@ -8,6 +8,7 @@ import { cents, formatUsd } from '@tp/money';
 import { ATTRIBUTION_COOKIE } from '../src/lib/http/attribution';
 import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
 import { KEPT_SUMMARY, REQUEST_AUDIT_KEPT, SENT_KEPT, convertKept } from '../src/lib/screening/retention';
+import { SCREENING_SENT_LINK, SCREENING_SENT_WAIT, SCREENING_WAIT_STATES } from '../src/lib/screening/sent';
 import { expectAccessible } from './a11y';
 import { personaEmail } from '../scripts/synthetic-personas';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
@@ -25,10 +26,29 @@ import {
   dateOfServiceCsv,
   expireScreeningsOnce,
   memberIdCsv,
-  priceScreeningsOnce,
   resultLinkIn,
   screeningRowsCsv,
+  startLocalScreeningConsumer,
 } from './screening';
+
+/**
+ * The journey's screening consumer (WORKER_JOBS=screening, in process; PR 6b-3): the platform no longer prices a
+ * screening, so the upload is priced only if the consumer runs. Started before the journey, stopped after it.
+ */
+const screeningTest = test.extend<{ consumer: Awaited<ReturnType<typeof startLocalScreeningConsumer>> }>({
+  consumer: [
+    // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from its first parameter's pattern.
+    async ({}, provide) => {
+      const consumer = await startLocalScreeningConsumer();
+      try {
+        await provide(consumer);
+      } finally {
+        await consumer.close();
+      }
+    },
+    { auto: true },
+  ],
+});
 
 /**
  * The free screening in the browser (Change Order 001, CO-04; reconciliation-001, D11 and D18 to D21; test matrix
@@ -124,7 +144,7 @@ async function noSidewaysScroll(page: Page, width: number, what: string): Promis
   expect(scroll, `${what} at ${String(width)} px scrolls sideways`).toBeLessThanOrEqual(inner);
 }
 
-test('a specialist approves the split; a file with patient information is refused in the browser; a clean file, its small rows left out, is priced, emailed, opened, converted and expires (SCR-01 to SCR-07)', async ({ browser }) => {
+screeningTest('a specialist approves the split; a file with patient information is refused in the browser; a clean file, its small rows left out, is priced by the screening consumer, emailed, opened, converted and expires (SCR-01 to SCR-07, SCR-18)', async ({ browser }) => {
   test.setTimeout(240_000);
 
   await test.step('a contract specialist approves the screening’s place-of-service split in the console', async () => {
@@ -248,8 +268,11 @@ test('a specialist approves the split; a file with patient information is refuse
     await expect(outside).toHaveText('1 row (12 claim lines, $412.00) in a quarter before 2026-Q1 was left out: PaidWhole has the Medicare content for 2026-Q1 to 2026-Q4 loaded.');
     await expect(outside).toHaveAttribute('data-rows', String(OUTSIDE_LEFT_OUT.rows));
     await page.getByRole('button', { name: 'Screen the file' }).click();
-    await expect(page).toHaveURL(/\/screening\?sent=1$/);
+    // A slot of the consumer is free: "usually within a minute" (the founder's Q12 of 2026-10-21).
+    await expect(page).toHaveURL(/\/screening\?sent=1&wait=soon$/);
     await expect(page.locator('[data-state="sent"]')).toContainText('Check your email');
+    await expect(page.locator('[data-state="sent"] [data-copy="wait"]')).toHaveText(SCREENING_SENT_WAIT.soon);
+    await expect(page.locator('[data-state="sent"]')).toContainText(SCREENING_SENT_LINK);
     await expect(page.locator('[data-state="sent"] [data-copy="kept"]')).toHaveText(SENT_KEPT);
     expect(await page.locator('body').innerText()).not.toMatch(/\/screening\/results\//);
     // The request carried nothing of the rows left out: neither their code nor their quarter, only the three numbers.
@@ -336,9 +359,23 @@ test('a specialist approves the split; a file with patient information is refuse
   });
 
   let link = '';
-  await test.step('the worker prices it and emails the link alone, under the lockup without the tagline (SCR-02)', async () => {
-    const swept = await priceScreeningsOnce();
-    expect(swept.complete).toBeGreaterThanOrEqual(1);
+  await test.step('the screening consumer prices it in its threads from the job the web sent, and emails the link alone, under the lockup without the tagline (SCR-02)', async () => {
+    await expect.poll(() => outboxFor(CONTACT).length, { timeout: 90_000, intervals: [500] }).toBe(1);
+    // Priced through the queue, once: the run's screening_price job completed, at the normal tier's priority, and the
+    // run kept when the web received the upload.
+    const priced = await withDatabase(
+      async (client) =>
+        (
+          await client.query<{ status: string; attempts: number; received: boolean; job_state: string | null; job_priority: number | null }>(
+            `SELECT r.status, r.attempts, r.received_at <= r.created_at AS received,
+                    (SELECT j.state::text FROM pgboss.job j WHERE j.name = 'screening_price' AND j.data->>'screening_run_id' = r.id::text ORDER BY j.created_on DESC LIMIT 1) AS job_state,
+                    (SELECT j.priority FROM pgboss.job j WHERE j.name = 'screening_price' AND j.data->>'screening_run_id' = r.id::text ORDER BY j.created_on DESC LIMIT 1) AS job_priority
+               FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
+            [CONTACT],
+          )
+        ).rows,
+    );
+    expect(priced).toEqual([{ status: 'complete', attempts: 1, received: true, job_state: 'completed', job_priority: 0 }]);
     const [message, ...more] = outboxFor(CONTACT);
     expect(more).toEqual([]);
     expect(message?.subject).toBe('Your screening is ready | PaidWhole');
@@ -353,6 +390,17 @@ test('a specialist approves the split; a file with patient information is refuse
     const token = link.slice(link.lastIndexOf('/') + 1);
     const stored = await withDatabase(async (client) => (await client.query<{ hash: string | null }>('SELECT r.result_token_sha256 AS hash FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [CONTACT])).rows[0]?.hash);
     expect(stored).toBe(createHash('sha256').update(token).digest('hex'));
+  });
+
+  await test.step('the "sent" page words each of its four states as the founder ruled (SCR-18)', async () => {
+    for (const wait of SCREENING_WAIT_STATES) {
+      await page.goto(`/screening?sent=1&wait=${wait}`);
+      await expect(page.locator('[data-state="sent"]')).toHaveAttribute('data-wait', wait);
+      await expect(page.locator('[data-state="sent"] [data-copy="wait"]')).toHaveText(SCREENING_SENT_WAIT[wait]);
+    }
+    // A link from before the states, or one edited by hand, reads as the first.
+    await page.goto('/screening?sent=1');
+    await expect(page.locator('[data-state="sent"] [data-copy="wait"]')).toHaveText(SCREENING_SENT_WAIT.soon);
   });
 
   await test.step('the link opens the result: the database’s sums under D19’s label, with no owed, underpaid or recovered and no tagline (SCR-05)', async () => {
@@ -525,7 +573,8 @@ test('a specialist approves the split; a file with patient information is refuse
       await client.query('SET LOCAL session_replication_role = replica');
       const shift = "created_at = created_at - interval '31 days', expires_at = expires_at - interval '31 days'";
       const uploads = 'SELECT u.id FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1';
-      await client.query(`UPDATE screening_run SET ${shift} WHERE upload_id IN (${uploads})`, [CONTACT]);
+      // A run is received in the ten minutes before it is created (screening_run_received), so its receipt moves too.
+      await client.query(`UPDATE screening_run SET ${shift}, received_at = received_at - interval '31 days' WHERE upload_id IN (${uploads})`, [CONTACT]);
       await client.query(`UPDATE screening_upload SET ${shift} WHERE id IN (${uploads})`, [CONTACT]);
       await client.query(`UPDATE screening_prospect SET ${shift} WHERE contact_email = $1`, [CONTACT]);
       await client.query('COMMIT');

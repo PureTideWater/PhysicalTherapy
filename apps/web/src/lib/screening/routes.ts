@@ -51,6 +51,7 @@ import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
+import { SCREENING_WAIT_STATES, type ScreeningWaitState } from './sent';
 
 /**
  * The free screening's routes (Change Order 001, CO-04; reconciliation-001 D18 to D21; docs/adr/0062):
@@ -385,7 +386,10 @@ export function screeningLaunched(environment: Environment, launch: ScreeningLau
  * release (screeningLaunched).
  */
 async function screeningOpen(pool: ScopePool<ScopeClient>, environment: Environment, launch: ScreeningLaunch): Promise<{ readonly open: boolean; readonly releaseNo: number | null }> {
-  if (!showsLegalSurfaces(SCREENING_LEGAL_SURFACES, environment) || !screeningLaunched(environment, launch)) {
+  if (!showsLegalSurfaces(SCREENING_LEGAL_SURFACES, environment)) {
+    return { open: false, releaseNo: null };
+  }
+  if (!screeningLaunched(environment, launch)) {
     return { open: false, releaseNo: null };
   }
   const status = await withClient(pool, async (client) => {
@@ -637,14 +641,8 @@ export const screeningSubmit = publicRoute({
   },
 });
 
-/**
- * The "sent" page's four states (the founder's Q12 of 2026-10-21, the recommended wording; counsel confirms it before
- * the screening opens): `soon`, usually within a minute; `minutes`, when every slot of the consumer is busy; `account`,
- * an upload over its account's share of the UTC day; `day`, one over the day's cap. The last two wait behind every
- * normal upload, with no time promised (Q7).
- */
-export const SCREENING_WAIT_STATES = ['soon', 'minutes', 'account', 'day'] as const;
-export type ScreeningWaitState = (typeof SCREENING_WAIT_STATES)[number];
+/** The "sent" page's four states (src/lib/screening/sent.ts holds their words). */
+export { SCREENING_WAIT_STATES, type ScreeningWaitState };
 
 /** Where a stored run stands (screening_wait()): its queue priority and tier, the runs pricing, and those ahead of it. */
 export interface ScreeningQueuePlace {

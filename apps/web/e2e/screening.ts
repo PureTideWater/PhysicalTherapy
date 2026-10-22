@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import { openPool } from '@tp/db';
+import { openPool, screeningDevLoginUrl } from '@tp/db';
 import { createLogger } from '@tp/observability';
-import { type ExpiryResult, LocalMailSender, type SweepResult, expireScreenings, sweepScreeningRuns } from '@tp/worker/runtime';
+import { type ExpiryResult, type RunningWorker, SCREENING_THREADS, expireScreenings, startScreeningConsumer, startWorker } from '@tp/worker/runtime';
+import { PgBoss } from 'pg-boss';
 
 import { E2E_MAIL_OUTBOX_DIR, E2E_ORIGIN, e2eDatabaseUrl } from './env';
 import type { OutboxMessage } from './outbox';
@@ -10,9 +11,9 @@ import type { OutboxMessage } from './outbox';
 /**
  * The free screening's journey support (Change Order 001, CO-04): an upload built in memory from SYNTHETIC rows (no
  * CSV is committed; the fixture rules refuse a table that is not synthetic, and these rows are totals, never a
- * patient's), the worker's two screening jobs run once on an operator pool of the e2e database (the login switches to
- * tp_operator in each transaction, as the platform worker's does), and the prospect's emails as the local outbox
- * holds them. The ZIP is release 900001's locality ZIP that
+ * patient's), the screening's own consumer running beside the e2e server as WORKER_JOBS=screening runs it, the
+ * expiry job run once on an operator pool of the e2e database (the login switches to tp_operator in each transaction,
+ * as the platform worker's does), and the prospect's emails as the local outbox holds them. The ZIP is release 900001's locality ZIP that
  * needs no ZIP+4 (00011); every code is one the release's SYNTHETIC fee schedule prices, in its 2026 quarters (the one
  * row of 2025, OUTSIDE_ROWS, is the browser's to leave out).
  */
@@ -106,7 +107,7 @@ export function resultLinkIn(message: OutboxMessage): string {
   return link;
 }
 
-/** An operator pool on the e2e database: its superuser login, which each transaction switches to tp_operator. */
+/** An operator pool on the e2e database: its superuser login, which the expiry's transactions switch to tp_operator. */
 async function withOperator<T>(run: (operator: ReturnType<typeof openPool>) => Promise<T>): Promise<T> {
   const operator = openPool(e2eDatabaseUrl(), 2);
   try {
@@ -117,13 +118,28 @@ async function withOperator<T>(run: (operator: ReturnType<typeof openPool>) => P
 }
 
 /**
- * The screening_price job's sweep, once, as the platform worker runs it every minute, but for runs of any age: each
- * queued run is priced and its link emailed to the local outbox at the e2e server's origin.
+ * The screening's own consumer, as WORKER_JOBS=screening runs it (docs/adr/0062; PR 6b-3): its pricing threads (three,
+ * as production's task), on the screening's dev login (tp_screening_dev, which switches to tp_screening in each
+ * transaction), working screening_price and its minute's sweep from the e2e database's queue, and emailing to the local
+ * outbox at the e2e server's origin. The platform no longer prices a screening, so a journey that screens starts this
+ * and waits for the email the consumer sends.
  */
-export function priceScreeningsOnce(): Promise<SweepResult> {
-  return withOperator((operator) =>
-    sweepScreeningRuns({ operator, mail: new LocalMailSender(E2E_MAIL_OUTBOX_DIR, null), appOrigin: E2E_ORIGIN, logger: createLogger({ sink: () => undefined }), jobId: randomUUID() }, { minQueuedAgeSeconds: 0 }),
+export async function startLocalScreeningConsumer(): Promise<{ worker: RunningWorker; close: () => Promise<void> }> {
+  const boss = new PgBoss(e2eDatabaseUrl());
+  boss.on('error', () => undefined);
+  const logger = createLogger({ sink: () => undefined });
+  const screening = await startScreeningConsumer(
+    {
+      databaseUrl: screeningDevLoginUrl(e2eDatabaseUrl()),
+      concurrency: SCREENING_THREADS,
+      notifications: { mail: { kind: 'local', dir: E2E_MAIL_OUTBOX_DIR }, appOrigin: E2E_ORIGIN, staticAssetOrigin: null },
+    },
+    boss,
+    logger,
+    { workerId: `e2e-screening-${randomUUID()}` },
   );
+  const worker = await startWorker({ boss, logger, screening, heartbeatMs: 60_000, shutdownTimeoutMs: 10_000 });
+  return { worker, close: () => worker.stop() };
 }
 
 /** The screening_expiry job, once: every screening past its 30 days deleted, each with its audit event. */
