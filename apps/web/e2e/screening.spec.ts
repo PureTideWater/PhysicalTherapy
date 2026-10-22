@@ -9,7 +9,7 @@ import { ATTRIBUTION_COOKIE } from '../src/lib/http/attribution';
 import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
 import { KEPT_SUMMARY, REQUEST_AUDIT_KEPT, SENT_KEPT, convertKept } from '../src/lib/screening/retention';
 import { SCREENING_SENT_LINK, SCREENING_SENT_WAIT, SCREENING_WAIT_STATES } from '../src/lib/screening/sent';
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { personaEmail } from '../scripts/synthetic-personas';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
 import { outboxFor } from './outbox';
@@ -392,15 +392,21 @@ screeningTest('a specialist approves the split; a file with patient information 
     expect(stored).toBe(createHash('sha256').update(token).digest('hex'));
   });
 
-  await test.step('the "sent" page words each of its four states as the founder ruled (SCR-18)', async () => {
+  await test.step('the "sent" page words each of its four states, and each is accessible at a phone\'s width (SCR-18)', async () => {
     for (const wait of SCREENING_WAIT_STATES) {
       await page.goto(`/screening?sent=1&wait=${wait}`);
       await expect(page.locator('[data-state="sent"]')).toHaveAttribute('data-wait', wait);
       await expect(page.locator('[data-state="sent"] [data-copy="wait"]')).toHaveText(SCREENING_SENT_WAIT[wait]);
+      // The alert and the columns' table at 390 px: no sideways scroll, and axe finds nothing (the table's scroller is a
+      // named region a keyboard can reach).
+      await atPhoneWidth(page, `the "sent" page, ${wait}`);
+      await expectAccessible(page, `the "sent" page, ${wait}`);
     }
-    // A link from before the states, or one edited by hand, reads as the first.
-    await page.goto('/screening?sent=1');
-    await expect(page.locator('[data-state="sent"] [data-copy="wait"]')).toHaveText(SCREENING_SENT_WAIT.soon);
+    // A link from before the states, one edited by hand, or one of any length says only that the file arrived.
+    for (const link of ['/screening?sent=1', '/screening?sent=1&wait=account', `/screening?sent=1&wait=${'x'.repeat(40)}`]) {
+      await page.goto(link);
+      await expect(page.locator('[data-state="sent"] [data-copy="wait"]')).toHaveText(SCREENING_SENT_WAIT.sent);
+    }
   });
 
   await test.step('the link opens the result: the database’s sums under D19’s label, with no owed, underpaid or recovered and no tagline (SCR-05)', async () => {

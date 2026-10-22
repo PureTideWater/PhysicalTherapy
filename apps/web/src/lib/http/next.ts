@@ -7,6 +7,7 @@ import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
 import { formInput } from './form';
 import { clientAddress, retryMinutes } from './rate-limit';
+import { RECEIVED_AT_HEADER, receivedAtFrom } from './received';
 import type { CookieJar, Issue, MutationResult, Outcome, Route, RouteRequest, Shell, UploadBody } from './route';
 
 /**
@@ -44,6 +45,8 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
     origin: sent.get('origin'),
     fetchSite: sent.get('sec-fetch-site'),
     clientAddress: clientAddress(sent.get('x-forwarded-for'), services().trustedProxyHops),
+    // The proxy's stamp of the request's arrival (it overwrites any copy the client sent).
+    receivedAt: receivedAtFrom(sent.get(RECEIVED_AT_HEADER)),
   };
 }
 

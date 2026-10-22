@@ -51,7 +51,7 @@ import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
-import { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath } from './sent';
+import { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath, screeningWaitStateOf } from './sent';
 
 /**
  * The free screening's routes (Change Order 001, CO-04; reconciliation-001 D18 to D21; docs/adr/0062):
@@ -183,15 +183,16 @@ export const screeningPage = publicRoute({
   kind: 'page',
   path: '/screening',
   phi: false,
-  // `wait` is read leniently: a link from before it existed, or one edited by hand, says "usually within a minute".
-  params: z.object({ sent: optionalText(z.literal('1')), wait: optionalText(z.string().max(16)) }),
+  // `wait` is read leniently, at any length: a link from before it existed, or one edited by hand, says only that the
+  // file arrived (screeningWaitStateOf), and never answers 404.
+  params: z.object({ sent: optionalText(z.literal('1')), wait: optionalText(z.string()) }),
   handle: async ({ params, services }): Promise<ScreeningPageData> => {
     const { open, releaseNo } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
     const now = services.now();
     const sent = params.sent !== undefined;
     return {
       sent,
-      wait: sent ? ((SCREENING_WAIT_STATES as readonly string[]).includes(params.wait ?? '') ? (params.wait as ScreeningWaitState) : 'soon') : null,
+      wait: sent ? screeningWaitStateOf(params.wait) : null,
       open,
       releaseNo,
       columns: SCREENING_COLUMNS,
@@ -512,9 +513,11 @@ export const screeningSubmit = publicRoute({
     referringFirm: field(400),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
-    // When the web began on this upload, before anything is read or checked: the time to its email is measured from it
-    // (decision 14; submit_screening() clamps it into the ten minutes before its own clock).
-    const receivedAt = new Date();
+    // When the web received this upload: the proxy's stamp at header time, before Next read the multipart body, copied
+    // the rows, parsed the input and counted the rate limit (src/lib/http/received.ts), so the time to its email covers
+    // the web's whole share (decision 14; TimeToEmailMs); this handler's own clock where no proxy ran.
+    // submit_screening() clamps it into the ten minutes before its own clock.
+    const receivedAt = request.receivedAt ?? new Date();
     // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
     const { open, releaseNo } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
     if (!open || releaseNo === null) {
@@ -623,9 +626,10 @@ export const screeningSubmit = publicRoute({
     try {
       wait = await withClient(services.pool, (client) => screeningQueuePlace(client, runId));
     } catch {
-      // Not fatal: the run is stored, and the minute's sweep sends its job at its own priority.
+      // Not fatal: the run is stored, and the minute's sweep sends its job at its own priority. Where it stands is not
+      // known, so the page says only that the file arrived.
       services.logger.warn('screening run not queued; the sweep will send it', { screening_run_id: runId, error_code: 'SCREENING_NOT_QUEUED' });
-      return { redirect: screeningSentPath('minutes') };
+      return { redirect: screeningSentPath('sent') };
     }
     const place = wait ?? { priority: 0, reason: null, pricing: 0, queuedAhead: 0 };
     if (place.reason !== null) {
@@ -673,16 +677,14 @@ async function screeningQueuePlace(client: ScopeClient, runId: string): Promise<
 }
 
 /**
- * The state the "sent" page shows: the tier when the upload waits; otherwise `minutes` when the runs pricing and those
- * ahead of it fill every slot the consumer has (its tasks times its threads), so this one cannot start at once; `soon`
- * when one is free.
+ * The state the "sent" page shows: `waiting` when the upload waits (past its account's share or the day's cap, which the
+ * page does not tell apart: sent.ts); otherwise `minutes` when the runs pricing and those ahead of it fill every slot
+ * the consumer has (its tasks times its threads), so this one cannot start at once; `soon` when one is free.
  */
 export function screeningWaitState(place: ScreeningQueuePlace, slots: number): ScreeningWaitState {
-  if (place.reason === 'account_share') {
-    return 'account';
-  }
-  if (place.reason === 'daily_cap') {
-    return 'day';
+  // Past the account's share or the day's cap alike: the page says it waits, the email says why (sent.ts).
+  if (place.reason !== null) {
+    return 'waiting';
   }
   return place.pricing + place.queuedAhead >= slots ? 'minutes' : 'soon';
 }

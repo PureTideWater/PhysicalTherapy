@@ -62,6 +62,8 @@ export interface PageRequestOptions {
   readonly address?: string | null;
   /** The browser's cookies (the attribution cookie, audit #57). */
   readonly cookies?: Readonly<Record<string, string>>;
+  /** When the proxy stamped the request's arrival (src/lib/http/received.ts), or none, as a request that met no proxy. */
+  readonly receivedAt?: Date;
 }
 
 /** A request as the application's own page makes it: same origin, no session. */
@@ -75,5 +77,6 @@ export function pageRequest(options: PageRequestOptions = {}): RouteRequest {
     origin: SCREENING_ORIGIN,
     fetchSite: 'same-origin',
     clientAddress: options.address ?? null,
+    ...(options.receivedAt === undefined ? {} : { receivedAt: options.receivedAt }),
   };
 }

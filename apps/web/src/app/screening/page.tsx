@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { PublicHeader } from '../../components/public-header';
+import { ScrollTable } from '../../components/scroll-table';
 import { ScreeningUploadForm } from '../../components/screening/upload-form';
 import { loadPublicPage } from '../../lib/http/next';
 import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, REDUCED_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
@@ -39,10 +40,10 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
           </p>
         </div>
         {data.sent ? (
-          <Alert data-state="sent" data-wait={data.wait ?? 'soon'}>
+          <Alert data-state="sent" data-wait={data.wait ?? 'sent'}>
             <AlertTitle>Check your email</AlertTitle>
             <AlertDescription>
-              <span data-copy="wait">{SCREENING_SENT_WAIT[data.wait ?? 'soon']}</span> {SCREENING_SENT_LINK}{' '}
+              <span data-copy="wait">{SCREENING_SENT_WAIT[data.wait ?? 'sent']}</span> {SCREENING_SENT_LINK}{' '}
               <span data-copy="kept" data-legal-surface="screening-kept-sent">
                 {SENT_KEPT}
               </span> If nothing arrives, check your spam folder, or{' '}
@@ -90,7 +91,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
                 </li>
               ))}
             </ul>
-            <div className="overflow-x-auto">
+            <ScrollTable label="The screening columns">
               <table className="w-full text-left text-sm" aria-label="The screening columns">
                 <thead className="text-muted-foreground">
                   <tr>
@@ -109,7 +110,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           </CardContent>
         </Card>
         <Card>

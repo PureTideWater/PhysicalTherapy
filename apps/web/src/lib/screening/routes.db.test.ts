@@ -601,6 +601,21 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
     }
   });
 
+  it('says only that the file arrived when where it stands cannot be read, and leaves its job to the sweep', async () => {
+    const unread = await ScreeningWorld.create();
+    try {
+      // The queue's read refused (as a database error would): the run is stored, its place unknown.
+      await unread.owner.query('REVOKE EXECUTE ON FUNCTION screening_wait(uuid) FROM tp_app');
+      const email = 'prospect.unread@clinic-unread.synthetic.test';
+      expect(await unread.call(screeningSubmit, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: screeningSentPath('sent') } });
+      expect(unread.logLines.filter((line) => line.error_code === 'SCREENING_NOT_QUEUED')).toHaveLength(1);
+      expect(unread.queue.screeningRuns).toEqual([]);
+      expect(await unread.price()).toEqual({ complete: 1, failed: 0, skipped: 0 });
+    } finally {
+      await unread.close();
+    }
+  });
+
   it('stays closed until a contract specialist approves a split, and records nothing of a prospect while closed', async () => {
     const closed = await ScreeningWorld.create({ open: false });
     try {
@@ -647,11 +662,18 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
     }
     return run;
   };
-  /** As the superuser with triggers off: the run is counted as a worst-shape file of 50,000 rows in the day's sums. */
+  /**
+   * As the superuser with triggers off: the run is counted as a worst-shape file of 50,000 rows in the day's sums, its
+   * entry in the queue's tally with it (the one its submission wrote: the run's account, at the run's creation).
+   */
   const countAsWorstShape = async (target: ScreeningWorld, runId: string) => {
     await target.owner.query('BEGIN');
     await target.owner.query("SET LOCAL session_replication_role = 'replica'");
-    await target.owner.query('UPDATE screening_run SET row_count = 50000 WHERE id = $1', [runId]);
+    await target.owner.query(
+      `WITH run AS (UPDATE screening_run SET row_count = 50000 WHERE id = $1 RETURNING rate_subject, created_at)
+       UPDATE screening_queue_tally t SET row_count = 50000 FROM run WHERE t.rate_subject = run.rate_subject AND t.created_at = run.created_at`,
+      [runId],
+    );
     await target.owner.query('COMMIT');
   };
 
@@ -661,7 +683,7 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
     expect(await submitted(submitInput({ contactEmail: email }))).toEqual({ status: 'ok', data: { redirect: SENT } });
     const after = Date.now();
     const run = await runOf(world, email);
-    // The web's clock at the handler's start: after the request began, no later than the run's own creation.
+    // No proxy ran (a route called directly), so the handler's own clock: after the request began, no later than the run's own creation.
     expect(run.received_at.getTime()).toBeGreaterThanOrEqual(before);
     expect(run.received_at.getTime()).toBeLessThanOrEqual(Math.min(after, run.created_at.getTime()));
     // The account as the rate limiter counts it (the email's domain here), keyed under the server's secret: the same
@@ -677,6 +699,16 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
     // The normal tier: priority 0, no reason, and its job sent at 0.
     expect([run.wait_reason, run.queue_priority]).toEqual([null, 0]);
     expect(world.queue.screeningPriorities[world.queue.screeningRuns.indexOf(run.id)]).toBe(0);
+  });
+
+  it('starts the time to email when the proxy stamped the request\'s arrival, before Next read the upload, not when the handler began', async () => {
+    const email = 'receipt.stamped@clinic-receipt-stamped.synthetic.test';
+    // Three large uploads at once on a quarter-vCPU web reached the handler 3.2 to 3.9 s after they arrived (CI's
+    // capacity run on 9eb4474): the stamp keeps that share inside TimeToEmailMs.
+    const arrived = new Date(Date.now() - 3_900);
+    expect(await world.call(screeningSubmit, { input: submitInput({ contactEmail: email }), receivedAt: arrived })).toEqual({ status: 'ok', data: { redirect: SENT } });
+    const run = await runOf(world, email);
+    expect(run.received_at.toISOString()).toBe(arrived.toISOString());
   });
 
   it('says "a few minutes" once every slot of the consumer is busy or taken by the runs ahead, and "usually within a minute" while one is free', { timeout: 120_000 }, async () => {
@@ -695,7 +727,7 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
     }
   });
 
-  it('sends an account\'s upload over its share of the day to wait, at a lower priority, and says so; another account is not held', { timeout: 120_000 }, async () => {
+  it('sends an account\'s upload over its share of the day to wait, at a lower priority, and says it waits without saying why; another account is not held', { timeout: 120_000 }, async () => {
     const shared = await ScreeningWorld.create();
     try {
       // Two worst-shape files from one firm (one account: its domain) fill its 100,000-row share for the UTC day.
@@ -705,9 +737,11 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
         await countAsWorstShape(shared, (await runOf(shared, email)).id);
       }
       const third = 'third@firm-share.synthetic.test';
+      // The page says the file waits and not why: nothing proves the visitor owns the address, and the account's share
+      // would tell anyone typing an address at the firm's domain that the firm screened more than its share today.
       expect(await shared.call(screeningSubmit, { input: submitInput({ practiceName: 'Synthetic Share Clinic third', contactEmail: third }) })).toEqual({
         status: 'ok',
-        data: { redirect: screeningSentPath('account') },
+        data: { redirect: screeningSentPath('waiting') },
       });
       const waiting = await runOf(shared, third);
       expect([waiting.wait_reason, waiting.queue_priority]).toEqual(['account_share', -1]);
@@ -722,17 +756,21 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
         status: 'ok',
         data: { redirect: SENT },
       });
-      // The page reads the state from its link, and an unknown one as the first.
+      // The page reads the state from its link, and anything else (an old state, a typo, one of any length) as `sent`,
+      // which says only that the file arrived: never a 404.
       const page = async (wait: string) => ok(await shared.call(screeningPage, { params: { sent: '1', wait } })).wait;
-      expect(await page('account')).toBe('account');
-      expect(await page('later')).toBe('soon');
+      expect(await page('waiting')).toBe('waiting');
+      expect(await page('account')).toBe('sent');
+      expect(await page('later')).toBe('sent');
+      expect(await page('x'.repeat(200))).toBe('sent');
+      expect(ok(await shared.call(screeningPage, { params: { sent: '1' } })).wait).toBe('sent');
       expect(ok(await shared.call(screeningPage)).wait).toBeNull();
     } finally {
       await shared.close();
     }
   });
 
-  it('sends an upload over the day\'s cap of normal-tier rows to wait at -1, and says the screening reached its limit for today', { timeout: 120_000 }, async () => {
+  it('sends an upload over the day\'s cap of normal-tier rows to wait at -1, and says it waits as for the account\'s share', { timeout: 120_000 }, async () => {
     const capped = await ScreeningWorld.create();
     try {
       // Twenty worst-shape files from ten firms, two each: each firm within its share, the day's normal tier at 1,000,000 rows.
@@ -742,7 +780,7 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
         await countAsWorstShape(capped, (await runOf(capped, email)).id);
       }
       const late = 'late@firm-late.synthetic.test';
-      expect(await capped.call(screeningSubmit, { input: submitInput({ practiceName: 'Synthetic Late Clinic', contactEmail: late }) })).toEqual({ status: 'ok', data: { redirect: screeningSentPath('day') } });
+      expect(await capped.call(screeningSubmit, { input: submitInput({ practiceName: 'Synthetic Late Clinic', contactEmail: late }) })).toEqual({ status: 'ok', data: { redirect: screeningSentPath('waiting') } });
       const waiting = await runOf(capped, late);
       expect([waiting.wait_reason, waiting.queue_priority]).toEqual(['daily_cap', -1]);
       expect(capped.queue.screeningPriorities.at(-1)).toBe(-1);
@@ -752,16 +790,16 @@ describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed a
     }
   });
 
-  it('words the four states as the founder ruled, logs the worker\'s codes, and keeps a production server closed unless the launch value names its own tag', () => {
-    expect(SCREENING_WAIT_STATES).toEqual(['soon', 'minutes', 'account', 'day']);
+  it('words the four states, logs the worker\'s codes, and keeps a production server closed unless the launch value names its own tag', () => {
+    expect(SCREENING_WAIT_STATES).toEqual(['soon', 'minutes', 'waiting', 'sent']);
     expect(SCREENING_UPLOAD_WAIT_CODES).toEqual(SCREENING_WAIT_CODES);
     const place = { priority: 0, reason: null, pricing: 0, queuedAhead: 0 };
     expect(screeningWaitState(place, 3)).toBe('soon');
     expect(screeningWaitState({ ...place, pricing: 2 }, 3)).toBe('soon');
     expect(screeningWaitState({ ...place, pricing: 2, queuedAhead: 1 }, 3)).toBe('minutes');
     expect(screeningWaitState({ ...place, queuedAhead: 3 }, 3)).toBe('minutes');
-    expect(screeningWaitState({ ...place, priority: -2, reason: 'account_share' }, 3)).toBe('account');
-    expect(screeningWaitState({ ...place, priority: -1, reason: 'daily_cap' }, 3)).toBe('day');
+    expect(screeningWaitState({ ...place, priority: -2, reason: 'account_share' }, 3)).toBe('waiting');
+    expect(screeningWaitState({ ...place, priority: -1, reason: 'daily_cap' }, 3)).toBe('waiting');
     // Decision 13 (SCR-20): staging and development are not gated; production only for its own tag's report.
     const sha = 'c'.repeat(64);
     expect(screeningLaunched('staging', { imageTag: null, value: null })).toBe(true);
