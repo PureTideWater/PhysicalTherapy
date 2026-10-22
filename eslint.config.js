@@ -103,8 +103,6 @@ export default defineConfig(
       'coverage/**',
       'reports/**',
       '.stryker-tmp/**',
-      // The base engine tools/engine-freeze/differential.test.ts extracts beside packages/pricing; never linted.
-      '**/.freeze-base/**',
       '**/playwright-report/**',
       '**/test-results/**',
       '**/next-env.d.ts',

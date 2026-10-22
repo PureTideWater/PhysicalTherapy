@@ -16,8 +16,6 @@ test-results/
 blob-report/
 /reports/
 /.stryker-tmp/
-# the base engine tools/engine-freeze/differential.test.ts extracts
-/packages/pricing/.freeze-base/
 fixtures/golden/.report
 
 # local environment

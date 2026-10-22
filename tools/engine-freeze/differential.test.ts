@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -31,12 +32,13 @@ import { type GoldenClaim, GOLDEN_CLAIMS_DIR, goldenPricingInput } from '../gold
 
 /**
  * The engine freeze's proof that nothing but PR 6b's ZIP+4 lookup changed (reconciliation-001; docs/adr/0064; PRC-22).
- * The base engine is extracted at ENGINE_FREEZE_BASE (CI sets it to the merge base) into packages/pricing/.freeze-base/,
+ * The base engine is extracted at ENGINE_FREEZE_BASE (CI sets it to the merge base) into a new temporary directory,
  * with the base's copy of every workspace package it depends on (@tp/money, @tp/rules, @tp/contracts and theirs, each
  * its src and package.json), linked to one another in node_modules as pnpm links them, so the base engine runs on its
  * own base arithmetic, rules and contracts, never the head's: a change to @tp/money's rounding shows here as a change
  * to the engine. Third-party packages (decimal.js, zod) resolve to the versions the head's lockfile installs. Every
- * test file of the extract is deleted, and the extract is ignored by git, the test runner and the linter. Both engines
+ * test file of the extract is deleted. The extract lives outside the repository, so no repository scan running beside
+ * this test (lint:logs' scan test, the copy and colour lints, the fixture guard) lists a file it then deletes. Both engines
  * then price, and every LinePricing must be deeply equal once `trace.engine` is set aside; for every line, the head's
  * recompute of the head's trace must equal the base's recompute of the base's trace, and the head's recompute must
  * read the base's stored trace alike (recompute.ts is one of the five files the exception opens):
@@ -52,7 +54,6 @@ import { type GoldenClaim, GOLDEN_CLAIMS_DIR, goldenPricingInput } from '../gold
 const BASE = (process.env.ENGINE_FREEZE_BASE ?? '').trim();
 const IN_CI = process.env.CI !== undefined && process.env.CI !== '' && process.env.CI !== 'false';
 const SKIPPED = BASE === '' && !IN_CI;
-const EXTRACT_ROOT = path.join(repositoryRoot, 'packages/pricing/.freeze-base');
 /** The golden set at PR 6b-1's base: G01-G64 and G101-G195 (fixtures/golden/README.md). It only grows. */
 const GOLDEN_FLOOR = { claims: 150, lines: 326 };
 const GENERATED_CLAIMS = 20_000;
@@ -98,9 +99,7 @@ function link(target: string, at: string): void {
  */
 function extractBase(base: string): string {
   const commit = git(['rev-parse', '--verify', `${base}^{commit}`]).trim();
-  const dir = path.join(EXTRACT_ROOT, `${commit.slice(0, 12)}-${String(process.pid)}`);
-  rmSync(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
+  const dir = mkdtempSync(path.join(os.tmpdir(), `tp-engine-freeze-${commit.slice(0, 12)}-`));
   const packages = workspacePackagesAt(commit);
   const extracted = new Map<string, string>();
   const pending = ['@tp/pricing'];
@@ -421,16 +420,13 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
 
   afterAll(() => {
     if (extracted !== '') rmSync(extracted, { recursive: true, force: true });
-    try {
-      rmdirSync(EXTRACT_ROOT);
-    } catch {
-      // Another run's extract is still there.
-    }
   });
 
-  it('extracts the base engine and the base’s own money, rules and contracts packages, without their tests, beside the package', () => {
+  it('extracts the base engine and the base’s own money, rules and contracts packages, without their tests, outside the repository', () => {
     ready();
-    expect(path.dirname(path.dirname(extracted))).toBe(path.join(repositoryRoot, 'packages/pricing'));
+    // No repository scan running beside this test can list a file of the extract and find it gone.
+    expect(path.dirname(realpathSync(extracted))).toBe(realpathSync(os.tmpdir()));
+    expect(path.relative(realpathSync(repositoryRoot), realpathSync(extracted)).startsWith('..')).toBe(true);
     const files = readdirSync(extracted, { recursive: true })
       .map(String)
       .filter((file) => !file.split(path.sep).includes('node_modules'));

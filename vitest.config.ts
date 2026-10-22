@@ -4,8 +4,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 const LOCAL_DATABASE_URL = 'postgres://postgres:test@localhost:5432/postgres';
 
 const WORKSPACES = '{apps,packages,infra,tools}';
-// '**/.freeze-base/**': the base engine tools/engine-freeze/differential.test.ts extracts, never a test of its own.
-const ignored = [...configDefaults.exclude, '**/.next/**', '**/cdk.out/**', '**/.stryker-tmp/**', '**/.freeze-base/**', 'apps/web/e2e/**'];
+const ignored = [...configDefaults.exclude, '**/.next/**', '**/cdk.out/**', '**/.stryker-tmp/**', 'apps/web/e2e/**'];
 
 /**
  * 100% branch coverage on the pricing engine, the ledger, the parser and the authorization helpers

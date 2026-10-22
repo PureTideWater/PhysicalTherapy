@@ -742,11 +742,4 @@ describe('the wiring', () => {
     expect(step?.run?.indexOf('GITHUB_ENV')).toBeLessThan(step?.run?.indexOf('check.ts') ?? 0);
     expect(steps.find((item) => item.uses?.startsWith('actions/checkout@') === true)?.with).toEqual({ 'fetch-depth': 0 });
   });
-
-  it('keeps the extracted base engine out of git, the test runner and the linter', () => {
-    expect(readFileSync(path.join(repositoryRoot, '.gitignore'), 'utf8').split('\n')).toContain('/packages/pricing/.freeze-base/');
-    expect(readFileSync(path.join(repositoryRoot, 'vitest.config.ts'), 'utf8')).toMatch(/const ignored = \[[^\]]*'\*\*\/\.freeze-base\/\*\*'/);
-    expect(readFileSync(path.join(repositoryRoot, 'eslint.config.js'), 'utf8')).toContain("'**/.freeze-base/**',");
-    expect(JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/pricing/tsconfig.json'), 'utf8'))).toMatchObject({ include: ['src'] });
-  });
 });
