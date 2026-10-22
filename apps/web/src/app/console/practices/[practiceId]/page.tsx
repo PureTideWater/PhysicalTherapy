@@ -54,7 +54,7 @@ export default async function PracticeSettingsPage(props: Props) {
       <Card role="region" aria-label="Pricing location">
         <CardHeader>
           <CardTitle>Pricing location</CardTitle>
-          <CardDescription>The billing ZIP gives the Medicare locality every line is priced at; a ZIP that spans two localities needs its ZIP+4. Saving queues the practice’s monitoring, so months waiting on the location price again.</CardDescription>
+          <CardDescription>The billing ZIP gives the Medicare locality every line is priced at; a ZIP that spans more than one locality needs its ZIP+4. Saving queues the practice’s monitoring, so months waiting on the location are priced once it is ready.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
           <p>

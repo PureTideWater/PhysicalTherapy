@@ -56,9 +56,9 @@ export default async function SettingsPage(props: { readonly params: Promise<{ p
                   <Badge variant={step.done ? 'outline' : 'destructive'}>{step.done ? 'Done' : 'To do'}</Badge>
                   <span>
                     <Link className="font-medium underline" href={step.href}>
-                      {STEPS[step.key]?.title ?? step.key}
+                      {step.title ?? STEPS[step.key]?.title ?? step.key}
                     </Link>
-                    <span className="block text-xs text-muted-foreground">{STEPS[step.key]?.detail}</span>
+                    <span className="block text-xs text-muted-foreground">{step.detail ?? STEPS[step.key]?.detail}</span>
                   </span>
                 </li>
               ))}

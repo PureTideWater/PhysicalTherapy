@@ -48,11 +48,23 @@ describe('the pricing location statuses (audit #33; docs/adr/0064)', () => {
       no_release: 'No Medicare rule release is in force yet.',
       zip_missing: 'Add the practice’s billing ZIP code.',
       zip_unknown: 'Medicare’s ZIP code list in force does not include 00012. Check the ZIP code.',
-      locality_not_loaded: 'PaidWhole has not loaded Medicare’s locality list for these dates yet. There is nothing to change here.',
+      locality_not_loaded: 'PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.',
       zip_plus_four_needed: 'Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.',
-      zip_plus_four_unknown: 'Medicare’s ZIP+4 list in force does not include 00012-9100. Check the four digits.',
+      zip_plus_four_unknown:
+        'Medicare’s ZIP+4 list in force does not list 00012-9100. If those four digits are right, tell us and we check Medicare’s list; until then, months that need it wait.',
     });
     expect(new Set(LOCATION_STATUSES.map((status) => locationStatusText(status, facts))).size).toBe(LOCATION_STATUSES.length);
     expect(locationStatusText('zip_unknown')).toBe('Medicare’s ZIP code list in force does not include this ZIP code. Check the ZIP code.');
+  });
+
+  it('names the month a waiting month lacks content for, and names no dates over the whole release (which lacks only the ZIP+4 list)', () => {
+    expect(locationStatusText('locality_not_loaded', { zip: '00012', month: '2026-03' })).toBe('PaidWhole has not loaded Medicare’s locality list for 2026-03 yet. There is nothing for you to change.');
+    expect(locationStatusText('locality_not_loaded', { zip: '00012', month: null })).toBe('PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.');
+    // The month changes no other status's sentence.
+    expect(locationStatusText('zip_plus_four_needed', { zip: '00012', month: '2026-03' })).toBe(locationStatusText('zip_plus_four_needed', { zip: '00012' }));
+  });
+
+  it('never asks the customer to check four digits that may be right while Q37 is open', () => {
+    expect(locationStatusText('zip_plus_four_unknown', { zip: '00012', zipPlusFour: '9100' })).not.toMatch(/Check the four digits/);
   });
 });

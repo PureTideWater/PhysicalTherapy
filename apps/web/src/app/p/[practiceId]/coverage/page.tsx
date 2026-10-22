@@ -166,7 +166,7 @@ export default async function CoveragePage(props: Props) {
               Months waiting on your billing ZIP: <Money value={locationHeadline.chargeCents} /> billed
             </CardTitle>
             <CardDescription>
-              <span className="font-mono tabular-nums">{locationHeadline.lines}</span> {locationHeadline.lines === 1 ? 'line' : 'lines'} in months that need the practice’s billing ZIP or its ZIP+4 before they can be priced. They price again by
+              <span className="font-mono tabular-nums">{locationHeadline.lines}</span> {locationHeadline.lines === 1 ? 'line' : 'lines'} in months that need the practice’s billing ZIP or its ZIP+4 before they can be priced. They are priced by
               themselves once it is set in{' '}
               <Link className="underline" href={`/p/${practiceId}/settings/pricing`}>
                 Pricing settings

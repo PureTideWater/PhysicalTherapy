@@ -5,6 +5,7 @@ import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClien
 import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
+import type { JobPayload, JobType } from '@tp/worker/jobs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -53,7 +54,23 @@ let services: Services;
 let keys: LocalKeyProvider;
 let provider: DevAuthProvider;
 let invitations: string[];
-let queue: MemoryQueue;
+let queue: SeenAtSend;
+
+/**
+ * The queue in memory, recording for each monitor job the ZIP another connection reads when the job is sent: a job
+ * sent before the save commits would be planned by an idle worker against the old location.
+ */
+class SeenAtSend extends MemoryQueue {
+  readonly zipsSeen: (string | null)[] = [];
+
+  override async enqueue<T extends JobType>(type: T, payload: JobPayload<T>): Promise<string | null> {
+    if (type === 'monitor') {
+      const practiceId = (payload as { readonly practice_id: string }).practice_id;
+      this.zipsSeen.push((await owner.query<{ zip: string }>('SELECT zip FROM practice_site WHERE practice_id = $1', [practiceId])).rows[0]?.zip ?? null);
+    }
+    return super.enqueue(type, payload);
+  }
+}
 
 beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
@@ -73,7 +90,7 @@ beforeAll(async () => {
     },
     scryptCost: { n: 1024, r: 8, p: 1 },
   });
-  queue = new MemoryQueue();
+  queue = new SeenAtSend();
   services = createServices({ origin: 'http://localhost:3100', pool: app, provider, keys, sealer, logger: createLogger({ sink: () => undefined }), queue });
   await loadRelease(owner, path.resolve(import.meta.dirname, '../../../../../fixtures/synthetic/rules/release-synth-900001'), { release: 900001, allowSyntheticFixtureForTests: true });
 }, 120_000);
@@ -438,7 +455,10 @@ describe('the console’s location form (audit #33; PR 6b)', () => {
   it('sets the location whole, audits it, queues the monitoring chain by the request and shows its status', async () => {
     const practice = await createTenantWorld(owner, 'console location');
     const queued = queue.jobs.length;
+    queue.zipsSeen.splice(0);
     const saved = await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '00012-0001' });
+    // Sent once the save had committed: another connection already read the saved ZIP (the world's was 00011).
+    expect(queue.zipsSeen).toEqual(['00012']);
     // 900001 has no ZIP+4 list: the content is not loaded, never "check the four digits".
     expect(saved).toMatchObject({ status: 'ok', data: { objectId: practice.practiceId, redirect: `/console/practices/${practice.practiceId}?location=locality_not_loaded` } });
     expect((await owner.query('SELECT zip, zip_plus_four, updated_by FROM practice_site WHERE practice_id = $1', [practice.practiceId])).rows).toEqual([{ zip: '00012', zip_plus_four: '0001', updated_by: admin.id }]);
@@ -448,7 +468,7 @@ describe('the console’s location form (audit #33; PR 6b)', () => {
     expect(queue.jobs.slice(queued)).toEqual([{ type: 'monitor', payload: { practice_id: practice.practiceId, request_id: audit.rows[0]?.request_id } }]);
     expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'locality_not_loaded' })).toMatchObject({
       status: 'ok',
-      data: { zip: '00012', location: { status: 'locality_not_loaded', text: 'PaidWhole has not loaded Medicare’s locality list for these dates yet. There is nothing to change here.' } },
+      data: { zip: '00012', location: { status: 'locality_not_loaded', text: 'PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.' } },
     });
     // Saved whole each time: five digits alone clear the ZIP+4.
     expect(await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '00011' })).toMatchObject({ status: 'ok', data: { redirect: expect.stringMatching(/\?location=ready$/) } });

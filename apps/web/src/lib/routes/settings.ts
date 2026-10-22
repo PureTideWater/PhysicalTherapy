@@ -16,9 +16,12 @@ import {
   type MonthWaitingOnLocation,
   type PracticeLocation,
   billingZipDone,
+  billingZipStep,
   locationConfirmed,
+  locationSettled,
   monthsWaitingOnLocation,
   practiceLocationReading,
+  runsPricedElsewhere,
 } from '../pricing/location';
 import { runsInEffect } from '../pricing/queries';
 import { ZIP_CODE_FORMAT, parseZipCode, zipCodeText } from '../zip';
@@ -129,6 +132,9 @@ export interface SetupStep {
   readonly key: 'mfa' | 'terms' | 'agreements' | 'team' | 'billing' | 'billing_zip' | 'upload' | 'correspondence';
   readonly done: boolean;
   readonly href: string;
+  /** The step's own words where they depend on the records (the billing ZIP's status); the page's otherwise. */
+  readonly title?: string;
+  readonly detail?: string;
 }
 
 export const settingsPage = practiceRoute({
@@ -158,7 +164,12 @@ export const settingsPage = practiceRoute({
         { key: 'billing', done: billing?.subscription?.status === 'active', href: `/settings/billing/${organizationId}` },
         // The practice's pricing location, confirmed by a person of the practice since it last changed, with nothing left
         // for the customer to change (audit #33; docs/adr/0064). Pricing never waits for the confirmation.
-        { key: 'billing_zip', done: billingZipDone(reading, await locationConfirmed(scope.client, practiceId, location)), href: pricingSettingsPath(practiceId) },
+        {
+          key: 'billing_zip',
+          done: billingZipDone(reading, await locationConfirmed(scope.client, practiceId, location)),
+          href: pricingSettingsPath(practiceId),
+          ...(billingZipStep(reading) ?? {}),
+        },
         { key: 'upload', done: Number.parseInt(uploads.rows[0]?.count ?? '0', 10) > 0, href: `/p/${practiceId}/uploads` },
         // The contact every payer's copy prints; no packet is exported without it (audit item #37 part 1, D6).
         { key: 'correspondence', done: (await practiceCorrespondenceContact(scope.client, practiceId)).state === 'set', href: correspondenceSettingsPath(practiceId) },
@@ -615,12 +626,11 @@ export const pricingSettingsPage = practiceRoute({
   handle: async ({ scope, practiceId, access, params, request }): Promise<PricingSettingsPageData> => {
     const { location, reading } = await practiceLocationReading(scope.client, practiceId);
     const { places, split } = await placesInEffect(scope.client, practiceId);
-    const pricedBefore =
-      location === null
-        ? []
-        : (await runsInEffect(scope, practiceId, request.requestId))
-            .filter((run) => new Date(run.createdAt) < location.updatedAt)
-            .map((run): PricedBeforeLocation => ({ runId: run.id, periodFrom: run.periodFrom, periodTo: run.periodTo, releaseNo: run.releaseNo }));
+    const inEffect = location === null ? [] : await runsInEffect(scope, practiceId, request.requestId);
+    const elsewhere = location === null ? new Set<string>() : await runsPricedElsewhere(scope.client, practiceId, inEffect, location);
+    const pricedBefore = inEffect
+      .filter((run) => elsewhere.has(run.id))
+      .map((run): PricedBeforeLocation => ({ runId: run.id, periodFrom: run.periodFrom, periodTo: run.periodTo, releaseNo: run.releaseNo }));
     return {
       practiceId,
       location,
@@ -679,13 +689,15 @@ export const setPricingLocationAction = practiceRoute({
   params: practiceParams,
   input: billingZipInput,
   audit: { action: 'pricing_location_set', objectType: 'practice' },
-  handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
+  handle: async ({ scope, practiceId, input, request, services, afterCommit }): Promise<MutationResult> => {
     try {
       await scope.client.query('SELECT practice_set_location($1, $2, $3) AS status', [practiceId, input.zip.zip5, input.zip.plusFour]);
     } catch (error) {
       throw locationRefusal(error) ?? error;
     }
-    await services.queue.enqueue('monitor', { practice_id: practiceId, request_id: request.requestId });
+    // Queued once the save has committed, so the plan it starts reads the saved location (a job sent inside the
+    // transaction could run first, plan with the old one and spend its request's key).
+    afterCommit(() => services.queue.enqueue('monitor', { practice_id: practiceId, request_id: request.requestId }));
     return { objectId: practiceId, redirect: `${pricingSettingsPath(practiceId)}?notice=saved` };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ zip: '00011' }) },
@@ -710,8 +722,14 @@ export const confirmPricingLocationAction = practiceRoute({
     if (permitted !== true) {
       throw new PermissionDeniedError('pricing_settings.set', 'no_role', []);
     }
-    if ((await practiceLocationReading(scope.client, practiceId)).location === null) {
+    const { location, reading } = await practiceLocationReading(scope.client, practiceId);
+    if (location === null) {
       throw new InputError([{ field: 'zip', message: 'add the billing ZIP first' }]);
+    }
+    // A location that still asks the customer for something (its ZIP+4, a ZIP or ZIP+4 Medicare's list lacks) is not
+    // confirmed as it stands: the status says what to do first.
+    if (!locationSettled(reading)) {
+      throw new InputError([{ field: 'zip', message: reading.text }]);
     }
     return { objectId: practiceId, redirect: `${pricingSettingsPath(practiceId)}?notice=confirmed` };
   },

@@ -8,6 +8,7 @@ import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClien
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
+import type { JobPayload, JobType } from '@tp/worker/jobs';
 import { type JobContext, intakeHandler, intakeServices, parseHandler, priceHandler } from '@tp/worker/runtime';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -48,7 +49,7 @@ let database: MigratedDatabase;
 let owner: DatabaseClient;
 let app: DatabasePool;
 let services: Services;
-let queue: MemoryQueue;
+let queue: SeenAtSend;
 let world: TenantWorld;
 let manager: string;
 let analyst: string;
@@ -62,7 +63,7 @@ beforeAll(async () => {
   await loadRouteRelease(owner);
   app = openPool(database.appUrl, 6);
   const sealer = new Sealer(randomBytes(32));
-  queue = new MemoryQueue();
+  queue = new SeenAtSend();
   services = createServices({
     origin: 'http://localhost:3100',
     pool: app,
@@ -98,6 +99,21 @@ beforeAll(async () => {
   );
   await send('MAP-05/remit.835');
 }, 120_000);
+
+/**
+ * The queue in memory, recording for each monitor job the ZIP another connection reads when the job is sent: a job
+ * sent before the save commits would be planned by an idle worker against the old location.
+ */
+class SeenAtSend extends MemoryQueue {
+  readonly zipsSeen: string[] = [];
+
+  override async enqueue<T extends JobType>(type: T, payload: JobPayload<T>): Promise<string | null> {
+    if (type === 'monitor') {
+      this.zipsSeen.push((await owner.query<{ zip: string }>('SELECT zip FROM practice_site WHERE practice_id = $1', [practiceId])).rows[0]?.zip ?? '');
+    }
+    return super.enqueue(type, payload);
+  }
+}
 
 afterAll(async () => {
   await endPool(app);
@@ -275,6 +291,8 @@ describe('Getting started: "Confirm your billing ZIP"', () => {
 
 describe('saving the location (audit #33)', () => {
   it('saves it, audits it, queues the monitoring chain by the request, and says a ZIP needs its ZIP+4 without refusing it', async () => {
+    // The worker's own sends while the upload loaded are not this save's.
+    queue.zipsSeen.splice(0);
     const saved = ok(await call(setPricingLocationAction, manager, P(), { zip: ' 00012 ' }));
     expect(saved).toEqual({ objectId: practiceId, redirect: `/p/${practiceId}/settings/pricing?notice=saved` });
     expect((await owner.query('SELECT zip, zip_plus_four, updated_by FROM practice_site WHERE practice_id = $1', [practiceId])).rows).toEqual([{ zip: '00012', zip_plus_four: null, updated_by: manager }]);
@@ -283,14 +301,27 @@ describe('saving the location (audit #33)', () => {
     );
     expect(audit.rows).toEqual([{ actor_id: manager, object_type: 'practice', object_id: practiceId, request_id: expect.stringMatching(/^test-/) }]);
     expect(queue.jobs.splice(0)).toEqual([{ type: 'monitor', payload: { practice_id: practiceId, request_id: audit.rows[0]?.request_id } }]);
+    // Sent once the save had committed: another connection already read the saved ZIP.
+    expect(queue.zipsSeen.splice(0)).toEqual(['00012']);
     const page = ok(await call(pricingSettingsPage, viewer, { ...P(), notice: 'saved' }));
     expect(page).toMatchObject({
       locationText: '00012',
       reading: { status: 'zip_plus_four_needed', text: 'Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.', carrier: null, locality: null },
       notice: 'saved',
     });
-    // Set by a person of the practice, but there is something left for the customer to change: not done.
+    // Set by a person of the practice, but there is something left for the customer to change: not done, and the step
+    // asks for that, not for a confirmation.
     expect(await billingZipStep()).toBe(false);
+    const step = ok(await call(settingsPage, world.adminUserId, P())).checklist?.find((entry) => entry.key === 'billing_zip');
+    expect(step).toMatchObject({ title: 'Add your billing ZIP+4', detail: 'Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.' });
+    // A location that still asks for its ZIP+4 is not confirmed as it stands, whoever sends the confirmation.
+    const confirmations = async () => (await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE action = 'pricing_location_confirmed'")).rows[0]?.n;
+    const before = await confirmations();
+    expect(await call(confirmPricingLocationAction, world.adminUserId, P(), { confirm: 'on' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'zip', message: 'Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.' }],
+    });
+    expect(await confirmations()).toBe(before);
   });
 
   it('holds a month whose Medicare line needs the ZIP+4, with no line kept, and names it with its dollars on Pricing settings and Coverage', async () => {
@@ -342,13 +373,41 @@ describe('saving the location (audit #33)', () => {
     expect((await owner.query('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [practiceId])).rows).toEqual([{ zip: '00012', zip_plus_four: '0001' }]);
     expect(ok(await call(pricingSettingsPage, viewer, P()))).toMatchObject({
       locationText: '00012-0001',
-      reading: { status: 'locality_not_loaded', text: 'PaidWhole has not loaded Medicare’s locality list for these dates yet. There is nothing to change here.' },
+      reading: { status: 'locality_not_loaded', text: 'PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.' },
       confirmed: false,
     });
+    // February's run stopped on the old location; the location now leaves the customer nothing to change, so the month
+    // is being priced with it, never listed under a status sentence it no longer has.
+    expect(ok(await call(pricingSettingsPage, viewer, P())).waiting).toEqual([
+      expect.objectContaining({ periodFrom: '2026-02-01', kind: 'repricing', status: 'locality_not_loaded', text: 'Being priced with the new location.' }),
+    ]);
     // Set by the practice administrator, who reads the audit events: confirmed by the save itself.
     expect(ok(await call(pricingSettingsPage, world.adminUserId, P())).confirmed).toBe(true);
     expect(await billingZipStep()).toBe(true);
     expect(ok(await call(practiceHome, viewer, P())).practice).toMatchObject({ zip: '00012', zipPlusFour: '0001' });
     expect(queue.jobs.splice(0)).toEqual([{ type: 'monitor', payload: { practice_id: practiceId, request_id: expect.stringMatching(/^test-/) } }]);
+  });
+});
+
+describe('months priced before the location changed', () => {
+  it('lists a complete run by the location it was priced at, never by the time of a save that changed nothing', async () => {
+    const pricedElsewhere = async () => ok(await call(pricingSettingsPage, viewer, P())).pricedBefore.map((run) => run.runId);
+    ok(await call(setPricingLocationAction, manager, P(), { zip: '00011' }));
+    // February priced at 00011 (the location now): nothing to list.
+    const created = ok(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', releaseNo: '900001' }));
+    const runId = /pricing-runs\/([0-9a-f-]{36})$/.exec(created.redirect ?? '')?.[1] ?? '';
+    await runQueue();
+    expect(ok(await call(pricingRunPage, manager, { ...P(), runId })).run).toMatchObject({ status: 'complete' });
+    expect(await pricedElsewhere()).toEqual([]);
+    // The same ZIP saved again changes no price: still nothing to list.
+    ok(await call(setPricingLocationAction, manager, P(), { zip: '00011' }));
+    expect(await pricedElsewhere()).toEqual([]);
+    // Another location: the run keeps 00011's prices until it is re-run.
+    ok(await call(setPricingLocationAction, manager, P(), { zip: '00012-0001' }));
+    expect(await pricedElsewhere()).toEqual([runId]);
+    // And back to 00011: the run's prices are the location's again.
+    ok(await call(setPricingLocationAction, manager, P(), { zip: '00011' }));
+    expect(await pricedElsewhere()).toEqual([]);
+    queue.jobs.splice(0);
   });
 });

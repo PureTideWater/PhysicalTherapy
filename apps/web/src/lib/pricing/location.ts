@@ -98,13 +98,80 @@ export async function locationConfirmed(client: ScopeClient, practiceId: string,
   return rows[0]?.confirmed === true;
 }
 
-/** Getting started's "Confirm your billing ZIP": confirmed, and nothing the customer can change (ready, or content PaidWhole has to load). */
-export function billingZipDone(reading: LocationReading, confirmed: boolean): boolean {
-  return confirmed && (LOCATION_SETTLED_STATUSES as readonly LocationStatus[]).includes(reading.status);
+/**
+ * Of the complete runs given, the ones priced at another location than `location`: the ZIP and ZIP+4 a line of the
+ * run read (every line of a run reads the run's settings, which its trace keeps, a null ZIP+4 left out), never the
+ * times, so a save of the same location, or a change and a change back, lists no run as priced elsewhere. A run with
+ * no line keeps no trace, and is compared by time: created before the location last changed. One line a run is read,
+ * its settings alone.
+ */
+export async function runsPricedElsewhere(
+  client: ScopeClient,
+  practiceId: string,
+  runs: readonly { readonly id: string; readonly createdAt: string | Date }[],
+  location: PracticeLocation,
+): Promise<ReadonlySet<string>> {
+  if (runs.length === 0) {
+    return new Set();
+  }
+  const { rows } = await client.query<{ id: string; zip: string | null; zip_plus_four: string | null; traced: boolean }>(
+    `SELECT r.id::text AS id, s.settings ->> 'zip' AS zip, s.settings ->> 'zip_plus_four' AS zip_plus_four, s.settings IS NOT NULL AS traced
+       FROM unnest($2::uuid[]) AS r (id)
+       LEFT JOIN LATERAL (SELECT p.trace -> 'settings' AS settings FROM priced_line p WHERE p.practice_id = $1 AND p.pricing_run_id = r.id LIMIT 1) s ON true`,
+    [practiceId, runs.map((run) => run.id)],
+  );
+  const created = new Map(runs.map((run) => [run.id, new Date(run.createdAt)]));
+  return new Set(
+    rows
+      .filter((row) =>
+        row.traced ? row.zip !== location.zip || (row.zip_plus_four ?? null) !== location.zipPlusFour : (created.get(row.id)?.getTime() ?? Infinity) < location.updatedAt.getTime(),
+      )
+      .map((row) => row.id),
+  );
 }
 
-/** Why a month waits on the location: no location at all (no run is created), or its run stopped a line on it. */
-export type LocationWaitKind = 'zip_missing' | 'location_not_ready';
+/**
+ * Whether the location leaves the customer nothing to change (ready, or content PaidWhole has to load): only then is it
+ * offered for, and taken as, the practice's confirmation.
+ */
+export function locationSettled(reading: LocationReading): boolean {
+  return (LOCATION_SETTLED_STATUSES as readonly LocationStatus[]).includes(reading.status);
+}
+
+/** What Getting started's billing ZIP step asks for while the location still asks the customer for something. */
+const UNSETTLED_STEP: Readonly<Partial<Record<LocationStatus, string>>> = {
+  zip_missing: 'Add your billing ZIP',
+  zip_unknown: 'Check your billing ZIP',
+  zip_plus_four_needed: 'Add your billing ZIP+4',
+  zip_plus_four_unknown: 'Review your billing ZIP+4',
+};
+
+/**
+ * Getting started's billing ZIP step as the location stands: "Confirm your billing ZIP" (the page's own words) once
+ * nothing is left for the customer to change; otherwise the status's own step, with its sentence as the detail, so the
+ * step never asks for a confirmation the page cannot take. Null keeps the page's words.
+ */
+export function billingZipStep(reading: LocationReading): { readonly title: string; readonly detail: string } | null {
+  if (locationSettled(reading)) {
+    return null;
+  }
+  return { title: UNSETTLED_STEP[reading.status] ?? 'Confirm your billing ZIP', detail: reading.text };
+}
+
+/** Getting started's "Confirm your billing ZIP": confirmed, and nothing the customer can change. */
+export function billingZipDone(reading: LocationReading, confirmed: boolean): boolean {
+  return confirmed && locationSettled(reading);
+}
+
+/**
+ * Why a month is listed with the location: no location at all (no run is created); its run stopped a line on it and
+ * the location still cannot price; or its run stopped a line on it and the location now prices (or waits only on
+ * content PaidWhole loads), so the month is being priced with the new location.
+ */
+export type LocationWaitKind = 'zip_missing' | 'location_not_ready' | 'repricing';
+
+/** What a month being priced with the new location says, in place of the status's sentence. */
+export const REPRICING_TEXT = 'Being priced with the new location.';
 
 export interface MonthWaitingOnLocation {
   readonly periodFrom: string;
@@ -168,18 +235,25 @@ export async function monthsWaitingOnLocation(client: ScopeClient, practiceId: s
     [practiceId, releaseNo],
   );
   return rows.flatMap((row): MonthWaitingOnLocation[] => {
-    const kind: LocationWaitKind | null = location === null ? 'zip_missing' : row.newest_failure === 'location_not_ready' ? 'location_not_ready' : null;
+    const status: LocationStatus = isLocationStatus(row.status) ? row.status : 'zip_missing';
+    // A month whose last run stopped on the location, at a location that now prices (a save since), is being priced
+    // again by the save's monitoring: it never reads as waiting on a step the customer has already taken.
+    const settled = (LOCATION_SETTLED_STATUSES as readonly LocationStatus[]).includes(status);
+    const kind: LocationWaitKind | null =
+      location === null ? 'zip_missing' : row.newest_failure !== 'location_not_ready' ? null : settled ? 'repricing' : 'location_not_ready';
     if (kind === null) {
       return [];
     }
-    const status: LocationStatus = isLocationStatus(row.status) ? row.status : 'zip_missing';
     return [
       {
         periodFrom: row.period_from,
         periodTo: row.period_to,
         kind,
         status,
-        text: locationStatusText(status, { zip: location?.zip ?? null, zipPlusFour: location?.zipPlusFour ?? null, releaseNo }),
+        text:
+          kind === 'repricing'
+            ? REPRICING_TEXT
+            : locationStatusText(status, { zip: location?.zip ?? null, zipPlusFour: location?.zipPlusFour ?? null, releaseNo, month: row.period_from.slice(0, 7) }),
         totals: { lines: row.lines, claims: row.claims, chargeCents: row.charge_cents, paidCents: row.paid_cents },
       },
     ];

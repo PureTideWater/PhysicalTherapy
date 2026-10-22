@@ -41,6 +41,12 @@ export interface LocationFacts {
   readonly carrier?: string | null;
   readonly locality?: string | null;
   readonly releaseNo?: number | null;
+  /**
+   * The month the status is read over (2026-03), for a waiting month; absent for the status over the whole release.
+   * Only locality_not_loaded's sentence differs: over a month the release may lack the ZIP's window of that month, while
+   * over the whole release (any window of a known ZIP overlaps it) it lacks only the ZIP+4 list.
+   */
+  readonly month?: string | null;
 }
 
 const or = (value: string | null | undefined, fallback: string): string => (value === null || value === undefined || value === '' ? fallback : value);
@@ -58,10 +64,13 @@ export function locationStatusText(status: LocationStatus, facts: LocationFacts 
     case 'zip_unknown':
       return `Medicare’s ZIP code list in force does not include ${zip}. Check the ZIP code.`;
     case 'locality_not_loaded':
-      return 'PaidWhole has not loaded Medicare’s locality list for these dates yet. There is nothing to change here.';
+      return facts.month === null || facts.month === undefined || facts.month === ''
+        ? `PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP ${zip} yet. There is nothing for you to change.`
+        : `PaidWhole has not loaded Medicare’s locality list for ${facts.month} yet. There is nothing for you to change.`;
     case 'zip_plus_four_needed':
       return `Medicare splits ZIP ${zip} between payment localities. Add its ZIP+4.`;
     case 'zip_plus_four_unknown':
-      return `Medicare’s ZIP+4 list in force does not include ${zip}-${or(facts.zipPlusFour, '????')}. Check the four digits.`;
+      // Right under either answer to Q37 (a ZIP+4 the ZIP9 file does not list): never "check the four digits", which may be right.
+      return `Medicare’s ZIP+4 list in force does not list ${zip}-${or(facts.zipPlusFour, '????')}. If those four digits are right, tell us and we check Medicare’s list; until then, months that need it wait.`;
   }
 }

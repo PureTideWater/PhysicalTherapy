@@ -63,18 +63,27 @@ export function DiffSummaryText({ summary }: { readonly summary: DiffSummary }) 
   );
 }
 
+/** What the diff says when the two runs pinned different place-of-service splits, by which of them pinned one. */
+export const SPLIT_CHANGE_TEXT = {
+  both: 'Places of service set from the approved split: the two runs priced under different approvals of the split, so a place the practice has not set may price at the other rate.',
+  added: 'The earlier run priced with no approved split; this run takes the approved split for every place the practice has not set, so such a place may now price, or price at the other rate.',
+  removed: 'The earlier run took the approved split for every place the practice had not set; this run priced with no approved split, so such a place may no longer price, or price at the other rate.',
+} as const;
+
 /**
- * When the two runs pinned different approvals of the place-of-service split (docs/adr/0064): every place a practice
- * has not set prices as the split it pinned says, so a line's place of service may price at the other rate. Null when
- * both pinned the same one (or none).
+ * When the two runs pinned different place-of-service splits (docs/adr/0064): every place a practice has not set
+ * prices as the split a run pinned says, so a line's place of service may price at the other rate, or (when one run
+ * pinned none, as every run before PR 6b and before the first approval) price in one run only. Null when both pinned
+ * the same one, or none.
  */
 export function SplitChangeText({ before, after }: { readonly before: Pick<DiffRun, 'placeOfServiceSplitId'>; readonly after: Pick<DiffRun, 'placeOfServiceSplitId'> }) {
   if (before.placeOfServiceSplitId === after.placeOfServiceSplitId) {
     return null;
   }
+  const change = before.placeOfServiceSplitId === null ? 'added' : after.placeOfServiceSplitId === null ? 'removed' : 'both';
   return (
-    <p className="text-sm" data-state="split-changed">
-      Places of service set from the approved split: the two runs priced under different approvals of the split, so a place the practice has not set may price at the other rate.
+    <p className="text-sm" data-state="split-changed" data-split-change={change}>
+      {SPLIT_CHANGE_TEXT[change]}
     </p>
   );
 }

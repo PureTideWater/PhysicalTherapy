@@ -170,7 +170,8 @@ export async function consoleLocationText(client: ScopeClient, practiceId: strin
     return five.status === 'ready' ? five.text : `Medicare prices this location under rule release ${String(releaseNo)}, in the locality of its ZIP+4.`;
   }
   if (status === 'zip_plus_four_unknown') {
-    return 'Medicare’s ZIP+4 list in force does not include this ZIP+4. Check the four digits.';
+    // Right under either answer to Q37: the digits may be right and the list incomplete.
+    return 'Medicare’s ZIP+4 list in force does not list this ZIP+4. If the practice confirms the four digits, check them against Medicare’s list.';
   }
   return locationStatusText(status, { zip, releaseNo });
 }
@@ -462,12 +463,13 @@ export const setPracticeLocation = platformRoute({
   params: z.object({}),
   input: z.object({ practiceId: opaqueId, zip: billingZip }),
   audit: { action: 'console_pricing_location_set', objectType: 'practice' },
-  handle: async ({ scope, input, request, services }): Promise<MutationResult> => {
+  handle: async ({ scope, input, request, services, afterCommit }): Promise<MutationResult> => {
     const status = await setLocation(scope.client, input.practiceId, input.zip);
     if (status === null) {
       throw new NotFoundError();
     }
-    await services.queue.enqueue('monitor', { practice_id: input.practiceId, request_id: request.requestId });
+    // Queued once the save has committed, so the plan reads the saved location (see setPricingLocationAction).
+    afterCommit(() => services.queue.enqueue('monitor', { practice_id: input.practiceId, request_id: request.requestId }));
     return { objectId: input.practiceId, redirect: `/console/practices/${input.practiceId}?location=${status}` };
   },
   sample: { params: () => ({}), input: (refs) => ({ practiceId: refs.practiceId, zip: '00011' }) },

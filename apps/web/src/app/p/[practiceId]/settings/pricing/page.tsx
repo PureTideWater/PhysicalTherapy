@@ -10,11 +10,21 @@ import { Money } from '../../../../../components/remittances/display';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
-import { LOCATION_NOTE, waitingHeadline } from '../../../../../lib/pricing/location';
+import { LOCATION_NOTE, locationSettled, waitingHeadline } from '../../../../../lib/pricing/location';
 import { pricingSettingsPage } from '../../../../../lib/routes/settings';
 import { confirmPricingLocation, setPricingLocation } from './actions';
 
 export const metadata: Metadata = { title: 'Pricing settings' };
+
+/** Where "tell us" goes: the support form, opened from Settings. */
+const SUPPORT_HREF = '/support?from=settings';
+
+/** The fields a refusal names, by their labels. */
+const FORM_LABELS = { zip: 'Billing ZIP', confirm: 'Confirmation' } as const;
+
+/** What a save says, by the location it leaves: one that prices (or waits only on PaidWhole's content), or one that still asks for something. */
+const SAVED_SETTLED = 'Months waiting on the billing ZIP are being priced.';
+const SAVED_UNSETTLED = 'Months that need the location still wait: see the status below.';
 
 /**
  * Pricing settings (audit #33; #16's minimal record; the founder's answers of 2026-10-21 to PR 6b's Q2 (a) and Q5 (a);
@@ -31,14 +41,16 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
   }
   const { practiceId, location, locationText, reading, confirmed, places, split, waiting, pricedBefore, canEdit, notice } = page.data;
   const headline = waitingHeadline(waiting);
+  // The location as it reads now decides what the save's notice promises, and whether it can be confirmed as it stands.
+  const settled = locationSettled(reading);
   return (
     <AppShell shell={page.shell} section="settings">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Pricing settings</h1>
       <SettingsNav practiceId={practiceId} organizationId={currentOrganization(page.shell)} current="pricing" />
       {notice === 'saved' ? (
-        <Alert role="status" data-notice="saved">
+        <Alert role="status" data-notice="saved" data-settled={settled ? 'yes' : 'no'}>
           <AlertTitle>Saved</AlertTitle>
-          <AlertDescription>Months waiting on the billing ZIP are priced again by themselves.</AlertDescription>
+          <AlertDescription>{settled ? SAVED_SETTLED : SAVED_UNSETTLED}</AlertDescription>
         </Alert>
       ) : notice === 'confirmed' ? (
         <Alert role="status" data-notice="confirmed">
@@ -49,7 +61,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
       <Card role="region" aria-label="Pricing location">
         <CardHeader>
           <CardTitle>Pricing location</CardTitle>
-          <CardDescription>Medicare prices each line at the payment locality of the practice’s billing ZIP. A few ZIP codes span two localities; for those, Medicare needs the ZIP+4.</CardDescription>
+          <CardDescription>Medicare prices each line at the payment locality of the practice’s billing ZIP. A few ZIP codes span more than one locality; for those, Medicare needs the ZIP+4.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
           <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-[max-content_1fr]">
@@ -58,14 +70,27 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
               {locationText ?? '—'}
             </dd>
           </dl>
-          <p data-location-status={reading.status}>{reading.text}</p>
+          <p data-location-status={reading.status}>
+            {reading.text}
+            {reading.status === 'zip_plus_four_unknown' ? (
+              <>
+                {' '}
+                <Link className="underline" href={SUPPORT_HREF}>
+                  Contact support
+                </Link>
+              </>
+            ) : null}
+          </p>
           {location !== null && confirmed ? <p className="text-muted-foreground" data-confirmed>Confirmed by the practice since it last changed.</p> : null}
           <p className="text-muted-foreground" data-location-note>
-            {LOCATION_NOTE}
+            {LOCATION_NOTE}{' '}
+            <Link className="underline" href={SUPPORT_HREF}>
+              Contact support
+            </Link>
           </p>
           {canEdit ? (
             <div className="flex flex-col gap-4">
-              <ActionForm action={setPricingLocation} submit="Save the billing ZIP" className="grid max-w-md gap-3">
+              <ActionForm action={setPricingLocation} submit="Save the billing ZIP" className="grid max-w-md gap-3" labels={FORM_LABELS}>
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <Field
@@ -79,8 +104,8 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
                   hint="Five digits, or ZIP+4 such as 27601-1234."
                 />
               </ActionForm>
-              {location !== null && !confirmed ? (
-                <ActionForm action={confirmPricingLocation} submit="Confirm the billing ZIP" variant="outline" className="flex flex-col gap-2">
+              {location !== null && settled && !confirmed ? (
+                <ActionForm action={confirmPricingLocation} submit="Confirm the billing ZIP" variant="outline" className="flex flex-col gap-2" labels={FORM_LABELS}>
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="confirm" value="on" />
@@ -133,7 +158,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
           <CardTitle>
             Months waiting on your billing ZIP{waiting.length === 0 ? null : <>: <Money value={headline.chargeCents} /> billed</>}
           </CardTitle>
-          <CardDescription>A month with a line that needs the billing ZIP or its ZIP+4 waits for it, and is priced again by itself once the location is ready.</CardDescription>
+          <CardDescription>A month with a line that needs the billing ZIP or its ZIP+4 waits for it, and is priced by itself once the location is ready.</CardDescription>
         </CardHeader>
         <CardContent className="text-sm">
           {waiting.length === 0 ? <p className="text-muted-foreground">No month is waiting on the billing ZIP.</p> : <MonthsWaitingOnLocation months={waiting} label="Months waiting on the billing ZIP" />}

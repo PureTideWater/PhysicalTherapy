@@ -1,14 +1,16 @@
 import type { MonthWaitingOnLocation } from '../../lib/pricing/location';
 import { Money } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 
 /**
  * The months that wait on the practice's pricing location (audit #33; docs/adr/0064), as Pricing settings and
  * Coverage list them: each month's lines, claims, billed and paid dollars, and the location's status over the month in
- * plain words. Money in the mono face; the status always in words, never a color alone.
+ * plain words. Money in the mono face; the status always in words, never a color alone. At a phone's width the table
+ * scrolls inside a region the keyboard reaches (ScrollTable), so "Why it waits" is never out of reach.
  */
 export function MonthsWaitingOnLocation({ months, label }: { readonly months: readonly MonthWaitingOnLocation[]; readonly label: string }) {
   return (
-    <div className="w-full overflow-x-auto">
+    <ScrollTable label={label}>
       <table className="w-full min-w-[36rem] text-left text-sm" aria-label={label}>
         <thead className="text-muted-foreground">
           <tr>
@@ -37,6 +39,6 @@ export function MonthsWaitingOnLocation({ months, label }: { readonly months: re
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }

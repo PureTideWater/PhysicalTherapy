@@ -34,7 +34,7 @@ export const FAILURE_TEXT: Readonly<Record<string, string>> = {
   unmapped_plan: 'A plan of the period’s lines has no mapping: map it, then create a new run.',
   job_failed: 'The price job failed three times and the operator was alerted; create a new run once it is fixed.',
   // Audit #33 (docs/adr/0064): a line needed the location, so no line was kept and the month waits for it.
-  location_not_ready: 'A line of the period needs the practice’s billing ZIP or ZIP+4: fix it in Pricing settings. Waiting months price again by themselves.',
+  location_not_ready: 'A line of the period needs the practice’s billing ZIP or ZIP+4: fix it in Pricing settings. Waiting months are priced by themselves once it is set.',
 } satisfies Readonly<Record<FailureCode, string>>;
 
 export const RERUN_TEXT: Readonly<Record<RerunReason, string>> = {

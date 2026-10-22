@@ -7,7 +7,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { personaEmail } from '../scripts/synthetic-personas';
 import { LocalESignature } from '../src/lib/agreements/esign';
 import { totpCode } from '../src/lib/auth/totp';
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { E2E_DEV_AUTH_DIR, E2E_ESIGN_DIR, E2E_ESIGN_SECRET } from './env';
 import { refusal, registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
 import { chainFrom, queue, until } from './journeys';
@@ -413,7 +413,9 @@ test('a practice created with no seeded settings reaches a priced month from its
       await expect(admin.getByRole('heading', { level: 1, name: 'Pricing settings' })).toBeVisible();
       await expect(admin.locator('[data-location-zip]')).toHaveText('00011');
       await expect(admin.locator('[data-location-status="ready"]')).toHaveText('Medicare prices this location in locality 99999-01 under rule release 900001.');
-      await expect(admin.locator('[data-location-note]')).toHaveText('This location prices every month, earlier months too when they are re-run. If the practice moved, tell us before changing it.');
+      await expect(admin.locator('[data-location-note]')).toHaveText('This location prices every month, earlier months too when they are re-run. If the practice moved, tell us before changing it. Contact support');
+      // "tell us" names its channel: the support form.
+      await expect(admin.locator('[data-location-note]').getByRole('link', { name: 'Contact support' })).toHaveAttribute('href', '/support?from=settings');
       await expectAccessible(admin, 'Pricing settings');
       await noSidewaysScroll(admin, 390, 'Pricing settings');
       await admin.getByRole('button', { name: 'Confirm the billing ZIP' }).click();
@@ -478,6 +480,8 @@ test('a practice created with no seeded settings reaches a priced month from its
       await expect(waiting.locator('[data-waiting-month="2026-03"]')).toContainText('Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.');
       await expect(waiting.getByRole('link', { name: 'Pricing settings' })).toHaveAttribute('href', `/p/${practices.split}/settings/pricing`);
       await expectAccessible(manager, 'Coverage with a month waiting on the billing ZIP');
+      // At a phone's width the waiting months' table scrolls inside a region the keyboard reaches.
+      await atPhoneWidth(manager, 'Coverage with a waiting month');
       // The run's own failure, in words.
       await manager.goto(`/p/${practices.split}/pricing-runs`);
       await expect(manager.getByRole('list', { name: 'Pricing runs' })).toContainText('A line of the period needs the practice’s billing ZIP or ZIP+4: fix it in Pricing settings.');
@@ -489,19 +493,34 @@ test('a practice created with no seeded settings reaches a priced month from its
     });
 
     await test.step('a ZIP+4 under a release with no ZIP+4 list reads as content not yet loaded, never as wrong digits', async () => {
+      // Getting started asks for what the location still needs, never for a confirmation it cannot take.
+      await admin.goto(`/p/${practices.split}/settings`);
+      const step = admin.locator('[data-step="billing_zip"]');
+      await expect(step).toHaveAttribute('data-done', 'no');
+      await expect(step.getByRole('link', { name: 'Add your billing ZIP+4' })).toBeVisible();
+      await expect(step).toContainText('Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.');
       await admin.goto(`/p/${practices.split}/settings/pricing`);
       await expect(admin.locator('[data-location-status="zip_plus_four_needed"]')).toHaveText('Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.');
+      await expect(admin.getByRole('button', { name: 'Confirm the billing ZIP' })).toHaveCount(0);
       await expect(admin.getByRole('table', { name: 'Months waiting on the billing ZIP' })).toContainText('2026-03');
+      await atPhoneWidth(admin, 'Pricing settings with a waiting month');
+      // A save that leaves the ZIP+4 still needed says the months still wait.
+      await admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)').fill('00012');
+      await admin.getByRole('button', { name: 'Save the billing ZIP' }).click();
+      await expect(admin.locator('[data-notice="saved"]')).toContainText('Months that need the location still wait: see the status below.');
       await admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)').fill('00012-0001');
       await admin.getByRole('button', { name: 'Save the billing ZIP' }).click();
-      await expect(admin.locator('[data-notice="saved"]')).toBeVisible();
+      await expect(admin.locator('[data-notice="saved"][data-settled="yes"]')).toContainText('Months waiting on the billing ZIP are being priced.');
       await expect(admin.locator('[data-location-zip]')).toHaveText('00012-0001');
-      await expect(admin.locator('[data-location-status="locality_not_loaded"]')).toHaveText('PaidWhole has not loaded Medicare’s locality list for these dates yet. There is nothing to change here.');
+      await expect(admin.locator('[data-location-status="locality_not_loaded"]')).toHaveText('PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.');
       await expect(admin.locator('main')).not.toContainText('Check the four digits');
-      // A field it cannot read is named, and announced.
-      await admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)').fill('0001');
+      // A field it cannot read is named by its label, marked invalid and focused, and announced.
+      const zipField = admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)');
+      await zipField.fill('0001');
       await admin.getByRole('button', { name: 'Save the billing ZIP' }).click();
-      await expect(admin.getByRole('alert').filter({ hasText: 'five digits, or ZIP+4 such as 27601-1234' })).toBeVisible();
+      await expect(admin.getByRole('alert').filter({ hasText: 'Billing ZIP: five digits, or ZIP+4 such as 27601-1234' })).toBeVisible();
+      await expect(zipField).toHaveAttribute('aria-invalid', 'true');
+      await expect(zipField).toBeFocused();
       await expectAccessible(admin, 'Pricing settings with a refused ZIP');
     });
   } finally {
