@@ -8,7 +8,7 @@ import { practiceSettings, syntheticRelease } from '@tp/pricing/testing';
 import { describe, expect, it } from 'vitest';
 
 import { COVERAGE_FORMAT, coverageOf, operatorAlerts, parseCoverage } from './coverage';
-import { ENGINE_ERRORS_MESSAGE, claimInput, lineResolver, priceClaims, runAsOf } from './execute';
+import { ENGINE_ERRORS_MESSAGE, claimInput, lineResolver, locationStops, priceClaims, runAsOf } from './execute';
 import type { StoredClaim, StoredLine } from './lines';
 import { RuleReleaseMismatchError } from './release';
 import { settingsOf } from './settings';
@@ -95,6 +95,19 @@ describe('the engine’s input from stored lines', () => {
   it('judges windows on the run’s creation day in UTC', () => {
     expect(runAsOf(new Date('2026-10-15T23:59:59.999Z'))).toBe('2026-10-15');
     expect(runAsOf(new Date('2026-10-16T00:00:00.000Z'))).toBe('2026-10-16');
+  });
+
+  it('fails a run on a line stopped by the location only at a status the customer can fix, by the details that status explains (audit #33)', () => {
+    const plusFour = ['locality_needs_zip_plus_four', 'zip_plus_four_not_in_locality_map'];
+    expect([...(locationStops('zip_plus_four_needed') ?? [])].sort()).toEqual(plusFour);
+    expect([...(locationStops('zip_plus_four_unknown') ?? [])].sort()).toEqual(plusFour);
+    // A ZIP on no Medicare list explains no_locality; a missing location explains the empty ZIP's invalid_settings.
+    expect([...(locationStops('zip_unknown') ?? [])].sort()).toEqual(['locality_needs_zip_plus_four', 'no_locality', 'zip_plus_four_not_in_locality_map']);
+    expect([...(locationStops('zip_missing') ?? [])].sort()).toEqual(['invalid_settings', ...plusFour]);
+    // A ready location, or content PaidWhole has not loaded, leaves a stopped line ENGINE_ERROR for the operator.
+    expect(locationStops('ready')).toBeNull();
+    expect(locationStops('locality_not_loaded')).toBeNull();
+    expect(locationStops('no_release')).toBeNull();
   });
 });
 

@@ -71,6 +71,8 @@ export interface ClaimedRun {
   /** The pinned release is still there as pinned: published, its manifest unchanged, and not withdrawn. */
   readonly releaseAvailable: boolean;
   readonly zip: string;
+  /** The prospect's ZIP+4, kept only when the ZIP's locality_map record needs it; null otherwise. */
+  readonly zipPlusFour: string | null;
   readonly placeOfServiceSettings: Readonly<Record<string, PlaceOfServiceSetting>>;
   /** The run's creation date in UTC, YYYY-MM-DD. */
   readonly asOf: string;
@@ -81,7 +83,7 @@ export interface ClaimedRun {
 /** Claims a run for pricing; null when it is not there to claim (already being priced, done, or out of attempts). */
 export async function claimRun(client: OperatorClient, runId: string): Promise<ClaimedRun | null> {
   const { rows } = await client.query(
-    'SELECT release_no, release_manifest_sha256, release_available, zip, settings, as_of::text AS as_of, row_count, attempt FROM operator_screening_claim($1)',
+    'SELECT release_no, release_manifest_sha256, release_available, zip, zip_plus_four, settings, as_of::text AS as_of, row_count, attempt FROM operator_screening_claim($1)',
     [runId],
   );
   const row = rows[0] as
@@ -90,6 +92,7 @@ export async function claimRun(client: OperatorClient, runId: string): Promise<C
         release_manifest_sha256: string;
         release_available: boolean;
         zip: string;
+        zip_plus_four: string | null;
         settings: Record<string, PlaceOfServiceSetting>;
         as_of: string;
         row_count: number;
@@ -103,6 +106,7 @@ export async function claimRun(client: OperatorClient, runId: string): Promise<C
         manifestSha256: row.release_manifest_sha256,
         releaseAvailable: row.release_available,
         zip: row.zip,
+        zipPlusFour: row.zip_plus_four,
         placeOfServiceSettings: row.settings,
         asOf: row.as_of,
         rowCount: row.row_count,
@@ -137,7 +141,8 @@ export async function runKeys(client: OperatorClient, runId: string): Promise<Ru
 /**
  * The pinned release's records of the keyed types for the run's key set (operator_screening_run_keys): for each code,
  * its relative values and MPPR rate with no modifier, its medically unlikely edit and its same-code pair; the general
- * practice-expense MPPR rate; and the prospect's ZIP's locality. Never a code the caller names.
+ * practice-expense MPPR rate; and the prospect's ZIP's locality, in the ZIP file and the ZIP+4 file. Never a code the
+ * caller names.
  */
 export async function runRecords(client: OperatorClient, runId: string): Promise<StoredRecordRow[]> {
   const { rows } = await client.query('SELECT record_type, key, value, effective_from, effective_to, sha256 FROM operator_screening_run_records($1)', [runId]);

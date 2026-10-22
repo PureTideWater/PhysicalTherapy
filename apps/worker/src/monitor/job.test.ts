@@ -49,13 +49,40 @@ describe('the monitor job', () => {
   });
 
   it('queues the price job of every run still queued, and says when months wait on a mapping', async () => {
-    const planned = await run({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [{ periodFrom: '2026-03-01', periodTo: '2026-03-31' }], queued: [RUN] });
+    const planned = await run({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [{ periodFrom: '2026-03-01', periodTo: '2026-03-31' }], waitingOnLocation: [], queued: [RUN] });
     expect(planned.queued).toEqual([{ type: 'price', payload: { practice_id: PRACTICE, pricing_run_id: RUN }, options: undefined }]);
     expect(planned.lines.map((line) => line.msg)).toEqual(['monitoring left months waiting on a plan mapping', 'monitoring planned the practice’s months']);
-    const quiet = await run({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], queued: [] });
+    const quiet = await run({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], waitingOnLocation: [], queued: [] });
     expect(quiet.lines.map((line) => line.msg)).toEqual(['monitoring planned the practice’s months']);
     // On the daily schedule the day's own reconcile follows; nothing more is queued here.
     expect(quiet.queued).toEqual([]);
+  });
+
+  it('says how many months wait on the practice’s pricing location, as information, never the operator’s alert (audit #33)', async () => {
+    const waiting = await run({
+      outcome: 'planned',
+      releaseNo: 900001,
+      created: [],
+      waitingOnMapping: [],
+      waitingOnLocation: [
+        { periodFrom: '2026-03-01', periodTo: '2026-03-31', status: 'zip_plus_four_needed' },
+        { periodFrom: '2026-04-01', periodTo: '2026-04-30', status: 'zip_plus_four_needed' },
+      ],
+      queued: [],
+    });
+    expect(waiting.queued).toEqual([]);
+    expect(waiting.lines).toEqual([
+      expect.objectContaining({ level: 'info', msg: 'monitoring left months waiting on the practice’s pricing location', error_code: 'LOCATION_NOT_READY', record_count: 2, release_no: 900001 }),
+      expect.objectContaining({ msg: 'monitoring planned the practice’s months' }),
+    ]);
+  });
+
+  it('plans after a save of the practice’s location, by the save’s request, and queues no reconcile for it', async () => {
+    vi.mocked(planMonitoring).mockResolvedValue({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], waitingOnLocation: [], queued: [RUN] });
+    const { job, queued } = context();
+    await monitorHandler()({ practice_id: PRACTICE, request_id: 'test-6f1d2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b' }, job);
+    expect(vi.mocked(planMonitoring)).toHaveBeenCalledWith(expect.anything(), PRACTICE, job.jobId);
+    expect(queued.map((item) => [item.type, item.payload])).toEqual([['price', { practice_id: PRACTICE, pricing_run_id: RUN }]]);
   });
 
   const afterDocument = async (plan: MonitorPlan) => {
@@ -67,10 +94,10 @@ describe('the monitor job', () => {
 
   it('reconciles after a document whose plan prices nothing, and leaves the reconcile to triage when it prices a run (docs/adr/0043)', async () => {
     const reconcile = ['reconcile', { practice_id: PRACTICE, document_id: DOCUMENT }];
-    expect(await afterDocument({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], queued: [] })).toEqual([reconcile]);
-    expect(await afterDocument({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [{ periodFrom: '2026-03-01', periodTo: '2026-03-31' }], queued: [] })).toEqual([reconcile]);
+    expect(await afterDocument({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], waitingOnLocation: [], queued: [] })).toEqual([reconcile]);
+    expect(await afterDocument({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [{ periodFrom: '2026-03-01', periodTo: '2026-03-31' }], waitingOnLocation: [], queued: [] })).toEqual([reconcile]);
     expect(await afterDocument({ outcome: 'no_release' })).toEqual([reconcile]);
-    expect(await afterDocument({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], queued: [RUN] })).toEqual([['price', { practice_id: PRACTICE, pricing_run_id: RUN }]]);
+    expect(await afterDocument({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], waitingOnLocation: [], queued: [RUN] })).toEqual([['price', { practice_id: PRACTICE, pricing_run_id: RUN }]]);
     expect(await afterDocument({ outcome: 'batch_loading', pendingDocuments: 1 })).toEqual([]);
   });
 });

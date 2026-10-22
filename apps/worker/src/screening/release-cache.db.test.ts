@@ -151,9 +151,10 @@ function practiceName(): string {
 /** Submits a screening of the rows at a ZIP, as submit_screening's caller does; the run's ID. */
 async function submit(rows: readonly Row[], zip: string): Promise<string> {
   const [created] = await asApp<{ id: string }>(
-    `SELECT submit_screening(practice => $1, state_code => $2, zip5 => $3, email => $4, codes => $5, modifier_sets => $6, unit_counts => $7, places => $8,
-                             products => $9, bands => $10, allowed_cents => $11, claim_counts => $12, rows_left_out => $13, claim_lines_left_out => $14,
-                             allowed_cents_left_out => $15, heard_from => NULL, campaign_source => NULL, campaign_medium => NULL, campaign_name => NULL,
+    `SELECT submit_screening(practice => $1, state_code => $2, zip5 => $3, plus_four => NULL, email => $4, codes => $5, modifier_sets => $6, unit_counts => $7,
+                             places => $8, products => $9, bands => $10, allowed_cents => $11, claim_counts => $12, rows_left_out => $13, claim_lines_left_out => $14,
+                             allowed_cents_left_out => $15, rows_outside_content => 0, claim_lines_outside_content => 0, allowed_cents_outside_content => 0,
+                             heard_from => NULL, campaign_source => NULL, campaign_medium => NULL, campaign_name => NULL,
                              click_kind => NULL, firm => NULL, consent_sha256 => NULL, terms_sha256 => $16, request => $17) AS id`,
     [
       practiceName(),
@@ -244,7 +245,7 @@ beforeAll(async () => {
   const internal = await createOrganization(owner, 'internal');
   const specialist = await createUser(owner, { hardwareKeyRequired: true });
   await addMembership(owner, internal, specialist, 'contract_specialist');
-  await asApp('SELECT console_approve_screening_split($1)', [JSON.stringify(SPLIT)], specialist);
+  await asApp('SELECT console_approve_place_of_service_split($1)', [JSON.stringify(SPLIT)], specialist);
 }, 60_000);
 
 afterAll(async () => {

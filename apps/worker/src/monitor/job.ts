@@ -6,7 +6,8 @@ import { type MonitorPlan, planMonitoring } from './plan';
 /**
  * The monitor job (PRD 5, J11; docs/adr/0004 and 0039): one practice per job, keyed by what set it off
  * (monitor:<practice>:<document> after a document's parse, monitor:<practice>:<day> on the daily
- * schedule), three attempts with the operator's alert on the third (the worker's, ADR 0019). It plans
+ * schedule, monitor:<practice>:<request> after a person saves the practice's pricing location, so a
+ * save is never swallowed by a daily job that is active and read the old location), three attempts with the operator's alert on the third (the worker's, ADR 0019). It plans
  * in one transaction (plan.ts) and then queues the price job of every run the chain created that is
  * still queued: the run is committed before its job can start. A replay plans nothing new (JOB-01).
  *
@@ -48,6 +49,15 @@ export function monitorHandler(): JobHandler<'monitor'> {
       if (plan.waitingOnMapping.length > 0) {
         // Coverage shows the dollars waiting on mappings; a month is planned again on the next trigger.
         context.logger.info('monitoring left months waiting on a plan mapping', { release_no: plan.releaseNo, error_code: 'UNMAPPED_PLAN' });
+      }
+      if (plan.waitingOnLocation.length > 0) {
+        // The customer's step, never the operator's: Coverage and Pricing settings name the months; a save of the
+        // location queues this step again (audit #33).
+        context.logger.info('monitoring left months waiting on the practice’s pricing location', {
+          release_no: plan.releaseNo,
+          error_code: 'LOCATION_NOT_READY',
+          record_count: plan.waitingOnLocation.length,
+        });
       }
       context.logger.info('monitoring planned the practice’s months', { release_no: plan.releaseNo });
     }

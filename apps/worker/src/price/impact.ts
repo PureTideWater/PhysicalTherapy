@@ -5,7 +5,7 @@ import type { IndexedRelease } from '@tp/pricing';
 import { lineResolver, priceClaims, runAsOf } from './execute';
 import { FIRST_CLAIM, type RunScope, claimPage } from './lines';
 import { loadRuleRelease } from './release';
-import { practiceSettings } from './settings';
+import { runSettings } from './settings';
 import type { PricedLineInsert } from './store';
 
 /**
@@ -13,8 +13,8 @@ import type { PricedLineInsert } from './store';
  * The release pipeline step 3 and the load-release skill: "run pnpm release:dry-run <next> against the
  * staging snapshot and paste the list of runs whose lines change"; step 5: customers see "which of
  * their runs would change"; docs/adr/0037). The run's lines (its period, up to its cut-off) are priced
- * twice by this engine with the practice's agreements and settings as they are now and the run's
- * triage date: once under the run's own release and once under the other; a line would change when
+ * twice by this engine with the practice's agreements and settings as they are now (its location, its
+ * own places and the place-of-service split the run pinned) and the run's triage date: once under the run's own release and once under the other; a line would change when
  * its expected allowed, unpriced reason, adjustments, dispute window, review flags or terms differ,
  * the same test as a re-run's diff (diff.ts, pricing_run_changed_lines()). So the count is the
  * release's own effect, whatever else changed since the run (a mapping, a sign-off), which a re-run's
@@ -91,7 +91,7 @@ export async function runReleaseImpact(scope: PracticeScope<ScopeClient>, run: I
   const purpose = options.purpose ?? 'release_impact';
   const own = run.releaseNo === release.releaseNo ? release : await loadRuleRelease(scope.client, run.releaseNo);
   const records = await loadAgreementRecords(scope, { practiceId: run.practiceId, requestId, purpose });
-  const settings = await practiceSettings(scope.client, run.practiceId);
+  const settings = await runSettings(scope.client, run.practiceId, run.id);
   const resolve = lineResolver(records);
   const asOf = runAsOf(run.createdAt);
   const lines: RunScope = { practiceId: run.practiceId, periodFrom: run.periodFrom, periodTo: run.periodTo, loadedBy: run.cutOff };

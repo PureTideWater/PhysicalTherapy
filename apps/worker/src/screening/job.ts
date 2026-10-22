@@ -35,7 +35,8 @@ import { newScreeningToken, screeningTokenHash } from './token';
  * release is no longer there as pinned (unpublished, its manifest changed, or withdrawn); read the release (audit #53
  * part 2, "The release read"): the record types no row's key selects once per release and manifest, held for the
  * next run (at most two releases), and, in one read-only transaction on one snapshot, the run's key set and the keyed
- * records for it (its distinct priced codes and the prospect's ZIP, from the database, never the caller), so a release
+ * records for it (its distinct priced codes and the prospect's ZIP, in the ZIP file and the ZIP+4 file, from the
+ * database, never the caller), so a release
  * withdrawn between the two reads is seen by both or neither, and a keyed read with no locality record (the guard
  * failed: submission refused every ZIP the release does not map) fails the run as RELEASE_UNAVAILABLE; price its pending rows 5,000 at a time through the
  * adapter over a view that serves only those keys, the engine once per distinct line; record each batch in one
@@ -224,6 +225,7 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
     release: view,
     changeDays: unionDays(shared.changeDays, releaseChangeDays(read.records)),
     zip: claimed.zip,
+    zipPlusFour: claimed.zipPlusFour,
     placeOfServiceSettings: claimed.placeOfServiceSettings,
     asOf: claimed.asOf,
     read: { codes, view },

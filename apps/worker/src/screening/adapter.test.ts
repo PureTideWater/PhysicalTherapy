@@ -3,12 +3,15 @@ import path from 'node:path';
 
 import { MA_NONCONTRACTED_TERMS } from '@tp/contracts';
 import { cents, decimal, roundOnce, unroundedCents } from '@tp/money';
-import { type LinePricing, type PricedLine, UNPRICED_REASONS, price } from '@tp/pricing';
+import { type LinePricing, type PricedLine, UNPRICED_REASONS, indexRelease, price } from '@tp/pricing';
 import { SYNTHETIC_PLACES, readRuleRelease, releaseVariant, ruleRecordLike, syntheticRelease } from '@tp/pricing/testing';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { ReleaseReadOutsideFetch } from '../price/keyed-release';
+import { recordSha256 } from '@tp/rules';
+
+import { ReleaseReadOutsideFetch, isKeyedRecordType, keyedRelease, screeningRequestedKeys } from '../price/keyed-release';
+import { type StoredRecordRow, indexStoredRelease } from '../price/release';
 import {
   LATER_PROCEDURE_LINE_NO,
   type PendingScreeningRow,
@@ -49,7 +52,7 @@ import { ScreeningPricer as LegacyScreeningPricer } from './test-support/legacy-
 const RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900001';
 const RELEASE = syntheticRelease(900001);
 const CHANGE_DAYS = releaseChangeDays(readRuleRelease(RELEASE_DIR).records);
-const CONTEXT: ScreeningPricingContext = { release: RELEASE, changeDays: CHANGE_DAYS, zip: '00011', placeOfServiceSettings: SYNTHETIC_PLACES, asOf: '2026-10-18' };
+const CONTEXT: ScreeningPricingContext = { release: RELEASE, changeDays: CHANGE_DAYS, zip: '00011', zipPlusFour: null, placeOfServiceSettings: SYNTHETIC_PLACES, asOf: '2026-10-18' };
 const CODES = ['97110', '97112', '97116', '97140', '97530', '97161', '97162', '97163', '97164', '97026', '97035', 'G0283'] as const;
 
 function row(overrides: Partial<PendingScreeningRow> = {}): PendingScreeningRow {
@@ -94,7 +97,7 @@ function direct(context: ScreeningPricingContext, pending: PendingScreeningRow):
       ],
     },
     release: context.release,
-    settings: { zip: context.zip, defaultRounding: null, placeOfServiceSettings: context.placeOfServiceSettings },
+    settings: { zip: context.zip, zipPlusFour: context.zipPlusFour, defaultRounding: null, placeOfServiceSettings: context.placeOfServiceSettings },
     asOf: context.asOf,
   });
   if (line === undefined) {
@@ -162,6 +165,48 @@ describe('the screening pricing adapter', () => {
       expect(assistant.expectedLineCents).toBeLessThan(therapist.expectedLineCents);
     }
     expect(pricer.outcome(row({ units: 8 }))).toMatchObject({ disposition: 'unpriced', reason: 'MUE_EXCEEDED', detail: null });
+  });
+
+  it('prices a ZIP split across localities at its ZIP+4’s locality, through the keyed read as through the whole release (SCR-15; docs/adr/0064)', () => {
+    const plusFour = readRuleRelease('fixtures/synthetic/rules/release-synth-900006');
+    const header = { releaseNo: plusFour.releaseNo, manifestSha256: plusFour.manifestSha256 };
+    const rows: StoredRecordRow[] = plusFour.records.map((record) => ({
+      record_type: record.record_type,
+      key: record.key as Record<string, string>,
+      value: record.value,
+      effective_from: record.effective_from,
+      effective_to: record.effective_to,
+      sha256: recordSha256(record),
+    }));
+    const whole = indexRelease(plusFour);
+    const codes = new Set<string>(CODES);
+    const view = keyedRelease({
+      shared: indexStoredRelease(header, rows.filter((stored) => !isKeyedRecordType(stored.record_type))),
+      records: indexStoredRelease(header, rows.filter((stored) => isKeyedRecordType(stored.record_type))),
+      requested: screeningRequestedKeys(codes, '00012'),
+    });
+    const base = { changeDays: releaseChangeDays(plusFour.records), zip: '00012', placeOfServiceSettings: SYNTHETIC_PLACES, asOf: '2026-10-18' };
+    const viaRead = new ScreeningPricer({ ...base, zipPlusFour: '5000', release: view, read: { codes, view } });
+    const viaWhole = new ScreeningPricer({ ...base, zipPlusFour: '5000', release: whole });
+    for (const [index, code] of CODES.entries()) {
+      const pending = row({ rowNo: index + 1, procedureCode: code, units: 1 });
+      expect(viaRead.outcome(pending), code).toEqual(viaWhole.outcome(pending));
+    }
+    expect(view.violation).toBeNull();
+    // 5000 is in locality 02's range, 0001 in locality 01's, which prices as the unsplit 00011 does.
+    const at = (zip: string, zipPlusFour: string | null) => new ScreeningPricer({ ...base, zip, zipPlusFour, release: whole }).outcome(row());
+    const locality02 = at('00012', '5000');
+    const locality01 = at('00012', '0001');
+    expect(locality02.disposition).toBe('priced');
+    expect(locality01.disposition).toBe('priced');
+    if (locality02.disposition === 'priced' && locality01.disposition === 'priced') {
+      expect(locality02.expectedLineCents).not.toBe(locality01.expectedLineCents);
+      expect(at('00011', null)).toMatchObject({ disposition: 'priced', expectedLineCents: locality01.expectedLineCents });
+      // A ZIP+4 given for an unsplit ZIP changes nothing.
+      expect(at('00011', '1234')).toMatchObject({ disposition: 'priced', expectedLineCents: locality01.expectedLineCents });
+    }
+    expect(at('00012', null)).toMatchObject({ disposition: 'unpriced', reason: 'ENGINE_ERROR', detail: 'locality_needs_zip_plus_four' });
+    expect(at('00012', '9100')).toMatchObject({ disposition: 'unpriced', reason: 'ENGINE_ERROR', detail: 'zip_plus_four_not_in_locality_map' });
   });
 
   it('passes the engine’s unpriced reasons through: a ZIP that needs its ZIP+4, a place of service outside the split, a band outside the release', () => {

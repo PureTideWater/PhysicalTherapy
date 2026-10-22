@@ -24,6 +24,11 @@ import { ScreeningPricer, pricesAsMedicare, releaseChangeDays } from './legacy-a
  *
  * Imported by tests and by the capacity harness's oracle only. Read as the owner of a scratch database; synthetic
  * data only.
+ *
+ * PR 6b: the split table's name in legacyOutcomes() (place_of_service_split, renamed by migration 20261105090000) is the
+ * only change since 3c1b289; the read path and the adapter are as they were. It proves five-digit runs only: the frozen
+ * pricer takes a five-digit ZIP, so a run of a ZIP split across localities is proved against a whole-release oracle
+ * (tools/screening-capacity/oracle.ts, wholeReleaseOutcomes; docs/adr/0064).
  */
 
 export interface OwnerClient {
@@ -105,7 +110,7 @@ export async function legacyOutcomes(owner: OwnerClient, runId: string): Promise
          FROM screening_run r
          JOIN screening_upload u ON u.id = r.upload_id
          JOIN screening_prospect p ON p.id = u.prospect_id
-         JOIN screening_place_of_service_split s ON s.id = r.place_of_service_split_id
+         JOIN place_of_service_split s ON s.id = r.place_of_service_split_id
         WHERE r.id = $1`,
       [runId],
     )

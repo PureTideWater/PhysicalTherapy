@@ -6,9 +6,10 @@
  * pricing. Which run is in effect for its period is defined here once (in-effect.ts), for every reader, and
  * whether a packet version's pricing is still current (pricing-check.ts, the database's one check). Executing a run is the worker's (the price job); nothing here stores a priced line.
  */
-export { type CreatePricingRunInput, type CreatedPricingRun, PricingRunInputError, createPricingRun } from './create';
+export { type CreatePricingRunInput, type CreatedPricingRun, PricingLocationWaiting, PricingRunInputError, createPricingRun } from './create';
 export { COVERAGE_FORMAT, type RunCoverage, operatorAlerts, parseCoverage, runCoverageSchema } from './coverage';
-export { CAUSE_KINDS, type CauseKind, type ContractPin, type LineCause, type MappingPin, type RecordVersion } from './causes';
+export { CAUSE_KINDS, type CauseKind, type ContractPin, type LineCause, type MappingPin, type RecordVersion, SETTINGS_FIELDS, type SettingsField } from './causes';
+export type { FailureCode } from './execute';
 export {
   type CompareRunsInput,
   DIFF_CHANGES,
@@ -37,7 +38,16 @@ export {
   linePricingNow,
   packetPricingCheck,
 } from './pricing-check';
-export { type ReleaseWithdrawal, RuleReleaseMismatchError, currentReleaseNo, loadRuleRelease, releaseHeader, releaseWithdrawals } from './release';
+export {
+  type ReleaseWithdrawal,
+  RuleReleaseMismatchError,
+  type StoredRecordRow,
+  currentReleaseNo,
+  indexStoredRelease,
+  loadRuleRelease,
+  releaseHeader,
+  releaseWithdrawals,
+} from './release';
 export {
   type AcceptRunInput,
   type AcceptedRun,

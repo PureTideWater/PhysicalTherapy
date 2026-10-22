@@ -19,7 +19,19 @@ import {
 } from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, openPool, provisionPracticeKey, withJobScope, withPracticeScope } from '@tp/db';
+import {
+  type DatabaseClient,
+  type DatabasePool,
+  LocalKeyProvider,
+  type PracticeCipher,
+  databaseClient,
+  documentObjectKey,
+  openPool,
+  provisionPracticeKey,
+  withActor,
+  withJobScope,
+  withPracticeScope,
+} from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
@@ -35,7 +47,9 @@ import { priceHandler } from '../job';
 /**
  * Test support for pricing runs against a scratch database (synthetic data only): a migrated database
  * with SYNTHETIC release 900001 loaded and a contract specialist; practices in the SYNTHETIC locality
- * with a billing manager and the specialist's support grant; SYNTHETIC 835s loaded through the
+ * (their pricing location, practice_site, the ZIP 00011 every tenant world is created with; another set
+ * by the billing manager through practice_set_location(), as the Pricing settings page does) with a
+ * billing manager and the specialist's support grant; SYNTHETIC 835s loaded through the
  * parse_835 job; contracts signed off and plans mapped through @tp/contracts' services by the people
  * the plan names; runs created in the billing manager's scope and executed by the price job.
  */
@@ -129,18 +143,62 @@ export class PricingWorld {
     await this.database.drop();
   }
 
-  /** A practice in the SYNTHETIC locality with the given settings, a billing manager and the specialist's support grant. */
+  /**
+   * A practice in the SYNTHETIC locality (its location the ZIP 00011, as createTenantWorld creates it) with the given
+   * settings, a billing manager and the specialist's support grant.
+   */
   async practice(label: string, settings: object = SETTINGS): Promise<Practice> {
     const { owner } = this;
     const world = await createTenantWorld(owner, label);
     const key = await provisionPracticeKey(this.keys, world.practiceId);
-    await owner.query("UPDATE practice SET data_key_ref = $1, zip = '00011', settings = $3 WHERE id = $2", [key.dataKeyRef, world.practiceId, JSON.stringify(settings)]);
+    await owner.query('UPDATE practice SET data_key_ref = $1, settings = $3 WHERE id = $2', [key.dataKeyRef, world.practiceId, JSON.stringify(settings)]);
     const manager = await createUser(owner);
     await addMembership(owner, world.organizationId, manager, 'billing_manager');
     await asOwner(owner, [world.practiceId], () =>
       owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'PR-1', 'SYNTHETIC ABSTRACTION', now() + interval '4 hours')`, [world.practiceId, this.specialist]),
     );
     return { world, practiceId: world.practiceId, manager, cipher: key.cipher };
+  }
+
+  /**
+   * Sets the practice's pricing location as a person holding pricing_settings.set in it (the billing manager unless
+   * said), through practice_set_location() as the application role, as the Pricing settings page does; returns the
+   * location's status under the release in force.
+   */
+  async setLocation(target: Practice, zip: string, zipPlusFour: string | null = null, actorId = target.manager): Promise<string> {
+    return withPracticeScope(this.app, { actorId, practiceIds: [target.practiceId] }, async (scope) => {
+      const { rows } = await scope.client.query<{ status: string }>('SELECT practice_set_location($1, $2, $3) AS status', [target.practiceId, zip, zipPlusFour]);
+      return rows[0]?.status ?? '';
+    });
+  }
+
+  /**
+   * Removes the practice's location as no role can: a practice created before migration 20261105090000 with no ZIP (dev
+   * and staging only) has none. The test's superuser connection, its triggers off for the one statement.
+   */
+  async withoutLocation(target: Practice): Promise<void> {
+    const { owner } = this;
+    await owner.query('BEGIN');
+    try {
+      await owner.query("SET LOCAL session_replication_role = 'replica'");
+      await owner.query('DELETE FROM practice_site WHERE practice_id = $1', [target.practiceId]);
+      await owner.query('COMMIT');
+    } catch (error) {
+      await owner.query('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /**
+   * The contract specialist approves a SYNTHETIC place-of-service split through the console's function, as the
+   * application role (console_approve_place_of_service_split(), under rate_record.approve); from then on it is the
+   * split in force, pinned on every new run of every practice. Returns its ID.
+   */
+  async approveSplit(settings: Readonly<Record<string, string>>): Promise<string> {
+    return withActor(this.app, this.specialist, async (scope) => {
+      const { rows } = await scope.client.query<{ id: string }>('SELECT console_approve_place_of_service_split($1) AS id', [JSON.stringify(settings)]);
+      return rows[0]?.id ?? '';
+    });
   }
 
   /** A job's context for the practice: its own job ID, a logger writing to `logs`, and its one-practice scope on the worker's own login. */
@@ -238,11 +296,12 @@ export class PricingWorld {
    * A signed-off version of a new contract with the payer: one general term at a percentage of Medicare (110 unless
    * said). A dispute window the contract states is cited on its page and verified by the specialist, as the
    * specialist abstracts it (D17 a), unless `windowCited` is false: then its lines' deadlines stay unverified.
+   * `terms`, when given, replace the general term (a fixed schedule, say), cited on the same page.
    */
   async signedContract(
     target: Practice,
     effectiveFrom: string,
-    options: { effectiveTo?: string; disputeWindowDays?: number; percentage?: string; payerId?: string; windowCited?: boolean } = {},
+    options: { effectiveTo?: string; disputeWindowDays?: number; percentage?: string; payerId?: string; windowCited?: boolean; terms?: object } = {},
   ): Promise<SignedContract> {
     const { owner } = this;
     const percentage = options.percentage ?? '110';
@@ -269,7 +328,7 @@ export class PricingWorld {
       return { contractId: contract.contractId, versionId: version.versionId };
     });
     const rateRecordId = await this.as(target, this.specialist, async (context) => {
-      const { rateRecordId: id } = await addRateRecord(context, { practiceId: target.practiceId, versionId, terms: termsAt(percentage), citation: { documentId, page: 2, quote: quoteAt(percentage) } });
+      const { rateRecordId: id } = await addRateRecord(context, { practiceId: target.practiceId, versionId, terms: options.terms ?? termsAt(percentage), citation: { documentId, page: 2, quote: quoteAt(percentage) } });
       for (const field of RATE_RECORD_FIELDS) {
         await approveRateRecordField(context, { practiceId: target.practiceId, rateRecordId: id, field });
       }

@@ -8,7 +8,8 @@ import { type RuleRecord, type RuleRecordOf, type RuleRecordType, canonicalJson 
  * A caller that prices a set of lines does not need the whole release in memory. The record types no line's own key
  * selects (the GPCIs, the conversion factors, the assistant and sequestration records, the code lists) are small and
  * shared by every run under a release: they are read and indexed once per release and manifest. The types a line looks
- * up by its own code or ZIP (KEYED_RECORD_TYPES) are read per run, by the keys the run's lines can ask for, and the
+ * up by its own code or ZIP (KEYED_RECORD_TYPES; the ZIP+4 file's locality_map_plus_four since PR 6b, docs/adr/0064, keyed
+ * by the five-digit ZIP like locality_map) are read per run, by the keys the run's lines can ask for, and the
  * database returns the key set it used beside the records. This view joins the two into one IndexedRelease for the
  * unchanged engine:
  *
@@ -29,7 +30,7 @@ import { type RuleRecord, type RuleRecordOf, type RuleRecordType, canonicalJson 
  */
 
 /** The record types a line looks up by its own key: read per run, by key. */
-export const KEYED_RECORD_TYPES = ['pfs_rvu', 'ncci_mue', 'mppr_rate', 'ncci_ptp', 'locality_map'] as const satisfies readonly RuleRecordType[];
+export const KEYED_RECORD_TYPES = ['pfs_rvu', 'ncci_mue', 'mppr_rate', 'ncci_ptp', 'locality_map', 'locality_map_plus_four'] as const satisfies readonly RuleRecordType[];
 
 export type KeyedRecordType = (typeof KEYED_RECORD_TYPES)[number];
 
@@ -73,14 +74,22 @@ export function keyIdentity(key: Readonly<Record<string, string>>): string {
 /** A set of keys per keyed type, from lists of keys. */
 export function requestedKeys(keys: Readonly<Partial<Record<KeyedRecordType, readonly Readonly<Record<string, string>>[]>>>): RequestedKeys {
   const set = (type: KeyedRecordType) => new Set((keys[type] ?? []).map(keyIdentity));
-  return { pfs_rvu: set('pfs_rvu'), ncci_mue: set('ncci_mue'), mppr_rate: set('mppr_rate'), ncci_ptp: set('ncci_ptp'), locality_map: set('locality_map') };
+  return {
+    pfs_rvu: set('pfs_rvu'),
+    ncci_mue: set('ncci_mue'),
+    mppr_rate: set('mppr_rate'),
+    ncci_ptp: set('ncci_ptp'),
+    locality_map: set('locality_map'),
+    locality_map_plus_four: set('locality_map_plus_four'),
+  };
 }
 
 /**
  * The keys a screening run's lines can ask for (apps/worker/src/screening/adapter.ts; the same keys
  * operator_screening_run_records() reads): for each priced code, its relative values and its MPPR rate with no
  * modifier, its medically unlikely edit, and the same-code pair (a screening claim is one line, or two lines of one
- * code: screeningVisitClaim); the general practice-expense MPPR rate; and the prospect's ZIP.
+ * code: screeningVisitClaim); the general practice-expense MPPR rate; and the prospect's ZIP, in the ZIP file and in the
+ * ZIP+4 file (keyed by the five-digit ZIP, so the fetch holds whatever the lookup reads, whether or not a ZIP+4 was given).
  */
 export function screeningRequestedKeys(codes: Iterable<string>, zip: string): RequestedKeys {
   const list = [...codes];
@@ -90,6 +99,7 @@ export function screeningRequestedKeys(codes: Iterable<string>, zip: string): Re
     mppr_rate: [...list.map((hcpcs) => ({ hcpcs, modifier: '' })), { component: 'practice_expense' }],
     ncci_ptp: list.map((code) => ({ column1: code, column2: code })),
     locality_map: [{ zip }],
+    locality_map_plus_four: [{ zip }],
   });
 }
 

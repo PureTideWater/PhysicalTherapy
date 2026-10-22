@@ -47,6 +47,8 @@ export interface DiffRun {
   readonly rerunOfId: string | null;
   readonly acceptedAt: Date | null;
   readonly completedAt: Date;
+  /** The place-of-service split the run pinned when it was created (docs/adr/0064); null when none was approved then. */
+  readonly placeOfServiceSplitId: string | null;
 }
 
 export interface DiffSummary {
@@ -155,6 +157,7 @@ interface RunRow {
   readonly rerun_of_id: string | null;
   readonly accepted_at: Date | null;
   readonly completed_at: Date | null;
+  readonly place_of_service_split_id: string | null;
 }
 
 async function runsOf(scope: PracticeScope<ScopeClient>, practiceId: string, ids: readonly string[], requestId: string): Promise<Map<string, RunRow>> {
@@ -164,7 +167,8 @@ async function runsOf(scope: PracticeScope<ScopeClient>, practiceId: string, ids
     async (client) =>
       (
         await client.query<RunRow>(
-          `SELECT id, practice_id, period_from::text AS period_from, period_to::text AS period_to, release_no, engine_version, status, rerun_of_id, accepted_at, completed_at
+          `SELECT id, practice_id, period_from::text AS period_from, period_to::text AS period_to, release_no, engine_version, status, rerun_of_id, accepted_at, completed_at,
+                  place_of_service_split_id
              FROM pricing_run WHERE practice_id = $1 AND id = ANY ($2::uuid[])`,
           [practiceId, ids],
         )
@@ -190,6 +194,7 @@ function diffRun(row: RunRow | undefined): DiffRun {
     rerunOfId: row.rerun_of_id,
     acceptedAt: row.accepted_at,
     completedAt: row.completed_at,
+    placeOfServiceSplitId: row.place_of_service_split_id,
   };
 }
 

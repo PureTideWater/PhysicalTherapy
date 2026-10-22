@@ -96,12 +96,17 @@ function practiceName(): string {
   return `Synthetic Therapy Group ${letters}`;
 }
 
-async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly email?: string; readonly practice?: string } = {}): Promise<string> {
+async function submit(
+  options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly plusFour?: string | null; readonly email?: string; readonly practice?: string } = {},
+): Promise<string> {
   const rows = options.rows ?? ROWS;
-  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) AS id', [
+  const [created] = await asApp<{ id: string }>(
+    'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) AS id',
+    [
     options.practice ?? practiceName(),
     'MN',
     options.zip ?? '00011',
+    options.plusFour ?? null,
     options.email ?? `prospect.${randomUUID().slice(0, 8)}@synthetic.test`,
     rows.map((row) => row[0]),
     rows.map((row) => row[1]),
@@ -114,6 +119,10 @@ async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: 
     0,
     0,
     '0',
+    // Nothing left out for its quarter: every row is inside release 900001's loaded content (2026).
+    0,
+    '0',
+    '0',
     // No attribution, consent or terms.
     null,
     null,
@@ -124,7 +133,8 @@ async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: 
     null,
     null,
     `test-${randomUUID()}`,
-  ]);
+    ],
+  );
   return created?.id ?? '';
 }
 
@@ -217,7 +227,7 @@ beforeAll(async () => {
   const internal = await createOrganization(owner, 'internal');
   specialist = await createUser(owner, { hardwareKeyRequired: true });
   await addMembership(owner, internal, specialist, 'contract_specialist');
-  await asApp('SELECT console_approve_screening_split($1)', [JSON.stringify(SPLIT)], specialist);
+  await asApp('SELECT console_approve_place_of_service_split($1)', [JSON.stringify(SPLIT)], specialist);
 }, 60_000);
 
 afterAll(async () => {
@@ -242,6 +252,7 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
       release: syntheticRelease(900001),
       changeDays: releaseChangeDays(readRuleRelease(RELEASE_DIR).records),
       zip: '00011',
+      zipPlusFour: null,
       placeOfServiceSettings: SPLIT,
       asOf: new Date().toISOString().slice(0, 10),
     });
@@ -320,8 +331,16 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     }
   });
 
-  it('refuses a ZIP whose locality needs its ZIP+4: the engine takes a five-digit ZIP alone, so nothing is asked for that it cannot use', async () => {
+  it('asks for the ZIP+4 of a ZIP whose locality needs one, and refuses one whose ZIP+4 list release 900001 has not loaded (SCR-15; docs/adr/0064)', async () => {
     await expect(submit({ zip: '00012', rows: [ROWS[0] as Row] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
+    // 900001 flags 00012 but has no ZIP+4 file: nothing the prospect can change, never "check the four digits".
+    await expect(submit({ zip: '00012', plusFour: '0001', rows: [ROWS[0] as Row] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_locality_not_loaded' });
+    // A ZIP+4 given for a ZIP that needs none is not kept, and the run's claim returns none.
+    const runId = await submit({ zip: '00011', plusFour: '1234', rows: [ROWS[0] as Row] });
+    expect((await owner.query('SELECT p.zip, p.zip_plus_four FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = $1', [runId])).rows).toEqual([
+      { zip: '00011', zip_plus_four: null },
+    ]);
+    expect(await priceScreeningRun(dependencies(new MemoryMailSender()), runId)).toBe('complete');
   });
 
   it('gives a pooled code two figures and calls a row an anomaly only more than $5 a claim line below the fully reduced one (G01’s 97110 and 97140, SYNTHETIC)', async () => {
