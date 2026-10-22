@@ -26,7 +26,9 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  * - One run of a practice executes at a time (a transaction-scoped advisory lock per practice), and
  *   a run already complete or failed is left as it is, so a replayed job has no effect (JOB-01).
  * - A run whose practice's location a line cannot be priced at (audit #33 and #7; docs/adr/0064): the
- *   location's status over the run's period is read once, when the run starts. When it is one a line
+ *   location's status over the run's period is judged in the pricing transaction, from the very ZIP and ZIP+4
+ *   the run's settings read there (a location saved between the job's transactions is the one priced, and the
+ *   one judged). When it is one a line
  *   cannot be priced at (a ZIP Medicare's list lacks, one that needs its ZIP+4 and has none, or a
  *   ZIP+4 the list does not hold; or no location at all, for a run created before locations existed)
  *   and the engine stops a line on the location, the pricing transaction is rolled back whole and the
@@ -87,6 +89,25 @@ export function locationStops(status: string): ReadonlySet<string> | null {
   return status === 'zip_missing' ? new Set([...LOCATION_DETAILS, 'invalid_settings']) : null;
 }
 
+/**
+ * The status of the location a run prices with, over its period under its release: zip_missing for no location (an
+ * empty ZIP), otherwise locality_status() of exactly the ZIP and ZIP+4 in `settings`. Judged on the settings the
+ * engine reads, never on another read of practice_site, so the stops and the prices come from one location.
+ */
+async function pricedLocationStatus(client: ScopeClient, run: { readonly release_no: number; readonly period_from: string; readonly period_to: string }, settings: PracticeSettings): Promise<string> {
+  if (settings.zip === '') {
+    return 'zip_missing';
+  }
+  const { rows } = await client.query<{ status: string }>('SELECT status FROM locality_status($1, $2, $3, $4::date, $5::date)', [
+    run.release_no,
+    settings.zip,
+    settings.zipPlusFour ?? null,
+    run.period_from,
+    run.period_to,
+  ]);
+  return rows[0]?.status ?? 'zip_unknown';
+}
+
 /** A line of the run stopped on the practice's location: the run fails as location_not_ready, its lines rolled back. */
 class LocationNotReady extends Error {
   override readonly name = 'LocationNotReady';
@@ -103,14 +124,12 @@ interface RunRow {
   readonly created_at: Date;
   /** Lines loaded after this are not the run's: its creation, or for a re-run the original's (text, to the microsecond). */
   readonly cut_off: string;
-  /** The practice's location status over the run's period under its release (practice_location_status()). */
-  readonly location: string;
 }
 
 async function lockRun(client: ScopeClient, practiceId: string, pricingRunId: string): Promise<RunRow | undefined> {
   const { rows } = await client.query<RunRow>(
     `SELECT id, practice_id, period_from::text AS period_from, period_to::text AS period_to, release_no, engine_version, status, created_at,
-            coalesce(lines_loaded_by, created_at)::text AS cut_off, practice_location_status(practice_id, release_no, period_from, period_to) AS location
+            coalesce(lines_loaded_by, created_at)::text AS cut_off
        FROM pricing_run WHERE id = $1 AND practice_id = $2 FOR UPDATE`,
     [pricingRunId, practiceId],
   );
@@ -229,7 +248,6 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     return started;
   }
 
-  const stops = locationStops(started.location);
   const priceRun = (): Promise<ExecuteOutcome> => context.transaction(async (scope): Promise<ExecuteOutcome> => {
     // One run of the practice at a time, whatever the queue does.
     await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('pricing_run:' || $1::text, 0))", [practiceId]);
@@ -252,6 +270,7 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     }
     const release = await loadRuleRelease(scope.client, run.release_no);
     const settings = await runSettings(scope.client, practiceId, pricingRunId);
+    const stops = locationStops(await pricedLocationStatus(scope.client, run, settings));
     const resolve = lineResolver(records);
     const asOf = runAsOf(run.created_at);
     const batch = options.claimsPerBatch ?? CLAIMS_PER_BATCH;

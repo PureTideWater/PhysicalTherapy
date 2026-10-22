@@ -548,6 +548,32 @@ describe('PRC-23: a month whose pricing location is not ready (audit #33; docs/a
     expect(await runRow(runId)).toMatchObject({ status: 'failed', failure_code: 'location_not_ready' });
   });
 
+  it('decides the location’s stops from the location it prices with, when the location changes between the job’s two transactions', async () => {
+    const target = await practice('location-changes-mid-job');
+    await load(target, 'MAP-05/remit.835');
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    // Ready when the run starts; the practice saves 00012 with no ZIP+4 before the transaction that prices.
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    const logs: Record<string, unknown>[] = [];
+    const context = jobContext(target.practiceId, logs);
+    let transactions = 0;
+    const moving: JobContext = {
+      ...context,
+      transaction: async (work) => {
+        transactions += 1;
+        if (transactions === 2) {
+          expect(await w.setLocation(target, '00012')).toBe('zip_plus_four_needed');
+        }
+        return context.transaction(work);
+      },
+    };
+    await priceHandler()({ practice_id: target.practiceId, pricing_run_id: runId }, moving);
+    // The lines read 00012, so they stop on the location: the customer's step, no line kept and no one paged.
+    expect(await runRow(runId)).toMatchObject({ status: 'failed', failure_code: 'location_not_ready' });
+    expect(await pricedLines(runId)).toEqual([]);
+    expect(logs.filter((line) => line.msg === ENGINE_ERRORS_MESSAGE)).toEqual([]);
+  });
+
   it('prices a fixed-schedule month at that location as before: its lines never read the locality', async () => {
     const target = await practice('plus-four-fixed');
     await load(target, 'MAP-05/remit.835');
