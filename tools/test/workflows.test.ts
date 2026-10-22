@@ -230,16 +230,110 @@ describe('workflows', () => {
     expect(steps.some((step) => step.run === 'pnpm licenses:check')).toBe(true);
   });
 
-  it('scan each release image and write its SBOM before pushing it', () => {
-    const steps = workflow('release.yml').jobs.images?.steps ?? [];
-    const scan = stepIndex(steps, isScan);
-    const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
-    const upload = stepIndex(steps, (step) => step.uses?.startsWith('actions/upload-artifact@') === true);
-    const push = stepIndex(steps, (step) => step.with?.push === true);
-    expect(scan).toBeLessThan(push);
-    expect(sbom).toBeLessThan(push);
-    expect(upload).toBeLessThan(push);
-    expect(steps.filter((step) => step.with?.push === true)).toHaveLength(1);
+  describe('release (decision 13; docs/adr/0062): build each image once, scan it, measure the screening on exactly the production web image and the worker image, and push exactly what was built', () => {
+    const file = readFileSync(path.join(repositoryRoot, '.github/workflows/release.yml'), 'utf8');
+    type ReleaseJob = Job & { needs?: unknown; if?: string; permissions?: unknown; 'timeout-minutes'?: number };
+    const release = parse(file) as Workflow & { permissions: unknown; jobs: Record<string, ReleaseJob> };
+    const job = (name: string) => release.jobs[name] as ReleaseJob;
+    const runs = (name: string) => job(name).steps.map((step) => step.run ?? '').join('\n');
+
+    it('runs on a release tag with a read-only token, four jobs, each with a timeout', () => {
+      expect(release.on).toEqual({ push: { tags: ['v*'] } });
+      expect(release.permissions).toEqual({ contents: 'read' });
+      expect(Object.keys(release.jobs).sort()).toEqual(['build', 'capacity', 'push', 'report']);
+      expect(Object.fromEntries(Object.entries(release.jobs).map(([name, entry]) => [name, entry['timeout-minutes']]))).toEqual({ build: 60, capacity: 90, push: 30, report: 10 });
+    });
+
+    it('builds the worker image and three web images, each with its own static host, and scans each and writes its SBOM before anything leaves the job', () => {
+      const build = job('build');
+      expect(build.strategy?.matrix?.image).toEqual(['web', 'web-staging', 'web-production', 'worker']);
+      expect(build.permissions).toBeUndefined();
+      const steps = build.steps;
+      const built = stepIndex(steps, (step) => step.uses === 'docker/build-push-action@v6');
+      expect(steps.filter((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toHaveLength(1);
+      expect(steps[built]?.with).toMatchObject({ push: false, load: true, file: '${{ steps.image.outputs.dockerfile }}', tags: '${{ steps.image.outputs.ref }}' });
+      expect(String(steps[built]?.with?.['build-args']).trim()).toBe('STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}');
+      // Each environment's CloudFront origin from its repository variable; the plain web image has none.
+      const naming = steps.find((step) => (step as Step & { id?: string }).id === 'image') as Step & { env?: Record<string, string> };
+      expect(naming.env).toMatchObject({ STAGING_ORIGIN: '${{ vars.STAGING_STATIC_ASSET_ORIGIN }}', PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
+      expect(naming.run).toContain('web-production) echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"; origin="$PRODUCTION_ORIGIN" ;;');
+      expect(naming.run).toContain('worker) echo "dockerfile=apps/worker/Dockerfile" >> "$GITHUB_OUTPUT"; origin="" ;;');
+      const scan = stepIndex(steps, isScan);
+      const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
+      const saved = stepIndex(steps, (step) => step.run?.includes('docker save') === true);
+      const kept = steps.findLastIndex((step) => step.uses === 'actions/upload-artifact@v4');
+      expect(steps[scan]?.with).toMatchObject({ 'image-ref': '${{ steps.image.outputs.ref }}', severity: 'HIGH,CRITICAL', 'exit-code': '1' });
+      expect([built < scan, scan < sbom, sbom < saved, saved < kept]).toEqual([true, true, true, true]);
+      // The image ID beside the image, so the jobs that load it can prove it is the one scanned.
+      expect(steps[saved]?.run).toContain(`docker image inspect -f '{{.Id}}' "$REF" > "$RUNNER_TEMP/image/$IMAGE.id"`);
+      expect(String(steps[kept]?.with?.path).trim().split('\n')).toEqual(['${{ runner.temp }}/image/${{ matrix.image }}.tar.gz', '${{ runner.temp }}/image/${{ matrix.image }}.id']);
+      expect(file).not.toMatch(/push: true/);
+    });
+
+    it('measures exactly the production web image and the worker image as built, with time enforced by the harness, on the capacity workflow\'s runner', () => {
+      const capacity = job('capacity');
+      expect(capacity.needs).toBe('build');
+      expect(capacity.permissions).toBeUndefined();
+      const workflowRunner = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
+      expect(capacity['runs-on']).toEqual(workflowRunner);
+      const steps = capacity.steps;
+      expect(steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false } });
+      expect(steps.filter((step) => step.uses === 'actions/download-artifact@v4').map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
+      expect(steps.some((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toBe(false);
+      expect(runs('capacity')).not.toMatch(/docker (?:buildx )?build/);
+      const measure = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
+      const loaded = stepIndex(steps, (step) => step.run?.includes('docker load') === true);
+      expect(loaded).toBeLessThan(measure);
+      expect(steps[measure]?.run).toContain('--web-image "$repository/web-production:$GITHUB_REF_NAME" --worker-image "$repository/worker:$GITHUB_REF_NAME"');
+      expect(steps[measure]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity "$@"');
+      // Production's static host, the one the web-production image was built with, routed to the web container.
+      expect((steps[measure] as Step & { env?: Record<string, string> }).env).toEqual({ PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
+      expect(steps[measure]?.run).toContain('set -- "$@" --static-asset-origin "$PRODUCTION_ORIGIN"');
+      const kept = steps[measure + 1] as Step & { if?: string };
+      expect(kept.uses).toBe('actions/upload-artifact@v4');
+      expect(kept.if).toBe('always()');
+      expect(String(kept.with?.path)).toContain('screening-capacity.sha256');
+    });
+
+    it('pushes exactly the images that were scanned, checking each ID, with packages: write in that job alone and no build', () => {
+      const push = job('push');
+      // A failed measurement does not hold a security fix back: the push needs the build alone.
+      expect(push.needs).toBe('build');
+      expect(push.permissions).toEqual({ contents: 'read', packages: 'write' });
+      expect(push.steps.some((step) => step.uses?.startsWith('docker/build-push-action@') === true || step.uses?.startsWith('actions/checkout') === true)).toBe(false);
+      const script = runs('push');
+      expect(script).not.toMatch(/docker (?:buildx )?build/);
+      expect(script).toContain('for image in web web-staging web-production worker; do');
+      expect(script).toContain('docker load --input "$RUNNER_TEMP/image/$image.tar.gz"');
+      expect(script).toContain('if [ "$id" != "$(cat "$RUNNER_TEMP/image/$image.id")" ]; then');
+      expect(script.indexOf('exit 1')).toBeLessThan(script.indexOf('docker push'));
+      expect([...script.matchAll(/docker push "([^"]+)"/g)].map((match) => match[1])).toEqual(['$ref', '$repository/$image:sha-$GITHUB_SHA']);
+      for (const [name, entry] of Object.entries(release.jobs)) {
+        expect(JSON.stringify(entry.permissions ?? {}).includes('packages'), name).toBe(name === 'push');
+      }
+    });
+
+    it('keeps the report, its SHA-256 and its summary as the tag\'s release assets from a job that alone may write contents and runs nothing but gh', () => {
+      const report = job('report');
+      expect(report.needs).toBe('capacity');
+      expect(report.if).toBe("${{ !cancelled() && needs.capacity.result != 'skipped' }}");
+      expect(report.permissions).toEqual({ contents: 'write' });
+      for (const [name, entry] of Object.entries(release.jobs)) {
+        expect(JSON.stringify(entry.permissions ?? {}).includes('"contents":"write"'), name).toBe(name === 'report');
+      }
+      expect(report.steps.map((step) => step.uses ?? 'run')).toEqual(['actions/download-artifact@v4', 'run']);
+      const commands = runs('report')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('"$RUNNER_TEMP'));
+      expect(commands.every((line) => line.startsWith('gh release '))).toBe(true);
+      expect(runs('report')).toContain('gh release upload "$TAG" --clobber');
+      for (const asset of ['screening-capacity.json', 'screening-capacity.sha256', 'summary.md']) {
+        expect(runs('report'), asset).toContain(`"$RUNNER_TEMP/screening-capacity/${asset}"`);
+      }
+      // It never makes a tag: a release is made only for the tag the founder pushed.
+      expect(runs('report')).toContain('--verify-tag');
+    });
   });
 
   it('run the intake test on a 2 GiB zip of 835s weekly against PostgreSQL (the milestone 3 done check)', () => {
