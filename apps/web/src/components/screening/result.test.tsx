@@ -66,6 +66,9 @@ const SUMMARY: ScreeningSummaryData = {
   couldNotPrice: { rows: 0, claimLines: 0, observedCents: c(0n) },
   // Two rows of fewer than 11 claim lines the browser left out before sending (SCR-07): in no other figure.
   leftOut: { rows: 2, claimLines: 13, observedCents: c(54_321n) },
+  // Twelve Medicare rows in quarters before the release's loaded content, left out by the browser (SCR-16, Q6 (a)).
+  outsideContent: { rows: 12, claimLines: 380, observedCents: c(4_120_000n) },
+  outsideContentBefore: '2026-Q1',
 };
 
 const GROUPS: ScreeningGroup[] = [
@@ -342,6 +345,21 @@ describe('the screening summary', () => {
     const none = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, leftOut: { rows: 0, claimLines: 0, observedCents: c(0n) } }} />);
     expect(none).not.toContain('data-section="left-out"');
     expect(none).not.toContain('Left out before sending');
+  });
+
+  it('says how many Medicare rows were not screened for a quarter outside the loaded content, apart from every figure, and nothing when none (SCR-16)', () => {
+    expect(html).toMatch(/data-section="outside-content"[\s\S]*?Not screened: quarters outside the loaded content/);
+    // The sentence as read: the figure's own span closes up to its parentheses.
+    const read = (markup: string) => text(markup).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+    expect(read(html)).toContain('12 rows ($41,200.00) in quarters before 2026-Q1 were not screened: PaidWhole has not loaded the Medicare content for them.');
+    // The allowed total in the sentence is in the mono face, as every figure.
+    expect(html).toMatch(/data-copy="outside-content"[^>]*>12 rows \(<span class="font-mono tabular-nums">\$41,200\.00<\/span>\)/);
+    const stat = (slot: string) => text(new RegExp(`data-figure="${slot}"[^>]*>([\\s\\S]*?)</dd>`).exec(html)?.[1] ?? '').trim();
+    expect(stat('outside-content-claim-lines')).toBe('Claim lines 380');
+    const between = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, outsideContent: { rows: 1, claimLines: 12, observedCents: c(50_000n) }, outsideContentBefore: null }} />);
+    expect(read(between)).toContain('1 row ($500.00) in a quarter outside the loaded content was not screened: PaidWhole has not loaded the Medicare content for it.');
+    const none = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, outsideContent: { rows: 0, claimLines: 0, observedCents: c(0n) } }} />);
+    expect(none).not.toContain('data-section="outside-content"');
   });
 
   it('names the release, the engine and when the link stops opening it', () => {

@@ -20,11 +20,12 @@ export { SCREENING_ORIGIN } from './page-services';
  * 900001 loaded and a place-of-service split a contract specialist approved: services as the web app builds them
  * (a memory queue), the routes called as a browser on the application's page would call them, the minute's sweep
  * run as the platform worker runs it, and the emails it sends kept in memory. Synthetic data only: invented
- * practices at the SYNTHETIC ZIPs 00011 and 00012, addresses at synthetic.test domains.
+ * practices at the SYNTHETIC ZIPs 00011 and 00012 (00012 needs its ZIP+4; release 900006 adds the ZIP+4 list),
+ * addresses at synthetic.test domains.
  */
 
 export const SCREENING_SPLIT = { '11': 'non_facility', '22': 'facility' } as const;
-const RELEASE_DIR = path.resolve(import.meta.dirname, '../../../../../../fixtures/synthetic/rules/release-synth-900001');
+const RULES_DIR = path.resolve(import.meta.dirname, '../../../../../../fixtures/synthetic/rules');
 
 /** The header a clean upload has, in the format's own spellings. */
 export const SCREENING_HEADERS = ['procedure_code', 'modifiers', 'units', 'place_of_service', 'payer_product', 'service_band', 'allowed_total', 'claim_count'] as const;
@@ -68,6 +69,8 @@ export interface SubmitOverrides {
   readonly rowCount?: string;
   /** What the browser says it left out (rows of fewer than 11 claim lines); none unless given. */
   readonly leftOut?: { readonly rows: number | string; readonly claimLines: number | string; readonly allowedCents: bigint | string };
+  /** What the browser says it left out for a quarter outside the loaded content (Medicare rows); none unless given. */
+  readonly outsideContent?: { readonly rows: number | string; readonly claimLines: number | string; readonly allowedCents: bigint | string };
 }
 
 /**
@@ -84,7 +87,7 @@ export function practiceName(): string {
 
 /**
  * The form the upload page sends for these rows: no byte of the file and no hash of it; its header cells, count and
- * canonical rows, and the three numbers of what it left out.
+ * canonical rows, and the six numbers of what it left out (for the floor, and for a quarter outside the content).
  */
 export function submitInput(overrides: SubmitOverrides = {}): Record<string, string> {
   const rows = overrides.rows ?? SAMPLE_ROWS;
@@ -101,6 +104,9 @@ export function submitInput(overrides: SubmitOverrides = {}): Record<string, str
     leftOutRows: String(overrides.leftOut?.rows ?? 0),
     leftOutClaimLines: String(overrides.leftOut?.claimLines ?? 0),
     leftOutAllowedCents: String(overrides.leftOut?.allowedCents ?? 0),
+    outsideContentRows: String(overrides.outsideContent?.rows ?? 0),
+    outsideContentClaimLines: String(overrides.outsideContent?.claimLines ?? 0),
+    outsideContentAllowedCents: String(overrides.outsideContent?.allowedCents ?? 0),
   };
 }
 
@@ -124,12 +130,17 @@ export class ScreeningWorld {
     readonly logLines: Record<string, unknown>[],
   ) {}
 
-  /** A migrated database with the release loaded, and (unless `open` is false) the split approved. */
-  static async create(options: { readonly open?: boolean; readonly queue?: JobQueue } = {}): Promise<ScreeningWorld> {
+  /**
+   * A migrated database with the releases loaded in order (900001 unless told; the last is in force), and (unless
+   * `open` is false) the split approved.
+   */
+  static async create(options: { readonly open?: boolean; readonly queue?: JobQueue; readonly releases?: readonly number[] } = {}): Promise<ScreeningWorld> {
     const database = await createMigratedDatabase(readDatabaseUrl());
     const owner = databaseClient(database.url);
     await owner.connect();
-    await loadRelease(owner, RELEASE_DIR, { release: 900001, allowSyntheticFixtureForTests: true });
+    for (const release of options.releases ?? [900001]) {
+      await loadRelease(owner, path.join(RULES_DIR, `release-synth-${String(release)}`), { release, allowSyntheticFixtureForTests: true });
+    }
     const internal = await createOrganization(owner, 'internal');
     const specialistId = await createUser(owner, { hardwareKeyRequired: true });
     await addMembership(owner, internal, specialistId, 'contract_specialist');
@@ -151,7 +162,7 @@ export class ScreeningWorld {
     try {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [this.specialistId]);
-      const { rows } = await client.query<{ id: string }>('SELECT console_approve_screening_split($1) AS id', [JSON.stringify(settings)]);
+      const { rows } = await client.query<{ id: string }>('SELECT console_approve_place_of_service_split($1) AS id', [JSON.stringify(settings)]);
       await client.query('COMMIT');
       return rows[0]?.id ?? '';
     } catch (error) {
@@ -159,6 +170,38 @@ export class ScreeningWorld {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Publishes a test-built SYNTHETIC release, never committed: release `from`'s records, and its MUE and MPPR records
+   * again a year earlier, so the content it has loaded spans 2025 and 2026 (rule_release_content_span()) and a Medicare
+   * row of a 2025 quarter is screened, not left out. It is then the release in force.
+   */
+  async publishContentFrom2025(releaseNo: number, from = 900001): Promise<void> {
+    await this.owner.query('BEGIN');
+    try {
+      await this.owner.query("INSERT INTO rule_release (release_no, manifest_sha256) VALUES ($1::integer, encode(sha256(convert_to('synthetic-test-release-' || $1::integer::text, 'UTF8')), 'hex'))", [
+        releaseNo,
+      ]);
+      await this.owner.query(
+        `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, effective_to, source, verification, sha256)
+         SELECT $1, record_type, key, value, effective_from, effective_to, source, verification, sha256 FROM rule_record WHERE release_no = $2`,
+        [releaseNo, from],
+      );
+      await this.owner.query(
+        `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, effective_to, source, verification, sha256)
+         SELECT $1, record_type, key, value, (effective_from - interval '1 year')::date,
+                CASE WHEN effective_to IS NULL THEN effective_from - 1 ELSE (effective_to - interval '1 year')::date END,
+                source, verification, encode(sha256(convert_to(sha256 || ':a year earlier', 'UTF8')), 'hex')
+           FROM rule_record WHERE release_no = $2 AND record_type IN ('ncci_mue', 'mppr_rate')`,
+        [releaseNo, from],
+      );
+      await this.owner.query('UPDATE rule_release SET published_at = now() WHERE release_no = $1', [releaseNo]);
+      await this.owner.query('COMMIT');
+    } catch (error) {
+      await this.owner.query('ROLLBACK');
+      throw error;
     }
   }
 

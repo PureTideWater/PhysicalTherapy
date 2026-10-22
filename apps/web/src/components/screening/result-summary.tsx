@@ -13,6 +13,7 @@ import {
   REDUCED_FIGURE_LABEL,
   SCREENING_INVESTIGATORY_NOTE,
   leftOutNote,
+  outsideContentNote,
 } from '../../lib/screening/labels';
 import { type KeptWith, resultRetention } from '../../lib/screening/retention';
 import { utc, utcDate } from '../format';
@@ -69,6 +70,10 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly couldNotPrice: ScreeningGroupTotals;
   /** Rows of fewer than 11 claim lines the browser left out before sending: in no other figure. */
   readonly leftOut: ScreeningGroupTotals;
+  /** Medicare rows the browser left out for a quarter outside the release's loaded content: in no other figure. */
+  readonly outsideContent: ScreeningGroupTotals;
+  /** The first quarter loaded when every such row lies before it; null otherwise. */
+  readonly outsideContentBefore: string | null;
 }
 
 /** A dollar figure: the mono face, tabular numerals. */
@@ -158,6 +163,26 @@ export function ScreeningReleaseWithdrawn({ summary }: { readonly summary: Scree
   );
 }
 
+/** The Medicare rows not screened for a quarter outside the release's loaded content (audit #7; PR 6b's Q6 (a)). */
+function OutsideContent({ summary }: { readonly summary: ScreeningSummaryData }) {
+  const note = outsideContentNote(summary.outsideContent.rows, summary.outsideContentBefore);
+  return (
+    <Card data-section="outside-content">
+      <CardHeader>
+        <CardTitle>Not screened: quarters outside the loaded content</CardTitle>
+        <CardDescription data-copy="outside-content">
+          {note.lead}
+          <ScreeningMoney cents={summary.outsideContent.observedCents} />
+          {note.tail}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <GroupStats group={summary.outsideContent} slot="outside-content" />
+      </CardContent>
+    </Card>
+  );
+}
+
 /** The file's totals, the Medicare-priced figures, and the dollars that cannot be priced without a contract. */
 export function ScreeningSummary({ summary }: { readonly summary: ScreeningSummaryData }) {
   const { priced } = summary;
@@ -183,6 +208,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
           </CardContent>
         </Card>
       )}
+      {summary.outsideContent.rows === 0 ? null : <OutsideContent summary={summary} />}
       <Card data-section="priced">
         <CardHeader>
           <CardTitle>Priced under Medicare</CardTitle>

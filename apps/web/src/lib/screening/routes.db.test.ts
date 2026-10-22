@@ -3,14 +3,15 @@ import path from 'node:path';
 
 import { tagline } from '@paidwhole/brand';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
-import { SCREENING_REJECTION_CODES, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
+import { SCREENING_REJECTION_CODES, currentQuarter, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ATTRIBUTION_COOKIE } from '../http/attribution';
 import { RATE_LIMITS } from '../http/rate-limit';
 import type { MutationResult, Outcome } from '../http/route';
+import { contentQuarters } from './content-span';
 import { SCREENING_LABELS_VERSION } from './labels';
-import { NO_PATIENT_INFORMATION, screeningConvert, screeningOpened, screeningPage, screeningReasonMessage, screeningResult, screeningSubmit } from './routes';
+import { NO_PATIENT_INFORMATION, SCREENING_ZIP_MESSAGES, screeningConvert, screeningOpened, screeningPage, screeningReasonMessage, screeningResult, screeningSubmit } from './routes';
 import { parseScreeningBytes } from './parse';
 import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
@@ -30,9 +31,15 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screening
  *   accepted, so two files differing only in a row left out store the same one, and a hash a request sends is never
  *   kept; and a later screening of the same practice replaces the earlier one, whose link stops opening it.
  *
- * And around them: closed until a split is approved, recording nothing while closed; a ZIP whose locality needs its
- * ZIP+4 refused (the pricing cannot use one; the refusal stays until PR 6b, which takes a ZIP+4 before launch by the
- * founder's ruling of 2026-10-18, superseding ruling 3); an address the mail service can send to; the result read by
+ * - SCR-15, a ZIP split across localities (PR 6b; the founder's ruling of 2026-10-18, 11:47 UTC, superseding ruling 3):
+ *   the ZIP code field takes five digits or ZIP+4; a ZIP that needs its ZIP+4 is refused until it is given ("enter the
+ *   ZIP+4"), one the ZIP+4 list does not hold is refused, and one whose ZIP+4 list is not loaded is refused as not
+ *   loaded; the ZIP+4 is kept only for a ZIP that needs it.
+ * - SCR-16, a Medicare row in a quarter outside the release's loaded content (the founder's answer of 2026-10-21 to
+ *   Q6 (a)): the browser leaves it out and counts it, a request that sends one anyway is refused by its row, and the
+ *   result says how many rows were not screened and that PaidWhole has not loaded the content for them.
+ *
+ * And around them: closed until a split is approved, recording nothing while closed; an address the mail service can send to; the result read by
  * its link alone, with both figures for a code in the reduction across codes and the database's standings, and not
  * found once expired; a result under a release since withdrawn keeping its notice and still converting (the owner's
  * ruling of 2026-10-18).
@@ -231,11 +238,15 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
           left_out_rows: 0,
           left_out_claim_lines: 0,
           left_out_allowed_cents: 0,
+          outside_content_rows: 0,
+          outside_content_claim_lines: 0,
+          outside_content_allowed_cents: 0,
         },
         prospect: {
           practice_name: 'Synthetic Therapy Group',
           state: 'MN',
           zip: '00011',
+          zip_plus_four: null,
           contact_email: email,
           // No attribution, consent or terms in this request.
           source: null,
@@ -316,7 +327,9 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
 
   it('keeps the hash of the rows it accepted, never of the file: two files differing only in a row left out store the same hash, and a hash the request sends is not kept', async () => {
     const now = new Date();
-    const quarter = `${String(now.getUTCFullYear() - 1)}-Q2`;
+    // A quarter inside release 900001's loaded content (2026), so the Medicare row is kept (SCR-16).
+    const quarter = '2026-Q2';
+    const quarters = await contentQuarters(world.owner, 900001, now);
     const header = SCREENING_HEADERS.join(',');
     const kept = `97110,GP,2,11,ma_noncontracted,${quarter},440.00,11`;
     // SYNTHETIC files: the same kept row, and a different small row (3 claim lines, then 7) that the browser leaves out.
@@ -324,7 +337,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     const hashes: string[] = [];
     for (const [index, file] of files.entries()) {
       const bytes = new TextEncoder().encode(file);
-      const parsed = parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: bytes.length }, bytes, now);
+      const parsed = parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: bytes.length }, bytes, now, quarters);
       expect(parsed.ok, `file ${String(index)}`).toBe(true);
       if (!parsed.ok) {
         return;
@@ -370,23 +383,116 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
   });
 });
 
-describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, read by its link alone', () => {
-  it('refuses a ZIP whose Medicare locality needs its ZIP+4, which the pricing cannot use, and never asks for or keeps a ZIP+4', async () => {
+describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
+  const kept = async (email: string) =>
+    (await world.owner.query<{ zip: string; zip_plus_four: string | null }>('SELECT zip, zip_plus_four FROM screening_prospect WHERE contact_email = $1', [email])).rows;
+
+  it('asks for the ZIP+4 of a ZIP that needs one, and says the ZIP+4 list is not loaded under a release without one, never "check the digits"', async () => {
     const email = 'prospect.plusfour@clinic-plusfour.synthetic.test';
-    const needs = await submitted(submitInput({ zip: '00012', contactEmail: email }));
-    expect(issuesOf(needs)).toEqual([
-      {
-        field: 'zip',
-        message: 'this ZIP code spans two Medicare localities, and a free screening cannot price one yet: its rows would need the ZIP+4, which the pricing does not take',
-      },
+    expect(issuesOf(await submitted(submitInput({ zip: '00012', contactEmail: email })))).toEqual([
+      { field: 'zip', message: 'Medicare splits this ZIP code between two payment areas. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.' },
     ]);
-    // A ZIP+4 sent anyway is not a field the route takes, and nothing is kept for the refused ZIP.
+    // 900001 has no ZIP+4 list: PaidWhole has not loaded it.
+    expect(issuesOf(await submitted(submitInput({ zip: '00012-0001', contactEmail: email })))).toEqual([
+      { field: 'zip', message: 'PaidWhole has not loaded Medicareâ€™s locality list for this ZIP code yet, so a screening cannot price it. Try again later.' },
+    ]);
+    expect(SCREENING_ZIP_MESSAGES.screening_locality_not_loaded).toBe('PaidWhole has not loaded Medicareâ€™s locality list for this ZIP code yet, so a screening cannot price it. Try again later.');
+    // A field the route does not read is ignored; nothing is kept of a refused ZIP.
     expect(issuesOf(await submitted({ ...submitInput({ zip: '00012', contactEmail: email }), zipPlusFour: '0001' })).map((issue) => issue.field)).toEqual(['zip']);
-    expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ n: 0 }]);
-    const columns = await world.owner.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'screening_prospect' AND column_name LIKE '%plus%'");
-    expect(columns.rows).toEqual([]);
+    expect(await kept(email)).toEqual([]);
     expect(issuesOf(await submitted(submitInput({ zip: '00099' })))).toEqual([{ field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' }]);
+    // Not a ZIP code at all: the form's own field.
+    for (const zip of ['0001', '00011-12', '00011 1234']) {
+      expect(issuesOf(await submitted(submitInput({ zip }))), zip).toEqual([{ field: 'zip', message: 'the practiceâ€™s ZIP code: five digits, or ZIP+4 such as 27601-1234' }]);
+    }
   });
+
+  it('takes a ZIP+4 with or without its hyphen, and keeps none for a ZIP that does not need one', async () => {
+    for (const [zip, email] of [
+      ['00011-1234', 'prospect.zip9.hyphen@clinic-zip9.synthetic.test'],
+      ['000111234', 'prospect.zip9.digits@clinic-zip9.synthetic.test'],
+    ] as const) {
+      expect(await submitted(submitInput({ zip, contactEmail: email })), zip).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+      expect(await kept(email)).toEqual([{ zip: '00011', zip_plus_four: null }]);
+    }
+  });
+
+  it('under a release with the ZIP+4 list, keeps the ZIP+4 a ZIP needs and refuses one the list does not hold', async () => {
+    const split = await ScreeningWorld.create({ releases: [900006] });
+    try {
+      const send = (zip: string, contactEmail: string) => split.call(screeningSubmit, { input: submitInput({ zip, contactEmail }) });
+      const email = 'prospect.zip9.split@clinic-zip9-split.synthetic.test';
+      expect(await send('00012-5000', email)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+      expect((await split.owner.query('SELECT zip, zip_plus_four FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ zip: '00012', zip_plus_four: '5000' }]);
+      // The gap between the list's ranges: "check the four digits".
+      expect(issuesOf(await send('00012-9100', 'prospect.zip9.gap@clinic-zip9-gap.synthetic.test'))).toEqual([
+        { field: 'zip', message: 'Medicareâ€™s ZIP+4 list in force does not include this ZIP+4. Check the four digits after the hyphen.' },
+      ]);
+      expect(issuesOf(await send('00012', 'prospect.zip9.none@clinic-zip9-none.synthetic.test'))).toEqual([{ field: 'zip', message: SCREENING_ZIP_MESSAGES.screening_zip_plus_four }]);
+    } finally {
+      await split.close();
+    }
+  }, 120_000);
+});
+
+describe('SCR-16: a Medicare row in a quarter outside the loaded content (Q6 (a))', () => {
+  it('names the quarters loaded on the page, refuses a Medicare row sent around the browser by its row, and takes another productâ€™s row of that quarter', async () => {
+    const page = ok(await world.call(screeningPage));
+    // 900001's MUE and per-code MPPR content is 2026's: its quarters up to the current one.
+    expect(page.contentQuarters).toEqual(await contentQuarters(world.owner, 900001, new Date()));
+    expect(page.contentQuarters[0]?.from).toBe('2026-Q1');
+    const email = 'prospect.outside@clinic-outside.synthetic.test';
+    const rows = [screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'] }), screeningRow('97140', 'ma_noncontracted', { band: '2025-Q4', claims: 20 })];
+    expect(issuesOf(await submitted(submitInput({ contactEmail: email, rows })))).toEqual([
+      { field: 'upload', message: 'Row 2: the service bandâ€™s quarter is outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out' },
+    ]);
+    const refused = await world.owner.query('SELECT u.status, u.rejection_reasons FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email]);
+    // The code, row and field, never the quarter.
+    expect(refused.rows).toEqual([{ status: 'rejected', rejection_reasons: [{ code: 'band_outside_content', row: 2, field: 'service_band' }] }]);
+    const commercial = [screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'] }), screeningRow('97140', 'commercial', { band: '2025-Q4', claims: 20 })];
+    expect(await submitted(submitInput({ contactEmail: 'prospect.outside.commercial@clinic-outside.synthetic.test', rows: commercial }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+  });
+
+  it('stores what the browser left out for its quarter as three numbers, and the result says how many rows were not screened', async () => {
+    const email = 'prospect.outside.counted@clinic-outside-counted.synthetic.test';
+    const outsideContent = { rows: 12, claimLines: 380, allowedCents: 4_120_000n };
+    expect(await submitted(submitInput({ contactEmail: email, outsideContent, leftOut: { rows: 1, claimLines: 3, allowedCents: 900n } }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    const upload = await world.owner.query(
+      `SELECT u.row_count, u.left_out_rows, u.outside_content_rows, u.outside_content_claim_lines::int AS claim_lines, u.outside_content_allowed_cents::text AS allowed
+         FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
+      [email],
+    );
+    expect(upload.rows).toEqual([{ row_count: 7, left_out_rows: 1, outside_content_rows: 12, claim_lines: 380, allowed: '4120000' }]);
+    await world.price();
+    const result = ok(await world.call(screeningResult, { params: { resultId: world.tokenFor(email) } }));
+    expect(result.summary.outsideContent).toEqual({ rows: 12, claimLines: 380, observedCents: 4_120_000n });
+    // 900001's content runs through 2026: while 2026 is the current year, every row left out lay before 2026-Q1.
+    const quarters = await contentQuarters(world.owner, 900001, result.summary.createdAt);
+    expect(result.summary.outsideContentBefore).toBe(quarters.length === 1 && quarters[0]?.to === currentQuarter(result.summary.createdAt) ? '2026-Q1' : null);
+    // Counted apart from every figure: the file's own totals are the rows sent.
+    expect(result.summary).toMatchObject({ rows: 7, claimLines: 79 });
+  });
+
+  it('takes only outside-content numbers the browser could have counted, and records nothing otherwise', async () => {
+    const email = 'prospect.outside.bad@clinic-outside-bad.synthetic.test';
+    for (const outsideContent of [
+      { rows: '1', claimLines: '10', allowedCents: '0' },
+      { rows: '0', claimLines: '11', allowedCents: '0' },
+      { rows: '1', claimLines: '100001', allowedCents: '0' },
+      { rows: '1', claimLines: '11', allowedCents: '27500001' },
+      { rows: '49994', claimLines: '549934', allowedCents: '0' },
+      { rows: 'x', claimLines: '0', allowedCents: '0' },
+      { rows: '1', claimLines: '11', allowedCents: '4.5' },
+    ]) {
+      expect(issuesOf(await submitted(submitInput({ contactEmail: email, outsideContent }))), JSON.stringify(outsideContent)).toEqual([
+        { field: 'upload', message: 'the file could not be read here; choose it again' },
+      ]);
+    }
+    expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ n: 0 }]);
+  });
+});
+
+describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, read by its link alone', () => {
 
   it('stores a clean upload, queues its pricing and says to check the email; the link opens the result, computed in SQL', async () => {
     const email = 'prospect.clean@clinic-clean.synthetic.test';
@@ -414,6 +520,7 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
     expect(summary.contractRequired).toEqual({ rows: 2, claimLines: 23, observedCents: 175_000n });
     expect(summary.notScreened).toEqual({ rows: 2, claimLines: 22, observedCents: 40_700n });
     expect(summary.leftOut).toEqual({ rows: 0, claimLines: 0, observedCents: 0n });
+    expect(summary.outsideContent).toEqual({ rows: 0, claimLines: 0, observedCents: 0n });
     expect(summary.priced.rows + summary.couldNotPrice.rows).toBe(3);
     expect(summary.priced.differenceCents).toBe(summary.priced.expectedCents - summary.priced.observedCents);
     expect(groups.reduce((total, group) => total + group.expectedCents, 0n)).toBe(summary.priced.expectedCents);

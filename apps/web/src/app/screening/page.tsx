@@ -69,6 +69,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
             maxRows={data.limits.maxRows}
             minClaimLines={data.limits.minClaimLines}
             serverTime={data.serverTime}
+            contentQuarters={data.contentQuarters}
             sources={data.sources}
           />
         )}

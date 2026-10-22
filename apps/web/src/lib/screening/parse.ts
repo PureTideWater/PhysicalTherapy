@@ -1,6 +1,6 @@
-import { SCREENING_MAX_FILE_BYTES, type ScreeningLeftOut, type ScreeningRejection, screenTable } from '@tp/worker/screening-format';
+import { type ContentQuarters, SCREENING_MAX_FILE_BYTES, type ScreeningLeftOut, type ScreeningRejection, screenTable } from '@tp/worker/screening-format';
 
-import { FILE_MESSAGES, leftOutMessage, reasonMessages } from './messages';
+import { FILE_MESSAGES, leftOutMessage, outsideContentMessage, reasonMessages } from './messages';
 
 /**
  * The screening upload, read in the browser (Change Order 001, CO-04; reconciliation-001, D18 a: "the browser parses
@@ -12,7 +12,10 @@ import { FILE_MESSAGES, leftOutMessage, reasonMessages } from './messages';
  * position and header text and its row by number, or what the form sends: the header's canonical column names in the
  * file's order (never the text typed), the row count and the rows of totals in their canonical form. A row of fewer
  * than 11 claim lines is left out and never sent (it can be one patient's service line); the form sends only how many
- * rows, claim lines and dollars were left out. No hash of the file is made or sent: the file holds the rows left out,
+ * rows, claim lines and dollars were left out. So is a Medicare row (original Medicare, or Medicare Advantage without a
+ * contract) whose quarter is outside the content the release in force has loaded (audit #7; the founder's answer of
+ * 2026-10-21 to PR 6b's Q6 (a)): the form sends how many, their claim lines and their allowed total, and the page names
+ * the quarters loaded (contentQuarters, from the server). No hash of the file is made or sent: the file holds the rows left out,
  * and a hash over them would let them be found by trial; the server hashes the rows it accepts. A problem never
  * quotes a cell's value, and no header text leaves the browser.
  */
@@ -30,6 +33,10 @@ export type ScreeningParse =
       readonly rows: string;
       /** The rows of fewer than 11 claim lines left out, never sent: how many, their claim lines and their allowed total. */
       readonly leftOut: ScreeningLeftOut;
+      /** The Medicare rows left out for a quarter outside the loaded content, never sent: the same three numbers. */
+      readonly outsideContent: ScreeningLeftOut;
+      /** Those rows' quarters, for this browser's sentence only; never sent. */
+      readonly outsideContentBands: readonly string[];
     }
   | { readonly ok: false; readonly messages: readonly string[]; readonly reasons: readonly ScreeningRejection[] };
 
@@ -207,13 +214,24 @@ function refused(message: string): ScreeningParse {
   return { ok: false, messages: [message], reasons: [] };
 }
 
-function refusedFor(reasons: readonly ScreeningRejection[], headers: readonly string[], total: number, leftOut?: ScreeningLeftOut): ScreeningParse {
-  const left = leftOut === undefined ? null : leftOutMessage(leftOut);
-  return { ok: false, messages: [...reasonMessages(reasons, headers, total), ...(left === null ? [] : [left])], reasons };
+function refusedFor(
+  reasons: readonly ScreeningRejection[],
+  headers: readonly string[],
+  total: number,
+  quarters: ContentQuarters,
+  left?: { readonly leftOut?: ScreeningLeftOut; readonly outsideContent?: ScreeningLeftOut; readonly outsideContentBands?: readonly string[] },
+): ScreeningParse {
+  const floor = left?.leftOut === undefined ? null : leftOutMessage(left.leftOut);
+  const outside = left?.outsideContent === undefined ? null : outsideContentMessage(left.outsideContent, left.outsideContentBands ?? [], quarters);
+  // Every row left out, some for the floor and some for their quarter: one sentence says nothing is left, and the two
+  // left-out lines say why, so the floor's "every row sums fewer than 11 claim lines" is not said of rows that do not.
+  const nothingLeft = reasons.some((reason) => reason.code === 'band_outside_content' && reason.row === undefined);
+  const shown = nothingLeft ? reasons.filter((reason) => !(reason.code === 'too_few_claim_lines' && reason.row === undefined)) : reasons;
+  return { ok: false, messages: [...reasonMessages(shown, headers, total - (reasons.length - shown.length)), ...(floor === null ? [] : [floor]), ...(outside === null ? [] : [outside])], reasons };
 }
 
-/** Reads and screens the bytes of a chosen file. */
-export function parseScreeningBytes(file: { readonly name: string; readonly type: string; readonly size: number }, bytes: Uint8Array, now: Date): ScreeningParse {
+/** Reads and screens the bytes of a chosen file; `contentQuarters` are the release's loaded content's quarters. */
+export function parseScreeningBytes(file: { readonly name: string; readonly type: string; readonly size: number }, bytes: Uint8Array, now: Date, contentQuarters: ContentQuarters): ScreeningParse {
   const before = fileProblem(file);
   if (before !== null) {
     return refused(before);
@@ -230,11 +248,19 @@ export function parseScreeningBytes(file: { readonly name: string; readonly type
     return refused(table.problem === 'unclosed_quote' ? FILE_MESSAGES.unclosedQuote : FILE_MESSAGES.textAfterQuote);
   }
   // The format's own screen, the server's rules: the header, then every row's shape, values, quarter and key.
-  const screened = screenTable(table.rows, now);
+  const screened = screenTable(table.rows, now, contentQuarters);
   if (!screened.ok) {
-    return refusedFor(screened.reasons, screened.headers, screened.total, screened.leftOut);
+    return refusedFor(screened.reasons, screened.headers, screened.total, contentQuarters, screened);
   }
-  return { ok: true, headers: screened.headers, rowCount: screened.rowCount, rows: screened.rows, leftOut: screened.leftOut };
+  return {
+    ok: true,
+    headers: screened.headers,
+    rowCount: screened.rowCount,
+    rows: screened.rows,
+    leftOut: screened.leftOut,
+    outsideContent: screened.outsideContent,
+    outsideContentBands: screened.outsideContentBands,
+  };
 }
 
 /**
@@ -249,11 +275,14 @@ export function clockOffset(serverTime: string, browserNow: number): number {
   return Number.isFinite(server) && Number.isFinite(browserNow) ? server - browserNow : 0;
 }
 
-/** Reads a chosen file in this browser and screens it; nothing is sent. `now` dates the current quarter. */
-export async function parseScreeningFile(file: File, now: Date = new Date()): Promise<ScreeningParse> {
+/**
+ * Reads a chosen file in this browser and screens it; nothing is sent. `now` dates the current quarter, and
+ * `contentQuarters` are the quarters of the content the release in force has loaded (the page's, from the server).
+ */
+export async function parseScreeningFile(file: File, now: Date, contentQuarters: ContentQuarters): Promise<ScreeningParse> {
   const before = fileProblem(file);
   if (before !== null) {
     return refused(before);
   }
-  return parseScreeningBytes(file, new Uint8Array(await file.arrayBuffer()), now);
+  return parseScreeningBytes(file, new Uint8Array(await file.arrayBuffer()), now, contentQuarters);
 }

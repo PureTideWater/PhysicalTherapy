@@ -2,7 +2,7 @@ import { cents } from '@tp/money';
 import { decodeScreeningRows } from '@tp/worker/screening-format';
 import { describe, expect, it } from 'vitest';
 
-import { leftOutMessage, reasonMessage } from './messages';
+import { leftOutMessage, outsideContentMessage, reasonMessage } from './messages';
 import {
   MAX_FILE_BYTES,
   type ScreeningParse,
@@ -21,7 +21,8 @@ import { TEMPLATE_NOTES, TEMPLATE_RULES, screeningTemplateCsv } from './template
 /**
  * The screening upload as the browser reads it (CO-04; decision D18 a): the file's own checks, its text as a table,
  * no hash of it, and (SCR-07) the rows of fewer than 11 claim lines it leaves out, never sent, with how many rows,
- * claim lines and dollars it left out. SYNTHETIC rows of totals, built here; no CSV is committed.
+ * claim lines and dollars it left out, and (SCR-16) the Medicare rows in quarters outside the release's loaded content it
+ * leaves out and counts the same way. SYNTHETIC rows of totals, built here; no CSV is committed.
  */
 
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -76,13 +77,16 @@ const NOW = new Date('2026-10-18T12:00:00Z');
 const HEADER = 'procedure_code,modifiers,units,place_of_service,payer_product,service_band,allowed_total,claim_count';
 const ROW_A = '97110,GP,1,11,ma_noncontracted,2026-Q1,600.00,40';
 const ROW_B = '97140,59 GP,1,11,medicare_ffs,2026-Q2,"2,500.00",50';
+/** The quarters release 900001's content is loaded for (its MUE and per-code MPPR records are 2026's). */
+const CONTENT = [{ from: '2026-Q1', to: '2026-Q4' }] as const;
+const NOTHING = { rows: 0, claimLines: 0, allowedCents: 0n };
 
 function csv(...lines: string[]): Uint8Array {
   return bytes(`${lines.join('\r\n')}\r\n`);
 }
 
 function parse(content: Uint8Array, name = 'totals.csv'): Promise<ScreeningParse> {
-  return Promise.resolve(parseScreeningBytes({ name, type: 'text/csv', size: content.length }, content, NOW));
+  return Promise.resolve(parseScreeningBytes({ name, type: 'text/csv', size: content.length }, content, NOW, CONTENT));
 }
 
 async function messages(content: Uint8Array): Promise<readonly string[]> {
@@ -102,10 +106,12 @@ describe('a clean file (CO-04)', () => {
       headers: HEADER.split(','),
       rowCount: 2,
       rows: ['97110\tGP\t1\t11\tma_noncontracted\t2026-Q1\t60000\t40', '97140\t59 GP\t1\t11\tmedicare_ffs\t2026-Q2\t250000\t50'].join('\n'),
-      leftOut: { rows: 0, claimLines: 0, allowedCents: 0n },
+      leftOut: NOTHING,
+      outsideContent: NOTHING,
+      outsideContentBands: [],
     });
     // What the browser sends is what the server decodes.
-    expect(result.ok && decodeScreeningRows(result.rows, NOW).ok).toBe(true);
+    expect(result.ok && decodeScreeningRows(result.rows, NOW, CONTENT).ok).toBe(true);
   });
 
   it('takes the common spellings of each column, in any order, as CSV or tab-separated text', async () => {
@@ -189,11 +195,11 @@ describe('the quarters dated by the serverâ€™s clock, never this computerâ€™s', 
 
   it('takes the current quarter on a computer whose clock is a year behind, and refuses the next on one a quarter ahead', () => {
     const content = csv(HEADER, '97110,GP,1,11,ma_noncontracted,2026-Q4,440.00,11');
-    const at = (browserNow: number) => parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: content.length }, content, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)));
+    const at = (browserNow: number) => parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: content.length }, content, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)), CONTENT);
     expect(at(Date.parse('2025-10-18T12:00:00Z'))).toMatchObject({ ok: true, rowCount: 1 });
     const ahead = csv(HEADER, '97110,GP,1,11,ma_noncontracted,2027-Q1,440.00,11');
     const browserNow = Date.parse('2027-01-15T12:00:00Z');
-    const refused = parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: ahead.length }, ahead, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)));
+    const refused = parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: ahead.length }, ahead, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)), CONTENT);
     expect(refused).toMatchObject({ ok: false, reasons: [{ code: 'band_in_future', row: 1, field: 'service_band' }] });
   });
 });
@@ -208,6 +214,8 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
       rowCount: 1,
       rows: '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t39600\t11',
       leftOut: { rows: 2, claimLines: 11, allowedCents: 136_001n },
+      outsideContent: NOTHING,
+      outsideContentBands: [],
     });
     // Nothing of a row left out is sent: neither its code nor its figures.
     expect(result.ok ? result.rows : '').not.toMatch(/97140|97530|36000|100001/);
@@ -226,7 +234,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     const one = await parse(csv(HEADER, kept, 'G0283,GP,1,22,ma_noncontracted,2025-Q3,136.84,3'));
     const other = await parse(csv(HEADER, kept, '97140,GP,1,11,medicare_ffs,2026-Q2,136.84,3'));
     expect(one.ok && other.ok).toBe(true);
-    expect(Object.keys(one).sort()).toEqual(['headers', 'leftOut', 'ok', 'rowCount', 'rows']);
+    expect(Object.keys(one).sort()).toEqual(['headers', 'leftOut', 'ok', 'outsideContent', 'outsideContentBands', 'rowCount', 'rows']);
     expect(one).toEqual(other);
   });
 
@@ -242,6 +250,65 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     ]);
     expect(reasonMessage({ code: 'too_few_claim_lines', row: 3, field: 'claim_count' })).toBe(
       'Row 3 sums fewer than 11 claim lines: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patientâ€™s care. Leave the row out.',
+    );
+  });
+});
+
+describe('SCR-16: a Medicare row in a quarter outside the loaded content is left out in the browser and counted (Q6 (a))', () => {
+  it('leaves out the Medicare rows of quarters before the content, after the floor, keeps every other productâ€™s rows, and says so with the quarters loaded', async () => {
+    const content = csv(
+      HEADER,
+      '97110,GP,1,11,medicare_ffs,2025-Q3,"1,200.00",20',
+      '97140,GP,1,11,ma_noncontracted,2025-Q4,800.00,15',
+      '97530,GP,1,11,medicare_ffs,2025-Q4,40.00,2',
+      '97110,GP,1,11,commercial,2025-Q4,900.00,30',
+      '97110,GP,1,11,medicare_ffs,2026-Q1,396.00,11',
+    );
+    const result = await parse(content);
+    expect(result).toEqual({
+      ok: true,
+      headers: HEADER.split(','),
+      rowCount: 2,
+      rows: ['97110\tGP\t1\t11\tcommercial\t2025-Q4\t90000\t30', '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t39600\t11'].join('\n'),
+      // The floor first: the 2-claim-line row is counted there only.
+      leftOut: { rows: 1, claimLines: 2, allowedCents: 4_000n },
+      outsideContent: { rows: 2, claimLines: 35, allowedCents: 200_000n },
+      outsideContentBands: ['2025-Q3', '2025-Q4'],
+    });
+    expect(result.ok ? result.rows : '').not.toMatch(/2025-Q3|120000|80000/);
+    expect(result.ok && outsideContentMessage(result.outsideContent, result.outsideContentBands, CONTENT)).toBe(
+      '2 rows (35 claim lines, $2,000.00) in quarters before 2026-Q1 were left out: PaidWhole has the Medicare content for 2026-Q1 to 2026-Q4 loaded.',
+    );
+  });
+
+  it('names several loaded runs, and quarters after the content or between its runs', () => {
+    const runs = [
+      { from: '2025-Q1', to: '2025-Q4' },
+      { from: '2026-Q2', to: '2026-Q4' },
+    ];
+    const one = { rows: 1, claimLines: 12, allowedCents: cents(50_000n) };
+    expect(outsideContentMessage(one, ['2026-Q1'], runs)).toBe(
+      '1 row (12 claim lines, $500.00) in a quarter outside the loaded content was left out: PaidWhole has the Medicare content for 2025-Q1 to 2025-Q4 and 2026-Q2 to 2026-Q4 loaded.',
+    );
+    expect(outsideContentMessage(one, ['2024-Q4'], runs)).toBe(
+      '1 row (12 claim lines, $500.00) in a quarter before 2025-Q1 was left out: PaidWhole has the Medicare content for 2025-Q1 to 2025-Q4 and 2026-Q2 to 2026-Q4 loaded.',
+    );
+    expect(outsideContentMessage({ rows: 3, claimLines: 40, allowedCents: cents(9_900n) }, ['2027-Q1'], [{ from: '2026-Q1', to: '2026-Q4' }])).toBe(
+      '3 rows (40 claim lines, $99.00) in quarters after 2026-Q4 were left out: PaidWhole has the Medicare content for 2026-Q1 to 2026-Q4 loaded.',
+    );
+    expect(outsideContentMessage(one, ['2026-Q1'], [])).toBe('1 row (12 claim lines, $500.00) was left out: PaidWhole has no Medicare content loaded yet.');
+    expect(outsideContentMessage({ rows: 0, claimLines: 0, allowedCents: cents(0n) }, [], runs)).toBeNull();
+  });
+
+  it('sends nothing when every row is left out, saying so once and counting each kind', async () => {
+    expect(await messages(csv(HEADER, '97110,GP,1,11,medicare_ffs,2025-Q4,600.00,40', '97140,GP,1,11,ma_noncontracted,2025-Q4,45.00,1'))).toEqual([
+      'Nothing is left to screen: every row was left out, as counted below.',
+      'Left out: 1 row of fewer than 11 claim lines, 1 claim line and $45.00 allowed in your file. It is not sent, and no figure includes it: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patientâ€™s care.',
+      '1 row (40 claim lines, $600.00) in a quarter before 2026-Q1 was left out: PaidWhole has the Medicare content for 2026-Q1 to 2026-Q4 loaded.',
+    ]);
+    // A row sent around the browser is named by its row on the server.
+    expect(reasonMessage({ code: 'band_outside_content', row: 7, field: 'service_band' })).toBe(
+      'Row 7, service band: PaidWhole has not loaded the Medicare content for that quarter, so a Medicare row in it cannot be screened.',
     );
   });
 });
@@ -360,8 +427,8 @@ describe('the file itself', () => {
 
   it('reads a chosen File by its bytes, refusing a spreadsheet by name before reading it', async () => {
     const content = csv(HEADER, ROW_A);
-    expect((await parseScreeningFile(new File([content as Uint8Array<ArrayBuffer>], 'totals.csv', { type: 'text/csv' }), NOW)).ok).toBe(true);
-    expect(await parseScreeningFile(new File([content as Uint8Array<ArrayBuffer>], 'totals.xlsx'), NOW)).toEqual({ ok: false, messages: [expect.stringMatching(/Save it as CSV/)], reasons: [] });
+    expect((await parseScreeningFile(new File([content as Uint8Array<ArrayBuffer>], 'totals.csv', { type: 'text/csv' }), NOW, CONTENT)).ok).toBe(true);
+    expect(await parseScreeningFile(new File([content as Uint8Array<ArrayBuffer>], 'totals.xlsx'), NOW, CONTENT)).toEqual({ ok: false, messages: [expect.stringMatching(/Save it as CSV/)], reasons: [] });
   });
 });
 
