@@ -19,7 +19,7 @@ import {
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { LocalKeyProvider, appDevLoginUrl, developmentMasterKey, openPool, provisionPracticeKey, withPracticeScope } from '@tp/db';
-import { asOwner } from '@tp/db/testing';
+import { asOwner, createPracticeWithLocation } from '@tp/db/testing';
 import { type JobPayload, type JobType, enqueue, singletonKey } from '@tp/worker/jobs';
 import { createPricingRun } from '@tp/worker/pricing';
 import { PgBoss } from 'pg-boss';
@@ -79,7 +79,8 @@ export async function journeyPractice(options: JourneyPracticeOptions): Promise<
     const key = await provisionPracticeKey(new LocalKeyProvider(developmentMasterKey()), id);
     const internal = await Promise.all(['contract-specialist', ...(options.supportFor ?? [])].map((persona) => userId(persona)));
     await asOwner(client, [id], async () => {
-      await client.query("INSERT INTO practice (id, organization_id, name, zip, data_key_ref, settings) VALUES ($1, $2, $3, '27601', $4, $5)", [id, organization, options.name, key.dataKeyRef, JSON.stringify(options.settings)]);
+      // With its pricing location (practice_site, PR 6b): ZIP 27601, as practice.zip was.
+      await createPracticeWithLocation(client, { id, organizationId: organization, name: options.name, dataKeyRef: key.dataKeyRef, zip: '27601', settings: options.settings as Readonly<Record<string, unknown>> });
       for (const kind of ['baa', 'engagement'] as const) {
         await client.query(
           `INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256)

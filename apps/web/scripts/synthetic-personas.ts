@@ -20,7 +20,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * administrator (who turns the kill switch on in the console) for the model features' journey, in a
  * practice of its own; and three billing managers of the other group for the ERA export journeys, in
  * practices of their own; and two billing managers of the other group and a reimbursement reviewer for the journey of a
- * submission sent without sign-off, in a practice of its own).
+ * submission sent without sign-off, in a practice of its own; and a platform administrator and two people of the other
+ * group for the pricing-location journey, in a group of its own the console creates).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -108,6 +109,12 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'unattested-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'unattested-approver', organization: 'other_group', role: 'billing_manager' },
   { key: 'unattested-reviewer', organization: 'internal', role: 'reviewer' },
+  // The pricing-location journey (audit #33, PR 6b): the platform administrator who creates its practices with their
+  // billing ZIPs, and two people of the other group the console adds to the journey's own group: its practice
+  // administrator, who confirms the billing ZIP, and a billing manager, who uploads and maps.
+  { key: 'location-admin', organization: 'internal', role: 'platform_admin' },
+  { key: 'location-practice-admin', organization: 'other_group', role: 'viewer' },
+  { key: 'location-manager', organization: 'other_group', role: 'billing_manager' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
+import { asOwner, createPracticeWithLocation } from '@tp/db/testing';
 import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail } from '../scripts/synthetic-personas';
@@ -94,11 +96,11 @@ test('a viewer reads the receipts but cannot upload: the permission state says w
 test('uploads stay disabled, with the reason, until the practice’s BAA is on file (J1)', async ({ page }) => {
   // A new practice of the same group, with no agreement on file yet.
   const east = await withDatabase(async (client) => {
-    const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO practice (organization_id, name, data_key_ref)
-       SELECT organization_id, 'SYNTHETIC PHYSICAL THERAPY EAST', data_key_ref FROM practice WHERE name = 'SYNTHETIC PHYSICAL THERAPY NORTH' RETURNING id`,
-    );
-    return rows[0]?.id ?? '';
+    const north = (await client.query<{ organization_id: string; data_key_ref: string }>("SELECT organization_id, data_key_ref FROM practice WHERE name = 'SYNTHETIC PHYSICAL THERAPY NORTH'")).rows[0];
+    const id = randomUUID();
+    // Created with its pricing location, as every practice is (practice_has_site, PR 6b).
+    await asOwner(client, [id], () => createPracticeWithLocation(client, { id, organizationId: north?.organization_id ?? '', name: 'SYNTHETIC PHYSICAL THERAPY EAST', dataKeyRef: north?.data_key_ref ?? '' }));
+    return id;
   });
   await signInWithTotp(page, 'analyst');
   await page.goto(`/p/${east}/uploads`);

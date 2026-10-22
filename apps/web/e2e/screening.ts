@@ -13,7 +13,8 @@ import type { OutboxMessage } from './outbox';
  * patient's), the worker's two screening jobs run once on an operator pool of the e2e database (the login switches to
  * tp_operator in each transaction, as the platform worker's does), and the prospect's emails as the local outbox
  * holds them. The ZIP is release 900001's locality ZIP that
- * needs no ZIP+4 (00011); every code is one the release's SYNTHETIC fee schedule prices, in its 2026 quarters.
+ * needs no ZIP+4 (00011); every code is one the release's SYNTHETIC fee schedule prices, in its 2026 quarters (the one
+ * row of 2025, OUTSIDE_ROWS, is the browser's to leave out).
  */
 
 export const SCREENING_ZIP = '00011';
@@ -56,6 +57,16 @@ export const SMALL_ROWS: readonly ScreeningCsvRow[] = [
 
 /** What the browser counts of SMALL_ROWS, and the result shows: 2 rows, 11 claim lines, $436.84. */
 export const SMALL_LEFT_OUT = { rows: 2, claimLines: 11, allowedCents: 43_684n, allowed: '$436.84' } as const;
+
+/**
+ * A Medicare row in a quarter before release 900001's loaded MPPR and MUE content (2026): the browser leaves it out and
+ * counts it, apart from the small rows, and says which quarters are loaded (audit #7; the founder's answer of 2026-10-21
+ * to PR 6b's Q6 (a)). Its code and quarter are in no other row, so a request that carried it would show it.
+ */
+export const OUTSIDE_ROWS: readonly ScreeningCsvRow[] = [['97035', '', '1', '11', 'medicare_ffs', '2025-Q4', '412.00', '12']];
+
+/** What the browser counts of OUTSIDE_ROWS, and the result shows: 1 row, 12 claim lines, $412.00. */
+export const OUTSIDE_LEFT_OUT = { rows: 1, claimLines: 12, allowedCents: 41_200n, allowed: '$412.00' } as const;
 
 /** Rows as CSV lines, each CRLF-terminated as a spreadsheet writes it, quoting a cell with a comma. */
 export function screeningRowsCsv(rows: readonly (readonly string[])[]): Buffer {
