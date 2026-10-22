@@ -2,14 +2,14 @@
 # The worker image: one bundled ESM file (apps/worker/build.ts). Build from the repository root:
 #   docker build -f apps/worker/Dockerfile -t tp-worker .
 
-FROM node:24-slim AS build
+FROM node:25-slim AS build
 RUN npm install --global pnpm@10.28.0
 WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/worker..."
 RUN pnpm --filter @tp/worker build
 
-FROM node:24-slim AS runtime
+FROM node:25-slim AS runtime
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
