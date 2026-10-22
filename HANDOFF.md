@@ -71,7 +71,7 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 - **Disk:** clear finished review clones under the scratchpad when free space drops below about 8 GB.
 
 **Weekly usage (founder):**
-- Readings: 24% (Wed 00:15 UTC), 35% (Wed 12:40), 41% (Wed 19:55), 44% (Wed 22:51), 52% (Thu 2026-10-22 06:50). The reset is Tuesday at 10:00 the founder's time (founder, 2026-10-22 ~16:55 UTC), which is 14:00 UTC if that is US Eastern (EDT until 2026-11-01); the next is 2026-10-27.
+- Readings: 24% (Wed 00:15 UTC), 35% (Wed 12:40), 41% (Wed 19:55), 44% (Wed 22:51), 52% (Thu 2026-10-22 06:50). The reset is Tuesday at 10:00 the founder's time (founder, 2026-10-22 ~16:53 UTC), which is 14:00 UTC if that is US Eastern (EDT until 2026-11-01); the next is 2026-10-27.
 - That is ahead of the ~11%-a-day pace (about 31% a day after the reset). Since Thursday: one heavy run at a time, about 5% a day, so the ~80% line is not reached before Tuesday.
 - Ask the founder for the % and the reset time at session start and before each heavy run. Start no new heavy run past about 80%, never cut a run off mid-way, and keep every quality stage.
 
