@@ -196,8 +196,11 @@ recommended answer accepted):
   request adds windows, NPIs and therapists per location and drops the unique index.
 - **Q3 (a):** `rule_record`'s record-type CHECK takes `locality_map_plus_four`, a granted exception to
   reconciliation-001's rule-table check. It is the migration's one statement on a rule table, and
-  `tools/engine-freeze/exception.json` (rewritten for this pull request: no engine file, no golden file) names it
-  exactly as `check.ts` prints it. A closed-list test holds `RULE_RECORD_TYPES` equal to the CHECK's 17 values.
+  `tools/engine-freeze/exception.json` (rewritten for this pull request in PR 6b-1's format: `pull_request` 36, no
+  engine file, no golden file) names it exactly as `check.ts` prints it, its one `rule_table_ddl` entry; the rule
+  tables' catalog snapshot (`tools/engine-freeze/rule-tables.catalog.json`) is regenerated for the widened CHECK by
+  `rule-tables.db.test.ts`'s update path, and `check.ts` lets the snapshot change only under that entry. A closed-list
+  test holds `RULE_RECORD_TYPES` equal to the CHECK's 17 values.
 - **Q5 (a):** the permission `pricing_settings.set` for the practice administrator, the billing manager (a firm's under
   a grant, as it signs off contracts) and so the firm principal; the reimbursement reviewer is denied it, as every
   write. A granted exception to "the permission matrix changes only in PR 14"; one of the pull request's two
