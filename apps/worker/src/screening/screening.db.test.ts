@@ -182,6 +182,18 @@ async function rewind(sql: string, values: unknown[]): Promise<void> {
 }
 
 /**
+ * Sets runs to 50,000 rows as the superuser, and their uploads' entries in the day's tally with them (the tier sums
+ * the tally, not the runs): each entry is the one its submission wrote, the run's account at the run's creation.
+ */
+async function worstShape(runIds: readonly string[]): Promise<void> {
+  await rewind(
+    `WITH run AS (UPDATE screening_run SET row_count = 50000 WHERE id = ANY ($1) RETURNING rate_subject, created_at)
+     UPDATE screening_queue_tally t SET row_count = 50000 FROM run WHERE t.rate_subject = run.rate_subject AND t.created_at = run.created_at`,
+    [runIds],
+  );
+}
+
+/**
  * Makes a run being priced stale: nothing has moved its progress for more than 2 minutes (migration 20261106090000), its
  * claim and its progress moved back together as the superuser.
  */
@@ -719,7 +731,7 @@ describe('the consumer’s pricing (migration 20261106090000; PR 6b-3)', () => {
   it('logs a run of the waiting tier apart, with its reason’s code, so the promise’s alarm never counts it', async () => {
     const subject = createHash('sha256').update(`account:${randomUUID()}`).digest('hex');
     const earlier = [await submit({ subject }), await submit({ subject })];
-    await rewind('UPDATE screening_run SET row_count = 50000 WHERE id = ANY ($1)', [earlier]);
+    await worstShape(earlier);
     const waiting = await submit({ subject });
     expect((await owner.query('SELECT wait_reason, queue_priority FROM screening_run WHERE id = $1', [waiting])).rows).toEqual([{ wait_reason: 'account_share', queue_priority: -1 }]);
     lines = [];
@@ -747,9 +759,9 @@ describe('the consumer’s pricing (migration 20261106090000; PR 6b-3)', () => {
     } as unknown as JobSender;
     const subject = createHash('sha256').update(`account:${randomUUID()}`).digest('hex');
     const normal = await submit({ subject, received: new Date(Date.now() - 30_000) });
-    await rewind('UPDATE screening_run SET row_count = 50000 WHERE id = $1', [normal]);
+    await worstShape([normal]);
     const second = await submit({ subject });
-    await rewind('UPDATE screening_run SET row_count = 50000 WHERE id = $1', [second]);
+    await worstShape([second]);
     const waiting = await submit({ subject });
     const exhausted = await submit({ email: 'prospect.sweep.exhausted@synthetic.test' });
     await rewind("UPDATE screening_run SET status = 'pricing', attempts = 3, started_at = now() - interval '3 minutes', progress_at = now() - interval '3 minutes' WHERE id = $1", [exhausted]);
@@ -757,11 +769,11 @@ describe('the consumer’s pricing (migration 20261106090000; PR 6b-3)', () => {
     const mail = new MemoryMailSender();
     const first = await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 });
     const mine = (runIds: readonly string[]) => sent.filter((send) => runIds.includes((send.data as { screening_run_id: string }).screening_run_id));
-    // In pg-boss's order: the normal tier first, oldest first, then the waiting tier.
-    expect(mine([normal, second, waiting]).map((send) => [(send.data as { screening_run_id: string }).screening_run_id, send.options])).toEqual([
-      [normal, { singletonKey: `screening_price:${normal}`, priority: 0, heartbeatSeconds: 60 }],
-      [second, { singletonKey: `screening_price:${second}`, priority: 0, heartbeatSeconds: 60 }],
-      [waiting, { singletonKey: `screening_price:${waiting}`, priority: -1, heartbeatSeconds: 60 }],
+    // In pg-boss's order: the normal tier first, oldest first, then the waiting tier, on its own queue.
+    expect(mine([normal, second, waiting]).map((send) => [send.name, (send.data as { screening_run_id: string }).screening_run_id, send.options])).toEqual([
+      ['screening_price', normal, { singletonKey: `screening_price:${normal}`, priority: 0, heartbeatSeconds: 60 }],
+      ['screening_price', second, { singletonKey: `screening_price:${second}`, priority: 0, heartbeatSeconds: 60 }],
+      ['screening_price_waiting', waiting, { singletonKey: `screening_price:${waiting}`, priority: -1, heartbeatSeconds: 60 }],
     ]);
     expect(first.failed).toBe(1);
     expect((await owner.query('SELECT status, failure_code FROM screening_run WHERE id = $1', [exhausted])).rows).toEqual([{ status: 'failed', failure_code: 'PRICING_ATTEMPTS_EXHAUSTED' }]);
