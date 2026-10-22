@@ -128,7 +128,7 @@
       "id": "billing",
       "title": "Billing and onboarding",
       "dictionary": "Operations (no PHI by design)",
-      "about": "Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice).",
+      "about": "Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice).",
       "tables": [
         "subscription",
         "subscription_claim",
@@ -144,6 +144,7 @@
         "screening_upload",
         "place_of_service_split",
         "screening_run",
+        "screening_queue_tally",
         "screening_result",
         "screening_outcome",
         "screening_lead",

@@ -95,6 +95,9 @@ interface Submission {
   readonly received?: Date | null;
   readonly zip?: string;
   readonly rows?: readonly Row[];
+  /** The practice's name and the contact address: a later screening with either the same name and ZIP or the same address replaces this one. */
+  readonly practice?: string;
+  readonly email?: string;
 }
 
 const SUBMIT = `SELECT submit_screening(${Array.from({ length: 30 }, (_, index) => `$${String(index + 1)}`).join(', ')}) AS run_id`;
@@ -102,11 +105,11 @@ const SUBMIT = `SELECT submit_screening(${Array.from({ length: 30 }, (_, index) 
 function submitValues(submission: Submission = {}): unknown[] {
   const rows = submission.rows ?? [ROW];
   return [
-    `Synthetic Therapy Group ${letters()}`,
+    submission.practice ?? `Synthetic Therapy Group ${letters()}`,
     'MN',
     submission.zip ?? '00011',
     null,
-    `prospect.${letters()}@synthetic.test`,
+    submission.email ?? `prospect.${letters()}@synthetic.test`,
     rows.map((row) => row[0]),
     rows.map((row) => row[1]),
     rows.map((row) => row[2]),
@@ -146,15 +149,48 @@ async function placeOf(runId: string): Promise<{ wait_reason: string | null; que
   return rows[0] ?? { wait_reason: 'missing', queue_priority: 1 };
 }
 
-/** Sets a run's row count as the superuser (a 50,000-row upload costs seconds to send; the tier sums row counts). */
+/**
+ * Sets a run's row count as the superuser, and its upload's entry in the day's tally with it (a 50,000-row upload
+ * costs seconds to send; the tier sums the tally). The entry is the one its submission wrote: the run's account, at
+ * the run's creation (both are its submission transaction's now()).
+ */
 async function sized(runId: string, rowCount: number): Promise<void> {
-  await rewind('UPDATE screening_run SET row_count = $2 WHERE id = $1', [runId, rowCount]);
+  await rewind(
+    `WITH run AS (UPDATE screening_run SET row_count = $2 WHERE id = $1 RETURNING rate_subject, created_at)
+     UPDATE screening_queue_tally t SET row_count = $2 FROM run WHERE t.rate_subject = run.rate_subject AND t.created_at = run.created_at`,
+    [runId, rowCount],
+  );
 }
 
-/** The normal tier's rows today, as the tier sums them. */
+/** Moves a run and its tally entry a day back (-1) or forward (1), as the superuser: a run of another UTC day. */
+async function shiftDay(runId: string, days: -1 | 1): Promise<void> {
+  await rewind(
+    `WITH run AS (
+       UPDATE screening_run SET created_at = created_at + make_interval(days => $2), expires_at = expires_at + make_interval(days => $2),
+                                received_at = received_at + make_interval(days => $2)
+        WHERE id = $1 RETURNING rate_subject, created_at - make_interval(days => $2) AS was)
+     UPDATE screening_queue_tally t SET created_at = t.created_at + make_interval(days => $2) FROM run WHERE t.rate_subject = run.rate_subject AND t.created_at = run.was`,
+    [runId, days],
+  );
+}
+
+/** A new UTC day for the sums: every run and tally entry of today moved to yesterday, as the superuser. */
+async function newDay(): Promise<void> {
+  const today = (await admin.query<{ id: string }>("SELECT id FROM screening_run WHERE created_at >= date_trunc('day', now(), 'UTC')")).rows;
+  for (const { id } of today) {
+    await rewind(
+      `UPDATE screening_run SET created_at = created_at - interval '1 day', expires_at = expires_at - interval '1 day', received_at = received_at - interval '1 day'
+        WHERE id = $1`,
+      [id],
+    );
+  }
+  await rewind("UPDATE screening_queue_tally SET created_at = created_at - interval '1 day' WHERE created_at >= date_trunc('day', now(), 'UTC')", []);
+}
+
+/** The normal tier's rows today, as the tier sums them: every normal upload's, a replaced one's too. */
 async function normalRowsToday(): Promise<number> {
   const { rows } = await admin.query<{ rows: number }>(
-    "SELECT coalesce(sum(row_count), 0)::integer AS rows FROM screening_run WHERE wait_reason IS NULL AND created_at >= date_trunc('day', now(), 'UTC')",
+    "SELECT coalesce(sum(row_count), 0)::integer AS rows FROM screening_queue_tally WHERE wait_reason IS NULL AND created_at >= date_trunc('day', now(), 'UTC')",
   );
   return rows[0]?.rows ?? 0;
 }
@@ -321,17 +357,9 @@ describe('SCR-17: the queue’s order, by the account’s share and the day’s 
     const other = await submit();
     expect(await placeOf(other)).toEqual({ wait_reason: null, queue_priority: 0 });
     // A run of another day is not today's: moved to yesterday, the heavy account's first leaves its sum.
-    await rewind(
-      `UPDATE screening_run SET created_at = created_at - interval '1 day', expires_at = expires_at - interval '1 day', received_at = received_at - interval '1 day'
-        WHERE id = $1`,
-      [first],
-    );
+    await shiftDay(first, -1);
     expect(await placeOf(await submit({ subject: heavy }))).toEqual({ wait_reason: null, queue_priority: 0 });
-    await rewind(
-      `UPDATE screening_run SET created_at = created_at + interval '1 day', expires_at = expires_at + interval '1 day', received_at = received_at + interval '1 day'
-        WHERE id = $1`,
-      [first],
-    );
+    await shiftDay(first, 1);
     expect(await placeOf(await submit({ subject: heavy }))).toEqual({ wait_reason: 'account_share', queue_priority: -3 });
 
     // The cap counts the normal tier alone: the heavy account's waiting runs, made as large as runs go, count for nothing.
@@ -355,6 +383,52 @@ describe('SCR-17: the queue’s order, by the account’s share and the day’s 
     await expect(rewind('UPDATE screening_run SET queue_priority = -21 WHERE id = $1', [fifth])).rejects.toMatchObject({ code: '23514', constraint: 'screening_run_priority' });
   });
 
+  it('counts an upload that a later one replaced: one address and practice resubmitting 50,000-row files waits at 0, 0, -1 and -2', { timeout: 180_000 }, async () => {
+    // Real 50,000-row uploads, nothing resized: a later screening of the same practice deletes the earlier one with its
+    // run (screening_replaced), and the account's share still counts every file it sent today.
+    // The earlier test took the day past the cap: a new one, so these uploads are judged by their account's share.
+    await newDay();
+    // 50,000 distinct rows (a run keeps a row once): commercial rows, which no pricing reads, by their units and quarter.
+    const rows = Array.from({ length: 50_000 }, (_, index): Row => [
+      '97110',
+      '',
+      (index % 999) + 1,
+      '11',
+      'commercial',
+      `20${String(14 + Math.floor(Math.floor(index / 999) / 4))}-Q${String((Math.floor(index / 999) % 4) + 1)}`,
+      10_000n,
+      11,
+    ]);
+    const mailbox = { subject: account(), practice: `Synthetic Repeat Clinic ${letters()}`, email: `repeat.${letters()}@synthetic.test`, rows };
+    const places = [];
+    for (let file = 0; file < 4; file += 1) {
+      places.push(await placeOf(await submit(mailbox)));
+    }
+    expect(places).toEqual([
+      { wait_reason: null, queue_priority: 0 },
+      { wait_reason: null, queue_priority: 0 },
+      { wait_reason: 'account_share', queue_priority: -1 },
+      { wait_reason: 'account_share', queue_priority: -2 },
+    ]);
+    // One screening of the practice is kept; the tally holds all four uploads, by the keyed subject and numbers alone.
+    expect((await admin.query('SELECT count(*)::integer AS n FROM screening_run WHERE rate_subject = $1', [mailbox.subject])).rows).toEqual([{ n: 1 }]);
+    expect(
+      (await admin.query('SELECT row_count, wait_reason FROM screening_queue_tally WHERE rate_subject = $1 ORDER BY created_at', [mailbox.subject])).rows,
+    ).toEqual([
+      { row_count: 50_000, wait_reason: null },
+      { row_count: 50_000, wait_reason: null },
+      { row_count: 50_000, wait_reason: 'account_share' },
+      { row_count: 50_000, wait_reason: 'account_share' },
+    ]);
+    // A practice screened again under new addresses of the same account (a firm's domain) is the same account's.
+    const firm = { subject: account(), practice: `Synthetic Rescreened Clinic ${letters()}`, rows };
+    const again = [];
+    for (let file = 0; file < 3; file += 1) {
+      again.push(await placeOf(await submit({ ...firm, email: `staff${String(file)}.${letters()}@synthetic.test` })));
+    }
+    expect(again.map((place) => place.queue_priority)).toEqual([0, 0, -1]);
+  });
+
   it('gives due runs, the queue’s gauge and a run’s wait in pg-boss’s order: the higher priority first, then the older', async () => {
     const queued = (
       await admin.query<{ id: string; queue_priority: number; received_at: Date }>(
@@ -365,8 +439,8 @@ describe('SCR-17: the queue’s order, by the account’s share and the day’s 
     expect(queued.length).toBeLessThanOrEqual(100);
     const due = await as<{ run_id: string; status: string; attempts: number; queue_priority: number }>(SCREENING_ROLE, 'SELECT * FROM operator_screening_due(0, 100)');
     expect(due.map((row) => [row.run_id, row.queue_priority])).toEqual(queued.map((row) => [row.id, row.queue_priority]));
-    // Queued for less than the age asked: left to their own job.
-    expect(await as(SCREENING_ROLE, 'SELECT * FROM operator_screening_due(3600, 100)')).toEqual([]);
+    // Queued for less than the age asked: left to their own job (two days: the runs an earlier test moved to yesterday).
+    expect(await as(SCREENING_ROLE, 'SELECT * FROM operator_screening_due(172800, 100)')).toEqual([]);
 
     // A run's wait: its own two values, the runs being priced, and the queued runs taken before it.
     for (const [index, run] of [0, 7, queued.length - 1].map((at) => [at, queued[at]] as const)) {
@@ -387,6 +461,43 @@ describe('SCR-17: the queue’s order, by the account’s share and the day’s 
     await expect(as(APP_ROLE, 'SELECT * FROM operator_screening_queue()')).rejects.toMatchObject({ code: '42501' });
     await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_queue()')).rejects.toMatchObject({ code: '42501' });
     await expect(as(SCREENING_ROLE, 'SELECT * FROM screening_wait($1)', [normal[0]?.id])).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('counts a normal upload that a later one replaced in the day’s cap, and keeps the tally to itself and for good until the day after', { timeout: 120_000 }, async () => {
+    await newDay();
+    expect(await normalRowsToday()).toBe(0);
+    // Normal uploads to one row short of the cap, the last of them one practice's 50,000.
+    const practice = { practice: `Synthetic Capped Clinic ${letters()}`, email: `capped.${letters()}@synthetic.test` };
+    for (let rows = await normalRowsToday(); rows < CAP - 1 - 50_000; rows = await normalRowsToday()) {
+      await sized(await submit(), Math.min(50_000, CAP - 1 - 50_000 - rows));
+    }
+    await sized(await submit(practice), 50_000);
+    expect(await normalRowsToday()).toBe(CAP - 1);
+    // The practice screened again with one row: it replaces the 50,000-row screening, whose rows still count: the cap.
+    expect(await placeOf(await submit(practice))).toEqual({ wait_reason: null, queue_priority: 0 });
+    expect(await normalRowsToday()).toBe(CAP);
+    const capped = await submit();
+    expect(await placeOf(capped)).toEqual({ wait_reason: 'daily_cap', queue_priority: -1 });
+
+    // The tally is the owner's alone: no role reads or writes it, an entry never changes, and one goes only once the
+    // UTC day after its own has ended (operator_screening_expire()).
+    for (const role of [APP_ROLE, OPERATOR_ROLE, SCREENING_ROLE]) {
+      await expect(as(role, 'SELECT count(*) FROM screening_queue_tally'), role).rejects.toMatchObject({ code: '42501' });
+    }
+    await expect(admin.query('UPDATE screening_queue_tally SET row_count = 1')).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query('DELETE FROM screening_queue_tally')).rejects.toMatchObject({ code: '23514', constraint: 'screening_queue_tally_kept' });
+    await expect(admin.query('TRUNCATE screening_queue_tally')).rejects.toMatchObject({ code: 'P0001' });
+    const before = (await admin.query<{ n: number }>('SELECT count(*)::integer AS n FROM screening_queue_tally')).rows[0]?.n ?? 0;
+    // The last upload's entry, made the day before yesterday's: the expiry deletes it, and nothing of yesterday or today.
+    await rewind(
+      `UPDATE screening_queue_tally t SET created_at = date_trunc('day', now(), 'UTC') - interval '1 day' - interval '1 second'
+         FROM screening_run r WHERE r.id = $1 AND t.rate_subject = r.rate_subject AND t.created_at = r.created_at`,
+      [capped],
+    );
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_expire(1000, $1)', [`test-${randomUUID()}`]);
+    // Yesterday's entries stay (today's sums never reach them, but a day's turn is kept whole); the one before went.
+    expect((await admin.query<{ n: number }>('SELECT count(*)::integer AS n FROM screening_queue_tally')).rows[0]?.n).toBe(before - 1);
+    expect((await admin.query("SELECT count(*)::integer AS n FROM screening_queue_tally WHERE created_at < date_trunc('day', now(), 'UTC') - interval '1 day'")).rows).toEqual([{ n: 0 }]);
   });
 
   it('keeps a run’s receipt, account and place in the queue for good', async () => {
@@ -467,12 +578,46 @@ describe('staleness: 2 minutes without progress, the claim and each recorded bat
     expect((await progressOf(runId)).attempts).toBe(2);
     // The attempt it overtook records nothing more.
     await expect(record(runId, 1)).rejects.toMatchObject({ code: '23514', constraint: 'screening_run_attempt' });
-    // The 2 minutes are the same everywhere: the claim's and due's (the worker holds SCREENING_STALE_SECONDS to them).
-    const bodies = (await admin.query<{ body: string }>("SELECT prosrc AS body FROM pg_proc WHERE proname IN ('operator_screening_claim', 'operator_screening_due')")).rows;
-    expect(bodies).toHaveLength(2);
+    // The 2 minutes are the same everywhere: the claim's, due's and the sweep's fail's (the worker holds
+    // SCREENING_STALE_SECONDS to them).
+    const bodies = (
+      await admin.query<{ body: string }>("SELECT prosrc AS body FROM pg_proc WHERE proname IN ('operator_screening_claim', 'operator_screening_due', 'operator_screening_fail')")
+    ).rows;
+    expect(bodies).toHaveLength(3);
     for (const { body } of bodies) {
       expect(body.match(/interval '[^']*'/g)).toEqual(["interval '2 minutes'"]);
     }
+  });
+
+  it('fails a run out of attempts only if it is still stale under the lock: a batch its third attempt recorded after the sweep read it keeps it priced', async () => {
+    const runId = await submit({ rows: [ROW, ['97110', '', 1, '11', 'ma_noncontracted', '2026-Q2', 2_000n, 11]] });
+    expect(await claim(runId)).toBe(1);
+    await idle(runId, 121);
+    expect(await claim(runId)).toBe(2);
+    await idle(runId, 121);
+    expect(await claim(runId)).toBe(3);
+    await idle(runId, 121);
+    // The sweep reads it due and out of attempts (resendScreeningRuns), and is about to fail it.
+    const due = await as<{ run_id: string; attempts: number }>(SCREENING_ROLE, 'SELECT run_id, attempts FROM operator_screening_due(0, 100)');
+    expect(due).toContainEqual({ run_id: runId, attempts: 3 });
+    // Meanwhile the third attempt, slow but alive, records a batch: its progress is now.
+    expect(await record(runId, 3)).toBe(2);
+    const exhausted = () => as<{ contact_email: string }>(SCREENING_ROLE, "SELECT contact_email FROM operator_screening_fail($1, 'PRICING_ATTEMPTS_EXHAUSTED', $2, NULL)", [runId, `test-${randomUUID()}`]);
+    // The sweep's fail names no attempt: under the run's lock it finds the run fresh, and fails nothing.
+    expect(await exhausted()).toEqual([]);
+    expect((await progressOf(runId)).status).toBe('pricing');
+    // Not out of attempts, a stale run is not the sweep's to fail either: it is claimed again.
+    const second = await submit();
+    expect(await claim(second)).toBe(1);
+    await idle(second, 121);
+    expect(await as(SCREENING_ROLE, "SELECT * FROM operator_screening_fail($1, 'PRICING_ATTEMPTS_EXHAUSTED', $2, NULL)", [second, `test-${randomUUID()}`])).toEqual([]);
+    // Stale again and still out of attempts: the sweep's fail takes it, and tells its contact.
+    await idle(runId, 121);
+    expect(await exhausted()).toHaveLength(1);
+    expect((await progressOf(runId)).status).toBe('failed');
+    // A queued run, never claimed, fails by the sweep as before (no staleness to judge).
+    const queued = await submit();
+    expect(await as(SCREENING_ROLE, "SELECT * FROM operator_screening_fail($1, 'EXPIRED', $2, NULL)", [queued, `test-${randomUUID()}`])).toHaveLength(1);
   });
 
   it('lets the attempt that claimed a run move its progress forward and nothing else, and no one move it back', async () => {
@@ -539,7 +684,50 @@ describe('the release read: by the record-type index, the six keyed types left o
   });
 });
 
-describe('D7: submit_screening() is migration 20261105090000’s but for the receipt, the account and the tier', () => {
+describe('the keyed read: by rule_record_identity, whatever rule_record\'s statistics', () => {
+  /** The plans of every statement `sql` runs, nested ones included, as auto_explain gives them in one session. */
+  async function nestedPlans(sql: string, values: unknown[]): Promise<string[]> {
+    const client = await admin.connect();
+    const plans: string[] = [];
+    const listen = (notice: { message?: string }) => {
+      plans.push(notice.message ?? '');
+    };
+    client.on('notice', listen);
+    try {
+      await client.query("LOAD 'auto_explain'");
+      await client.query('SET auto_explain.log_min_duration = 0');
+      await client.query('SET auto_explain.log_nested_statements = on');
+      await client.query("SET auto_explain.log_level = 'notice'");
+      await client.query("SET auto_explain.log_format = 'json'");
+      await client.query('SET client_min_messages = notice');
+      await client.query(sql, values);
+    } finally {
+      client.off('notice', listen);
+      await client.query('RESET ALL');
+      client.release(true);
+    }
+    return plans;
+  }
+
+  it('reads a run\'s keyed records by the identity index, never a scan of the release, and tells the planner the run\'s key set is one row', async () => {
+    const runId = await submit();
+    expect(await claim(runId)).toBe(1);
+    // With rule_record analyzed (the release loader analyzes and freezes it once a release is loaded): CI's capacity
+    // run on 9eb4474 read a release just loaded, before any ANALYZE, in S1, its first scenario, where each keyed read
+    // hash-joined all 2.2 million records of the release, setting each page's hint bits as it went, and S1-1 recorded no
+    // batch for five minutes (tools/release/load.db.test.ts holds the loader to it).
+    const plans = (await nestedPlans('SELECT count(*) FROM operator_screening_run_records($1)', [runId])).filter((plan) => plan.includes('rule_record'));
+    expect(plans.length).toBeGreaterThanOrEqual(1);
+    const keyed = plans.join('\n');
+    expect(keyed).toMatch(/rule_record_identity/);
+    expect(keyed).not.toMatch(/"Node Type": "(?:Hash Join|Merge Join)"/);
+    expect(keyed).not.toMatch(/"Node Type": "(?:Seq Scan|Bitmap Heap Scan)",[^{}]*"Relation Name": "rule_record"/);
+    // The run's key set is one row (the run, by its key), not the 1,000 the planner assumes of a function by default.
+    expect((await admin.query("SELECT prorows FROM pg_proc WHERE proname = 'operator_screening_run_keys'")).rows).toEqual([{ prorows: 1 }]);
+  });
+});
+
+describe('D7: submit_screening() is migration 20261105090000’s but for the receipt, the account, the tier and the day’s tally', () => {
   /** The CREATE FUNCTION submit_screening(...) statement a migration file holds. */
   function submitStatement(file: string): string {
     const text = readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
@@ -550,18 +738,27 @@ describe('D7: submit_screening() is migration 20261105090000’s but for the rec
     return text.slice(start, end + 4);
   }
 
-  it('differs from it in the two parameters before request and the run’s four new values alone, and is the body the database holds', async () => {
+  it('differs from it in the two parameters before request, the run’s four new values and its entry in the tally alone, and is the body the database holds', async () => {
     const before = submitStatement(LOCATION_MIGRATION);
     const after = submitStatement(CONSUMER_MIGRATION);
     const signature = ['terms_sha256 text, request text) RETURNS uuid', 'terms_sha256 text, received timestamptz,\n  rate_account_subject text, request text) RETURNS uuid'] as const;
     const run = [
       `    INSERT INTO screening_run (upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count)
-    SELECT upload.id, in_force, manifest, split, n FROM upload`,
+    SELECT upload.id, in_force, manifest, split, n FROM upload
+    RETURNING id
+  ), uploaded AS (`,
       `    INSERT INTO screening_run (upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count, received_at, rate_subject,
                                wait_reason, queue_priority)
     SELECT upload.id, in_force, manifest, split, n, least(greatest(coalesce(received, now()), now() - interval '10 minutes'), now()), rate_account_subject,
            tier.wait_reason, tier.queue_priority
-      FROM upload, screening_queue_tier(rate_account_subject, n) tier`,
+      FROM upload, screening_queue_tier(rate_account_subject, n) tier
+    RETURNING id, wait_reason
+  ), tallied AS (
+    -- The upload in the day's tally (Q7): the account's share and the cap count it even once a later screening of
+    -- the same practice or address replaces this one and deletes its run.
+    INSERT INTO screening_queue_tally (rate_subject, row_count, wait_reason)
+    SELECT rate_account_subject, n, run.wait_reason FROM run
+  ), uploaded AS (`,
     ] as const;
     for (const [old] of [signature, run]) {
       expect(before.split(old).length, old).toBe(2);

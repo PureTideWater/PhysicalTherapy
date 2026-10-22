@@ -203,12 +203,29 @@ export const screeningRun = pgTable(
   },
   (table) => [
     index('screening_run_by_status').on(table.status, table.createdAt),
-    index('screening_run_created_at').on(table.createdAt),
-    index('screening_run_account_day').on(table.rateSubject, table.createdAt),
     index('screening_run_waiting')
       .on(table.queuePriority.desc(), table.createdAt)
       .where(sql`status = 'queued'`),
   ],
+);
+
+/**
+ * The day's uploads as the queue's sums count them (Q7; migration 20261106090000): one append-only entry per accepted
+ * upload, the account's keyed subject, its rows and its tier, kept until the UTC day after its own has ended. A later
+ * screening that replaces an earlier one deletes its run, never its entry, so the account's share and the day's cap
+ * count every upload. The owner's alone: no role reads it.
+ */
+export const screeningQueueTally = pgTable(
+  'screening_queue_tally',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The rate limiter's keyed HMAC of the screening bucket's account, as the run keeps it (64 hex). */
+    rateSubject: text('rate_subject').notNull(),
+    rowCount: integer('row_count').notNull(),
+    waitReason: text('wait_reason', { enum: SCREENING_WAIT_REASONS }),
+    createdAt: createdAt(),
+  },
+  (table) => [index('screening_queue_tally_account_day').on(table.rateSubject, table.createdAt), index('screening_queue_tally_day').on(table.createdAt)],
 );
 
 export const screeningResult = pgTable(

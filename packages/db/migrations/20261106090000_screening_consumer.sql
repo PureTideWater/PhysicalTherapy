@@ -24,6 +24,12 @@
 --   upload at 0. Every upload is accepted. pg-boss takes higher priorities first, then older jobs, and
 --   operator_screening_due() orders the same way. No lock is taken for the sums, so submissions at the same moment can
 --   overshoot the share or the cap by what is in flight (docs/adr/0062).
+-- - screening_queue_tally: the day's uploads as the sums count them, one append-only entry per accepted upload (the
+--   account's keyed subject, the row count and the tier; nothing else), written by submit_screening() beside the run.
+--   The sums read it, not screening_run, because a later screening of the same practice or contact address replaces
+--   an earlier one and deletes its run: summed over the runs that remain, one mailbox resubmitting 50,000-row files
+--   would never pass its share, nor the day's normal uploads the cap (the review of 2026-10-22). An entry is kept
+--   until the UTC day after its own has ended, then operator_screening_expire() deletes it; no role reads it.
 -- - screening_wait(run): the web's honest message (the run's priority and reason, the runs being priced, and the queued
 --   runs pg-boss takes before it). operator_screening_queue(): the consumer's gauge, normal-tier queued runs and the
 --   oldest one's age (OldestQueuedMs), the waiting tier's count, and the runs being priced.
@@ -35,13 +41,16 @@
 -- Every shared function is recreated on top of the body migration 20261105090000 left, read from a freshly migrated
 -- database: submit_screening() as it was but for its two new parameters (received, rate_account_subject, before request)
 -- and the run's four new values; operator_screening_claim() as it was but for staleness on progress_at, which the claim
--- sets; operator_screening_record() as it was but for the update of progress_at in place of the lock; the others as
--- each says. Privileges come last, once: every function this migration creates is revoked from PUBLIC and granted to
--- exactly its role (CREATE OR REPLACE keeps an ACL). tp_operator keeps the nine pricing functions for one release, so the
--- previous image's platform task still prices during the deploy window; the first schema pull request after this one is
--- deployed revokes them (docs/runbooks/deploy-and-rollback.md: add, then remove). No PHI table, no ledger table, no rule
--- table, no pricing_run or priced_line row and no rule release or record row is touched; the PHI registry is unchanged
--- (the screening tables hold no practice and no patient, and tp_screening reads none of them).
+-- sets; operator_screening_record() as it was but for the update of progress_at in place of the lock;
+-- operator_screening_fail() as it was but for the sweep's failure of a run out of attempts, only while it is stale;
+-- operator_screening_expire() as it was and then the tally's old entries; operator_screening_run_keys() estimated at its
+-- one row; the others as each says. Privileges come last, once: every function this migration creates is revoked from
+-- PUBLIC and granted to exactly its role (CREATE OR REPLACE keeps an ACL). tp_operator keeps the nine pricing functions
+-- for one release, so the previous image's platform task still prices during the deploy window; the first schema pull
+-- request after this one is deployed revokes them (docs/runbooks/deploy-and-rollback.md: add, then remove). No PHI
+-- table, no ledger table, no rule table, no pricing_run or priced_line row and no rule release or record row is touched;
+-- the PHI registry is unchanged (the screening tables hold no practice and no patient, and tp_screening reads none of
+-- them).
 --
 -- Runs as tp_owner. Safe with the previous image running, except during the deploy window:
 -- 1. the previous web's submissions fail: submit_screening()'s signature changed. The screening is closed in production
@@ -50,9 +59,15 @@
 --    claim fences any run both take, and a run either completes is complete once. Its calls work against the new
 --    bodies (the claim sets progress_at, which the trigger accepts; a recorded batch also moves it; due's new column is
 --    not among those it reads by name, nor complete's two);
--- 3. a stale run is claimed again 2 minutes after its last progress, not 10 after its claim, by either image;
--- 4. a job the previous web sends carries pg-boss's default priority (0, the normal tier) and no heartbeat of its own,
---    and takes the queue's heartbeat once the new consumer has set it (updateQueue);
+-- 3. a stale run is claimed again 2 minutes after its last progress, not 10 after its claim, by either image; and a run
+--    out of attempts is failed by a sweep (either image's, naming no attempt) only while it is still stale under the
+--    run's lock, so a third attempt that recorded a batch after the sweep read it is not failed under it;
+-- 4. a job queued before the new consumer starts (the previous web's or the previous platform's sweep's) carries
+--    pg-boss's default priority (0, the normal tier) and no heartbeat: pg-boss copies a queue's heartbeat onto a job
+--    when the job is inserted, and supervises each job by its own, so updateQueue gives one only to jobs sent after it
+--    (the new image sends every screening job with its own). Should the consumer die while it prices such a job, the
+--    job stays active until pg-boss's expiry (15 minutes) holds the sweep's re-send, and that run is claimed again
+--    after about 15 minutes, not 3; this holds for the jobs of one deploy window only (docs/runbooks/deploy-and-rollback.md);
 -- 5. the previous platform task's minute schedule of screening_price stays in pg-boss until the new consumer removes it
 --    at its start; a schedule fired before then runs the sweep on the consumer.
 -- Rollback across this pull request is run from the previous tag: its platform prices again under tp_operator's
@@ -65,9 +80,9 @@
 -- ---------------------------------------------------------------------------------------------------
 
 ALTER TABLE screening_run
-  -- When the web began receiving the upload (its handler's start, before any parsing), by the web's clock; the time to
-  -- email is measured from it. submit_screening() clamps what it is given into the ten minutes before the run's
-  -- creation, so a clock never refuses a prospect.
+  -- When the web began receiving the upload (its proxy's stamp at the request's headers, before Next reads the body),
+  -- by the web's clock; the time to email is measured from it. submit_screening() clamps what it is given into the ten
+  -- minutes before the run's creation, so a clock never refuses a prospect.
   ADD COLUMN received_at timestamptz,
   -- The rate limiter's keyed HMAC of the screening bucket's account (a business domain, or a free-mail mailbox), as the
   -- web computes it for its own limit: the database never receives the account. The share sums an account's rows by it.
@@ -100,15 +115,46 @@ ALTER TABLE screening_run
     AND (status NOT IN ('pricing', 'complete') OR progress_at IS NOT NULL)
     AND (progress_at IS NULL OR progress_at >= started_at));
 
--- The day's sums at submission (the cap's normal rows, and an account's rows), and the queued runs in pg-boss's order
--- (operator_screening_due(), screening_wait(), operator_screening_queue()).
-CREATE INDEX screening_run_created_at ON screening_run (created_at);
-CREATE INDEX screening_run_account_day ON screening_run (rate_subject, created_at);
+-- The queued runs in pg-boss's order (operator_screening_due(), screening_wait(), operator_screening_queue()). The day's
+-- sums read the tally (section 2), not the runs.
 CREATE INDEX screening_run_waiting ON screening_run (queue_priority DESC, created_at) WHERE status = 'queued';
 
 -- ---------------------------------------------------------------------------------------------------
 -- 2. The queue's tier (Q7)
 -- ---------------------------------------------------------------------------------------------------
+
+-- The day's uploads as the queue's sums count them (Q7): one entry per accepted upload, written by submit_screening()
+-- beside its run, holding the account's keyed subject (the run's rate_subject), its row count and its tier, and nothing
+-- else: no run, no prospect, no address. A later screening of the same practice or address replaces an earlier one and
+-- deletes its run, but never its entry, so the account's share and the cap count every upload of the day. Append-only;
+-- an entry goes once the UTC day after its own has ended (operator_screening_expire()), the day's turn kept whole. The
+-- owner's alone: its policy serves the definer functions, and no role holds a privilege on it.
+CREATE TABLE screening_queue_tally (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  rate_subject text NOT NULL CONSTRAINT screening_queue_tally_rate_subject CHECK (rate_subject ~ '^[0-9a-f]{64}$'),
+  row_count integer NOT NULL CONSTRAINT screening_queue_tally_row_count CHECK (row_count BETWEEN 1 AND 50000),
+  wait_reason text CONSTRAINT screening_queue_tally_wait_reason CHECK (wait_reason IN ('account_share', 'daily_cap')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+-- An account's rows today, and the day's normal rows.
+CREATE INDEX screening_queue_tally_account_day ON screening_queue_tally (rate_subject, created_at);
+CREATE INDEX screening_queue_tally_day ON screening_queue_tally (created_at);
+
+CREATE FUNCTION screening_queue_tally_kept() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF OLD.created_at < date_trunc('day', now(), 'UTC') - interval '1 day' THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'an entry of the queue''s tally is kept until the UTC day after its own has ended'
+    USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_queue_tally_kept';
+END;
+$$;
+CREATE TRIGGER screening_queue_tally_fixed BEFORE UPDATE ON screening_queue_tally FOR EACH ROW EXECUTE FUNCTION reject_change();
+CREATE TRIGGER screening_queue_tally_kept BEFORE DELETE ON screening_queue_tally FOR EACH ROW EXECUTE FUNCTION screening_queue_tally_kept();
+CREATE TRIGGER screening_queue_tally_no_truncate BEFORE TRUNCATE ON screening_queue_tally FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
+ALTER TABLE screening_queue_tally ENABLE ROW LEVEL SECURITY;
+ALTER TABLE screening_queue_tally FORCE ROW LEVEL SECURITY;
+CREATE POLICY screening_queue_tally_owner ON screening_queue_tally FOR ALL TO tp_owner USING (true) WITH CHECK (true);
 
 -- The founder's numbers (Q7, 2026-10-21): an account's share of rows a UTC day (two worst-shape files), and the day's
 -- cap of rows of uploads within their share (ten accounts' shares). Read by screening_queue_tier() alone, which
@@ -122,8 +168,9 @@ $$;
 -- this upload's with them, exceed the share, at -k for its k-th such upload today (at most -20), so heavy accounts take
 -- turns and none's surplus goes before another's first; otherwise past the day's cap, at -1, when the day's rows of
 -- normal uploads, this one's with them, exceed the cap (the cap counts the normal tier alone, so one firm's surplus
--- does not use up everyone else's protection); otherwise normal, at 0. No lock: what is in flight at once can overshoot.
--- Granted to no role; submit_screening() calls it as the owner.
+-- does not use up everyone else's protection); otherwise normal, at 0. The day's uploads are the tally's, a replaced
+-- one's with them. No lock: what is in flight at once can overshoot. Granted to no role; submit_screening() calls it as
+-- the owner.
 CREATE FUNCTION screening_queue_tier(subject text, row_count integer) RETURNS TABLE (wait_reason text, queue_priority smallint)
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
   WITH limits AS (
@@ -131,10 +178,10 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
   ), today AS (
     SELECT date_trunc('day', now(), 'UTC') AS started
   ), account AS (
-    SELECT coalesce(sum(r.row_count), 0) + $2 AS rows, count(*) FILTER (WHERE r.wait_reason = 'account_share') AS waiting
-      FROM screening_run r, today WHERE r.rate_subject = $1 AND r.created_at >= today.started
+    SELECT coalesce(sum(t.row_count), 0) + $2 AS rows, count(*) FILTER (WHERE t.wait_reason = 'account_share') AS waiting
+      FROM screening_queue_tally t, today WHERE t.rate_subject = $1 AND t.created_at >= today.started
   ), normal AS (
-    SELECT coalesce(sum(r.row_count), 0) + $2 AS rows FROM screening_run r, today WHERE r.wait_reason IS NULL AND r.created_at >= today.started
+    SELECT coalesce(sum(t.row_count), 0) + $2 AS rows FROM screening_queue_tally t, today WHERE t.wait_reason IS NULL AND t.created_at >= today.started
   )
   SELECT CASE WHEN account.rows > limits.account_rows THEN 'account_share' WHEN normal.rows > limits.daily_rows THEN 'daily_cap' END,
          (CASE WHEN account.rows > limits.account_rows THEN -least(20, 1 + account.waiting)
@@ -204,10 +251,11 @@ DROP FUNCTION submit_screening(text, text, text, text, text, text[], text[], int
 
 -- An accepted upload, exactly as migration 20261105090000 left it (the refusals in their order, the hash, the locks, the
 -- outcome, the run pinned to the release and the split in force, the rows, and the replacement of an earlier screening
--- of the same practice), and two parameters more before request: received, when the web began receiving the upload
--- (null is now), and rate_account_subject, the rate limiter's keyed HMAC of the account (64 hex characters, or the run's
--- CHECK refuses it). The run keeps both, the receipt clamped into the ten minutes before its creation, and the tier
--- screening_queue_tier() gives it (Q7). A db test diffs this body against that migration's (D7).
+-- of the same practice), and two parameters more before request: received, when the web received the upload (null is
+-- now), and rate_account_subject, the rate limiter's keyed HMAC of the account (64 hex characters, or the run's CHECK
+-- refuses it). The run keeps both, the receipt clamped into the ten minutes before its creation, and the tier
+-- screening_queue_tier() gives it (Q7); the upload's entry in the day's tally keeps its subject, rows and tier past any
+-- later replacement. A db test diffs this body against that migration's (D7).
 CREATE FUNCTION submit_screening(practice text, state_code text, zip5 text, plus_four text, email text, codes text[], modifier_sets text[],
   unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[],
   rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, rows_outside_content integer,
@@ -317,7 +365,12 @@ BEGIN
     SELECT upload.id, in_force, manifest, split, n, least(greatest(coalesce(received, now()), now() - interval '10 minutes'), now()), rate_account_subject,
            tier.wait_reason, tier.queue_priority
       FROM upload, screening_queue_tier(rate_account_subject, n) tier
-    RETURNING id
+    RETURNING id, wait_reason
+  ), tallied AS (
+    -- The upload in the day's tally (Q7): the account's share and the cap count it even once a later screening of
+    -- the same practice or address replaces this one and deletes its run.
+    INSERT INTO screening_queue_tally (rate_subject, row_count, wait_reason)
+    SELECT rate_account_subject, n, run.wait_reason FROM run
   ), uploaded AS (
     INSERT INTO screening_result (run_id, row_no, procedure_code, modifiers, units, place_of_service, payer_product, service_band, claim_count, observed_allowed_cents, disposition)
     SELECT run.id, u.ordinality::integer, u.code, CASE WHEN u.mods = '' THEN '{}'::text[] ELSE string_to_array(u.mods, ' ') END, u.unit_count, u.place,
@@ -499,6 +552,64 @@ BEGIN
 END;
 $$;
 
+-- Fails a run, as migration 20261104090000 did, but a sweep's failure of a run out of attempts (no attempt named) only
+-- while the run is still stale under its lock: being priced at its third attempt with no progress for 2 minutes. The
+-- sweep read the run due a moment before; a third attempt, slow but alive, may have recorded a batch since, and is
+-- left to finish. An attempt's own failure (its attempt named) and a queued run's are as before. Same signature and
+-- result, so its grants stay.
+CREATE OR REPLACE FUNCTION operator_screening_fail(run uuid, failure text, request text, attempt integer) RETURNS TABLE (contact_email text)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  target screening_run%ROWTYPE;
+BEGIN
+  SELECT r.* INTO target FROM screening_run r WHERE r.id = $1 FOR UPDATE;
+  IF NOT FOUND OR target.status NOT IN ('queued', 'pricing') OR ($4 IS NOT NULL AND target.attempts <> $4) THEN
+    RETURN;
+  END IF;
+  IF $4 IS NULL AND target.status = 'pricing' AND NOT (target.attempts >= 3 AND target.progress_at < now() - interval '2 minutes') THEN
+    RETURN;
+  END IF;
+  UPDATE screening_run r SET status = 'failed', failure_code = $2, failed_at = now() WHERE r.id = target.id;
+  UPDATE screening_outcome o SET stage = 'failed' WHERE o.upload_id = target.upload_id AND o.stage = 'accepted';
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES ('system', 'screening_failed', 'screening_run', target.id, 'screening', $3);
+  RETURN QUERY
+    SELECT p.contact_email FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE u.id = target.upload_id;
+END;
+$$;
+
+-- Deletes expired screenings and kept summaries, exactly as migration 20261104090000 did, and then the queue tally's
+-- entries of the days before yesterday (UTC), which no sum reads any more: the tally keeps an account's subject no
+-- longer than the day after its upload. Same signature and result, so its grant (tp_operator's) stays.
+CREATE OR REPLACE FUNCTION operator_screening_expire(at_most integer, request text) RETURNS TABLE (prospects integer, runs integer, leads integer)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  doomed uuid[];
+  doomed_leads uuid[];
+  run_total integer;
+BEGIN
+  SELECT coalesce(array_agg(x.id), '{}') INTO doomed FROM (
+    SELECT p.id FROM screening_prospect p WHERE p.expires_at <= now()
+     ORDER BY p.expires_at, p.id
+     LIMIT least(greatest(coalesce($1, 0), 0), 1000)
+       FOR UPDATE SKIP LOCKED) x;
+  SELECT count(*)::integer INTO run_total FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE u.prospect_id = ANY (doomed);
+  DELETE FROM screening_prospect p WHERE p.id = ANY (doomed);
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  SELECT 'system', 'screening_expired', 'screening_prospect', d.id, 'screening', $2 FROM unnest(doomed) AS d (id);
+  SELECT coalesce(array_agg(x.id), '{}') INTO doomed_leads FROM (
+    SELECT l.id FROM screening_lead l WHERE l.expires_at <= now()
+     ORDER BY l.expires_at, l.id
+     LIMIT least(greatest(coalesce($1, 0), 0), 1000)
+       FOR UPDATE SKIP LOCKED) x;
+  DELETE FROM screening_lead l WHERE l.id = ANY (doomed_leads);
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  SELECT 'system', 'screening_lead_expired', 'screening_lead', d.id, 'screening', $2 FROM unnest(doomed_leads) AS d (id);
+  DELETE FROM screening_queue_tally t WHERE t.created_at < date_trunc('day', now(), 'UTC') - interval '1 day';
+  RETURN QUERY SELECT cardinality(doomed), run_total, cardinality(doomed_leads);
+END;
+$$;
+
 -- The pinned release's records of the types no row's key selects, as migration 20261105090000 left it, read through
 -- rule_record_by_type (release_no, record_type) instead of a scan of every release's records (#31; measured on the
 -- scale release: a parallel sequential scan of rule_record, 705 ms warm and about 13 s cold on gp3, against 1.3 ms by
@@ -541,6 +652,15 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- The run's key set is one row at most (the run, by its primary key), and the planner is told so: with its default
+-- estimate of 1,000 rows, operator_screening_run_records() reckoned 43,000 wanted keys and, with no statistics on
+-- rule_record (a release just loaded, before any ANALYZE), hash-joined every record of the release instead of probing
+-- rule_record_identity for each key. CI's capacity run on 9eb4474 met it in S1, its first scenario after the load: two
+-- keyed reads each scanned all 2.2 million records under gp3's I/O limits, setting each page's hint bits as they went,
+-- and S1-1 recorded no batch for five minutes. Estimated at its one row, the keyed read probes the index whatever the
+-- statistics say. (The release loader now analyzes and freezes rule_record after a load as well.)
+ALTER FUNCTION operator_screening_run_keys(uuid) ROWS 1;
 
 -- Records what pricing found for up to 5,000 pending rows, exactly as migration 20261104090000 did, but the run is
 -- updated rather than only locked: its progress moves to now (never back), so a consumer that dies is noticed 2 minutes
@@ -617,8 +737,8 @@ $$;
 
 -- Every function this migration creates, or drops and creates, is revoked from PUBLIC by name (there are no default
 -- privileges); CREATE OR REPLACE keeps a function's ACL, so those are not repeated. The two the queue's tier reads are
--- granted to no role: submit_screening() calls them as the owner.
-REVOKE ALL ON FUNCTION screening_wait_limits(), screening_queue_tier(text, integer) FROM PUBLIC;
+-- granted to no role: submit_screening() calls them as the owner; nor is the tally's delete guard, a trigger's.
+REVOKE ALL ON FUNCTION screening_wait_limits(), screening_queue_tier(text, integer), screening_queue_tally_kept() FROM PUBLIC;
 REVOKE ALL ON FUNCTION submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
   integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION operator_screening_due(integer, integer), operator_screening_complete(uuid, text, text, text, text, integer), operator_screening_queue(),

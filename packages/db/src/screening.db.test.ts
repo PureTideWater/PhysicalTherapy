@@ -31,6 +31,8 @@ const SCREENING_TABLES = [
   'screening_lead_product',
   'screening_outcome',
   'screening_prospect',
+  // The day's uploads as the queue's sums count them (migration 20261106090000; Q7).
+  'screening_queue_tally',
   'screening_result',
   'screening_run',
   'screening_upload',
@@ -330,7 +332,7 @@ afterAll(async () => {
 });
 
 describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
-  it('names nine tables, none of whose columns is shaped like a name, a date of birth, a member ID, a date of service or a claim number', async () => {
+  it('names ten tables, none of whose columns is shaped like a name, a date of birth, a member ID, a date of service or a claim number', async () => {
     const { rows } = await admin.query<{ table_name: string; column_name: string; type: string }>(
       `SELECT c.relname AS table_name, a.attname AS column_name, format_type(a.atttypid, a.atttypmod) AS type
          FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -355,6 +357,8 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
         'place_of_service_split.approved_at',
         'screening_prospect.created_at',
         'screening_prospect.expires_at',
+        // When an upload entered the queue's day tally (migration 20261106090000; Q7).
+        'screening_queue_tally.created_at',
         'screening_run.completed_at',
         'screening_run.converted_at',
         'screening_run.created_at',

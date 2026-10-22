@@ -331,6 +331,7 @@ export {
   screeningLeadProduct,
   screeningOutcome,
   screeningProspect,
+  screeningQueueTally,
   screeningResult,
   screeningRun,
   screeningUpload,

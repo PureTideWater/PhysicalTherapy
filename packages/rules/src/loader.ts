@@ -115,7 +115,8 @@ export function loadRefusals(releaseNo: number, records: readonly Located<RuleRe
 /**
  * Verifies the release (manifest, every record against the schema, no overlapping windows, the
  * release number asked for, and every record verified to L2 or higher and not synthetic), then in
- * one transaction inserts the release, its records, and marks it published. From then on the
+ * one transaction inserts the release, its records, and marks it published, and then analyzes
+ * rule_record and freezes the records (VACUUM, which no transaction may hold). From then on the
  * database refuses any change to either table's rows for that release. Loading the same release
  * again is a no-op; loading a different release under a number already loaded is refused. Nothing
  * is written when any check fails.
@@ -160,12 +161,19 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
     await client.query('UPDATE rule_release SET published_at = now(), updated_at = now() WHERE release_no = $1', [releaseNo]);
     await client.query('COMMIT');
     open = false;
-    return { status: 'loaded', ...result };
   } finally {
     if (open) {
       await client.query('ROLLBACK');
     }
   }
+  // Analyzed and frozen before anything reads it (outside the transaction: VACUUM cannot run in one). Without
+  // statistics the planner reckons a release a sliver of rule_record, and the first screenings after a load hash-joined
+  // every record of the release instead of probing rule_record_identity, setting each page's hint bits as they read
+  // (CI's capacity run on 9eb4474: S1-1, the first screening after the load, recorded no batch for five minutes). A
+  // release's records never change, so they are frozen once, here, and no anti-wraparound vacuum rewrites them later;
+  // pages already frozen are skipped.
+  await client.query('VACUUM (FREEZE, ANALYZE) rule_record');
+  return { status: 'loaded', ...result };
 }
 
 export interface WithdrawOptions {

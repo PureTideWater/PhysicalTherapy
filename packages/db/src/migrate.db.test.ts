@@ -168,6 +168,7 @@ describe('migrate', () => {
           'screening_lead_product',
           'screening_outcome',
           'screening_prospect',
+          'screening_queue_tally',
           'screening_result',
           'screening_run',
           'screening_upload',
