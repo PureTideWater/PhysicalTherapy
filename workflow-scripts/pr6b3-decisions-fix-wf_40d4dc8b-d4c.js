@@ -1,0 +1,70 @@
+export const meta = {
+  name: 'pr6b3-decisions-fix',
+  description: 'PR 6b-3 (#39): the S5 slots verdict root-caused and fixed, and the founder\'s rulings of 2026-10-22 built (the web at 0.5 vCPU/1 GiB, ScreeningLaunch computed at synthesis from the launch report and the ECR images, the wording approved), then one full suite, the local capacity smoke, one push and the PR body',
+  phases: [
+    { title: 'Fix', detail: 'A: the S5 slots verdict (worker dispatch and harness); B: the web size and the computed launch value (infra, runbooks, ADRs); in parallel' },
+    { title: 'Integrate', detail: 'pull both, the full suite once, the local smoke S1/S4/S5, one push, PR body, approval summary' },
+  ],
+}
+
+const WT = '/home/user/pr6b3'
+const BR = 'co-001/pr-06b-screening-consumer'
+const HEAD = '7abb99c66d1f1b3eaf508aabeb9c50a312f76c23'
+const SP = '/tmp/claude-0/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/scratchpad'
+const REVIEWLOG = '/tmp/claude-0/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/tasks/wnaynjj24.output'
+const ATTR = `End every commit message with these two lines, after a blank line:
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01MXvjcgRoTSrfU3V7a5MShH`
+
+const CONTEXT = `Repository PureTideWater/PhysicalTherapy (PaidWhole). PR 6b-3 is draft pull request #39 into claude/build-platform (base a33b0fd), branch ${BR}, head ${HEAD}, worktree ${WT}: the screening's own consumer and the 60-second time check (audit #53 parts 3-4, decisions 13-16). Its review round is done (the fix round's report: ${REVIEWLOG}, JSON; result.fix holds the dispositions, the sizing question and the wording). The domain model is at SHA-256 6d7a143dd4e5a7145943324afd21a583f9036925978e90d8b9cecf6b4e97f712, approval line 6859, unsigned.
+CI's capacity run on ${HEAD} (time enforced, Docker runtime, 4-CPU runner, cold Postgres per scenario; job 120130643798): S1-1 23.4 s, S1-2 1.8, S2-1 7.4, S3-1 6.5, S4-1 46.0, S4-2 45.1, S4-3 46.0, S4-4 31.4, S5-1 12.3, S5-2 16.5, S5-3 16.0, S5-4 1.6; the time metric within bounds everywhere. The verdict failed on one line: "slots not used: S5's first 3 large uploads were not priced at once (3 declared; S5-3, S5-2 waited)". The same verdict passed on 9eb4474, before the review round's dispatch change (adb2ebb: the screening_price_waiting queue worked with one thread fewer, the pool dispatching normal runs first) and before the statistics fix made runs faster. The worst time, 46.0 s, is above 44 s: the sizing question.
+The founder's rulings of 2026-10-22 (~23:00 UTC; "Do the recommended for everything if it optimizes things"), to build and record (ADR 0049 and 0062, PRD 19's cost line, reconciliation-001, dated 2026-10-22, naming the founder, Tyler Williams):
+(1) Sizing (O9): the web task at 0.5 vCPU and 1 GiB in every environment, from 0.25 vCPU and 512 MiB (about +$18.02 a month in production with two web tasks, +$9.01 each in staging and dev; us-east-1 on-demand Fargate prices, to be re-read on AWS's pages before relying on them, O12). The consumer stays one 2 vCPU/4 GiB task with three threads. Only if CI's worst time is still above 44 s after this does the 4 vCPU/8 GiB consumer and the 8-core runner come back to the founder; never change the 48-s line or the 44-s question.
+(2) The launch value: the CDK app computes ScreeningLaunch at synthesis from the launch report (for example -c tp:launchReport=<file>) using launchCheck() against the ECR image references the stack deploys, and refuses a value passed directly as a parameter; the deploy runbook and decision 13's steps say so.
+(3) The wording in the review round's report (result.fix.wording: the "sent" page's soon, minutes, waiting and sent sentences and the email's account_share and daily_cap lines) is approved by the founder as written; counsel confirms before the screening opens (Q12, O4).
+Environment: export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH. PostgreSQL 18 on 5433 (postgres:test, socket /tmp); databases tp_pr6b3_<role>_<n>, dropped when done. E2e ports 4931-4939. No Docker daemon here: the capacity harness runs with its process runtime (indicative only; CI's run is the measurement of record). If PostgreSQL stops answering, start it with su postgres -c "/opt/pg18/bin/pg_ctl -D /root/pgdata18 -o '-p 5433 -k /tmp' -l /tmp/pg18.log start".
+Rules: CLAUDE.md in full; the engine freeze; golden files, releases and content untouched; no applied migration edited; no DDL on the rule tables; the edit hooks are live and never bypassed (the marker route for this PR's own unmerged migration only, under the founder's standing permission; stop and report on any refusal); never skip, disable or loosen a test, a verdict or a capacity limit; never force-push or --no-verify. You may share ${WT} with the other builder: stage only your own paths and commit with 'git commit -m "..." -- <paths>' (retry if the index is locked); do not push (the integrator pushes once). Commit messages in the repository's style. ${ATTR}`
+
+const CHECKS = { type: 'array', items: { type: 'object', properties: { command: { type: 'string' }, passed: { type: 'boolean' }, note: { type: 'string' } }, required: ['command', 'passed'] } }
+const PART = { type: 'object', properties: {
+  summary: { type: 'string' }, root_cause: { type: 'string' }, commits: { type: 'array', items: { type: 'string' } },
+  files: { type: 'array', items: { type: 'string' } }, checks: CHECKS, open_items: { type: 'array', items: { type: 'string' } },
+}, required: ['summary', 'commits', 'files', 'checks', 'open_items'] }
+const FINAL = { type: 'object', properties: {
+  summary: { type: 'string' }, head: { type: 'string' }, domain_model_sha256: { type: 'string' }, approval_line_number: { type: 'number' },
+  smoke: { type: 'string' }, checks: CHECKS, approval_summary: { type: 'string' }, open_items: { type: 'array', items: { type: 'string' } },
+}, required: ['summary', 'head', 'domain_model_sha256', 'approval_line_number', 'smoke', 'checks', 'approval_summary', 'open_items'] }
+
+phase('Fix')
+const [a, b] = await parallel([
+  () => agent(`${CONTEXT}
+
+You are builder A: the S5 slots verdict. You own apps/worker/src/** (the screening pool, threads, jobs, consumer and their tests) and tools/screening-capacity/** (only if the root cause is in the harness), and the SCR rows of docs/product/test-matrix.md they touch. Do not touch infra, apps/web, docs/adr or docs/runbooks (builder B owns them).
+1. Find why, in S5 on CI, two of three practice-shaped uploads queued together waited for another to finish instead of starting on the consumer's free threads. Read report.ts's slots verdict (how "waited" is decided), the pool's dispatch since adb2ebb (normal-first, the waiting queue worked with one thread fewer), how jobs are fetched (pg-boss work/fetch, batch size, polling interval, when a free thread asks for the next job), and how the faster runs after the statistics fix change the timing. Reproduce it before fixing: a worker test (or a db test with a real pg-boss) where three normal jobs queued within a second must start on three threads at once, which fails on ${HEAD}; then a local process-runtime run of S5 (and S4) with time enforced, cold start where the process runtime can apply it.
+2. Fix it at its root so a free thread takes the next normal job at once (for example, a fetch woken when a thread frees and when jobs are sent, rather than waiting a polling interval), keeping every rule the review round added: normal runs first, a waiting-tier run only while another thread stays idle, never every thread for the waiting tier, the heartbeat and the stale-claim recovery. If, and only if, the evidence shows the verdict misjudges a correct dispatch (for example, a job queued after another had already finished), correct the verdict with a test that shows the case, never by loosening what "priced at once" requires.
+3. Checks: pnpm typecheck; pnpm lint (NODE_OPTIONS=--max-old-space-size=6144); apps/worker unit and the worker db tests you changed (consumer.db.test.ts, threads, jobs); tools/screening-capacity unit if touched; the local smoke of S4 and S5 before and after (indicative). Commit (do not push) and return the root cause with its evidence, the commits, the files and the checks.`, { label: 'fix A: S5 slots', phase: 'Fix', schema: PART }),
+  () => agent(`${CONTEXT}
+
+You are builder B: the founder's rulings (1) and (2) in the infrastructure and the documents, and (3) in the documents. You own infra/** (lib, constructs, test), .github/workflows/release.yml and tools/test/workflows.test.ts if the launch value's steps change there, tools/screening-capacity/limits.ts and its test only for the web's limits, docs/runbooks/{deploy-and-rollback,screening-capacity}.md, docs/adr/{0049,0062}-*.md, PRD section 19 (docs/product/prd*.md or wherever the cost line lives), and reconciliation-001's decisions as built. Do not touch apps/worker (builder A owns it) or apps/web.
+1. The web task at 0.5 vCPU and 1 GiB in every environment (infra/lib/environments.ts or wherever compute.web is declared), with its heap flag and any memory-derived setting consistent; the capacity harness measures the web at the same production size (it must read the same declaration, not a copy); the infra tests assert it. Update PRD 19's cost line and ADR 0049 with the new monthly costs and the founder's ruling of 2026-10-22.
+2. ScreeningLaunch computed at synthesis: the CDK app reads the launch report (-c tp:launchReport=<file>, or the existing context naming convention), runs launchCheck() against the ECR image references the stack deploys (<WebRepositoryUri>:<tag> and <WorkerRepositoryUri>:<tag>, as the review round's runbook copies them), and sets the value itself; a ScreeningLaunch passed directly as a parameter is refused (a synth error naming the rule), and an absent report keeps production's screening closed. Keep the consumer condition the review round added (the consumer runs whenever a launch value is set) and its CfnRule or equivalent. Infra tests: a passing report for exactly these images opens; a failing, stale or other-image report, or a hand-typed value, does not. Update the deploy runbook (decision 13's steps, O5) and ADR 0062.
+3. Record the founder's approval of the wording (Q12, 2026-10-22; counsel still to confirm before the screening opens, O4) in ADR 0062 and reconciliation-001.
+4. Checks: pnpm typecheck; pnpm lint; pnpm lint:copy; infra tests and synth for each environment; tools/test; tools/screening-capacity unit if limits.ts changed; actionlint if a workflow changed. Commit (do not push) and return the commits, the files, the checks and the new monthly costs per environment.`, { label: 'fix B: size and launch value', phase: 'Fix', schema: PART }),
+])
+if (!a || !b) return { error: 'a builder returned nothing', a, b }
+
+phase('Integrate')
+const fin = await agent(`${CONTEXT}
+
+You are the integrator. Builder A (the S5 slots verdict): ${JSON.stringify(a).slice(0, 8000)}
+Builder B (the web size, the computed launch value, the wording's approval): ${JSON.stringify(b).slice(0, 8000)}
+1. In ${WT}: git status is clean apart from both builders' commits; read CI's check job on ${HEAD} with the GitHub MCP tools (ToolSearch "select:mcp__github__pull_request_read,mcp__github__get_job_logs"); only the domain model's approval case may be red there, and any other red is fixed here at its root.
+2. Re-read both builders' diffs adversarially: what would make CI or a reviewer reject this? Fix anything you find, with a test.
+3. If the schema changed, regenerate docs/product/domain-model.md on a fresh PostgreSQL 18 database (pnpm db:domain-model --out --strict), read its Cross-checks block, report the new SHA-256 and the approval line's number; otherwise confirm it is unchanged (6d7a143d..., line 6859). Never write the approval line or approvers.json.
+4. Run the full local suite ONCE on the final tree and record each command and result: pnpm typecheck; pnpm lint (NODE_OPTIONS=--max-old-space-size=6144); pnpm lint:copy; pnpm lint:logs; pnpm check:fixtures; pnpm synth --all with git diff --exit-code fixtures/synthetic; PR_NUMBER=39 pnpm -s exec tsx tools/engine-freeze/check.ts $(git merge-base origin/claude/build-platform HEAD); CI=true ENGINE_FREEZE_BASE=$(git merge-base origin/claude/build-platform HEAD) pnpm test; pnpm test:golden; pnpm test:oracle with TP_ORACLE_PYTHON=/opt/py312-ci/bin/python; pnpm verify-content; a fresh PostgreSQL 18 database migrated from empty, then pnpm test:db against it (only the approval case may fail); pnpm -s db:domain-model --check; pnpm test:e2e on ports 4931-4939; pnpm build; the infra tests and synth; actionlint (/opt/actionlint/actionlint); and the local capacity smoke of S1, S4 and S5 with time enforced at the web's new size (process runtime, indicative). A failure is fixed at its root and the affected checks rerun.
+5. Push ONCE: git push -u origin ${BR}, retrying after 2, 4, 8 and 16 s on a network error; never force, never --no-verify.
+6. Update #39's body with the GitHub MCP tool update_pull_request (ToolSearch "select:mcp__github__update_pull_request"): keep every section and the domain-model summary at the top; add a "Founder's rulings of 2026-10-22" section (the web size and its cost, the computed launch value, the wording approved, counsel next), the S5 root cause and fix, CI's capacity runs on 9eb4474 and 7abb99c, this round's checks and smoke; keep the ending lines and the draft state.
+7. Return, in approval_summary, the founder's plain-language approval summary in markdown: what 6b-3 changes for a prospect and for operations, the schema in plain words, what proves it (with CI's numbers), what changed since the review round, the SHA-256 to approve, and the open items. Short and plain.
+Return the head you pushed, the domain model's SHA-256 and line, the smoke run, every check, the approval summary and the open items.`, { label: 'integrate, full suite, push', phase: 'Integrate', schema: FINAL })
+if (!fin) throw new Error('the integrator returned nothing')
+return { a, b, fin }
