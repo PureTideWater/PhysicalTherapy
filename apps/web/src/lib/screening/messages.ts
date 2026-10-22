@@ -1,5 +1,15 @@
 import { formatUsd } from '@tp/money';
-import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, SCREENING_MIN_CLAIM_LINES, type ScreeningColumn, type ScreeningLeftOut, type ScreeningRejection } from '@tp/worker/screening-format';
+import {
+  type ContentQuarters,
+  PHI_KIND_LABELS,
+  SCREENING_MAX_REASONS,
+  SCREENING_MAX_ROWS,
+  SCREENING_MIN_CLAIM_LINES,
+  type ScreeningColumn,
+  type ScreeningLeftOut,
+  type ScreeningRejection,
+  contentQuartersText,
+} from '@tp/worker/screening-format';
 
 /**
  * What the screening page says about an upload it refuses (Change Order 001, CO-04: "reject any upload containing
@@ -7,8 +17,10 @@ import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, SCREENING_M
  * in the browser) and, in the browser alone, by the header text the person typed; a row by its number under the
  * header. Patient information comes first, so its column is named however many other problems the file has. A
  * message never holds a cell's value, and the header text never leaves the browser: the server's own messages name
- * the position and the kind only. And what the browser says of the rows of fewer than 11 claim lines it leaves out:
- * how many, their claim lines and their allowed total, never which. Plain data, safe to import in the browser.
+ * the position and the kind only. And what the browser says of the rows of fewer than 11 claim lines it leaves out,
+ * and of the Medicare rows in quarters outside the release's loaded content it leaves out (audit #7; the founder's
+ * answer of 2026-10-21 to PR 6b's Q6 (a)): how many, their claim lines and their allowed total, never which, and the
+ * quarters PaidWhole has loaded. Plain data, safe to import in the browser.
  */
 
 /**
@@ -83,6 +95,11 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
       return `${rowName(reason.row)}: ${reason.column === undefined ? 'the service band column' : columnName(reason.column, header).replace(/^Column/, 'column')} holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates and upload again.`;
     case 'band_in_future':
       return `${rowName(reason.row)}, service band: that quarter has not started yet.`;
+    case 'band_outside_content':
+      return reason.row === undefined
+        ? // Every row was left out; the left-out lines that follow it say why, once each.
+          'Nothing is left to screen: every row was left out, as counted below.'
+        : `${rowName(reason.row)}, service band: PaidWhole has not loaded the Medicare content for that quarter, so a Medicare row in it cannot be screened.`;
     case 'duplicate_row':
       return `${rowName(reason.row)} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}: the same code, modifiers, units, place of service, payer product and quarter. Add the two into one row.`;
     case 'no_rows':
@@ -115,6 +132,53 @@ export function leftOutMessage(leftOut: ScreeningLeftOut): string | null {
   const one = leftOut.rows === 1;
   const rows = one ? `1 row of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines` : `${many(leftOut.rows, 'row')} of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines each`;
   return `Left out: ${rows}, ${many(leftOut.claimLines, 'claim line')} and ${formatUsd(leftOut.allowedCents)} allowed in your file. ${one ? 'It is not sent, and no figure includes it' : 'They are not sent, and no figure includes them'}: ${CLAIM_FLOOR_REASON}.`;
+}
+
+/**
+ * Where the rows left out for their quarter lie, as the sentences name it: before the first quarter loaded, or after
+ * the last, when every one of them does; null otherwise (between runs of loaded quarters, or on both sides).
+ */
+export function outsideContentWhere(bands: readonly string[], quarters: ContentQuarters): { readonly side: 'before' | 'after'; readonly quarter: string } | null {
+  const first = quarters[0]?.from;
+  const last = quarters.at(-1)?.to;
+  if (first === undefined || last === undefined || bands.length === 0) {
+    return null;
+  }
+  if (bands.every((band) => band < first)) {
+    return { side: 'before', quarter: first };
+  }
+  if (bands.every((band) => band > last)) {
+    return { side: 'after', quarter: last };
+  }
+  return null;
+}
+
+/**
+ * What the browser says, before sending, of the Medicare rows it left out because their quarter is outside the
+ * release's loaded MPPR and MUE content (the founder's answer of 2026-10-21 to PR 6b's Q6 (a)): how many, their claim
+ * lines and their allowed total, where their quarters lie, and the quarters PaidWhole has the content for; null when
+ * it left none out. `bands` are those rows' quarters (never sent).
+ */
+export function outsideContentMessage(outside: ScreeningLeftOut, bands: readonly string[], quarters: ContentQuarters): string | null {
+  if (outside.rows === 0) {
+    return null;
+  }
+  const one = outside.rows === 1;
+  const where = outsideContentWhere(bands, quarters);
+  const place = where === null ? (quarters.length === 0 ? '' : one ? ' in a quarter outside the loaded content' : ' in quarters outside the loaded content') : ` in ${one ? 'a quarter' : 'quarters'} ${where.side} ${where.quarter}`;
+  const loaded = quarters.length === 0 ? 'PaidWhole has no Medicare content loaded yet' : `PaidWhole has the Medicare content for ${contentQuartersText(quarters)} loaded`;
+  return `${many(outside.rows, 'row')} (${many(outside.claimLines, 'claim line')}, ${formatUsd(outside.allowedCents)})${place} ${one ? 'was' : 'were'} left out: ${loaded}.`;
+}
+
+/**
+ * Which quarters' Medicare rows a screening screens, said before a file is chosen (the founder's answer of 2026-10-21
+ * to PR 6b's Q6 (a)): the quarters the release in force has the Medicare content for, and that rows of other quarters
+ * are left out and counted, so a prospect builds the file for those quarters.
+ */
+export function screenedQuartersMessage(quarters: ContentQuarters): string {
+  return quarters.length === 0
+    ? 'PaidWhole has no Medicare content loaded yet, so Medicare rows are left out and counted.'
+    : `Medicare rows of ${contentQuartersText(quarters)} are screened; rows of other quarters are left out and counted.`;
 }
 
 /**

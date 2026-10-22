@@ -10,6 +10,7 @@ import {
   inviteMember,
   recordAgreement,
   setOrganizationStatus,
+  setPracticeLocation,
   setPracticeSettings,
   unlockUser,
 } from '../../lib/routes/console';
@@ -31,6 +32,11 @@ export async function createPracticeAction(_state: ActionState, form: FormData):
 
 export async function setPracticeSettingsAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(setPracticeSettings, form);
+}
+
+/** Sets a practice's pricing location, its billing ZIP and ZIP+4 (audit #33). */
+export async function setPracticeLocationAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(setPracticeLocation, form);
 }
 
 export async function inviteMemberAction(_state: ActionState, form: FormData): Promise<ActionState> {

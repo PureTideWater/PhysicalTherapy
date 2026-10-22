@@ -8,6 +8,7 @@ import { PgBoss } from 'pg-boss';
 
 import { developmentMasterKey } from '../src/lib/server/config';
 import { seed } from '../scripts/seed';
+import { approvePreparedSplit } from './split';
 import {
   E2E_AGREEMENTS_DIR,
   E2E_BILLING_DIR,
@@ -25,7 +26,9 @@ import {
 /**
  * Before the e2e server starts: a fresh database (migrated, with the application role's dev login,
  * and SYNTHETIC rule release 900001 loaded, the release pricing runs are pinned to) and a fresh local
- * identity provider, seeded with the synthetic personas. Synthetic data only.
+ * identity provider, seeded with the synthetic personas; then the seeded contract specialist approves the
+ * place-of-service split every practice's run pins (e2e/split.ts; PR 6b), so no spec's places depend on another's
+ * order. Synthetic data only.
  */
 const SYNTHETIC_RELEASE = path.resolve(import.meta.dirname, '../../../fixtures/synthetic/rules/release-synth-900001');
 const admin = databaseClient(e2eAdminUrl());
@@ -55,6 +58,8 @@ for (const directory of [E2E_ESIGN_DIR, E2E_AGREEMENTS_DIR, E2E_COMPLIANCE_DIR])
 rmSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true, force: true });
 mkdirSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true });
 await seed({ databaseUrl: e2eDatabaseUrl(), devAuthDirectory: E2E_DEV_AUTH_DIR, masterKey: developmentMasterKey() });
+// The split before any spec: every practice's default for a place it has not set (docs/adr/0064).
+await approvePreparedSplit(e2eDatabaseUrl());
 // pg-boss's schema and the worker's queues, as the worker creates them on start: the server queues
 // intake jobs on them, and the upload tests run the worker beside it.
 const boss = new PgBoss(e2eDatabaseUrl());

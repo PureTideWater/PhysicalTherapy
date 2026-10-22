@@ -4,12 +4,12 @@ import { describe, expect, it } from 'vitest';
 import type { ActionState } from '../../lib/http/next';
 import { PROSPECT_SOURCE_OPTIONS } from '../../lib/routes/onboarding';
 import { ABOUT_PRACTICE, UPLOAD_EMAIL_HINT } from '../../lib/screening/retention';
-import { ScreeningUploadForm } from './upload-form';
+import { ScreeningUploadForm, ZIP_HINT } from './upload-form';
 
 /**
  * The screening's upload form as the server renders it (CO-04; decisions D18 a, D20 a and D21 a): the file is read in
- * the browser, so its input has no name and no submission can carry it; no ZIP+4 is asked for (the pricing cannot use
- * one); the contact's email is where the link goes; and it says, in plain words, that a row of fewer than 11 claim
+ * the browser, so its input has no name and no submission can carry it; the ZIP code field takes five digits or ZIP+4,
+ * asked for only where Medicare splits the ZIP code (PR 6b; docs/adr/0064); the contact's email is where the link goes; and it says, in plain words, that a row of fewer than 11 claim
  * lines is left out and that denied lines stay out of every total (the founder's rulings of 2026-10-18); and, from the
  * founder's rulings of 2026-10-20 (audit #57), it asks how the practice heard of us and which firm referred it, both
  * optional, and says what is deleted and what is kept. SYNTHETIC values.
@@ -19,7 +19,15 @@ const action = (state: ActionState): Promise<ActionState> => Promise.resolve(sta
 
 describe('the screening upload form', () => {
   const html = renderToStaticMarkup(
-    <ScreeningUploadForm action={action} states={[{ value: 'MN', label: 'MN' }]} maxRows={50_000} minClaimLines={11} serverTime="2026-10-18T12:00:00.000Z" sources={PROSPECT_SOURCE_OPTIONS} />,
+    <ScreeningUploadForm
+      action={action}
+      states={[{ value: 'MN', label: 'MN' }]}
+      maxRows={50_000}
+      minClaimLines={11}
+      serverTime="2026-10-18T12:00:00.000Z"
+      contentQuarters={[{ from: '2026-Q1', to: '2026-Q4' }]}
+      sources={PROSPECT_SOURCE_OPTIONS}
+    />,
   );
   const plain = html.replace(/<!-- -->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
@@ -34,12 +42,22 @@ describe('the screening upload form', () => {
     expect(html).not.toContain('enctype="multipart/form-data"');
   });
 
-  it('asks who the screening is for, and where its link is emailed, never for a ZIP+4 it could not use, and says so', () => {
+  it('asks who the screening is for, and where its link is emailed, with one ZIP code field that takes ZIP+4 (PR 6b)', () => {
     for (const name of ['practiceName', 'state', 'zip', 'contactEmail']) {
       expect(html).toContain(`name="${name}"`);
     }
     expect(html).not.toContain('name="zipPlusFour"');
-    expect(html).toContain('a ZIP code that spans two Medicare localities cannot be screened yet');
+    const zip = /<input[^>]*name="zip"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(zip).toContain('maxLength="10"');
+    expect(zip).toContain('pattern="[0-9]{5}(-?[0-9]{4})?"');
+    expect(zip).toContain('aria-describedby="field-zip-hint"');
+    expect(ZIP_HINT).toBe('Five digits, or ZIP+4 if you know it. A few ZIP codes span more than one Medicare payment area; for those we ask for the ZIP+4.');
+    expect(plain).toContain(ZIP_HINT);
+    // Which quarters' Medicare rows are screened, before a file is chosen (Q6 (a)).
+    expect(plain).toContain('Medicare rows of 2026-Q1 to 2026-Q4 are screened; rows of other quarters are left out and counted.');
+    // What the page says of a chosen file is announced: its live region is there before any file is.
+    expect(html).toContain('<div role="status" data-slot="file-status"></div>');
+    expect(plain).not.toContain('cannot be screened yet');
     // One screening a practice: a later one replaces it, so two are never held to be subtracted.
     expect(html).toContain('A practice keeps one screening at a time: a later one for the same practice name and ZIP code, or from the same email address, replaces it, and the earlier link stops opening it.');
     expect(html).toContain('<option value="">Choose a state</option>');

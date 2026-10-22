@@ -12,10 +12,14 @@ import { expectAccessible } from './a11y';
 import { personaEmail } from '../scripts/synthetic-personas';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
 import { outboxFor } from './outbox';
+import { PREPARED_SPLIT } from './split';
 import {
   CLEAN_ROWS,
+  OUTSIDE_LEFT_OUT,
+  OUTSIDE_ROWS,
   SCREENING_HEADER,
   SCREENING_ZIP,
+  SCREENING_ZIP_PLUS_FOUR,
   SMALL_LEFT_OUT,
   SMALL_ROWS,
   dateOfServiceCsv,
@@ -45,6 +49,12 @@ import {
  * accessible, and with no sideways scroll at 390 and 1280 px. Converting it records an audit request and the
  * screening_converted event; once the screening is past its 30 days the link opens nothing, the expiry job deletes
  * it, and the conversion's event remains. Synthetic data only.
+ *
+ * PR 6b (docs/adr/0064; SCR-15, SCR-16): the split the specialist approves is the one prepare.ts approved before any
+ * spec (every practice's default for a place it has not set); a Medicare row in a quarter outside the loaded content
+ * is left out in the browser and counted, with the loaded quarters named, and the result says so; and a ZIP that
+ * needs its ZIP+4, under a release that has not loaded its ZIP+4 list, is told so before any ZIP+4 is asked for, and
+ * never to check the digits.
  *
  * Audit #57 (the founder's rulings of 2026-10-20; SCR-10 to SCR-13, the screens' side): the prospect lands with
  * campaign codes and a paid click in the URL, and the proxy sets the first-party attribution cookie (the codes and the
@@ -123,8 +133,10 @@ test('a specialist approves the split; a file with patient information is refuse
     try {
       await registerKeyAndSignIn(specialist, 'screening-specialist');
       await specialist.goto('/console/screening');
-      await expect(specialist.getByRole('heading', { level: 1, name: 'Screening place of service' })).toBeVisible();
-      await expect(specialist.getByRole('navigation', { name: 'Internal console' }).getByRole('link', { name: 'Screening place of service' })).toHaveAttribute('aria-current', 'page');
+      await expect(specialist.getByRole('heading', { level: 1, name: 'Place-of-service split' })).toBeVisible();
+      await expect(specialist.getByRole('navigation', { name: 'Internal console' }).getByRole('link', { name: 'Place-of-service split' })).toHaveAttribute('aria-current', 'page');
+      // Every practice's default too, since PR 6b: the page says what approving changes.
+      await expect(specialist.locator('[data-split-warning]')).toHaveText('Approving changes every place a practice has not set, from each practice’s next run, and the free screening’s split.');
       await specialist.getByLabel('Facility places of service', { exact: true }).fill('21, 22, 23');
       await specialist.getByLabel('Non-facility places of service', { exact: true }).fill('11 12');
       await specialist.getByRole('button', { name: 'Approve this split' }).click();
@@ -136,6 +148,12 @@ test('a specialist approves the split; a file with patient information is refuse
       await expectAccessible(specialist, 'the screening split');
       const recorded = await withDatabase(async (client) => (await client.query<{ approved: string }>("SELECT count(*)::text AS approved FROM audit_event WHERE action = 'screening_split_approved' AND object_type = 'screening_place_of_service_split'")).rows[0]?.approved);
       expect(Number(recorded)).toBeGreaterThanOrEqual(1);
+      // The split in force is the one prepare.ts approved before any spec ran, setting for setting: approving it again
+      // changes no place another spec's run fills.
+      const splits = await withDatabase(async (client) => (await client.query<{ settings: unknown }>('SELECT settings FROM place_of_service_split ORDER BY approved_at, id')).rows.map((row) => row.settings));
+      expect(splits.length).toBeGreaterThanOrEqual(2);
+      expect(splits.at(-1)).toEqual(PREPARED_SPLIT);
+      expect(splits[0]).toEqual(PREPARED_SPLIT);
     } finally {
       await context.close();
     }
@@ -216,7 +234,7 @@ test('a specialist approves the split; a file with patient information is refuse
   });
 
   // The downloaded template, its notes kept, filled with SYNTHETIC totals.
-  const clean = Buffer.concat([template, screeningRowsCsv([...CLEAN_ROWS, ...SMALL_ROWS])]);
+  const clean = Buffer.concat([template, screeningRowsCsv([...CLEAN_ROWS, ...SMALL_ROWS, ...OUTSIDE_ROWS])]);
   await test.step('the template, filled and its notes kept, is sent as its rows of totals, no hash of the file, its rows of fewer than 11 claim lines left out and counted, and the page says to check the email (SCR-07)', async () => {
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: clean });
     await expect(page.locator('[data-state="file-ready"]')).toContainText(`${String(CLEAN_ROWS.length)} rows of totals`);
@@ -225,6 +243,10 @@ test('a specialist approves the split; a file with patient information is refuse
       `Left out: ${String(SMALL_LEFT_OUT.rows)} rows of fewer than 11 claim lines each, ${String(SMALL_LEFT_OUT.claimLines)} claim lines and ${SMALL_LEFT_OUT.allowed} allowed in your file.`,
     );
     await expect(leftOut).toContainText('They are not sent, and no figure includes them');
+    // The Medicare row of 2025, outside 900001's loaded content: left out and counted, with the quarters loaded named (SCR-16).
+    const outside = page.locator('[data-state="outside-content"]');
+    await expect(outside).toHaveText('1 row (12 claim lines, $412.00) in a quarter before 2026-Q1 was left out: PaidWhole has the Medicare content for 2026-Q1 to 2026-Q4 loaded.');
+    await expect(outside).toHaveAttribute('data-rows', String(OUTSIDE_LEFT_OUT.rows));
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(page).toHaveURL(/\/screening\?sent=1$/);
     await expect(page.locator('[data-state="sent"]')).toContainText('Check your email');
@@ -237,14 +259,17 @@ test('a specialist approves the split; a file with patient information is refuse
     for (const body of bodies) {
       expect(body).not.toContain('97164');
       expect(body).not.toContain('2026-Q3');
+      expect(body).not.toContain('97035');
+      expect(body).not.toContain('2025-Q4');
       expect(body).not.toContain(fileHash);
       expect(body).not.toContain('fileSha256');
     }
     const upload = await withDatabase(
       async (client) =>
         (
-          await client.query<{ rows_sha256: string; again: string; row_count: number; status: string; left_out: string[] }>(
+          await client.query<{ rows_sha256: string; again: string; row_count: number; status: string; left_out: string[]; outside: string[] }>(
             `SELECT u.rows_sha256, u.row_count, u.status, ARRAY[u.left_out_rows::text, u.left_out_claim_lines::text, u.left_out_allowed_cents::text] AS left_out,
+                    ARRAY[u.outside_content_rows::text, u.outside_content_claim_lines::text, u.outside_content_allowed_cents::text] AS outside,
                     (SELECT encode(sha256(convert_to(string_agg(concat_ws(E'\\t', s.procedure_code, array_to_string(s.modifiers, ' '), s.units, s.place_of_service, s.payer_product,
                                                                           s.service_band, s.observed_allowed_cents, s.claim_count), E'\\n' ORDER BY s.row_no), 'UTF8')), 'hex')
                        FROM screening_run r JOIN screening_result s ON s.run_id = r.id WHERE r.upload_id = u.id) AS again
@@ -261,6 +286,7 @@ test('a specialist approves the split; a file with patient information is refuse
         row_count: CLEAN_ROWS.length,
         status: 'accepted',
         left_out: [String(SMALL_LEFT_OUT.rows), String(SMALL_LEFT_OUT.claimLines), SMALL_LEFT_OUT.allowedCents.toString()],
+        outside: [String(OUTSIDE_LEFT_OUT.rows), String(OUTSIDE_LEFT_OUT.claimLines), OUTSIDE_LEFT_OUT.allowedCents.toString()],
       },
     ]);
     const small = await withDatabase(
@@ -367,6 +393,15 @@ test('a specialist approves the split; a file with patient information is refuse
     await expect(page.locator('[data-figure="left-out-rows"] dd')).toHaveText(String(SMALL_LEFT_OUT.rows));
     await expect(page.locator('[data-figure="left-out-claim-lines"] dd')).toHaveText(String(SMALL_LEFT_OUT.claimLines));
     await expect(page.locator('[data-figure="left-out-allowed"] dd')).toHaveText(SMALL_LEFT_OUT.allowed);
+    // The Medicare row outside the loaded content, not screened, as the browser counted it (SCR-16). Its quarter lies
+    // before 2026-Q1 while 900001's content runs to the screening's quarter; the result says "outside" otherwise.
+    const notScreened = page.locator('[data-section="outside-content"]');
+    await expect(notScreened).toContainText('Not screened: quarters outside the loaded content');
+    await expect(notScreened.locator('[data-copy="outside-content"]')).toHaveText(
+      /^1 row \(\$412\.00\) in a quarter (?:before 2026-Q1|outside the loaded content) was not screened: PaidWhole has not loaded the Medicare content for it\.$/,
+    );
+    await expect(page.locator('[data-figure="outside-content-claim-lines"] dd')).toHaveText(String(OUTSIDE_LEFT_OUT.claimLines));
+    await expect(page.locator('[data-figure="outside-content-allowed"] dd')).toHaveText(OUTSIDE_LEFT_OUT.allowed);
     await expect(page.locator('[data-figure="could-not-price-allowed"] dd')).toHaveText(observed('unpriced', 'rates_change_in_band'));
     // The row whose place of service the split leaves out is unpriced for that reason.
     await expect(page.locator('[data-coverage="medicare_ffs:unpriced"][data-reason="ENGINE_ERROR"]')).toContainText('The place of service is not in the approved place-of-service split');
@@ -597,4 +632,46 @@ test('a specialist approves the split; a file with patient information is refuse
   });
 
   await context.close();
+});
+
+test('a ZIP that spans more than one Medicare payment area, whose ZIP+4 list is not loaded, is told so before any ZIP+4 is asked for, and never to check the digits; the file stays chosen (SCR-15)', async ({ page }) => {
+  const contact = `screening-zip4-${randomBytes(4).toString('hex')}@clinic-zip4.synthetic.test`;
+  await page.goto('/screening');
+  await page.getByLabel('Practice name').fill('SYNTHETIC SPLIT ZIP CLINIC');
+  await page.getByLabel('State').selectOption('MN');
+  const zip = page.getByLabel('ZIP code', { exact: true });
+  await expect(zip).toHaveAttribute('maxlength', '10');
+  await expect(page.locator('#field-zip-hint')).toHaveText('Five digits, or ZIP+4 if you know it. A few ZIP codes span more than one Medicare payment area; for those we ask for the ZIP+4.');
+  // Which quarters' Medicare rows are screened, said before a file is chosen.
+  await expect(page.locator('[data-slot="screened-quarters"]')).toHaveText('Medicare rows of 2026-Q1 to 2026-Q4 are screened; rows of other quarters are left out and counted.');
+  await zip.fill(SCREENING_ZIP_PLUS_FOUR);
+  await page.getByLabel('Work email').fill(contact);
+  await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: screeningRowsCsv([SCREENING_HEADER, ...CLEAN_ROWS]) });
+  // What the page says of the chosen file is in a live region, so it is announced.
+  await expect(page.getByRole('status').locator('[data-state="file-ready"]')).toBeVisible();
+  await page.getByRole('button', { name: 'Screen the file' }).click();
+  const error = page.locator('[data-state="error"]');
+  // Release 900001 flags the ZIP and has not loaded its ZIP+4 list: the prospect is told so, never sent to look up a
+  // ZIP+4 the screening could not use (review of PR 6b-2, finding 22).
+  const notLoaded = 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.';
+  await expect(error).toHaveAttribute('role', 'alert');
+  await expect(error).toContainText(`ZIP code: ${notLoaded}`);
+  await expect(error).not.toContainText('Enter the full ZIP+4');
+  // The refusal is the ZIP field's: shown under it, marked invalid, described by it, and the focus is on it.
+  await expect(zip).toHaveAttribute('aria-invalid', 'true');
+  await expect(zip).toHaveAttribute('aria-describedby', 'field-zip-error field-zip-hint');
+  await expect(page.locator('#field-zip-error')).toHaveText(notLoaded);
+  await expect(zip).toBeFocused();
+  // The file is still chosen, and a ZIP+4 given changes nothing while the list is not loaded.
+  await expect(page.locator('[data-state="file-ready"]')).toBeVisible();
+  await zip.fill(`${SCREENING_ZIP_PLUS_FOUR}-0001`);
+  await page.getByRole('button', { name: 'Screen the file' }).click();
+  await expect(page.locator('#field-zip-error')).toHaveText(notLoaded);
+  await expect(error).toContainText(`ZIP code: ${notLoaded}`);
+  await expect(error).not.toContainText('Check the four digits');
+  await expectAccessible(page, 'the screening page with a ZIP refused');
+  await noSidewaysScroll(page, 390, 'the screening page with a ZIP refused');
+  // Nothing of a refused ZIP is kept.
+  const kept = await withDatabase(async (client) => (await client.query<{ n: string }>('SELECT count(*)::text AS n FROM screening_prospect WHERE contact_email = $1', [contact])).rows[0]?.n);
+  expect(kept).toBe('0');
 });

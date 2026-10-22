@@ -1,7 +1,7 @@
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import { canonicalJson } from '@tp/rules';
 
-import { type CauseTrace, type LineCause, type TraceRecordRef, differingRecords, lineCauses } from './causes';
+import { type CauseTrace, LOCATION_RECORD_TYPES, type LineCause, type OtherRelease, type RecordVersion, type TraceRecordRef, differingRecords, lineCauses, recordsRead, ruleLabel } from './causes';
 
 /**
  * The diff of two complete runs of a practice (PRD 7, Pricing runs: "compare two runs; re-run under a
@@ -47,6 +47,10 @@ export interface DiffRun {
   readonly rerunOfId: string | null;
   readonly acceptedAt: Date | null;
   readonly completedAt: Date;
+  /** The place-of-service split the run pinned when it was created (docs/adr/0064); null when none was approved then. */
+  readonly placeOfServiceSplitId: string | null;
+  /** When that split was approved (pricing_run_split(), in the run's practice's scope), for the diff to name; null with no split. */
+  readonly placeOfServiceSplitApprovedAt: Date | null;
 }
 
 export interface DiffSummary {
@@ -155,6 +159,8 @@ interface RunRow {
   readonly rerun_of_id: string | null;
   readonly accepted_at: Date | null;
   readonly completed_at: Date | null;
+  readonly place_of_service_split_id: string | null;
+  readonly place_of_service_split_approved_at: Date | null;
 }
 
 async function runsOf(scope: PracticeScope<ScopeClient>, practiceId: string, ids: readonly string[], requestId: string): Promise<Map<string, RunRow>> {
@@ -164,8 +170,10 @@ async function runsOf(scope: PracticeScope<ScopeClient>, practiceId: string, ids
     async (client) =>
       (
         await client.query<RunRow>(
-          `SELECT id, practice_id, period_from::text AS period_from, period_to::text AS period_to, release_no, engine_version, status, rerun_of_id, accepted_at, completed_at
-             FROM pricing_run WHERE practice_id = $1 AND id = ANY ($2::uuid[])`,
+          `SELECT r.id, r.practice_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.engine_version, r.status, r.rerun_of_id, r.accepted_at,
+                  r.completed_at, r.place_of_service_split_id, s.approved_at AS place_of_service_split_approved_at
+             FROM pricing_run r LEFT JOIN LATERAL pricing_run_split(r.id) s ON true
+            WHERE r.practice_id = $1 AND r.id = ANY ($2::uuid[])`,
           [practiceId, ids],
         )
       ).rows,
@@ -190,6 +198,8 @@ function diffRun(row: RunRow | undefined): DiffRun {
     rerunOfId: row.rerun_of_id,
     acceptedAt: row.accepted_at,
     completedAt: row.completed_at,
+    placeOfServiceSplitId: row.place_of_service_split_id,
+    placeOfServiceSplitApprovedAt: row.place_of_service_split_approved_at,
   };
 }
 
@@ -316,6 +326,67 @@ async function sameRuleLookup(client: ScopeClient, pairs: readonly { readonly be
     };
 }
 
+/**
+ * Under two releases, the location's records (LOCATION_RECORD_TYPES) a line read in one run only, as the other run's
+ * release holds their rule (OtherRelease): whether it holds a record of the rule with the same value and window, and
+ * its version of the rule on the read record's first day. A record the ZIP's change makes a line read is then a
+ * release cause too when the new release added or changed it for the new location. Under one release, nothing.
+ */
+async function otherReleaseLookup(
+  client: ScopeClient,
+  traces: readonly { readonly before: unknown; readonly after: unknown }[],
+  beforeRelease: number,
+  afterRelease: number,
+): Promise<OtherRelease> {
+  if (beforeRelease === afterRelease) {
+    return () => undefined;
+  }
+  const asked = new Map<string, { readonly ref: TraceRecordRef; readonly release: number; readonly other: number }>();
+  for (const pair of traces) {
+    const first = recordsRead(pair.before);
+    const second = recordsRead(pair.after);
+    for (const [label, ref] of first) {
+      if (!second.has(label) && LOCATION_RECORD_TYPES.has(ref.record_type)) {
+        asked.set(`before:${ref.sha256}:${label}`, { ref, release: beforeRelease, other: afterRelease });
+      }
+    }
+    for (const [label, ref] of second) {
+      if (!first.has(label) && LOCATION_RECORD_TYPES.has(ref.record_type)) {
+        asked.set(`after:${ref.sha256}:${label}`, { ref, release: afterRelease, other: beforeRelease });
+      }
+    }
+  }
+  const asks = [...asked.values()];
+  if (asks.length === 0) {
+    return () => undefined;
+  }
+  // The records as read, by release and hash, and every record of the same rules in the other release.
+  const { rows: read } = await client.query<{ release_no: number; sha256: string; value: unknown; effective_from: string; effective_to: string | null }>(
+    `SELECT r.release_no, r.sha256, r.value, r.effective_from::text AS effective_from, r.effective_to::text AS effective_to
+       FROM rule_record r JOIN unnest($1::int[], $2::text[]) AS w (release_no, sha256) ON w.release_no = r.release_no AND w.sha256 = r.sha256`,
+    [asks.map((ask) => ask.release), asks.map((ask) => ask.ref.sha256)],
+  );
+  const { rows: held } = await client.query<{ release_no: number; record_type: string; key: Readonly<Record<string, string>>; sha256: string; value: unknown; effective_from: string; effective_to: string | null }>(
+    `SELECT DISTINCT r.release_no, r.record_type, r.key, r.sha256, r.value, r.effective_from::text AS effective_from, r.effective_to::text AS effective_to
+       FROM rule_record r JOIN unnest($1::int[], $2::text[], $3::jsonb[]) AS w (release_no, record_type, key)
+         ON w.release_no = r.release_no AND w.record_type = r.record_type AND w.key = r.key`,
+    [asks.map((ask) => ask.other), asks.map((ask) => ask.ref.record_type), asks.map((ask) => JSON.stringify(ask.ref.key))],
+  );
+  const valueOf = new Map(read.map((row) => [`${String(row.release_no)}:${row.sha256}`, canonicalJson([row.value, row.effective_from, row.effective_to])]));
+  return (ref, readIn) => {
+    const release = readIn === 'before' ? beforeRelease : afterRelease;
+    const other = readIn === 'before' ? afterRelease : beforeRelease;
+    const rule = held.filter((row) => row.release_no === other && ruleLabel(row) === ruleLabel(ref));
+    const value = valueOf.get(`${String(release)}:${ref.sha256}`);
+    const same = value !== undefined && rule.some((row) => canonicalJson([row.value, row.effective_from, row.effective_to]) === value);
+    const onFirstDay = rule
+      .filter((row) => row.effective_from <= ref.effective_from && (row.effective_to === null || row.effective_to >= ref.effective_from))
+      .sort((x, y) => (x.effective_from < y.effective_from ? 1 : x.effective_from > y.effective_from ? -1 : 0))[0];
+    const version: RecordVersion | null = onFirstDay === undefined ? null : { sha256: onFirstDay.sha256, effectiveFrom: onFirstDay.effective_from, effectiveTo: onFirstDay.effective_to };
+    return { same, other: version };
+  };
+}
+
 export async function compareRuns(scope: PracticeScope<ScopeClient>, input: CompareRunsInput): Promise<RunDiff> {
   const filter = input.filter ?? 'all';
   const perPage = input.perPage ?? DIFF_LINES_PER_PAGE;
@@ -375,6 +446,12 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
       : [],
   );
   const sameRule = (await sameRuleLookup(scope.client, pairs))(before.releaseNo, after.releaseNo);
+  const otherRelease = await otherReleaseLookup(
+    scope.client,
+    entries.flatMap(([, entry]) => (entry.before !== undefined && entry.after !== undefined ? [{ before: entry.before.trace, after: entry.after.trace }] : [])),
+    before.releaseNo,
+    after.releaseNo,
+  );
   const lines = entries.map(([serviceLineId, entry]): DiffLine => {
     const any = (entry.before ?? entry.after) as SideRow;
     const first = sideOf(entry.before);
@@ -388,7 +465,7 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
       before: first,
       after: second,
       changes: first !== null && second !== null ? sideChanges(first, second) : [],
-      causes: entry.before !== undefined && entry.after !== undefined ? lineCauses(entry.before.trace, entry.after.trace, sameRule) : [],
+      causes: entry.before !== undefined && entry.after !== undefined ? lineCauses(entry.before.trace, entry.after.trace, sameRule, otherRelease) : [],
     };
   });
   return { before, after, summary, filter, lines, page, pages, total };

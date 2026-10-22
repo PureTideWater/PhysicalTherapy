@@ -92,6 +92,15 @@ export {
 } from './resolver';
 export { type CoverageLine, type MappedLine, PricingRefusedError, type WaitingOnMapping, assertPricingAllowed, unmappedPlanIds, waitingOnMapping } from './coverage';
 export { type CalendarInput, type DerivedCalendarEvent, deriveCalendarEvents } from './calendar';
+export {
+  LOCATION_NOT_READY_STATUSES,
+  LOCATION_SETTLED_STATUSES,
+  LOCATION_STATUSES,
+  type LocationFacts,
+  type LocationStatus,
+  isLocationStatus,
+  locationStatusText,
+} from './location';
 export { STORED_PAGE_TEXT_FORMAT, normalizePageText, pageTextHash, parsePageText, quoteOnPage, serializePageText } from './evidence/page-text';
 export { type ScannedPageReader, ScanReadError, TEXTRACT_ACTIONS, TextractPageReader, type TextractPageReaderOptions, type TextractStaging, createTextractPageReader } from './evidence/scan';
 export {

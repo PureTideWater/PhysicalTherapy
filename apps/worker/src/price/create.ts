@@ -1,4 +1,4 @@
-import { assertPracticePricingAllowed } from '@tp/contracts';
+import { type LocationStatus, assertPracticePricingAllowed } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { ENGINE_VERSION, isIsoDate } from '@tp/pricing';
 
@@ -16,6 +16,13 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
  * database refuses the same mismatch itself, and a run in another person's name. A re-run of a complete
  * run (rerun.ts) is recorded the same way. The monitoring chain (../monitor) creates a month's run the
  * same way in its job's scope: the run is then the job's (created_by_job_id), not a person's.
+ *
+ * No run is created for a practice that has no pricing location (audit #33; docs/adr/0064): every line
+ * would stop as ENGINE_ERROR invalid_settings, fixed fees included. The location is checked here
+ * (PricingLocationWaiting), after the mapping guard, and Postgres refuses the same run itself
+ * (pricing_run_location_missing, re-runs included), which recordRun reports the same way. A location a
+ * line cannot be priced at (a ZIP Medicare's list lacks, or one that needs its ZIP+4) still gets its run:
+ * the run fails as location_not_ready only when a line stops on it (execute.ts).
  */
 
 /** The request is not a run the plan allows (a period backwards, or with no lines). Messages name fields, never values. */
@@ -27,6 +34,26 @@ export class PricingRunInputError extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+/**
+ * The practice has no pricing location (no billing ZIP): the period waits for it with no run. The status is the
+ * closed list's (practice_location_status()); nothing else is said.
+ */
+export class PricingLocationWaiting extends Error {
+  override readonly name = 'PricingLocationWaiting';
+
+  constructor(readonly status: Extract<LocationStatus, 'zip_missing'> = 'zip_missing') {
+    super('the practice has no pricing location (its billing ZIP): the period waits for it');
+  }
+}
+
+/** Whether the practice has a location in the caller's scope (practice_location_status() under the caller's row-level security). */
+async function assertLocation(client: ScopeClient, practiceId: string, releaseNo: number, periodFrom: string, periodTo: string): Promise<void> {
+  const { rows } = await client.query<{ status: string }>('SELECT practice_location_status($1, $2, $3::date, $4::date) AS status', [practiceId, releaseNo, periodFrom, periodTo]);
+  if (rows[0]?.status === 'zip_missing') {
+    throw new PricingLocationWaiting();
   }
 }
 
@@ -48,6 +75,11 @@ export interface CreatedPricingRun {
 
 function isMismatch(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23514' && error instanceof Error && /rule-release mismatch/.test(error.message);
+}
+
+/** Postgres refused a run of a practice with no location (pricing_run_rules(), pricing_run_location_missing). */
+function isLocationMissing(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === '23514' && 'constraint' in error && error.constraint === 'pricing_run_location_missing';
 }
 
 export async function createPricingRun(scope: PracticeScope<ScopeClient>, input: CreatePricingRunInput): Promise<CreatedPricingRun> {
@@ -72,6 +104,8 @@ export async function createPricingRun(scope: PracticeScope<ScopeClient>, input:
   }
   // MAP-01: refused while any plan of the run's lines has no mapping (PricingRefusedError).
   await assertPracticePricingAllowed(scope, { practiceId: input.practiceId, requestId: input.requestId, purpose: 'pricing' }, plans);
+  // Audit #33: no run while the practice has no location (PricingLocationWaiting); Postgres refuses it too.
+  await assertLocation(scope.client, input.practiceId, input.releaseNo, input.periodFrom, input.periodTo);
   return recordRun(scope, { practiceId: input.practiceId, periodFrom: input.periodFrom, periodTo: input.periodTo, releaseNo: input.releaseNo, rerunOf: null });
 }
 
@@ -87,9 +121,10 @@ export interface RunPins {
 
 /**
  * Records the run queued, pinned to the release and to this engine, in the actor's name (a person's,
- * or for a job's scope the job's; the database refuses a job's re-run). The database
- * refuses a release that is not the one in force (RuleReleaseMismatchError here), and a re-run that does
- * not price the period and lines of a complete run of the practice.
+ * or for a job's scope the job's; the database refuses a job's re-run). The database pins the
+ * place-of-service split in force on it (pricing_run_rules()), and refuses a release that is not the one
+ * in force (RuleReleaseMismatchError here), a run of a practice with no location (PricingLocationWaiting
+ * here), and a re-run that does not price the period and lines of a complete run of the practice.
  */
 export async function recordRun(scope: PracticeScope<ScopeClient>, pins: RunPins): Promise<CreatedPricingRun> {
   try {
@@ -122,6 +157,10 @@ export async function recordRun(scope: PracticeScope<ScopeClient>, pins: RunPins
     if (isMismatch(error)) {
       await scope.client.query('ROLLBACK TO SAVEPOINT create_pricing_run');
       throw new RuleReleaseMismatchError(pins.releaseNo, await currentReleaseNo(scope.client));
+    }
+    if (isLocationMissing(error)) {
+      await scope.client.query('ROLLBACK TO SAVEPOINT create_pricing_run');
+      throw new PricingLocationWaiting();
     }
     throw error;
   }

@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 
-import { AGREEMENT_KINDS, MEMBERSHIP_ROLES, type MembershipRole, provisionPracticeKey } from '@tp/db/runtime';
+import { LOCATION_STATUSES, type LocationStatus } from '@tp/contracts';
+import { AGREEMENT_KINDS, MEMBERSHIP_ROLES, type MembershipRole, type ScopeClient, provisionPracticeKey } from '@tp/db/runtime';
 import { z } from 'zod';
 
 import { revokeUserSessions } from '../auth/sessions';
 import { PracticeSettingsError, type PracticeSettingsForm, practiceSettingsInput, settingsDocument, settingsForm } from '../console/practice-settings';
 import { platformRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { localityReading, releaseInForce } from '../pricing/location';
+import { ZIP_CODE_FORMAT, type ZipCode, parseZipCode } from '../zip';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
 /**
@@ -144,13 +147,46 @@ export interface ConsoleGrant {
   readonly agreementId: string;
 }
 
+/**
+ * A practice's location as the console reads it (console_practice_settings(), organization.manage): the stored ZIP and
+ * ZIP+4, and their status in the release in force now, in words. Never a status a link names, so a reload or an
+ * edited link shows the location as it stands (review of PR 6b-2, finding 14).
+ */
+export interface ConsoleLocation {
+  readonly practiceId: string;
+  /** The stored billing ZIP and ZIP+4's four digits; both null when the practice has no location. */
+  readonly zip: string | null;
+  readonly zipPlusFour: string | null;
+  readonly status: LocationStatus;
+  readonly text: string;
+}
+
+/**
+ * The location's status and its words: the practice's own sentence (@tp/contracts locationStatusText, through
+ * localityReading()), but for a ZIP+4 Medicare's list does not hold, which the console asks the practice about before
+ * checking Medicare's list (right under either answer to Q37: the digits may be right and the list incomplete).
+ */
+async function consoleLocationOf(client: ScopeClient, practiceId: string, zip: string | null, zipPlusFour: string | null): Promise<ConsoleLocation> {
+  const reading = await localityReading(client, await releaseInForce(client), zip === null ? null : { zip, zipPlusFour });
+  const text =
+    reading.status === 'zip_plus_four_unknown' ? 'Medicare’s ZIP+4 list in force does not list this ZIP+4. If the practice confirms the four digits, check them against Medicare’s list.' : reading.text;
+  return { practiceId, zip, zipPlusFour, status: reading.status, text };
+}
+
+/** A practice's location as it stands, or null for a practice the console does not read. */
+export async function consoleLocation(client: ScopeClient, practiceId: string): Promise<ConsoleLocation | null> {
+  const row = (await client.query<{ zip: string | null; zip_plus_four: string | null }>('SELECT zip, zip_plus_four FROM console_practice_settings($1)', [practiceId])).rows[0];
+  return row === undefined ? null : consoleLocationOf(client, practiceId, row.zip, row.zip_plus_four);
+}
+
 export const organizationPage = platformRoute({
   id: 'console.organization',
   kind: 'page',
   path: '/console/organizations/[organizationId]',
   phi: false,
   permission: 'organization.manage',
-  params: z.object({ organizationId: opaqueId }),
+  // created: the practice just created, shown with its location as it stands.
+  params: z.object({ organizationId: opaqueId, created: optionalText(opaqueId).catch(undefined) }),
   handle: async ({ scope, params }) => {
     const id = params.organizationId;
     const organization = (await scope.client.query<OrganizationRow>('SELECT id, kind, name, status, created_at FROM organization WHERE id = $1', [id])).rows[0];
@@ -214,6 +250,7 @@ export const organizationPage = platformRoute({
       ),
       roles: ROLES_BY_KIND[organization.kind],
       practices: practices.rows.map((row) => ({ id: row.practice_id, name: row.name, status: row.status, createdAt: row.created_at })),
+      created: params.created !== undefined && practices.rows.some((row) => row.practice_id === params.created) ? await consoleLocation(scope.client, params.created) : null,
       members: members.rows.map(
         (row): MemberSummary => ({
           membershipId: row.id,
@@ -258,8 +295,47 @@ export const organizationPage = platformRoute({
 
 const npi = optionalText(z.string().regex(/^\d{10}$/, 'ten digits'));
 const lastFour = optionalText(z.string().regex(/^\d{4}$/, 'four digits'));
-const zip = optionalText(z.string().regex(/^\d{5}$/, 'five digits'));
 
+/** The billing ZIP as a console form sends it: required, five digits or ZIP+4 (parseZipCode). */
+export const billingZip = z
+  .string()
+  .trim()
+  .transform((text, context): ZipCode => {
+    const parsed = parseZipCode(text);
+    if (parsed === null) {
+      context.addIssue({ code: 'custom', message: ZIP_CODE_FORMAT });
+      return z.NEVER;
+    }
+    return parsed;
+  });
+
+/** The location setters' refusals of a malformed ZIP or ZIP+4, named on the form's field. */
+function locationRefused(error: unknown): InputError | undefined {
+  if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23514' && 'constraint' in error) {
+    if (error.constraint === 'practice_site_zip' || error.constraint === 'practice_site_zip_plus_four') {
+      return new InputError([{ field: 'zip', message: ZIP_CODE_FORMAT }]);
+    }
+  }
+  return undefined;
+}
+
+/** console_set_practice_location()'s answer: the location's status, or null for a practice that does not exist or is deleted. */
+async function setLocation(client: ScopeClient, practiceId: string, zip: ZipCode): Promise<LocationStatus | null> {
+  let status: string | null | undefined;
+  try {
+    status = (await client.query<{ status: string | null }>('SELECT console_set_practice_location($1, $2, $3) AS status', [practiceId, zip.zip5, zip.plusFour])).rows[0]?.status;
+  } catch (error) {
+    throw locationRefused(error) ?? error;
+  }
+  return status === null || status === undefined ? null : (LOCATION_STATUSES.find((known) => known === status) ?? null);
+}
+
+/**
+ * Creates a practice of a group with its own data key (PRD 3) and its pricing location (audit #33; docs/adr/0064):
+ * the billing ZIP is required, five digits or ZIP+4, and set by console_set_practice_location() in the creating
+ * transaction, before the database's deferred check (practice_has_site) runs at commit. A ZIP that needs its ZIP+4, or
+ * one the release in force does not map, is accepted and its status shown beside the new practice, never refused.
+ */
 export const createPractice = platformRoute({
   id: 'console.create_practice',
   kind: 'action',
@@ -267,30 +343,37 @@ export const createPractice = platformRoute({
   phi: false,
   permission: 'organization.manage',
   params: z.object({}),
-  input: z.object({ organizationId: opaqueId, name: requiredText(200), npi, taxIdLast4: lastFour, zip }),
+  input: z.object({ organizationId: opaqueId, name: requiredText(200), npi, taxIdLast4: lastFour, zip: billingZip }),
   audit: { action: 'practice_created', objectType: 'practice' },
   handle: async ({ scope, input, services }): Promise<MutationResult> => {
     const id = randomUUID();
     // The practice is created with its own data key (PRD 3), wrapped by the key provider.
     const key = await provisionPracticeKey(services.keys, id);
-    await scope.client.query('INSERT INTO practice (id, organization_id, name, npi, tax_id_last4, zip, data_key_ref) VALUES ($1, $2, $3, $4, $5, $6, $7)', [
+    await scope.client.query('INSERT INTO practice (id, organization_id, name, npi, tax_id_last4, data_key_ref) VALUES ($1, $2, $3, $4, $5, $6)', [
       id,
       input.organizationId,
       input.name,
       input.npi ?? null,
       input.taxIdLast4 ?? null,
-      input.zip ?? null,
       key.dataKeyRef,
     ]);
-    return { objectId: id, redirect: `/console/organizations/${input.organizationId}` };
+    const status = await setLocation(scope.client, id, input.zip);
+    if (status === null) {
+      throw new NotFoundError();
+    }
+    return { objectId: id, redirect: `/console/organizations/${input.organizationId}?created=${id}` };
   },
-  sample: { params: () => ({}), input: (refs) => ({ organizationId: refs.organizationId, name: 'SYNTHETIC CONSOLE PRACTICE' }) },
+  sample: { params: () => ({}), input: (refs) => ({ organizationId: refs.organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', zip: '00011' }) },
 });
 
 export interface PracticeSettingsPageData {
   readonly practice: { readonly id: string; readonly organizationId: string; readonly name: string };
   readonly form: PracticeSettingsForm;
   readonly saved: boolean;
+  /** The location as stored, its ZIP+4 too, with its status now: shown, and the form's starting value. */
+  readonly location: ConsoleLocation;
+  /** The location form was just saved (?location=saved). */
+  readonly locationSaved: boolean;
 }
 
 /**
@@ -306,25 +389,32 @@ export const practiceSettingsPage = platformRoute({
   path: '/console/practices/[practiceId]',
   phi: false,
   permission: 'organization.manage',
-  params: z.object({ practiceId: opaqueId, saved: optionalText(z.literal('1')) }),
+  params: z.object({ practiceId: opaqueId, saved: optionalText(z.literal('1')), location: optionalText(z.literal('saved')).catch(undefined) }),
   handle: async ({ scope, params }): Promise<PracticeSettingsPageData> => {
-    const { rows } = await scope.client.query<{ practice_id: string; organization_id: string; name: string; zip: string | null; settings: unknown }>(
-      'SELECT practice_id, organization_id, name, zip, settings FROM console_practice_settings($1)',
+    const { rows } = await scope.client.query<{ practice_id: string; organization_id: string; name: string; zip: string | null; zip_plus_four: string | null; settings: unknown }>(
+      'SELECT practice_id, organization_id, name, zip, zip_plus_four, settings FROM console_practice_settings($1)',
       [params.practiceId],
     );
     const row = rows[0];
     if (row === undefined) {
       throw new NotFoundError();
     }
-    return { practice: { id: row.practice_id, organizationId: row.organization_id, name: row.name }, form: settingsForm(row.zip, row.settings), saved: params.saved !== undefined };
+    return {
+      practice: { id: row.practice_id, organizationId: row.organization_id, name: row.name },
+      form: settingsForm(row.settings),
+      saved: params.saved !== undefined,
+      location: await consoleLocationOf(scope.client, row.practice_id, row.zip, row.zip_plus_four),
+      locationSaved: params.location !== undefined,
+    };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
 });
 
 /**
- * Sets a practice's billing ZIP and its pricing and triage settings (a blank field returns it to its
- * default; the practice's other settings stay). Validated here as the engine and triage read them,
- * written by console_set_practice_settings() in the practice's one scope, and audited.
+ * Sets a practice's pricing and triage settings (a blank field returns it to its default; the practice's other
+ * settings stay). Validated here as the engine and triage read them, written by console_set_practice_settings() in
+ * the practice's one scope, and audited. The billing ZIP is the location's own form (setPracticeLocation): this
+ * passes none, which leaves the location as it is.
  */
 export const setPracticeSettings = platformRoute({
   id: 'console.practice_settings',
@@ -345,7 +435,7 @@ export const setPracticeSettings = platformRoute({
       }
       throw error;
     }
-    const { rows } = await scope.client.query<{ changed: boolean }>('SELECT console_set_practice_settings($1, $2, $3) AS changed', [input.practiceId, document.zip, JSON.stringify(document.settings)]);
+    const { rows } = await scope.client.query<{ changed: boolean }>('SELECT console_set_practice_settings($1, NULL, $2) AS changed', [input.practiceId, JSON.stringify(document.settings)]);
     if (rows[0]?.changed !== true) {
       throw new NotFoundError();
     }
@@ -353,8 +443,37 @@ export const setPracticeSettings = platformRoute({
   },
   sample: {
     params: () => ({}),
-    input: (refs) => ({ practiceId: refs.practiceId, zip: '00011', facilityPlaces: '22', nonFacilityPlaces: '11', defaultRounding: 'HALF_UP_CENT', lineMateriality: '5.00', caseMateriality: '250.00' }),
+    input: (refs) => ({ practiceId: refs.practiceId, facilityPlaces: '22', nonFacilityPlaces: '11', defaultRounding: 'HALF_UP_CENT', lineMateriality: '5.00', caseMateriality: '250.00' }),
   },
+});
+
+/**
+ * Sets a practice's pricing location from the console (audit #33; docs/adr/0064): its billing ZIP and, where
+ * Medicare's locality list needs it, its ZIP+4, entered whole each time (the form starts from the stored location, so a
+ * save never drops a ZIP+4 it did not show). Written by console_set_practice_location() (organization.manage, checked
+ * again there) in the practice's one scope, audited, and the monitoring chain queued by this request's ID so the months
+ * waiting on the location are planned again. A change clears the practice's confirmation, so its Getting started asks
+ * a person of the practice to confirm it. The link back says only that it was saved; the page reads the status.
+ */
+export const setPracticeLocation = platformRoute({
+  id: 'console.practice_location',
+  kind: 'action',
+  path: '/console/practices/[practiceId]',
+  phi: false,
+  permission: 'organization.manage',
+  params: z.object({}),
+  input: z.object({ practiceId: opaqueId, zip: billingZip }),
+  audit: { action: 'console_pricing_location_set', objectType: 'practice' },
+  handle: async ({ scope, input, request, services, afterCommit }): Promise<MutationResult> => {
+    const status = await setLocation(scope.client, input.practiceId, input.zip);
+    if (status === null) {
+      throw new NotFoundError();
+    }
+    // Queued once the save has committed, so the plan reads the saved location (see setPricingLocationAction).
+    afterCommit(() => services.queue.enqueue('monitor', { practice_id: input.practiceId, request_id: request.requestId }));
+    return { objectId: input.practiceId, redirect: `/console/practices/${input.practiceId}?location=saved` };
+  },
+  sample: { params: () => ({}), input: (refs) => ({ practiceId: refs.practiceId, zip: '00011' }) },
 });
 
 function isUniqueViolation(error: unknown): boolean {
@@ -746,6 +865,7 @@ export const CONSOLE_ROUTES = [
   createPractice,
   practiceSettingsPage,
   setPracticeSettings,
+  setPracticeLocation,
   inviteMember,
   endMembership,
   unlockUser,

@@ -9,8 +9,8 @@ import { startLocalWorker } from './worker';
 
 /**
  * Pricing runs in the browser (PRD 5, J7; PRD 7, Pricing runs, Claims and lines, Coverage; test matrix
- * MAP-05): a platform administrator sets the practice's billing ZIP and place-of-service split in
- * the internal console (docs/adr/0040), a billing manager uploads a SYNTHETIC remittance from a
+ * MAP-05): a platform administrator sets the practice's pricing location (its billing ZIP, docs/adr/0064) and
+ * place-of-service settings in the internal console (docs/adr/0040), a billing manager uploads a SYNTHETIC remittance from a
  * Medicare Advantage plan (fixture MAP-05, February 2026), maps the plan as MA non-contracted,
  * creates a run for February under the SYNTHETIC release prepare.ts loads, and the price job (the
  * worker run here beside the server) prices it. The run shows complete with its coverage and its variance by payer pattern; a line opens
@@ -28,19 +28,26 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
   test.setTimeout(240_000);
   await signInWithTotp(page, 'pricing-manager');
   const other = await practiceId('other');
-  await test.step('a platform administrator sets the practice’s billing ZIP and place-of-service settings in the console', async () => {
+  await test.step('a platform administrator sets the practice’s pricing location and place-of-service settings in the console', async () => {
     const context = await browser.newContext();
     const admin = await context.newPage();
     try {
       await registerKeyAndSignIn(admin, 'pricing-admin');
       await admin.goto(`/console/practices/${other}`);
-      await admin.getByLabel('Billing ZIP').fill('00011');
+      // The pricing location has its own form since PR 6b (audit #33): the billing ZIP, set whole.
+      await admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)').fill('00011');
+      await admin.getByRole('button', { name: 'Save the location' }).click();
+      await expect(admin.locator('[data-notice="location"]')).toBeVisible();
+      // The status the location has now, read from the database, and the stored location in the field (review of PR 6b-2, finding 14).
+      await expect(admin.locator('[data-location-status="ready"]')).toHaveText('Medicare prices this location in locality 99999-01 under rule release 900001.');
+      await expect(admin.locator('[data-location-zip]')).toHaveText('00011');
+      await expect(admin.getByLabel('Billing ZIP (ZIP+4 if Medicare needs one)')).toHaveValue('00011');
       await admin.getByLabel('Places of service priced as facility').fill('22');
       await admin.getByLabel('Places of service priced as non-facility').fill('11');
       await admin.getByLabel('Default rounding when a contract is silent').selectOption('HALF_UP_CENT');
       await admin.getByRole('button', { name: 'Save the settings' }).click();
       await expect(admin.locator('[data-notice="saved"]')).toBeVisible();
-      await expect(admin.getByLabel('Billing ZIP')).toHaveValue('00011');
+      await expect(admin.locator('[data-location-zip]')).toHaveText('00011');
     } finally {
       await context.close();
     }

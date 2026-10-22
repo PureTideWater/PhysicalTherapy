@@ -1,0 +1,22 @@
+{
+  "case": "SCR-16",
+  "module": "SCR",
+  "title": "A Medicare screening row in a quarter outside the loaded content",
+  "assertion": "Left out in the browser and counted, with the loaded quarters named, and the result says so. A bypassing request is refused on the server and in the database. Other products' rows are untouched, and a content with no records at all has an empty span",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/screening/format.test.ts",
+    "packages/db/src/screening.db.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A row with an earlier quarter; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

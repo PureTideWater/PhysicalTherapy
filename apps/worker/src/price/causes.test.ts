@@ -99,7 +99,122 @@ describe('lineCauses', () => {
       settings: { zip: '00012', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } },
       engine: 'phase-three/1',
     });
-    expect(lineCauses(before, after, never)).toEqual([{ kind: 'claim' }, { kind: 'settings' }, { kind: 'engine', before: 'phase-two/1', after: 'phase-three/1' }]);
+    expect(lineCauses(before, after, never)).toEqual([
+      { kind: 'claim' },
+      { kind: 'settings', fields: ['zip'], before: { zip: '00011' }, after: { zip: '00012' } },
+      { kind: 'engine', before: 'phase-two/1', after: 'phase-three/1' },
+    ]);
+  });
+
+  it('names each settings key that differs, in order, with both sides, an absent ZIP+4 read as none (docs/adr/0064)', () => {
+    const settings = { zip: '00012', zip_plus_four: '0001', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } };
+    const changed = lineCauses(
+      trace({ settings: { zip: '00012', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } } }),
+      trace({ settings: { ...settings, default_rounding: 'HALF_EVEN_CENT', place_of_service_settings: { '11': 'non_facility', '22': 'facility' } } }),
+      never,
+    );
+    expect(changed).toEqual([
+      {
+        kind: 'settings',
+        fields: ['zip_plus_four', 'default_rounding', 'place_of_service_settings'],
+        before: { zip_plus_four: null, default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } },
+        after: { zip_plus_four: '0001', default_rounding: 'HALF_EVEN_CENT', place_of_service_settings: { '11': 'non_facility', '22': 'facility' } },
+      },
+    ]);
+    expect(lineCauses(trace({ settings }), trace({ settings: { ...settings, zip_plus_four: '5000' } }), never)).toEqual([
+      { kind: 'settings', fields: ['zip_plus_four'], before: { zip_plus_four: '0001' }, after: { zip_plus_four: '5000' } },
+    ]);
+  });
+
+  it('after only a ZIP+4 change, names the setting alone: the GPCI of the other locality read in one run only is not a release record', () => {
+    const settings = { zip: '00012', zip_plus_four: '0001', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } };
+    const locality02 = ref('pfs_gpci', { carrier: '99999', locality: '02' }, 'g');
+    const plusFour = ref('locality_map_plus_four', { zip: '00012' }, 'h');
+    const before = trace({ settings, records: [rvu('a'), gpci, plusFour] });
+    const after = trace({ settings: { ...settings, zip_plus_four: '5000' }, records: [rvu('a'), locality02, plusFour] });
+    expect(lineCauses(before, after, never)).toEqual([{ kind: 'settings', fields: ['zip_plus_four'], before: { zip_plus_four: '0001' }, after: { zip_plus_four: '5000' } }]);
+    // A ZIP change skips the location's records read in one run only too: the ZIP file's and the ZIP+4 file's.
+    const zip12 = ref('locality_map', { zip: '00012' }, 'i');
+    const zip11 = ref('locality_map', { zip: '00011' }, 'j');
+    expect(
+      lineCauses(trace({ records: [rvu('a'), gpci, zip11] }), trace({ settings: { ...settings, zip_plus_four: '5000' }, records: [rvu('a'), locality02, zip12, plusFour] }), never).map(
+        (cause) => cause.kind,
+      ),
+    ).toEqual(['settings']);
+  });
+
+  it('still names a record a new release added when the rounding changed beside it: a rounding change reads no other record', () => {
+    const mue = ref('ncci_mue', { hcpcs: '97110' }, 'e');
+    const rounded = trace({ settings: { zip: '00011', default_rounding: 'HALF_EVEN_CENT', place_of_service_settings: { '11': 'non_facility' } }, records: [rvu('a'), gpci, mue] });
+    expect(lineCauses(trace(), rounded, never)).toEqual([
+      { kind: 'release_record', recordType: 'ncci_mue', key: { hcpcs: '97110' }, before: null, after: { sha256: mue.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' } },
+      { kind: 'settings', fields: ['default_rounding'], before: { default_rounding: 'HALF_UP_CENT' }, after: { default_rounding: 'HALF_EVEN_CENT' } },
+    ]);
+    // Nor does a change of places of service, so a GPCI read in one run only is still named then.
+    const placed = trace({ settings: { zip: '00011', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'facility' } }, records: [rvu('a'), gpci, ref('pfs_gpci', { carrier: '99999', locality: '02' }, 'g')] });
+    expect(lineCauses(trace(), placed, never).map((cause) => (cause.kind === 'release_record' ? `${cause.kind}:${cause.recordType}` : cause.kind))).toEqual(['release_record:pfs_gpci', 'settings']);
+  });
+
+  it('names the ZIP+4 file a new release loaded as a release record, never the settings, when the same ZIP+4 had stopped on a gap in the content or on a file that did not list it', () => {
+    const settings = { zip: '00012', zip_plus_four: '9100', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } };
+    const zip12 = ref('locality_map', { zip: '00012' }, 'i');
+    const unlisted = ref('locality_map_plus_four', { zip: '00012' }, 'h');
+    const listed = ref('locality_map_plus_four', { zip: '00012' }, 'k');
+    const locality02 = ref('pfs_gpci', { carrier: '99999', locality: '02' }, 'g');
+    const located = (locality: Record<string, unknown>, gpciRecord: TraceRecordRef | null) => ({
+      ...trace({ settings }),
+      steps: { fee_schedule: { rvu: { record: rvu('a') }, locality: { record: zip12, carrier: '99999', locality: '01', plus_four_required: true, ...locality }, gpci: gpciRecord === null ? null : { record: gpciRecord } } },
+    });
+    const priced = located({ plus_four: { record: listed, zip_plus_four: '9100', from: '9000', to: '9999', carrier: '99999', locality: '02' } }, locality02);
+    const now = (record: TraceRecordRef) => ({ sha256: record.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' });
+    // ENGINE_ERROR no_locality_plus_four: no ZIP+4 file of the ZIP was in force, so the line read none.
+    expect(lineCauses(located({}, null), priced, never)).toEqual([
+      { kind: 'release_record', recordType: 'locality_map_plus_four', key: { zip: '00012' }, before: null, after: now(listed) },
+      { kind: 'release_record', recordType: 'pfs_gpci', key: { carrier: '99999', locality: '02' }, before: null, after: now(locality02) },
+    ]);
+    // ENGINE_ERROR zip_plus_four_not_in_locality_map: the trace names the file read (plus_four_unlisted), which changed.
+    expect(lineCauses(located({ plus_four_unlisted: unlisted }, null), priced, never)).toEqual([
+      { kind: 'release_record', recordType: 'locality_map_plus_four', key: { zip: '00012' }, before: now(unlisted), after: now(listed) },
+      { kind: 'release_record', recordType: 'pfs_gpci', key: { carrier: '99999', locality: '02' }, before: null, after: now(locality02) },
+    ]);
+  });
+
+  it('when the ZIP and the release both change, names the location’s record the new release changed for the new location, and skips the ones it kept', () => {
+    const zip11 = ref('locality_map', { zip: '00011' }, 'j');
+    const zip13 = ref('locality_map', { zip: '00013' }, 'y');
+    const gpci02 = ref('pfs_gpci', { carrier: '99999', locality: '02' }, 'y');
+    const before = trace({ records: [rvu('a'), gpci, zip11] });
+    const after = trace({ settings: { zip: '00013', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } }, records: [rvu('a'), gpci02, zip13] });
+    const settings = { kind: 'settings', fields: ['zip'], before: { zip: '00011' }, after: { zip: '00013' } };
+    // One release (or the caller asks nothing): the new location reads other records, and the ZIP is the cause.
+    expect(lineCauses(before, after, never)).toEqual([settings]);
+    // Two releases: the earlier one held 00013's record as read, but its GPCI of locality 02 held another value (a
+    // GPCI update), and 00011's record is in the later release as read.
+    const earlierGpci02 = { sha256: 'x'.repeat(64), effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' };
+    const asked: string[] = [];
+    const otherRelease = (read: TraceRecordRef, readIn: 'before' | 'after') => {
+      asked.push(`${readIn}:${ruleLabel(read)}`);
+      return read.record_type === 'pfs_gpci' && readIn === 'after' ? { same: false, other: earlierGpci02 } : { same: true, other: null };
+    };
+    expect(lineCauses(before, after, never, otherRelease)).toEqual([
+      { kind: 'release_record', recordType: 'pfs_gpci', key: { carrier: '99999', locality: '02' }, before: earlierGpci02, after: { sha256: gpci02.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' } },
+      settings,
+    ]);
+    expect(asked.sort()).toEqual([`after:${ruleLabel(gpci02)}`, `after:${ruleLabel(zip13)}`, `before:${ruleLabel(gpci)}`, `before:${ruleLabel(zip11)}`].sort());
+    // A record the other release lacks altogether is named with no version on that side; one read only before, too.
+    expect(lineCauses(before, after, never, (read, readIn) => (readIn === 'before' && read.record_type === 'locality_map' ? { same: false, other: null } : { same: true, other: null }))).toEqual([
+      { kind: 'release_record', recordType: 'locality_map', key: { zip: '00011' }, before: { sha256: zip11.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' }, after: null },
+      settings,
+    ]);
+  });
+
+  it('still names a record a new release added when the ZIP changed beside it, if the location does not decide that record', () => {
+    const mppr = ref('mppr_rate', { hcpcs: '97110', modifier: '' }, 'f');
+    const moved = trace({ settings: { zip: '00012', zip_plus_four: '0001', default_rounding: 'HALF_UP_CENT', place_of_service_settings: { '11': 'non_facility' } }, records: [rvu('a'), gpci, mppr] });
+    expect(lineCauses(trace(), moved, never)).toEqual([
+      { kind: 'release_record', recordType: 'mppr_rate', key: { hcpcs: '97110', modifier: '' }, before: null, after: { sha256: mppr.sha256, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' } },
+      { kind: 'settings', fields: ['zip', 'zip_plus_four'], before: { zip: '00011', zip_plus_four: null }, after: { zip: '00012', zip_plus_four: '0001' } },
+    ]);
   });
 });
 

@@ -10,8 +10,17 @@ import { canonicalJson } from '@tp/rules';
  * - contract_version: another contract version or rate record priced it (a sign-off, an amendment).
  * - release_record: a rule record the line read holds another value or window in the second run's
  *   release, or (with the same agreement) the line read a record in one release that the other lacks.
+ *   A record read in one run only is not a release cause when the terms changed (the new terms read
+ *   other records). When the practice's ZIP or ZIP+4 changed and it is one of the three types the
+ *   location decides (locality_map, locality_map_plus_four, pfs_gpci; docs/adr/0064), the new location
+ *   reads other ones: under one release that is the settings cause alone; under two releases the other
+ *   run's release is asked for the same rule (otherRelease), and the record is a release cause too when
+ *   that release lacks it or holds another value or window, which the new release added or changed for
+ *   the location. A rounding or place-of-service change skips no record, since neither changes which
+ *   records are read.
  * - claim: the claim's facts changed between the runs (a reversal or correction loaded since).
- * - settings: the practice's settings changed (its ZIP, rounding or place-of-service split).
+ * - settings: the practice's settings changed, naming the trace's settings keys that differ (its ZIP,
+ *   ZIP+4, rounding or places of service, the approved split's among them) with both sides' values.
  * - engine: another engine version priced it.
  * - claim_lines: none of the line's own inputs changed, so another line of its claim changed how it
  *   prices (the multiple procedure ranking, or the per-visit carrier).
@@ -41,6 +50,13 @@ export interface MappingPin {
   readonly mappingKind: string | null;
 }
 
+/** The trace's settings keys a settings cause names, in this order (a key absent from a trace reads as null). */
+export const SETTINGS_FIELDS = ['zip', 'zip_plus_four', 'default_rounding', 'place_of_service_settings'] as const;
+export type SettingsField = (typeof SETTINGS_FIELDS)[number];
+
+/** The record types the practice's location decides which record a line reads. */
+export const LOCATION_RECORD_TYPES: ReadonlySet<string> = new Set(['locality_map', 'locality_map_plus_four', 'pfs_gpci']);
+
 export interface ContractPin {
   readonly contractVersionId: string | null;
   readonly rateRecordId: string | null;
@@ -58,7 +74,14 @@ export type LineCause =
       readonly after: RecordVersion | null;
     }
   | { readonly kind: 'claim' }
-  | { readonly kind: 'settings' }
+  | {
+      readonly kind: 'settings';
+      /** The settings keys whose values differ, in SETTINGS_FIELDS order. */
+      readonly fields: readonly SettingsField[];
+      /** Each differing key's value in the first run's trace and in the second's (null when absent). */
+      readonly before: Readonly<Partial<Record<SettingsField, unknown>>>;
+      readonly after: Readonly<Partial<Record<SettingsField, unknown>>>;
+    }
   | { readonly kind: 'engine'; readonly before: string; readonly after: string }
   | { readonly kind: 'claim_lines' };
 
@@ -130,13 +153,38 @@ export function differingRecords(before: unknown, after: unknown): { readonly be
   return pairs;
 }
 
+/** A trace's settings key, null when absent or when the settings are not an object. */
+function setting(settings: unknown, field: SettingsField): unknown {
+  return typeof settings === 'object' && settings !== null && !Array.isArray(settings) ? ((settings as Readonly<Record<string, unknown>>)[field] ?? null) : null;
+}
+
+/** The settings keys two traces' settings differ by, in SETTINGS_FIELDS order. */
+export function settingsFields(before: unknown, after: unknown): SettingsField[] {
+  return SETTINGS_FIELDS.filter((field) => canonicalJson(setting(before, field)) !== canonicalJson(setting(after, field)));
+}
+
+/**
+ * A record of the location's types that a line read in one run only, as the other run's release holds its rule:
+ * `same` when that release holds a record of the rule with the same value and window (the release did not change it
+ * for this location), and `other`, the version of the rule that release holds on the record's first day, or null.
+ * Undefined when the two runs priced under one release (nothing to ask).
+ */
+export type OtherRelease = (ref: TraceRecordRef, readIn: 'before' | 'after') => { readonly same: boolean; readonly other: RecordVersion | null } | undefined;
+
 /**
  * The causes of a line's difference, in CAUSE_KINDS order. `sameRule` says whether two records of one
  * rule with different hashes hold the same value and window. Records a line read in one run only are
- * a cause only when the line kept its mapping and contract terms; otherwise they follow from the new
- * terms, which are the cause.
+ * a cause only when the line kept its mapping and contract terms; for the three types the location
+ * decides, when its ZIP or ZIP+4 changed too, only when `otherRelease` says the other run's release
+ * does not hold the same record (a new release's change for the new location); otherwise they follow
+ * from the new terms or location, which are the cause.
  */
-export function lineCauses(before: CauseTrace, after: CauseTrace, sameRule: (before: TraceRecordRef, after: TraceRecordRef) => boolean): LineCause[] {
+export function lineCauses(
+  before: CauseTrace,
+  after: CauseTrace,
+  sameRule: (before: TraceRecordRef, after: TraceRecordRef) => boolean,
+  otherRelease: OtherRelease = () => undefined,
+): LineCause[] {
   const causes: LineCause[] = [];
   const mapping = (trace: CauseTrace): MappingPin => ({ mappingId: trace.agreement?.mapping_id ?? null, mappingKind: trace.agreement?.mapping_kind ?? null });
   const contract = (trace: CauseTrace): ContractPin => ({ contractVersionId: trace.agreement?.contract_version_id ?? null, rateRecordId: trace.agreement?.rate_record_id ?? null });
@@ -147,6 +195,8 @@ export function lineCauses(before: CauseTrace, after: CauseTrace, sameRule: (bef
     causes.push({ kind: 'contract_version', before: contract(before), after: contract(after) });
   }
   const sameTerms = causes.length === 0;
+  const fields = settingsFields(before.settings, after.settings);
+  const sameLocation = !fields.includes('zip') && !fields.includes('zip_plus_four');
   const first = recordsRead(before);
   const second = recordsRead(after);
   const labels = [...new Set([...first.keys(), ...second.keys()])].sort();
@@ -159,6 +209,21 @@ export function lineCauses(before: CauseTrace, after: CauseTrace, sameRule: (bef
       }
     } else if (!sameTerms) {
       continue;
+    } else if (!sameLocation && LOCATION_RECORD_TYPES.has((earlier ?? later)?.record_type ?? '')) {
+      // The new location reads this record; it is the release's doing too only when the other release lacks it as read.
+      const read = (earlier ?? later) as TraceRecordRef;
+      const held = otherRelease(read, earlier === undefined ? 'after' : 'before');
+      if (held === undefined || held.same) {
+        continue;
+      }
+      causes.push({
+        kind: 'release_record',
+        recordType: read.record_type,
+        key: read.key,
+        before: earlier === undefined ? held.other : version(earlier),
+        after: later === undefined ? held.other : version(later),
+      });
+      continue;
     }
     const ref = (earlier ?? later) as TraceRecordRef;
     causes.push({ kind: 'release_record', recordType: ref.record_type, key: ref.key, before: version(earlier), after: version(later) });
@@ -167,7 +232,8 @@ export function lineCauses(before: CauseTrace, after: CauseTrace, sameRule: (bef
     causes.push({ kind: 'claim' });
   }
   if (canonicalJson(before.settings) !== canonicalJson(after.settings)) {
-    causes.push({ kind: 'settings' });
+    const values = (settings: unknown) => Object.fromEntries(fields.map((field) => [field, setting(settings, field)])) as Partial<Record<SettingsField, unknown>>;
+    causes.push({ kind: 'settings', fields, before: values(before.settings), after: values(after.settings) });
   }
   if (before.engine !== after.engine) {
     causes.push({ kind: 'engine', before: before.engine, after: after.engine });

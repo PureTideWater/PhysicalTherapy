@@ -1,8 +1,13 @@
 {
-  "ruling": "The founder's ruling of 2026-10-18 11:47 UTC (docs/product/reconciliation-001.md, the engine freeze and Approval; ADR 0062, owner ruling 3): PR 6b's ZIP+4 locality lookup alone may change the engine. The golden additions: the founder's answer to PR 6b's Q4 (a) of 2026-10-21, G196-G199 under synthetic release 900006 with every existing golden file byte-identical.",
-  "pull_request": 35,
-  "engine_files": ["engine.ts", "reasons.ts", "recompute.ts", "trace.ts", "types.ts"],
-  "golden_added": ["fixtures/golden/claims/G196-*", "fixtures/golden/claims/G197-*", "fixtures/golden/claims/G198-*", "fixtures/golden/claims/G199-*"],
-  "golden_edited": ["fixtures/golden/QUESTIONS.md", "fixtures/golden/README.md"],
-  "rule_table_ddl": []
+  "ruling": "The founder's ruling of 2026-10-18 11:47 UTC (docs/product/reconciliation-001.md, the engine freeze and Approval; ADR 0062, owner ruling 3): PR 6b fixes ZIP+4 localities before launch; and the founder's answer of 2026-10-21 (about 22:30 UTC) to PR 6b's Q3 (a), recorded in docs/adr/0064: widen rule_record's record-type CHECK by locality_map_plus_four in PR 6b-2's migration, a granted exception to reconciliation-001's rule-table check (no DDL on rule_release, rule_record or rule_release_withdrawal). No engine file and no golden file changes in PR 6b-2.",
+  "pull_request": 36,
+  "engine_files": [],
+  "golden_added": [],
+  "golden_edited": [],
+  "rule_table_ddl": [
+    {
+      "migration": "packages/db/migrations/20261105090000_pricing_location_and_zip_plus_four.sql",
+      "statement": "ALTER TABLE rule_record DROP CONSTRAINT rule_record_record_type_check, ADD CONSTRAINT rule_record_record_type_check CHECK (record_type IN ('pfs_rvu', 'pfs_gpci', 'conversion_factor', 'mppr_rate', 'therapy_threshold', 'assistant_modifier', 'sequestration', 'ncci_ptp', 'ncci_mue', 'carc', 'rarc', 'claim_status_code', 'state_prompt_pay', 'dispute_window', 'locality_map', 'locality_map_plus_four', 'denial_category'))"
+    }
+  ]
 }

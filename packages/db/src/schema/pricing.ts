@@ -4,11 +4,12 @@ import { type AnyPgColumn, bigint, date, index, integer, jsonb, numeric, pgTable
 import { contractVersion, payerPlanMapping, rateRecord } from './contracts';
 import { serviceLine } from './remittances';
 import { ruleRelease } from './rules';
+import { placeOfServiceSplit } from './screening';
 import { practice, user } from './tenancy';
 
 /**
  * Pricing runs and priced lines (Data dictionary, Pricing, triage and cases; PRD 8; PRD 11), mirroring
- * migrations/20261018090000_pricing_runs.sql, 20261019150000_reruns_and_release_withdrawal.sql and 20261020090000_monitoring_digests_notifications.sql for typed queries. The SQL is the source of truth for the
+ * migrations/20261018090000_pricing_runs.sql, 20261019150000_reruns_and_release_withdrawal.sql, 20261020090000_monitoring_digests_notifications.sql and 20261105090000_pricing_location_and_zip_plus_four.sql for typed queries. The SQL is the source of truth for the
  * run's states, the pinned release (a rule-release mismatch is refused), the immutability of complete
  * runs and of every priced line (triggers for every role), row-level security and grants; a database
  * test checks that these columns match it. Both are PHI tables: every query runs inside a scope from
@@ -72,6 +73,12 @@ export const pricingRun = pgTable(
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     /** The monitor job that created the run (migrations/20261020090000); exactly one of this and created_by is set. */
     createdByJobId: uuid('created_by_job_id'),
+    /**
+     * The place-of-service split in force when the run was created, set by the database (pricing_run_rules(), never a
+     * caller; migrations/20261105090000; ADR 0064): every place the practice has not set prices with it. Null when no
+     * split was approved then, and on every run created before the migration.
+     */
+    placeOfServiceSplitId: uuid('place_of_service_split_id').references(() => placeOfServiceSplit.id),
   },
   (table) => [
     index('pricing_run_by_period').on(table.practiceId, table.periodFrom, table.periodTo),

@@ -128,7 +128,8 @@ describe.each(TABLES)('$table', ({ table, tenantColumn }) => {
   beforeAll(async () => {
     key = factory.primaryKey(table);
     rowsA = [await factory.create(owner, table, worldA)];
-    if (table !== 'practice') {
+    // The practice itself and its one location are the world's own rows; every other table gets two of A's.
+    if (!factory.holdsOneRow(table)) {
       rowsA.push(await factory.create(owner, table, worldA));
     }
     rowB = await factory.create(owner, table, worldB);
@@ -208,6 +209,14 @@ describe.each(TABLES)('$table', ({ table, tenantColumn }) => {
       }
     };
     const own = [probe.values[tenantColumn]];
+    // A table the application role holds no INSERT on, written only through SECURITY DEFINER functions (practice_site:
+    // practice_set_location() and the console's): refused by privilege with its own practice in scope too, so no
+    // scope ever lets the role write it directly.
+    if ((await privileged(table, 'INSERT')).length === 0) {
+      await refused(attempt(probe.actorId, own), false);
+      await refused(attempt(probe.actorId, [worldB.practiceId]), false);
+      return;
+    }
     // Rows only platform administrators create (the reviewed insert policies): the control is theirs.
     const platformOnly = REVIEWED_PLATFORM_POLICIES.some((item) => item.table === table && item.command === 'a' && table !== 'practice');
     if (platformOnly) {

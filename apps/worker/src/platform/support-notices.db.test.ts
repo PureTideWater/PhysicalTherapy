@@ -1,7 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from '@tp/db/testing';
+import {
+  type MigratedDatabase,
+  type TenantWorld,
+  addMembership,
+  asOwner,
+  createMigratedDatabase,
+  createOrganization,
+  createPracticeWithLocation,
+  createTenantWorld,
+  createUser,
+  endPool,
+} from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -78,7 +89,10 @@ async function practiceWithoutAdministrator(): Promise<string> {
   await owner.query('BEGIN');
   try {
     await owner.query('ALTER TABLE practice DISABLE TRIGGER practice_has_administrator');
-    await owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [practiceId, organizationId, 'SYNTHETIC PRACTICE WITHOUT ADMINISTRATOR', placeholderDataKeyRef()]);
+    // With its pricing location, which every practice is created with (practice_has_site, audit #33), checked now so no
+    // deferred event is pending when the trigger is enabled again.
+    await createPracticeWithLocation(owner, { id: practiceId, organizationId, name: 'SYNTHETIC PRACTICE WITHOUT ADMINISTRATOR' });
+    await owner.query('SET CONSTRAINTS practice_has_site IMMEDIATE');
     await owner.query('ALTER TABLE practice ENABLE TRIGGER practice_has_administrator');
     await owner.query('COMMIT');
   } catch (error) {

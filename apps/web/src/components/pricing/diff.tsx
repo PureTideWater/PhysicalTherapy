@@ -1,7 +1,8 @@
-import type { DiffChange, DiffLine, DiffSide, DiffSummary } from '@tp/worker/pricing';
+import type { DiffChange, DiffLine, DiffRun, DiffSide, DiffSummary } from '@tp/worker/pricing';
 import Link from 'next/link';
 
 import { causeText } from '../../lib/pricing/causes';
+import { utc } from '../format';
 import { Money } from '../remittances/display';
 
 /**
@@ -60,6 +61,44 @@ export function DiffSummaryText({ summary }: { readonly summary: DiffSummary }) 
       {summary.onlyAfter === 0 ? '' : `; ${String(summary.onlyAfter)} only in the second`}. Expected allowed over the lines both priced: <Money value={summary.beforeExpectedCents} /> before,{' '}
       <Money value={summary.afterExpectedCents} /> after.
     </span>
+  );
+}
+
+/** How the two runs' place-of-service splits differ: each pinned one, only the later run did, or only the earlier. */
+export type SplitChange = 'both' | 'added' | 'removed';
+
+/**
+ * What the diff says when the two runs pinned different place-of-service splits, by which of them pinned one, naming
+ * when each split was approved (UTC, to the minute; review of PR 6b-2, finding 16).
+ */
+export function splitChangeText(change: SplitChange, beforeApprovedAt: Date | null, afterApprovedAt: Date | null): string {
+  switch (change) {
+    case 'both':
+      return `Places of service set from the approved split: the earlier run priced under the split approved ${utc(beforeApprovedAt)} and this run under the one approved ${utc(afterApprovedAt)}, so a place the practice has not set may price at the other rate.`;
+    case 'added':
+      return `The earlier run priced with no approved split; this run takes the split approved ${utc(afterApprovedAt)} for every place the practice has not set, so such a place may now price, or price at the other rate.`;
+    case 'removed':
+      return `The earlier run took the split approved ${utc(beforeApprovedAt)} for every place the practice had not set; this run priced with no approved split, so such a place may no longer price, or price at the other rate.`;
+  }
+}
+
+type RunSplit = Pick<DiffRun, 'placeOfServiceSplitId' | 'placeOfServiceSplitApprovedAt'>;
+
+/**
+ * When the two runs pinned different place-of-service splits (docs/adr/0064): every place a practice has not set
+ * prices as the split a run pinned says, so a line's place of service may price at the other rate, or (when one run
+ * pinned none, as every run before PR 6b and before the first approval) price in one run only. Null when both pinned
+ * the same one, or none.
+ */
+export function SplitChangeText({ before, after }: { readonly before: RunSplit; readonly after: RunSplit }) {
+  if (before.placeOfServiceSplitId === after.placeOfServiceSplitId) {
+    return null;
+  }
+  const change: SplitChange = before.placeOfServiceSplitId === null ? 'added' : after.placeOfServiceSplitId === null ? 'removed' : 'both';
+  return (
+    <p className="text-sm" data-state="split-changed" data-split-change={change}>
+      {splitChangeText(change, before.placeOfServiceSplitApprovedAt, after.placeOfServiceSplitApprovedAt)}
+    </p>
   );
 }
 

@@ -272,7 +272,7 @@ function ShellNav({ shell, section }: { readonly shell: Shell; readonly section:
                 Specialist queue
               </RailLink>
               <RailLink href="/console/screening" active={section === 'screening_split'}>
-                Screening place of service
+                Place-of-service split
               </RailLink>
             </>
           ) : null}

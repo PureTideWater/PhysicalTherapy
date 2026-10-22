@@ -144,9 +144,11 @@ describe('migrate', () => {
           'payer_plan_mapping',
           'payer_response',
           'phi_table_registry',
+          'place_of_service_split',
           'plan',
           'posting_row',
           'practice',
+          'practice_site',
           'priced_line',
           'pricing_run',
           'prospect_request',
@@ -165,7 +167,6 @@ describe('migrate', () => {
           'screening_lead',
           'screening_lead_product',
           'screening_outcome',
-          'screening_place_of_service_split',
           'screening_prospect',
           'screening_result',
           'screening_run',
@@ -289,6 +290,67 @@ describe('the free screening migration (20261104090000) over requests declined b
           [user],
         ),
       ).rejects.toMatchObject({ constraint: 'prospect_request_declined' });
+    });
+  });
+});
+
+describe('the location migration (20261105090000) over practices, a split and a run before it', () => {
+  it('keeps each practice’s ZIP as its location (none for a practice with no ZIP), renames the split with its rows, leaves earlier runs unpinned and takes the new record type', async () => {
+    const location = '20261105090000_pricing_location_and_zip_plus_four.sql';
+    const later = readMigrations(dir).filter((migration) => migration.name >= location);
+    for (const migration of later) {
+      unlinkSync(path.join(dir, migration.name));
+    }
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url, migrationsDir: dir });
+      const [group, withZip, withoutZip, person, split, run] = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+      // The rows as the previous head held them, written with triggers off (no administrator, no published release's checks).
+      const client = new pg.Client({ connectionString: url });
+      await client.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL session_replication_role = replica');
+        await client.query("INSERT INTO organization (id, kind, name) VALUES ($1, 'group', 'SYNTHETIC GROUP')", [group]);
+        await client.query('INSERT INTO "user" (id, cognito_sub, email, mfa_enrolled, status) VALUES ($1, $2, $3, true, \'active\')', [person, `synthetic-${person}`, `${person}@synthetic.test`]);
+        await client.query("INSERT INTO practice (id, organization_id, name, zip, data_key_ref) VALUES ($1, $2, 'SYNTHETIC WITH A ZIP', '27601', 'local:v1:AAAA')", [withZip, group]);
+        await client.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC WITHOUT A ZIP', 'local:v1:AAAA')", [withoutZip, group]);
+        await client.query(`INSERT INTO screening_place_of_service_split (id, settings, approved_by) VALUES ($1, '{"11": "non_facility"}', $2)`, [split, person]);
+        await client.query("INSERT INTO rule_release (release_no, manifest_sha256, published_at) VALUES (900001, $1, now())", ['a'.repeat(64)]);
+        await client.query(
+          "INSERT INTO pricing_run (id, practice_id, period_from, period_to, release_no, engine_version, created_by) VALUES ($1, $2, '2026-01-01', '2026-01-31', 900001, 'phase-two/1', $3)",
+          [run, withZip, person],
+        );
+        await client.query('COMMIT');
+      } finally {
+        await client.end();
+      }
+      for (const migration of later) {
+        copyFileSync(path.join(MIGRATIONS_DIR, migration.name), path.join(dir, migration.name));
+      }
+      await migrate({ databaseUrl: url, migrationsDir: dir });
+      expect(await query(url, 'SELECT practice_id, zip, zip_plus_four, updated_by FROM practice_site ORDER BY practice_id')).toEqual([
+        { practice_id: withZip, zip: '27601', zip_plus_four: null, updated_by: null },
+      ]);
+      // practice.zip keeps its value, deprecated, for the previous image during the deploy.
+      expect(await query(url, "SELECT zip, col_description('practice'::regclass, (SELECT attnum FROM pg_attribute WHERE attrelid = 'practice'::regclass AND attname = 'zip')) AS comment FROM practice WHERE id = $1", [withZip])).toEqual([
+        { zip: '27601', comment: 'Deprecated by practice_site (ADR 0064): never read or written; dropped by the multi-site PR' },
+      ]);
+      expect(await query(url, "SELECT id, settings, approved_by FROM place_of_service_split")).toEqual([{ id: split, settings: { '11': 'non_facility' }, approved_by: person }]);
+      expect(await query(url, "SELECT to_regclass('public.screening_place_of_service_split') AS old")).toEqual([{ old: null }]);
+      expect(await query(url, 'SELECT place_of_service_split_id FROM pricing_run WHERE id = $1', [run])).toEqual([{ place_of_service_split_id: null }]);
+      expect(await query(url, "SELECT role, effect FROM role_permission WHERE action = 'pricing_settings.set' ORDER BY role")).toEqual([
+        { role: 'billing_manager', effect: 'allow' },
+        { role: 'firm_principal', effect: 'allow' },
+        { role: 'practice_admin', effect: 'allow' },
+        { role: 'reviewer', effect: 'deny' },
+      ]);
+      await query(url, "INSERT INTO rule_release (release_no, manifest_sha256) VALUES (900006, $1)", ['b'.repeat(64)]);
+      await query(
+        url,
+        `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, source, verification, sha256)
+         VALUES (900006, 'locality_map_plus_four', '{"zip":"00012"}', '{}', '2026-01-01', '{"synthetic":true}', 'L1', $1)`,
+        ['c'.repeat(64)],
+      );
     });
   });
 });

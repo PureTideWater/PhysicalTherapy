@@ -99,6 +99,16 @@ describe('the persona matrix (PRD 3)', () => {
     expect(MEMBERSHIP_ROLES.filter((role) => rolesPermit([role], 'rate_record.approve'))).toEqual(['contract_specialist']);
   });
 
+  it('lets the practice administrator, the billing manager and the firm principal set the pricing location, and denies the reviewer (PR 6b’s Q5 (a))', () => {
+    expect(MEMBERSHIP_ROLES.filter((role) => rolesPermit([role], 'pricing_settings.set'))).toEqual(['practice_admin', 'billing_manager', 'firm_principal']);
+    expect(matrixRows().filter((row) => row.action === 'pricing_settings.set')).toEqual([
+      { role: 'billing_manager', action: 'pricing_settings.set', effect: 'allow' },
+      { role: 'firm_principal', action: 'pricing_settings.set', effect: 'allow' },
+      { role: 'practice_admin', action: 'pricing_settings.set', effect: 'allow' },
+      { role: 'reviewer', action: 'pricing_settings.set', effect: 'deny' },
+    ]);
+  });
+
   it('marks the structural "must not" rules', () => {
     expect(PERSONAS.firm_principal.mustNot.map((entry) => entry.structural)).toContain('grant_in_force');
     expect(PERSONAS.support.mustNot.map((entry) => entry.structural)).toEqual(['support_grant_expiry']);

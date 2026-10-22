@@ -13,8 +13,10 @@ import {
   REDUCED_FIGURE_LABEL,
   SCREENING_INVESTIGATORY_NOTE,
   leftOutNote,
+  outsideContentNote,
 } from '../../lib/screening/labels';
 import { type KeptWith, resultRetention } from '../../lib/screening/retention';
+import { zipCodeText } from '../../lib/zip';
 import { utc, utcDate } from '../format';
 
 /**
@@ -52,6 +54,8 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly practiceName: string;
   readonly state: string;
   readonly zip: string;
+  /** The ZIP+4's four digits, kept only when the ZIP's locality needs them; null otherwise. */
+  readonly zipPlusFour: string | null;
   readonly releaseNo: number;
   readonly engineVersion: string;
   readonly createdAt: Date | string;
@@ -69,6 +73,10 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly couldNotPrice: ScreeningGroupTotals;
   /** Rows of fewer than 11 claim lines the browser left out before sending: in no other figure. */
   readonly leftOut: ScreeningGroupTotals;
+  /** Medicare rows the browser left out for a quarter outside the release's loaded content: in no other figure. */
+  readonly outsideContent: ScreeningGroupTotals;
+  /** The first quarter loaded when every such row lies before it; null otherwise. */
+  readonly outsideContentBefore: string | null;
 }
 
 /** A dollar figure: the mono face, tabular numerals. */
@@ -133,7 +141,7 @@ export function ScreeningHeading({ summary, converted = false }: { readonly summ
     <div className="flex flex-col gap-1">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Your free screening</h1>
       <p className="text-base text-muted-foreground">
-        <span data-copy="practice">{summary.practiceName}</span>, {summary.state} <span className="font-mono tabular-nums">{summary.zip}</span>. Screened {utc(summary.createdAt)} under rule release{' '}
+        <span data-copy="practice">{summary.practiceName}</span>, {summary.state} <span className="font-mono tabular-nums">{zipCodeText(summary.zip, summary.zipPlusFour)}</span>. Screened {utc(summary.createdAt)} under rule release{' '}
         <span className="font-mono tabular-nums">{summary.releaseNo}</span> (engine <span className="font-mono">{summary.engineVersion}</span>).
       </p>
       <p className="text-sm text-muted-foreground" data-copy={converted ? 'kept-converted' : 'kept'} data-kept-with={summary.keptWith} data-legal-surface="screening-kept-result">
@@ -155,6 +163,26 @@ export function ScreeningReleaseWithdrawn({ summary }: { readonly summary: Scree
         Rule release <span className="font-mono tabular-nums">{summary.releaseNo}</span> was withdrawn after this screening was priced: its content was found to be wrong, so the Medicare figures below may be too. Screen the file again for figures under the release in force.
       </AlertDescription>
     </Alert>
+  );
+}
+
+/** The Medicare rows not screened for a quarter outside the release's loaded content (audit #7; PR 6b's Q6 (a)). */
+function OutsideContent({ summary }: { readonly summary: ScreeningSummaryData }) {
+  const note = outsideContentNote(summary.outsideContent.rows, summary.outsideContentBefore);
+  return (
+    <Card data-section="outside-content">
+      <CardHeader>
+        <CardTitle>Not screened: quarters outside the loaded content</CardTitle>
+        <CardDescription data-copy="outside-content">
+          {note.lead}
+          <ScreeningMoney cents={summary.outsideContent.observedCents} />
+          {note.tail}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <GroupStats group={summary.outsideContent} slot="outside-content" />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -183,6 +211,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
           </CardContent>
         </Card>
       )}
+      {summary.outsideContent.rows === 0 ? null : <OutsideContent summary={summary} />}
       <Card data-section="priced">
         <CardHeader>
           <CardTitle>Priced under Medicare</CardTitle>

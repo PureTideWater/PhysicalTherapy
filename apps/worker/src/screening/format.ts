@@ -19,6 +19,13 @@ import { type Cents, MoneyError, cents, parseAmount, parseCents } from '@tp/mone
  * quarter and the practice's name and ZIP, can be one patient's service line. The browser leaves such a row out before
  * anything is sent and counts what it left out (screenTable); the server refuses one it is sent, naming its row
  * (decodeScreeningRows); the database refuses one stored (screening_result_claim_count).
+ *
+ * A Medicare row (medicare_ffs or ma_noncontracted, the products the screening prices) whose quarter is outside the
+ * content the release in force has loaded (its MPPR and MUE spans, rule_release_content_span(); audit #7, the founder's
+ * answer of 2026-10-21 to PR 6b's Q6 (a)) would price silently without those limits. The browser leaves such a row out
+ * after the floor's and counts what it left out (screenTable, given the release's content quarters); the server refuses
+ * one it is sent anyway as band_outside_content, naming its row (decodeScreeningRows); the database refuses one stored
+ * (submit_screening, screening_band_outside_content). Other products' rows are never priced and are untouched.
  */
 
 /** The eight columns, each required once, in the canonical rows' order. */
@@ -66,6 +73,7 @@ export const SCREENING_REJECTION_CODES = [
   'invalid_value',
   'band_holds_date',
   'band_in_future',
+  'band_outside_content',
   'duplicate_row',
   'no_rows',
   'too_many_rows',
@@ -381,6 +389,7 @@ const REASON_ORDER: Readonly<Record<ScreeningRejectionCode, number>> = {
   row_shape: 4,
   invalid_value: 4,
   band_in_future: 4,
+  band_outside_content: 4,
   duplicate_row: 4,
   no_rows: 5,
   too_many_rows: 5,
@@ -478,6 +487,116 @@ export function quarterDays(band: string): { readonly first: string; readonly la
   const first = ['01-01', '04-01', '07-01', '10-01'][quarter - 1] as string;
   const last = ['03-31', '06-30', '09-30', '12-31'][quarter - 1] as string;
   return { first: `${year}-${first}`, last: `${year}-${last}` };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The quarters the release's content is loaded for (audit #7)
+
+/** The contents whose loaded span decides a Medicare row's quarter (rule_release_content_span()'s rows). */
+export const SCREENING_CONTENT_SPANS = ['mppr_code', 'mppr_general', 'ncci_mue'] as const;
+
+/** A run of consecutive quarters, both included, YYYY-Qn. */
+export interface ContentQuarterRun {
+  readonly from: string;
+  readonly to: string;
+}
+
+/** The quarters wholly inside every content span of a release, as sorted, maximal runs. */
+export type ContentQuarters = readonly ContentQuarterRun[];
+
+/** One content's loaded days as rule_release_content_span() returns them: its name and its datemultirange as text. */
+export interface ContentSpan {
+  readonly content: string;
+  readonly loaded: string;
+}
+
+/** A day of the proleptic calendar, YYYY-MM-DD, moved by whole days (UTC arithmetic, no clock). */
+function shiftDay(day: string, days: number): string {
+  const at = new Date(`${day}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
+
+/** A span's ranges as [first day, first day after) pairs; null bounds are unbounded. Throws on text that is not a date multirange. */
+export function parseDateMultirange(text: string): readonly { readonly from: string | null; readonly until: string | null }[] {
+  const body = text.trim();
+  if (!body.startsWith('{') || !body.endsWith('}')) {
+    throw new RangeError('a date multirange is written {range, ...}');
+  }
+  const inner = body.slice(1, -1).trim();
+  if (inner === '') {
+    return [];
+  }
+  const ranges: { from: string | null; until: string | null }[] = [];
+  const pattern = /\s*([[(])\s*(\d{4}-\d{2}-\d{2}|-?infinity|)\s*,\s*(\d{4}-\d{2}-\d{2}|-?infinity|)\s*([\])])\s*(?:,|$)/gy;
+  let match: RegExpExecArray | null;
+  let read = 0;
+  while ((match = pattern.exec(inner)) !== null) {
+    const [, open, lower = '', upper = '', close] = match;
+    const from = lower === '' || lower.endsWith('infinity') ? null : open === '[' ? lower : shiftDay(lower, 1);
+    const until = upper === '' || upper.endsWith('infinity') ? null : close === ')' ? upper : shiftDay(upper, 1);
+    ranges.push({ from, until });
+    read = pattern.lastIndex;
+  }
+  if (read !== inner.length) {
+    throw new RangeError('a date multirange is written {range, ...}');
+  }
+  return ranges;
+}
+
+/** The quarter after a quarter, YYYY-Qn. */
+function nextQuarter(band: string): string {
+  const year = Number(band.slice(0, 4));
+  const quarter = Number(band.slice(6));
+  return quarter === 4 ? `${String(year + 1)}-Q1` : `${String(year)}-Q${String(quarter + 1)}`;
+}
+
+/** Whether a quarter's days all lie inside one of the ranges. */
+function quarterInside(band: string, ranges: readonly { readonly from: string | null; readonly until: string | null }[]): boolean {
+  const first = quarterDays(band).first;
+  const after = quarterDays(nextQuarter(band)).first;
+  return ranges.some((range) => (range.from === null || range.from <= first) && (range.until === null || after <= range.until));
+}
+
+/**
+ * The quarters from 2000-Q1 to the current quarter (no band may come after it) wholly inside every content's loaded
+ * span, as sorted, maximal runs. A content missing from `spans` has no span, so no quarter is inside: never the
+ * infinite one. Pure: the web reads the spans once per release (rule_release_content_span()) and caches the result.
+ */
+export function contentQuartersOf(spans: readonly ContentSpan[], now: Date): ContentQuarterRun[] {
+  const ranges = SCREENING_CONTENT_SPANS.map((content) => {
+    const found = spans.find((span) => span.content === content);
+    return found === undefined ? [] : parseDateMultirange(found.loaded);
+  });
+  const last = currentQuarter(now);
+  const runs: { from: string; to: string }[] = [];
+  for (let band = '2000-Q1'; band <= last; band = nextQuarter(band)) {
+    if (ranges.every((range) => quarterInside(band, range))) {
+      const open = runs.at(-1);
+      if (open !== undefined && nextQuarter(open.to) === band) {
+        open.to = band;
+      } else {
+        runs.push({ from: band, to: band });
+      }
+    }
+  }
+  return runs;
+}
+
+/** Whether a band (YYYY-Qn) is one of the content's quarters. */
+export function bandInContent(band: string, quarters: ContentQuarters): boolean {
+  return quarters.some((run) => run.from <= band && band <= run.to);
+}
+
+/** Whether a row is one the screening prices whose quarter is outside the content's quarters: left out, or refused when sent. */
+export function outsideContent(row: Pick<ScreeningRow, 'payerProduct' | 'serviceBand'>, quarters: ContentQuarters): boolean {
+  return (SCREENING_PRICED_PRODUCTS as readonly string[]).includes(row.payerProduct) && !bandInContent(row.serviceBand, quarters);
+}
+
+/** The content's quarters in words: '2026-Q1 to 2026-Q4', '2025-Q1 to 2025-Q4 and 2026-Q2 to 2026-Q4'; '' for none. */
+export function contentQuartersText(quarters: ContentQuarters): string {
+  const parts = quarters.map((run) => (run.from === run.to ? run.from : `${run.from} to ${run.to}`));
+  return parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1) as string}`;
 }
 
 /**
@@ -688,6 +807,30 @@ export function leftOutPlausible(leftOut: ScreeningLeftOut, rowCount: number): b
   );
 }
 
+/**
+ * Whether three outside-content numbers are ones the browser could have counted beside `rowCount` rows sent and
+ * `leftOutRows` rows the floor left out: whole numbers, each row SCREENING_MIN_CLAIM_LINES to SCREENING_MAX_CLAIMS claim
+ * lines (the floor runs first), at most $25,000.00 a claim line, and no more rows in all than a file may hold. The
+ * server's check of what the form says; the screening_upload CHECKs hold the same.
+ */
+export function outsideContentPlausible(outside: ScreeningLeftOut, rowCount: number, leftOutRows: number): boolean {
+  const { rows, claimLines, allowedCents } = outside;
+  return (
+    Number.isSafeInteger(rows) &&
+    Number.isSafeInteger(claimLines) &&
+    Number.isSafeInteger(rowCount) &&
+    Number.isSafeInteger(leftOutRows) &&
+    rows >= 0 &&
+    rowCount >= 0 &&
+    leftOutRows >= 0 &&
+    rows + rowCount + leftOutRows <= SCREENING_MAX_ROWS &&
+    claimLines >= SCREENING_MIN_CLAIM_LINES * rows &&
+    claimLines <= SCREENING_MAX_CLAIMS * rows &&
+    allowedCents >= 0n &&
+    allowedCents <= SCREENING_MAX_LINE_ALLOWED_CENTS * BigInt(claimLines)
+  );
+}
+
 /** What the browser has once it has read a table: the reasons it is refused, or what the form sends. */
 export type ScreenedTable =
   | {
@@ -699,6 +842,10 @@ export type ScreenedTable =
       readonly rows: string;
       /** The rows of fewer claim lines, left out and never sent. */
       readonly leftOut: ScreeningLeftOut;
+      /** The Medicare rows (of at least the floor's claim lines) whose quarter is outside the release's loaded content, left out and never sent. */
+      readonly outsideContent: ScreeningLeftOut;
+      /** Those rows' quarters, distinct and sorted, for the browser's own sentence; never sent. */
+      readonly outsideContentBands: readonly string[];
     }
   | {
       readonly ok: false;
@@ -708,8 +855,10 @@ export type ScreenedTable =
       readonly reasons: readonly ScreeningRejection[];
       /** How many reasons there were in all. */
       readonly total: number;
-      /** When every row sums fewer than SCREENING_MIN_CLAIM_LINES claim lines: what was left out, leaving nothing to send. */
+      /** When every row was left out (for the floor, or its quarter): what was left out, leaving nothing to send. */
       readonly leftOut?: ScreeningLeftOut;
+      readonly outsideContent?: ScreeningLeftOut;
+      readonly outsideContentBands?: readonly string[];
     };
 
 /** Collects a table's reasons: every one counted, at most 20 of each order kept, patient information first. */
@@ -733,15 +882,26 @@ class ReasonList {
   }
 }
 
+/** What a set of rows left out comes to: how many, their claim lines and their allowed total, in bigint. */
+function countedOut(rows: readonly ScreeningRow[]): ScreeningLeftOut {
+  return {
+    rows: rows.length,
+    claimLines: rows.reduce((total, row) => total + row.claimCount, 0),
+    allowedCents: cents(rows.reduce((total, row) => total + row.allowedCents, 0n)),
+  };
+}
+
 /**
  * A table of cells (its first row the header) screened as the server will: the header, then every row's shape,
  * values, band and key. Every row is read, so a band holding dates of service is named wherever it is; at most 20
  * reasons are kept, patient information first, with how many there were. On a pass, the header's canonical column
  * names and the rows in their canonical form: no header text the person typed is sent. A row of fewer than
- * SCREENING_MIN_CLAIM_LINES claim lines that is otherwise clean is left out, never sent, and counted in `leftOut`; a
- * table whose every row is left out has nothing to send and is refused, with what was left out.
+ * SCREENING_MIN_CLAIM_LINES claim lines that is otherwise clean is left out, never sent, and counted in `leftOut`;
+ * then each Medicare row whose quarter is not one of `contentQuarters` (the release's loaded content, contentQuartersOf)
+ * is left out, never sent, and counted in `outsideContent` (a row the floor left out is counted there only). A table
+ * whose every row is left out has nothing to send and is refused, with what was left out.
  */
-export function screenTable(table: readonly (readonly string[])[], now: Date): ScreenedTable {
+export function screenTable(table: readonly (readonly string[])[], now: Date, contentQuarters: ContentQuarters): ScreenedTable {
   const [header, ...data] = table;
   if (header === undefined) {
     return { ok: false, headers: [], reasons: [{ code: 'no_rows' }], total: 1 };
@@ -783,20 +943,21 @@ export function screenTable(table: readonly (readonly string[])[], now: Date): S
   if (reasons.total > 0) {
     return { ok: false, headers: typed, reasons: reasons.kept(), total: reasons.total };
   }
-  const kept = rows.filter((row) => !belowClaimFloor(row.claimCount));
+  const floored = rows.filter((row) => !belowClaimFloor(row.claimCount));
   const small = rows.filter((row) => belowClaimFloor(row.claimCount));
-  const leftOut: ScreeningLeftOut = {
-    rows: small.length,
-    claimLines: small.reduce((total, row) => total + row.claimCount, 0),
-    allowedCents: cents(small.reduce((total, row) => total + row.allowedCents, 0n)),
-  };
+  const outside = floored.filter((row) => outsideContent(row, contentQuarters));
+  const kept = floored.filter((row) => !outsideContent(row, contentQuarters));
+  const leftOut = countedOut(small);
+  const outsideCounted = countedOut(outside);
+  const outsideContentBands = [...new Set(outside.map((row) => row.serviceBand))].sort();
   if (kept.length === 0) {
-    return { ok: false, headers: typed, reasons: [{ code: 'too_few_claim_lines' }], total: 1, leftOut };
+    const nothing: ScreeningRejection[] = [...(small.length > 0 ? [{ code: 'too_few_claim_lines' as const }] : []), ...(outside.length > 0 ? [{ code: 'band_outside_content' as const }] : [])];
+    return { ok: false, headers: typed, reasons: keptReasons(nothing), total: nothing.length, leftOut, outsideContent: outsideCounted, outsideContentBands };
   }
   const canonical = Object.entries(checked.positions)
     .sort(([, a], [, b]) => a - b)
     .map(([column]) => column as ScreeningColumn);
-  return { ok: true, headers: canonical, rowCount: kept.length, rows: encodeScreeningRows(kept), leftOut };
+  return { ok: true, headers: canonical, rowCount: kept.length, rows: encodeScreeningRows(kept), leftOut, outsideContent: outsideCounted, outsideContentBands };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -832,10 +993,11 @@ export type RowsDecode =
  * The form's rows read back, strictly: every field already canonical (a procedure code of the real shape, an allowed
  * total of at most $25,000.00 a claim line), at least SCREENING_MIN_CLAIM_LINES claim lines a row (the browser leaves a
  * smaller row out, so one here was sent around it: refused, naming its row), at most 50,000 rows, no key twice, no band
- * after the current quarter. The server's check of what the browser sent; at most 20 reasons kept, with how many there
- * were.
+ * after the current quarter, and no Medicare row whose quarter is not one of `contentQuarters` (the browser leaves one
+ * out, so one here was sent around it: refused as band_outside_content, naming its row and the service_band field,
+ * never its quarter; a row below the floor is refused for the floor alone, as the browser counts it there only). The server's check of what the browser sent; at most 20 reasons kept, with how many there were.
  */
-export function decodeScreeningRows(text: string, now: Date): RowsDecode {
+export function decodeScreeningRows(text: string, now: Date, contentQuarters: ContentQuarters): RowsDecode {
   if (text === '') {
     return { ok: false, reasons: [{ code: 'no_rows' }], total: 1 };
   }
@@ -873,10 +1035,19 @@ export function decodeScreeningRows(text: string, now: Date): RowsDecode {
           reasons.add({ code: 'invalid_value', row: rowNo, field });
         }
       }
+      const belowFloor = claimsValid && belowClaimFloor(Number(claims));
       if (CANONICAL.band.test(band) && band > quarter) {
         reasons.add({ code: 'band_in_future', row: rowNo, field: 'service_band' });
+      } else if (
+        // A row below the floor is the floor's alone, as the browser counts it there only.
+        !belowFloor &&
+        CANONICAL.band.test(band) &&
+        (SCREENING_PAYER_PRODUCTS as readonly string[]).includes(product) &&
+        outsideContent({ payerProduct: product as ScreeningPayerProduct, serviceBand: band }, contentQuarters)
+      ) {
+        reasons.add({ code: 'band_outside_content', row: rowNo, field: 'service_band' });
       }
-      if (claimsValid && belowClaimFloor(Number(claims))) {
+      if (belowFloor) {
         reasons.add({ code: 'too_few_claim_lines', row: rowNo, field: 'claim_count' });
       }
       if (reasons.total === before) {

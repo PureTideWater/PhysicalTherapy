@@ -22,7 +22,8 @@
     "./screening": "./src/screening/public.ts",
     "./screening-format": "./src/screening/format.ts",
     "./screening-wording": "./src/screening/wording.ts",
-    "./screening-oracle": "./src/screening/test-support/legacy-release.ts"
+    "./screening-oracle": "./src/screening/test-support/legacy-release.ts",
+    "./screening-pricer": "./src/screening/adapter.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

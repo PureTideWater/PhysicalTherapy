@@ -270,6 +270,7 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/screening/message.ts',
       'apps/worker/src/support/support-mail.ts',
       'packages/contracts/src/calendar.ts',
+      'packages/contracts/src/location.ts',
       'packages/packets/src/draft.ts',
       'packages/triage/src/headline.ts',
       'packages/triage/src/stages.ts',
@@ -318,6 +319,7 @@ describe('the copy lint: what it reads', () => {
       'packages/triage/src/behavior.ts',
       'packages/packets/src/draft.ts',
       'packages/contracts/src/calendar.ts',
+      'packages/contracts/src/location.ts',
     ]) {
       expect(files, file).toContain(file);
     }

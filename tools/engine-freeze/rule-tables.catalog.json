@@ -457,7 +457,7 @@
       {
         "name": "rule_record_record_type_check",
         "kind": "c",
-        "definition": "CHECK ((record_type = ANY (ARRAY['pfs_rvu'::text, 'pfs_gpci'::text, 'conversion_factor'::text, 'mppr_rate'::text, 'therapy_threshold'::text, 'assistant_modifier'::text, 'sequestration'::text, 'ncci_ptp'::text, 'ncci_mue'::text, 'carc'::text, 'rarc'::text, 'claim_status_code'::text, 'state_prompt_pay'::text, 'dispute_window'::text, 'locality_map'::text, 'denial_category'::text])))",
+        "definition": "CHECK ((record_type = ANY (ARRAY['pfs_rvu'::text, 'pfs_gpci'::text, 'conversion_factor'::text, 'mppr_rate'::text, 'therapy_threshold'::text, 'assistant_modifier'::text, 'sequestration'::text, 'ncci_ptp'::text, 'ncci_mue'::text, 'carc'::text, 'rarc'::text, 'claim_status_code'::text, 'state_prompt_pay'::text, 'dispute_window'::text, 'locality_map'::text, 'locality_map_plus_four'::text, 'denial_category'::text])))",
         "deferrable": false,
         "deferred": false
       },

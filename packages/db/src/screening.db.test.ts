@@ -25,10 +25,11 @@ import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrg
 
 const SCREENING_TABLES = [
   'marketing_campaign',
+  // The split, every practice's default since migration 20261105090000 (renamed from screening_place_of_service_split).
+  'place_of_service_split',
   'screening_lead',
   'screening_lead_product',
   'screening_outcome',
-  'screening_place_of_service_split',
   'screening_prospect',
   'screening_result',
   'screening_run',
@@ -75,13 +76,24 @@ async function as<T extends pg.QueryResultRow = pg.QueryResultRow>(role: string,
   }
 }
 
+/** What a test-built release leaves out or adds beside the base below (migration 20261105090000's cases). */
+interface ReleaseShape {
+  /** 00012's ZIP+4 list: 0000-4999 in locality 01, 5000-8999 in 02, 9000-9999 not listed (as 900006 has it). */
+  readonly plusFour?: boolean;
+  /** No ncci_mue record at all, or MUE windows that end early. */
+  readonly mue?: 'none' | { readonly effectiveTo: string };
+  /** No per-code reduction record (the general one stays). */
+  readonly perCodeMppr?: false;
+}
+
 /**
  * A SYNTHETIC release with two locality_map records, 00011 (no ZIP+4) and 00012 (ZIP+4 required), and for the keyed
  * read (audit #53's SQL) the keyed records of 97110 (its fee schedule values, MUE, own reduction record and same-code
  * pair), the general reduction record, a fee schedule record and a pair no screening row asks for, and a shared
- * conversion factor. Values are SYNTHETIC placeholders: these tests price no row through the engine.
+ * conversion factor, all for 2026; and, as `shape` says, 00012's ZIP+4 list or less of the content a Medicare row reads
+ * silently (audit #7). Values are SYNTHETIC placeholders: these tests price no row through the engine.
  */
-async function publishSyntheticRelease(releaseNo: number): Promise<void> {
+async function publishSyntheticRelease(releaseNo: number, shape: ReleaseShape = {}): Promise<void> {
   const client = await admin.connect();
   try {
     await client.query('BEGIN');
@@ -92,21 +104,39 @@ async function publishSyntheticRelease(releaseNo: number): Promise<void> {
          ($1, 'locality_map', '{"zip":"00012"}', '{"state":"ZZ","carrier":"99999","locality":"01","rural_indicator":"R","plus_four_required":true}', '2026-01-01', '2026-12-31', '{"synthetic":true}', 'L1', $3)`,
       [releaseNo, hex('b'), hex('c')],
     );
+    if (shape.plusFour === true) {
+      await client.query(
+        `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, effective_to, source, verification, sha256)
+         VALUES ($1, 'locality_map_plus_four', '{"zip":"00012"}', $2, '2026-01-01', '2026-12-31', '{"synthetic":true}', 'L1', $3)`,
+        [
+          releaseNo,
+          JSON.stringify({
+            state: 'ZZ',
+            ranges: [
+              { from: '0000', to: '4999', carrier: '99999', locality: '01', rural_indicator: 'R' },
+              { from: '5000', to: '8999', carrier: '99999', locality: '02', rural_indicator: 'R' },
+            ],
+          }),
+          hex('d'),
+        ],
+      );
+    }
     const keyed: readonly (readonly [string, object])[] = [
       ['pfs_rvu', { hcpcs: '97110', modifier: '' }],
       ['pfs_rvu', { hcpcs: '97999', modifier: '' }],
-      ['ncci_mue', { hcpcs: '97110' }],
-      ['mppr_rate', { hcpcs: '97110', modifier: '' }],
+      ...(shape.mue === 'none' ? [] : [['ncci_mue', { hcpcs: '97110' }] as const]),
+      ...(shape.perCodeMppr === false ? [] : [['mppr_rate', { hcpcs: '97110', modifier: '' }] as const]),
       ['mppr_rate', { component: 'practice_expense' }],
       ['ncci_ptp', { column1: '97110', column2: '97110' }],
       ['ncci_ptp', { column1: '97110', column2: '97140' }],
       ['conversion_factor', { applicability: 'non_qualifying_apm' }],
     ];
     for (const [type, key] of keyed) {
+      const effectiveTo = type === 'ncci_mue' && typeof shape.mue === 'object' ? shape.mue.effectiveTo : '2026-12-31';
       await client.query(
         `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, effective_to, source, verification, sha256)
-         VALUES ($1, $2, $3, '{"synthetic":true}', '2026-01-01', '2026-12-31', '{"synthetic":true}', 'L1', $4)`,
-        [releaseNo, type, JSON.stringify(key), sha256(`${type}:${JSON.stringify(key)}`)],
+         VALUES ($1, $2, $3, '{"synthetic":true}', '2026-01-01', $5, '{"synthetic":true}', 'L1', $4)`,
+        [releaseNo, type, JSON.stringify(key), sha256(`${type}:${JSON.stringify(key)}`), effectiveTo],
       );
     }
     await client.query('UPDATE rule_release SET published_at = now() WHERE release_no = $1', [releaseNo]);
@@ -123,10 +153,14 @@ interface SubmitOptions {
   /** The practice's name; one of its own unless given (a screening replaces an earlier one of the same practice). */
   readonly practice?: string;
   readonly zip?: string;
+  /** The ZIP+4, kept only when the ZIP's locality_map record needs it (migration 20261105090000). */
+  readonly plusFour?: string | null;
   readonly email?: string;
   readonly rows?: readonly (readonly [string, string, number, string, string, string, bigint, number])[];
   /** The rows of fewer than 11 claim lines the browser left out: how many, their claim lines and their allowed cents. */
   readonly leftOut?: readonly [number | null, number | null, bigint | null];
+  /** The Medicare rows the browser left out for a quarter outside the release's loaded content: how many, their claim lines and their allowed cents (Q6 (a)). */
+  readonly outsideContent?: readonly [number | null, bigint | null, bigint | null];
   /** How the prospect heard of us, the cookie's campaign codes and kind of paid click, and the referring firm. */
   readonly attribution?: {
     readonly source?: string | null;
@@ -152,7 +186,10 @@ const ROWS: NonNullable<SubmitOptions['rows']> = [
   ['97116', 'GP', 1, '11', 'other', '2026-Q1', 600n, 11],
 ];
 
-const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) AS run_id';
+/** submit_screening's 28 arguments (migration 20261105090000: the ZIP+4 after the ZIP, the three out-of-content counts after the left-out ones). */
+const SUBMIT_ARGUMENTS = 28;
+const placeholders = (count: number) => Array.from({ length: count }, (_, index) => `$${String(index + 1)}`).join(', ');
+const SUBMIT = `SELECT submit_screening(${placeholders(SUBMIT_ARGUMENTS)}) AS run_id`;
 
 /** The rows in their canonical form (format.ts, encodeScreeningRows): each row's eight fields tab-joined, the rows joined by line feeds. */
 function canonicalRows(rows: NonNullable<SubmitOptions['rows']>): string {
@@ -164,10 +201,12 @@ const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 function submitValues(options: SubmitOptions = {}): unknown[] {
   const rows = options.rows ?? ROWS;
   const [leftRows, leftLines, leftCents] = options.leftOut ?? [0, 0, 0n];
+  const [outsideRows, outsideLines, outsideCents] = options.outsideContent ?? [0, 0n, 0n];
   return [
     options.practice ?? `  Synthetic Therapy Group ${letters()}  `,
     'MN',
     options.zip ?? '00011',
+    options.plusFour ?? null,
     options.email ?? ` Prospect.${randomUUID().slice(0, 8)}@Synthetic.Test `,
     rows.map((row) => row[0]),
     rows.map((row) => row[1]),
@@ -180,6 +219,9 @@ function submitValues(options: SubmitOptions = {}): unknown[] {
     leftRows,
     leftLines,
     leftCents === null ? null : leftCents.toString(),
+    outsideRows,
+    outsideLines === null ? null : outsideLines.toString(),
+    outsideCents === null ? null : outsideCents.toString(),
     options.attribution?.source ?? null,
     options.attribution?.utmSource ?? null,
     options.attribution?.utmMedium ?? null,
@@ -198,7 +240,7 @@ async function submit(options: SubmitOptions = {}): Promise<string> {
 }
 
 async function approveSplit(settings: object = SPLIT): Promise<string> {
-  const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT console_approve_screening_split($1) AS id', [JSON.stringify(settings)], specialist);
+  const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT console_approve_place_of_service_split($1) AS id', [JSON.stringify(settings)], specialist);
   return row?.id ?? '';
 }
 
@@ -298,7 +340,7 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
         'screening_lead.reminder_sent_at',
         'screening_lead.result_first_opened_at',
         'screening_lead.screened_at',
-        'screening_place_of_service_split.approved_at',
+        'place_of_service_split.approved_at',
         'screening_prospect.created_at',
         'screening_prospect.expires_at',
         'screening_run.completed_at',
@@ -331,6 +373,8 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
       'screening_terms_sha256',
       'created_at',
       'expires_at',
+      // The ZIP+4, kept only when the ZIP needs it (migration 20261105090000).
+      'zip_plus_four',
     ]);
     // An outcome holds no name, email, ZIP, exact count, dollar figure, date or day count: bands, whole percents of a
     // total it never holds, closed codes, flags, the month as text and the release (audit #57).
@@ -388,6 +432,10 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
       'left_out_allowed_cents',
       'created_at',
       'expires_at',
+      // The Medicare rows left out for a quarter outside the release's loaded content: three numbers (migration 20261105090000).
+      'outside_content_rows',
+      'outside_content_claim_lines',
+      'outside_content_allowed_cents',
     ]);
     // The control: the shape catches each kind CO-04 names.
     for (const shaped of ['patient_name', 'member_id', 'date_of_birth', 'dob', 'date_of_service', 'service_date', 'claim_number', 'clp01', 'icn', 'subscriber_id']) {
@@ -435,6 +483,9 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
     expect(await valid([{ code: 'invalid_value', row: 12, field: 'units' }, { code: 'duplicate_row', row: 40, first_row: 3 }])).toBe(true);
     // A row of fewer than 11 claim lines is named by its number and field alone, never its count.
     expect(await valid([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count' }])).toBe(true);
+    // A Medicare row outside the release's loaded content, sent anyway: its row and field, never its quarter.
+    expect(await valid([{ code: 'band_outside_content', row: 7, field: 'service_band' }])).toBe(true);
+    expect(await valid([{ code: 'band_outside_content', row: 7, field: 'service_band', band: '2025-Q4' }])).toBe(false);
     expect(await valid([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count', claim_count: 1 }])).toBe(false);
     expect(await valid([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count', value: '97110' }])).toBe(false);
     expect(await valid([{ code: 'phi_column', column: 4, phi: 'member_id', header: 'Member ID' }])).toBe(false);
@@ -481,9 +532,10 @@ describe('the roles reach the tables only through their functions', () => {
       [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE],
     );
     const byName = Object.fromEntries(rows.map((row) => [row.name.replace(/\(.*$/, ''), row]));
+    // The split's console functions and the run guard's split are named without 'screening' since migration
+    // 20261105090000; location.db.test.ts checks them, and screening_band_days(), by their exact names.
     const forApp = [
       'screening_status',
-      'screening_zip_status',
       'submit_screening',
       'reject_screening_upload',
       'screening_result_summary',
@@ -492,8 +544,6 @@ describe('the roles reach the tables only through their functions', () => {
       'screening_result_coverage',
       'screening_result_rows',
       'convert_screening',
-      'console_screening_splits',
-      'console_approve_screening_split',
       'screening_result_opened',
       'screening_lead_withdraw',
       'console_register_marketing_campaign',
@@ -521,8 +571,8 @@ describe('the roles reach the tables only through their functions', () => {
       expect(row.billing, name).toBe(false);
       expect(row.app, name).toBe(forApp.includes(name));
       expect(row.operator, name).toBe(forOperator.includes(name));
-      // Every function a role may call runs as the owner, but the ZIP check, which reads only global rule content.
-      expect(row.definer, name).toBe((forApp.includes(name) || forOperator.includes(name)) && name !== 'screening_zip_status');
+      // Every function a role may call runs as the owner.
+      expect(row.definer, name).toBe(forApp.includes(name) || forOperator.includes(name));
     }
   });
 });
@@ -538,21 +588,99 @@ describe('the screening rules', () => {
     await approveSplit();
   }, 60_000);
 
-  it('opens with the release and the split in force, and refuses a ZIP the locality map does not price from five digits', async () => {
+  it('opens with the release and the split in force, and refuses a ZIP the release does not map, and one whose ZIP+4 list is not loaded with or without a ZIP+4', async () => {
     const [status] = await as<{ release_no: number; place_of_service_split_id: string }>(APP_ROLE, 'SELECT * FROM screening_status()');
     expect(status?.release_no).toBe(900001);
-    expect(await as(APP_ROLE, 'SELECT * FROM screening_zip_status($1)', ['00011'])).toEqual([{ known: true, plus_four_required: false }]);
-    expect(await as(APP_ROLE, 'SELECT * FROM screening_zip_status($1)', ['00012'])).toEqual([{ known: true, plus_four_required: true }]);
-    expect(await as(APP_ROLE, 'SELECT * FROM screening_zip_status($1)', ['00099'])).toEqual([{ known: false, plus_four_required: false }]);
+    // The location's status in the release in force (locality_status(), migration 20261105090000), as the web reads it.
+    const location = async (zip: string, plusFour: string | null) => (await as<{ status: string }>(APP_ROLE, 'SELECT status FROM locality_status(900001, $1, $2, NULL, NULL)', [zip, plusFour]))[0]?.status;
+    expect(await location('00011', null)).toBe('ready');
+    expect(await location('00012', null)).toBe('zip_plus_four_needed');
+    expect(await location('00012', '0001')).toBe('locality_not_loaded');
+    expect(await location('00099', null)).toBe('zip_unknown');
     await expect(submit({ zip: '00099' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_unknown' });
-    // The engine takes a five-digit ZIP alone, so a ZIP whose locality needs its ZIP+4 is refused and no ZIP+4 is kept.
-    await expect(submit({ zip: '00012' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
-    const withoutNeed = await submit({ zip: '00011' });
-    const zips = await admin.query<{ id: string; zip: string }>(
-      'SELECT r.id, p.zip FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = ANY ($1)',
+    // A ZIP whose locality needs its ZIP+4, under a release that loads no ZIP+4 list of it: the list is not loaded, said
+    // before the prospect is asked for digits the screening could not use (review of PR 6b-2, finding 22), and again
+    // when one is given. The practice's own status keeps asking for the ZIP+4 first (locality_status() above).
+    await expect(submit({ zip: '00012' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_locality_not_loaded' });
+    await expect(submit({ zip: '00012', plusFour: '0001' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_locality_not_loaded' });
+    // A ZIP+4 given for a ZIP that needs none is not kept (minimisation).
+    const withoutNeed = await submit({ zip: '00011', plusFour: '1234' });
+    const zips = await admin.query<{ id: string; zip: string; zip_plus_four: string | null }>(
+      'SELECT r.id, p.zip, p.zip_plus_four FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = ANY ($1)',
       [[withoutNeed]],
     );
-    expect(zips.rows).toEqual([{ id: withoutNeed, zip: '00011' }]);
+    expect(zips.rows).toEqual([{ id: withoutNeed, zip: '00011', zip_plus_four: null }]);
+  });
+
+  it('refuses a Medicare row in a quarter outside the release’s loaded content, and takes any other product’s row of that quarter (SCR-16)', async () => {
+    // The test release loads its MUE and reduction records for 2026 alone.
+    for (const product of ['medicare_ffs', 'ma_noncontracted']) {
+      for (const band of ['2025-Q4', '2027-Q1']) {
+        await expect(submit({ rows: [['97110', 'GP', 1, '11', product, band, 4_000n, 11]] }), `${product} ${band}`).rejects.toMatchObject({
+          code: '23514',
+          constraint: 'screening_band_outside_content',
+        });
+      }
+    }
+    // Among rows inside the content, one outside refuses the upload: the browser leaves such a row out, so one sent is a bypass.
+    await expect(submit({ rows: [...ROWS, ['97530', '', 1, '11', 'medicare_ffs', '2025-Q4', 4_000n, 11]] })).rejects.toMatchObject({ constraint: 'screening_band_outside_content' });
+    for (const product of ['ma_contracted', 'commercial', 'medicaid', 'other']) {
+      expect(await submit({ rows: [['97110', 'GP', 1, '11', product, '2025-Q4', 4_000n, 11]] }), product).toMatch(/^[0-9a-f-]{36}$/);
+    }
+    expect(await submit({ rows: [['97110', 'GP', 1, '11', 'medicare_ffs', '2026-Q4', 4_000n, 11]] })).toMatch(/^[0-9a-f-]{36}$/);
+    // The error names no quarter and no row.
+    const refused = await submit({ rows: [['97110', 'GP', 1, '11', 'medicare_ffs', '2025-Q1', 4_000n, 11]] }).then(
+      () => undefined,
+      (error: unknown) => error as Error,
+    );
+    expect(refused?.message).not.toMatch(/2025|97110/);
+  });
+
+  it('keeps of the rows left out for their quarter three numbers alone, beside the floor’s, held to what the browser could have counted (Q6 (a))', async () => {
+    const runId = await submit({ leftOut: [1, 4, 1_000n], outsideContent: [2, 30n, 41_200n] });
+    const stored = await admin.query(
+      `SELECT u.outside_content_rows, u.outside_content_claim_lines::text AS claim_lines, u.outside_content_allowed_cents::text AS cents
+         FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = $1`,
+      [runId],
+    );
+    expect(stored.rows).toEqual([{ outside_content_rows: 2, claim_lines: '30', cents: '41200' }]);
+    // The result's summary returns them, beside the floor's.
+    await complete(runId, hex('7'));
+    expect(await as(APP_ROLE, 'SELECT left_out_rows, outside_content_rows, outside_content_claim_lines::text AS lines, outside_content_observed_cents::text AS cents FROM screening_result_summary($1)', [hex('7')])).toEqual([
+      { left_out_rows: 1, outside_content_rows: 2, lines: '30', cents: '41200' },
+    ]);
+    // Each row left out sums 11 to 100,000 claim lines (the floor runs first), at most $25,000.00 a claim line.
+    await expect(submit({ outsideContent: [1, 10n, 0n] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_upload_outside_content_claim_lines' });
+    await expect(submit({ outsideContent: [1, 100_001n, 0n] })).rejects.toMatchObject({ constraint: 'screening_upload_outside_content_claim_lines' });
+    await expect(submit({ outsideContent: [0, 11n, 0n] })).rejects.toMatchObject({ constraint: 'screening_upload_outside_content_claim_lines' });
+    await expect(submit({ outsideContent: [0, 0n, 1n] })).rejects.toMatchObject({ constraint: 'screening_upload_outside_content_allowed' });
+    await expect(submit({ outsideContent: [1, 11n, 27_500_001n] })).rejects.toMatchObject({ constraint: 'screening_upload_outside_content_allowed' });
+    expect(await submit({ outsideContent: [1, 11n, 27_500_000n] })).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(submit({ outsideContent: [-1, 0n, 0n] })).rejects.toMatchObject({ code: '23514' });
+    await expect(submit({ outsideContent: [null, 0n, 0n] })).rejects.toMatchObject({ code: '23502' });
+    // No more rows in all than a file may hold, with the floor's.
+    await expect(submit({ leftOut: [24_997, 24_997, 0n], outsideContent: [24_998, 274_978n, 0n] })).rejects.toMatchObject({ constraint: 'screening_upload_accepted_rows' });
+    expect(await submit({ leftOut: [24_997, 24_997, 0n], outsideContent: [24_997, 274_967n, 0n] })).toMatch(/^[0-9a-f-]{36}$/);
+    // A rejected upload leaves nothing out.
+    const [prospect] = (await admin.query<{ id: string }>("INSERT INTO screening_prospect (practice_name, state, zip, contact_email) VALUES ('SYNTHETIC', 'MN', '00011', 'outside@synthetic.test') RETURNING id")).rows;
+    await expect(
+      admin.query(
+        `INSERT INTO screening_upload (prospect_id, row_count, status, rejection_reasons, outside_content_rows, outside_content_claim_lines) VALUES ($1, 2, 'rejected', '[{"code":"band_outside_content","row":2,"field":"service_band"}]', 1, 11)`,
+        [prospect?.id],
+      ),
+    ).rejects.toMatchObject({ constraint: 'screening_upload_outside_content_accepted' });
+    // The reason itself is one a refused upload may keep: its code, row and field, never its quarter.
+    expect(
+      await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $7) AS id', [
+        'Synthetic Outside Clinic',
+        'MN',
+        '00011',
+        'outside.refused@synthetic.test',
+        3,
+        JSON.stringify([{ code: 'band_outside_content', row: 2, field: 'service_band' }]),
+        `test-${randomUUID()}`,
+      ]),
+    ).toEqual([{ id: expect.stringMatching(/^[0-9a-f-]{36}$/) as string }]);
   });
 
   it('stores the prospect, an accepted upload of hash and count, a queued run pinned to the release and split, and every row, with its audit event', async () => {
@@ -561,7 +689,7 @@ describe('the screening rules', () => {
       `SELECT p.practice_name, p.state, p.zip, p.contact_email, u.rows_sha256, u.row_count AS upload_rows,
               ARRAY[u.left_out_rows::text, u.left_out_claim_lines::text, u.left_out_allowed_cents::text] AS left_out, u.status AS upload_status, u.rejection_reasons,
               r.release_no, r.release_manifest_sha256, r.row_count, r.status, r.attempts, r.result_token_sha256,
-              r.place_of_service_split_id = screening_split_in_force() AS split_in_force, r.expires_at = r.created_at + interval '30 days' AS thirty_days
+              r.place_of_service_split_id = place_of_service_split_in_force() AS split_in_force, r.expires_at = r.created_at + interval '30 days' AS thirty_days
          FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = $1`,
       [runId],
     );
@@ -605,7 +733,7 @@ describe('the screening rules', () => {
 
   it('refuses arrays of different lengths, no rows, more than 50,000, a repeated row key and a modifier set out of order', async () => {
     const values = submitValues();
-    await expect(as(APP_ROLE, SUBMIT, values.map((value, index) => (index === 7 ? ['11'] : value)))).rejects.toMatchObject({ constraint: 'screening_rows' });
+    await expect(as(APP_ROLE, SUBMIT, values.map((value, index) => (index === 8 ? ['11'] : value)))).rejects.toMatchObject({ constraint: 'screening_rows' });
     await expect(submit({ rows: [] })).rejects.toMatchObject({ constraint: 'screening_rows' });
     const many = Array.from({ length: 50_001 }, (_, index) => ['97110', '', 1 + (index % 999), '11', 'medicare_ffs', `20${String(10 + Math.floor(index / 999) % 17)}-Q1`, 0n, 11] as const);
     await expect(submit({ rows: many })).rejects.toMatchObject({ constraint: 'screening_rows' });
@@ -716,8 +844,8 @@ describe('the screening rules', () => {
     // The canonical rows sent, hashed: and the same hash worked out again from the rows the table holds.
     expect(stored.rows).toEqual([{ rows_sha256: sha256('97530\tGP\t2\t11\tma_noncontracted\t2026-Q2\t60000\t12\n97110\tCQ GP\t1\t22\tmedicare_ffs\t2026-Q1\t0\t11'), again: sha256(canonicalRows(rows)) }]);
     expect(stored.rows[0]?.rows_sha256).toBe(stored.rows[0]?.again);
-    // The function takes no hash: a seventeenth argument is no submit_screening at all.
-    await expect(as(APP_ROLE, 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)', [...submitValues().slice(0, 4), hex('d'), ...submitValues().slice(4)])).rejects.toMatchObject({
+    // The function takes no hash: one argument more is no submit_screening at all.
+    await expect(as(APP_ROLE, `SELECT submit_screening(${placeholders(SUBMIT_ARGUMENTS + 1)})`, [...submitValues().slice(0, 5), hex('d'), ...submitValues().slice(5)])).rejects.toMatchObject({
       code: '42883',
     });
     // The owner either: an accepted upload has the hash of its rows, a refused one none.
@@ -993,21 +1121,21 @@ describe('the screening rules', () => {
   });
 
   it('keeps the split append-only, valid and approved by a contract specialist, the latest in force', async () => {
-    await expect(approveSplit({ '11': 'nonfacility' })).rejects.toMatchObject({ constraint: 'screening_place_of_service_split_settings' });
-    await expect(approveSplit({})).rejects.toMatchObject({ constraint: 'screening_place_of_service_split_settings' });
-    await expect(approveSplit({ '1': 'facility' })).rejects.toMatchObject({ constraint: 'screening_place_of_service_split_settings' });
-    await expect(approveSplit({ '00': 'facility' })).rejects.toMatchObject({ constraint: 'screening_place_of_service_split_settings' });
-    await expect(as(APP_ROLE, 'SELECT console_approve_screening_split($1)', [JSON.stringify(SPLIT)], analyst)).rejects.toMatchObject({ code: '42501' });
-    await expect(as(APP_ROLE, 'SELECT console_approve_screening_split($1)', [JSON.stringify(SPLIT)])).rejects.toMatchObject({ code: '42501' });
-    await expect(as(APP_ROLE, 'SELECT * FROM console_screening_splits()', [], analyst)).rejects.toMatchObject({ code: '42501' });
+    await expect(approveSplit({ '11': 'nonfacility' })).rejects.toMatchObject({ constraint: 'place_of_service_split_settings' });
+    await expect(approveSplit({})).rejects.toMatchObject({ constraint: 'place_of_service_split_settings' });
+    await expect(approveSplit({ '1': 'facility' })).rejects.toMatchObject({ constraint: 'place_of_service_split_settings' });
+    await expect(approveSplit({ '00': 'facility' })).rejects.toMatchObject({ constraint: 'place_of_service_split_settings' });
+    await expect(as(APP_ROLE, 'SELECT console_approve_place_of_service_split($1)', [JSON.stringify(SPLIT)], analyst)).rejects.toMatchObject({ code: '42501' });
+    await expect(as(APP_ROLE, 'SELECT console_approve_place_of_service_split($1)', [JSON.stringify(SPLIT)])).rejects.toMatchObject({ code: '42501' });
+    await expect(as(APP_ROLE, 'SELECT * FROM console_place_of_service_splits()', [], analyst)).rejects.toMatchObject({ code: '42501' });
     const later = await approveSplit({ '11': 'non_facility', '12': 'non_facility', '22': 'facility' });
-    const splits = await as<{ id: string; approved_by: string; in_force: boolean }>(APP_ROLE, 'SELECT id, approved_by, in_force FROM console_screening_splits()', [], specialist);
+    const splits = await as<{ id: string; approved_by: string; in_force: boolean }>(APP_ROLE, 'SELECT id, approved_by, in_force FROM console_place_of_service_splits()', [], specialist);
     expect(splits[0]).toEqual({ id: later, approved_by: specialist, in_force: true });
     expect(splits.slice(1).every((split) => !split.in_force)).toBe(true);
     const [status] = await as<{ place_of_service_split_id: string }>(APP_ROLE, 'SELECT place_of_service_split_id FROM screening_status()');
     expect(status?.place_of_service_split_id).toBe(later);
-    await expect(admin.query('UPDATE screening_place_of_service_split SET settings = $2 WHERE id = $1', [later, JSON.stringify(SPLIT)])).rejects.toMatchObject({ code: 'P0001' });
-    await expect(admin.query('DELETE FROM screening_place_of_service_split WHERE id = $1', [later])).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query('UPDATE place_of_service_split SET settings = $2 WHERE id = $1', [later, JSON.stringify(SPLIT)])).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query('DELETE FROM place_of_service_split WHERE id = $1', [later])).rejects.toMatchObject({ code: 'P0001' });
   });
 
   it('expires a screening 30 days after its upload: its prospect, upload, run and rows go together, each an audit event, and its conversion stays', async () => {
@@ -1448,7 +1576,14 @@ describe('audit #57: what a row may hold, and the bands and channel the database
     expect(await codes(['row 12'])).toBe(false);
     expect(await codes(['no_rows', null])).toBe(false);
     expect(await codes(Array.from({ length: 14 }, () => 'no_rows'))).toBe(false);
+    // The 14 codes there are since migration 20261105090000 (band_outside_content, a Medicare row outside the loaded content).
+    const all = ['band_holds_date', 'band_in_future', 'band_outside_content', 'duplicate_column', 'duplicate_row', 'invalid_value', 'missing_column', 'no_rows', 'phi_column', 'row_count_mismatch', 'row_shape', 'too_few_claim_lines', 'too_many_rows', 'unknown_column'];
+    expect(await codes(all)).toBe(true);
+    expect(await codes(['band_outside_content'])).toBe(true);
+    expect(await codes([...all, 'zip_unknown'].sort())).toBe(false);
     expect((await admin.query<{ v: string }>('SELECT screening_labels_version() AS v')).rows[0]?.v).toMatch(/^screening-labels\/20\d{2}-\d{2}-\d{2}$/);
+    // The labels of the ZIP+4's engine details and of the rows left out for their quarter (migration 20261105090000).
+    expect((await admin.query<{ v: string }>('SELECT screening_labels_version() AS v')).rows).toEqual([{ v: 'screening-labels/2026-11-05' }]);
   });
 
   it('refuses a prospect’s attribution that is not a code, a list answer or a firm’s name, and a consent or terms hash that is not one', async () => {
@@ -1466,6 +1601,9 @@ describe('audit #57: what a row may hold, and the bands and channel the database
       ['referring_firm', 'x'.repeat(201), 'screening_prospect_referring_firm'],
       ['followup_consent_sha256', 'yes', 'screening_prospect_followup_consent'],
       ['screening_terms_sha256', hex('A'), 'screening_prospect_screening_terms'],
+      ['zip_plus_four', '123', 'screening_prospect_zip_plus_four'],
+      ['zip_plus_four', '12a4', 'screening_prospect_zip_plus_four'],
+      ['zip_plus_four', '00012-5000', 'screening_prospect_zip_plus_four'],
     ] as const) {
       await expect(insert(column, value), `${column} ${String(value)}`).rejects.toMatchObject({ code: '23514', constraint });
     }
@@ -2522,5 +2660,76 @@ describe('audit #53: the release’s keyed records are read by the run’s own k
       await client.query('ROLLBACK');
       client.release();
     }
+  });
+});
+
+describe('PR 6b: the ZIP+4 and the content a release has loaded (migration 20261105090000; SCR-15, SCR-16)', () => {
+  // Each release published here is the release in force from then on, so these run last, in this order.
+  it('asks for the ZIP+4 only where the ZIP needs it, keeps it only then, refuses one the ZIP+4 list does not hold, and hands it to the pricing', async () => {
+    await publishSyntheticRelease(900011, { plusFour: true });
+    expect((await as<{ release_no: number }>(APP_ROLE, 'SELECT release_no FROM screening_status()'))[0]?.release_no).toBe(900011);
+    await expect(submit({ zip: '00012' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
+    await expect(submit({ zip: '00012', plusFour: '9100' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four_unknown' });
+    await expect(submit({ zip: '00012', plusFour: '12a4' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four_unknown' });
+    const needed = await submit({ zip: '00012', plusFour: '5000' });
+    const unneeded = await submit({ zip: '00011', plusFour: '5000' });
+    const kept = await admin.query<{ id: string; zip: string; zip_plus_four: string | null }>(
+      'SELECT r.id, p.zip, p.zip_plus_four FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = ANY ($1) ORDER BY p.zip',
+      [[needed, unneeded]],
+    );
+    expect(kept.rows).toEqual([
+      { id: unneeded, zip: '00011', zip_plus_four: null },
+      { id: needed, zip: '00012', zip_plus_four: '5000' },
+    ]);
+    // The claim hands the ZIP+4 to the pricing context; the keyed read holds the ZIP's plus-four record, never the shared read.
+    expect(await as(OPERATOR_ROLE, 'SELECT zip, zip_plus_four, release_no FROM operator_screening_claim($1)', [needed])).toEqual([{ zip: '00012', zip_plus_four: '5000', release_no: 900011 }]);
+    const records = await as<{ record_type: string; key: object; sha256: string }>(OPERATOR_ROLE, 'SELECT record_type, key, sha256 FROM operator_screening_run_records($1)', [needed]);
+    expect(records.filter((row) => row.record_type.startsWith('locality_map'))).toEqual([
+      { record_type: 'locality_map', key: { zip: '00012' }, sha256: hex('c') },
+      { record_type: 'locality_map_plus_four', key: { zip: '00012' }, sha256: hex('d') },
+    ]);
+    expect((await as<{ record_type: string }>(OPERATOR_ROLE, 'SELECT record_type FROM operator_screening_release($1)', [needed])).map((row) => row.record_type)).toEqual(['conversion_factor']);
+    // A five-digit run's keyed read names its own ZIP alone: 00011 has no plus-four record, so none is read.
+    expect(await as(OPERATOR_ROLE, 'SELECT zip, zip_plus_four FROM operator_screening_claim($1)', [unneeded])).toEqual([{ zip: '00011', zip_plus_four: null }]);
+    const fiveDigit = await as<{ record_type: string }>(OPERATOR_ROLE, 'SELECT record_type FROM operator_screening_run_records($1)', [unneeded]);
+    expect(fiveDigit.filter((row) => row.record_type.startsWith('locality_map'))).toEqual([{ record_type: 'locality_map' }]);
+  });
+
+  it('spans each silently read content by its records’ windows, and refuses a Medicare row outside them: no MUE at all, MUE that ends a quarter early, no per-code reduction', async () => {
+    const spans = async (release: number) =>
+      Object.fromEntries((await as<{ content: string; loaded: string }>(APP_ROLE, 'SELECT content, loaded::text FROM rule_release_content_span($1)', [release])).map((row) => [row.content, row.loaded]));
+    const medicare = (band: string) => submit({ rows: [['97110', 'GP', 1, '11', 'medicare_ffs', band, 4_000n, 11]] });
+    const accepted = /^[0-9a-f-]{36}$/;
+    expect(await spans(900011)).toEqual({ mppr_code: '{[2026-01-01,2027-01-01)}', mppr_general: '{[2026-01-01,2027-01-01)}', ncci_mue: '{[2026-01-01,2027-01-01)}' });
+    // No ncci_mue record at all: an empty span, never every date, so no quarter is inside it.
+    await publishSyntheticRelease(900012, { mue: 'none' });
+    expect(await spans(900012)).toEqual({ mppr_code: '{[2026-01-01,2027-01-01)}', mppr_general: '{[2026-01-01,2027-01-01)}', ncci_mue: '{}' });
+    await expect(medicare('2026-Q2')).rejects.toMatchObject({ code: '23514', constraint: 'screening_band_outside_content' });
+    expect(await submit({ rows: [['97110', 'GP', 1, '11', 'commercial', '2026-Q2', 4_000n, 11]] })).toMatch(accepted);
+    // MUE that ends 2026-09-30: the fourth quarter is outside, the third inside.
+    await publishSyntheticRelease(900013, { mue: { effectiveTo: '2026-09-30' } });
+    expect((await spans(900013)).ncci_mue).toBe('{[2026-01-01,2026-10-01)}');
+    await expect(medicare('2026-Q4')).rejects.toMatchObject({ constraint: 'screening_band_outside_content' });
+    expect(await medicare('2026-Q3')).toMatch(accepted);
+    // No per-code reduction record: every Medicare quarter is outside.
+    await publishSyntheticRelease(900014, { perCodeMppr: false });
+    expect((await spans(900014)).mppr_code).toBe('{}');
+    for (const band of ['2026-Q1', '2026-Q2', '2026-Q3', '2026-Q4']) {
+      await expect(medicare(band), band).rejects.toMatchObject({ constraint: 'screening_band_outside_content' });
+    }
+    await expect(submit({ rows: [['97110', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 4_000n, 11]] })).rejects.toMatchObject({ constraint: 'screening_band_outside_content' });
+    expect(await submit({ rows: [['97110', 'GP', 1, '11', 'ma_contracted', '2026-Q1', 4_000n, 11]] })).toMatch(accepted);
+  });
+
+  it('gives the quarter as its days, and nothing for what is not a quarter (no grant: only submit_screening reads it)', async () => {
+    const days = async (band: string) => (await admin.query<{ days: string | null }>('SELECT screening_band_days($1)::text AS days', [band])).rows[0]?.days;
+    expect(await days('2026-Q1')).toBe('[2026-01-01,2026-04-01)');
+    expect(await days('2026-Q4')).toBe('[2026-10-01,2027-01-01)');
+    expect(await days('2025-Q2')).toBe('[2025-04-01,2025-07-01)');
+    for (const band of ['2026-Q5', '2026-01', '1999-Q1', '', '2026-Q1 ']) {
+      expect(await days(band), band).toBeNull();
+    }
+    await expect(as(APP_ROLE, "SELECT screening_band_days('2026-Q1')")).rejects.toMatchObject({ code: '42501' });
+    await expect(as(OPERATOR_ROLE, 'SELECT * FROM rule_release_content_span(900011)')).rejects.toMatchObject({ code: '42501' });
   });
 });

@@ -3,7 +3,18 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { BillingEventError, WebhookSignatureError, signPayload } from '@tp/billing';
 import { LocalBillingProvider, MemorySimulatorStore, SIMULATOR_TEST_ROUTING } from '@tp/billing/local';
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, withActor, withJobScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from '@tp/db/testing';
+import {
+  type MigratedDatabase,
+  type TenantWorld,
+  addMembership,
+  asOwner,
+  createMigratedDatabase,
+  createOrganization,
+  createPracticeWithLocation,
+  createTenantWorld,
+  createUser,
+  endPool,
+} from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MemoryMailSender } from '../mail/mail';
@@ -441,9 +452,8 @@ describe('billing with the local Stripe test-mode simulator', () => {
   it('counts each group’s and firm’s practices nightly, once a day', async () => {
     const world = await createTenantWorld(owner, 'usage group');
     const second = randomUUID();
-    await asOwner(owner, [second], () =>
-      owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [second, world.organizationId, 'SYNTHETIC SECOND PRACTICE', placeholderDataKeyRef()]),
-    );
+    // Every practice is created with its pricing location (practice_has_site, audit #33).
+    await asOwner(owner, [second], () => createPracticeWithLocation(owner, { id: second, organizationId: world.organizationId, name: 'SYNTHETIC SECOND PRACTICE' }));
     const firm = await createOrganization(owner, 'firm', 'usage firm');
     const agreementId = randomUUID();
     await asOwner(owner, [world.practiceId], async () => {
@@ -481,7 +491,7 @@ describe('billing with the local Stripe test-mode simulator', () => {
     const practices = [world.practiceId];
     for (const name of ['SYNTHETIC FEES TWO', 'SYNTHETIC FEES THREE']) {
       const id = randomUUID();
-      await asOwner(owner, [id], () => owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [id, world.organizationId, name, placeholderDataKeyRef()]));
+      await asOwner(owner, [id], () => createPracticeWithLocation(owner, { id, organizationId: world.organizationId, name }));
       practices.push(id);
     }
     const customer = await customerRef(world.organizationId);

@@ -34,7 +34,11 @@ afterAll(async () => {
   await database.drop();
 });
 
-/** A platform administrator creates a practice with a fresh data key, once its administrator is invited. */
+/**
+ * A platform administrator creates a practice with a fresh data key, once its administrator is invited, and sets its
+ * pricing location in the same transaction, as the console does (console_set_practice_location(); the database checks
+ * at commit that the practice has one).
+ */
 async function practiceWithKey(): Promise<{ practiceId: string; adminUserId: string }> {
   const internal = await createOrganization(owner, 'internal');
   const platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
@@ -45,9 +49,10 @@ async function practiceWithKey(): Promise<{ practiceId: string; adminUserId: str
   await addMembership(owner, group, adminUserId, 'practice_admin');
   const practiceId = randomUUID();
   const { dataKeyRef } = await provisionPracticeKey(provider, practiceId);
-  await withActor(app, platformAdmin, (scope) =>
-    scope.client.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC KEYED PRACTICE', $3)", [practiceId, group, dataKeyRef]),
-  );
+  await withActor(app, platformAdmin, async (scope) => {
+    await scope.client.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC KEYED PRACTICE', $3)", [practiceId, group, dataKeyRef]);
+    await scope.client.query("SELECT console_set_practice_location($1, '00011', NULL)", [practiceId]);
+  });
   return { practiceId, adminUserId };
 }
 

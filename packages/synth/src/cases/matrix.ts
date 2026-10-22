@@ -82,6 +82,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "The base and head engines, each on its own money, rules and contracts packages, price and recompute alike every golden claim and generated five-digit claims. Nothing under `packages/pricing` but tests changes beyond the exception's files, and no existing golden file or release a golden claim pins changes",
   },
+  {
+    id: 'PRC-23',
+    title: 'A month whose pricing location is not ready',
+    assertion:
+      "With no ZIP, no run is created (refused in the worker and in Postgres). When a line needs a ZIP+4, or a ZIP Medicare's list does not hold, the run fails with no lines kept, and the month is not re-created daily. A fixed-fee month prices. Coverage and Pricing settings name the month as waiting on the billing ZIP, with its dollars. Saving the location prices it with no hand re-run",
+  },
+  {
+    id: 'PRC-24',
+    title: 'A place of service the practice has not set',
+    assertion:
+      "Priced with the approved split's setting, read as `tp_app`. The run records the split, and the practice's own setting wins",
+  },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
   { id: 'CAS-03', title: 'Lines grouped by payer pattern from traces', assertion: 'One case per pattern' },
@@ -179,7 +191,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SCR-08',
     title: "The screening's capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16)",
     assertion:
-      'The production images at production\'s task sizes, Postgres at db.t4g.medium\'s size or the runner\'s share with gp3\'s baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once (cold, the worst ones distinct) with a small one queued behind them; fails on an OOM kill (Postgres\'s included), a restart, anonymous memory above 90% of a limit, a limit or cold start not applied, a runner too small, a wrong, unfinished or stalled result, a result page that does not open (its first page of groups or its last), a small upload not queued behind the large ones, an oracle mismatch or an oracle short of an upload\'s Medicare rows (S1-1, S2-1, S3-1), or a run of fewer than S1 to S5; the time to email reported as "open, PR 6b" until environments.ts declares the screening\'s consumer, then failing above 48 s on the runner (60 s scaled by the runner-to-Fargate factor once staging measures it)',
+      'The production images at production\'s task sizes, Postgres at db.t4g.medium\'s size or the runner\'s share with gp3\'s baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once (cold, the worst ones distinct) with a small one queued behind them; fails on an OOM kill (Postgres\'s included), a restart, anonymous memory above 90% of a limit, a limit or cold start not applied, a runner too small, a wrong, unfinished or stalled result, a result page that does not open (its first page of groups or its last), a small upload not queued behind the large ones, an oracle mismatch or an oracle short of an upload\'s Medicare rows (S1-1, S2-1 and S3-1 against the read and adapter frozen at 3c1b289, and S1-2, a ZIP the release splits across localities sent with its ZIP+4, against the whole-release oracle), or a run of fewer than S1 to S5; the time to email reported as "open, PR 6b" until environments.ts declares the screening\'s consumer, then failing above 48 s on the runner (60 s scaled by the runner-to-Fargate factor once staging measures it)',
   },
   {
     id: 'SCR-09',
@@ -216,6 +228,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'A later screening of a practice with a kept summary',
     assertion:
       "The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), an audit event naming it; its request is carried over only by the same ZIP and practice name, and an address-only match leaves the request without a summary; the result page and email of a screening that took a request over say its details are kept with it; a failed, abandoned or refused resend deletes nothing, and a completion after expiry is refused",
+  },
+  {
+    id: 'SCR-15',
+    title: 'A screening of a ZIP split across localities',
+    assertion:
+      'The ZIP+4 is asked for, and kept only when needed and only for 30 days; under a release with no ZIP+4 list of the ZIP, the list is said not loaded before any ZIP+4 is asked for. Rows are priced at its locality, the keyed read holds the plus-four record, and the result names the ZIP+4',
+  },
+  {
+    id: 'SCR-16',
+    title: 'A Medicare screening row in a quarter outside the loaded content',
+    assertion:
+      "Left out in the browser and counted, with the loaded quarters named, and the result says so. A bypassing request is refused on the server and in the database. Other products' rows are untouched, and a content with no records at all has an empty span",
   },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },

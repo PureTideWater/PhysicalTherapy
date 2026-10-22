@@ -14,6 +14,8 @@ import {
   SCREENING_PAYER_PRODUCTS,
   SCREENING_STATES,
   SCREENING_TOKEN,
+  type ContentQuarterRun,
+  type ContentQuarters,
   type ScreeningColumn,
   type ScreeningLeftOut,
   type ScreeningRejection,
@@ -21,6 +23,7 @@ import {
   checkHeaders,
   decodeScreeningRows,
   leftOutPlausible,
+  outsideContentPlausible,
   screeningTokenHash,
   storableRejections,
 } from '@tp/worker/screening';
@@ -33,6 +36,8 @@ import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
 import { optionalText } from '../routes/schemas';
+import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
+import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
 
@@ -51,9 +56,13 @@ import { screeningRateAccount } from './rate';
  *   count and reasons alone, with no hash (reject_screening_upload()), and its messages name a column by position and
  *   kind, never a header's text or a cell's value. A clean one is stored and queued for pricing in one call
  *   (submit_screening(), which hashes the rows it stores and replaces any earlier screening of the same practice), and
- *   the browser says to check the email: the result's link goes to the contact address only. A ZIP whose Medicare locality needs its ZIP+4 is refused: the engine
- *   takes a five-digit ZIP alone, so no ZIP+4 is asked for or kept. The refusal stays until PR 6b, which takes a
- *   ZIP+4 and resolves its locality before launch (the founder's ruling of 2026-10-18, 11:47 UTC, superseding ruling 3).
+ *   the browser says to check the email: the result's link goes to the contact address only. The ZIP code field takes
+ *   five digits or ZIP+4 (PR 6b; the founder's ruling of 2026-10-18, 11:47 UTC, superseding ruling 3; docs/adr/0064):
+ *   a ZIP whose Medicare locality needs its ZIP+4 is refused until the ZIP+4 is given (screening_zip_plus_four, "enter
+ *   the ZIP+4"), and the ZIP+4 is kept only for such a ZIP. A Medicare row in a quarter outside the content the release
+ *   in force has loaded (rule_release_content_span(), audit #7) is left out by the browser and counted, three numbers
+ *   beside the floor's; one sent anyway is refused by its row (band_outside_content), as submit_screening() refuses it
+ *   too (the founder's answer of 2026-10-21 to PR 6b's Q6 (a)).
  * - The result (/screening/results/[resultId], public): the token in the link, looked up by its SHA-256 alone; a link
  *   that is unknown, expired or not yet complete is not found. Every figure is the database's bigint sum of the
  *   engine's per-row results, before sequestration; a code in the reduction across codes has two figures (before
@@ -76,7 +85,9 @@ import { screeningRateAccount } from './rate';
  *   (src/lib/http/attribution.ts). The database writes the counts-only outcome of every submission, refused or
  *   accepted.
  * - The console's split (/console/screening): the contract specialist (rate_record.approve) approves the platform's
- *   default place-of-service split; a person, never a model.
+ *   default place-of-service split (place_of_service_split since PR 6b: every place a practice has not set, pinned on
+ *   each pricing run, and the screening's); a person, never a model. Its audit action and object type keep their
+ *   screening names, so the approval history reads under one name (docs/adr/0064).
  *
  * Public routes open no session scope: each runs one SECURITY DEFINER function on the application's pool, as the
  * audit request does, and the function writes the audit event.
@@ -129,6 +140,11 @@ export interface ScreeningPageData {
   readonly serverTime: string;
   /** "How did you hear about us?": a blank first option (no answer), then the closed list. */
   readonly sources: readonly { readonly value: string; readonly label: string }[];
+  /**
+   * The quarters the release in force has the Medicare content for, up to the server's current quarter (audit #7): the
+   * browser leaves a Medicare row of any other quarter out. None while screening is closed.
+   */
+  readonly contentQuarters: readonly ContentQuarterRun[];
 }
 
 async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
@@ -156,6 +172,7 @@ export const screeningPage = publicRoute({
   params: z.object({ sent: optionalText(z.literal('1')) }),
   handle: async ({ params, services }): Promise<ScreeningPageData> => {
     const { open, releaseNo } = await screeningOpen(services.pool, services.environment);
+    const now = services.now();
     return {
       sent: params.sent !== undefined,
       open,
@@ -164,8 +181,9 @@ export const screeningPage = publicRoute({
       products: SCREENING_PAYER_PRODUCTS,
       states: SCREENING_STATES,
       limits: SCREENING_LIMITS,
-      serverTime: services.now().toISOString(),
+      serverTime: now.toISOString(),
       sources: PROSPECT_SOURCE_OPTIONS,
+      contentQuarters: releaseNo === null ? [] : await withClient(services.pool, (client) => contentQuarters(client, releaseNo, now)),
     };
   },
 });
@@ -207,6 +225,10 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
       return `${row}: ${columnName(reason).toLowerCase()} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1`;
     case 'band_in_future':
       return `${row}: the service band’s quarter has not started yet`;
+    case 'band_outside_content':
+      return reason.row === undefined
+        ? 'Every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded'
+        : `${row}: the service band’s quarter is outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out`;
     case 'duplicate_row':
       return `${row} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}; add the two into one row`;
     case 'no_rows':
@@ -226,7 +248,9 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
 interface ProspectFields {
   readonly practiceName: string;
   readonly state: string;
+  /** The five-digit ZIP, and the four digits after it when the form gave a ZIP+4 (kept only where Medicare needs it). */
   readonly zip: string;
+  readonly plusFour: string | null;
   readonly contactEmail: string;
   /** How the prospect heard of us, or null when the form left it blank. */
   readonly heardFrom: ProspectSource | null;
@@ -287,9 +311,9 @@ function prospectFields(input: {
   if (!(SCREENING_STATES as readonly string[]).includes(state)) {
     issues.push({ field: 'state', message: 'choose the state the practice bills from' });
   }
-  const zip = input.zip.trim();
-  if (!/^[0-9]{5}$/.test(zip)) {
-    issues.push({ field: 'zip', message: 'the practice’s five-digit ZIP code' });
+  const zipCode = parseZipCode(input.zip);
+  if (zipCode === null) {
+    issues.push({ field: 'zip', message: `the practice’s ZIP code: ${ZIP_CODE_FORMAT}` });
   }
   const contactEmail = input.contactEmail.trim().toLowerCase();
   if (!SCREENING_EMAIL.test(contactEmail) || contactEmail.length > 254 || contactEmail.indexOf('@') > 64) {
@@ -300,7 +324,7 @@ function prospectFields(input: {
   if (issues.length > 0) {
     throw new InputError(issues);
   }
-  return { practiceName, state, zip, contactEmail, heardFrom, referringFirm };
+  return { practiceName, state, zip: zipCode?.zip5 ?? '', plusFour: zipCode?.plusFour ?? null, contactEmail, heardFrom, referringFirm };
 }
 
 /** A refusal's issues: one per reason kept (at most 20), the last saying how many more there were. */
@@ -346,18 +370,23 @@ function headerCells(text: string): string[] | null {
   return cells.success ? cells.data : null;
 }
 
-/** The upload checked again: the rows, or the reasons it is refused (at most 20 kept) and how many there were. */
+/**
+ * The upload checked again: the rows, or the reasons it is refused (at most 20 kept) and how many there were. A
+ * Medicare row whose quarter is not one of `quarters` (the release in force's loaded content) is refused by its row:
+ * the browser leaves such a row out, so one here was sent around it.
+ */
 function checkUpload(
   headers: readonly string[],
   rowsText: string,
   rowCount: number,
   now: Date,
+  quarters: ContentQuarters,
 ): { readonly rows: readonly ScreeningRow[] } | { readonly reasons: readonly ScreeningRejection[]; readonly total: number } {
   const header = checkHeaders(headers);
   if (!header.ok) {
     return { reasons: header.reasons, total: header.total };
   }
-  const decoded = decodeScreeningRows(rowsText, now);
+  const decoded = decodeScreeningRows(rowsText, now, quarters);
   if (!decoded.ok) {
     return { reasons: decoded.reasons, total: decoded.total };
   }
@@ -386,6 +415,27 @@ function leftOutFields(input: { readonly leftOutRows: string; readonly leftOutCl
   return rows === null || claimLines === null || allowed === null ? null : { rows, claimLines, allowedCents: cents(BigInt(allowed)) };
 }
 
+/** Whole cents as sent, blank as zero, or null when they are not at most `digits` digits (bigint: no float on an amount). */
+function centsField(text: string, digits: number): Cents | null {
+  const trimmed = text.trim();
+  if (trimmed === '') {
+    return cents(0n);
+  }
+  return new RegExp(`^[0-9]{1,${String(digits)}}$`).test(trimmed) ? cents(BigInt(trimmed)) : null;
+}
+
+/**
+ * The Medicare rows the browser says it left out for a quarter outside the loaded content, as sent: three whole
+ * numbers (at most 50,000 rows of at most 100,000 claim lines, at most $25,000.00 a claim line), or null when one is
+ * not.
+ */
+function outsideContentFields(input: { readonly outsideContentRows: string; readonly outsideContentClaimLines: string; readonly outsideContentAllowedCents: string }): ScreeningLeftOut | null {
+  const rows = wholeField(input.outsideContentRows, 6);
+  const claimLines = wholeField(input.outsideContentClaimLines, 10);
+  const allowed = centsField(input.outsideContentAllowedCents, 17);
+  return rows === null || claimLines === null || allowed === null ? null : { rows, claimLines, allowedCents: allowed };
+}
+
 export const screeningSubmit = publicRoute({
   id: 'public.screening_submit',
   kind: 'action',
@@ -409,23 +459,33 @@ export const screeningSubmit = publicRoute({
     leftOutRows: field(12),
     leftOutClaimLines: field(12),
     leftOutAllowedCents: field(20),
+    // The Medicare rows the browser left out because their quarter is outside the content the release in force has
+    // loaded: how many, their claim lines and their allowed total in cents. Blank is none.
+    outsideContentRows: field(12),
+    outsideContentClaimLines: field(16),
+    outsideContentAllowedCents: field(24),
     // How the prospect heard of us (PROSPECT_SOURCES; blank is none) and a referring firm (optional).
     heardFrom: field(32),
     referringFirm: field(400),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
     // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
-    if (!(await screeningOpen(services.pool, services.environment)).open) {
+    const { open, releaseNo } = await screeningOpen(services.pool, services.environment);
+    if (!open || releaseNo === null) {
       throw new InputError([SCREENING_CLOSED]);
     }
     const prospect = prospectFields(input);
     const headers = headerCells(input.headers);
     const rowCount = /^[0-9]{1,8}$/.test(input.rowCount.trim()) ? Number(input.rowCount.trim()) : null;
     const leftOut = leftOutFields(input);
-    if (headers === null || rowCount === null || leftOut === null) {
+    const outside = outsideContentFields(input);
+    if (headers === null || rowCount === null || leftOut === null || outside === null) {
       throw new InputError([{ field: 'upload', message: UPLOAD_UNREADABLE }]);
     }
-    const checked = checkUpload(headers, input.rows, rowCount, services.now());
+    const now = services.now();
+    const quarters = await withClient(services.pool, (client) => contentQuarters(client, releaseNo, now));
+    const checked = checkUpload(headers, input.rows, rowCount, now, quarters);
+    // A refused upload's prospect names the five-digit ZIP alone (its ZIP+4 is kept only on an accepted screening of a ZIP that needs it).
     const prospectValues = [prospect.practiceName, prospect.state, prospect.zip, prospect.contactEmail];
     // How the prospect heard of us, the first-party cookie's campaign codes and kind of paid click (read on the
     // server, checked again by the database), and the referring firm. The screening terms' SHA-256 is null until their
@@ -457,7 +517,7 @@ export const screeningSubmit = publicRoute({
     }
     const { rows } = checked;
     // What the browser says it left out must be what it could have counted beside these rows; nothing is recorded otherwise.
-    if (!leftOutPlausible(leftOut, rows.length)) {
+    if (!leftOutPlausible(leftOut, rows.length) || !outsideContentPlausible(outside, rows.length, leftOut.rows)) {
       throw new InputError([{ field: 'upload', message: UPLOAD_UNREADABLE }]);
     }
     let runId: string;
@@ -465,9 +525,15 @@ export const screeningSubmit = publicRoute({
       runId = await withClient(services.pool, async (client) => {
         // The database hashes the rows it stores (their canonical form); no hash is taken from the browser.
         const result = await client.query<{ run_id: string }>(
-          'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) AS run_id',
+          `SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+                                   $28) AS run_id`,
           [
-          ...prospectValues,
+          prospect.practiceName,
+          prospect.state,
+          prospect.zip,
+          // The ZIP+4 as given: submit_screening() keeps it only where the ZIP's locality needs it.
+          prospect.plusFour,
+          prospect.contactEmail,
           rows.map((row) => row.procedureCode),
           rows.map((row) => row.modifiers.join(' ')),
           rows.map((row) => row.units),
@@ -479,6 +545,9 @@ export const screeningSubmit = publicRoute({
           leftOut.rows,
           leftOut.claimLines,
           leftOut.allowedCents.toString(),
+          outside.rows,
+          outside.claimLines,
+          outside.allowedCents.toString(),
           ...attribution,
           consentSha256,
           termsSha256,
@@ -504,6 +573,18 @@ export const screeningSubmit = publicRoute({
   },
 });
 
+/**
+ * What the screening says when the ZIP code needs more than five digits, or Medicare's list for it is not loaded
+ * (PR 6b; the founder's answers of 2026-10-21 to Q12: the recommended wording, for counsel to confirm before the
+ * screening opens).
+ */
+export const SCREENING_ZIP_MESSAGES = {
+  screening_zip_plus_four: 'This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as 27601-1234, so the screening uses the right one.',
+  // Right under either answer to Q37 (a ZIP+4 the ZIP9 file does not list): the digits may be right.
+  screening_zip_plus_four_unknown: 'Medicare’s ZIP+4 list in force does not list this ZIP+4. If the four digits after the hyphen are right, a screening cannot price this ZIP+4 yet.',
+  screening_locality_not_loaded: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.',
+} as const;
+
 /** What a refusal of submit_screening() says, by the rule it names. */
 function submitIssue(constraint: string | undefined): Issue {
   switch (constraint) {
@@ -512,12 +593,19 @@ function submitIssue(constraint: string | undefined): Issue {
     case 'screening_zip_unknown':
       return { field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' };
     case 'screening_zip_plus_four':
-      return {
-        field: 'zip',
-        message: 'this ZIP code spans two Medicare localities, and a free screening cannot price one yet: its rows would need the ZIP+4, which the pricing does not take',
-      };
+      return { field: 'zip', message: SCREENING_ZIP_MESSAGES.screening_zip_plus_four };
+    case 'screening_zip_plus_four_unknown':
+      return { field: 'zip', message: SCREENING_ZIP_MESSAGES.screening_zip_plus_four_unknown };
+    case 'screening_locality_not_loaded':
+      return { field: 'zip', message: SCREENING_ZIP_MESSAGES.screening_locality_not_loaded };
+    case 'screening_band_outside_content':
+      return { field: 'upload', message: 'a Medicare row is in a quarter outside the Medicare content PaidWhole has loaded; choose the file again, and the page leaves it out' };
     case 'screening_rows':
     case 'screening_result_once':
+    case 'screening_upload_accepted_rows':
+    case 'screening_upload_outside_content_claim_lines':
+    case 'screening_upload_outside_content_allowed':
+    case 'screening_upload_outside_content_accepted':
       return { field: 'upload', message: 'the rows could not be stored as sent; choose the file again' };
     case undefined:
     default:
@@ -552,6 +640,8 @@ export interface ScreeningSummary extends ScreeningGroupTotals {
   readonly practiceName: string;
   readonly state: string;
   readonly zip: string;
+  /** The ZIP+4's four digits, kept only when the ZIP's locality needs them (the heading names it); null otherwise. */
+  readonly zipPlusFour: string | null;
   readonly releaseNo: number;
   readonly engineVersion: string;
   readonly createdAt: Date;
@@ -569,6 +659,13 @@ export interface ScreeningSummary extends ScreeningGroupTotals {
   readonly couldNotPrice: ScreeningGroupTotals;
   /** Rows of fewer than 11 claim lines the browser left out before sending, as it counted them: in no other figure. */
   readonly leftOut: ScreeningGroupTotals;
+  /**
+   * Medicare rows the browser left out because their quarter is outside the content the release had loaded (audit #7;
+   * Q6 (a)), as it counted them: in no other figure.
+   */
+  readonly outsideContent: ScreeningGroupTotals;
+  /** The release's first loaded quarter when every such row lies before it (the content runs to the screening's quarter); null otherwise. */
+  readonly outsideContentBefore: string | null;
 }
 
 export interface ScreeningResultGroup {
@@ -715,12 +812,16 @@ type SummaryRow = Record<
   | 'unpriced_observed_cents'
   | 'left_out_rows'
   | 'left_out_claim_lines'
-  | 'left_out_observed_cents',
+  | 'left_out_observed_cents'
+  | 'outside_content_rows'
+  | 'outside_content_claim_lines'
+  | 'outside_content_observed_cents',
   string | number
 > & {
   readonly practice_name: string;
   readonly state: string;
   readonly zip: string;
+  readonly zip_plus_four: string | null;
   readonly release_no: number;
   readonly engine_version: string;
   readonly created_at: Date;
@@ -823,6 +924,9 @@ export const screeningResult = publicRoute({
         reduced_difference_cents: string | null;
         standing: string;
       }>('SELECT * FROM screening_result_rows($1, $2)', [hash, SCREENING_TOP_ROWS]);
+      // The quarters the run's release had the Medicare content for, up to the screening's own quarter: when they are one
+      // run that reaches it, every row left out for its quarter lay before the first (quarterRowsLayBefore).
+      const quarters = await contentQuarters(client, summary.release_no, summary.created_at);
       const totals = (rowsKey: keyof SummaryRow, claimsKey: keyof SummaryRow, observedKey: keyof SummaryRow): ScreeningGroupTotals => ({
         rows: count(summary[rowsKey] as number),
         claimLines: count(summary[claimsKey] as string),
@@ -836,6 +940,7 @@ export const screeningResult = publicRoute({
           practiceName: summary.practice_name,
           state: summary.state,
           zip: summary.zip,
+          zipPlusFour: summary.zip_plus_four,
           releaseNo: summary.release_no,
           engineVersion: summary.engine_version,
           createdAt: summary.created_at,
@@ -855,6 +960,8 @@ export const screeningResult = publicRoute({
           notScreened: totals('not_screened_rows', 'not_screened_claim_lines', 'not_screened_observed_cents'),
           couldNotPrice: totals('unpriced_rows', 'unpriced_claim_lines', 'unpriced_observed_cents'),
           leftOut: totals('left_out_rows', 'left_out_claim_lines', 'left_out_observed_cents'),
+          outsideContent: totals('outside_content_rows', 'outside_content_claim_lines', 'outside_content_observed_cents'),
+          outsideContentBefore: quarterRowsLayBefore(quarters, summary.created_at),
         },
         groups: groups.rows.map((group) => ({
           groupNo: group.group_no,
@@ -1050,7 +1157,7 @@ export const screeningSplitPage = platformRoute({
   params: z.object({ approved: optionalText(z.literal('1')) }),
   handle: async ({ scope, params }): Promise<ScreeningSplitPageData> => {
     const { rows } = await scope.client.query<{ id: string; settings: Record<string, 'facility' | 'non_facility'>; approved_by: string; approved_by_email: string | null; approved_at: Date; in_force: boolean }>(
-      'SELECT id, settings, approved_by, approved_by_email, approved_at, in_force FROM console_screening_splits()',
+      'SELECT id, settings, approved_by, approved_by_email, approved_at, in_force FROM console_place_of_service_splits()',
     );
     const release = await scope.client.query<{ release_no: number | null }>('SELECT current_rule_release() AS release_no');
     const history = rows.map((row) => ({ id: row.id, settings: row.settings, approvedBy: row.approved_by, approvedByEmail: row.approved_by_email, approvedAt: row.approved_at, inForce: row.in_force }));
@@ -1080,9 +1187,9 @@ export const screeningSplitApprove = platformRoute({
     }
     let id: string | undefined;
     try {
-      id = (await scope.client.query<{ id: string }>('SELECT console_approve_screening_split($1::jsonb) AS id', [JSON.stringify(settings)])).rows[0]?.id;
+      id = (await scope.client.query<{ id: string }>('SELECT console_approve_place_of_service_split($1::jsonb) AS id', [JSON.stringify(settings)])).rows[0]?.id;
     } catch (error) {
-      if (pgError(error)?.constraint === 'screening_place_of_service_split_settings') {
+      if (pgError(error)?.constraint === 'place_of_service_split_settings') {
         throw new InputError([{ field: 'settings', message: 'each place of service is a two-digit code from 01 to 99, set to facility or non-facility, and at least one is set' }]);
       }
       throw error;

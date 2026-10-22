@@ -33,10 +33,20 @@ export const REPORT_FORMAT = 'tp-screening-capacity/3';
 export const ALL_SCENARIOS = ['S1', 'S2', 'S3', 'S4', 'S5'] as const;
 
 /**
- * The uploads compared with the oracle: the worst shape priced from a fresh platform's first read (S1-1), the practice
- * shape the same way (S2-1), and the practice shape priced from the shared types the platform held from S2 (S3-1).
+ * The uploads compared with an oracle: the worst shape priced from a fresh platform's first read (S1-1), the practice
+ * shape the same way (S2-1), and the practice shape priced from the shared types the platform held from S2 (S3-1), each
+ * with the frozen 3c1b289 read path; and the small upload from a ZIP split across localities with its ZIP+4 (S1-2),
+ * with the whole release, since the frozen pricer takes a five-digit ZIP alone (PR 6b, docs/adr/0064; oracle.ts).
  */
-export const ORACLE_UPLOADS = ['S1-1', 'S2-1', 'S3-1'] as const;
+export const ORACLE_UPLOADS = ['S1-1', 'S1-2', 'S2-1', 'S3-1'] as const;
+
+/** Which oracle an upload is compared with (oracle.ts). */
+export type OracleKind = 'frozen_3c1b289' | 'whole_release';
+
+/** The oracle an upload of ORACLE_UPLOADS is compared with: the whole release for S1-2's split ZIP, the frozen path otherwise. */
+export function oracleKind(upload: string): OracleKind {
+  return upload === 'S1-2' ? 'whole_release' : 'frozen_3c1b289';
+}
 
 /**
  * How the time is judged: whether the screening's consumer is declared, whether the harness runs it as production
@@ -205,6 +215,8 @@ export interface ScenarioMeasure {
 export interface OracleComparison {
   readonly scenario: string;
   readonly upload: string;
+  /** The oracle it was compared with. */
+  readonly oracle: OracleKind;
   readonly rows: number;
   /** The upload's Medicare rows (original Medicare and Medicare Advantage without a contract): what the oracle must compare. */
   readonly expectedRows: number;
@@ -221,7 +233,16 @@ export interface Measurements {
   readonly applied: AppliedLimits;
   readonly runnerProblems: readonly string[];
   readonly departures: readonly { readonly what: string; readonly direction: string }[];
-  readonly release: { readonly releaseNo: number; readonly manifestSha256: string; readonly records: number };
+  readonly release: {
+    readonly releaseNo: number;
+    readonly manifestSha256: string;
+    readonly records: number;
+    /**
+     * The ZIP9 file's size (open item O8, PR 6b): its records (one per split ZIP and year), the ranges each holds, and its
+     * lines and bytes a year. Absent from a report written before PR 6b.
+     */
+    readonly zip9?: { readonly records: number; readonly rangesPerRecord: number; readonly linesPerYear: number; readonly bytesPerYear: number };
+  };
   readonly shapes: Readonly<Record<string, unknown>>;
   readonly scenarios: readonly ScenarioMeasure[];
   readonly oracle: readonly OracleComparison[];
@@ -334,6 +355,9 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     if (comparison.rows <= 0 || comparison.rows !== comparison.expectedRows) {
       reasons.push(`oracle compared ${String(comparison.rows)} rows of ${upload}, not its ${String(comparison.expectedRows)} Medicare rows`);
     }
+    if (comparison.oracle !== oracleKind(upload)) {
+      reasons.push(`oracle: ${upload} compared with ${comparison.oracle}, not ${oracleKind(upload)}`);
+    }
     if (comparison.storedSha256 !== comparison.oracleSha256) {
       reasons.push(`oracle mismatch: ${upload}`);
     }
@@ -357,7 +381,11 @@ export function markdown(full: Report, rule: TimeRule): string {
   const lines = [
     `## Screening capacity: ${full.verdict.pass ? 'pass' : 'fail'} (time ${full.verdict.time})`,
     '',
-    `Commit \`${full.commit}\`, ${full.runtime} runtime, runner ${String(full.runner.cpus)} CPUs and ${String(full.runner.memoryMiB)} MiB (${full.runner.cpuModel}), load average ${full.runner.loadAverage.map((value) => value.toFixed(2)).join(' ')}. Release ${String(full.release.releaseNo)} (${String(full.release.records)} records).`,
+    `Commit \`${full.commit}\`, ${full.runtime} runtime, runner ${String(full.runner.cpus)} CPUs and ${String(full.runner.memoryMiB)} MiB (${full.runner.cpuModel}), load average ${full.runner.loadAverage.map((value) => value.toFixed(2)).join(' ')}. Release ${String(full.release.releaseNo)} (${String(full.release.records)} records${
+      full.release.zip9 === undefined
+        ? ''
+        : `; ZIP9: ${String(full.release.zip9.records)} records of ${String(full.release.zip9.rangesPerRecord)} ranges, ${String(full.release.zip9.linesPerYear)} lines and ${(full.release.zip9.bytesPerYear / MIB).toFixed(1)} MiB a year`
+    }).`,
     '',
     '| Upload | Shape | Rows | Seconds to email | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',

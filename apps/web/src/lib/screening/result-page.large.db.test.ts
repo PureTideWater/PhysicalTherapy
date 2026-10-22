@@ -68,6 +68,9 @@ function figures(rowNo: number, claims: number, observed: bigint) {
 
 beforeAll(async () => {
   world = await ScreeningWorld.create();
+  // The worst shape's Medicare rows span 2025 and 2026, and 900001's MUE and MPPR content is 2026's: a test-built release
+  // that loads both years, so no row is left out for its quarter (audit #7; PR 6b).
+  await world.publishContentFrom2025(900021);
   const email = 'prospect.worst@clinic-worst.synthetic.test';
   const outcome = await world.call(screeningSubmit, { input: submitInput({ rows: screeningRows(shapeRows('worst')), zip: '00011', contactEmail: email }) });
   expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });

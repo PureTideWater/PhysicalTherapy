@@ -27,6 +27,11 @@ import { type MembershipRole, MEMBERSHIP_ROLES } from '../schema/tenancy';
  *   and the SOC 2 evidence checklist are the platform administrators' (status.manage, compliance.manage), and
  *   the support desk (platform administrators and support engineers) works tickets (support_ticket.work):
  *   the operations PRD 19 names, which the persona table leaves unassigned.
+ * - The practice's pricing location (its billing ZIP and ZIP+4, practice_site) is set by the practice administrator,
+ *   the billing manager and so the firm principal (pricing_settings.set), a firm's billing manager under a grant as it
+ *   signs off contracts: firms onboard practices, and every change is audited. The reimbursement reviewer is denied it
+ *   as every write. The founder's answer to PR 6b's Q5 (a), 2026-10-21: a granted exception to "the matrix changes only
+ *   in PR 14" (docs/adr/0064).
  * - The organization owner of J18 (PRD 5) is its administrator: the practice administrator of a group and
  *   the firm principal of a firm ("is billed", PRD 3) choose its plan and payment method and read its
  *   invoices (organization.billing); platform administrators manage billing for every organization
@@ -74,6 +79,7 @@ export const PERMISSIONS = {
   'portfolio.read': { scope: 'organization', writes: false, description: 'see the firm portfolio' },
   'organization.billing': { scope: 'organization', writes: true, description: 'choose the organization’s plan and payment method and read its invoices' },
   'proof_level.set': { scope: 'practice', writes: true, description: 'set the practice’s proof level for recovered (posted or deposited)' },
+  'pricing_settings.set': { scope: 'practice', writes: true, description: 'set the practice’s pricing location (its billing ZIP and ZIP+4)' },
   'contract.review': { scope: 'platform', writes: false, description: 'review model-proposed contract abstractions' },
   'rate_record.approve': { scope: 'platform', writes: true, description: 'approve rate records for publication' },
   'rate_record.edit_published': { scope: 'platform', writes: true, description: 'edit a published rate version' },
@@ -141,6 +147,7 @@ const BILLING_MANAGER_DOES: readonly Permission[] = [
   'packet.approve',
   'submission.log',
   'posting.reconcile',
+  'pricing_settings.set',
 ];
 
 const ANALYST: Persona = {
@@ -173,6 +180,7 @@ export const PERSONAS: Readonly<Record<MembershipRole, Persona>> = {
       'contract.sign_off',
       'organization.billing',
       'proof_level.set',
+      'pricing_settings.set',
     ],
     mustNot: [{ rule: 'Edit rate records (that is the specialist’s job)', denies: ['rate_record.edit'] }],
   },

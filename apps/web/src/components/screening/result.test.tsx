@@ -42,6 +42,7 @@ const SUMMARY: ScreeningSummaryData = {
   practiceName: 'SYNTHETIC SCREENING CLINIC',
   state: 'ZZ',
   zip: '00011',
+  zipPlusFour: null,
   releaseNo: 900001,
   engineVersion: 'engine/1',
   createdAt: '2026-10-18T12:00:00.000Z',
@@ -66,6 +67,9 @@ const SUMMARY: ScreeningSummaryData = {
   couldNotPrice: { rows: 0, claimLines: 0, observedCents: c(0n) },
   // Two rows of fewer than 11 claim lines the browser left out before sending (SCR-07): in no other figure.
   leftOut: { rows: 2, claimLines: 13, observedCents: c(54_321n) },
+  // Twelve Medicare rows in quarters before the release's loaded content, left out by the browser (SCR-16, Q6 (a)).
+  outsideContent: { rows: 12, claimLines: 380, observedCents: c(4_120_000n) },
+  outsideContentBefore: '2026-Q1',
 };
 
 const GROUPS: ScreeningGroup[] = [
@@ -344,6 +348,21 @@ describe('the screening summary', () => {
     expect(none).not.toContain('Left out before sending');
   });
 
+  it('says how many Medicare rows were not screened for a quarter outside the loaded content, apart from every figure, and nothing when none (SCR-16)', () => {
+    expect(html).toMatch(/data-section="outside-content"[\s\S]*?Not screened: quarters outside the loaded content/);
+    // The sentence as read: the figure's own span closes up to its parentheses.
+    const read = (markup: string) => text(markup).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+    expect(read(html)).toContain('12 rows ($41,200.00) in quarters before 2026-Q1 were not screened: PaidWhole has not loaded the Medicare content for them.');
+    // The allowed total in the sentence is in the mono face, as every figure.
+    expect(html).toMatch(/data-copy="outside-content"[^>]*>12 rows \(<span class="font-mono tabular-nums">\$41,200\.00<\/span>\)/);
+    const stat = (slot: string) => text(new RegExp(`data-figure="${slot}"[^>]*>([\\s\\S]*?)</dd>`).exec(html)?.[1] ?? '').trim();
+    expect(stat('outside-content-claim-lines')).toBe('Claim lines 380');
+    const between = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, outsideContent: { rows: 1, claimLines: 12, observedCents: c(50_000n) }, outsideContentBefore: null }} />);
+    expect(read(between)).toContain('1 row ($500.00) in a quarter outside the loaded content was not screened: PaidWhole has not loaded the Medicare content for it.');
+    const none = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, outsideContent: { rows: 0, claimLines: 0, observedCents: c(0n) } }} />);
+    expect(none).not.toContain('data-section="outside-content"');
+  });
+
   it('names the release, the engine and when the link stops opening it', () => {
     expect(text(html)).toContain('rule release 900001');
     expect(text(html)).toContain('engine/1');
@@ -528,6 +547,16 @@ describe('the coverage', () => {
     expect(html).toMatch(/data-coverage="medicaid:not_screened"[\s\S]*?Not screened/);
     expect(text(html)).toContain('33% of the rows (2 of 6) cannot be priced without a contract');
     expect(html).not.toContain('data-tone="whole"');
+  });
+});
+
+describe('the screening’s heading', () => {
+  /** The location the heading names, in its mono span before "Screened". */
+  const location = (summary: ScreeningSummaryData) => /, ZZ <span class="font-mono tabular-nums">([^<]*)<\/span>\. Screened/.exec(renderToStaticMarkup(<ScreeningHeading summary={summary} />))?.[1];
+
+  it('names the ZIP+4 that chose the locality, and the five digits alone when none was kept (review of PR 6b-2, finding 21)', () => {
+    expect(location({ ...SUMMARY, zip: '00012', zipPlusFour: '5001' })).toBe('00012-5001');
+    expect(location(SUMMARY)).toBe('00011');
   });
 });
 

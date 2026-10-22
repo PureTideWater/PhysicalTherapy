@@ -1,4 +1,4 @@
-import type { LineCause } from '@tp/worker/pricing';
+import type { LineCause, SettingsField } from '@tp/worker/pricing';
 
 /**
  * A diff line's cause in words (PRD 7, Pricing runs: a re-run "with a diff"; docs/adr/0037): what the two
@@ -26,6 +26,28 @@ export function keyText(key: Readonly<Record<string, string>>): string {
     .join(', ');
 }
 
+/** A setting's value as a cause names it: a ZIP or ZIP+4 as typed, anything absent as none. */
+function settingValue(value: unknown): string {
+  return typeof value === 'string' && value !== '' ? value : 'none';
+}
+
+/**
+ * One changed setting in words (docs/adr/0064): the billing ZIP and ZIP+4 with their values before and after (a
+ * business address's ZIP, never a patient's), the rounding and the places of service by name.
+ */
+function settingText(field: SettingsField, before: unknown, after: unknown): string {
+  switch (field) {
+    case 'zip':
+      return `the billing ZIP (${settingValue(before)} → ${settingValue(after)})`;
+    case 'zip_plus_four':
+      return `the billing ZIP+4 (${settingValue(before)} → ${settingValue(after)})`;
+    case 'default_rounding':
+      return 'the default rounding';
+    case 'place_of_service_settings':
+      return 'the places of service';
+  }
+}
+
 export function causeText(cause: LineCause): string {
   switch (cause.kind) {
     case 'mapping':
@@ -46,7 +68,9 @@ export function causeText(cause: LineCause): string {
     case 'claim':
       return "The claim's facts (a reversal or a correction loaded since)";
     case 'settings':
-      return "The practice's pricing settings";
+      return cause.fields.length === 0
+        ? "The practice's pricing settings"
+        : `The practice's pricing settings: ${cause.fields.map((field) => settingText(field, cause.before[field] ?? null, cause.after[field] ?? null)).join(', ')}`;
     case 'engine':
       return `The engine, ${cause.before} to ${cause.after}`;
     case 'claim_lines':

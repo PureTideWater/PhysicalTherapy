@@ -12,6 +12,7 @@ import {
   type UploadMeasure,
   limitProblems,
   markdown,
+  oracleKind,
   report,
   timeLabel,
   timeRule,
@@ -122,7 +123,7 @@ function measured(overrides: Partial<Measurements> = {}): Measurements {
     release: { releaseNo: 900_100, manifestSha256: 'c'.repeat(64), records: 2_245_245 },
     shapes: {},
     scenarios: scenarios(),
-    oracle: ORACLE_UPLOADS.map((item) => ({ scenario: item.slice(0, 2), upload: item, rows: 50_000, expectedRows: 50_000, storedSha256: 'd'.repeat(64), oracleSha256: 'd'.repeat(64) })),
+    oracle: ORACLE_UPLOADS.map((item) => ({ scenario: item.slice(0, 2), upload: item, oracle: oracleKind(item), rows: 50_000, expectedRows: 50_000, storedSha256: 'd'.repeat(64), oracleSha256: 'd'.repeat(64) })),
     only: [],
     notStarted: [],
     aborted: null,
@@ -205,6 +206,12 @@ describe('the checks PR 6 controls fail the run whatever the time rule', () => {
     ['an oracle that compared fewer rows than the upload’s Medicare rows', measured({ oracle: measured().oracle.map((item) => (item.upload === 'S3-1' ? { ...item, rows: 49_000 } : item)) }), /^oracle compared 49000 rows of S3-1/],
     ['an upload left out of the oracle (its run not found)', measured({ oracle: measured().oracle.filter((item) => item.upload !== 'S1-1') }), /^oracle not compared: S1-1$/],
     ['the held entry’s run not compared', measured({ oracle: measured().oracle.filter((item) => item.upload !== 'S3-1') }), /^oracle not compared: S3-1$/],
+    ['the split ZIP’s run not compared', measured({ oracle: measured().oracle.filter((item) => item.upload !== 'S1-2') }), /^oracle not compared: S1-2$/],
+    [
+      'the split ZIP’s run compared with the frozen oracle, which cannot price it',
+      measured({ oracle: measured().oracle.map((item) => (item.upload === 'S1-2' ? { ...item, oracle: 'frozen_3c1b289' as const } : item)) }),
+      /^oracle: S1-2 compared with frozen_3c1b289, not whole_release$/,
+    ],
     ['a run of only some scenarios', measured({ scenarios: scenarios().filter((item) => item.id === 'S2' || item.id === 'S3'), only: ['S2', 'S3'] }), /^partial run: measured S2, S3; a verdict needs S1, S2, S3, S4, S5 \(asked for S2, S3\)$/],
     ['scenarios the deadline left unstarted', measured({ scenarios: scenarios().slice(0, 3), notStarted: ['S4', 'S5'] }), /^deadline: S4, S5 not started/],
     ['a small upload priced before the large ones it was sent behind', measured({ scenarios: scenarios().map((item) => (item.id === 'S4' ? { ...item, uploads: item.uploads.map((entry) => (entry.behind ? { ...entry, jobStartedMs: 15_000 } : entry)) } : item)) }), /^queue order: S4-4 was not queued and started behind/],
@@ -234,5 +241,22 @@ describe('the report', () => {
     expect(text).not.toMatch(/\/screening\/results\//);
     expect(text).not.toMatch(/(?<![a-z0-9])[a-z]{32}(?![a-z0-9])/);
     expect(markdown(full, OPEN)).toContain('| S1-1 | worst | 50000 | 30.0 | 0.9 | 4.0 (150000) | 20.0 | 3.0 | 0.2 | 1.1, 1.2 | open, PR 6b |');
+  });
+
+  it('compares the five-digit uploads with the frozen read path and the split ZIP’s with the whole release (PR 6b)', () => {
+    expect(ORACLE_UPLOADS.map((upload) => [upload, oracleKind(upload)])).toEqual([
+      ['S1-1', 'frozen_3c1b289'],
+      ['S1-2', 'whole_release'],
+      ['S2-1', 'frozen_3c1b289'],
+      ['S3-1', 'frozen_3c1b289'],
+    ]);
+  });
+
+  it('reports the ZIP9 file’s size beside the release (open item O8)', () => {
+    const zip9 = { records: 2_546, rangesPerRecord: 40, linesPerYear: 101_840, bytesPerYear: 8_249_040 };
+    const full = report(measured({ release: { releaseNo: 900_100, manifestSha256: 'c'.repeat(64), records: 2_247_791, zip9 } }), OPEN);
+    expect(full.release.zip9).toEqual(zip9);
+    expect(markdown(full, OPEN)).toContain('Release 900100 (2247791 records; ZIP9: 2546 records of 40 ranges, 101840 lines and 7.9 MiB a year).');
+    expect(markdown(report(measured(), OPEN), OPEN)).toContain('Release 900100 (2245245 records).');
   });
 });

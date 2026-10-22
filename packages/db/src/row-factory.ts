@@ -21,7 +21,8 @@ import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrgan
  * it (DERIVED_VALUES); a row a column references that must have taken a further step first
  * (PREPARED_REFERENCES) takes it once created, and a row that only makes sense as a link in a chain of
  * rows (CHAINED_ROWS: the ledger's) is built with its chain; a table only a practice job writes
- * (JOB_WRITTEN: the export rows) is written as a job of the world. It first fills only NOT
+ * (JOB_WRITTEN: the export rows) is written as a job of the world; and a table every practice is created with one
+ * row of (WORLD_ROWS: its pricing location) is read from the world, never inserted twice. It first fills only NOT
  * NULL columns without defaults, and if a constraint refuses that row, fills every column it can. Rows
  * are written as the owner role inside the world's practice scope.
  *
@@ -197,6 +198,13 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
  * factory's submission sends an attested export, so its reason is null).
  */
 const DATABASE_STAMPED: ReadonlySet<string> = new Set(['practice.deleted_at', 'submission.pricing_check', 'submission.unattested_reason']);
+
+/**
+ * Deprecated columns the factory never writes: nothing reads or writes them, and the application role may not. A
+ * practice's ZIP is its location's since migration 20261105090000 (practice_site; practice.zip is dropped by the
+ * multi-site pull request).
+ */
+const DEPRECATED: ReadonlySet<string> = new Set(['practice.zip']);
 
 /**
  * Columns that must equal a column of the row another of their columns references: a case's payer is
@@ -453,6 +461,15 @@ async function storedExport(client: OwnerClient, world: TenantWorld, kind: 'post
  */
 const JOB_WRITTEN: ReadonlySet<string> = new Set(['posting_row', 'eft_row']);
 
+/**
+ * Tables that hold one row per practice, which every practice, the world's included, is created with: a practice's
+ * pricing location (practice_site; migration 20261105090000, whose unique index refuses a second row and whose
+ * deferred check refuses a practice without one). The factory reads the world's own row rather than inserting one,
+ * and the probe it builds for one is that row's values under a new id: a row the database accepted for the practice,
+ * which the application role may not insert at all (writes go through definer functions).
+ */
+const WORLD_ROWS: ReadonlySet<string> = new Set(['practice_site']);
+
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
 const LITERAL = /'((?:[^']|'')*)'::[\w ]+/g;
 const MATCHES = /^CHECK \(\("?(\w+)"? ~ '((?:[^']|'')*)'::text\)\)$/;
@@ -541,16 +558,49 @@ export class RowFactory {
       const found = await asOwner(client, [world.practiceId], () => client.query(`SELECT * FROM ${quote(TENANT_TABLE)} WHERE id = $1`, [world.practiceId]));
       return found.rows[0] as Row;
     }
+    if (WORLD_ROWS.has(table)) {
+      return this.worldRow(client, table, world);
+    }
     return this.attempt(client, table, world, depth, true);
+  }
+
+  /** Whether the world holds its one row of `table` from its creation (WORLD_ROWS): create() returns it, and no second is made. */
+  holdsOneRow(table: string): boolean {
+    return table === TENANT_TABLE || WORLD_ROWS.has(table);
   }
 
   /**
    * Builds a new row of `table` for `world` that the owner could insert (it is inserted and rolled
-   * back to prove it), without keeping it: the probe a cross-tenant INSERT test attempts.
+   * back to prove it), without keeping it: the probe a cross-tenant INSERT test attempts. For a
+   * table of WORLD_ROWS, the world's own row under a new id (a second is refused by its unique index).
    */
   async build(client: OwnerClient, table: string, world: TenantWorld): Promise<BuiltRow> {
-    const values = await this.attempt(client, table, world, 0, false);
+    const values = WORLD_ROWS.has(table) ? await this.worldRowProbe(client, table, world) : await this.attempt(client, table, world, 0, false);
     return { table, values, actorId: await this.actorFor(client, table, world) };
+  }
+
+  /** The world's own row of a WORLD_ROWS table, which the world was created with. */
+  private async worldRow(client: OwnerClient, table: string, world: TenantWorld): Promise<Row> {
+    const found = await asOwner(client, [world.practiceId], () => client.query(`SELECT * FROM ${quote(table)} WHERE practice_id = $1`, [world.practiceId]));
+    const [row, ...more] = found.rows as Row[];
+    if (row === undefined || more.length > 0) {
+      throw new RowFactoryError(`${table}: the world should hold exactly one row of its own (it holds ${String(found.rows.length)})`);
+    }
+    return row;
+  }
+
+  /** The world's own row's values under a new primary key, without the columns the database stamps. */
+  private async worldRowProbe(client: OwnerClient, table: string, world: TenantWorld): Promise<Row> {
+    const row = await this.worldRow(client, table, world);
+    const key = this.primaryKey(table);
+    const values: Row = {};
+    for (const column of this.info(table).columns) {
+      if (column.generated || ['created_at', 'updated_at'].includes(column.name)) {
+        continue;
+      }
+      values[column.name] = column.name === key ? randomUUID() : row[column.name];
+    }
+    return values;
   }
 
   /** Who writes a row of `table` for `world`: its administrator, a holder of the role the table needs, or a job of the world. */
@@ -641,7 +691,12 @@ export class RowFactory {
         row.practice_id = world.practiceId;
         continue;
       }
-      if (SAME_AS[`${table}.${column.name}`] !== undefined || DERIVED_VALUES[`${table}.${column.name}`] !== undefined || DATABASE_STAMPED.has(`${table}.${column.name}`)) {
+      if (
+        SAME_AS[`${table}.${column.name}`] !== undefined ||
+        DERIVED_VALUES[`${table}.${column.name}`] !== undefined ||
+        DATABASE_STAMPED.has(`${table}.${column.name}`) ||
+        DEPRECATED.has(`${table}.${column.name}`)
+      ) {
         continue;
       }
       const fixed = FIXED_VALUES[`${table}.${column.name}`];

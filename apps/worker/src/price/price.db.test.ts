@@ -10,11 +10,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { JobContext } from '../jobs/handlers';
 import { parseCoverage } from './coverage';
-import { PricingRunInputError } from './create';
+import { PricingLocationWaiting, PricingRunInputError } from './create';
 import { ENGINE_ERRORS_MESSAGE } from './execute';
 import { priceHandler } from './job';
 import { RuleReleaseMismatchError } from './release';
-import { rerunReasons } from './rerun';
+import { createRerun, rerunReasons } from './rerun';
 import { FIXTURES, type Practice, PricingWorld, RELEASE, errorOf } from './test-support/pricing-world';
 
 /**
@@ -23,7 +23,9 @@ import { FIXTURES, type Practice, PricingWorld, RELEASE, errorOf } from './test-
  * to MAP-05, PRC-12, PRC-14, PRC-15, JOB-01). Each case is a practice of its own: its SYNTHETIC 835s
  * are parsed and loaded by the parse_835 job, its plans mapped and its contracts signed off through
  * @tp/contracts' services by the people the plan names, a run created in the billing manager's scope
- * and executed by the price job in the practice's job scope, under SYNTHETIC release 900001.
+ * and executed by the price job in the practice's job scope, under SYNTHETIC release 900001. The
+ * practice's pricing location and the place-of-service split (PRC-23, PRC-24; docs/adr/0064) are read
+ * by the job as the worker's own login, a member of the application role, as in production.
  */
 
 let w: PricingWorld;
@@ -41,7 +43,8 @@ const load = (target: Practice, fixture: string) => w.load(target, fixture);
 const one = <T>(sql: string, values: unknown[]) => w.one<T>(sql, values);
 const payerOf = (target: Practice) => w.payerOf(target);
 const planOf = (target: Practice, key: string) => w.planOf(target, key);
-const signedContract = (target: Practice, effectiveFrom: string, options?: { effectiveTo?: string; disputeWindowDays?: number; percentage?: string }) => w.signedContract(target, effectiveFrom, options);
+const signedContract = (target: Practice, effectiveFrom: string, options?: { effectiveTo?: string; disputeWindowDays?: number; percentage?: string; terms?: object }) =>
+  w.signedContract(target, effectiveFrom, options);
 const mapped = (target: Practice, planId: string, kind: 'contract' | 'no_agreement' | 'ma_noncontracted', effectiveFrom: string, contractVersionId: string | null = null) =>
   w.mapped(target, planId, kind, effectiveFrom, contractVersionId);
 const createRun = (target: Practice, periodFrom: string, periodTo: string, releaseNo = RELEASE) => w.createRun(target, periodFrom, periodTo, releaseNo);
@@ -487,6 +490,174 @@ describe('JOB-01: a replayed price job', () => {
     const [linesA, linesB] = [await pricedLines(a), await pricedLines(b)];
     expect(linesA).toHaveLength(3);
     expect(linesB.map((line) => [line.service_line_id, line.expected_allowed_cents])).toEqual(linesA.map((line) => [line.service_line_id, line.expected_allowed_cents]));
+  });
+});
+
+describe('PRC-23: a month whose pricing location is not ready (audit #33; docs/adr/0064)', () => {
+  /** A fixed schedule of $50.00 a line for every code: no line of it reads the locality. */
+  const FIXED = { scope: {}, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '5000' }, flags: { timed_units_rule: 'PER_CODE' } };
+
+  it('creates no run while the practice has no location: refused by the creator and by Postgres, re-runs included', async () => {
+    const target = await practice('no-location');
+    await load(target, 'MAP-05/remit.835');
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    const complete = await createRun(target, '2026-02-01', '2026-02-28');
+    await execute(target, complete);
+    expect(await runRow(complete)).toMatchObject({ status: 'complete' });
+    // A practice from before locations existed, with no ZIP (dev and staging only).
+    await w.withoutLocation(target);
+    const refused = await errorOf(createRun(target, '2026-02-01', '2026-02-28'));
+    expect(refused).toBeInstanceOf(PricingLocationWaiting);
+    expect(refused).toMatchObject({ status: 'zip_missing' });
+    expect(
+      await errorOf(
+        withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, (scope) =>
+          createRerun(scope, { practiceId: target.practiceId, pricingRunId: complete, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }),
+        ),
+      ),
+    ).toBeInstanceOf(PricingLocationWaiting);
+    expect(
+      await errorOf(
+        withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, (scope) =>
+          scope.client.query("INSERT INTO pricing_run (practice_id, period_from, period_to, release_no, engine_version, created_by) VALUES ($1, '2026-02-01', '2026-02-28', $2, $3, $4)", [
+            target.practiceId,
+            RELEASE,
+            ENGINE_VERSION,
+            target.manager,
+          ]),
+        ),
+      ),
+    ).toMatchObject({ code: '23514', constraint: 'pricing_run_location_missing' });
+    expect((await one<{ n: number }>('SELECT count(*)::int AS n FROM pricing_run WHERE practice_id = $1', [target.practiceId])).n).toBe(1);
+  });
+
+  it('fails a percent-of-Medicare month whose lines need the ZIP+4 as location_not_ready, keeping no line and paging no one', async () => {
+    const target = await practice('plus-four-needed');
+    await load(target, 'MAP-05/remit.835');
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    // 00012 is split between two localities in release 900001's ZIP file: it needs its ZIP+4.
+    expect(await w.setLocation(target, '00012')).toBe('zip_plus_four_needed');
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    const logs: Record<string, unknown>[] = [];
+    await execute(target, runId, logs);
+    expect(await runRow(runId)).toMatchObject({ status: 'failed', failure_code: 'location_not_ready', coverage: null, completed_at: null });
+    expect(await pricedLines(runId)).toEqual([]);
+    expect(logs.filter((line) => line.msg === ENGINE_ERRORS_MESSAGE || line.level === 'error')).toEqual([]);
+    // A replay leaves the failed run as it is.
+    await execute(target, runId);
+    expect(await runRow(runId)).toMatchObject({ status: 'failed', failure_code: 'location_not_ready' });
+  });
+
+  it('decides the location’s stops from the location it prices with, when the location changes between the job’s two transactions', async () => {
+    const target = await practice('location-changes-mid-job');
+    await load(target, 'MAP-05/remit.835');
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    // Ready when the run starts; the practice saves 00012 with no ZIP+4 before the transaction that prices.
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    const logs: Record<string, unknown>[] = [];
+    const context = jobContext(target.practiceId, logs);
+    let transactions = 0;
+    const moving: JobContext = {
+      ...context,
+      transaction: async (work) => {
+        transactions += 1;
+        if (transactions === 2) {
+          expect(await w.setLocation(target, '00012')).toBe('zip_plus_four_needed');
+        }
+        return context.transaction(work);
+      },
+    };
+    await priceHandler()({ practice_id: target.practiceId, pricing_run_id: runId }, moving);
+    // The lines read 00012, so they stop on the location: the customer's step, no line kept and no one paged.
+    expect(await runRow(runId)).toMatchObject({ status: 'failed', failure_code: 'location_not_ready' });
+    expect(await pricedLines(runId)).toEqual([]);
+    expect(logs.filter((line) => line.msg === ENGINE_ERRORS_MESSAGE)).toEqual([]);
+  });
+
+  it('prices a fixed-schedule month at that location as before: its lines never read the locality', async () => {
+    const target = await practice('plus-four-fixed');
+    await load(target, 'MAP-05/remit.835');
+    const signed = await signedContract(target, '2026-01-01', { terms: FIXED });
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'contract', '2026-01-01', signed.versionId);
+    expect(await w.setLocation(target, '00012')).toBe('zip_plus_four_needed');
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    await execute(target, runId);
+    expect(await runRow(runId)).toMatchObject({ status: 'complete', failure_code: null });
+    const lines = await pricedLines(runId);
+    expect(lines.map((line) => [line.method, line.unpriced_reason])).toEqual([
+      ['FIXED_SCHEDULE', null],
+      ['FIXED_SCHEDULE', null],
+      ['FIXED_SCHEDULE', null],
+    ]);
+    expect(parseTrace(lines[0]?.trace).settings).toMatchObject({ zip: '00012' });
+    expectTracesRecompute(lines);
+  });
+
+  it('keeps a line ENGINE_ERROR no_locality_plus_four for the operator when the location waits on content PaidWhole has not loaded (locality_not_loaded)', async () => {
+    const target = await practice('plus-four-not-loaded');
+    await load(target, 'MAP-05/remit.835');
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    // Release 900001 has no ZIP+4 file: nothing the customer can change, so the run completes and pages the operator,
+    // and the engine names the gap (no_locality_plus_four), never the practice's ZIP+4.
+    expect(await w.setLocation(target, '00012', '0001')).toBe('locality_not_loaded');
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    const logs: Record<string, unknown>[] = [];
+    await execute(target, runId, logs);
+    expect(await runRow(runId)).toMatchObject({ status: 'complete' });
+    const lines = await pricedLines(runId);
+    expect(lines.map((line) => line.unpriced_reason)).toEqual(['ENGINE_ERROR', 'ENGINE_ERROR', 'ENGINE_ERROR']);
+    expect(parseTrace(lines[0]?.trace)).toMatchObject({ settings: { zip: '00012', zip_plus_four: '0001' }, outcome: { reason: 'ENGINE_ERROR', detail: 'no_locality_plus_four' } });
+    expect(parseCoverage((await runRow(runId)).coverage).engine_errors).toEqual([{ detail: 'no_locality_plus_four', lines: 3, pages_operator: true }]);
+    expect(logs.filter((line) => line.msg === ENGINE_ERRORS_MESSAGE)).toHaveLength(1);
+  });
+});
+
+describe('PRC-24: a place of service the practice has not set (docs/adr/0064)', () => {
+  // The split in force is pinned on every run created after it, so these tests run late in the file (before the
+  // mismatch, which publishes a release).
+  const SPLIT = { '11': 'non_facility', '12': 'non_facility', '21': 'facility', '22': 'facility', '23': 'facility' };
+
+  it('prices with the approved split’s setting read by the job as the application role, and records the split on the run', async () => {
+    const splitId = await w.approveSplit(SPLIT);
+    const target = await practice('prc-24', { default_rounding: 'HALF_UP_CENT' });
+    await load(target, 'MAP-05/remit.835');
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    expect(await one('SELECT place_of_service_split_id FROM pricing_run WHERE id = $1', [runId])).toEqual({ place_of_service_split_id: splitId });
+    await execute(target, runId);
+    const lines = await pricedLines(runId);
+    expect(lines.map((line) => line.unpriced_reason)).toEqual([null, null, null]);
+    for (const line of lines) {
+      const trace = parseTrace(line.trace);
+      expect(trace.settings.place_of_service_settings).toEqual(SPLIT);
+      expect(trace.steps.fee_schedule?.setting).toBe('non_facility');
+    }
+    expectTracesRecompute(lines);
+    // The split's settings reach only the run's own practice's scope.
+    const other = await practice('prc-24-other');
+    const read = (scopePractice: Practice) =>
+      withPracticeScope(w.app, { actorId: scopePractice.manager, practiceIds: [scopePractice.practiceId] }, async (scope) => {
+        const { rows } = await scope.client.query<{ place_of_service_split_id: string; settings: unknown }>('SELECT place_of_service_split_id, settings FROM pricing_run_split($1)', [runId]);
+        return rows;
+      });
+    expect(await read(target)).toEqual([{ place_of_service_split_id: splitId, settings: SPLIT }]);
+    expect(await read(other)).toEqual([]);
+  });
+
+  it('lets the practice’s own setting win over the split', async () => {
+    const target = await practice('prc-24-own', { place_of_service_settings: { '11': 'facility' } });
+    await load(target, 'MAP-05/remit.835');
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    await execute(target, runId);
+    const lines = await pricedLines(runId);
+    expect(lines.map((line) => line.unpriced_reason)).toEqual([null, null, null]);
+    for (const line of lines) {
+      const trace = parseTrace(line.trace);
+      expect(trace.settings.place_of_service_settings).toEqual({ ...SPLIT, '11': 'facility' });
+      expect(trace.steps.fee_schedule?.setting).toBe('facility');
+    }
+    expectTracesRecompute(lines);
   });
 });
 

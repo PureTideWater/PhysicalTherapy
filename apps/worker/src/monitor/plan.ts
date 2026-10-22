@@ -1,7 +1,7 @@
-import { PricingRefusedError } from '@tp/contracts';
+import { LOCATION_NOT_READY_STATUSES, type LocationStatus, PricingRefusedError, isLocationStatus } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 
-import { PricingRunInputError, createPricingRun } from '../price/create';
+import { PricingLocationWaiting, PricingRunInputError, createPricingRun } from '../price/create';
 import { currentReleaseNo } from '../price/release';
 
 /**
@@ -20,6 +20,15 @@ import { currentReleaseNo } from '../price/release';
  *    (createPricingRun: the release in force, the period's plans, MAP-01's refusal of a plan with no
  *    mapping), in the job's own name. A month refused for an unmapped plan waits for its mapping; a month
  *    whose lines are all reversals has nothing to price.
+ * 4. A month waits on the practice's pricing location (audit #33 and #7; docs/adr/0064), with no run
+ *    created: while the practice has no location at all (createPricingRun refuses, PricingLocationWaiting),
+ *    and while the newest run of that exact month failed location_not_ready (a line needed a ZIP+4, or a
+ *    ZIP or ZIP+4 Medicare's list does not hold; never a gap in the content such as no_locality_plus_four,
+ *    whose run completes with the line ENGINE_ERROR for the operator) under the release in force, covering
+ *    the month's newest line, and was created at or after the location was last saved, while the location still
+ *    reads as one a line cannot price at (waitingOnLocation). So such a month is not priced
+ *    again every day: saving the location (which queues this step by its request) or a new release in force
+ *    plans it again. Each waiting month is listed with its location's status.
  *
  * It returns every run the chain created that is still queued, the ones just created included, so the
  * job (re)queues their price jobs: a replay (the same document, or the same day) creates nothing new and
@@ -41,6 +50,11 @@ export interface CreatedMonthRun extends PlannedMonth {
   readonly pricingRunId: string;
 }
 
+/** A month waiting on the practice's location, with the location's status over it (the closed list's). */
+export interface WaitingMonth extends PlannedMonth {
+  readonly status: LocationStatus;
+}
+
 export type MonitorPlan =
   | { readonly outcome: 'batch_loading'; readonly pendingDocuments: number }
   | { readonly outcome: 'no_release' }
@@ -50,6 +64,8 @@ export type MonitorPlan =
       readonly created: readonly CreatedMonthRun[];
       /** Months refused while a plan of their lines has no mapping (MAP-01). */
       readonly waitingOnMapping: readonly PlannedMonth[];
+      /** Months waiting on the practice's location: none created while it is missing, or its last run failed location_not_ready. */
+      readonly waitingOnLocation: readonly WaitingMonth[];
       /** The chain's runs still queued (the ones just created among them): their price jobs are queued. */
       readonly queued: readonly string[];
     };
@@ -95,6 +111,58 @@ export async function uncoveredMonths(client: ScopeClient, practiceId: string): 
   return rows.map((row) => ({ periodFrom: row.period_from, periodTo: row.period_to }));
 }
 
+/** The statuses at which a month whose run failed location_not_ready still cannot price, so it waits with no new run. */
+const STILL_WAITING: readonly LocationStatus[] = ['zip_missing', ...LOCATION_NOT_READY_STATUSES];
+
+/**
+ * Whether an uncovered month waits on the practice's location with no new run: the newest run of exactly that month
+ * failed location_not_ready, under `releaseNo` (the release in force), its cut-off at or after the month's newest line
+ * (the same lines as uncoveredMonths()), and was created at or after the practice's location was last saved; and the
+ * location's status over the month, as it reads now, is still one at which a line cannot price. The last condition is
+ * what decides: a run created while a save was still open has a created_at later than the save's updated_at (both are
+ * their transaction's start) yet read the old location, so the times alone never prove a run saw the saved location. A
+ * month whose location is now ready, or waits on content PaidWhole loads (locality_not_loaded), is always planned; that
+ * starts no daily loop, since a run at such a status never fails location_not_ready. A save of the location, a new
+ * release in force or a newer line plans it again.
+ */
+export async function waitingOnLocation(client: ScopeClient, practiceId: string, month: PlannedMonth, releaseNo: number): Promise<boolean> {
+  const { rows } = await client.query<{ waits: boolean }>(
+    `WITH newest AS (
+       SELECT max(l.created_at) AS at
+         FROM claim c JOIN service_line l ON l.claim_id = c.id
+        WHERE c.practice_id = $1 AND date_trunc('month', coalesce(l.service_date, c.service_from))::date = $2::date
+     ), last_run AS (
+       SELECT r.status, r.failure_code, r.release_no, r.created_at, coalesce(r.lines_loaded_by, r.created_at) AS cut_off
+         FROM pricing_run r
+        WHERE r.practice_id = $1 AND r.period_from = $2::date AND r.period_to = $3::date
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT 1
+     )
+     SELECT coalesce(r.status = 'failed' AND r.failure_code = 'location_not_ready' AND r.release_no = $4
+                     AND r.cut_off >= (SELECT n.at FROM newest n)
+                     AND r.created_at >= (SELECT s.updated_at FROM practice_site s WHERE s.practice_id = $1)
+                     AND practice_location_status($1, $4, $2::date, $3::date) = ANY ($5::text[]), false) AS waits
+       FROM last_run r`,
+    [practiceId, month.periodFrom, month.periodTo, releaseNo, STILL_WAITING],
+  );
+  return rows[0]?.waits ?? false;
+}
+
+/** The practice's location status over a month under a release (practice_location_status(), the caller's scope). */
+async function locationStatus(client: ScopeClient, practiceId: string, month: PlannedMonth, releaseNo: number): Promise<LocationStatus> {
+  const { rows } = await client.query<{ status: string }>('SELECT practice_location_status($1, $2, $3::date, $4::date) AS status', [
+    practiceId,
+    releaseNo,
+    month.periodFrom,
+    month.periodTo,
+  ]);
+  const status = rows[0]?.status;
+  if (!isLocationStatus(status)) {
+    throw new Error('the location status is not one of the closed list');
+  }
+  return status;
+}
+
 /** The chain's runs of the practice still waiting for their price job, oldest month first. */
 export async function queuedMonitoringRuns(client: ScopeClient, practiceId: string): Promise<string[]> {
   const { rows } = await client.query<{ id: string }>(
@@ -118,18 +186,26 @@ export async function planMonitoring(scope: PracticeScope<ScopeClient>, practice
   }
   const created: CreatedMonthRun[] = [];
   const waitingOnMapping: PlannedMonth[] = [];
+  const waitingLocation: WaitingMonth[] = [];
   for (const month of await uncoveredMonths(client, practiceId)) {
+    if (await waitingOnLocation(client, practiceId, month, releaseNo)) {
+      // Its last run failed location_not_ready and nothing it depends on changed since: no run today.
+      waitingLocation.push({ ...month, status: await locationStatus(client, practiceId, month, releaseNo) });
+      continue;
+    }
     try {
       const run = await createPricingRun(scope, { practiceId, periodFrom: month.periodFrom, periodTo: month.periodTo, releaseNo, requestId });
       created.push({ ...month, pricingRunId: run.pricingRunId });
     } catch (error) {
       if (error instanceof PricingRefusedError) {
         waitingOnMapping.push(month);
+      } else if (error instanceof PricingLocationWaiting) {
+        waitingLocation.push({ ...month, status: error.status });
       } else if (!(error instanceof PricingRunInputError && error.field === 'period')) {
         throw error;
       }
       // A month whose lines are all reversals or superseded claims holds nothing to price.
     }
   }
-  return { outcome: 'planned', releaseNo, created, waitingOnMapping, queued: await queuedMonitoringRuns(client, practiceId) };
+  return { outcome: 'planned', releaseNo, created, waitingOnMapping, waitingOnLocation: waitingLocation, queued: await queuedMonitoringRuns(client, practiceId) };
 }

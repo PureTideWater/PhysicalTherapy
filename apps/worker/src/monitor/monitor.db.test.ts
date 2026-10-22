@@ -13,7 +13,7 @@ import { databaseJobRuns } from '../jobs/runs';
 import { type MailMessage, MemoryMailSender } from '../mail/mail';
 import { parseHandler } from '../parse/job';
 import { priceHandler } from '../price/job';
-import { type Practice, RELEASE } from '../price/test-support/pricing-world';
+import { type Practice, RELEASE, RERUN_RELEASE } from '../price/test-support/pricing-world';
 import { reconcileHandler } from '../reconcile/job';
 import { todayUtc } from '../triage/execute';
 import { triageHandler } from '../triage/job';
@@ -21,7 +21,7 @@ import { TriageWorld } from '../triage/test-support/triage-world';
 import { JOB_FAILED_MESSAGE, type RunningWorker, startWorker } from '../worker';
 import { notifyRun } from './chain';
 import { monitorHandler } from './job';
-import { MONITOR_DELAY_SECONDS } from './plan';
+import { MONITOR_DELAY_SECONDS, planMonitoring } from './plan';
 import { MemoryQueue } from './test-support/memory-queue';
 
 /**
@@ -32,7 +32,8 @@ import { MemoryQueue } from './test-support/memory-queue';
  * job, job_run, the last-attempt alert) runs every job from a queue in memory with pg-boss's singleton
  * keys and three attempts; the SYNTHETIC CAS fixtures are parsed and loaded by parse_835, their plans
  * mapped and fixed-schedule contracts signed off through @tp/contracts' services, under SYNTHETIC
- * release 900001.
+ * release 900001. Months that wait on the practice's pricing location (test matrix PRC-23; audit #33;
+ * docs/adr/0064) are planned last, since the last of them publishes another release.
  */
 
 const ORIGIN = 'http://localhost:3000';
@@ -577,5 +578,154 @@ describe('notification preferences in the user’s own settings', () => {
         { user_id: practice.manager, digest_email: true, in_app: false },
       ].sort((a, b) => (a.user_id < b.user_id ? -1 : 1)),
     );
+  });
+});
+
+describe('PRC-23: months that wait on the practice’s pricing location (audit #33; docs/adr/0064)', () => {
+  const MONTH = { periodFrom: '2026-02-01', periodTo: '2026-02-28' };
+
+  /** A practice whose February 2026 lines are Medicare Advantage non-contracted: every one reads the locality. */
+  async function medicareMonth(label: string): Promise<Practice> {
+    const practice = await w.practice(label);
+    await w.pricing.load(practice, 'MAP-05/remit.835');
+    await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    return practice;
+  }
+  const daily = (c: Chain, practice: Practice) => enqueue(c.queue.client, 'monitor', { practice_id: practice.practiceId, day: todayUtc() });
+  const ran = async (c: Chain) => (await c.queue.drain()).map((job) => [job.name, job.outcome]);
+  const runsOf = (practiceId: string) =>
+    rows<{ status: string; failure_code: string | null; release_no: number; lines: number; job: boolean }>(
+      `SELECT r.status, r.failure_code, r.release_no, (SELECT count(*)::int FROM priced_line p WHERE p.pricing_run_id = r.id) AS lines, r.created_by_job_id IS NOT NULL AS job
+         FROM pricing_run r WHERE r.practice_id = $1 ORDER BY r.created_at, r.id`,
+      [practiceId],
+    );
+  const waitingLines = (c: Chain) => c.logs.filter((line) => line.error_code === 'LOCATION_NOT_READY');
+  const failedWait = { status: 'failed', failure_code: 'location_not_ready', release_no: RELEASE, lines: 0, job: true };
+
+  it('creates no run for a month while the practice has no location, and lists the month with its status', async () => {
+    const practice = await medicareMonth('LOC-MISSING');
+    // A practice from before locations existed, with no ZIP (dev and staging only).
+    await w.pricing.withoutLocation(practice);
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect(waitingLines(c)).toEqual([
+        expect.objectContaining({ level: 'info', msg: 'monitoring left months waiting on the practice’s pricing location', record_count: 1, release_no: RELEASE }),
+      ]);
+      expect(c.logs.filter((line) => line.level === 'error')).toEqual([]);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await runsOf(practice.practiceId)).toEqual([]);
+    const plan = await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID()));
+    expect(plan).toMatchObject({ outcome: 'planned', created: [], waitingOnMapping: [], waitingOnLocation: [{ ...MONTH, status: 'zip_missing' }], queued: [] });
+  });
+
+  it('fails a month whose lines need the ZIP+4 as location_not_ready with no line kept, and does not create it again on the next day’s plan', async () => {
+    const practice = await medicareMonth('LOC-PLUS-FOUR');
+    expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([
+        ['monitor', 'succeeded'],
+        ['price', 'succeeded'],
+      ]);
+      expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
+      // The next day's plan: the month waits with no new run, and no one is paged.
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
+      expect(waitingLines(c)).toEqual([expect.objectContaining({ record_count: 1 })]);
+      expect(c.logs.filter((line) => line.level === 'error' || line.msg === JOB_FAILED_MESSAGE)).toEqual([]);
+    } finally {
+      await c.worker.stop();
+    }
+    const plan = await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID()));
+    expect(plan).toMatchObject({ outcome: 'planned', created: [], waitingOnLocation: [{ ...MONTH, status: 'zip_plus_four_needed' }], queued: [] });
+    expect(await failedRun(practice.practiceId)).toBeUndefined();
+  });
+
+  it('prices the month after a save of the location, planned by the save’s request with no hand re-run, a daily job queued beside it', async () => {
+    const practice = await medicareMonth('LOC-SAVED');
+    expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');
+    const requestId = `test-${randomUUID()}`;
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      await c.queue.drain();
+      expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
+      // A person saves the location (the Pricing settings action) and the route queues the plan by the save's request.
+      expect(await w.pricing.setLocation(practice, '00011')).toBe('ready');
+      // A daily job already queued holds its own key, so the save's is never swallowed; a second send of the save is.
+      expect(await daily(c, practice)).not.toBeNull();
+      expect(await enqueue(c.queue.client, 'monitor', { practice_id: practice.practiceId, request_id: requestId })).not.toBeNull();
+      expect(await enqueue(c.queue.client, 'monitor', { practice_id: practice.practiceId, request_id: requestId })).toBeNull();
+      expect(await ran(c)).toEqual([
+        ['monitor', 'succeeded'],
+        ['monitor', 'succeeded'],
+        ['price', 'succeeded'],
+        ['triage', 'succeeded'],
+        ['reconcile', 'succeeded'],
+      ]);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await runsOf(practice.practiceId)).toEqual([failedWait, { status: 'complete', failure_code: null, release_no: RELEASE, lines: 3, job: true }]);
+    expect(await rows("SELECT singleton_key, outcome FROM job_run WHERE practice_id = $1 AND job_type = 'monitor' AND idempotency_key = $2", [practice.practiceId, requestId])).toEqual([
+      { singleton_key: `monitor:${practice.practiceId}:${requestId}`, outcome: 'succeeded' },
+    ]);
+  });
+
+  it('plans a waiting month again once the location is ready, when its failed run was created during the save and read the old location', async () => {
+    const practice = await medicareMonth('LOC-RACE');
+    expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');
+    // A person's save of a ready ZIP begins (its practice_site.updated_at is this transaction's start) and is still open.
+    const save = await w.app.connect();
+    try {
+      await save.query('BEGIN');
+      await save.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [practice.manager, `{${practice.practiceId}}`]);
+      expect((await save.query<{ status: string }>("SELECT practice_set_location($1, '00011', NULL) AS status", [practice.practiceId])).rows).toEqual([{ status: 'ready' }]);
+      // Meanwhile a daily plan creates February's run, later than the save's start, and its price job reads the old location.
+      const c = await chain();
+      try {
+        await daily(c, practice);
+        expect(await ran(c)).toEqual([
+          ['monitor', 'succeeded'],
+          ['price', 'succeeded'],
+        ]);
+      } finally {
+        await c.worker.stop();
+      }
+      expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
+      await save.query('COMMIT');
+    } finally {
+      save.release();
+    }
+    // The location is now ready: the month is planned again, whatever the failed run's time says.
+    const plan = await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID()));
+    expect(plan).toMatchObject({ outcome: 'planned', created: [MONTH], waitingOnLocation: [] });
+  });
+
+  it('plans a waiting month again once a new release is in force (last in the file: it publishes release 900004)', async () => {
+    const practice = await medicareMonth('LOC-RELEASE');
+    expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      await c.queue.drain();
+      expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
+      await w.pricing.loadRerunRelease();
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([
+        ['monitor', 'succeeded'],
+        ['price', 'succeeded'],
+      ]);
+    } finally {
+      await c.worker.stop();
+    }
+    // Planned and priced under the new release; the location still needs its ZIP+4, so the month waits again.
+    expect(await runsOf(practice.practiceId)).toEqual([failedWait, { ...failedWait, release_no: RERUN_RELEASE }]);
   });
 });

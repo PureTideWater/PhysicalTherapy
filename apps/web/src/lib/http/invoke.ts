@@ -266,6 +266,20 @@ async function run<R>(running: Running, handle: () => Promise<R>): Promise<Outco
   return shell === undefined ? { status: 'ok', data } : { status: 'ok', data, shell };
 }
 
+/**
+ * Runs the work a handler left for after its commit (AfterCommit), in order. The request's records are committed, so a
+ * failure here changes nothing the request answers: it is logged by code and the job's own schedule takes it up.
+ */
+async function runCommitted(committed: readonly (() => Promise<unknown>)[], services: Services): Promise<void> {
+  for (const work of committed) {
+    try {
+      await work();
+    } catch {
+      services.logger.warn('work after the commit did not run; the job’s schedule takes it up', { error_code: 'AFTER_COMMIT_FAILED' });
+    }
+  }
+}
+
 /** Maps what a handler may throw to an outcome; anything else is a server error. */
 async function refusal(error: unknown, kind: Route['kind'], services: Services, actor: Actor, practiceId: string | null): Promise<Outcome<never>> {
   if (error instanceof NotFoundError) {
@@ -411,16 +425,22 @@ function actorRoute<P, I, R>(spec: ActorSpec<P, I, R>, access: Extract<Access, {
       if (refused !== undefined) {
         return refused;
       }
+      const committed: (() => Promise<unknown>)[] = [];
+      const afterCommit = (work: () => Promise<unknown>) => {
+        committed.push(work);
+      };
       try {
-        return await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+        const outcome = await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
           // The console stays open in maintenance (its administrators turn the flag off there); the terms of use
           // bind customers only, whom no platform route serves.
           await gates(scope, { termsExempt: shape.termsExempt || access.kind === 'platform', maintenanceExempt: access.kind === 'platform' || shape.termsExempt });
           const roles = access.kind === 'platform' ? await requirePlatformPermission(scope, access.permission) : await platformRoles(scope);
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
-            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles }),
+            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, afterCommit }),
           );
         });
+        await runCommitted(committed, services);
+        return outcome;
       } catch (error) {
         return refusal(error, spec.kind, services, actor, null);
       }
@@ -466,8 +486,12 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
         return refused;
       }
       const practiceId = parsed.params.practiceId;
+      const committed: (() => Promise<unknown>)[] = [];
+      const afterCommit = (work: () => Promise<unknown>) => {
+        committed.push(work);
+      };
       try {
-        return await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId], oneSnapshot }, async (scope) => {
+        const outcome = await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId], oneSnapshot }, async (scope) => {
           await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
           if (scope.access(practiceId) === undefined) {
             throw new NotFoundError();
@@ -481,9 +505,11 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
           }
           const roles = await platformRoles(scope);
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId, roles }, () =>
-            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, practiceId, access, platformRoles: roles }),
+            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, practiceId, access, platformRoles: roles, afterCommit }),
           );
         });
+        await runCommitted(committed, services);
+        return outcome;
       } catch (error) {
         return refusal(error, spec.kind, services, actor, practiceId);
       }
@@ -520,8 +546,12 @@ export function organizationRoute<P extends { readonly organizationId: string },
         return refused;
       }
       const organizationId = parsed.params.organizationId;
+      const committed: (() => Promise<unknown>)[] = [];
+      const afterCommit = (work: () => Promise<unknown>) => {
+        committed.push(work);
+      };
       try {
-        return await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+        const outcome = await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
           await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
           if ((await organizationRoles(scope, organizationId)).length === 0) {
             throw new NotFoundError();
@@ -529,9 +559,11 @@ export function organizationRoute<P extends { readonly organizationId: string },
           const held = await requireOrganizationPermission(scope, organizationId, spec.permission);
           const roles = await platformRoles(scope);
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
-            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held }),
+            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held, afterCommit }),
           );
         });
+        await runCommitted(committed, services);
+        return outcome;
       } catch (error) {
         return refusal(error, spec.kind, services, actor, null);
       }

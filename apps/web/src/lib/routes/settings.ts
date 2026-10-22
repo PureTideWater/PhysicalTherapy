@@ -11,10 +11,25 @@ import { type MembershipRole, rolesPermit } from '@tp/db/runtime';
 import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
+import {
+  LOCATION_CHANGED,
+  type LocationReading,
+  type MonthWaitingOnLocation,
+  type PracticeLocation,
+  billingZipDone,
+  billingZipStep,
+  locationConfirmed,
+  locationSettled,
+  monthsWaitingOnLocation,
+  practiceLocationReading,
+  runsPricedElsewhere,
+} from '../pricing/location';
+import { runsInEffect } from '../pricing/queries';
+import { ZIP_CODE_FORMAT, parseZipCode, zipCodeText } from '../zip';
 import { canSetCorrespondence, correspondenceSettingsPath } from '../packets/contact';
 import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
-import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { ROLES_BY_KIND } from './console';
 import { blankOptional, emailAddress, opaqueId, optionalText } from './schemas';
 
@@ -26,13 +41,17 @@ import { blankOptional, emailAddress, opaqueId, optionalText } from './schemas';
  * and tested on its own:
  *
  * - /p/<practice>/settings: the sections the role reaches and, for the practice administrator, the onboarding
- *   checklist of J2 (MFA, terms, the agreement chain confirmed, the team invited, a plan chosen).
+ *   checklist of J2 (MFA, terms, the agreement chain confirmed, the team invited, a plan chosen, the billing ZIP
+ *   confirmed).
  * - Agreements and grants: the chain (BAA, engagement letter, terms, data-rights addendum) with each document's
  *   reference and SHA-256, its confirmation by the administrator (an audit event), and the grants to the
  *   practice (a view; approving and revoking firm grants are milestone 12's firm flows).
  * - Materiality and pursuit defaults: set by the people who work cases (the database checks it again).
  * - The proof level: posted or deposited, the administrator's alone, with the rule for lines already recovered
  *   stated before it is saved and applied by the next reconcile (docs/adr/0053).
+ * - Pricing settings: the practice's pricing location (its billing ZIP and ZIP+4), its status in the rule release in
+ *   force, the places of service in effect and the months waiting on the location; set and confirmed under
+ *   pricing_settings.set (audit #33; docs/adr/0064).
  * - The access log: read-only, filtered to one record ("who read claim X") from the record's own page.
  * - Export and deletion: stated placeholders until milestone 12 builds the workflows.
  * - Users and roles (/settings/organizations/<organization>/users): the organization's members and invitations,
@@ -111,9 +130,12 @@ async function lastConfirmation(client: Parameters<typeof practiceOrganization>[
 }
 
 export interface SetupStep {
-  readonly key: 'mfa' | 'terms' | 'agreements' | 'team' | 'billing' | 'upload' | 'correspondence';
+  readonly key: 'mfa' | 'terms' | 'agreements' | 'team' | 'billing' | 'billing_zip' | 'upload' | 'correspondence';
   readonly done: boolean;
   readonly href: string;
+  /** The step's own words where they depend on the records (the billing ZIP's status); the page's otherwise. */
+  readonly title?: string;
+  readonly detail?: string;
 }
 
 export const settingsPage = practiceRoute({
@@ -134,12 +156,21 @@ export const settingsPage = practiceRoute({
       ]);
       const uploads = await scope.client.query<{ count: string }>('SELECT count(*) AS count FROM source_document WHERE practice_id = $1', [practiceId]);
       const billing = rolesPermit(access.roles, 'organization.billing') ? await organizationBilling(scope.client, organizationId) : null;
+      const { reading } = await practiceLocationReading(scope.client, practiceId);
       checklist = [
         { key: 'mfa', done: true, href: '/account/devices' },
         { key: 'terms', done: true, href: '/terms' },
         { key: 'agreements', done: missingKinds(agreements).length === 0 && (await lastConfirmation(scope.client, practiceId)) !== null, href: `/p/${practiceId}/settings/agreements` },
         { key: 'team', done: Number.parseInt(team.rows[0]?.count ?? '0', 10) > 0, href: `/settings/organizations/${organizationId}/users` },
         { key: 'billing', done: billing?.subscription?.status === 'active', href: `/settings/billing/${organizationId}` },
+        // The practice's pricing location, confirmed by a person of the practice since it last changed, with nothing left
+        // for the customer to change (audit #33; docs/adr/0064). Pricing never waits for the confirmation.
+        {
+          key: 'billing_zip',
+          done: billingZipDone(reading, await locationConfirmed(scope.client, practiceId)),
+          href: pricingSettingsPath(practiceId),
+          ...(billingZipStep(reading) ?? {}),
+        },
         { key: 'upload', done: Number.parseInt(uploads.rows[0]?.count ?? '0', 10) > 0, href: `/p/${practiceId}/uploads` },
         // The contact every payer's copy prints; no packet is exported without it (audit item #37 part 1, D6).
         { key: 'correspondence', done: (await practiceCorrespondenceContact(scope.client, practiceId)).state === 'set', href: correspondenceSettingsPath(practiceId) },
@@ -494,6 +525,255 @@ export const setCorrespondenceContactAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ name: 'SYNTHETIC BILLING OFFICE', phone: '(919) 555-0100' }) },
 });
 
+/** The Pricing settings section's path. */
+export function pricingSettingsPath(practiceId: string): string {
+  return `/p/${practiceId}/settings/pricing`;
+}
+
+/** A place of service as it prices: at the facility or the non-facility rate, and whose setting it is. */
+export interface PlaceInEffect {
+  readonly code: string;
+  readonly setting: 'facility' | 'non_facility';
+  /** The practice's own setting, or the approved place-of-service split's for a place the practice has not set. */
+  readonly source: 'practice' | 'split';
+}
+
+/** A complete run in effect priced before the location last changed: the location prices it again only when it is re-run. */
+export interface PricedBeforeLocation {
+  readonly runId: string;
+  readonly periodFrom: string;
+  readonly periodTo: string;
+  readonly releaseNo: number;
+}
+
+export interface PricingSettingsPageData {
+  readonly practiceId: string;
+  /** The location as stored, or null when the practice has none. */
+  readonly location: PracticeLocation | null;
+  /** The location as the screens show it: 27601, or 27601-1234. */
+  readonly locationText: string | null;
+  /** Its status in the release in force over the whole release, and the sentence for it. */
+  readonly reading: LocationReading;
+  /** Whether a person of the practice set or confirmed it since it last changed (everyone who opens the practice reads it). */
+  readonly confirmed: boolean;
+  readonly places: readonly PlaceInEffect[];
+  /** shown: the split in force's places are listed; not_read: a split is approved but no run of the practice has pinned it yet; none: none is approved. */
+  readonly split: 'shown' | 'not_read' | 'none';
+  readonly waiting: readonly MonthWaitingOnLocation[];
+  readonly pricedBefore: readonly PricedBeforeLocation[];
+  /** pricing_settings.set: the practice administrator, the billing manager and the firm principal (the founder's answer to PR 6b's Q5 (a)). */
+  readonly canEdit: boolean;
+  /** What the action that led here did: saved, confirmed, or nothing, as the location changed since its page loaded. */
+  readonly notice: 'saved' | 'confirmed' | 'changed' | null;
+}
+
+const PLACE_SETTINGS = new Set(['facility', 'non_facility']);
+
+/** A stored place-of-service map as its places, in code order (anything else in it is left out). */
+function placesOf(value: unknown, source: PlaceInEffect['source']): PlaceInEffect[] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return [];
+  }
+  return Object.entries(value as Record<string, unknown>)
+    .filter((entry): entry is [string, PlaceInEffect['setting']] => /^\d{2}$/.test(entry[0]) && typeof entry[1] === 'string' && PLACE_SETTINGS.has(entry[1]))
+    .map(([code, setting]) => ({ code, setting, source }));
+}
+
+/**
+ * The places of service in effect: the practice's own settings, then the approved split's for every place the
+ * practice has not set, as the price job merges them (docs/adr/0064). The split's settings are read through
+ * pricing_run_split() from the practice's newest run that pinned the split in force; the application role reads the
+ * split no other way.
+ */
+async function placesInEffect(client: Parameters<typeof practiceOrganization>[0], practiceId: string): Promise<{ readonly places: PlaceInEffect[]; readonly split: PricingSettingsPageData['split'] }> {
+  const own = placesOf(
+    ((await client.query<{ settings: unknown }>('SELECT settings FROM practice WHERE id = $1', [practiceId])).rows[0]?.settings as Record<string, unknown> | undefined)?.place_of_service_settings,
+    'practice',
+  );
+  const inForce = (await client.query<{ id: string | null }>('SELECT place_of_service_split_in_force() AS id')).rows[0]?.id ?? null;
+  const pinned =
+    inForce === null
+      ? undefined
+      : (
+          await client.query<{ settings: unknown }>(
+            `SELECT s.settings
+               FROM (SELECT r.id FROM pricing_run r WHERE r.practice_id = $1 AND r.place_of_service_split_id = $2 ORDER BY r.created_at DESC, r.id DESC LIMIT 1) newest
+               CROSS JOIN LATERAL pricing_run_split(newest.id) s`,
+            [practiceId, inForce],
+          )
+        ).rows[0];
+  const set = new Set(own.map((place) => place.code));
+  const fromSplit = pinned === undefined ? [] : placesOf(pinned.settings, 'split').filter((place) => !set.has(place.code));
+  return {
+    places: [...own, ...fromSplit].sort((left, right) => (left.code < right.code ? -1 : left.code > right.code ? 1 : 0)),
+    split: inForce === null ? 'none' : pinned === undefined ? 'not_read' : 'shown',
+  };
+}
+
+/**
+ * Pricing settings (audit #33; #16's minimal record; the founder's answers of 2026-10-21 to PR 6b's Q2 (a) and Q5 (a);
+ * docs/adr/0064): the practice's pricing location (its billing ZIP and, where Medicare's locality list needs it, its
+ * ZIP+4), its status in the rule release in force in plain words, the places of service in effect, the months that
+ * wait on the location, and the complete months priced before it last changed, each linked to its run to price it
+ * again. Everyone who opens the practice sees it; the practice administrator, the billing manager and the firm
+ * principal set and confirm the location.
+ */
+export const pricingSettingsPage = practiceRoute({
+  id: 'practice.settings.pricing',
+  kind: 'page',
+  path: '/p/[practiceId]/settings/pricing',
+  phi: true,
+  permission: 'practice.open',
+  params: z.object({ practiceId: opaqueId, notice: optionalText(z.enum(['saved', 'confirmed', 'changed'])).catch(undefined) }),
+  handle: async ({ scope, practiceId, access, params, request }): Promise<PricingSettingsPageData> => {
+    const { location, reading } = await practiceLocationReading(scope.client, practiceId);
+    const { places, split } = await placesInEffect(scope.client, practiceId);
+    const inEffect = location === null ? [] : await runsInEffect(scope, practiceId, request.requestId);
+    const elsewhere = location === null ? new Set<string>() : await runsPricedElsewhere(scope.client, practiceId, inEffect, location);
+    const pricedBefore = inEffect
+      .filter((run) => elsewhere.has(run.id))
+      .map((run): PricedBeforeLocation => ({ runId: run.id, periodFrom: run.periodFrom, periodTo: run.periodTo, releaseNo: run.releaseNo }));
+    return {
+      practiceId,
+      location,
+      locationText: location === null ? null : zipCodeText(location.zip, location.zipPlusFour),
+      reading,
+      confirmed: await locationConfirmed(scope.client, practiceId),
+      places,
+      split,
+      waiting: await monthsWaitingOnLocation(scope.client, practiceId),
+      pricedBefore,
+      canEdit: rolesPermit(access.roles, 'pricing_settings.set'),
+      notice: params.notice ?? null,
+    };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
+});
+
+/** The billing ZIP as the form sends it: five digits or ZIP+4, with or without its hyphen (parseZipCode). */
+export const billingZipInput = z.object({
+  zip: z
+    .string()
+    .trim()
+    .transform((text, context) => {
+      const parsed = parseZipCode(text);
+      if (parsed === null) {
+        context.addIssue({ code: 'custom', message: ZIP_CODE_FORMAT });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
+});
+
+/**
+ * The confirmation's refusal when the location is no longer the one its page showed, on the shown ZIP's field in the
+ * notice's words: the Pricing settings form reads the page again with the notice instead (isLocationChanged).
+ */
+export const LOCATION_CHANGED_ISSUE = { field: 'shownZip', message: LOCATION_CHANGED } as const;
+
+/** Whether a refusal is LOCATION_CHANGED_ISSUE: nothing was confirmed because the location changed since the page loaded. */
+export function isLocationChanged(issues: readonly Issue[] | undefined): boolean {
+  return (issues ?? []).some((issue) => issue.field === LOCATION_CHANGED_ISSUE.field && issue.message === LOCATION_CHANGED_ISSUE.message);
+}
+
+/**
+ * The location functions' refusals a form names: a malformed ZIP or ZIP+4 (the handler's check, bypassed) on the ZIP's
+ * field, and a confirmation of a location that changed since its page loaded (practice_site_changed) as
+ * LOCATION_CHANGED_ISSUE.
+ */
+export function locationRefusal(error: unknown): InputError | undefined {
+  if (isPgError(error, ['23514']) && typeof error === 'object' && error !== null && 'constraint' in error) {
+    if (error.constraint === 'practice_site_zip' || error.constraint === 'practice_site_zip_plus_four') {
+      return new InputError([{ field: 'zip', message: ZIP_CODE_FORMAT }]);
+    }
+    if (error.constraint === 'practice_site_changed') {
+      return new InputError([LOCATION_CHANGED_ISSUE]);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Sets the practice's pricing location (audit #33): the role check here (pricing_settings.set) and again in Postgres
+ * (practice_set_location(): a person holding it in a practice of the transaction's scope, and the ZIP's and ZIP+4's
+ * shapes), in the practice's scope, audited. A ZIP that needs its ZIP+4, or one the release does not map, is
+ * accepted and its status shown, never refused. The monitoring chain is queued by this request's ID, so the months
+ * waiting on the location are planned again with no hand re-run, whatever daily plan is already queued.
+ */
+export const setPricingLocationAction = practiceRoute({
+  id: 'practice.settings.pricing_location',
+  kind: 'action',
+  path: '/p/[practiceId]/settings/pricing',
+  phi: true,
+  permission: 'pricing_settings.set',
+  params: practiceParams,
+  input: billingZipInput,
+  audit: { action: 'pricing_location_set', objectType: 'practice' },
+  handle: async ({ scope, practiceId, input, request, services, afterCommit }): Promise<MutationResult> => {
+    try {
+      await scope.client.query('SELECT practice_set_location($1, $2, $3) AS status', [practiceId, input.zip.zip5, input.zip.plusFour]);
+    } catch (error) {
+      throw locationRefusal(error) ?? error;
+    }
+    // Queued once the save has committed, so the plan it starts reads the saved location (a job sent inside the
+    // transaction could run first, plan with the old one and spend its request's key).
+    afterCommit(() => services.queue.enqueue('monitor', { practice_id: practiceId, request_id: request.requestId }));
+    return { objectId: practiceId, redirect: `${pricingSettingsPath(practiceId)}?notice=saved` };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ zip: '00011' }) },
+});
+
+/**
+ * Confirms the location the page showed (Getting started's "Confirm your billing ZIP"): a location the platform
+ * administrator entered, or changed, waits for a person of the practice to confirm it. The form carries the ZIP and
+ * ZIP+4 its page showed, and only that location is confirmed: one changed since the page loaded (by the console, or by
+ * a change that commits while the confirmation waits on it) is refused here and again in Postgres, which compares it
+ * with the location locked (practice_site_changed), and the page is read again with LOCATION_CHANGED (verification of
+ * PR 6b-2, finding 1). The role check here and in Postgres: practice_confirm_location() refuses anyone but a person
+ * outside the platform's staff who holds pricing_settings.set in the active practice (42501), and a location that
+ * still asks the customer for something (practice_site_settled), and records the confirmation on the location, which
+ * everyone who opens the practice reads (review of PR 6b-2, findings 1, 8 and 9). Audited as pricing_location_confirmed;
+ * a refusal confirms and audits nothing.
+ */
+export const confirmPricingLocationAction = practiceRoute({
+  id: 'practice.settings.pricing_confirm',
+  kind: 'action',
+  path: '/p/[practiceId]/settings/pricing',
+  phi: true,
+  permission: 'pricing_settings.set',
+  params: practiceParams,
+  input: z.object({
+    confirm: z.literal('on', { message: 'confirm the billing ZIP above' }),
+    // The location the page showed: its ZIP, and its ZIP+4 (blank for none).
+    shownZip: z.string().regex(/^[0-9]{5}$/, 'five digits'),
+    shownZipPlusFour: optionalText(z.string().regex(/^[0-9]{4}$/, 'four digits')).transform((value) => value ?? null),
+  }),
+  audit: { action: 'pricing_location_confirmed', objectType: 'practice' },
+  handle: async ({ scope, practiceId, input }): Promise<MutationResult> => {
+    const { location, reading } = await practiceLocationReading(scope.client, practiceId);
+    if (location === null) {
+      throw new InputError([{ field: 'zip', message: 'add the billing ZIP first' }]);
+    }
+    if (location.zip !== input.shownZip || location.zipPlusFour !== input.shownZipPlusFour) {
+      throw new InputError([LOCATION_CHANGED_ISSUE]);
+    }
+    // A location that still asks the customer for something (its ZIP+4, a ZIP or ZIP+4 Medicare's list lacks) is not
+    // confirmed as it stands: the status says what to do first.
+    if (!locationSettled(reading)) {
+      throw new InputError([{ field: 'zip', message: reading.text }]);
+    }
+    try {
+      await scope.client.query('SELECT practice_confirm_location($1, $2, $3)', [practiceId, input.shownZip, input.shownZipPlusFour]);
+    } catch (error) {
+      // practice_site_changed: a change that committed while the confirmation waited on the location's lock.
+      throw locationRefusal(error) ?? error;
+    }
+    return { objectId: practiceId, redirect: `${pricingSettingsPath(practiceId)}?notice=confirmed` };
+  },
+  // The synthetic world's practice is created at 00011, with no ZIP+4.
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ confirm: 'on', shownZip: '00011', shownZipPlusFour: '' }) },
+});
+
 export interface AccessLogEntry {
   readonly id: string;
   readonly at: Date;
@@ -798,6 +1078,9 @@ export const SETTINGS_ROUTES = [
   setProofLevelAction,
   correspondenceSettingsPage,
   setCorrespondenceContactAction,
+  pricingSettingsPage,
+  setPricingLocationAction,
+  confirmPricingLocationAction,
   accessLogPage,
   dataSettingsPage,
   usersSettingsPage,

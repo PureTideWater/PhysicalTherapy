@@ -7,7 +7,8 @@ import { Field, SelectField } from '../../../../components/field';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { practiceSettingsPage } from '../../../../lib/routes/console';
-import { setPracticeSettingsAction } from '../../actions';
+import { zipCodeText } from '../../../../lib/zip';
+import { setPracticeLocationAction, setPracticeSettingsAction } from '../../actions';
 import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Practice settings' };
@@ -22,19 +23,22 @@ const ROUNDING = [
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 /**
- * A practice's pricing and triage settings in the internal console (PRD 5, J8: materiality thresholds
- * are practice settings with defaults; PRD 11, Inputs; PRD 12, Deadlines and pursuit cost; ADR 0040).
- * The billing ZIP gives the locality, the place-of-service split decides the facility or non-facility
- * practice expense, the materiality thresholds decide what is actionable and what becomes a case, and
- * the staff rate and minutes give the pursuit-cost estimate. A blank field keeps the default. None of
- * it is a patient's data; no practice record is read here.
+ * A practice's pricing location and its pricing and triage settings in the internal console (PRD 5, J8: materiality
+ * thresholds are practice settings with defaults; PRD 11, Inputs; PRD 12, Deadlines and pursuit cost; ADR 0040;
+ * audit #33 and docs/adr/0064). The location (the billing ZIP and, where Medicare's locality list needs it, its ZIP+4)
+ * gives the locality and has its own form; the place-of-service split decides the facility or non-facility practice
+ * expense, the materiality thresholds decide what is actionable and what becomes a case, and the staff rate and
+ * minutes give the pursuit-cost estimate. A blank field keeps the default. None of it is a patient's data; no
+ * practice record is read here. The location is shown as stored, its ZIP+4 too, with its status now, and the form
+ * starts from it, so a save never drops a ZIP+4 it did not show (review of PR 6b-2, finding 14).
  */
 export default async function PracticeSettingsPage(props: Props) {
   const page = await loadPage(practiceSettingsPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="organizations" roles={page.roles} message={page.message} nextStep="The internal console is for platform administrators." />;
   }
-  const { practice, form, saved } = page.data;
+  const { practice, form, saved, location, locationSaved } = page.data;
+  const stored = location.zip === null ? null : zipCodeText(location.zip, location.zipPlusFour);
   return (
     <AppShell shell={page.shell} section="organizations">
       <div className="flex flex-col gap-1">
@@ -50,6 +54,37 @@ export default async function PracticeSettingsPage(props: Props) {
           <AlertDescription>The next pricing run and triage of this practice read these settings.</AlertDescription>
         </Alert>
       ) : null}
+      <Card role="region" aria-label="Pricing location">
+        <CardHeader>
+          <CardTitle>Pricing location</CardTitle>
+          <CardDescription>The billing ZIP gives the Medicare locality every line is priced at; a ZIP that spans more than one locality needs its ZIP+4. Saving queues the practice’s monitoring, so months waiting on the location are priced once it is ready.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 text-sm">
+          {locationSaved ? (
+            <Alert role="status" data-notice="location">
+              <AlertTitle>Location saved</AlertTitle>
+            </Alert>
+          ) : null}
+          <p>
+            Billing ZIP: <span className="font-mono tabular-nums" data-location-zip>{stored ?? 'none'}</span>
+          </p>
+          <p data-location-status={location.status}>{location.text}</p>
+          <ActionForm action={setPracticeLocationAction} submit="Save the location" className="grid max-w-xl gap-3">
+            <FormKeys />
+            <input type="hidden" name="practiceId" value={practice.id} />
+            <Field
+              label="Billing ZIP (ZIP+4 if Medicare needs one)"
+              name="zip"
+              required
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={10}
+              defaultValue={stored ?? ''}
+              hint="Five digits, or ZIP+4 such as 27601-1234. Saving replaces the ZIP and the ZIP+4 together."
+            />
+          </ActionForm>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Settings</CardTitle>
@@ -59,7 +94,6 @@ export default async function PracticeSettingsPage(props: Props) {
           <ActionForm action={setPracticeSettingsAction} submit="Save the settings" className="grid max-w-xl gap-3">
             <FormKeys />
             <input type="hidden" name="practiceId" value={practice.id} />
-            <Field label="Billing ZIP" name="zip" inputMode="numeric" pattern="[0-9]{5}" defaultValue={form.zip} hint="The billing address ZIP, which gives the fee schedule's locality." />
             <Field label="Places of service priced as facility" name="facilityPlaces" defaultValue={form.facilityPlaces} hint="Two-digit codes, separated by commas (for example 19, 22)." />
             <Field label="Places of service priced as non-facility" name="nonFacilityPlaces" defaultValue={form.nonFacilityPlaces} hint="Two-digit codes, separated by commas (for example 11)." />
             <SelectField label="Default rounding when a contract is silent" name="defaultRounding" options={ROUNDING} defaultValue={form.defaultRounding} />

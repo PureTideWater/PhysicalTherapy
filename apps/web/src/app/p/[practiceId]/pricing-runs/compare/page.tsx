@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
-import { DiffSummaryText, DiffTable } from '../../../../../components/pricing/diff';
+import { DiffSummaryText, DiffTable, SplitChangeText } from '../../../../../components/pricing/diff';
 import { RunStateBadges } from '../../../../../components/pricing/display';
 import { Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
@@ -82,6 +82,7 @@ export default async function ComparePricingRunsPage(props: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          <SplitChangeText before={diff.before} after={diff.after} />
           <nav aria-label="Diff filter" className="flex flex-wrap gap-2 text-sm">
             {Object.entries(FILTER_NAMES).map(([name, label]) => (
               <Link

@@ -1,12 +1,12 @@
-import { type AgreementRecords, PricingRefusedError, agreementResolver, assertPricingAllowed, loadAgreementRecords } from '@tp/contracts';
+import { type AgreementRecords, LOCATION_NOT_READY_STATUSES, PricingRefusedError, agreementResolver, assertPricingAllowed, loadAgreementRecords } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
-import { ENGINE_VERSION, type AgreementInput, type IndexedRelease, type LineFacts, type PracticeSettings, type PricingInput, price } from '@tp/pricing';
+import { ENGINE_VERSION, type AgreementInput, type IndexedRelease, type LineFacts, type LinePricing, type PracticeSettings, type PricingInput, price } from '@tp/pricing';
 
 import { type RunCoverage, computeCoverage, operatorAlerts } from './coverage';
 import { FIRST_CLAIM, type RunScope, type StoredClaim, claimPage, runPlans } from './lines';
 import { loadRuleRelease } from './release';
-import { practiceSettings } from './settings';
+import { runSettings } from './settings';
 import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store';
 
 /**
@@ -25,9 +25,22 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  *   whatever was loaded since the run was created (MAP-01). Neither retries: retrying changes nothing.
  * - One run of a practice executes at a time (a transaction-scoped advisory lock per practice), and
  *   a run already complete or failed is left as it is, so a replayed job has no effect (JOB-01).
+ * - A run whose practice's location a line cannot be priced at (audit #33 and #7; docs/adr/0064): the
+ *   location's status over the run's period is judged in the pricing transaction, from the very ZIP and ZIP+4
+ *   the run's settings read there (a location saved between the job's transactions is the one priced, and the
+ *   one judged). When it is one a line
+ *   cannot be priced at (a ZIP Medicare's list lacks, one that needs its ZIP+4 and has none, or a
+ *   ZIP+4 the list does not hold; or no location at all, for a run created before locations existed)
+ *   and the engine stops a line on the location, the pricing transaction is rolled back whole and the
+ *   run fails as location_not_ready with no line kept: the customer's step, which the screens name,
+ *   never the operator's alert. The month waits for the location (../monitor/plan.ts). A month whose
+ *   lines never read the locality (a fixed schedule, per visit) prices as usual; with a ready location
+ *   (or a content gap, locality_not_loaded) a stopped line stays ENGINE_ERROR for the operator. So does a
+ *   line stopped as no_locality_plus_four at any status: the release has no ZIP+4 file of the ZIP in force
+ *   on its date, a gap in PaidWhole's content that the customer cannot fix, so it never fails the run.
  */
 
-export type FailureCode = 'engine_version_mismatch' | 'unmapped_plan' | 'job_failed';
+export type FailureCode = 'engine_version_mismatch' | 'unmapped_plan' | 'job_failed' | 'location_not_ready';
 
 export type ExecuteOutcome =
   | { readonly outcome: 'complete'; readonly coverage: RunCoverage }
@@ -55,6 +68,50 @@ export interface ExecuteOptions {
 export const ENGINE_ERRORS_MESSAGE = 'pricing run recorded engine errors for the operator';
 
 const CLAIMS_PER_BATCH = 500;
+
+/**
+ * The engine's details that stop a line on the practice's location, whatever its status: no ZIP+4 for a ZIP that needs
+ * one, and a ZIP+4 no range of the ZIP+4 file in force holds. Never no_locality_plus_four (no ZIP+4 file of the ZIP in
+ * force on the line's date): that is a gap in the content, the operator's to load, whatever the ZIP+4.
+ */
+const LOCATION_DETAILS: ReadonlySet<string> = new Set(['locality_needs_zip_plus_four', 'zip_plus_four_not_in_locality_map']);
+
+/**
+ * The engine details that stop a line on the location at a status (null: none, the location prices or the gap is
+ * content): the ZIP+4's two always; no_locality when the ZIP is on no Medicare list (zip_unknown); and
+ * invalid_settings when the practice has no location at all (an empty ZIP). A content gap (no_locality_plus_four, or
+ * no_locality at a known ZIP) is never one: its line stays ENGINE_ERROR and pages the operator.
+ */
+export function locationStops(status: string): ReadonlySet<string> | null {
+  if ((LOCATION_NOT_READY_STATUSES as readonly string[]).includes(status)) {
+    return status === 'zip_unknown' ? new Set([...LOCATION_DETAILS, 'no_locality']) : LOCATION_DETAILS;
+  }
+  return status === 'zip_missing' ? new Set([...LOCATION_DETAILS, 'invalid_settings']) : null;
+}
+
+/**
+ * The status of the location a run prices with, over its period under its release: zip_missing for no location (an
+ * empty ZIP), otherwise locality_status() of exactly the ZIP and ZIP+4 in `settings`. Judged on the settings the
+ * engine reads, never on another read of practice_site, so the stops and the prices come from one location.
+ */
+async function pricedLocationStatus(client: ScopeClient, run: { readonly release_no: number; readonly period_from: string; readonly period_to: string }, settings: PracticeSettings): Promise<string> {
+  if (settings.zip === '') {
+    return 'zip_missing';
+  }
+  const { rows } = await client.query<{ status: string }>('SELECT status FROM locality_status($1, $2, $3, $4::date, $5::date)', [
+    run.release_no,
+    settings.zip,
+    settings.zipPlusFour ?? null,
+    run.period_from,
+    run.period_to,
+  ]);
+  return rows[0]?.status ?? 'zip_unknown';
+}
+
+/** A line of the run stopped on the practice's location: the run fails as location_not_ready, its lines rolled back. */
+class LocationNotReady extends Error {
+  override readonly name = 'LocationNotReady';
+}
 
 interface RunRow {
   readonly id: string;
@@ -136,8 +193,18 @@ export function lineResolver(records: AgreementRecords): (line: StoredClaim['lin
   };
 }
 
-/** Prices one batch of claims into rows; the results pair with the stored lines by line number. */
-export function priceClaims(claims: readonly StoredClaim[], resolve: (line: StoredClaim['lines'][number]) => AgreementInput, release: IndexedRelease, settings: PracticeSettings, asOf: string): PricedLineInsert[] {
+/**
+ * Prices one batch of claims into rows; the results pair with the stored lines by line number. `seen`, when given,
+ * is shown each of the engine's results before its row is made.
+ */
+export function priceClaims(
+  claims: readonly StoredClaim[],
+  resolve: (line: StoredClaim['lines'][number]) => AgreementInput,
+  release: IndexedRelease,
+  settings: PracticeSettings,
+  asOf: string,
+  seen?: (result: LinePricing) => void,
+): PricedLineInsert[] {
   const rows: PricedLineInsert[] = [];
   for (const claim of claims) {
     const results = price(claimInput(claim, resolve, release, settings, asOf));
@@ -147,6 +214,7 @@ export function priceClaims(claims: readonly StoredClaim[], resolve: (line: Stor
       if (line === undefined) {
         throw new Error('the engine returned a line the claim does not hold');
       }
+      seen?.(result);
       rows.push(pricedLineRow(line, result));
     }
   }
@@ -180,7 +248,7 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     return started;
   }
 
-  const outcome = await context.transaction(async (scope): Promise<ExecuteOutcome> => {
+  const priceRun = (): Promise<ExecuteOutcome> => context.transaction(async (scope): Promise<ExecuteOutcome> => {
     // One run of the practice at a time, whatever the queue does.
     await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('pricing_run:' || $1::text, 0))", [practiceId]);
     const run = await lockRun(scope.client, practiceId, pricingRunId);
@@ -201,10 +269,20 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       return { outcome: 'failed', failureCode: 'unmapped_plan' };
     }
     const release = await loadRuleRelease(scope.client, run.release_no);
-    const settings = await practiceSettings(scope.client, practiceId);
+    const settings = await runSettings(scope.client, practiceId, pricingRunId);
+    const stops = locationStops(await pricedLocationStatus(scope.client, run, settings));
     const resolve = lineResolver(records);
     const asOf = runAsOf(run.created_at);
     const batch = options.claimsPerBatch ?? CLAIMS_PER_BATCH;
+    // A line stopped on a location it cannot be priced at rolls the whole transaction back (LocationNotReady).
+    const onLocation =
+      stops === null
+        ? undefined
+        : (result: LinePricing) => {
+            if (result.outcome === 'unpriced' && result.reason === 'ENGINE_ERROR' && result.detail !== null && stops.has(result.detail)) {
+              throw new LocationNotReady('a line of the run stopped on the practice’s location');
+            }
+          };
     let after = FIRST_CLAIM;
     for (;;) {
       const claims = await claimPage(scope, lines, after, batch, context.jobId);
@@ -212,13 +290,24 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       if (last === undefined) {
         break;
       }
-      await insertPricedLines(scope.client, practiceId, pricingRunId, priceClaims(claims, resolve, release, settings, asOf));
+      await insertPricedLines(scope.client, practiceId, pricingRunId, priceClaims(claims, resolve, release, settings, asOf, onLocation));
       after = last.claimId;
     }
     const coverage = await computeCoverage(scope.client, pricingRunId);
     await scope.client.query("UPDATE pricing_run SET status = 'complete', coverage = $2, completed_at = now() WHERE id = $1", [pricingRunId, JSON.stringify(coverage)]);
     return { outcome: 'complete', coverage };
   });
+  let outcome: ExecuteOutcome;
+  try {
+    outcome = await priceRun();
+  } catch (error) {
+    if (!(error instanceof LocationNotReady)) {
+      throw error;
+    }
+    // Nothing of the pricing transaction was kept; the run fails in a transaction of its own, the month waits.
+    await context.transaction((scope) => failRun(scope.client, practiceId, pricingRunId, 'location_not_ready'));
+    return { outcome: 'failed', failureCode: 'location_not_ready' };
+  }
 
   if (outcome.outcome === 'complete' && operatorAlerts(outcome.coverage) > 0) {
     // Fixed text for the log lint and the operator's alarm; the lines and their details are on the run.

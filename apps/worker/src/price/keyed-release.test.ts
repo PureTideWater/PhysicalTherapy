@@ -12,10 +12,12 @@ import { type StoredRecordRow, indexStoredRelease } from './release';
 /**
  * The release read by key (audit #53 part 2; docs/adr/0062, "The release read"): shared types from the shared index,
  * keyed types only by the keys the run fetched, and a lookup outside them never a silent "not found": it sets a sticky
- * violation (type and field names only) and throws. SYNTHETIC release 900001 only.
+ * violation (type and field names only) and throws. SYNTHETIC release 900006 only (release 900001 with a second
+ * locality and the ZIP+4 file of the ZIP 00012, so the sixth keyed type, locality_map_plus_four, has a record; PR 6b,
+ * docs/adr/0064).
  */
 
-const RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900001';
+const RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900006';
 const RELEASE = readRuleRelease(RELEASE_DIR);
 const HEADER = { releaseNo: RELEASE.releaseNo, manifestSha256: RELEASE.manifestSha256 };
 
@@ -43,11 +45,12 @@ const PRESENT: Readonly<Record<KeyedRecordType, Readonly<Record<string, string>>
   mppr_rate: { hcpcs: '97110', modifier: '' },
   ncci_ptp: { column1: '97140', column2: '97530' },
   locality_map: { zip: '00011' },
+  locality_map_plus_four: { zip: '00012' },
 };
 
 describe('keyedRelease', () => {
-  it('serves the five keyed types by the keys fetched, and every other type from the shared index', () => {
-    expect([...KEYED_RECORD_TYPES]).toEqual(['pfs_rvu', 'ncci_mue', 'mppr_rate', 'ncci_ptp', 'locality_map']);
+  it('serves the six keyed types by the keys fetched, and every other type from the shared index', () => {
+    expect([...KEYED_RECORD_TYPES]).toEqual(['pfs_rvu', 'ncci_mue', 'mppr_rate', 'ncci_ptp', 'locality_map', 'locality_map_plus_four']);
     const view = keyedRelease({ shared: SHARED, records: RECORDS, requested: requestedKeys(Object.fromEntries(KEYED_RECORD_TYPES.map((type) => [type, [PRESENT[type]]]))) });
     for (const type of KEYED_RECORD_TYPES) {
       const found = view.inForce(type, PRESENT[type], '2026-02-01');
@@ -72,6 +75,8 @@ describe('keyedRelease', () => {
       mppr_rate: { hcpcs: '97161', modifier: '' },
       ncci_ptp: { column1: '97110', column2: '97110' },
       locality_map: { zip: '99999' },
+      // A ZIP whose locality needs no ZIP+4 has no record in the ZIP+4 file.
+      locality_map_plus_four: { zip: '00011' },
     };
     const view = keyedRelease({ shared: SHARED, records: RECORDS, requested: requestedKeys(Object.fromEntries(KEYED_RECORD_TYPES.map((type) => [type, [absent[type]]]))) });
     for (const type of KEYED_RECORD_TYPES) {
@@ -114,7 +119,7 @@ describe('keyedRelease', () => {
     expect(() => keyedRelease({ shared: SHARED, records: other, requested: requestedKeys({}) })).toThrow(RangeError);
   });
 
-  it('asks a screening run for each code’s relative values, MPPR rate, edit and same-code pair, the general MPPR rate and the ZIP', () => {
+  it('asks a screening run for each code’s relative values, MPPR rate, edit and same-code pair, the general MPPR rate and the ZIP, in both ZIP files', () => {
     const requested = screeningRequestedKeys(['97110', '97140'], '00011');
     expect(Object.fromEntries(Object.entries(requested).map(([type, keys]) => [type, [...keys].sort()]))).toEqual({
       pfs_rvu: [keyIdentity({ hcpcs: '97110', modifier: '' }), keyIdentity({ hcpcs: '97140', modifier: '' })].sort(),
@@ -122,6 +127,8 @@ describe('keyedRelease', () => {
       mppr_rate: [keyIdentity({ hcpcs: '97110', modifier: '' }), keyIdentity({ hcpcs: '97140', modifier: '' }), keyIdentity({ component: 'practice_expense' })].sort(),
       ncci_ptp: [keyIdentity({ column1: '97110', column2: '97110' }), keyIdentity({ column1: '97140', column2: '97140' })].sort(),
       locality_map: [keyIdentity({ zip: '00011' })],
+      // Keyed by the five-digit ZIP, so the fetch holds whatever the lookup reads, with or without a ZIP+4.
+      locality_map_plus_four: [keyIdentity({ zip: '00011' })],
     });
     // Field order does not matter: keys compare canonically, as the release index compares them.
     expect(requested.pfs_rvu.has(keyIdentity({ modifier: '', hcpcs: '97110' }))).toBe(true);
@@ -158,5 +165,36 @@ describe('keyedRelease', () => {
     const quiet = price({ claim, release: missing, settings, asOf: '2026-10-18' });
     expect(quiet.map((result) => (result.outcome === 'unpriced' ? result.reason : result.outcome))).toEqual(['ENGINE_ERROR', 'ENGINE_ERROR']);
     expect(missing.violation).toEqual({ recordType: 'mppr_rate', keyFields: ['hcpcs', 'modifier'] });
+  });
+
+  it('prices a ZIP split across localities through its ZIP+4 file’s record, fetched by the ZIP, and flags a run that did not fetch it (SCR-15)', () => {
+    const line = {
+      lineNo: 1,
+      serviceLineId: null,
+      procedureCode: '97110',
+      modifiers: ['GP'],
+      units: '1',
+      serviceDate: '2026-02-02',
+      placeOfService: '11',
+      chargeCents: cents(0n),
+      observedAllowedCents: cents(0n),
+      observedAllowedBasis: 'paid_plus_pr' as const,
+      patientShareAdjustments: [],
+      agreement: { outcome: 'MA_NONCONTRACTED' as const, mapping: SCREENING_MAPPING, terms: MA_NONCONTRACTED_TERMS },
+    };
+    const claim = { claimStatusCode: '1', reversed: false, corrected: false, remittanceDate: null, payerPlanKey: null, lines: [line] };
+    const settings = { zip: '00012', zipPlusFour: '5000', defaultRounding: null, placeOfServiceSettings: SYNTHETIC_PLACES };
+    const requested = screeningRequestedKeys(['97110'], '00012');
+    const full = keyedRelease({ shared: SHARED, records: RECORDS, requested });
+    const [priced] = price({ claim, release: full, settings, asOf: '2026-10-18' });
+    expect(full.violation).toBeNull();
+    expect(priced?.outcome).toBe('priced');
+    // The ZIP+4's range names locality 02, through the record the run fetched by its ZIP.
+    expect(priced?.trace.steps.fee_schedule?.locality?.plus_four).toMatchObject({ zip_plus_four: '5000', carrier: '99999', locality: '02' });
+    expect(priced?.trace.steps.fee_schedule?.gpci?.record.key).toEqual({ carrier: '99999', locality: '02' });
+    const without = keyedRelease({ shared: SHARED, records: RECORDS, requested: { ...requested, locality_map_plus_four: new Set<string>() } });
+    const [quiet] = price({ claim, release: without, settings, asOf: '2026-10-18' });
+    expect(quiet?.outcome).toBe('unpriced');
+    expect(without.violation).toEqual({ recordType: 'locality_map_plus_four', keyFields: ['zip'] });
   });
 });

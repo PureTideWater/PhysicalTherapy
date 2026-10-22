@@ -56,7 +56,9 @@ async function execute(app: DatabasePool, practiceId: string, pricingRunId: stri
 
 export async function seedPricingRun(options: PricingWorldOptions): Promise<SeededRuns> {
   const { owner, app, practiceId, managerId } = options;
-  await owner.query("UPDATE practice SET zip = '00011', settings = settings || $2::jsonb WHERE id = $1", [
+  // The pricing location (practice_site, PR 6b) the lines price at: ZIP 00011, no ZIP+4.
+  await owner.query("UPDATE practice_site SET zip = '00011', zip_plus_four = NULL WHERE practice_id = $1", [practiceId]);
+  await owner.query('UPDATE practice SET settings = settings || $2::jsonb WHERE id = $1', [
     practiceId,
     JSON.stringify({ place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' }),
   ]);

@@ -40,14 +40,26 @@ export const MONITORED_PRACTICE = 'SYNTHETIC OTHER PRACTICE MONITORING';
 export const CHAINED_PRACTICES: ReadonlySet<string> = new Set([MONITORED_PRACTICE, LEDGER_PRACTICE]);
 
 /**
+ * The pricing-location journey's practices (e2e/onboarding.spec.ts; audit #33, PR 6b), created in the console under
+ * this prefix and a run's own suffix: the chain plans their months, so a month that waits on the billing ZIP, and the
+ * daily plan that does not create its run again, are the chain's own.
+ */
+export const LOCATION_PRACTICE_PREFIX = 'SYNTHETIC LOCATION PRACTICE ';
+
+/** Whether the monitoring chain's planning step is real for a practice of this name. */
+export function chained(name: string): boolean {
+  return CHAINED_PRACTICES.has(name) || name.startsWith(LOCATION_PRACTICE_PREFIX);
+}
+
+/**
  * A handler that does its work for the named practices only, and nothing (the placeholder) for every
  * other: whichever spec's worker takes the job, those journeys' runs, and no other spec's runs, come from
  * the chain.
  */
-function onlyFor<T extends 'monitor' | 'digest'>(practices: ReadonlySet<string>, real: JobHandlers[T], fallback: JobHandlers[T]): JobHandlers[T] {
+function onlyFor<T extends 'monitor' | 'digest'>(practices: (name: string) => boolean, real: JobHandlers[T], fallback: JobHandlers[T]): JobHandlers[T] {
   return (async (payload: Parameters<JobHandlers[T]>[0], context: JobContext) => {
     const named = await context.transaction(async (scope) => (await scope.client.query<{ name: string }>('SELECT name FROM practice WHERE id = $1', [payload.practice_id])).rows[0]?.name);
-    await (named !== undefined && practices.has(named) ? real : fallback)(payload as never, context);
+    await (named !== undefined && practices(named) ? real : fallback)(payload as never, context);
   }) as JobHandlers[T];
 }
 
@@ -111,7 +123,7 @@ export async function holdExports(practiceId: string): Promise<{ release: () => 
 /**
  * The worker, as main.ts wires it in development, for the length of a test. The monitoring chain's
  * planning step (monitor; docs/adr/0039) is real for the monitoring and recovery journeys' practices
- * (CHAINED_PRACTICES), and the digest for the monitoring journey's alone (emailed to the local outbox,
+ * (CHAINED_PRACTICES) and the pricing-location journey's (LOCATION_PRACTICE_PREFIX), and the digest for the monitoring journey's alone (emailed to the local outbox,
  * MAIL_OUTBOX_DIR's directory); both are placeholders for every other practice: each other spec's
  * pricing runs are the ones it creates, and the database tests run the chain on synthetic files. A spec
  * starts the monitor step a parse queued without its batch wait (e2e/journeys.ts, chainFrom). The
@@ -132,8 +144,8 @@ export async function startLocalWorker(): Promise<{ worker: RunningWorker; close
     logger: createLogger({ sink: () => undefined }),
     handlers: {
       ...placeholderHandlers,
-      monitor: onlyFor<'monitor'>(CHAINED_PRACTICES, monitorHandler(), placeholderHandlers.monitor),
-      digest: onlyFor<'digest'>(new Set([MONITORED_PRACTICE]), digestHandler({ mail: new LocalMailSender(E2E_MAIL_OUTBOX_DIR, null), appOrigin: E2E_ORIGIN }), placeholderHandlers.digest),
+      monitor: onlyFor<'monitor'>(chained, monitorHandler(), placeholderHandlers.monitor),
+      digest: onlyFor<'digest'>((name) => name === MONITORED_PRACTICE, digestHandler({ mail: new LocalMailSender(E2E_MAIL_OUTBOX_DIR, null), appOrigin: E2E_ORIGIN }), placeholderHandlers.digest),
       intake: intakeHandler(services),
       parse_835: parseHandler(services),
       price: priceHandler(),

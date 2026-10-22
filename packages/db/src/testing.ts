@@ -8,10 +8,12 @@ import { appDevLoginUrl, billingDevLoginUrl, esignDevLoginUrl, workerDevLoginUrl
 export { type BuiltRow, RowFactory, RowFactoryError, type Row } from './row-factory';
 export {
   type OwnerClient,
+  type PracticeWithLocation,
   type TenantWorld,
   addMembership,
   asOwner,
   createOrganization,
+  createPracticeWithLocation,
   createTenantWorld,
   createUser,
   placeholderDataKeyRef,

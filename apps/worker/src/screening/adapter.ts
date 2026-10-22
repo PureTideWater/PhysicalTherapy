@@ -71,13 +71,18 @@ export const SCREENING_MAPPING: PlanMappingRecord = Object.freeze({
   supersedesId: null,
 });
 
-/** What pricing a run needs: its pinned release and the days its records change, the prospect's ZIP, the run's approved split and its date. */
+/** What pricing a run needs: its pinned release and the days its records change, the prospect's ZIP and ZIP+4, the run's approved split and its date. */
 export interface ScreeningPricingContext {
   readonly release: IndexedRelease;
   /** Every day on which a record of the release starts, or the day after one ends (releaseChangeDays()). */
   readonly changeDays: readonly IsoDate[];
-  /** The prospect's five-digit ZIP (submit_screening refuses one whose locality needs its ZIP+4, which the engine cannot take). */
+  /** The prospect's five-digit ZIP. */
   readonly zip: string;
+  /**
+   * The prospect's ZIP+4, kept only when the ZIP's locality_map record needs it (submit_screening refuses such a ZIP
+   * without one, and one its ZIP+4 list does not hold; docs/adr/0064); null otherwise. The engine reads it only then.
+   */
+  readonly zipPlusFour: string | null;
   readonly placeOfServiceSettings: Readonly<Record<string, PlaceOfServiceSetting>>;
   /** The run's creation date (UTC). */
   readonly asOf: IsoDate;
@@ -431,7 +436,7 @@ function priceClaim(context: ScreeningPricingContext, claim: ClaimFacts): LinePr
   const lines = price({
     claim,
     release: context.release,
-    settings: { zip: context.zip, defaultRounding: null, placeOfServiceSettings: context.placeOfServiceSettings },
+    settings: { zip: context.zip, zipPlusFour: context.zipPlusFour, defaultRounding: null, placeOfServiceSettings: context.placeOfServiceSettings },
     asOf: context.asOf,
   });
   const violation = context.read?.view.violation ?? null;

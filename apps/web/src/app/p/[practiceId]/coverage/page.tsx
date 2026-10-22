@@ -7,11 +7,13 @@ import { QuestionList, TotalsText } from '../../../../components/contracts/displ
 import { Figure } from '../../../../components/coverage/share';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
+import { MonthsWaitingOnLocation } from '../../../../components/pricing/location';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../components/uploads/format-flag';
 import { type UnconfirmedFormatSource, unconfirmedFormatExplanation } from '../../../../lib/contracts/format-sources';
 import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remedies';
+import { waitingHeadline } from '../../../../lib/pricing/location';
 import { shareOf } from '../../../../lib/pricing/view';
 import { loadPage } from '../../../../lib/http/next';
 import { coveragePage } from '../../../../lib/routes/coverage';
@@ -91,7 +93,9 @@ export default async function CoveragePage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, share, run, pricingRuns, reasons, waiting, waitingPlans, readiness, unconfirmedFormats, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } = page.data;
+  const { practiceId, lines, priced, share, run, pricingRuns, reasons, waiting, waitingPlans, waitingOnLocation, readiness, unconfirmedFormats, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } =
+    page.data;
+  const locationHeadline = waitingHeadline(waitingOnLocation);
   // The shares are of every line a run in effect priced; before one takes effect, of every line the practice holds.
   const inEffect = share.runs > 0;
   const of = inEffect ? share.of : { lines: lines.lines, chargeCents: lines.chargeCents };
@@ -155,6 +159,26 @@ export default async function CoveragePage(props: Props) {
         </CardContent>
       </Card>
       <UnconfirmedFormats practiceId={practiceId} sources={unconfirmedFormats} />
+      {waitingOnLocation.length === 0 ? null : (
+        <Card role="region" aria-label="Months waiting on your billing ZIP">
+          <CardHeader>
+            <CardTitle>
+              Months waiting on your billing ZIP: <Money value={locationHeadline.chargeCents} /> billed
+            </CardTitle>
+            <CardDescription>
+              <span className="font-mono tabular-nums">{locationHeadline.lines}</span> {locationHeadline.lines === 1 ? 'line' : 'lines'} in months that need the practice’s billing ZIP or its ZIP+4 before they can be priced. They are priced by
+              themselves once it is set in{' '}
+              <Link className="underline" href={`/p/${practiceId}/settings/pricing`}>
+                Pricing settings
+              </Link>
+              .
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <MonthsWaitingOnLocation months={waitingOnLocation} label="Months waiting on the billing ZIP" />
+          </CardContent>
+        </Card>
+      )}
       <Card role="region" aria-label="Dollars waiting on mappings">
         <CardHeader>
           <CardTitle>

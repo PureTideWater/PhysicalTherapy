@@ -149,7 +149,13 @@ export const REVIEWED_SCOPE_FUNCTIONS: readonly ReviewedScopeFunction[] = [
     function: 'console_set_practice_settings(uuid,text,jsonb)',
     scope: 'narrows',
     reason:
-      'PRD 5, J8 and PRD 11, Inputs: a platform administrator sets a practice\u2019s billing ZIP and its pricing and triage settings from the console (organization.manage, checked inside); the update runs in that one practice and the caller\u2019s scope is restored (ADR 0040)',
+      'PRD 5, J8 and PRD 11, Inputs: a platform administrator sets a practice\u2019s billing ZIP and its pricing and triage settings from the console (organization.manage, checked inside); the update runs in that one practice and the caller\u2019s scope is restored (ADR 0040). Since migration 20261105090000 a ZIP it is given sets the practice\u2019s location (practice_site), never practice.zip (ADR 0064)',
+  },
+  {
+    function: 'console_set_practice_location(uuid,text,text)',
+    scope: 'narrows',
+    reason:
+      'Audit #33 and #16 (PR 6b; ADR 0064): the platform administrator sets a practice\u2019s location (its billing ZIP and ZIP+4, practice_site) at its creation and from the console (organization.manage, checked inside); one practice, and the caller\u2019s scope is restored',
   },
   {
     function: 'console_release_runs()',

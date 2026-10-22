@@ -3,8 +3,10 @@
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
 import { type FormEvent, startTransition, useActionState, useEffect, useRef, useState } from 'react';
 
+import type { ContentQuarters } from '@tp/worker/screening-format';
+
 import type { ActionState } from '../../lib/http/next';
-import { FILE_MESSAGES, leftOutMessage } from '../../lib/screening/messages';
+import { FILE_MESSAGES, leftOutMessage, outsideContentMessage, screenedQuartersMessage } from '../../lib/screening/messages';
 import { type ScreeningParse, clockOffset, parseScreeningFile } from '../../lib/screening/parse';
 import { ABOUT_PRACTICE, HEARD_FROM_LABEL, REFERRING_FIRM_HINT, REFERRING_FIRM_LABEL, UPLOAD_EMAIL_HINT } from '../../lib/screening/retention';
 import { TEMPLATE_FILE_NAME, screeningTemplateCsv } from '../../lib/screening/template';
@@ -19,16 +21,21 @@ import { Field, SelectField } from '../field';
  * serverTime, moved on by this browser's clock since), so a computer whose clock is wrong refuses no quarter the server
  * takes and sends none it refuses. A row of fewer than 11 claim lines (the CMS small-cell standard) is
  * left out before sending, since it can be one patient's service line, and the form says how many rows, claim lines
- * and dollars it left out. A clean file goes to the server as its header's canonical column names, its row count, its
- * rows of totals in their canonical form and those three left-out numbers, never a hash of the file (which holds the
- * rows left out); the server checks them again and hashes the rows it accepts. No
- * ZIP+4 is asked for: the pricing takes a five-digit ZIP alone, so a ZIP that spans two Medicare localities cannot be
- * screened yet, and the form says so before the upload (decision D20 a; until PR 6b, which takes a ZIP+4 before launch by
- * the founder's ruling of 2026-10-18). The result is emailed:
+ * and dollars it left out. So is a Medicare row whose quarter is outside the content the release in force has loaded
+ * (audit #7; the founder's answer of 2026-10-21 to PR 6b's Q6 (a)): the form says how many rows, claim lines and dollars
+ * it left out and which quarters PaidWhole has loaded, before anything is sent. A clean file goes to the server as its
+ * header's canonical column names, its row count, its rows of totals in their canonical form and those six left-out
+ * numbers, never a hash of the file (which holds the rows left out); the server checks them again and hashes the rows
+ * it accepts. The ZIP code field takes five digits or ZIP+4: the ZIP+4 is needed, and kept, only for a ZIP code that
+ * spans more than one Medicare payment area (PR 6b; the founder's ruling of 2026-10-18, 11:47 UTC, and answer of 2026-10-21 to
+ * Q11 (a); docs/adr/0064). The result is emailed:
  * the page only says to check the email. Two optional fields say how the practice heard of PaidWhole (a closed list) and
  * which billing firm referred it, and the hint under the email address says what is deleted and what is kept (audit
  * #57; the founder's rulings of 2026-10-20).
  */
+
+/** What the ZIP code field takes (PR 6b): the ZIP+4 is asked for only where Medicare splits the ZIP code. */
+export const ZIP_HINT = 'Five digits, or ZIP+4 if you know it. A few ZIP codes span more than one Medicare payment area; for those we ask for the ZIP+4.';
 
 export interface ScreeningUploadFormProps {
   readonly action: (state: ActionState, form: FormData) => Promise<ActionState>;
@@ -38,6 +45,8 @@ export interface ScreeningUploadFormProps {
   readonly minClaimLines: number;
   /** The server's clock when it built the page (ISO 8601): the file's quarters are dated by it, never this computer's. */
   readonly serverTime: string;
+  /** The quarters the release in force has the Medicare content for: a Medicare row of any other quarter is left out. */
+  readonly contentQuarters: ContentQuarters;
   /** "How did you hear about us?": a blank first option, then the closed list. */
   readonly sources: readonly { readonly value: string; readonly label: string }[];
 }
@@ -58,17 +67,32 @@ function issueField(field: string): string {
   return FIELD_NAMES[field] ?? field;
 }
 
-export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, serverTime, sources }: ScreeningUploadFormProps) {
+/** The fields of this form the server may refuse, in the form's order: a refusal moves the focus to the first. */
+const REFUSABLE_FIELDS = ['practiceName', 'state', 'zip', 'contactEmail', 'heardFrom', 'referringFirm'] as const;
+
+export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, serverTime, contentQuarters, sources }: ScreeningUploadFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   const [parsed, setParsed] = useState<ScreeningParse | null>(null);
   const [reading, setReading] = useState(false);
   const [local, setLocal] = useState<readonly string[]>([]);
   const chosen = useRef<File | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   // How far the server's clock is ahead of this browser's, taken once the page is in this browser.
   const offset = useRef(0);
   useEffect(() => {
     offset.current = clockOffset(serverTime, Date.now());
   }, [serverTime]);
+  // What the server refused of each field, shown under the field it names (and in the summary below the file).
+  const refused = (field: string): string | undefined => state.issues?.find((issue) => issue.field === field)?.message;
+  // After a refusal the submit button was disabled while it was pending, which dropped the focus: it goes to the first
+  // field refused, or to the summary when the refusal names no field of the form.
+  useEffect(() => {
+    if (state.error === undefined) {
+      return;
+    }
+    const first = REFUSABLE_FIELDS.find((field) => state.issues?.some((issue) => issue.field === field));
+    (first === undefined ? errorRef.current : document.getElementById(`field-${first}`))?.focus();
+  }, [state]);
 
   const read = async (file: File | null): Promise<ScreeningParse | null> => {
     chosen.current = file;
@@ -79,7 +103,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
     }
     setReading(true);
     try {
-      const result = await parseScreeningFile(file, new Date(Date.now() + offset.current));
+      const result = await parseScreeningFile(file, new Date(Date.now() + offset.current), contentQuarters);
       // A later choice replaces this one; only the file still chosen is shown.
       if (chosen.current === file) {
         setParsed(result);
@@ -110,6 +134,9 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
       body.set('leftOutRows', String(result.leftOut.rows));
       body.set('leftOutClaimLines', String(result.leftOut.claimLines));
       body.set('leftOutAllowedCents', result.leftOut.allowedCents.toString());
+      body.set('outsideContentRows', String(result.outsideContent.rows));
+      body.set('outsideContentClaimLines', String(result.outsideContent.claimLines));
+      body.set('outsideContentAllowedCents', result.outsideContent.allowedCents.toString());
       startTransition(() => {
         formAction(body);
       });
@@ -127,6 +154,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
 
   const problems = parsed !== null && !parsed.ok ? parsed.messages : [];
   const leftOut = parsed?.ok === true ? leftOutMessage(parsed.leftOut) : null;
+  const outside = parsed?.ok === true ? outsideContentMessage(parsed.outsideContent, parsed.outsideContentBands, contentQuarters) : null;
   return (
     <form onSubmit={submit} className="flex flex-col gap-6" data-slot="screening-upload">
       <Card>
@@ -137,22 +165,23 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <Field label="Practice name" name="practiceName" required maxLength={200} autoComplete="organization" />
-          <SelectField label="State" name="state" options={[{ value: '', label: 'Choose a state' }, ...states]} required />
+          <Field label="Practice name" name="practiceName" required maxLength={200} autoComplete="organization" error={refused('practiceName')} />
+          <SelectField label="State" name="state" options={[{ value: '', label: 'Choose a state' }, ...states]} required error={refused('state')} />
           <Field
             label="ZIP code"
             name="zip"
             required
             inputMode="numeric"
-            pattern="[0-9]{5}"
-            maxLength={5}
+            pattern="[0-9]{5}(-?[0-9]{4})?"
+            maxLength={10}
             autoComplete="postal-code"
-            hint="The five-digit ZIP of the practice's location, which names the Medicare locality the rows are priced at; a ZIP code that spans two Medicare localities cannot be screened yet."
+            hint={ZIP_HINT}
+            error={refused('zip')}
           />
           {/* The hint is a legal surface counsel reviews before the screening opens: docs/product/legal-surfaces.md, data-legal-surface="screening-kept-upload". */}
-          <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint={UPLOAD_EMAIL_HINT} />
-          <SelectField label={HEARD_FROM_LABEL} name="heardFrom" options={sources} />
-          <Field label={REFERRING_FIRM_LABEL} name="referringFirm" maxLength={200} autoComplete="off" hint={REFERRING_FIRM_HINT} />
+          <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint={UPLOAD_EMAIL_HINT} error={refused('contactEmail')} />
+          <SelectField label={HEARD_FROM_LABEL} name="heardFrom" options={sources} error={refused('heardFrom')} />
+          <Field label={REFERRING_FIRM_LABEL} name="referringFirm" maxLength={200} autoComplete="off" hint={REFERRING_FIRM_HINT} error={refused('referringFirm')} />
         </CardContent>
       </Card>
       <Card>
@@ -163,6 +192,9 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
+          <p className="text-sm" data-slot="screened-quarters">
+            {screenedQuartersMessage(contentQuarters)}
+          </p>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="screening-file">File to screen</Label>
             <Input
@@ -189,18 +221,31 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
             </p>
           </div>
           {reading ? <p className="text-sm text-muted-foreground" data-state="reading">Reading the file in this browser…</p> : null}
-          {parsed?.ok === true ? (
-            <div className="flex flex-col gap-1 text-sm">
-              <p data-state="file-ready">
-                The file is ready: <span className="font-mono tabular-nums">{parsed.rowCount.toLocaleString('en-US')}</span> {parsed.rowCount === 1 ? 'row' : 'rows'} of totals, and no column of patient information.
-              </p>
-              {leftOut === null ? null : (
-                <p data-state="left-out" data-rows={parsed.leftOut.rows} data-claim-lines={parsed.leftOut.claimLines} data-allowed-cents={parsed.leftOut.allowedCents.toString()}>
-                  {leftOut}
+          {/* A live region that is always there, so what the page says of the chosen file (rows left out included) is announced. */}
+          <div role="status" data-slot="file-status">
+            {parsed?.ok === true ? (
+              <div className="flex flex-col gap-1 text-sm">
+                <p data-state="file-ready">
+                  The file is ready: <span className="font-mono tabular-nums">{parsed.rowCount.toLocaleString('en-US')}</span> {parsed.rowCount === 1 ? 'row' : 'rows'} of totals, and no column of patient information.
                 </p>
-              )}
-            </div>
-          ) : null}
+                {leftOut === null ? null : (
+                  <p data-state="left-out" data-rows={parsed.leftOut.rows} data-claim-lines={parsed.leftOut.claimLines} data-allowed-cents={parsed.leftOut.allowedCents.toString()}>
+                    {leftOut}
+                  </p>
+                )}
+                {outside === null ? null : (
+                  <p
+                    data-state="outside-content"
+                    data-rows={parsed.outsideContent.rows}
+                    data-claim-lines={parsed.outsideContent.claimLines}
+                    data-allowed-cents={parsed.outsideContent.allowedCents.toString()}
+                  >
+                    {outside}
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
           {problems.length + local.length > 0 ? (
             <Alert variant="destructive" data-state="file-refused">
               <AlertTitle>Not sent</AlertTitle>
@@ -217,7 +262,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
         </CardContent>
       </Card>
       {state.error === undefined ? null : (
-        <Alert variant="destructive" data-state="error">
+        <Alert variant="destructive" data-state="error" ref={errorRef} tabIndex={-1}>
           <AlertTitle>Not done</AlertTitle>
           <AlertDescription>
             <p>{state.error}</p>

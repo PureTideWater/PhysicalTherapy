@@ -1,0 +1,22 @@
+{
+  "case": "PRC-24",
+  "module": "PRC",
+  "title": "A place of service the practice has not set",
+  "assertion": "Priced with the approved split's setting, read as `tp_app`. The run records the split, and the practice's own setting wins",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/price/settings.test.ts",
+    "apps/worker/src/price/price.db.test.ts",
+    "packages/db/src/location.db.test.ts",
+    "apps/web/e2e/onboarding.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A setting; any Medicare line will do.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

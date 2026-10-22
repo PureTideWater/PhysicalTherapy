@@ -10,7 +10,8 @@
     "packages/pricing/src/recompute.test.ts",
     "packages/pricing/src/properties.test.ts",
     "tools/golden-worksheet/engine.golden.test.ts",
-    "tools/release/release.test.ts"
+    "tools/release/release.test.ts",
+    "packages/db/src/location.db.test.ts"
   ],
   "codeListRelease": 900001,
   "noFileReason": null,

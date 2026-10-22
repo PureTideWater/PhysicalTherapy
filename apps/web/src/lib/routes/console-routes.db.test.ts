@@ -1,8 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import path from 'node:path';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
+import { loadRelease } from '@tp/rules/loader';
+import type { JobPayload, JobType } from '@tp/worker/jobs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -13,6 +16,7 @@ import { SESSION_COOKIE, openSession, resolveSession } from '../auth/sessions';
 import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
+import { MemoryQueue } from '../uploads/queue';
 import {
   createOrganization as createOrganizationRoute,
   createPractice,
@@ -24,6 +28,7 @@ import {
   practiceSettingsPage,
   recordAgreement,
   setOrganizationStatus,
+  setPracticeLocation,
   setPracticeSettings,
   supportPage,
   unlockUser,
@@ -37,7 +42,9 @@ import { csrfTokenFor } from '../http/csrf';
  * route-tests.db.test.ts covers for every route): a practice gets its own data key, an invitation
  * creates the provider's account and an invited user, a membership's end revokes the user's
  * sessions, the last administrator cannot leave, a support grant lasts four hours and its reads reach
- * the practice's administrators, and the database's refusals come back as outcomes.
+ * the practice's administrators, and the database's refusals come back as outcomes. A practice is created with its
+ * pricing location, its billing ZIP required, and the console sets the location on its own form (audit #33; PR 6b),
+ * under SYNTHETIC release 900001 (00011 is known; 00012 needs its ZIP+4, and 900001 has no ZIP+4 list).
  */
 
 let database: MigratedDatabase;
@@ -47,6 +54,23 @@ let services: Services;
 let keys: LocalKeyProvider;
 let provider: DevAuthProvider;
 let invitations: string[];
+let queue: SeenAtSend;
+
+/**
+ * The queue in memory, recording for each monitor job the ZIP another connection reads when the job is sent: a job
+ * sent before the save commits would be planned by an idle worker against the old location.
+ */
+class SeenAtSend extends MemoryQueue {
+  readonly zipsSeen: (string | null)[] = [];
+
+  override async enqueue<T extends JobType>(type: T, payload: JobPayload<T>): Promise<string | null> {
+    if (type === 'monitor') {
+      const practiceId = (payload as { readonly practice_id: string }).practice_id;
+      this.zipsSeen.push((await owner.query<{ zip: string }>('SELECT zip FROM practice_site WHERE practice_id = $1', [practiceId])).rows[0]?.zip ?? null);
+    }
+    return super.enqueue(type, payload);
+  }
+}
 
 beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
@@ -66,8 +90,10 @@ beforeAll(async () => {
     },
     scryptCost: { n: 1024, r: 8, p: 1 },
   });
-  services = createServices({ origin: 'http://localhost:3100', pool: app, provider, keys, sealer, logger: createLogger({ sink: () => undefined }) });
-});
+  queue = new SeenAtSend();
+  services = createServices({ origin: 'http://localhost:3100', pool: app, provider, keys, sealer, logger: createLogger({ sink: () => undefined }), queue });
+  await loadRelease(owner, path.resolve(import.meta.dirname, '../../../../../fixtures/synthetic/rules/release-synth-900001'), { release: 900001, allowSyntheticFixtureForTests: true });
+}, 120_000);
 
 afterAll(async () => {
   await endPool(app);
@@ -123,19 +149,29 @@ describe('organizations and practices', () => {
     const organizationId = created.data.objectId;
     expect(created.data.redirect).toBe(`/console/organizations/${organizationId}`);
     // A practice always has an administrator (PRD 3): until the group's is invited, there is no practice.
-    expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '27601' })).toEqual({
+    expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '00011' })).toEqual({
       status: 'invalid',
       issues: [{ field: 'input', message: "invite the practice group's administrator before creating or moving its practice: a practice always has an administrator" }],
     });
     const invited = await run(inviteMember, admin.token, { organizationId, email: 'console-group-admin@synthetic.test', role: 'practice_admin' });
     expect(invited.status).toBe('ok');
-    const practice = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '27601' });
+    // The billing ZIP is required: a practice is never created without its pricing location.
+    expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '' })).toMatchObject({ status: 'invalid', issues: [{ field: 'zip' }] });
+    expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '0001' })).toMatchObject({
+      status: 'invalid',
+      issues: [{ field: 'zip', message: 'five digits, or ZIP+4 such as 27601-1234' }],
+    });
+    const practice = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '00011' });
     if (practice.status !== 'ok' || practice.data.objectId === undefined) {
       throw new Error(`expected a new practice, got ${practice.status}`);
     }
     const practiceId = practice.data.objectId;
-    const { rows } = await owner.query<{ data_key_ref: string; npi: string | null; zip: string }>('SELECT data_key_ref, npi, zip FROM practice WHERE id = $1', [practiceId]);
-    expect(rows[0]).toMatchObject({ npi: null, zip: '27601', data_key_ref: expect.stringMatching(/^local:v1:/) });
+    // The link names the practice alone: its location's status is read from the database (review of PR 6b-2, finding 14).
+    expect(practice.data.redirect).toBe(`/console/organizations/${organizationId}?created=${practiceId}`);
+    const { rows } = await owner.query<{ data_key_ref: string; npi: string | null; zip: string | null }>('SELECT data_key_ref, npi, zip FROM practice WHERE id = $1', [practiceId]);
+    // practice.zip is deprecated and never written: the location is practice_site's.
+    expect(rows[0]).toMatchObject({ npi: null, zip: null, data_key_ref: expect.stringMatching(/^local:v1:/) });
+    expect((await owner.query('SELECT zip, zip_plus_four, updated_by FROM practice_site WHERE practice_id = $1', [practiceId])).rows).toEqual([{ zip: '00011', zip_plus_four: null, updated_by: admin.id }]);
     // The wrapped key opens with the key provider, for this practice only.
     await expect(openPracticeCipher(keys, practiceId, rows[0]?.data_key_ref ?? null)).resolves.toBeDefined();
     await expect(openPracticeCipher(keys, randomUUID(), rows[0]?.data_key_ref ?? null)).rejects.toThrow();
@@ -148,16 +184,52 @@ describe('organizations and practices', () => {
       { action: 'security_event', object_type: 'membership', purpose: 'role_escalation', object_id: membershipId, practice_id: null },
       { action: 'practice_created', object_type: 'practice', purpose: null, object_id: practiceId, practice_id: null },
     ]);
-    const page = await run(organizationPage, admin.token, undefined, { organizationId });
+    const page = await run(organizationPage, admin.token, undefined, { organizationId, created: practiceId });
     expect(page).toMatchObject({
       status: 'ok',
-      data: { organization: { kind: 'group' }, practices: [{ id: practiceId, name: 'SYNTHETIC CONSOLE PRACTICE' }], members: [{ email: 'console-group-admin@synthetic.test', role: 'practice_admin' }], agreements: [], grants: [] },
+      data: {
+        organization: { kind: 'group' },
+        practices: [{ id: practiceId, name: 'SYNTHETIC CONSOLE PRACTICE' }],
+        members: [{ email: 'console-group-admin@synthetic.test', role: 'practice_admin' }],
+        agreements: [],
+        grants: [],
+        created: { practiceId, zip: '00011', zipPlusFour: null, status: 'ready', text: 'Medicare prices this location in locality 99999-01 under rule release 900001.' },
+      },
     });
+    // A status a hand-edited link names is not read; a practice not of the organization shows nothing.
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: practiceId, location: 'zip_unknown' })).toMatchObject({
+      status: 'ok',
+      data: { created: { practiceId, status: 'ready' } },
+    });
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: world.practiceId })).toMatchObject({ status: 'ok', data: { created: null } });
+  });
+
+  it('accepts a ZIP that needs its ZIP+4, or one the release does not list, with its status, never refusing it (audit #33)', async () => {
+    const created = await run(createOrganizationRoute, admin.token, { kind: 'group', name: 'SYNTHETIC SPLIT ZIP GROUP' });
+    const organizationId = created.status === 'ok' ? (created.data.objectId ?? '') : '';
+    expect((await run(inviteMember, admin.token, { organizationId, email: 'console-split-admin@synthetic.test', role: 'practice_admin' })).status).toBe('ok');
+    const split = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC SPLIT ZIP PRACTICE', zip: '00012' });
+    if (split.status !== 'ok' || split.data.objectId === undefined) {
+      throw new Error(`expected a new practice, got ${split.status}`);
+    }
+    expect(split.data.redirect).toBe(`/console/organizations/${organizationId}?created=${split.data.objectId}`);
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: split.data.objectId })).toMatchObject({
+      status: 'ok',
+      data: { created: { status: 'zip_plus_four_needed', text: 'Medicare splits ZIP 00012 between payment localities. Add its ZIP+4.' } },
+    });
+    const unknown = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC UNLISTED ZIP PRACTICE', zip: '27601-1234' });
+    const unknownId = unknown.status === 'ok' ? (unknown.data.objectId ?? '') : '';
+    expect(await run(organizationPage, admin.token, undefined, { organizationId, created: unknownId })).toMatchObject({
+      status: 'ok',
+      data: { created: { zip: '27601', zipPlusFour: '1234', status: 'zip_unknown' } },
+    });
+    // A ZIP+4 given for a ZIP the release does not list is kept as given.
+    expect((await owner.query('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [unknownId])).rows).toEqual([{ zip: '27601', zip_plus_four: '1234' }]);
   });
 
   it('refuses a practice owned by a firm, with the database’s rule as the reason', async () => {
     const firmId = await createOrganization(owner, 'firm', 'console firm');
-    expect(await run(createPractice, admin.token, { organizationId: firmId, name: 'SYNTHETIC' })).toEqual({
+    expect(await run(createPractice, admin.token, { organizationId: firmId, name: 'SYNTHETIC', zip: '00011' })).toEqual({
       status: 'invalid',
       issues: [{ field: 'input', message: 'a practice is owned by a practice group' }],
     });
@@ -284,11 +356,13 @@ describe('agreements', () => {
 });
 
 describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
-  it('sets a practice’s billing ZIP and its pricing and triage settings, keeping its other settings, and audits it', async () => {
+  it('sets a practice’s pricing and triage settings, keeping its other settings and its location, and audits it', async () => {
     const practice = await createTenantWorld(owner, 'settings');
     await owner.query(`UPDATE practice SET settings = '{"kept_elsewhere": true, "line_materiality_cents": "900"}'::jsonb WHERE id = $1`, [practice.practiceId]);
+    await owner.query("UPDATE practice_site SET zip = '00012', zip_plus_four = '0001' WHERE practice_id = $1", [practice.practiceId]);
     const set = await run(setPracticeSettings, admin.token, {
       practiceId: practice.practiceId,
+      // The form has no ZIP since PR 6b: one sent anyway is not a field it reads, and the location is left as it is.
       zip: '00011',
       facilityPlaces: '22, 21',
       nonFacilityPlaces: '11',
@@ -302,10 +376,10 @@ describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
       minutesPerFollowUp: '15',
     });
     expect(set).toMatchObject({ status: 'ok', data: { objectId: practice.practiceId, redirect: `/console/practices/${practice.practiceId}?saved=1` } });
-    const { rows } = await owner.query('SELECT zip, settings FROM practice WHERE id = $1', [practice.practiceId]);
+    expect((await owner.query('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [practice.practiceId])).rows).toEqual([{ zip: '00012', zip_plus_four: '0001' }]);
+    const { rows } = await owner.query('SELECT settings FROM practice WHERE id = $1', [practice.practiceId]);
     expect(rows).toEqual([
       {
-        zip: '00011',
         settings: {
           kept_elsewhere: true,
           place_of_service_settings: { '11': 'non_facility', '21': 'facility', '22': 'facility' },
@@ -324,8 +398,10 @@ describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
       status: 'ok',
       data: {
         practice: { id: practice.practiceId, organizationId: practice.organizationId, name: expect.any(String) },
+        // The console reads the location whole, its ZIP+4 too, with its status now.
+        location: { practiceId: practice.practiceId, zip: '00012', zipPlusFour: '0001', status: 'locality_not_loaded' },
+        locationSaved: false,
         form: {
-          zip: '00011',
           facilityPlaces: '21, 22',
           nonFacilityPlaces: '11',
           defaultRounding: 'HALF_UP_CENT',
@@ -341,7 +417,7 @@ describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
       },
     });
     // A field left blank returns to its default.
-    expect((await run(setPracticeSettings, admin.token, { practiceId: practice.practiceId, zip: '00011' })).status).toBe('ok');
+    expect((await run(setPracticeSettings, admin.token, { practiceId: practice.practiceId })).status).toBe('ok');
     expect((await owner.query('SELECT settings FROM practice WHERE id = $1', [practice.practiceId])).rows).toEqual([{ settings: { kept_elsewhere: true } }]);
   });
 
@@ -351,14 +427,14 @@ describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
       issues: [{ field: 'facilityPlaces', message: 'place of service 11 is listed as both facility and non-facility' }],
     });
     expect(await run(setPracticeSettings, admin.token, { practiceId: world.practiceId, staffRatePerHour: '60.00' })).toMatchObject({ status: 'invalid', issues: [{ field: 'staffRatePerHour' }] });
-    expect(await run(setPracticeSettings, admin.token, { practiceId: world.practiceId, zip: '2760' })).toMatchObject({ status: 'invalid', issues: [{ field: 'zip' }] });
-    expect(await run(setPracticeSettings, admin.token, { practiceId: randomUUID(), zip: '27601' })).toEqual({ status: 'not_found' });
+    expect(await run(setPracticeSettings, admin.token, { practiceId: randomUUID() })).toEqual({ status: 'not_found' });
     expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: randomUUID() })).toEqual({ status: 'not_found' });
   });
 
   it('is the platform administrator’s alone, in the routes and in the database', async () => {
     const adminToken = await sessionFor(world.adminUserId, 'totp');
-    expect(await run(setPracticeSettings, adminToken, { practiceId: world.practiceId, zip: '00011' })).toMatchObject({ status: 'forbidden' });
+    expect(await run(setPracticeSettings, adminToken, { practiceId: world.practiceId })).toMatchObject({ status: 'forbidden' });
+    expect(await run(setPracticeLocation, adminToken, { practiceId: world.practiceId, zip: '00011' })).toMatchObject({ status: 'forbidden' });
     expect(await run(practiceSettingsPage, adminToken, undefined, { practiceId: world.practiceId })).toMatchObject({ status: 'forbidden' });
     // The practice's own administrator, as the application, cannot reach the functions either.
     const client = await app.connect();
@@ -379,6 +455,45 @@ describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
     } finally {
       client.release();
     }
+  });
+});
+
+describe('the console’s location form (audit #33; PR 6b)', () => {
+  it('sets the location whole, audits it, queues the monitoring chain by the request and shows its status', async () => {
+    const practice = await createTenantWorld(owner, 'console location');
+    const queued = queue.jobs.length;
+    queue.zipsSeen.splice(0);
+    const saved = await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '00012-0001' });
+    // Sent once the save had committed: another connection already read the saved ZIP (the world's was 00011).
+    expect(queue.zipsSeen).toEqual(['00012']);
+    // The link says it was saved, never a status: the page reads the location's status from the database.
+    expect(saved).toMatchObject({ status: 'ok', data: { objectId: practice.practiceId, redirect: `/console/practices/${practice.practiceId}?location=saved` } });
+    expect((await owner.query('SELECT zip, zip_plus_four, updated_by FROM practice_site WHERE practice_id = $1', [practice.practiceId])).rows).toEqual([{ zip: '00012', zip_plus_four: '0001', updated_by: admin.id }]);
+    const audit = await owner.query<{ object_id: string; request_id: string }>("SELECT object_id, request_id FROM audit_event WHERE actor_id = $1 AND action = 'console_pricing_location_set' AND object_type = 'practice'", [admin.id]);
+    expect(audit.rows).toEqual([{ object_id: practice.practiceId, request_id: expect.stringMatching(/^test-/) }]);
+    // The monitor of that practice, keyed by the save's own request, so a daily plan already queued never swallows it.
+    expect(queue.jobs.slice(queued)).toEqual([{ type: 'monitor', payload: { practice_id: practice.practiceId, request_id: audit.rows[0]?.request_id } }]);
+    // The page shows the stored ZIP and ZIP+4, and the status they have now (900001 has no ZIP+4 list: the content is
+    // not loaded, never "check the four digits"), whatever the link says (review of PR 6b-2, finding 14).
+    const stored = {
+      practiceId: practice.practiceId,
+      zip: '00012',
+      zipPlusFour: '0001',
+      status: 'locality_not_loaded',
+      text: 'PaidWhole has not loaded Medicare’s ZIP+4 list for ZIP 00012 yet. There is nothing for you to change.',
+    };
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'saved' })).toMatchObject({ status: 'ok', data: { location: stored, locationSaved: true } });
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId })).toMatchObject({ status: 'ok', data: { location: stored, locationSaved: false } });
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'ready' })).toMatchObject({ status: 'ok', data: { location: stored, locationSaved: false } });
+    // Saved whole each time: five digits alone clear the ZIP+4.
+    expect(await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '00011' })).toMatchObject({ status: 'ok', data: { redirect: `/console/practices/${practice.practiceId}?location=saved` } });
+    expect((await owner.query('SELECT zip, zip_plus_four FROM practice_site WHERE practice_id = $1', [practice.practiceId])).rows).toEqual([{ zip: '00011', zip_plus_four: null }]);
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, location: 'saved' })).toMatchObject({
+      status: 'ok',
+      data: { location: { zip: '00011', zipPlusFour: null, status: 'ready', text: 'Medicare prices this location in locality 99999-01 under rule release 900001.' }, locationSaved: true },
+    });
+    expect(await run(setPracticeLocation, admin.token, { practiceId: practice.practiceId, zip: '0001' })).toMatchObject({ status: 'invalid', issues: [{ field: 'zip' }] });
+    expect(await run(setPracticeLocation, admin.token, { practiceId: randomUUID(), zip: '00011' })).toEqual({ status: 'not_found' });
   });
 });
 

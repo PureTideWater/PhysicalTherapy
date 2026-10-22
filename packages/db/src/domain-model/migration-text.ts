@@ -125,6 +125,9 @@ const CREATE_TABLE = new RegExp(`^CREATE TABLE (?:IF NOT EXISTS )?(?:public\\.)?
 const COLUMN_ITEM = new RegExp(`^${NAME}\\s`, 'i');
 const CREATE_VIEW = new RegExp(`^CREATE (?:OR REPLACE )?(?:MATERIALIZED )?VIEW ${NAME}`, 'i');
 const ALTER_TABLE = new RegExp(`^ALTER TABLE (?:ONLY )?(?:IF EXISTS )?(?:public\\.)?${NAME}`, 'i');
+/** A table or a function renamed: it keeps the migration that created it, under its new name. */
+const RENAME_TABLE = new RegExp(`^ALTER TABLE (?:IF EXISTS )?(?:ONLY )?(?:public\\.)?${NAME}\\s+RENAME TO\\s+${NAME}$`, 'i');
+const RENAME_FUNCTION = new RegExp(`^ALTER FUNCTION (?:public\\.)?${NAME}\\s*\\([^)]*\\)\\s+RENAME TO\\s+${NAME}$`, 'i');
 const ADD_COLUMN = new RegExp(`ADD COLUMN (?:IF NOT EXISTS )?${NAME}`, 'gi');
 const CREATE_FUNCTION = new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION (?:public\\.)?${NAME}\\s*\\(`, 'i');
 const CREATE_TRIGGER = new RegExp(`^CREATE (?:CONSTRAINT )?TRIGGER \\S+ [\\s\\S]*? ON (?:public\\.)?${NAME}`, 'i');
@@ -179,6 +182,28 @@ export function readMigrationText(dir: string): MigrationText {
         const t = unquote(m[1] ?? '');
         setOnce(tableCreatedBy, t, file);
         addTo(tableTouchedBy, t, file);
+        continue;
+      }
+      if ((m = RENAME_TABLE.exec(st))) {
+        // Where the table was created, and where each of its columns was added, carry over to its new name, and
+        // so does every migration that touched it; the renaming migration touched both names.
+        const from = unquote(m[1] ?? '');
+        const to = unquote(m[2] ?? '');
+        const created = tableCreatedBy.get(from);
+        if (created !== undefined) setOnce(tableCreatedBy, to, created);
+        for (const [key, by] of [...columnAddedBy]) {
+          if (key.startsWith(`${from}.`)) setOnce(columnAddedBy, `${to}.${key.slice(from.length + 1)}`, by);
+        }
+        for (const by of tableTouchedBy.get(from) ?? []) addTo(tableTouchedBy, to, by);
+        addTo(tableTouchedBy, from, file);
+        addTo(tableTouchedBy, to, file);
+        continue;
+      }
+      if ((m = RENAME_FUNCTION.exec(st))) {
+        const from = unquote(m[1] ?? '');
+        const to = unquote(m[2] ?? '');
+        for (const by of functionDefinedBy.get(from) ?? []) addTo(functionDefinedBy, to, by);
+        addTo(functionDefinedBy, to, file);
         continue;
       }
       if ((m = ALTER_TABLE.exec(st))) {

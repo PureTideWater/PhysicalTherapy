@@ -1039,6 +1039,33 @@ What the build holds against the ruling (a build note of 2026-10-21, not a rulin
   Provider Organization (PPO)" and fails one quoting "plan identifier 12". Mutation testing covers `payer.ts`,
   `facts.ts` and the package's `index.ts` in both Stryker configurations. No schema, migration or domain-model change.
 
+## Owner ruling (2026-10-22): the trigger on `rule_release_withdrawal`, an exception to the rule-table check
+
+PR 6b-1's rule-table check (`tools/engine-freeze`) found that this ADR's migration,
+`20261103090000_deadline_verification_and_export_attestation.sql`, creates in its statement 22 the trigger
+`rule_release_withdrawal_pricing_current_lock` (BEFORE INSERT ON `rule_release_withdrawal` FOR EACH ROW EXECUTE
+FUNCTION `pricing_current_change_lock()`), the withdrawal's side of the lock described under Decision. That is DDL on a
+rule table, which reconciliation-001's content-pipeline check ("No DDL touches `rule_release`, `rule_record` or
+`rule_release_withdrawal`") forbids and which no ruling had granted; the migration's header says no rule table is
+touched.
+
+The founder, Tyler Williams, ruled on 2026-10-22 that it is **accepted as an exception** to that check, if it adds
+value, and the build found it does:
+
+- **What it does.** `pricing_current_change_lock()` only takes the exclusive transaction-scoped advisory lock
+  `pricing_current:withdrawal`. It writes nothing and changes no rule data: the table's rows, constraints and
+  privileges are as they were (PR 6b-1's reviewers verified it on PostgreSQL 18).
+- **Why it stays.** It serializes a release's withdrawal with the packet approval, the export guard, the attestation
+  and the submission's flag, each of which takes the shared side (`pricing_current_read_lock()`) right before its
+  check. No packet is approved or exported as current while the release it was priced under is being withdrawn (the
+  combined audit's item #4). Removing it would reopen that race.
+- **Its cost.** A withdrawal waits behind any such check holding the shared lock, and can time out there; the release
+  operator retries it. A withdrawal is rare and deliberate.
+- **Its bounds.** The exception covers this one trigger as it stands. The applied migration and its header are not
+  edited; any other DDL on a rule table needs its own ruling; `tools/engine-freeze/rule-tables.catalog.json` records
+  the tables with the trigger. Recorded in `docs/product/reconciliation-001.md` (Content pipeline) and ADR 0064, by
+  PR 6b-2.
+
 ## Owner rulings (2026-10-21)
 
 The founder, Tyler Williams, ruled on this pull request on 2026-10-21:

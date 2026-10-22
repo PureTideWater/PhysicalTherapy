@@ -58,6 +58,20 @@ describe('job registry', () => {
     expect(singletonKey('monitor', { practice_id: PRACTICE, day: '2026-10-15' })).toBe(`monitor:${PRACTICE}:2026-10-15`);
   });
 
+  it('takes a monitoring job after a save of the practice’s pricing location, by the save’s request, under a key of its own (audit #33)', () => {
+    const save = { practice_id: PRACTICE, request_id: SUBJECT };
+    expect(parsePayload('monitor', save)).toEqual(save);
+    // A request ID as audit_event.request_id records it, the route tests' own included.
+    expect(parsePayload('monitor', { practice_id: PRACTICE, request_id: `test-${SUBJECT}` })).toEqual({ practice_id: PRACTICE, request_id: `test-${SUBJECT}` });
+    expect(singletonKey('monitor', save)).toBe(`monitor:${PRACTICE}:${SUBJECT}`);
+    // So a daily job already active (its key the day) never swallows the save.
+    expect(singletonKey('monitor', save)).not.toBe(singletonKey('monitor', { practice_id: PRACTICE, day: '2026-10-15' }));
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: SUBJECT, day: '2026-10-15' })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: '' })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: 'SYNTHETIC TWIN' })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: 'x'.repeat(129) })).toThrow(ZodError);
+  });
+
   it('refuses identifiers that are not UUIDs and periods that are not months', () => {
     expect(() => parsePayload('parse_835', { practice_id: PRACTICE, document_id: 'SYNPCN0001' })).toThrow(ZodError);
     expect(() => parsePayload('digest', { practice_id: PRACTICE, period: '2026-13' })).toThrow(ZodError);

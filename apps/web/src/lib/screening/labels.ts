@@ -15,7 +15,7 @@ import { unpricedReasonText } from '../contracts/remedies';
  * its result was shown under; the database's screening_labels_version() returns the same (a database test holds the
  * two equal), and labels.test.ts pins every label here to its version, so a label changes only under a new version.
  */
-export const SCREENING_LABELS_VERSION = 'screening-labels/2026-10-18';
+export const SCREENING_LABELS_VERSION = 'screening-labels/2026-11-05';
 
 /** What every Medicare figure priced alone, and every figure worked out from one, is qualified by (decision D19 a). */
 export const BEFORE_REDUCTION = 'before the reduction across codes';
@@ -93,6 +93,23 @@ export function leftOutNote(rows: number): string {
     : `Rows of fewer than ${floor} claim lines were left out by your browser before anything was sent, because a row that small can describe one patient’s care. No figure on this page includes these rows; this is what your browser counted of them.`;
 }
 
+/**
+ * The Medicare rows a screening did not screen because their quarter is outside the content the release had loaded
+ * (audit #7; the founder's answers of 2026-10-21 to PR 6b's Q6 (a) and Q12): the browser left them out and counted
+ * them, and the result says how many and their allowed total, apart from every figure. The sentence is in two parts
+ * around the allowed total, which renders in the mono face. `before` is the first quarter loaded when every such row
+ * lies before it (the release's content then runs to the screening's quarter, after which no row may lie); otherwise
+ * the quarters are named as outside the loaded content.
+ */
+export function outsideContentNote(rows: number, before: string | null): { readonly lead: string; readonly tail: string } {
+  const one = rows === 1;
+  const where = before === null ? `${one ? 'a quarter' : 'quarters'} outside the loaded content` : `${one ? 'a quarter' : 'quarters'} before ${before}`;
+  return {
+    lead: `${rows.toLocaleString('en-US')} ${one ? 'row' : 'rows'} (`,
+    tail: `) in ${where} ${one ? 'was' : 'were'} not screened: PaidWhole has not loaded the Medicare content for ${one ? 'it' : 'them'}.`,
+  };
+}
+
 /** That a screening is investigatory, never a contract figure (CO-04). */
 export const SCREENING_INVESTIGATORY_NOTE =
   'A screening is investigatory. It compares the allowed amounts in your file with public Medicare rates; it is not a contract figure, and nothing here is a finding about a payer. A PaidWhole audit prices your lines under your signed contracts.';
@@ -111,8 +128,8 @@ export const PRODUCT_LABELS: Readonly<Record<ScreeningProduct, string>> = {
 
 /** What each product's rows are in a screening (decision D20 a). */
 export const PRODUCT_NOTES: Readonly<Record<ScreeningProduct, string>> = {
-  medicare_ffs: 'Priced under the Medicare physician fee schedule.',
-  ma_noncontracted: 'Priced under the Medicare Advantage non-contracted rule: the Medicare fee schedule.',
+  medicare_ffs: 'Priced under the Medicare physician fee schedule, for the quarters PaidWhole has loaded.',
+  ma_noncontracted: 'Priced under the Medicare Advantage non-contracted rule: the Medicare fee schedule, for the quarters PaidWhole has loaded.',
   ma_contracted: 'Cannot be priced without a contract.',
   commercial: 'Cannot be priced without a contract.',
   medicaid: 'Not screened: state Medicaid rates are not in a screening.',
@@ -156,7 +173,10 @@ export const DISPOSITION_NOTES: Readonly<Record<ScreeningDisposition, string>> =
  */
 const DETAIL_LABELS: Readonly<Record<string, string>> = {
   place_of_service_unmapped: 'The place of service is not in the approved place-of-service split',
-  locality_needs_zip_plus_four: 'The ZIP spans two Medicare localities, which a free screening cannot price yet',
+  locality_needs_zip_plus_four: 'The ZIP spans more than one Medicare locality and no ZIP+4 was given',
+  // A gap in PaidWhole's content (no ZIP+4 list of the ZIP in force), never the prospect's ZIP+4 (PR 6b-1's review).
+  no_locality_plus_four: 'PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day',
+  zip_plus_four_not_in_locality_map: 'Medicare’s ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day',
   no_locality: 'The ZIP has no Medicare locality on the quarter’s first day',
   no_gpci: 'No geographic adjustment for the locality in the year',
   no_conversion_factor: 'No conversion factor for the year',

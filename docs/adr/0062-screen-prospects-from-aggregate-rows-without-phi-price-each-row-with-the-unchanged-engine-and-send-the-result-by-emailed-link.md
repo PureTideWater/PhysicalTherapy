@@ -1,6 +1,6 @@
 # 0062. Screen prospects from aggregate rows without PHI, price each row with the unchanged engine, and send the result by emailed link
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (ZIP+4 localities and quarters outside the loaded content, PR 6b)
 - **Date:** 2026-10-18
 - **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams, and the founder's approval of 2026-10-18 after the best-option audit, items 6 and 1, with the ruling of 11:47 UTC that supersedes ruling 3); the build (PR 6 of Change Order 001) and its review of 2026-10-20
 - **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17; SCR-07 added by the founder's ruling), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
@@ -25,10 +25,10 @@ What the repository held, and what constrains the design:
   `MA_NONCONTRACTED`, whose terms (`MA_NONCONTRACTED_TERMS` in `@tp/contracts`) are Original Medicare's: 100% of
   the current year's fee schedule at the practice's locality, the non-qualifying conversion factor, every flag on
   and no rounding of its own. It prices a claim's lines together (the multiple procedure reduction ranks a day's
-  units across codes), takes a five-digit ZIP (`PracticeSettings.zip`, `^\d{5}$`), stops with `ENGINE_ERROR
-  locality_needs_zip_plus_four` for a ZIP whose `locality_map` record needs its ZIP+4, and stops with
+  units across codes), takes a five-digit ZIP and, where that ZIP's `locality_map` record needs it, the ZIP+4
+  (`PracticeSettings.zipPlusFour`), whose `locality_map_plus_four` range names the locality (ADR 0064), and stops with
   `place_of_service_unmapped` for a place of service missing from the split it is given. Nothing under
-  `packages/pricing/src` may change.
+  `packages/pricing/src` changes but PR 6b's ZIP+4 lookup, by the founder's ruling of 2026-10-18 11:47 UTC (ADR 0064).
 - `prospect_request` (ADR 0053) is the pattern: a public table with row-level security forced, written only
   through a SECURITY DEFINER function.
 - Platform jobs run as `tp_operator` (ADRs 0014 and 0019), which owns nothing and has no table grants; it cannot
@@ -45,10 +45,12 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
 
 - `screening_prospect`: the practice's name, state, five-digit ZIP and the contact address, lower case and one the
   mail service can send to (plain ASCII, an RFC 5322 dot-atom before the @, a dotted domain with no trailing dot
-  after it). No ZIP+4: the engine takes a five-digit ZIP alone, so a ZIP whose `locality_map` record needs its ZIP+4
-  is refused (`screening_zip_plus_four`, "a free screening cannot price one yet") rather than asked for four digits
-  nothing could use. This pull request keeps the refusal until PR 6b lands: the founder's ruling of 11:47 UTC on
-  2026-10-18 supersedes ruling 3 and has ZIP+4 localities fixed before launch there (see Owner rulings).
+  after it). The ZIP+4 is asked for only when the ZIP's `locality_map` record needs it, and is kept only then
+  (`zip_plus_four`, deleted with the prospect at 30 days). A ZIP that needs one and lacks it is refused as
+  `screening_zip_plus_four` ('enter the ZIP+4'), one the ZIP+4 file does not list as `screening_zip_plus_four_unknown`,
+  and one whose ZIP+4 list is not loaded as `screening_locality_not_loaded`, with or without a ZIP+4, so a prospect is
+  never asked for a ZIP+4 the screening cannot use (PR 6b, ADR 0064; its review round's finding 22). The result's
+  heading names the ZIP+4 kept (finding 21).
 - `screening_upload`: its row count, accepted or rejected, and the rejection reasons, which
   `screening_rejections_valid()` holds to at most 20 objects of a code, a column position, a row, a first row, a
   field and a PHI kind: never a header's text or a cell's value. No byte of the file is stored, and no hash of it.
@@ -62,7 +64,8 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
 - `screening_place_of_service_split`: the platform's default facility or non-facility setting per place of
   service, approved by a contract specialist (`rate_record.approve`, the existing permission; the matrix is
   frozen until PR 14), append-only, the latest approval in force. A fifth table beside CO-12's four, because the
-  engine needs a split and no rule record carries one (fixtures/golden/QUESTIONS.md, Q08).
+  engine needs a split and no rule record carries one (fixtures/golden/QUESTIONS.md, Q08). `place_of_service_split`
+  since PR 6b (ADR 0064): also the default for every place a practice has not set, pinned on each pricing run.
 - `screening_run`: an accepted upload pinned at creation to the release in force (`current_rule_release()`, with
   no foreign key so no DDL touches `rule_release`) and its manifest hash, and to the split in force; queued,
   pricing (re-claimed when stale, at most three attempts), complete or failed (`screening_run_rules`). Only the
@@ -92,7 +95,7 @@ counts-only outcome of every screening, kept with no end date, and a converted o
 summary, kept 12 months from the upload.
 
 The application role calls `screening_status()`, `screening_zip_status()` (an invoker function over the global
-`locality_map`), `submit_screening()` (prospect, upload with the hash of its rows, run and every row in one call,
+`locality_map`; since PR 6b `locality_status()`, over `locality_map` and `locality_map_plus_four`, ADR 0064), `submit_screening()` (prospect, upload with the hash of its rows, run and every row in one call,
 `screening_submitted`, deleting any earlier screening of the same practice, `screening_replaced`),
 `reject_screening_upload()` (`screening_rejected`; like the submission, it records nothing while screening is
 closed), the reads by token hash (`screening_result_summary`, which also says whether the run's release has since
@@ -110,8 +113,8 @@ PRD 11's worked example, golden claim G01, allowed exactly as one visit, is with
 never an anomaly. The operator
 role calls `operator_screening_*()`: due, claim (which also says whether the pinned release is still there as
 pinned: published, its manifest unchanged and not withdrawn), release (the pinned release's records with their
-stored hashes, `locality_map` limited to the run's ZIP, only while the manifest is the one pinned and the release
-is not withdrawn), rows, record, complete (`screening_completed`), fail (`screening_failed`) and expire.
+stored hashes, `locality_map` limited to the run's ZIP, and since PR 6b `locality_map_plus_four` beside it, keyed by
+the run's ZIP, only while the manifest is the one pinned and the release is not withdrawn), rows, record, complete (`screening_completed`), fail (`screening_failed`) and expire.
 
 **The browser parses; the server checks again (D18 a).** `apps/worker/src/screening/format.ts`
 (`@tp/worker/screening-format`, browser-safe, `@tp/money` alone) holds the eight columns and their spellings, the
@@ -259,8 +262,8 @@ process on a 4-CPU machine; under production's limits, see Capacity under produc
 release for each ZIP. The record types no row's key selects (the GPCIs, conversion factors, the assistant and
 sequestration records, the code lists and the other small types) are read by `operator_screening_release()` and held
 once per release and manifest, two releases at most (`RELEASES_KEPT`; a withdrawal still evicts its entry). The five
-types a line looks up by its own key (`pfs_rvu`, `ncci_mue`, `mppr_rate`, `ncci_ptp`, `locality_map`) are read for
-each run, in one operator transaction: `operator_screening_run_keys()` returns the distinct codes of the run's
+types a line looks up by its own key (`pfs_rvu`, `ncci_mue`, `mppr_rate`, `ncci_ptp`, `locality_map`, and since PR 6b
+a sixth, `locality_map_plus_four` beside `locality_map`, keyed by the run's ZIP) are read for each run, in one operator transaction: `operator_screening_run_keys()` returns the distinct codes of the run's
 Medicare rows still to price and the prospect's ZIP, from the run's own rows and never a caller's, and
 `operator_screening_run_records()` returns, for each code, its relative values and MPPR rate with no modifier, its
 medically unlikely edit and its same-code pair (a screening claim is one line, or two lines of one code), with the
@@ -280,7 +283,9 @@ trace. Each phase (the shared read or its reuse, the keyed read, pricing, record
 the old read's by an oracle, `adapter.ts` and the read path exactly as they were at commit 3c1b289, frozen in
 `apps/worker/src/screening/test-support` and imported only by tests and the capacity harness's oracle: row for row on a
 test-local release built for the cases where the two could differ (`release-cache.db.test.ts`), and by SHA-256 over
-upload 1 of each production-shaped scenario in the capacity test. As built, the key set's codes are those of the rows
+upload 1 of each production-shaped scenario in the capacity test. *PR 6b changed one identifier in `legacy-release.ts`,
+the split table's name; the read path and the adapter are otherwise as at 3c1b289. Split-ZIP runs are proved against a
+whole-release oracle (ADR 0064).* As built, the key set's codes are those of the rows
 still to price (the database's function reads `pending` rows), so a run claimed again after a stale attempt reads only
 what it still prices; the codes priced equal the key set on every attempt.
 
@@ -489,7 +494,7 @@ a production server keeps the screening closed while any of the screening's wait
 | Price a row's visit composition (D19 c), or show a range computed outside the engine (D19 b) | Asks the prospect for what an aggregate has not got, or computes a number outside the engine. The owner's ruling 1 gets the range from the engine itself: both ends are `price()` outputs. Revisit if prospects send visit-level aggregates. |
 | A fully reduced figure from a higher-valued pool code ahead of the row | Depends on which codes the release carries and their practice-expense parts at the place of service; the row's own code with one unit always ranks first by the engine's tie rule, and the second line's cut is its own whatever ranks first. |
 | Compare against the engine's final amount, after sequestration | What PR 6 first did: a payer's allowed amount is normally before sequestration, so a row allowed in full looked about 3% (SYNTHETIC; 2% real) above the figure and up to that much of a shortfall was hidden. The owner's ruling 2 compares before it. |
-| Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`), so this pull request refuses such a ZIP. The founder's ruling of 11:47 UTC on 2026-10-18 supersedes ruling 3: PR 6b takes a ZIP+4 in practice settings and the screening and has the engine resolve the locality from it, before launch. |
+| Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`), so this pull request refuses such a ZIP. The founder's ruling of 11:47 UTC on 2026-10-18 supersedes ruling 3: PR 6b takes a ZIP+4 in practice settings and the screening and has the engine resolve the locality from it, before launch. *Built in PR 6b (ADR 0064).* |
 | Keep a row of fewer than 11 claim lines and hide it in the result | It would still be stored: one patient's service line in tables built as non-PHI, from a prospect with no BAA. |
 | Say what was left out in the browser alone, storing nothing of it | The result, opened later from the emailed link, could not say that its figures leave rows out, and its totals would not match the prospect's file. Three sums with no code or quarter beside them name no service line (with one row left out they are its count and dollars, which counsel confirms). |
 | Hash the file in the browser and keep that hash (what PR 6 first did) | The file holds the rows left out, so its hash, with no key, beside the rows kept and the left-out sums, let a left-out row be found by trial in seconds (the review of 2026-10-20). The hash kept is the database's own, of the rows it stores, which says nothing they do not. |
@@ -530,12 +535,10 @@ a production server keeps the screening closed while any of the screening's wait
   that holds for every payer's allowed amount is for the reimbursement specialist to confirm with
   fixtures/golden/QUESTIONS.md, Q21 (which asks it of the engine's own lines; the golden lines and QUESTIONS.md are
   unchanged by this pull request, so the note is here). The engine is not touched.
-- A ZIP whose `locality_map` record needs its ZIP+4 is refused, with the message that a free screening cannot price
-  one yet, and no ZIP+4 is asked for or kept: the engine takes a five-digit ZIP alone (`PracticeSettings.zip`) and
-  stops with `ENGINE_ERROR locality_needs_zip_plus_four` for such a locality, so D20's "ZIP+4 asked only where
-  `locality_map` requires it" is not met by this pull request. The founder's ruling of 11:47 UTC on 2026-10-18
-  supersedes ruling 3: PR 6b meets it before launch, and the refusal stays in this pull request's code until PR 6b
-  lands.
+- A ZIP whose locality needs its ZIP+4 is priced from it; D20's "ZIP+4 asked only where `locality_map` requires it" is
+  met (PR 6b).
+- A Medicare row in a quarter outside the release's loaded MPPR and MUE content is left out and counted, with the
+  loaded quarters named (audit #7, PR 6b).
 - A row of fewer than 11 claim lines is never sent by the page, stored or priced (the founder's ruling on the
   audit's item 6): the browser leaves it out and counts it, the server refuses one sent around the browser by its
   row number, and the database refuses one stored. A practice whose rows are mostly small sees much of its file left
@@ -635,12 +638,12 @@ The questions this pull request put to the owner, ruled by the founder, Tyler Wi
    reimbursement specialist confirms this later (fixtures/golden/QUESTIONS.md, Q21). *Built:* `beforeSequestration()`
    reads the trace's step and rounds it once under the trace's rule; the trace carries the amount, so nothing had to be
    computed in its place.
-3. **ZIP+4.** Screening keeps refusing a ZIP whose locality needs its ZIP+4, with the clear message; an engine change is
-   revisited when release 1's real locality map loads. *Built:* unchanged (`screening_zip_plus_four`).
-   *Superseded at 11:47 UTC on 2026-10-18 by the founder, Tyler Williams:* ZIP+4 localities are fixed before launch in
-   their own pull request, PR 6b: practice settings and the screening accept a ZIP+4, the engine resolves the locality
-   from it, five-digit ZIPs and the golden lines are unchanged, and the change order's engine freeze is loosened for
-   that lookup only. This pull request keeps the refusal in its code until PR 6b lands.
+3. **ZIP+4.** As the founder, Tyler Williams, ruled at 11:47 UTC on 2026-10-18: ZIP+4 localities are fixed before
+   launch in their own pull request, PR 6b: practice settings and the screening accept a ZIP+4, the engine resolves
+   the locality from it, five-digit ZIPs and the golden lines are unchanged, and the change order's engine freeze is
+   loosened for that lookup only. *Built in PR 6b (ADR 0064):* the engine resolves the locality from the ZIP+4 file;
+   practice settings and the screening take a ZIP+4; five-digit ZIPs and the golden lines are unchanged, proved by a
+   differential test against the base engine.
 4. **A withdrawn release.** A result priced under a release later withdrawn keeps its notice and may still be converted
    to an audit request (the audit prices nothing from the screening). *Built:* unchanged, now tested.
 
@@ -662,7 +665,7 @@ experience, privacy and compliance, never weighted by build effort):
    column guide; the triage change is PR 6d.
 
 What stays open: the specialist's answer to Q21 (should a payer's allowed amount turn out to be reported after
-sequestration, the comparison is put to the owner again); ZIP+4 localities, in PR 6b before launch; counsel's answer
+sequestration, the comparison is put to the owner again); counsel's answer
 on the floor (the number; lines or patients; whether a left-out total under 11 claim lines may be shown as counted;
 and the scope of one screening a practice); and visit-level aggregates (see Revisit when).
 
@@ -817,7 +820,7 @@ we list (`retention.ts`, `wording.ts`); PR 7's campaign screen, from which the f
 
 ## Revisit when
 
-Release 1 is published (screening opens); PR 6b lands (ZIP+4 localities: the refusal here is replaced); counsel
+Release 1 is published (screening opens); the specialist answers Q37 (a ZIP+4 the ZIP+4 file does not list); counsel
 answers on the floor (the number, whether it counts claim lines or patients, the left-out totals and the scope of one
 screening a practice); the reimbursement specialist
 answers Q21 (the owner's ruling 2: which figure a payer's allowed amount is compared with); prospects ask for
@@ -825,3 +828,58 @@ visit-level aggregates (the reduction across codes); or the permission matrix ga
 platform pricing defaults (PR 14); counsel answers on the reworded surfaces, the attribution cookie's disclosure or
 the linkage between an outcome and a kept request; the screening terms' wording lands (its hash may then be required);
 PR 6e builds consent capture on the columns here; or PR 7's funnel needs read functions over the outcomes.
+
+## Amendment (PR 6b)
+
+ADR [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) records how a screening takes the ZIP+4 of a ZIP that Medicare splits between payment localities, keeps it only
+then, and prices its rows at the locality the ZIP+4 file's range names. It records how a Medicare row in a quarter
+outside the release's loaded MPPR and MUE content is left out by the browser and counted, refused when sent anyway,
+and named on the result (audit #7). It records the split's rename to `place_of_service_split`, every practice's default
+for a place it has not set, with the audit action `screening_split_approved` and the object type
+`screening_place_of_service_split` kept, so the approval history reads under one name.
+
+The founder, Tyler Williams, answered PR 6b's questions on 2026-10-21 (about 22:30 UTC: "Do all the recommended options
+for these questions as long as it optimizes the app"). Those this record's screening and console build:
+
+- **Q2 (a):** the practice's ZIP+4 lives on its location record, `practice_site`, one per practice and undated, set in
+  Settings > Pricing settings and in the console; the screening's own ZIP+4 stays on `screening_prospect` (ADR 0064).
+- **Q6 (a):** a Medicare row in a quarter outside the loaded content is left out and counted, as the claim-line floor's
+  rows are: three numbers on `screening_upload` (`outside_content_rows`, `outside_content_claim_lines`,
+  `outside_content_allowed_cents`), kept with the upload for its 30 days and never copied to `screening_lead` or
+  `screening_outcome`; a request that sends one anyway is refused by its row (`band_outside_content`), and
+  `submit_screening()` refuses it too (`screening_band_outside_content`).
+- **Q11 (a):** no change to what the pages say is kept for the ZIP+4: it is entered in the same "ZIP code" field, goes
+  with the prospect at 30 days and is never kept with a request, and the words already cover it (counsel confirms
+  that "ZIP code" reads as including it).
+- **Q12:** the recommended wording, for counsel to confirm before the screening opens. The new sentences a prospect
+  reads, word for word:
+  - the ZIP code field's hint: "Five digits, or ZIP+4 if you know it. A few ZIP codes span more than one Medicare
+    payment area; for those we ask for the ZIP+4.";
+  - a ZIP that needs its ZIP+4: "This ZIP code spans more than one Medicare payment area. Enter the full ZIP+4, such as
+    27601-1234, so the screening uses the right one.";
+  - a ZIP+4 the list does not hold (right under either answer to Q37, so never "check the four digits"): "Medicare’s
+    ZIP+4 list in force does not list this ZIP+4. If the four digits after the hyphen are right, a screening cannot price
+    this ZIP+4 yet.";
+  - a ZIP whose ZIP+4 list is not loaded, with or without its ZIP+4 (said before any ZIP+4 is asked for): "PaidWhole has
+    not loaded Medicare’s ZIP+4 list for this ZIP code yet, so a screening cannot price it. Try again later.";
+  - before a file is chosen: "Medicare rows of 2026-Q1 to 2026-Q4 are screened; rows of other quarters are left out and
+    counted." (no content loaded: "PaidWhole has no Medicare content loaded yet, so Medicare rows are left out and
+    counted."), and the two Medicare products' notes end "for the quarters PaidWhole has loaded";
+  - the upload page, before sending: "12 rows (380 claim lines, $41,200.00) in quarters before 2026-Q1 were left out:
+    PaidWhole has the Medicare content for 2026-Q1 to 2026-Q4 loaded." (one row: "1 row (12 claim lines, $500.00) in a
+    quarter before 2026-Q1 was left out: ..."; quarters after the content: "in quarters after 2026-Q4"; quarters between
+    loaded runs: "in quarters outside the loaded content", the runs named as "2025-Q1 to 2025-Q4 and 2026-Q2 to
+    2026-Q4"; no content loaded at all: "... were left out: PaidWhole has no Medicare content loaded yet.");
+  - the result page, under "Not screened: quarters outside the loaded content": "12 rows ($41,200.00) in quarters before
+    2026-Q1 were not screened: PaidWhole has not loaded the Medicare content for them." The result keeps no row's
+    quarter, so it says "before" the first quarter loaded only when the release's content runs to the screening's own
+    quarter (no row may lie after it), and "in quarters outside the loaded content" otherwise; it is a label, under
+    `screening-labels/2026-11-05`;
+  - when every row is left out: "Nothing is left to screen: every row was left out, as counted below."; a row sent
+    around the browser: "Row 12, service band: PaidWhole has not loaded the Medicare content for that quarter, so a
+    Medicare row in it cannot be screened." (the server's: "Row 12: the service band’s quarter is outside the Medicare
+    content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out");
+  - the result's three engine details: "The ZIP spans more than one Medicare locality and no ZIP+4 was given", "Medicare’s
+    ZIP+4 list has no locality for this ZIP+4 on the quarter’s first day" and, for a row in a quarter with no ZIP+4
+    list of the ZIP in force (`no_locality_plus_four`, a gap in PaidWhole's content that PR 6b-1's review split from the
+    unlisted ZIP+4), "PaidWhole has not loaded Medicare’s ZIP+4 list for this ZIP on the quarter’s first day".

@@ -1,7 +1,10 @@
 # 0039. Monitor each upload batch through a keyed job chain, digest each month on the operator's schedule, and keep notifications to counts and totals
 
 - **Status:** accepted (amends 0004 for the monitor and reconcile subjects, and 0038 for triage of the chain's runs;
-  amended by [0040](0040-judge-lines-from-their-pricing-in-effect-hold-per-visit-and-ncci-lines-for-review-and-set-practice-settings-in-the-console.md): the daily monitor closes passed windows, figures keyed by a closed list, and what was pulled forward from milestone 11)
+  amended by [0040](0040-judge-lines-from-their-pricing-in-effect-hold-per-visit-and-ncci-lines-for-review-and-set-practice-settings-in-the-console.md): the daily monitor closes passed windows, figures keyed by a closed list, and what was pulled forward from milestone 11;
+  amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md):
+  months that wait on the practice's pricing location, and a location save that queues the plan by its request,
+  "Amendment (PR 6b-2)" below)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 5 (J11, J12), 6 (Monitoring jobs and notifications; Reports and exports), 7 (Practice dashboard,
@@ -143,3 +146,47 @@ worker heartbeat and its alarm are unchanged.
 Milestone 9 (the ledger fills reconcile and recoveries), milestone 11 (the Settings screen for practice materiality
 and preferences, SES configuration sets), volumes where a daily no-op digest job per practice matters, or a customer who
 wants a digest per batch.
+
+## Amendment (PR 6b-2, 2026-10-21): months that wait on the practice's pricing location
+
+Audit #33 (and #7's rule that a month waits only when one of its lines needs what is missing), built under the
+founder's answers of 2026-10-21 (about 22:30 UTC) to PR 6b's Q2 (a), the practice's one pricing location
+(`practice_site`), and Q5 (a), `pricing_settings.set` for the people who set it; docs/adr/0064 records the location
+itself.
+
+- **No run while the location is missing.** `createPricingRun()` checks `practice_location_status()` after the
+  mapping guard and throws `PricingLocationWaiting` (`zip_missing`) instead of creating a run whose every line, fixed
+  fees included, would stop as `ENGINE_ERROR invalid_settings`; Postgres refuses the same insert, re-runs included
+  (`pricing_run_location_missing`), which `recordRun()` reports the same way. The plan lists the month as waiting on
+  the location, with its status, and creates nothing.
+- **A run whose line stops on the location fails, keeping nothing.** The price job reads the location's status over
+  the run's period once, when the run starts. At `zip_unknown`, `zip_plus_four_needed` or `zip_plus_four_unknown`
+  (`LOCATION_NOT_READY_STATUSES` in `@tp/contracts`; and an empty location on a run created before locations existed),
+  a line the engine stops on the location (`locality_needs_zip_plus_four`, `zip_plus_four_not_in_locality_map`, and
+  `no_locality` only for a ZIP on no Medicare list) rolls the pricing transaction back whole, and the run fails
+  `location_not_ready` in a transaction of its own, with no line kept. It is the customer's step, which Coverage and
+  Pricing settings name: the operator is not paged and triage is not queued. A month whose lines never read the
+  locality (a fixed schedule, per visit) prices as before; with a ready location, or a content gap
+  (`locality_not_loaded`), a stopped line stays `ENGINE_ERROR` for the operator, as before. A line stopped as
+  `ENGINE_ERROR no_locality_plus_four` (PR 6b-1's review: the release has no ZIP+4 file of the ZIP in force on the
+  line's date) is a content gap at every status, never a location stop: the run completes, the line pages the
+  operator, and the practice is never asked to change its ZIP or ZIP+4.
+- **Such a month is not priced again every day.** A failed run never covers a month, so the plan would create one a
+  day. It waits instead (`waitingOnLocation()`) while the newest run of exactly that month failed `location_not_ready`
+  under the release in force, its cut-off at or after the month's newest line, and was created at or after the
+  location was last saved. A save of the location, a new release in force or a newer line plans it again. The job
+  logs `LOCATION_NOT_READY` with the count of waiting months, as information.
+- **A save queues the plan by its request.** `monitor` takes a third payload, `{ practice_id, request_id }`, the
+  save's request ID (as `audit_event.request_id` records it), keyed `monitor:<practice>:<request>`: a daily job that is
+  queued or active, and may have read the old location, never swallows the save, and a second send of the same save
+  is refused while the first waits. No reconcile is queued for it.
+- **The split the run pinned.** The price job and the release dry run price with `runSettings()`: the location's ZIP
+  and ZIP+4, the practice's rounding and own places of service, and every place it has not set from the
+  place-of-service split the run pinned (`pricing_run_split()`, read as the application role). The trace keeps the
+  merged places; the re-run diff names the settings keys that differ, and skips a record read in one run only for the
+  location's three record types when the ZIP or ZIP+4 changed.
+
+Tests: `apps/worker/src/monitor/monitor.db.test.ts` (PRC-23: a practice with no location gets no run, a month that
+needs its ZIP+4 fails once and is not re-created on the next day's plan, a save planned by its request prices it beside
+a queued daily job, a new release in force plans it again), `apps/worker/src/price/price.db.test.ts` (PRC-23 and
+PRC-24, as the worker's login), `apps/worker/src/jobs/registry.test.ts` and `apps/worker/src/monitor/job.test.ts`.

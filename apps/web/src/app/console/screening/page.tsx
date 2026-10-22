@@ -9,7 +9,7 @@ import { loadPage } from '../../../lib/http/next';
 import { type ScreeningSplitView, screeningSplitPage } from '../../../lib/screening/routes';
 import { approveScreeningSplitAction } from './actions';
 
-export const metadata: Metadata = { title: 'Screening place of service' };
+export const metadata: Metadata = { title: 'Place-of-service split' };
 
 type Props = { readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -26,32 +26,36 @@ function codesOf(split: ScreeningSplitView | null, setting: 'facility' | 'non_fa
 }
 
 /**
- * The free screening's place-of-service split (Change Order 001, CO-04; reconciliation-001, D20 a): the platform's
- * default, which a contract specialist approves (a person, never a model; permission rate_record.approve). The engine
- * prices a screening row at the facility or non-facility rate by its place of service and leaves a place outside the
- * split unpriced. Each approval is a new record, kept with who approved it and when; the latest is in force for new
- * screenings, and a run keeps the split it was pinned to. Screening stays closed until a split is approved and a rule
- * release is in force.
+ * The place-of-service split (Change Order 001, CO-04; reconciliation-001, D20 a; since PR 6b every practice's default,
+ * docs/adr/0064): the platform's default, which a contract specialist approves (a person, never a model; permission
+ * rate_record.approve). The engine prices a row at the facility or non-facility rate by its place of service and
+ * leaves a place outside the split unpriced; a practice's own setting comes first. Each approval is a new record, kept
+ * with who approved it and when; the latest is in force for new screenings and each practice's next pricing run, and
+ * a run keeps the split it was pinned to. Screening stays closed until a split is approved and a rule release is in
+ * force.
  */
 export default async function ScreeningSplitPage(props: Props) {
   const page = await loadPage(screeningSplitPage, { searchParams: props.searchParams });
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="screening_split" roles={page.roles} message={page.message} nextStep="The screening's place-of-service split is approved by a contract specialist." />;
+    return <Forbidden shell={page.shell} section="screening_split" roles={page.roles} message={page.message} nextStep="The place-of-service split is approved by a contract specialist." />;
   }
   const { approved, releaseNo, inForce, history } = page.data;
   return (
     <AppShell shell={page.shell} section="screening_split">
       <div className="flex flex-col gap-1">
-        <h1 className="text-[2rem] font-bold leading-display tracking-display">Screening place of service</h1>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Place-of-service split</h1>
         <p className="text-base text-muted-foreground">
-          The free screening prices each Medicare row at the facility or the non-facility rate by its place of service. A place in neither list is left unpriced. Your approval is recorded under your
-          account with the time; the latest approval is in force for new screenings.
+          Each Medicare line and screening row prices at the facility or the non-facility rate by its place of service. A place in neither list is left unpriced, unless a practice has set it. Your approval
+          is recorded under your account with the time; the latest approval is in force.
+        </p>
+        <p className="text-base" data-split-warning>
+          Approving changes every place a practice has not set, from each practice’s next run, and the free screening’s split.
         </p>
       </div>
       {approved ? (
         <Alert data-state="approved">
           <AlertTitle>Split approved</AlertTitle>
-          <AlertDescription>New screenings are priced with it; screenings already queued keep the split they were given.</AlertDescription>
+          <AlertDescription>New screenings and each practice’s next pricing run use it; screenings already queued and runs already created keep the split they were given.</AlertDescription>
         </Alert>
       ) : null}
       <Card>

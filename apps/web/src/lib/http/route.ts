@@ -280,10 +280,19 @@ interface BaseContext<P, I> {
 
 export type PublicContext<P, I> = BaseContext<P, I>;
 
+/**
+ * Work a signed-in route runs only once its transaction has committed, in the order given: a job that must read what
+ * the request wrote (the monitor a location save queues plans with the saved location). It never runs for a request
+ * that fails or is refused. A failure of the work is logged by code and does not change the outcome: the request's
+ * records are already committed, and the job's own schedule takes it up.
+ */
+export type AfterCommit = (work: () => Promise<unknown>) => void;
+
 export interface ActorContext<P, I> extends BaseContext<P, I> {
   readonly actor: Actor;
   readonly scope: ActorScope<ScopeClient>;
   readonly platformRoles: readonly MembershipRole[];
+  readonly afterCommit: AfterCommit;
 }
 
 export interface PracticeContext<P, I> extends BaseContext<P, I> {
@@ -292,6 +301,7 @@ export interface PracticeContext<P, I> extends BaseContext<P, I> {
   readonly practiceId: string;
   readonly access: PracticeAccess;
   readonly platformRoles: readonly MembershipRole[];
+  readonly afterCommit: AfterCommit;
 }
 
 interface CommonSpec<P, I> {
