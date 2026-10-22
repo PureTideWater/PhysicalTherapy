@@ -1,6 +1,7 @@
 # 0014. Keep the audit log append-only with codes only, copy it nightly to write-once storage, drill restores monthly, and state retention as metadata
 
-- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
+- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md),
+  and by PR 6b-3 (below: the free screening's pricing leaves the platform jobs for its own consumer)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 6 (audit log, data lifecycle, observability), 8 (audit_event), 15 (files), 16 (audit log, backups
@@ -86,3 +87,31 @@ uses it (day end plus seven years), and the intake and deletion workflows will r
 
 Counsel and the first customers settle the retention schedule (PRD 20), the first audit rows approach seven years,
 the compute lands (milestone 11, where the operator login is granted), or deletion lands (milestone 12).
+
+## Amendment (PR 6b-3, 2026-10-21): the free screening's pricing leaves the platform jobs
+
+Audit #53 parts 3 and 4 (decisions 13 to 16), built under the founder's answers of 2026-10-21 (about 22:30 UTC) to
+PR 6b's Q1 and Q7; docs/adr/0062 records the consumer and the time check, 0019 its role and login.
+
+- **`screening_price` is no longer a platform job.** It leaves `PLATFORM_JOB_TYPES`, its payload and its minute
+  schedule (`apps/worker/src/jobs/platform.ts`) and becomes one of the screening consumer's two jobs
+  (`apps/worker/src/jobs/screening.ts`): `screening_price`, one run by its opaque ID (the web sends it once the upload
+  is stored, at the run's priority), and `screening_sweep`, every minute. The queue keeps its name, so jobs queued
+  before a deploy move to the consumer with no copy and no loss. `screening_expiry` stays a platform job, as
+  `tp_operator`.
+- **Its own service (Q1 (a)).** The consumer is the worker image with `WORKER_JOBS=screening`: one always-on task of
+  2 vCPU and 4 GiB pricing three screenings at once, each in its own worker thread, about $74.50 a month per
+  environment; production's is held at 0 until launch and staging's is always on (Q1 (b), (c)). Its main thread holds
+  pg-boss, the jobs' heartbeats, the worker's heartbeat and the sweep, and prices nothing. Every worker still creates
+  the screening queues (now with the 60-second job heartbeat, `SCREENING_QUEUE_OPTIONS`), so the web's send never
+  meets a missing queue; the consumer also sets the heartbeat on a queue that already existed (`updateQueue`, since
+  `createQueue` leaves it as it was) and removes the platform's old minute schedule of `screening_price` (a schedule
+  fired before then runs the sweep).
+- **The sweep sends, it does not price (Q7).** It fails a stale run out of attempts and sends each due run's job again
+  with its singleton key, its priority and the heartbeat (the exclusive policy refuses a duplicate), so every pricing
+  goes through pg-boss's order (the normal tier first, then an account's uploads past its share at -k and the day's
+  uploads past its cap at -1) and the consumer's three slots. It logs the queue's gauge (`screening queue`).
+- **The same failure rules.** A screening job's third failed attempt logs `job failed on its last attempt`, as every
+  job's; a run whose thread fails it fails its job with fixed text, never the error's. The consumer's graceful stop
+  waits 110 seconds for the runs in hand, under its service's 120-second stop timeout.
+
