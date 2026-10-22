@@ -10,11 +10,12 @@ import type { ScreeningServiceSettings } from './environments';
 
 /**
  * The main thread's old-generation heap in MiB: the container runs node with --max-old-space-size at this (#31's
- * explicit heap limit; the plan's G3). Each pricing thread has its own limit (apps/worker/src/screening/threads.ts,
- * SCREENING_THREAD_HEAP_MB), and the threads and the main thread together stay under 90% of the task's memory, so a
- * thread out of memory fails alone (infra/test/screening.test.ts reads the worker's constants and holds both).
+ * explicit heap limit; the plan's G3). Node gives every pricing thread the same limit, the process's flag winning over
+ * a thread's resourceLimits (apps/worker/src/screening/threads.ts, SCREENING_THREAD_HEAP_MB, equal to it), and the
+ * threads and the main thread together stay under 90% of the task's memory, so a thread out of memory fails alone
+ * (infra/test/screening.test.ts reads the worker's constants and holds both).
  */
-export const SCREENING_MAIN_HEAP_MB = 512;
+export const SCREENING_MAIN_HEAP_MB = 896;
 
 /** The node flag that sets it on the container's command. */
 export const SCREENING_MAIN_HEAP_FLAG = `--max-old-space-size=${String(SCREENING_MAIN_HEAP_MB)}`;

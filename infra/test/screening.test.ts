@@ -28,10 +28,12 @@ describe.each(ENVIRONMENTS)('%s: the screening consumer\'s size', (environment) 
     expect(screeningSlots(screening)).toBe(screening.desiredCount * SCREENING_THREADS);
   });
 
-  it('holds three threads of 1,024 MiB and a 512 MiB main thread under 90% of the task\'s 4,096 MiB (3,584 of 3,686.4)', () => {
+  it('holds three threads and the main thread, 896 MiB each, under 90% of the task\'s 4,096 MiB (3,584 of 3,686.4)', () => {
     const heaps = screeningHeapMib(screening, SCREENING_THREAD_HEAP_MB);
     expect(heaps).toBe(workerHeapMib(screening.concurrency));
-    expect(heaps).toBe(3 * 1024 + 512);
+    // Node gives each thread the process's own flag, so a thread's limit is the main thread's.
+    expect(SCREENING_THREAD_HEAP_MB).toBe(SCREENING_MAIN_HEAP_MB);
+    expect(heaps).toBe(4 * 896);
     expect(heaps).toBeLessThan(SCREENING_HEAP_SHARE * screening.memoryMiB);
     expect(SCREENING_HEAP_SHARE * screening.memoryMiB).toBeCloseTo(3686.4, 5);
   });

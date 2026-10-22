@@ -60,7 +60,9 @@ export const SCREENING_CONSUMER_STATES = ['held', 'running'] as const;
  *   production web keeps the screening closed unless it names the ImageTag the deploy runs, so a value a later deploy
  *   keeps by omission vouches for no other image and closes the screening instead.
  * - ScreeningConsumer (Q1 (b)): `held` (the default) or `running`. Only where the screening consumer starts at launch
- *   (production) does it count: the consumer runs no task until it is `running`. Elsewhere it runs once released.
+ *   (production) does it count: the consumer runs no task until it is `running` or ScreeningLaunch is not `closed`, so
+ *   a deploy that can open the screening always runs its consumer (a launch value with ScreeningConsumer left at
+ *   `held`, or reset to it by a rollback across PR 6b-3, still runs it). Elsewhere it runs once released.
  */
 export class DeployParameters extends Construct {
   readonly appDomainName: string;
@@ -160,20 +162,26 @@ export class DeployParameters extends Construct {
   }
 
   /**
-   * True once ImageTag names a release and ScreeningConsumer is `running`: created where a service starts at launch
-   * (the screening consumer in production), and nowhere else.
+   * True once ImageTag names a release and either ScreeningConsumer is `running` or ScreeningLaunch is not `closed`:
+   * the consumer runs whenever the screening can open, so no deploy opens it with no task to price what prospects send
+   * (the web opens it only for a launch value naming its own tag; a value kept from another tag runs the consumer while
+   * the page stays closed, which prices nothing new and costs the consumer's hours). Created where a service starts at
+   * launch (the screening consumer in production), and nowhere else.
    */
   get screeningLaunched(): CfnCondition {
     if (this.launchedCondition === undefined) {
       this.launchedCondition = new CfnCondition(this.parameterScope, 'ScreeningConsumerRunning', {
-        expression: Fn.conditionAnd(this.released, Fn.conditionEquals(this.screeningConsumer, 'running')),
+        expression: Fn.conditionAnd(
+          this.released,
+          Fn.conditionOr(Fn.conditionEquals(this.screeningConsumer, 'running'), Fn.conditionNot(Fn.conditionEquals(this.screeningLaunch, SCREENING_CLOSED))),
+        ),
       });
       this.launchedCondition.overrideLogicalId('ScreeningConsumerRunning');
     }
     return this.launchedCondition;
   }
 
-  /** `count` once released and ScreeningConsumer is `running`, 0 until then (the screening consumer's count at launch). */
+  /** `count` once released and ScreeningConsumer is `running` or a launch value is given, 0 until then (the screening consumer's count at launch). */
   countOnceLaunched(count: number): number {
     return Token.asNumber(Fn.conditionIf(this.screeningLaunched.logicalId, count, 0));
   }

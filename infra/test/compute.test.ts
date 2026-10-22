@@ -567,7 +567,7 @@ describe('the compute contract with the applications', () => {
     expect(COMMANDS.web).toEqual(['node', 'apps/web/server.js']);
     expect(COMMANDS.worker).toEqual(['node', '--enable-source-maps', 'dist/main.js']);
     // The screening consumer runs the same bundle with its main thread's heap limit (the plan's G3).
-    expect(COMMANDS.screening).toEqual(['node', '--enable-source-maps', '--max-old-space-size=512', 'dist/main.js']);
+    expect(COMMANDS.screening).toEqual(['node', '--enable-source-maps', '--max-old-space-size=896', 'dist/main.js']);
     // Its threads load the bundle's own thread file beside main.js.
     expect(source('apps/worker/build.ts')).toContain("'screening-thread'");
     // The worker bundle carries the migrator beside main.js, and the image the migrations it applies

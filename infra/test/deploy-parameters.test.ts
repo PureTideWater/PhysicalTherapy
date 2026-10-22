@@ -79,11 +79,22 @@ describe.each(ENVIRONMENTS)('%s: deploy-time parameters', (environment) => {
     expect(SCREENING_CONSUMER_STATES).toEqual(['held', 'running']);
   });
 
-  it('runs the screening consumer at launch only where its settings say so: production waits for ScreeningConsumer=running', () => {
+  it('runs the screening consumer at launch only where its settings say so: production waits for ScreeningConsumer=running or a launch value', () => {
     const conditions = (templateFor(environment).toJSON() as { Conditions: Record<string, unknown> }).Conditions;
     if (environment === 'production') {
+      // Whenever the screening can open (a launch value), the consumer runs, whatever ScreeningConsumer says: a deploy
+      // that passes the launch value and keeps or defaults ScreeningConsumer to held never opens a screening no task
+      // prices (the review of 2026-10-22).
       expect(conditions.ScreeningConsumerRunning).toEqual({
-        'Fn::And': [{ Condition: 'Released' }, { 'Fn::Equals': [{ Ref: PARAMETER_NAMES.screeningConsumer }, 'running'] }],
+        'Fn::And': [
+          { Condition: 'Released' },
+          {
+            'Fn::Or': [
+              { 'Fn::Equals': [{ Ref: PARAMETER_NAMES.screeningConsumer }, 'running'] },
+              { 'Fn::Not': [{ 'Fn::Equals': [{ Ref: PARAMETER_NAMES.screeningLaunch }, 'closed'] }] },
+            ],
+          },
+        ],
       });
     } else {
       expect(conditions.ScreeningConsumerRunning).toBeUndefined();
