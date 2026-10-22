@@ -6,7 +6,7 @@ import { practiceShapeUpload } from '@tp/tools/screening-capacity/uploads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { contentQuarters } from './content-span';
-import { screeningResult, screeningSubmit } from './routes';
+import { screeningResult, screeningSentPath, screeningSubmit } from './routes';
 import { SCREENING_HEADERS, ScreeningWorld, screeningRow } from './test-support/screening-world';
 
 /**
@@ -112,7 +112,7 @@ describe('a screening of 50,000 rows', () => {
         rows: text,
       },
     });
-    expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(outcome).toEqual({ status: 'ok', data: { redirect: screeningSentPath('soon') } });
     const stored = performance.now();
     expect(await world.price()).toEqual({ complete: 1, failed: 0, skipped: 0 });
     const token = world.tokenFor(email);

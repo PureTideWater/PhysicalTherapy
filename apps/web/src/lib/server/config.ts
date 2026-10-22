@@ -54,6 +54,13 @@ const schema = z.object({
   TP_ENVIRONMENT: z.enum(['dev', 'staging', 'production']).optional(),
   // The static host the build's assets load from (next.config.ts and the CSP, src/proxy.ts): checked here at start.
   STATIC_ASSET_ORIGIN: z.string().regex(STATIC_ORIGIN_PATTERN, 'an https origin with no path').optional(),
+  // Decision 13 (docs/adr/0062): the release tag this server runs (the stack's ImageTag) and the deploy's launch value,
+  // `closed` or `<tag>:<SHA-256 of the tag's passing capacity report>`; a production server opens the screening only
+  // when the value names its own tag (src/lib/screening/routes.ts, screeningLaunched).
+  IMAGE_TAG: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/, 'an image tag').optional(),
+  SCREENING_LAUNCH: z.string().regex(/^(closed|v[0-9A-Za-z.-]{1,60}:[0-9a-f]{64})$/, 'closed, or a tag and a 64-hex SHA-256').optional(),
+  // Screenings the consumer prices at once (its tasks times its threads): the "sent" page's "every slot is busy".
+  SCREENING_SLOTS: z.string().regex(/^[1-9][0-9]?$/, 'a whole number from 1 to 99').optional(),
 });
 
 export type AuthProviderSettings =
@@ -61,6 +68,18 @@ export type AuthProviderSettings =
   | { readonly kind: 'cognito'; readonly userPoolId: string; readonly clientId: string; readonly region: string };
 
 export type KeyProviderSettings = { readonly kind: 'local'; readonly masterKey: Buffer } | { readonly kind: 'kms'; readonly keyId: string };
+
+/**
+ * The deploy's word on the screening (decision 13): the release tag this server runs and the launch value the deploy
+ * passed. Null where unset (development, tests, and a deploy before the first launch).
+ */
+export interface ScreeningLaunch {
+  readonly imageTag: string | null;
+  readonly value: string | null;
+}
+
+/** Screenings priced at once where SCREENING_SLOTS is unset: one consumer task of three threads (Q1 (a)). */
+export const DEFAULT_SCREENING_SLOTS = 3;
 
 /** Where uploads land: the documents bucket (presigned PUTs under SSE-KMS) or a local directory. */
 export type DocumentSettings = { readonly kind: 's3'; readonly bucket: string; readonly kmsKeyId: string } | { readonly kind: 'local'; readonly dir: string };
@@ -138,6 +157,10 @@ export interface WebConfig {
   readonly complianceExportDir: string | null;
   /** The deployment this server runs in (the evidence export names it); dev outside staging and production. */
   readonly environment: 'dev' | 'staging' | 'production';
+  /** IMAGE_TAG and SCREENING_LAUNCH: a production server opens the screening only for a launch value of its own tag. */
+  readonly screeningLaunch: ScreeningLaunch;
+  /** SCREENING_SLOTS: when this many screenings are queued or pricing ahead, the "sent" page says it can take minutes. */
+  readonly screeningSlots: number;
 }
 
 export class ConfigError extends Error {
@@ -250,6 +273,8 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     environment: production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TP_ENVIRONMENT, 'TP_ENVIRONMENT') : (settings.TP_ENVIRONMENT ?? 'dev'),
     trustedProxyHops: Number.parseInt(production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TRUSTED_PROXY_HOPS, 'TRUSTED_PROXY_HOPS') : (settings.TRUSTED_PROXY_HOPS ?? '0'), 10),
     securityEmail: deployed ? needed(settings.SECURITY_EMAIL, 'SECURITY_EMAIL') : (settings.SECURITY_EMAIL ?? 'security@synthetic.test'),
+    screeningLaunch: { imageTag: settings.IMAGE_TAG ?? null, value: settings.SCREENING_LAUNCH ?? null },
+    screeningSlots: settings.SCREENING_SLOTS === undefined ? DEFAULT_SCREENING_SLOTS : Number.parseInt(settings.SCREENING_SLOTS, 10),
   };
   if (deployed) {
     // What the public pages and security.txt name (audit item #20 (f)): never the development defaults.

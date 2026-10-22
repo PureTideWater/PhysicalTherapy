@@ -35,7 +35,7 @@ class MemoryJar implements CookieJar {
   }
 }
 
-export function screeningServices(pool: DatabasePool, options: { readonly queue?: JobQueue; readonly sink?: (line: string) => void } = {}): Services {
+export function screeningServices(pool: DatabasePool, options: { readonly queue?: JobQueue; readonly sink?: (line: string) => void; readonly screeningSlots?: number } = {}): Services {
   const sealer = new Sealer(randomBytes(32));
   return createServices({
     origin: SCREENING_ORIGIN,
@@ -51,6 +51,7 @@ export function screeningServices(pool: DatabasePool, options: { readonly queue?
     sealer,
     logger: createLogger({ sink: options.sink ?? (() => undefined) }),
     queue: options.queue ?? new MemoryQueue(),
+    ...(options.screeningSlots === undefined ? {} : { screeningSlots: options.screeningSlots }),
   });
 }
 

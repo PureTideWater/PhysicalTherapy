@@ -7,11 +7,24 @@ import { ScreeningUploadForm } from '../../components/screening/upload-form';
 import { loadPublicPage } from '../../lib/http/next';
 import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, REDUCED_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
 import { SENT_KEPT } from '../../lib/screening/retention';
-import { screeningPage } from '../../lib/screening/routes';
+import { type ScreeningWaitState, screeningPage } from '../../lib/screening/routes';
 import { TEMPLATE_COLUMNS, TEMPLATE_RULES } from '../../lib/screening/template';
 import { submitScreeningAction } from './actions';
 
 export const metadata: Metadata = { title: 'Free screening' };
+
+/**
+ * The "sent" alert's first words, by where the upload stands in the queue (the founder's Q12 of 2026-10-21, the
+ * recommended wording, for counsel to confirm before the screening opens): usually within a minute; a few minutes when
+ * every slot is busy; and, with no time promised, one over its account's share of the day or over the day's cap (Q7).
+ */
+const SCREENING_SENT_WAIT: Readonly<Record<ScreeningWaitState, string>> = {
+  soon: 'We are screening your file. The result is emailed to the address you gave as a link, usually within a minute.',
+  minutes: 'We are screening your file. Every screening slot is busy right now, so the result, emailed to the address you gave as a link, can take a few minutes.',
+  account:
+    'We have your file. Your email address or its organization has already screened more than one day’s share today, so this file waits until the screenings ahead of it are done, and the result, emailed to the address you gave as a link, can take longer than usual.',
+  day: 'We have your file. The screening has reached its limit for today, so this file waits until the screenings ahead of it are done, and the result, emailed to the address you gave as a link, can take longer than usual.',
+};
 
 /**
  * The free screening (Change Order 001, CO-04; reconciliation-001, D11, D18 to D21): a prospect uploads a file of
@@ -38,11 +51,11 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
           </p>
         </div>
         {data.sent ? (
-          <Alert data-state="sent">
+          <Alert data-state="sent" data-wait={data.wait ?? 'soon'}>
             <AlertTitle>Check your email</AlertTitle>
             <AlertDescription>
-              We are screening your file. The result is emailed to the address you gave as a link, usually within a few minutes, and the link opens it for 30 days, or until a later screening for the same
-              practice or from the same email address replaces it. <span data-copy="kept" data-legal-surface="screening-kept-sent">
+              <span data-copy="wait">{SCREENING_SENT_WAIT[data.wait ?? 'soon']}</span> The link opens the result for 30 days, or until a later screening for the same practice or from the same email
+              address replaces it. <span data-copy="kept" data-legal-surface="screening-kept-sent">
                 {SENT_KEPT}
               </span> If nothing arrives, check your spam folder, or{' '}
               <Link className="underline" href="/screening">

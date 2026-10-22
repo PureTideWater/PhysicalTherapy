@@ -7,7 +7,7 @@ import { shapeRows, screeningRows } from '@tp/tools/screening-capacity/uploads';
 import { screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { SCREENING_GROUPS_PER_PAGE, type ScreeningResultData, screeningResult, screeningSubmit } from './routes';
+import { SCREENING_GROUPS_PER_PAGE, type ScreeningResultData, screeningResult, screeningSentPath, screeningSubmit } from './routes';
 import { ScreeningWorld, submitInput } from './test-support/screening-world';
 
 /**
@@ -73,7 +73,7 @@ beforeAll(async () => {
   await world.publishContentFrom2025(900021);
   const email = 'prospect.worst@clinic-worst.synthetic.test';
   const outcome = await world.call(screeningSubmit, { input: submitInput({ rows: screeningRows(shapeRows('worst')), zip: '00011', contactEmail: email }) });
-  expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+  expect(outcome).toEqual({ status: 'ok', data: { redirect: screeningSentPath('soon') } });
   const { owner } = world;
   const run = (
     await owner.query<{ id: string }>(

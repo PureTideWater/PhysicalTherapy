@@ -394,6 +394,20 @@ describe('the web configuration', () => {
     expect(() => readWebConfig({ ...base, STATIC_ASSET_ORIGIN: 'https://static.synthetic.test/assets' })).toThrow(ConfigError);
   });
 
+  it('reads the release tag, the screening launch value and the consumer\'s slots, closed and three when unset (decision 13; docs/adr/0062)', () => {
+    expect(readWebConfig(base)).toMatchObject({ screeningLaunch: { imageTag: null, value: null }, screeningSlots: 3 });
+    const sha = 'e'.repeat(64);
+    expect(readWebConfig({ ...base, IMAGE_TAG: 'v2027.1.0', SCREENING_LAUNCH: `v2027.1.0:${sha}`, SCREENING_SLOTS: '6' })).toMatchObject({
+      screeningLaunch: { imageTag: 'v2027.1.0', value: `v2027.1.0:${sha}` },
+      screeningSlots: 6,
+    });
+    expect(readWebConfig({ ...base, IMAGE_TAG: 'none', SCREENING_LAUNCH: 'closed' }).screeningLaunch).toEqual({ imageTag: 'none', value: 'closed' });
+    expect(() => readWebConfig({ ...base, SCREENING_LAUNCH: 'open' })).toThrow(new ConfigError('invalid settings: SCREENING_LAUNCH'));
+    expect(() => readWebConfig({ ...base, SCREENING_LAUNCH: `v2027.1.0:${sha.toUpperCase()}` })).toThrow(new ConfigError('invalid settings: SCREENING_LAUNCH'));
+    expect(() => readWebConfig({ ...base, SCREENING_SLOTS: '0' })).toThrow(new ConfigError('invalid settings: SCREENING_SLOTS'));
+    expect(() => readWebConfig({ ...base, IMAGE_TAG: 'latest:sha' })).toThrow(new ConfigError('invalid settings: IMAGE_TAG'));
+  });
+
   it('requires every implementation choice explicitly in production', () => {
     const e2e = { ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e' };
     expect(() => readWebConfig({ ...base, NODE_ENV: 'production' })).toThrow(new ConfigError('TP_AUTH_PROVIDER is required in production'));
