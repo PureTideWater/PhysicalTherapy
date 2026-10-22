@@ -18,7 +18,7 @@ catalog:
   react-dom: ^19.3.1
   tsx: ^4.23.15
   typescript: ^6.0.3
-  vitest: ^5.0.4
+  vitest: ^5.0.5
   zod: ^4.6.7
 
 # pnpm 10 runs no dependency lifecycle scripts unless they are listed here.
