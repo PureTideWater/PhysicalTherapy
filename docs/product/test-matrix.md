@@ -85,7 +85,7 @@ Every case the suites must contain, by module, with the fixture that exercises i
 | PRC-18 | Property: turning a flag off never lowers the amount | Holds |
 | PRC-19 | Re-run under release 2 with one changed RVU | Diff lists exactly the affected lines |
 | PRC-20 | 100,000 lines | Under two minutes on one vCPU |
-| PRC-21 | A ZIP whose locality needs its ZIP+4 | With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`. Never a guessed locality |
+| PRC-21 | A ZIP whose locality needs its ZIP+4 | With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. With no ZIP+4 file of the ZIP in force, `ENGINE_ERROR no_locality_plus_four`, a gap in the content. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`, the trace naming the file read. Never a guessed locality |
 | PRC-22 | The engine freeze outside the ZIP+4 lookup | The base and head engines give equal results on every golden claim and on generated five-digit claims. The diff under `packages/pricing/src` holds only the exception's files, and no existing golden file changes |
 
 PRC-21 and PRC-22 were added by Change Order 001 in its pull request 6b-1, under the founder's ruling of 2026-10-18 11:47 UTC (reconciliation-001 line 428, the ZIP+4 lookup the only engine change) and the founder's answers of 2026-10-21 to PR 6b's Q3 (the record type `locality_map_plus_four`) and Q4 (golden claims G196-G199 under release 900006); docs/adr/0064.

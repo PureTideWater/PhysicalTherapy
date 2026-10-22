@@ -168,8 +168,8 @@ function dayAfter(date: string): string {
  * The ZIP+4 completeness check (docs/adr/0064): every ZIP whose locality_map record needs its ZIP+4
  * (plus_four_required, the ZIP5 file's flag) has locality_map_plus_four records of that ZIP, from the same quarter's
  * ZIP9 file, in force on every date of the flagged record's window. Without them the engine stops each of the ZIP's
- * fee-schedule lines (ENGINE_ERROR zip_plus_four_not_in_locality_map) though the practice gave its ZIP+4, so a
- * release that would do that is refused. One problem per flagged record, naming the first date left uncovered.
+ * fee-schedule lines (ENGINE_ERROR no_locality_plus_four) though the practice gave its ZIP+4, so a release that would
+ * do that is refused. One problem per flagged record, naming the first date left uncovered.
  * Only real releases are checked: the SYNTHETIC releases 900001 to 900005 flag 00012 with no ZIP9 file, on purpose.
  */
 export function plusFourGaps(records: readonly RuleRecord[]): string[] {

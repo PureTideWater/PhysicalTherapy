@@ -490,7 +490,7 @@ class PlusFour(unittest.TestCase):
 
     def test_a_release_with_no_plus_four_record_in_force_is_not_a_golden_line(self):
         for release in (self.base, self.split_release(plus_four=[self.plus_four_record("2027-01-01", None)])):
-            with self.subTest(release=release.number), self.assertRaisesRegex(gw.InputError, "holds no locality_map_plus_four record for ZIP 00012 in force on 2026-03-10.*zip_plus_four_not_in_locality_map"):
+            with self.subTest(release=release.number), self.assertRaisesRegex(gw.InputError, "holds no locality_map_plus_four record for ZIP 00012 in force on 2026-03-10.*no_locality_plus_four"):
                 self.priced(release, "00012", "0001")
         overlapping = self.split_release(plus_four=[self.plus_four_record(), self.plus_four_record("2026-03-01", None)])
         with self.assertRaisesRegex(gw.InputError, "two locality_map_plus_four records"):

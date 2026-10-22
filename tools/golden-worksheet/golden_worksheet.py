@@ -975,7 +975,7 @@ def plus_four_locality(release, locality, zip_code, plus_four, line):
     if split is None:
         raise InputError(
             f"release {release.number} holds no locality_map_plus_four record for ZIP {zip_code} in force on {line.date}: the engine stops the line "
-            "with ENGINE_ERROR (zip_plus_four_not_in_locality_map), so it is not a golden line"
+            "with ENGINE_ERROR (no_locality_plus_four), a gap in the content, so it is not a golden line"
         )
     name, listed = zip9_file(split, f"release {release.number}: the locality_map_plus_four record of ZIP {zip_code}")
     found = listed.get((zip_code, plus_four))

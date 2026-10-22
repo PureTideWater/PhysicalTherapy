@@ -623,8 +623,14 @@ function feeSchedule(context: LineContext, terms: PricedTerms, parameters: Perce
       throw new EngineInputError('locality_needs_zip_plus_four');
     }
     const split = release.inForce('locality_map_plus_four', { zip: settings.zip }, date);
-    const range = split?.value.ranges.find((item) => item.from <= given && given <= item.to);
-    if (split === null || range === undefined) {
+    if (split === null) {
+      // No ZIP+4 file of the ZIP is in force: the content lacks it, whatever the ZIP+4 (never blamed on the practice).
+      throw new EngineInputError('no_locality_plus_four');
+    }
+    const range = split.value.ranges.find((item) => item.from <= given && given <= item.to);
+    if (range === undefined) {
+      // The file in force lists no range holding the ZIP+4: the trace names that file, so its version is on record.
+      schedule.locality = { ...traced, plus_four_unlisted: release.ref(split) };
       throw new EngineInputError('zip_plus_four_not_in_locality_map');
     }
     ({ carrier, locality: localityNo } = range);

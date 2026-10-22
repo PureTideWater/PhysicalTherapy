@@ -74,7 +74,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'PRC-21',
     title: 'A ZIP whose locality needs its ZIP+4',
     assertion:
-      "With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`. Never a guessed locality",
+      "With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. With no ZIP+4 file of the ZIP in force, `ENGINE_ERROR no_locality_plus_four`, a gap in the content. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`, the trace naming the file read. Never a guessed locality",
   },
   {
     id: 'PRC-22',

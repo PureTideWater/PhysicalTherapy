@@ -241,7 +241,8 @@ export const prc21 = (b: CaseBuilder) =>
       locality: '02, with the plus-four record and its range in the trace; recompute(trace) holds',
       withZipPlusFour0001: 'locality 01, the amount of the ZIP 00011',
       withoutZipPlusFour: 'ENGINE_ERROR locality_needs_zip_plus_four',
-      withZipPlusFour9100: 'ENGINE_ERROR zip_plus_four_not_in_locality_map (no range lists it; never a guessed locality)',
+      withZipPlusFour9100: 'ENGINE_ERROR zip_plus_four_not_in_locality_map (no range lists it; never a guessed locality), the trace naming the plus-four record read',
+      withNoZipPlusFourRecord: 'ENGINE_ERROR no_locality_plus_four (release 900001: no ZIP+4 file of the ZIP in force, a gap in the content, never the practice ZIP+4)',
     },
   });
 

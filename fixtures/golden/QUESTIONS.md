@@ -228,9 +228,10 @@ and on what evidence.
 docs/adr/0064): the practice settings carry an optional ZIP+4, read only when the ZIP's `locality_map` record flags
 it; the locality is then the one the ZIP+4 file (CMS's ZIP9 file) lists for that ZIP+4, read in force on the service
 date whatever the year basis, and the trace records the range. With no ZIP+4 the engine stops the line with
-`ENGINE_ERROR` (`locality_needs_zip_plus_four`); with one the ZIP+4 file does not list, with `ENGINE_ERROR`
-(`zip_plus_four_not_in_locality_map`): never a neighbouring range's locality or the ZIP5 record's. Neither stop is a
-golden line. A ZIP the record does not flag ignores its ZIP+4. *Claims:* G196 to G199. *For the specialist:* does
+`ENGINE_ERROR` (`locality_needs_zip_plus_four`); with no ZIP+4 file of the ZIP in force, a gap in the content, with
+`ENGINE_ERROR` (`no_locality_plus_four`); with one the ZIP+4 file does not list, with `ENGINE_ERROR`
+(`zip_plus_four_not_in_locality_map`), the trace naming the file: never a neighbouring range's locality or the ZIP5
+record's. No stop is a golden line. A ZIP the record does not flag ignores its ZIP+4. *Claims:* G196 to G199. *For the specialist:* does
 Medicare apply the ZIP5 locality to a ZIP+4 the ZIP9 file does not list, or return the claim? (An answer of "the
 ZIP5 locality" changes the importer, not the engine.)
 

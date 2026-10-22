@@ -2,7 +2,7 @@
   "case": "PRC-21",
   "module": "PRC",
   "title": "A ZIP whose locality needs its ZIP+4",
-  "assertion": "With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`. Never a guessed locality",
+  "assertion": "With the ZIP+4, priced at the ZIP+4 file's range's locality, with the range in the trace and `recompute(trace)` holding. Without it, `ENGINE_ERROR locality_needs_zip_plus_four`. With no ZIP+4 file of the ZIP in force, `ENGINE_ERROR no_locality_plus_four`, a gap in the content. A ZIP+4 no range lists is `ENGINE_ERROR zip_plus_four_not_in_locality_map`, the trace naming the file read. Never a guessed locality",
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": [
@@ -391,7 +391,8 @@
     "locality": "02, with the plus-four record and its range in the trace; recompute(trace) holds",
     "withZipPlusFour0001": "locality 01, the amount of the ZIP 00011",
     "withoutZipPlusFour": "ENGINE_ERROR locality_needs_zip_plus_four",
-    "withZipPlusFour9100": "ENGINE_ERROR zip_plus_four_not_in_locality_map (no range lists it; never a guessed locality)"
+    "withZipPlusFour9100": "ENGINE_ERROR zip_plus_four_not_in_locality_map (no range lists it; never a guessed locality), the trace naming the plus-four record read",
+    "withNoZipPlusFourRecord": "ENGINE_ERROR no_locality_plus_four (release 900001: no ZIP+4 file of the ZIP in force, a gap in the content, never the practice ZIP+4)"
   },
   "notes": []
 }

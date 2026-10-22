@@ -211,6 +211,8 @@ describe('recompute(trace)', () => {
       expectReproduced(priceLines(day(), settings(zip, zipPlusFour), plusFour));
       expectReproduced(priceLines([lineFacts()], settings(zip, zipPlusFour), plusFour));
     }
+    // The stop of (e): no ZIP+4 record in force (release 900001).
+    expectReproduced(priceLines(day(), settings('00012', '0001')));
     const [first] = priceLines(day(), settings('00012', '5000'), plusFour);
     expect(first?.outcome).toBe('priced');
     const tampered = (change: (trace: PricingTrace) => void): string[] => {
@@ -232,6 +234,33 @@ describe('recompute(trace)', () => {
     // Without the ZIP+4 step a flagged ZIP's line has no locality, and the GPCI no longer follows from the ZIP5 record.
     expect(tampered((trace) => delete locality(trace).plus_four)).toEqual(['locality ZIP+4', 'GPCI record key']);
     expect(tampered((trace) => (locality(trace).plus_four_required = false))).toEqual(['locality ZIP+4']);
+    // Only the plus-four record decides, and a priced line never records a ZIP+4 file without its range.
+    expect(tampered((trace) => (split(trace).record.record_type = 'locality_map'))).toEqual(['ZIP+4 record type']);
+    expect(tampered((trace) => (locality(trace).plus_four_unlisted = split(trace).record))).toEqual(['ZIP+4 range not listed']);
+    expect(tampered((trace) => (trace.settings.zip_plus_four = '50000'))).toEqual(['ZIP+4 against the settings']);
+    // A ZIP+4 step the engine never writes is not a trace at all: text that is not four digits, whatever sorts inside
+    // the range ('undefined' and '50000' both fall between '5000' and '8999' as text).
+    const malformed = (change: (trace: PricingTrace) => void) => () => {
+      const trace = stored(first);
+      change(trace);
+      return recompute(trace);
+    };
+    expect(
+      malformed((trace) => {
+        delete trace.settings.zip_plus_four;
+        split(trace).zip_plus_four = 'undefined';
+        split(trace).to = 'zzzz';
+      }),
+    ).toThrow(new TraceRecomputeError('the value is not a pricing trace'));
+    expect(
+      malformed((trace) => {
+        trace.settings.zip_plus_four = '50000';
+        split(trace).zip_plus_four = '50000';
+      }),
+    ).toThrow(TraceRecomputeError);
+    for (const field of ['from', 'to'] as const) {
+      expect(malformed((trace) => (split(trace)[field] = `${split(trace)[field]}0`))).toThrow(TraceRecomputeError);
+    }
     // A ZIP+4 step on a ZIP that does not need one.
     const [unflagged] = priceLines(day(), settings('00011', '1234'), plusFour);
     const added = stored(unflagged);

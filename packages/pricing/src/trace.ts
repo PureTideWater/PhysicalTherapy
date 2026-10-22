@@ -22,6 +22,8 @@ export const TRACE_FORMAT = 'tp-pricing-trace/2';
 export const ENGINE_VERSION = 'phase-two/2';
 
 const decimalText = z.string().regex(/^-?\d+(?:\.\d+)?$/, 'must be decimal text');
+/** A ZIP+4's four digits, as the engine reads them (the settings keep what was given, verbatim). */
+const plusFourCode = z.string().regex(/^\d{4}$/, 'must be four digits');
 const centsText = z.string().regex(/^(?:0|-?[1-9]\d*)$/, 'must be whole cents as integer text');
 const dateText = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date written YYYY-MM-DD');
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'must be a SHA-256 in hex');
@@ -132,7 +134,8 @@ const feeSchedule = z.strictObject({
   /**
    * The practice ZIP's locality record, its own carrier and locality as written. A ZIP whose record needs its ZIP+4
    * is decided by the range of the plus-four record holding the settings' ZIP+4 (`plus_four`, present only then);
-   * without a ZIP+4 the line stops (ENGINE_ERROR).
+   * without a ZIP+4, or with no plus-four record in force, the line stops (ENGINE_ERROR). When the plus-four record in
+   * force has no range holding the ZIP+4, the line stops and `plus_four_unlisted` names that record.
    */
   locality: z
     .strictObject({
@@ -140,7 +143,10 @@ const feeSchedule = z.strictObject({
       carrier: z.string(),
       locality: z.string(),
       plus_four_required: z.boolean().nullable(),
-      plus_four: z.strictObject({ record: recordRef, zip_plus_four: z.string(), from: z.string(), to: z.string(), carrier: z.string(), locality: z.string() }).optional(),
+      plus_four: z
+        .strictObject({ record: recordRef, zip_plus_four: plusFourCode, from: plusFourCode, to: plusFourCode, carrier: z.string(), locality: z.string() })
+        .optional(),
+      plus_four_unlisted: recordRef.optional(),
     })
     .nullable(),
   gpci: z.strictObject({ record: recordRef, work_gpci: decimalText, pe_gpci: decimalText, mp_gpci: decimalText }).nullable(),
