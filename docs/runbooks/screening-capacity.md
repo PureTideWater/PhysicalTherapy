@@ -18,7 +18,8 @@ no credential is used.
 1. On GitHub's free 4-CPU runner (`runs-on: ubuntu-24.04`), builds both production images from their Dockerfiles and
    runs `pnpm screening:capacity --time-mode advisory` (`tools/screening-capacity/run.ts`) with the harness, its child
    processes and Chromium on Postgres's CPUs, as `pnpm -s screening:capacity --print-harness-cpus` gives them (0-1).
-   The release's capacity job (`release.yml`) runs the same harness on the same runner with `--time-mode binding`.
+   The release's capacity job (`release.yml`) runs the same harness on the same runner with `--time-mode binding`, and
+   its report job attests the report as that run's ("Provenance", below).
 2. Reads production's limits from `infra/lib/environments.ts` and `infra/lib/constructs/database.ts`: web half a vCPU
    and 1 GiB (the founder's ruling of 2026-10-22 on the sizing question, O9) and platform a quarter vCPU and 512 MiB,
    both with no swap; the screening consumer (`compute.screening`, PR 6b-3) one task of 2 vCPU and
@@ -59,7 +60,8 @@ no credential is used.
 6. Stops every service and compares S1-1, S2-1 and S3-1 (the last priced from the shared types the thread held) with the
    oracle (the old read path and adapter, frozen at 3c1b289) by SHA-256, and S1-2 (a ZIP split across localities, with
    its ZIP+4) with the whole-release oracle, each over all of its upload's Medicare rows; then removes Postgres.
-7. Writes `screening-capacity.json` (format `tp-screening-capacity/7`: the time mode (`timeMode`), the verdict's time
+7. Writes `screening-capacity.json` (format `tp-screening-capacity/8`: the GitHub Actions run that measured
+   (`workflow`, from `GITHUB_WORKFLOW_REF`, `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT`; null outside Actions), the time mode (`timeMode`), the verdict's time
    warnings (`verdict.timeWarnings`, an advisory run's), the layout and which it was (`expected.layout`, its `kind`
    `shared` or `own`) and the CPUs the harness ran on (`harnessAffinity`), the consumer as measured, both image IDs (each
    image's config digest, `docker image inspect -f {{.Id}}` on the runner's classic overlay2 image store), each
@@ -203,9 +205,9 @@ What it does:
 
 - S4 runs three times in every capacity run, as S4 always ran (a cold Postgres, restarted with its page cache dropped,
   then web, platform and the consumer fresh; the same uploads).
-- S4's time verdict is taken from the middle run: the three runs are ordered by their worst large upload's time to email
-  (a run with a large upload never emailed counts as the slowest), and the middle run's four uploads, the small one
-  included, are judged against the 48-s line, and its worst time against the 44-s sizing question. The gate's warning
+- S4's time verdict is taken from the middle run: the three runs are ordered by their worst upload's time to email, the
+  small one included (a run with an upload never emailed counts as the slowest), and the middle run's four uploads are
+  judged against the 48-s line, and its worst time against the 44-s sizing question. The gate's warning
   and the launch check's note use that time.
 - Every other scenario's time verdict is unchanged (one run each).
 
@@ -215,7 +217,10 @@ What it does not do:
   nothing pending, no `ENGINE_ERROR`, nothing stalled, every run emailed, the result pages), queue order, the slots used
   at once, no waiting tier, the platform pricing none, the time metric within its bounds, no OOM kill or restart, the
   cold start and the limits applied. The oracle comparisons (S1-1, S1-2, S2-1, S3-1) are as before.
-- It does not change the 48-s line, the 44-s question or any other verdict. Two of three runs above 48 s still fail.
+- It does not change the 48-s line, the 44-s question or any other verdict. Two of three runs with an upload above 48 s
+  still fail, whichever upload it was: the runs are ordered by all four uploads, so the middle run has one above the
+  line too (the verification of PR 6b-3's capacity changes; ordered by the large uploads alone, two runs whose small
+  upload was the slow one could pass).
 - On the free runner it still measures the runner's contention, which production does not have: the median takes the
   swing out of one verdict, not the contention out of the measurement. GitHub's 8-core larger runner, each service on
   CPUs of its own, takes the contention out ("The 8-core runner", below), once an organization owns the repository.
@@ -245,9 +250,11 @@ that day, replacing the 8-core runner: "Free: time advisory", no organization an
   the slots used, no waiting tier, the platform pricing none, the time metric within its 2-s bound, the limits applied,
   memory under 90% of each limit, no OOM kill or restart. A cancelled measurement fails the gate.
 - **Binding** (`--time-mode binding`: `release.yml`'s capacity job): time fails the run as every other check does.
-- **Decision 13:** the launch check accepts only a binding report that passes with time enforced, read again from its
-  measurements in binding mode (the median of three included); it refuses an advisory report whatever its verdict,
-  naming the mode. Production's screening still cannot open until a release passes the time-enforced capacity check.
+- **Decision 13:** the launch check accepts only the binding report release.yml measured on the tag and attested in
+  that run ("The launch check (decision 13)", below), passing with time enforced, read again from its measurements in
+  binding mode (the median of three included); it refuses an advisory report whatever its verdict, naming the mode, and
+  any report the release's run on the tag did not attest. Production's screening still cannot open until a release
+  passes the time-enforced capacity check.
 - **What it gives up:** a pull request no longer blocks on time, so a slowdown can merge unnoticed, a warning on its
   checks aside, until a release is measured; a release whose run fails on time still pushes its images but keeps
   production's screening closed until a later release passes. The free runner's shared CPUs put a contention
@@ -265,8 +272,8 @@ ruling of 2026-10-23 chose it after the median of three failed on the free runne
 measured 52.8 to 56.9 s, every correctness check holding; the free runner's S4 followed the host's speed, 38.3 s with
 the release loaded in 219 s on 19aa09c, 51.4 s at 262 s on 54ec890 and 56.9 s at 270 s on 35bcc56). It could not run
 without an organization, and the third ruling replaced it ("Time advisory and binding", above). It stays the faithful
-option: the harness already gives a runner of eight CPUs or more this layout (`cpuLayout()`), the report records it as
-`own`, and the launch check accepts it. The CPUs are the runner's logical CPUs; which of them are threads of one
+option: the harness already gives a runner of eight CPUs or more this layout (`cpuLayout()`) and the report records it as
+`own`; the launch check refuses it until a release measures there (`RELEASE_RUNNER`, step 5). The CPUs are the runner's logical CPUs; which of them are threads of one
 physical core is the host's, not the harness's.
 
 **Prerequisite:** GitHub's documentation offers GitHub-hosted larger runners only to organizations and enterprises on
@@ -287,8 +294,10 @@ with Settings → General → Transfer ownership). Confirm on GitHub's documenta
    request workflows from contributors") at least at its default: a fork's pull request that changes a watched path
    would measure on this runner, which is billed by the minute.
 5. A pull request then sets `runs-on: paidwhole-8core` on both capacity jobs, names the label in
-   `.github/actionlint.yaml` (actionlint refuses an unknown label), and changes `tools/test/workflows.test.ts` to hold
-   it; whether the pull request's time stays advisory there is the founder's to rule.
+   `.github/actionlint.yaml` (actionlint refuses an unknown label), changes `tools/test/workflows.test.ts` to hold
+   it, and moves `RELEASE_RUNNER` in `tools/screening-capacity/launch-check.ts` to that label and 8 CPUs, so the launch
+   check accepts the layout of CPUs of their own and refuses the shared one; whether the pull request's time stays
+   advisory there is the founder's to rule.
 
 **Cost:** GitHub bills a larger runner by the minute, public repository or not: about $0.032 a minute for 8-core Linux,
 about $44 a month by the design's estimate (about 1,375 runner minutes), and the organization's plan apart from it.
@@ -334,52 +343,114 @@ matches a line of either; a line is a path, or a pattern whose `*` also matches 
 
 ## The launch check (decision 13)
 
-Production's screening opens only when the latest capacity report for the image being deployed is the release's
-binding one and passes with time enforced, on both image IDs. The release workflow measures the `web-production` and worker images exactly as built
-and keeps the report as an asset of the tag's GitHub release. The deploy names that report, and the CDK app runs the
-check at synthesis and sets the launch value itself (the founder's ruling of 2026-10-22;
-docs/runbooks/deploy-and-rollback.md, steps 3 and 4):
+Production's screening opens only on the capacity report `release.yml` measured on the tag being deployed and attested
+in that same run: binding, passing with time enforced, on both image IDs. The release workflow measures the
+`web-production` and worker images exactly as built, attests the report with GitHub's artifact attestation, and keeps
+the report, its SHA-256, its summary and the attestation's bundle (`screening-capacity.sigstore.json`) as assets of the
+tag's GitHub release. The deploy names the report and the bundle, and the CDK app runs the check at synthesis and sets
+the launch value itself (the founder's ruling of 2026-10-22; docs/runbooks/deploy-and-rollback.md, steps 3 and 4):
 
 ```
-gh release download <tag> --pattern screening-capacity.json --dir <dir>
-cdk deploy tp-production -c tp:launchReport=<dir>/screening-capacity.json -c tp:launchTag=<tag> --parameters ImageTag=<tag>
+gh release download <tag> --pattern 'screening-capacity.*' --dir <dir>
+cdk deploy tp-production -c tp:launchReport=<dir>/screening-capacity.json \
+  -c tp:launchAttestation=<dir>/screening-capacity.sigstore.json -c tp:launchTag=<tag> --parameters ImageTag=<tag>
 ```
 
 The app (`infra/lib/screening-launch.ts`) reads the images the stack deploys, `<WebRepositoryUri>:<tag>` and
 `<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each by its manifest in ECR, so the images checked are
-those ECS runs, whatever image store the deployer's Docker uses. A binding report that passes gives
-`<tag>:<the report's SHA-256>`, which the stack writes into the web's `SCREENING_LAUNCH`, with a rule that refuses the deploy unless `ImageTag` is that tag; a refused report stops the
-synthesis, naming decision 13 and each reason; no report keeps production's screening closed. The value is never a
-parameter, and context that sets it by hand stops the synthesis. To preview the check before the deploy:
+those ECS runs, whatever image store the deployer's Docker uses, and verifies the report's attestation with `gh
+attestation verify` against the bundle ("Provenance", below). A report the check accepts gives `<tag>:<the report's
+SHA-256>`, which the stack writes into the web's `SCREENING_LAUNCH`, with a rule that refuses the deploy unless
+`ImageTag` is that tag; a refused report stops the synthesis, naming decision 13 and each reason; the three `-c` values
+go together, and none keeps production's screening closed. The value is never a parameter, and context that sets it by
+hand stops the synthesis. To preview the check before the deploy:
 
 ```
-pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-capacity.json --tag <tag> \
+pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-capacity.json \
+  --attestation <dir>/screening-capacity.sigstore.json --tag <tag> \
   --web-image <WebRepositoryUri>:<tag> --worker-image <WorkerRepositoryUri>:<tag>
 ```
 
-It prints the value the deploy will compute, or each reason and a non-zero exit. It checks the report's format
-(`tp-screening-capacity/7`; a report of S4 run once, or `/5` and `/6`, which record no time mode, are refused), its time
-mode (binding, the release's; an advisory report, a pull request's, is refused whatever its verdict, the mode named),
-the layout the report measured (one of the two production's settings give: the free runner's shared CPUs, where the
-release measures, or CPUs of their own on eight; another service's size in it is refused), the Docker runtime, a pass
-with time enforced as recorded and as the checkout's own `verdict()` reads the measurements again in binding mode,
-whatever mode the report records (S4's time on its middle run, the middle run the report names being the one its
-measurements give),
-the tag's commit, both images by config digest (the report's IDs, which the harness reads with `docker image inspect -f
-{{.Id}}` on the runner's classic overlay2 image store, where an image's ID is its config's SHA-256, against the config
-digest each image's manifest in ECR names, read with `docker buildx imagetools inspect --raw` and an index resolved to
-its linux/amd64 manifest; nothing is pulled), the web and platform measured at production's declared sizes (the web's half vCPU and 1 GiB since 2026-10-22),
-and the consumer measured against `compute.screening` for production. A note of the founder's sizing question (a worst
-judged time above 44 s, read again from the measurements, S4's from its middle run) does not stop it: the merge settles
-that question. The web keeps production closed unless
+It prints the value the deploy will compute, or each reason and a non-zero exit. It checks:
+
+- the report's format (`tp-screening-capacity/8`; every older one is refused: a report of S4 run once, `/5` and `/6`,
+  which record no time mode, and `/7`, which records no run) and the Docker runtime;
+- its time mode (binding, the release's; an advisory report, a pull request's, is refused whatever its verdict, the
+  mode named);
+- its provenance: the run the report records (`workflow`: `GITHUB_WORKFLOW_REF`, `GITHUB_RUN_ID` and
+  `GITHUB_RUN_ATTEMPT`, which the harness reads from the runner) must be
+  `PureTideWater/PhysicalTherapy/.github/workflows/release.yml@refs/tags/<tag>`, and the report's bytes must carry that
+  run's attestation ("Provenance", below); the note on an accepted report names the run and the attempts that measured
+  and attested it;
+- a pass with time enforced as recorded and as the checkout's own `verdict()` reads the measurements again in binding
+  mode, whatever mode the report records (S4's time on its middle run, the middle run the report names being the one
+  its measurements give; every other scenario judged on time whatever repetition it records);
+- the layout release.yml's runner gives production's sizes (`RELEASE_RUNNER` in `launch-check.ts`: the free 4-CPU
+  `ubuntu-24.04` runner's shared CPUs). A report measured on CPUs of their own, an 8-CPU runner's, is refused until a
+  release measures there ("The 8-core runner", above); `tools/test/workflows.test.ts` holds release.yml's runner to
+  `RELEASE_RUNNER`, so the two move together;
+- the tag's commit, and both images by config digest (the report's IDs, which the harness reads with `docker image
+  inspect -f {{.Id}}` on the runner's classic overlay2 image store, where an image's ID is its config's SHA-256, against
+  the config digest each image's manifest in ECR names, read with `docker buildx imagetools inspect --raw` and an index
+  resolved to its linux/amd64 manifest; nothing is pulled);
+- every size production declares, as the harness derives it from `infra/lib/environments.ts` and the database
+  construct: the web and the platform (the web's half vCPU and 1 GiB since 2026-10-22), each consumer task's vCPUs and
+  memory and their number, Postgres at db.t4g.medium's 2 vCPU and 4 GiB on the release layout's CPUs 0-1, the storage
+  at gp3's baseline, and the consumer as measured against `compute.screening` (its tasks, vCPUs, memory and
+  concurrency). A report that agrees with itself at another size, which its own verdict passes, is refused.
+
+A note of the founder's sizing question (a worst judged time above 44 s, read again from the measurements, S4's from its
+middle run) does not stop it: the merge settles that question. The web keeps production closed unless
 `SCREENING_LAUNCH` names the tag it runs, so a deploy of another tag without its own report closes the screening.
+
+### Provenance
+
+Until the verification of PR 6b-3's capacity changes, the check accepted any report that said `binding`: anyone could
+run the harness with `--time-mode binding` on a machine of their own, on the release's images and the tag's commit, or
+edit a report, and open production with it. Now only the release's report opens it:
+
+- **Signed:** `release.yml`'s report job attests `screening-capacity.json` with `actions/attest-build-provenance`
+  (pinned to a commit, v4.2.2). Sigstore's certificate for the signature is issued from GitHub's OIDC token for that job,
+  which no workflow can write: it names the signing workflow and its ref
+  (`https://github.com/PureTideWater/PhysicalTherapy/.github/workflows/release.yml@refs/tags/<tag>`), the repository,
+  the commit, the event (`push`), the runner (GitHub-hosted) and the run and attempt. The statement names the report's
+  SHA-256. The signature is entered in Sigstore's public transparency log and stored in the repository's attestations
+  (`https://github.com/PureTideWater/PhysicalTherapy/attestations`); the bundle is kept beside the report. Only the
+  report job has `id-token: write` and `attestations: write`, and it runs nothing but the attestation and `gh`, never
+  the code it measured.
+- **Verified:** the launch check runs `gh attestation verify <report> --bundle <bundle> --repo
+  PureTideWater/PhysicalTherapy --signer-workflow PureTideWater/PhysicalTherapy/.github/workflows/release.yml
+  --source-ref refs/tags/<tag> --source-digest <the tag's commit> --deny-self-hosted-runners --predicate-type
+  https://slsa.dev/provenance/v1 --format json`, then reads gh's verified result again, each field exactly: the
+  statement names the SHA-256 of the bytes it checked, the signer and the build signer are release.yml on the tag, the
+  repository, ref and commit are this one's and the tag's, the runner is GitHub-hosted, the event a push, and the run is
+  the one the report records. A report measured anywhere else (a pull request's run, a branch's, a fork's, a machine of
+  one's own) has no such attestation, and one changed by a single byte after it was signed matches none; each is
+  refused, naming why.
+- **On the deployer's machine:** `gh` (2.89.0 has every flag the check passes; an older gh that lacks one is refused,
+  naming the flag), with the bundle on disk, needs no GitHub login, and fetches Sigstore's trusted roots on first use
+  from `tuf-repo-cdn.sigstore.dev` and `tuf-repo.github.com`; where they cannot be reached the check is refused, naming
+  gh's error, and the screening stays closed.
+- **A re-run:** re-running the release's capacity job replaces the release's assets with the new report and bundle; the
+  report records its attempt and the check's note names it. Every attempt's attestation stays in the repository's
+  attestations and Sigstore's log, so the earlier reports' digests remain on record.
+- **What it does not prove:** that the code which measured is honest. It proves which workflow run wrote the report: the
+  tag's own code, with its locked dependencies. A tag is created only by the founder and never moved or deleted (the
+  release-tag rulesets, docs/runbooks/github-governance.md, 4C), and the release's actions are pinned to commits. Nor
+  does it bind a deploy made outside the CDK app: whoever holds production's deploy credentials can still set the
+  task's environment directly, which the account's access controls and CloudTrail govern, not this check.
+- **If the repository goes private:** artifact attestations for a private repository need GitHub Enterprise Cloud
+  (GitHub's plans give them to public repositories only below it). Making the repository private therefore needs this
+  revisited before the next release (open item O15), or every release's report goes unattested and production's
+  screening cannot open.
 
 ## Running it elsewhere
 
 - Anywhere, the machine needs 4 CPUs (the free runner's shared layout; eight or more gives each service its own); with
   fewer the harness stops as "runner too small" before it starts anything, naming each need. Every run names its time
   mode (`--time-mode advisory` or `--time-mode binding`, no default): advisory to read the times as warnings, binding
-  as a release does. Only a release's binding Docker report can open production.
+  as a release does. Only the binding report release.yml measures on a tag and attests in that run can open
+  production: a report measured anywhere else, binding or not, has no such attestation and is refused ("Provenance").
 - With Docker: build the images as tagged in the workflow, then
   `taskset -c "$(pnpm -s screening:capacity --print-harness-cpus)" pnpm screening:capacity --out <dir> --release-dir <dir> --web-image tp-web:capacity --worker-image tp-worker:capacity --time-mode advisory`
   (add `--static-asset-origin https://<host>` for a web image built with `STATIC_ASSET_ORIGIN`). The report's image IDs

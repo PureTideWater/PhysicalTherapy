@@ -68,11 +68,15 @@ static host (its assets load from the application host), and says so in the buil
    `<env>` is `staging` or `production` (each built with its own static host, so pages load their assets from
    CloudFront; ADR 0055); the plain `web` image, with none, is for an environment without CloudFront. The repositories'
    tags are immutable: a tag is never pushed twice.
-3. **The launch report (production; decision 13, test matrix SCR-20).** Production's screening opens only for the
-   release's binding capacity report of the tag being deployed, passing with time enforced, on both image IDs (an
-   advisory report, a pull request's, is refused whatever its verdict), and only the CDK app sets its
-   launch value (the founder's ruling of 2026-10-22): at synthesis it runs the launch check on the report the deploy
-   names and on the images the stack deploys, `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the
+3. **The launch report (production; decision 13, test matrix SCR-20).** Production's screening opens only on the
+   capacity report `release.yml` measured on the tag being deployed and attested in that same run, binding and passing
+   with time enforced, on both image IDs (an advisory report, a pull request's, is refused whatever its verdict, and so
+   is a report measured anywhere else, or edited, which carries no attestation of the release's run on the tag), and
+   only the CDK app sets its launch value (the founder's ruling of 2026-10-22): at synthesis it verifies the report's
+   attestation with `gh attestation verify` against the bundle the release kept beside it (signed by this repository's
+   `.github/workflows/release.yml` at `refs/tags/<tag>`, at the tag's commit, on a GitHub-hosted runner; the
+   verification of PR 6b-3's capacity changes) and runs the launch check on the report the deploy names and on the
+   images the stack deploys, `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the
    account and region of your credentials, with the tag's commit in this checkout (step 1 fetched the tags) and
    production's sizes as `infra/lib/environments.ts` declares them. It compares each image by its config digest: the
    report holds the IDs the release's runner measured (`docker image inspect -f {{.Id}}` on its classic overlay2 image
@@ -83,14 +87,20 @@ static host (its assets load from the application host), and says so in the buil
    matter: under the containerd image store (the default for new Docker Desktop and Docker Engine 29 installs) `docker
    image inspect -f {{.Id}}` gives the manifest's digest instead, which is why the check never reads it. A registry it
    cannot read (log in first), a platform manifest not found, an index with no linux/amd64 manifest or an unexpected
-   media type is named as the reason. Download the release's report and log Docker in to the environment's registry
-   (`docker buildx` comes with Docker Desktop and with Docker Engine's `docker-buildx-plugin`); you may preview the
-   check, which prints the value the deploy will compute or each reason it refuses:
+   media type is named as the reason. Download the release's report with its attestation's bundle (the pattern takes
+   `screening-capacity.json`, `screening-capacity.sha256` and `screening-capacity.sigstore.json`) and log Docker in to
+   the environment's registry (`docker buildx` comes with Docker Desktop and with Docker Engine's
+   `docker-buildx-plugin`). The check needs the GitHub CLI (`gh`; 2.89.0 has every flag it passes, and an older one is
+   refused, naming the flag), which verifies the bundle on disk with no GitHub login and fetches Sigstore's trusted
+   roots on first use from `tuf-repo-cdn.sigstore.dev` and `tuf-repo.github.com`. You may preview the check, which
+   prints the value the deploy will compute, with a note naming the release's run and attempt that measured and
+   attested the report, or each reason it refuses:
 
    ```
-   gh release download <tag> --pattern screening-capacity.json --dir <dir>
+   gh release download <tag> --pattern 'screening-capacity.*' --dir <dir>
    aws ecr get-login-password | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
-   pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-capacity.json --tag <tag> \
+   pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-capacity.json \
+     --attestation <dir>/screening-capacity.sigstore.json --tag <tag> \
      --web-image <WebRepositoryUri>:<tag> --worker-image <WorkerRepositoryUri>:<tag>
    ```
 
@@ -100,17 +110,19 @@ static host (its assets load from the application host), and says so in the buil
    screening. Staging needs no report: its screening is not gated, so the end-to-end journey and staging's measurement
    of the runner-to-Fargate factor (decision 15) run there.
 4. **Deploy.** `cdk deploy tp-<env> --parameters ImageTag=<tag>`. In production, to open the screening, or keep it open,
-   name the tag's report on every deploy, with an absolute path (cdk runs the app from `infra/`):
+   name the tag's report and its attestation's bundle on every deploy, each with an absolute path (cdk runs the app
+   from `infra/`); the three `-c` values go together:
 
    ```
-   cdk deploy tp-production -c tp:launchReport=<dir>/screening-capacity.json -c tp:launchTag=<tag> \
+   cdk deploy tp-production -c tp:launchReport=<dir>/screening-capacity.json \
+     -c tp:launchAttestation=<dir>/screening-capacity.sigstore.json -c tp:launchTag=<tag> \
      --parameters ImageTag=<tag>
    ```
 
    The app writes `<tag>:<the report's SHA-256>` into the web's `SCREENING_LAUNCH` (the stack's `ScreeningLaunch` output
    shows it), and the stack's rule `ScreeningLaunchImageTag` refuses the deploy before any change unless `ImageTag` is
    `<tag>`. A report the check refuses stops the synthesis, naming decision 13 and each reason, and nothing is deployed:
-   to ship the release with the screening closed, deploy again without the two `-c` values. A deploy without them closes
+   to ship the release with the screening closed, deploy again without the three `-c` values. A deploy without them closes
    production's screening, since context holds for one invocation only and no launch value carries over from an
    earlier deploy. The screening consumer (held at no task until launch; the founder's Q1 (b)) runs whenever the
    deploy carries a launch value, so no deploy opens the screening without it. From production's first launch deploy
@@ -196,8 +208,10 @@ cdk deploy tp-<env> -c tp:skipMigrations=true --parameters ImageTag=<previous ta
 ```
 
 In production after launch, a rollback without a report closes the screening; to keep it open on the previous image,
-add that tag's own report, checked as in step 3 (`-c tp:launchReport=<dir>/screening-capacity.json -c
-tp:launchTag=<previous tag>`, the report downloaded from the previous tag's release). A report of the previous tag that
+add that tag's own report and its attestation's bundle, checked as in step 3 (`-c
+tp:launchReport=<dir>/screening-capacity.json -c tp:launchAttestation=<dir>/screening-capacity.sigstore.json -c
+tp:launchTag=<previous tag>`, both downloaded from the previous tag's release; a release from before the attestation
+has no bundle, and its report is refused). A report of the previous tag that
 the check refuses (one measured at other sizes than this checkout declares, for instance) stops the synthesis; roll
 back without it, with the screening closed.
 

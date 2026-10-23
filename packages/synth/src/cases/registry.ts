@@ -384,7 +384,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/jobs/enqueue.test.ts',
     'packages/db/src/screening-queue.db.test.ts',
   ]),
-  'SCR-20': none(6, 'The launch check reads synthetic capacity reports built in memory; no file.', [
+  'SCR-20': none(6, 'The launch check reads synthetic capacity reports and synthetic attestation verifications (gh’s JSON) built in memory; no file.', [
     'tools/screening-capacity/launch-check.test.ts',
     'tools/screening-capacity/report.test.ts',
     'apps/web/src/lib/screening/routes.db.test.ts',

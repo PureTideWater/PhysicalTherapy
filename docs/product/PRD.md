@@ -650,7 +650,7 @@ Browser to CloudFront (static) and the load balancer (dynamic); WAF; the Next.js
 
 ### Cost
 
-About $1,376 to $2,026 a month at ten customers and $2,376 to $3,576 at fifty, including the compliance platform, model calls and the free screening's consumer, whose capacity check runs on GitHub's free runner while the repository is public (section 19); model spend is cents per document. Reserved capacity is not bought before fifty customers.
+About $1,361 to $2,021 a month at ten customers and $2,376 to $3,576 at fifty, including the compliance platform, model calls and the free screening's consumer, whose capacity check runs on GitHub's free runner while the repository is public (section 19); model spend is cents per document. Reserved capacity is not bought before fifty customers.
 
 ## 16. Security and compliance engineering
 
@@ -823,7 +823,7 @@ Remittances, claims, lines and ledger entries: retained for the contract term pl
 | Textract, S3, KMS, Secrets Manager | $45 | $180 |
 | Model calls | $50 to $160 | $250 to $800 |
 | Compliance platform, workspace, tools | $750 to $1,300 | $1,000 to $1,500 |
-| **Total** | **$1,376 to $2,026** | **$2,376 to $3,576** |
+| **Total** | **$1,361 to $2,021** | **$2,376 to $3,576** |
 
 ## 20. Open decisions and assumptions
 

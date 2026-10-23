@@ -261,7 +261,10 @@ the role.
 `held` (the default) or `running`, counts only where the consumer starts at launch. The screening's launch value,
 `closed` or `<tag>:<SHA-256>` (pattern `^(closed|v[0-9A-Za-z.-]{1,60}:[0-9a-f]{64})$`: the tag and the SHA-256 of its
 passing capacity report), is not a parameter (the founder's ruling of 2026-10-22): the CDK app computes it at synthesis
-from `-c tp:launchReport=<file> -c tp:launchTag=<tag>` by running `launchCheck()` on the images the stack deploys,
+from `-c tp:launchReport=<file> -c tp:launchAttestation=<bundle> -c tp:launchTag=<tag>` by running `launchCheck()` on
+the report's attestation as `gh attestation verify` checks it against the bundle the release kept (only the report
+`release.yml` measured on the tag and attested in that run opens production: ADR 0062, the verification of PR 6b-3's
+capacity changes) and on the images the stack deploys,
 `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the deploy's account and region (`CDK_DEFAULT_ACCOUNT`,
 `CDK_DEFAULT_REGION`), each compared by the config digest its manifest in ECR names (nothing is pulled, so the
 deployer's image store does not matter), and writes it into the web's `SCREENING_LAUNCH` and the
