@@ -339,9 +339,10 @@ describe('Q7: the waiting tier keeps a thread for the normal tier', () => {
 });
 
 /**
- * A stand-in pricing thread for the consumer's own pool (threads.ts): it prices nothing, holds each run for the
- * milliseconds its ID ends with (none for an ID that does not end in digits), and writes when it took and ended each
- * run, on which thread, to `<mail dir>/runs.log`.
+ * A stand-in pricing thread for the consumer's own pool (threads.ts): it prices nothing, holds each run timedRun() made
+ * for the milliseconds its ID ends with, and any other run (the Q7 test's leftover waiting-tier job, whose random UUID
+ * can end in twelve digits or read as a number such as 1e10) not at all, and writes when it took and ended each run, on
+ * which thread, to `<mail dir>/runs.log`.
  */
 const TIMED_THREAD = `
 import { appendFileSync } from 'node:fs';
@@ -349,8 +350,8 @@ import { parentPort, threadId, workerData } from 'node:worker_threads';
 const log = workerData.notifications.mail.dir + '/runs.log';
 parentPort.on('message', async (request) => {
   appendFileSync(log, 'start ' + request.runId + ' ' + String(threadId) + ' ' + String(Date.now()) + '\\n');
-  const ms = Number(request.runId.slice(-12));
-  await new Promise((resolve) => setTimeout(resolve, Number.isFinite(ms) ? ms : 0));
+  const timed = /-0000-4000-8000-([0-9]{12})$/.exec(request.runId);
+  await new Promise((resolve) => setTimeout(resolve, timed === null ? 0 : Number(timed[1])));
   appendFileSync(log, 'end ' + request.runId + ' ' + String(threadId) + ' ' + String(Date.now()) + '\\n');
   parentPort.postMessage({ kind: 'priced', outcome: 'complete' });
 });
