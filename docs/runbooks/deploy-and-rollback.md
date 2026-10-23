@@ -39,7 +39,8 @@ static host (its assets load from the application host), and says so in the buil
    `v<major>.<minor>.<patch>` on main's merged commit (docs/runbooks/github-governance.md, 4C: only the founder can).
    The release workflow (`.github/workflows/release.yml`) builds the worker image and three web images (`web` with no
    static host, `web-staging` and `web-production` with each environment's), scans each and writes its software bill of
-   materials, measures the screening's capacity with time enforced on exactly `web-production` and `worker` as built, and
+   materials, measures the screening's capacity with time enforced and binding on exactly `web-production` and `worker`
+   as built (every other capacity run is advisory: the founder's third ruling of 2026-10-23), and
    pushes exactly the images it built and scanned, never a rebuild, to the repository's container registry under the
    tag. It keeps the capacity report (`screening-capacity.json`), its SHA-256 and its summary as assets of the tag's
    GitHub release (a draft release when the tag had none). A failed measurement does not stop the push; it keeps
@@ -67,8 +68,9 @@ static host (its assets load from the application host), and says so in the buil
    `<env>` is `staging` or `production` (each built with its own static host, so pages load their assets from
    CloudFront; ADR 0055); the plain `web` image, with none, is for an environment without CloudFront. The repositories'
    tags are immutable: a tag is never pushed twice.
-3. **The launch report (production; decision 13, test matrix SCR-20).** Production's screening opens only for a passing
-   capacity report of the tag being deployed, with time enforced, on both image IDs, and only the CDK app sets its
+3. **The launch report (production; decision 13, test matrix SCR-20).** Production's screening opens only for the
+   release's binding capacity report of the tag being deployed, passing with time enforced, on both image IDs (an
+   advisory report, a pull request's, is refused whatever its verdict), and only the CDK app sets its
    launch value (the founder's ruling of 2026-10-22): at synthesis it runs the launch check on the report the deploy
    names and on the images the stack deploys, `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the
    account and region of your credentials, with the tag's commit in this checkout (step 1 fetched the tags) and

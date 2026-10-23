@@ -297,6 +297,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'tools/screening-capacity/uploads.test.ts',
     'tools/screening-capacity/measure.test.ts',
     'tools/screening-capacity/launch-check.test.ts',
+    'tools/test/workflows.test.ts',
     'packages/synth/src/release/scale.test.ts',
     'packages/synth/src/screening/uploads.test.ts',
     'tools/release/scale.test.ts',
@@ -389,6 +390,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/screening/routes.db.test.ts',
     'infra/test/deploy-parameters.test.ts',
     'infra/test/compute.test.ts',
+    'tools/test/workflows.test.ts',
   ]),
   'JOB-01': { completesIn: 3, build: workflow.job01, assertedBy: ['apps/worker/src/worker.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/e2e/monitoring.spec.ts'] },
   'JOB-02': none(7, 'Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.', [

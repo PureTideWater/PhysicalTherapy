@@ -278,8 +278,9 @@ value: the stack checked its form and the web its tag, but neither could tell a 
 **The release's images** (`.github/workflows/release.yml`; decision 13 bound to both images). The release builds the
 worker image and the web image three times (`web` with no static host, `web-staging` and `web-production` with each
 environment's, from the repository variables `STAGING_STATIC_ASSET_ORIGIN` and `PRODUCTION_STATIC_ASSET_ORIGIN`), scans
-each and writes its SBOM, measures the screening with time enforced on exactly `web-production` and `worker` as built,
-on the capacity workflow's runner, and pushes exactly the images it scanned (loaded from the build's saved copies, each
+each and writes its SBOM, measures the screening with time enforced and binding on exactly `web-production` and `worker`
+as built, on the capacity workflow's runner (GitHub's free 4-CPU runner; every other capacity run is advisory, the
+founder's third ruling of 2026-10-23, and only the release's binding report can open production), and pushes exactly the images it scanned (loaded from the build's saved copies, each
 ID checked), never a rebuild. Before this, the release pushed a second build of what it scanned, and the deploy built the
 web image locally, unscanned. The report, its SHA-256 and its summary are the tag's release assets, from the one job that
 may write contents. A failed measurement does not hold a security fix back; it keeps the screening closed. The deploy
@@ -292,21 +293,23 @@ review round of 2026-10-22 found the web's quarter vCPU the largest share of the
 at once reached the queue after 14.6 to 16.0 s on it, 6.9 s on half a vCPU), and CI's run on 7abb99c measured a worst
 of 46.0 s against the 44-s question. The consumer stays one task of 2 vCPU and 4 GiB with three threads; only if CI's
 worst time is still above 44 s with the larger web do a 4 vCPU and 8 GiB consumer and GitHub's 8-core runner go back to
-the founder, and the 48-s line and the 44-s question do not change. *Since the founder's ruling of 2026-10-23 on the
-runner* the measurement runs on GitHub's 8-core runner, each service on CPUs of its own; a middle S4 run's worst time
-above 44 s there takes the 4 vCPU and 8 GiB consumer back to the founder (docs/adr/0062, Owner rulings (2026-10-23)).
-The capacity harness measures the web at this size,
-read from the same declaration, and the launch check refuses a report measured at another. The web's command sets no
+the founder, and the 48-s line and the 44-s question do not change. *Since the founder's rulings of 2026-10-23*
+(docs/adr/0062, Owner rulings (2026-10-23)) the measurement runs on GitHub's free 4-CPU runner, its CPUs shared, S4's
+time judged on the middle of three runs, advisory on pull requests and binding on a release's run; the 8-core runner,
+which the second ruling chose, needs an organization and stays the faithful option once one owns the repository. The
+capacity harness measures the web at this size, read from the same declaration, and the launch check refuses a report measured at another. The web's command sets no
 heap flag: Node 24 sizes V8's heap from the container's memory limit (a 560 MiB heap limit at 1 GiB, 259 MiB at 512
 MiB, measured), so the heap follows the task.
 
 **Cost** (PRD 19, the founder's Q1 of 2026-10-21; prices read from search results, to be read again on AWS's own pages
 before the first deploy, open item O12): the consumer about $74.50 a month per environment once it runs (about $60.10 on
-ARM after #136); staging always on; production about $0.40 a month (its secret) until launch. GitHub's 8-core larger
-runner (`paidwhole-8core`) for the capacity workflow and the release's measurement now, public repository or private
-(the founder's ruling of 2026-10-23 on the runner), about $44 a month: GitHub bills it by the minute, about $0.032 a
-minute for 8-core Linux, about 1,375 runner minutes a month by the design's estimate, the price to be read again on
-GitHub's pricing page before it is relied on (O12). The web at half
+ARM after #136); staging always on; production about $0.40 a month (its secret) until launch. The capacity workflow and
+the release's measurement run on GitHub's free 4-CPU runner, at no cost while the repository is public (the founder's
+third ruling of 2026-10-23, "Free: time advisory", which replaced the second ruling's 8-core larger runner, about $44 a
+month, because larger runners need an organization). Once the repository is private its standard runner has 2 CPUs,
+too small for the harness, and the capacity test needs a 4-core larger runner, about $22 a month, which itself needs an
+organization on GitHub Team (the price to be read again on GitHub's pricing page before it is relied on, O12). The web
+at half
 a vCPU and 1 GiB (the founder's ruling of 2026-10-22): about $18.02 a task a month instead of $9.01 (us-east-1
 on-demand, x86, 730 hours: $0.04048 a vCPU-hour and $0.004445 a GB-hour), so about $36.04 a month in production's two
 tasks instead of $18.02 (+$18.02), and about $18.02 in staging's one instead of $9.01 (+$9.01); dev's stack, when
