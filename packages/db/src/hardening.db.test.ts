@@ -349,8 +349,11 @@ describe('the audit log', () => {
       code(asApp(north.adminUserId, [], "INSERT INTO audit_event (actor_id, actor_kind, action, object_type) VALUES ($1, $2, $3, 'user')", [north.adminUserId, kind, action]));
     expect(await insert('user', 'membership_created')).toBe('accepted');
     expect(await insert('system', 'membership_created')).toBe('42501');
-    for (const reserved of ['notice_sent', 'security_event', 'sign_in_failed', 'data_key_destroyed']) {
-      expect(await insert('user', reserved)).toBe('42501');
+    // And, since migration 20261107090000, the three the mail record writes: a notice no one received, and the
+    // screening stream's pause and resume (audit #76), which only its definer functions write.
+    for (const reserved of ['notice_sent', 'security_event', 'sign_in_failed', 'data_key_destroyed', 'notice_undelivered', 'mail_stream_paused', 'mail_stream_resumed']) {
+      expect(await insert('user', reserved), reserved).toBe('42501');
+      expect(await insert('service', reserved), reserved).toBe('42501');
     }
   });
 });

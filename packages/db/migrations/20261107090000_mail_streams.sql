@@ -458,14 +458,15 @@ BEGIN
   END IF;
   PERFORM operator_assert_scope(g.practice_id);
   PERFORM pg_advisory_xact_lock(hashtext(notice || ':' || target::text));
-  notice_id := NULL;
-  recipients := 0;
   opened := false;
   SELECT n.id, n.recipients INTO notice_id, recipients FROM support_grant_notice n WHERE n.support_grant_id = target AND n.notice = notice;
   IF FOUND THEN
     RETURN NEXT;
     RETURN;
   END IF;
+  -- Not opened: none, and no recipient, unless it is opened below.
+  notice_id := NULL;
+  recipients := 0;
   IF notice = 'support_grant_closed' THEN
     IF NOT (now() >= g.expires_at OR now() >= g.created_at + interval '4 hours') THEN
       RETURN NEXT;
