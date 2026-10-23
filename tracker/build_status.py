@@ -295,6 +295,7 @@ BLOCKERS = [
   ("A GitHub identity for the build (runbook 3i), then APPROVAL_REVIEW_REQUIRED", "CO1", "You", "docs/runbooks/github-governance.md, step 3i; until then the build merges on green CI (D4 a)"),
   ("Counsel: decisions 3, 4, 7 and 17, the cookie notice, the 11-line floor, the screening terms, the campaign-code wording", "CO1", "Counsel", "Before the first real packet and before the screening opens"),
   ("Specialist: Q21 on sequestration", "M5, CO1", "Specialist", "fixtures/golden/QUESTIONS.md"),
+  ("Revisit: how the screening's 60-second promise is measured (free runner, time advisory on PRs; issue #41)", "CO1, launch", "You", "Before the screening opens: measure on AWS staging (recommended) or an organization on GitHub Team with the 8-core runner; then the sizing question O9"),
 ]
 
 def journal(run):
