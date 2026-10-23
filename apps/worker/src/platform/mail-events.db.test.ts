@@ -49,14 +49,19 @@ afterAll(async () => {
   await database.drop();
 });
 
-/** Every stream open, confirmed and unprobed, and no message recorded: each test starts from the seeded state. */
+/**
+ * Every stream open, confirmed and unprobed, and no message recorded: each test starts from the seeded state. The window
+ * starts a minute back, as the seeded one starts at the migration: a test's events carry this process's clock to the
+ * millisecond, and a window starting at the database's now(), to the microsecond, would begin after a message stamped
+ * in the same millisecond and leave it uncounted (CI on 6579169, SCR-21).
+ */
 beforeEach(async () => {
   await owner.query('DELETE FROM screening_bounce_mark');
   await owner.query('DELETE FROM mail_send');
   await owner.query('DELETE FROM screening_mail_refusal');
   await owner.query(`UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL,
                        pause_complaints = NULL, ses_enabled_confirmed_at = now(), probe_sent_at = NULL, probe_delivered_at = NULL,
-                       probe_bounced_at = NULL, resumed_at = NULL, window_starts_at = now()`);
+                       probe_bounced_at = NULL, resumed_at = NULL, window_starts_at = now() - interval '1 minute'`);
 });
 
 /** The queue in memory: a message received and not deleted is hidden until the run ends (its visibility timeout). */
