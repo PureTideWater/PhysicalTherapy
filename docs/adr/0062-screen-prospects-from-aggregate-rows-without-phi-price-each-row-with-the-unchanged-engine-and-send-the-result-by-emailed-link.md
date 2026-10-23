@@ -339,7 +339,9 @@ outside a pull request opens or updates one issue from a job that holds the work
 no repository code. Its report (`tp-screening-capacity/2`) holds counts, times, limits and hashes, never a row, a link
 or a token. *Since PR 6b-3 time is enforced: the harness runs the consumer as production will, the workflow is a
 required check through its gate job, and the report (`tp-screening-capacity/4`) names the consumer and both image IDs
-(Amendment (PR 6b-3)).*
+(Amendment (PR 6b-3)). Since the founder's ruling of 2026-10-23, S4 runs three times, its time judged on the middle run,
+the report is `tp-screening-capacity/5` and the job's timeout 100 minutes (Amendment (PR 6b-3), Owner rulings
+(2026-10-23)).*
 
 **The result page holds one page of groups (audit #53 part 1, found by the capacity test's first local run).** The
 page read and rendered every group by payer product and code, and a worst-shape result's 20,507 groups exhausted the
@@ -737,7 +739,9 @@ The founder, Tyler Williams, accepted on 2026-10-20 the recommended answer to ev
     the runner is than Fargate, then at 60 seconds scaled by that factor. *Built:* `TIME_ALLOWANCE_MS`,
     `TIME_PROMISE_MS` and `RUNNER_TO_FARGATE` (null until staging measures it) in `tools/screening-capacity/limits.ts`;
     `timeVerdict()` in `report.ts`: 47.9 s passes, 48.1 s fails as the allowance, 60.1 s as the promise. *Enforced
-    from PR 6b-3:* every upload of every scenario, the small ones included.
+    from PR 6b-3:* every upload of every scenario, the small ones included. *Since the founder's ruling of 2026-10-23:*
+    S4 runs three times and its time is judged on the middle run, every other check in all three; the line is unchanged
+    (Amendment (PR 6b-3), Owner rulings (2026-10-23)).
 16. **How PR 6 merges before its consumer exists:** the test fails PR 6 on everything PR 6 controls; time shows as
     "open, PR 6b" until PR 6b declares the consumer in `infra/lib/environments.ts`, which switches it on in tested
     code. *Built:* `timeRule()` reads `compute.screening`; `report.test.ts` holds today's settings to "open" and a
@@ -971,6 +975,42 @@ ADR 0049:
     sent more than one day’s share of rows for screening that day."
   - `daily_cap`: "It waited behind other screenings because the screening had reached its limit for that day."
 
+### Owner rulings (2026-10-23)
+
+The capacity test measured the same code twice on GitHub's free 4-CPU runner: S4 (three worst-shape uploads at once and
+a small one behind them) at 38.3, 37.6 and 35.3 s on 19aa09c, a pass, and at 51.4, 51.4 and 45.2 s on 54ec890, the
+founder's commit of the domain model's approval line, a fail; the second runner was slower throughout (the release
+loaded in 262 s against 219 s). The cause is the runner, not the consumer: the harness's layout (`limits.ts`,
+`postgresLimit`) puts Postgres, the harness and Chromium on CPUs 0-1 and the consumer on 2-3 with the web and the
+platform on CPU 3, a contention production does not have, which swings with the host's speed. Asked whether to move the
+measurement to GitHub's 8-core larger runner (about $44 a month), the founder, Tyler Williams, ruled on 2026-10-23:
+"Stay free: median of 3".
+
+- **What it does:** the capacity workflow and the release's capacity job keep the free 4-CPU runner. S4 runs three times
+  in every capacity run (S4#1, S4#2 and S4#3, each as S4 always ran: a cold Postgres, restarted with its page cache
+  dropped, then web, platform and the consumer fresh; the same uploads from the same ZIPs, each run's under practice
+  names and addresses of its own, so none replaces another). The runs are ordered by their worst large upload's time
+  to email (one never emailed counts as the slowest), and S4's time verdict is the middle run's: its four uploads, the
+  small one included, against the 48-s line, and its worst time against the 44-s sizing question, which the gate's
+  warning and the launch check's note carry. Every other scenario's time is judged as before, on its one run.
+- **What it does not do:** it excuses no other check. Correctness (the oracle comparisons as before, row counts,
+  nothing pending, no `ENGINE_ERROR`, nothing stalled, every run emailed, the result pages), queue order, the slots used
+  at once, no waiting tier, the platform pricing none, the time metric within its bounds, no OOM kill or restart, the
+  cold start and the limits applied hold in all three runs. The 48-s line, the 44-s question and every other verdict are
+  unchanged; two runs of three above the line still fail. It still measures the runner's contention, which production
+  does not have: the median takes the host's swing out of S4's verdict, not the contention out of the measurement.
+  GitHub's 8-core larger runner, with Postgres, the consumer, the web with the platform, and the harness each on CPUs of
+  their own, remains the option that measures production's layout; the 4-core larger runner still replaces
+  `ubuntu-24.04` once the repository is private (Q1 (d)).
+- **Built:** `tools/screening-capacity/scenario-runs.ts` (`REPEATED_SCENARIO`, `REPETITIONS`), `uploads.ts` (S4's three
+  runs), `report.ts` (`repeatedScenario()`, the verdict, `worstTime()` and the summary's line naming every run's times
+  and the middle run, which the harness also logs), the report `tp-screening-capacity/5` (each of S4's runs a scenario of
+  its own with its repetition, and `repeated`), and `launch-check.ts`, which reads the middle run again from the
+  measurements, refuses a report naming another, and refuses `tp-screening-capacity/4` as any older format. The two
+  more runs take about 3 minutes (CI's S4 took 59 s on 19aa09c and 78 s on 54ec890 from its cold restart to S5's
+  start), so both capacity jobs' timeouts went from 90 to 100 minutes; the harness's deadlines (60 and 70 minutes)
+  stay. Test matrix SCR-08; docs/runbooks/screening-capacity.md, "S4's three runs".
+
 ### The consumer, as built
 
 `WORKER_JOBS=screening` (`apps/worker/src/main.ts`, `config.ts`) runs the screening's queues alone, with
@@ -1057,8 +1097,9 @@ runner's first CPUs (0-1, shared with the harness and Chromium), the consumer th
 consumer's last (3), each a listed harsher departure, the web at production's half vCPU and 1 GiB read from
 `compute.web` (the founder's ruling of 2026-10-22); a runner with fewer than 4 CPUs is too small, since 3 would leave
 Postgres one CPU, which lands at the line (the design's run 9). Time is enforced (`HARNESS_RUNS_SCREENING_CONSUMER`):
-every upload of every scenario, the small ones included, fails above 48 s on the runner. The report
-(`tp-screening-capacity/4`) names the consumer as measured (tasks, vCPUs, MiB, threads) and both image IDs, and fails a
+every upload of every scenario, the small ones included, fails above 48 s on the runner, S4's on the middle of its three
+runs (the founder's ruling of 2026-10-23, Owner rulings (2026-10-23) above). The report (`tp-screening-capacity/4`, `/5`
+since that ruling) names the consumer as measured (tasks, vCPUs, MiB, threads) and both image IDs, and fails a
 consumer measured at another size, its three threads not pricing S4's and S5's large uploads at once, an upload in the
 waiting tier (every scenario upload is a prospect of its own, at a domain of its own, so none crosses a share), and the
 consumer's time-to-email line missing or out of its bounds: never above the time from the harness's click on "Screen the
@@ -1090,7 +1131,8 @@ deploy names the report and its tag as context (`cdk deploy tp-production -c tp:
 `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each read by its
 manifest in ECR (the copies ECS runs). It gives `<tag>:<the report's SHA-256>` only for a Docker-runtime report of the
 tag's commit that passes with time enforced (as recorded and as this checkout's `verdict()` reads its measurements
-again), on both images by config digest (the report's IDs, `docker image inspect -f {{.Id}}` on the release runner's
+again, S4's time on its middle run of three, the middle run the report names being the one its measurements give), on
+both images by config digest (the report's IDs, `docker image inspect -f {{.Id}}` on the release runner's
 classic overlay2 image store, where an image's ID is its config's SHA-256, against the `config.digest` of each image's
 manifest in ECR, an index resolved to its linux/amd64 manifest; nothing is pulled, so the deployer's image store does
 not matter, and the containerd store's `{{.Id}}`, a manifest's digest, is never read: the verification of PR 6b-3), with
@@ -1115,6 +1157,6 @@ run is cancelled (`always()`: a job skipped by its condition counts as passing a
 the web's screening entry points and the harness, and the files no import reaches (the Dockerfiles, the web's Next
 config, the manifests and the lockfile, the migrations, the workflow); a unit test holds the committed list equal to
 what `watched.ts` derives, and the changes job reads it from the base and the head as data. A run whose worst time is
-above 44 s posts a warning annotation and the gate prints the sizing question, so it shows on the pull request's
-checks. A path filter on the trigger would leave a required check pending on every other pull request.
+above 44 s (S4's from its middle run) posts a warning annotation and the gate prints the sizing question, so it shows on
+the pull request's checks. A path filter on the trigger would leave a required check pending on every other pull request.
 
