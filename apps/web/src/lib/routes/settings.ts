@@ -869,6 +869,12 @@ export interface InvitationView {
   readonly sends: number;
   readonly acceptedAt: Date | null;
   readonly expired: boolean;
+  /**
+   * When the invitation's email was reported undelivered (bounced, suppressed, rejected or complained; docs/adr/0065,
+   * D10), or null. Only while that report is about the email last sent (at or after sent_at less 5 seconds, the clock
+   * skew between SES and the database), so a late report of an earlier email never flags a resent one.
+   */
+  readonly undeliveredAt: Date | null;
 }
 
 const organizationParams = z.object({ organizationId: opaqueId, notice: optionalText(z.enum(['invited', 'role_changed', 'ended', 'resent'])).catch(undefined) });
@@ -898,8 +904,19 @@ export const usersSettingsPage = organizationRoute({
         ORDER BY u.email, m.id`,
       [organizationId],
     );
-    const invitations = await scope.client.query<{ id: string; email: string; role: MembershipRole; sent_at: Date; expires_at: Date; sends: number; accepted_at: Date | null; expired: boolean }>(
-      `SELECT i.id, u.email, m.role, i.sent_at, i.expires_at, i.sends, i.accepted_at, (i.accepted_at IS NULL AND i.expires_at <= now()) AS expired
+    const invitations = await scope.client.query<{
+      id: string;
+      email: string;
+      role: MembershipRole;
+      sent_at: Date;
+      expires_at: Date;
+      sends: number;
+      accepted_at: Date | null;
+      expired: boolean;
+      undelivered_at: Date | null;
+    }>(
+      `SELECT i.id, u.email, m.role, i.sent_at, i.expires_at, i.sends, i.accepted_at, (i.accepted_at IS NULL AND i.expires_at <= now()) AS expired,
+              CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_at END AS undelivered_at
          FROM invitation i JOIN "user" u ON u.id = i.user_id JOIN membership m ON m.id = i.membership_id
         WHERE i.organization_id = $1 AND (m.ends_at IS NULL OR m.ends_at > now())
         ORDER BY i.accepted_at IS NOT NULL, i.sent_at DESC, i.id LIMIT 100`,
@@ -912,7 +929,17 @@ export const usersSettingsPage = organizationRoute({
         (row): MemberView => ({ membershipId: row.id, userId: row.user_id, email: row.email, role: row.role, status: row.status, mfaEnrolled: row.mfa_enrolled, self: row.self }),
       ),
       invitations: invitations.rows.map(
-        (row): InvitationView => ({ id: row.id, email: row.email, role: row.role, sentAt: row.sent_at, expiresAt: row.expires_at, sends: row.sends, acceptedAt: row.accepted_at, expired: row.expired }),
+        (row): InvitationView => ({
+          id: row.id,
+          email: row.email,
+          role: row.role,
+          sentAt: row.sent_at,
+          expiresAt: row.expires_at,
+          sends: row.sends,
+          acceptedAt: row.accepted_at,
+          expired: row.expired,
+          undeliveredAt: row.undelivered_at,
+        }),
       ),
       notice: params.notice ?? null,
     };

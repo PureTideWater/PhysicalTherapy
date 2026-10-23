@@ -205,3 +205,22 @@ export const FILE_MESSAGES = {
   textAfterQuote: 'A cell has text after its closing quote. Save it again as CSV and choose it again.',
   noFile: 'Choose the file to screen.',
 } as const;
+
+/**
+ * What the screening says while its mail stream is paused (audit #76; docs/adr/0065, D7; the founder's Q12 of
+ * 2026-10-21: the recommended wording, for counsel to confirm before the screening opens): the page's alert, and the
+ * refusal of an upload that raced the pause.
+ */
+export const SCREENING_PAUSED = {
+  title: 'New screenings are paused',
+  text: 'Too many of our recent result emails could not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.',
+  refusal: 'New screenings are paused while we fix our result emails. Try again later.',
+} as const;
+
+/**
+ * What the screening says when the client or the email account it is counted under has had 3 screening results that
+ * could not be delivered in 7 days (the bounce budget; the founder's Q10 (a) of 2026-10-21): the recommended wording,
+ * for counsel to confirm before the screening opens. It names no address and nothing about any one screening.
+ */
+export const SCREENING_BOUNCE_BUDGET =
+  'Several recent screening results sent from this connection, or to this email account, could not be delivered, so we cannot take another screening from it for up to 7 days. Check the email address, or request an audit instead.';

@@ -408,6 +408,43 @@ describe('the web configuration', () => {
     expect(() => readWebConfig({ ...base, IMAGE_TAG: 'latest:sha' })).toThrow(new ConfigError('invalid settings: IMAGE_TAG'));
   });
 
+  it('checks a screening\'s address with SES and DNS under the day\'s cap on a deployed server, and with the stand-ins elsewhere (docs/adr/0065; Q1 (g))', () => {
+    expect(readWebConfig(base).mailValidation).toEqual({ kind: 'local', dailyCap: 50, delayMs: 0 });
+    expect(readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '2000', MAIL_VALIDATION_DAILY_CAP: '7' }).mailValidation).toEqual({ kind: 'local', dailyCap: 7, delayMs: 2000 });
+    expect(() => readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '9000' })).toThrow(new ConfigError('MAIL_CHECK_DELAY_MS is at most 5000'));
+    expect(() => readWebConfig({ ...base, MAIL_VALIDATION: 'smtp' })).toThrow(new ConfigError('invalid settings: MAIL_VALIDATION'));
+    expect(() => readWebConfig({ ...base, MAIL_VALIDATION_DAILY_CAP: '0' })).toThrow(new ConfigError('invalid settings: MAIL_VALIDATION_DAILY_CAP'));
+    const deployed = {
+      ...base,
+      NODE_ENV: 'production',
+      TP_AUTH_PROVIDER: 'cognito',
+      COGNITO_USER_POOL_ID: 'us-east-1_Synthetic',
+      COGNITO_CLIENT_ID: 'syntheticclient',
+      TP_KEY_PROVIDER: 'kms',
+      KMS_KEY_ID: 'alias/tp',
+      AUTH_COOKIE_SECRET: key,
+      TRUSTED_PROXY_HOPS: '1',
+      SUPPORT_EMAIL: 'help@synthetic.test',
+      SECURITY_EMAIL: 'security@synthetic.test',
+      TP_ENVIRONMENT: 'staging',
+      APP_ORIGIN: 'https://app.synthetic.test',
+      DOCUMENTS_BUCKET: 'tp-staging-documents',
+      DOCUMENTS_KMS_KEY_ID: 'alias/tp',
+      BILLING_DATABASE_URL: base.DATABASE_URL,
+    };
+    expect(() => readWebConfig(deployed)).toThrow(new ConfigError('MAIL_VALIDATION is required in production'));
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses' })).toThrow(new ConfigError('MAIL_VALIDATION_DAILY_CAP is required in production'));
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'local', MAIL_VALIDATION_DAILY_CAP: '50' })).toThrow(
+      new ConfigError('MAIL_VALIDATION=local is refused in production (SES and DNS only, outside the e2e suite)'),
+    );
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_CHECK_DELAY_MS: '2000' })).toThrow(
+      new ConfigError('MAIL_CHECK_DELAY_MS is refused in production (it slows the local stand-ins only)'),
+    );
+    expect(readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50 });
+    // The end-to-end suite's production build checks with the stand-ins.
+    expect(readWebConfig({ ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key, BILLING_DATABASE_URL: base.DATABASE_URL }).mailValidation.kind).toBe('local');
+  });
+
   it('requires every implementation choice explicitly in production', () => {
     const e2e = { ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e' };
     expect(() => readWebConfig({ ...base, NODE_ENV: 'production' })).toThrow(new ConfigError('TP_AUTH_PROVIDER is required in production'));
@@ -450,6 +487,8 @@ describe('the web configuration', () => {
       DOCUMENTS_BUCKET: 'tp-production-documents',
       DOCUMENTS_KMS_KEY_ID: 'alias/tp-production',
       QUEUE_DATABASE_URL: 'postgres://tp_queue:x@db.internal:5432/tp',
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: '1000',
     });
     expect(config).toMatchObject({
       origin: 'https://app.synthetic.test',
@@ -464,6 +503,7 @@ describe('the web configuration', () => {
       environment: 'production',
       esign: { kind: 'none' },
       complianceExportDir: null,
+      mailValidation: { kind: 'ses', dailyCap: 1000 },
     });
     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
@@ -528,6 +568,8 @@ describe('the web configuration', () => {
       SECURITY_EMAIL: 'security@synthetic.test',
       APP_ORIGIN: 'https://app.synthetic.test',
       TP_ENVIRONMENT: 'staging',
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: '1000',
     };
     expect(readWebConfig(production)).toMatchObject({ supportEmail: 'help@synthetic.test', environment: 'staging', esign: { kind: 'none' }, complianceExportDir: null });
     expect(() => readWebConfig({ ...production, SUPPORT_EMAIL: undefined })).toThrow(new ConfigError('SUPPORT_EMAIL is required in production'));
@@ -559,6 +601,8 @@ describe('the web configuration', () => {
       SECURITY_EMAIL: 'security@synthetic.test',
       APP_ORIGIN: 'https://app.synthetic.test',
       TP_ENVIRONMENT: 'production',
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: '1000',
     };
     expect(readWebConfig(production)).toMatchObject({ securityEmail: 'security@synthetic.test', origin: 'https://app.synthetic.test' });
     expect(() => readWebConfig({ ...production, SECURITY_EMAIL: undefined })).toThrow(new ConfigError('SECURITY_EMAIL is required in production'));

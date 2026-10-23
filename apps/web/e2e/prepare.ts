@@ -8,6 +8,7 @@ import { PgBoss } from 'pg-boss';
 
 import { developmentMasterKey } from '../src/lib/server/config';
 import { seed } from '../scripts/seed';
+import { prepareMailAccounts } from './mail';
 import { approvePreparedSplit } from './split';
 import {
   E2E_AGREEMENTS_DIR,
@@ -17,6 +18,7 @@ import {
   E2E_DEV_AUTH_DIR,
   E2E_DOCUMENTS_DIR,
   E2E_ESIGN_DIR,
+  E2E_MAIL_EVENTS_DIR,
   E2E_MAIL_OUTBOX_DIR,
   E2E_MODEL_OUTPUTS_DIR,
   e2eAdminUrl,
@@ -50,6 +52,7 @@ try {
 rmSync(E2E_DEV_AUTH_DIR, { recursive: true, force: true });
 rmSync(E2E_DOCUMENTS_DIR, { recursive: true, force: true });
 rmSync(E2E_MAIL_OUTBOX_DIR, { recursive: true, force: true });
+rmSync(E2E_MAIL_EVENTS_DIR, { recursive: true, force: true });
 rmSync(E2E_BILLING_DIR, { recursive: true, force: true });
 for (const directory of [E2E_ESIGN_DIR, E2E_AGREEMENTS_DIR, E2E_COMPLIANCE_DIR]) {
   rmSync(directory, { recursive: true, force: true });
@@ -58,6 +61,8 @@ for (const directory of [E2E_ESIGN_DIR, E2E_AGREEMENTS_DIR, E2E_COMPLIANCE_DIR])
 rmSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true, force: true });
 mkdirSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true });
 await seed({ databaseUrl: e2eDatabaseUrl(), devAuthDirectory: E2E_DEV_AUTH_DIR, masterKey: developmentMasterKey() });
+// The mail journeys' two accounts (e2e/mail.ts; docs/adr/0065), in the store before the server reads it.
+await prepareMailAccounts(e2eDatabaseUrl(), E2E_DEV_AUTH_DIR);
 // The split before any spec: every practice's default for a place it has not set (docs/adr/0064).
 await approvePreparedSplit(e2eDatabaseUrl());
 // pg-boss's schema and the worker's queues, as the worker creates them on start: the server queues

@@ -127,11 +127,22 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
               </thead>
               <tbody>
                 {invitations.map((invitation) => (
-                  <tr key={invitation.id} className="border-t" data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.expired ? 'expired' : 'pending'}>
+                  <tr
+                    key={invitation.id}
+                    className="border-t"
+                    data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.undeliveredAt !== null ? 'undelivered' : invitation.expired ? 'expired' : 'pending'}
+                  >
                     <td className="py-1 pr-3">{invitation.email}</td>
                     <td className="py-1 pr-3">{roleName(invitation.role)}</td>
                     <td className="py-1 pr-3">
-                      {invitation.acceptedAt !== null ? `accepted ${utcDate(invitation.acceptedAt)}` : invitation.expired ? 'expired' : `open until ${utcDate(invitation.expiresAt)}`}
+                      {/* An invitation email reported undelivered (docs/adr/0065, D10): the administrator checks the address and invites again. */}
+                      {invitation.acceptedAt !== null
+                        ? `accepted ${utcDate(invitation.acceptedAt)}`
+                        : invitation.undeliveredAt !== null
+                          ? `Not delivered ${utcDate(invitation.undeliveredAt)}: check the address, then invite again`
+                          : invitation.expired
+                            ? 'expired'
+                            : `open until ${utcDate(invitation.expiresAt)}`}
                     </td>
                     <td className="py-1">
                       {invitation.acceptedAt === null ? (
