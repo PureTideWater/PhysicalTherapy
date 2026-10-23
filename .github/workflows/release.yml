@@ -115,13 +115,15 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  # Decision 13: the capacity test with time enforced, on the production web image and the worker image exactly as built
-  # and scanned (their IDs are the report's), on the same runner as .github/workflows/screening-capacity.yml's
-  # measurement (GitHub's 8-core larger runner, each service on CPUs of its own: the founder's ruling of 2026-10-23 on
-  # the runner), with its timeout: 100 minutes, S4 three times (the founder's ruling of 2026-10-23, median of 3).
+  # Decision 13: the capacity test with time enforced and binding, on the production web image and the worker image
+  # exactly as built and scanned (their IDs are the report's), on the same runner as
+  # .github/workflows/screening-capacity.yml's measurement (GitHub's free 4-CPU runner, its CPUs shared), with its
+  # timeout: 100 minutes, S4 three times (the founder's ruling of 2026-10-23, median of 3). Binding: a time above the
+  # line fails this run, and only a binding report that passes opens production's screening (the founder's third ruling
+  # of 2026-10-23, "Free: time advisory", which made every other capacity run advisory).
   capacity:
     needs: build
-    runs-on: paidwhole-8core
+    runs-on: ubuntu-24.04
     timeout-minutes: 100
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -171,7 +173,8 @@ jobs:
           cpus=$(pnpm -s screening:capacity --print-harness-cpus)
           echo "harness on CPUs $cpus"
           set -- --out "$RUNNER_TEMP/screening-capacity" --release-dir "$RUNNER_TEMP/scale-release" \
-            --web-image "$repository/web-production:$GITHUB_REF_NAME" --worker-image "$repository/worker:$GITHUB_REF_NAME"
+            --web-image "$repository/web-production:$GITHUB_REF_NAME" --worker-image "$repository/worker:$GITHUB_REF_NAME" \
+            --time-mode binding
           if [ -n "$PRODUCTION_ORIGIN" ]; then
             set -- "$@" --static-asset-origin "$PRODUCTION_ORIGIN"
           fi

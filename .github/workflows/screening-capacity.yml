@@ -5,17 +5,20 @@ name: screening-capacity
 # task sizes (half a vCPU and 1 GiB for web, the founder's ruling of 2026-10-22, and a quarter vCPU and 512 MiB for
 # platform; the screening consumer, WORKER_JOBS=screening, at 2 vCPU and 4 GiB pricing three at once), Postgres at
 # db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms delay each way, the SYNTHETIC scale release
-# 900100 and the practice and worst 50,000-row uploads, alone and three at once with a small one behind them. Time is enforced: above 48 s on the runner fails (decisions 13 to 16, the founder's
-# rulings of 2026-10-20; PR 6b-3). The measurement runs on GitHub's 8-core larger runner with Postgres, the consumer,
-# the web, the platform and the harness each on CPUs of their own, as production has them (the founder's second ruling
-# of 2026-10-23, "8-core runner"). The three worst at once (S4) run three times and their time is judged on the middle
-# run, every other check in all three (the founder's first ruling of 2026-10-23, median of 3, kept on the larger
-# runner). Synthetic data only, no credentials.
+# 900100 and the practice and worst 50,000-row uploads, alone and three at once with a small one behind them. Time is
+# judged against 48 s on the runner (decisions 13 to 16, the founder's rulings of 2026-10-20; PR 6b-3) and is advisory
+# here (the founder's third ruling of 2026-10-23, "Free: time advisory"): on every event this workflow runs on, none a
+# release, a time above the line is a warning on the checks and every other check fails the job; a release's capacity
+# run (release.yml) is binding, and production's screening opens only on its pass (decision 13). The measurement runs on
+# GitHub's free 4-CPU runner, its CPUs shared as before the 8-core ruling, which needed an organization. The three worst
+# at once (S4) run three times and their time is judged on the middle run, every other check in all three (the
+# founder's first ruling of 2026-10-23, median of 3). Synthetic data only, no credentials.
 #
 # A required check from PR 6b-3 on (the founder's Q8 of 2026-10-21; the founder sets the ruleset, runbook
 # screening-capacity "Making it required"): every pull request runs the workflow, and its "screening-capacity gate" job
-# passes at once when no watched path changed, else only when the measurement passed. A path filter on the trigger
-# would leave a required check pending forever on every other pull request.
+# passes at once when no watched path changed, else only when the measurement passed every check but time, whose
+# verdicts it carries as warnings. A path filter on the trigger would leave a required check pending forever on every
+# other pull request.
 on:
   schedule:
     # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (audit #54).
@@ -117,14 +120,16 @@ jobs:
     if: needs.changes.outputs.measure == 'true'
     outputs:
       sizing: ${{ steps.measure.outputs.sizing }}
-    # GitHub's 8-core larger runner (the founder's ruling of 2026-10-23 on the runner; Linux x64, 8 cores, 32 GB), which
-    # the founder creates under this name with the Ubuntu 24.04 image chosen in its settings, so its image is pinned
-    # there as ubuntu-24.04 pins the other jobs' (audit #19). Each service on CPUs of its own: Postgres 0-1 (db.t4g.medium's
-    # 2 vCPU), the consumer 2-3, the web 4, the platform 5, the harness and Chromium 6-7 (limits.ts, cpuLayout); a runner
-    # with fewer than 8 CPUs stops as "runner too small". The release's capacity job runs on the same runner. Until the
-    # runner exists this job waits in GitHub's queue and the gate does not pass (docs/runbooks/screening-capacity.md,
-    # "The 8-core runner").
-    runs-on: paidwhole-8core
+      time-warnings: ${{ steps.measure.outputs.time-warnings }}
+    # GitHub's free 4-CPU runner for a public repository (the founder's third ruling of 2026-10-23, "Free: time
+    # advisory": GitHub's larger runners exist only for an organization on GitHub Team or Enterprise Cloud, and
+    # PureTideWater is a personal account). Postgres keeps db.t4g.medium's 2 vCPU on 0-1, shared with the harness and
+    # Chromium, and the consumer its 2 on 2-3, whose last the web and the platform share (limits.ts, cpuLayout); a smaller
+    # runner stops as "runner too small". Once the repository is private its standard runner has 2, so this label (and the
+    # release's capacity job's, the same runner) becomes a 4-core larger runner, which needs an organization on GitHub
+    # Team (docs/runbooks/screening-capacity.md, "The 8-core runner"); until then a private run is refused as too small
+    # and the screening cannot open.
+    runs-on: ubuntu-24.04
     # A run takes 30 to 60 minutes (the scale release, two image builds, five scenarios, S4 three times); a hung scenario
     # stops at 100 instead of GitHub's 360 (docs/adr/0063). S4's two more runs (the founder's ruling of 2026-10-23) need
     # about 3 minutes: CI's S4 took 59 s on 19aa09c and 78 s on 54ec890 from its cold restart (about 20 s) to S5's start;
@@ -191,8 +196,10 @@ jobs:
           path: ${{ runner.temp }}/scale-release
           key: ${{ steps.scale-release.outputs.cache-primary-key }}
 
-      # The harness, its child processes and Chromium on CPUs of their own (6-7 on the 8-core runner), never a service's:
-      # the layout's own answer (limits.ts, harnessCpus), which the report records and the verdict holds them to.
+      # The harness, its child processes and Chromium on Postgres's CPUs (0-1 on the free 4-CPU runner), never the
+      # consumer's (2-3) or the CPU the web and the platform share (3): the layout's own answer (limits.ts, harnessCpus),
+      # which the report records and the verdict holds them to. Time advisory: a time above the line is annotated as a
+      # warning and handed to the gate, and every other failing check fails this step (report.ts, jobResult).
       - name: Measure under production limits
         id: measure
         run: |
@@ -202,7 +209,8 @@ jobs:
             --out "$RUNNER_TEMP/screening-capacity" \
             --release-dir "$RUNNER_TEMP/scale-release" \
             --web-image tp-web:capacity \
-            --worker-image tp-worker:capacity
+            --worker-image tp-worker:capacity \
+            --time-mode advisory
 
       # The report (written after every scenario, so a run that stops still has its figures), its SHA-256 and the
       # services' logs (IDs, codes and numbers by the logger's allowlist, synthetic data, result links masked).
@@ -218,12 +226,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
 
-  # The required check (Q8): passes at once when no watched path changed, else only when the measurement passed. It runs
-  # whatever the other jobs did, a cancelled run included: GitHub reports a job its condition skipped as a success for a
-  # required check, so a gate skipped on a cancel would pass with no measurement; run, it fails (CAPACITY=cancelled).
-  # A run a newer push superseded fails only on the older commit, which no longer gates the pull request. A passing
-  # measurement whose worst judged time (S4's from its middle run of three) is above 44 s also carries the founder's
-  # sizing question (O9) here, as a warning on the pull request's checks.
+  # The required check (Q8): passes at once when no watched path changed, else only when the measurement passed every
+  # check but time, which is advisory here (the founder's third ruling of 2026-10-23): the measuring job then succeeded,
+  # and its time warnings (the 48-s line, S4 judged on its middle run of three) are printed here again as warnings on the
+  # pull request's checks. It runs whatever the other jobs did, a cancelled run included: GitHub reports a job its
+  # condition skipped as a success for a required check, so a gate skipped on a cancel would pass with no measurement;
+  # run, it fails (CAPACITY=cancelled). A run a newer push superseded fails only on the older commit, which no longer
+  # gates the pull request. A worst judged time above 44 s also carries the founder's sizing question (O9) here, as a
+  # warning.
   gate:
     name: screening-capacity gate
     needs: [changes, capacity]
@@ -237,6 +247,7 @@ jobs:
           MEASURE: ${{ needs.changes.outputs.measure }}
           CAPACITY: ${{ needs.capacity.result }}
           SIZING: ${{ needs.capacity.outputs.sizing }}
+          TIME_WARNINGS: ${{ needs.capacity.outputs.time-warnings }}
         run: |
           if [ "$CHANGES" != "success" ]; then
             echo "the changed paths could not be read ($CHANGES)"
@@ -250,10 +261,13 @@ jobs:
             echo "the capacity measurement did not pass ($CAPACITY): see its job's summary"
             exit 1
           fi
+          if [ -n "$TIME_WARNINGS" ]; then
+            echo "::warning title=Time (advisory)::$TIME_WARNINGS"
+          fi
           if [ -n "$SIZING" ]; then
             echo "::warning title=Sizing question (O9)::$SIZING"
           fi
-          echo "the capacity measurement passed with time enforced"
+          echo "the capacity measurement passed every check but time, which is advisory here; a release's capacity run holds it binding"
 
   # A failure outside a pull request opens one issue, or comments on the one already open. This job holds the
   # workflow's only write permission and runs no repository code: it checks nothing out.

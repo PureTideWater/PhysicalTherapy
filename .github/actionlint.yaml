@@ -1,7 +1,0 @@
-# actionlint knows GitHub's standard runner labels only and refuses any other unless it is listed here. paidwhole-8core
-# is GitHub's 8-core larger runner, which the founder creates for both capacity jobs (screening-capacity.yml and
-# release.yml; the founder's ruling of 2026-10-23 on the runner; docs/runbooks/screening-capacity.md, "The 8-core
-# runner"). It is GitHub-hosted, not self-hosted: actionlint names every custom label this way.
-self-hosted-runner:
-  labels:
-    - paidwhole-8core

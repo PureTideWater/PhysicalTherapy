@@ -7,12 +7,14 @@ import * as deployParameters from '../../infra/lib/deploy-parameters';
 import { type CommandRunner, type LaunchInput, RELEASE_TAG, launchCheck, readManifest, registryImageId, reportSha256, repositoryOf } from './launch-check';
 import { MIB } from './limits';
 import { type Measurements, report } from './report';
-import { ENFORCED, OPEN, type S4Times, applied, expected, measured, scenario, scenarios, upload, withS1, withoutConsumer } from './test-support/measurements';
+import { ADVISORY, ENFORCED, OPEN, type S4Times, applied, expected, measured, onOwnCpus, scenario, scenarios, upload, withS1, withoutConsumer } from './test-support/measurements';
 
 /**
  * Decision 13's launch check (docs/adr/0062; the design's §5.4; test matrix SCR-20), on synthetic reports: production's
- * screening opens only for the deployed tag's passing report with time enforced, on both image IDs and the consumer
- * production declares; anything else names its reason and gives no launch value.
+ * screening opens only for the deployed tag's binding report that passes with time enforced, on both image IDs and the
+ * consumer production declares, measured on the free 4-CPU runner's layout or on CPUs of their own; an advisory report
+ * (a pull request's, whose time only warns: the founder's third ruling of 2026-10-23, "Free: time advisory") and
+ * anything else names its reason and gives no launch value.
  */
 
 const TAG = 'v1.4.0';
@@ -62,7 +64,7 @@ describe('the launch check', () => {
   it('reads the measurements again rather than trust a recorded pass', () => {
     const slow = measured({ scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + 60_100 })])) });
     const edited = JSON.parse(kept(slow)) as { verdict: unknown };
-    edited.verdict = { pass: true, time: 'enforced', reasons: [] };
+    edited.verdict = { pass: true, time: 'enforced', reasons: [], timeWarnings: [] };
     expect(reasons({ reportText: JSON.stringify(edited) })).toEqual(['verdict read again: fail with time enforced (time: S1-1 60.1 s, fail (promise broken: above 60 s))']);
   });
 
@@ -108,53 +110,87 @@ describe('the launch check', () => {
   it('fails a malformed tag, an older format, and a file that is not a complete report', () => {
     expect(RELEASE_TAG.test(TAG)).toBe(true);
     expect(reasons({ tag: 'latest' })).toEqual(['tag: latest is not a release tag (v followed by letters, digits, dots and hyphens)']);
-    for (const format of ['tp-screening-capacity/3', 'tp-screening-capacity/4', 'tp-screening-capacity/5']) {
-      // A report in a format before S4 ran three times, or before each service had CPUs of its own (/5, the free 4-CPU
-      // runner's: the founder's rulings of 2026-10-23), is refused as any other.
+    for (const format of ['tp-screening-capacity/3', 'tp-screening-capacity/4', 'tp-screening-capacity/5', 'tp-screening-capacity/6']) {
+      // A report in a format before S4 ran three times, or before the time mode was recorded (/5 and /6: the founder's
+      // rulings of 2026-10-23), is refused as any other.
       const older = { ...(JSON.parse(kept()) as Record<string, unknown>), format };
-      expect(reasons({ reportText: JSON.stringify(older) })).toEqual([`report: format ${format}, not tp-screening-capacity/6`]);
+      expect(reasons({ reportText: JSON.stringify(older) })).toEqual([`report: format ${format}, not tp-screening-capacity/7`]);
     }
     expect(reasons({ reportText: 'not json' })).toEqual(['report: not JSON']);
-    expect(reasons({ reportText: JSON.stringify({ format: 'tp-screening-capacity/6' }) })).toEqual(['report: not a complete capacity report']);
+    expect(reasons({ reportText: JSON.stringify({ format: 'tp-screening-capacity/7' }) })).toEqual(['report: not a complete capacity report']);
   });
 
-  /**
-   * The free 4-CPU runner's layout, measured as it was applied: Postgres, the harness and Chromium on 0-1, the consumer on
-   * 2-3 and the web and the platform on 3 (the layout of every capacity run before the founder's ruling of 2026-10-23 on
-   * the runner).
-   */
-  function measuredOn(layout: Measurements['expected']['layout'], harnessAffinity: string): Measurements {
-    const cpusetOf: Readonly<Record<string, string>> = { web: layout.web, platform: layout.platform, 'screening-1': layout.consumer, postgres: layout.postgres };
-    return measured({
-      expected: { ...expected, postgres: { ...expected.postgres, cpuset: layout.postgres }, layout },
-      applied: applied({ containers: applied().containers.map((item) => ({ ...item, cpuset: cpusetOf[item.name] ?? item.cpuset })) }),
-      harnessAffinity,
-    });
-  }
-  const PRODUCTION_LAYOUT = 'Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7';
+  const ADVISORY_REASON =
+    "time mode: advisory, not binding: decision 13 opens production only on a release's binding capacity run, where time fails the run, never on an advisory one, where time only warns (the founder's ruling of 2026-10-23, time advisory)";
+  const SLOW_S1 = 'time: S1-1 48.1 s, fail (allowance: above 48 s on the runner)';
 
-  it('refuses a report measured on another layout than production’s, each service on CPUs of its own (the founder’s ruling of 2026-10-23 on the runner)', () => {
-    const shared = { postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' };
-    const layoutReason = `layout: the report measured Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 3, the platform on 3 and the harness with Chromium on 0-1, and decision 13 opens production only on production's layout: ${PRODUCTION_LAYOUT}`;
-    expect(reasons({ reportText: kept(measuredOn(shared, '0-1')) })).toEqual([
-      'verdict: fail with time enforced; launch needs a pass with time enforced',
-      'verdict read again: fail with time enforced (layout: Postgres and the harness share CPUs 0-1; layout: the screening consumer, the web and the platform share CPU 3)',
-      layoutReason,
+  it('refuses an advisory report that passes, naming the time mode (the founder’s third ruling of 2026-10-23, time advisory)', () => {
+    expect(reasons({ reportText: kept(measured(), ADVISORY) })).toEqual([ADVISORY_REASON, 'verdict: pass with time advisory; launch needs a pass with time enforced']);
+  });
+
+  it('refuses an advisory report whose job passed on time warnings, reading its time again as binding', () => {
+    const slow = measured({ scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + 48_100 })])) });
+    expect(report(slow, ADVISORY).verdict.pass).toBe(true);
+    expect(reasons({ reportText: kept(slow, ADVISORY) })).toEqual([
+      ADVISORY_REASON,
+      'verdict: pass with time advisory; launch needs a pass with time enforced',
+      `verdict read again: fail with time enforced (${SLOW_S1})`,
     ]);
-    // A recorded pass is not taken on trust: the layout is read again from the report's own limits.
-    const edited = JSON.parse(kept(measuredOn(shared, '0-1'))) as { verdict: unknown };
-    edited.verdict = { pass: true, time: 'enforced', reasons: [] };
-    expect(reasons({ reportText: JSON.stringify(edited) })).toEqual([
-      'verdict read again: fail with time enforced (layout: Postgres and the harness share CPUs 0-1; layout: the screening consumer, the web and the platform share CPU 3)',
-      layoutReason,
+    // Edited to read as binding, its time is still read again as binding from its measurements.
+    const edited = JSON.parse(kept(slow, ADVISORY)) as { timeMode: unknown; verdict: unknown };
+    edited.timeMode = 'binding';
+    edited.verdict = { pass: true, time: 'enforced', reasons: [], timeWarnings: [] };
+    expect(reasons({ reportText: JSON.stringify(edited) })).toEqual([`verdict read again: fail with time enforced (${SLOW_S1})`]);
+    // A failing advisory report: refused, the mode named whatever the verdict.
+    const failing = measured({ scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + 48_100, pendingRows: 2 })])) });
+    expect(reasons({ reportText: kept(failing, ADVISORY) })).toEqual([
+      ADVISORY_REASON,
+      'verdict: fail with time advisory; launch needs a pass with time enforced',
+      `verdict read again: fail with time enforced (rows still pending: S1-1 (2); ${SLOW_S1})`,
     ]);
-    // A layout of CPUs of their own that is not production's (a consumer larger than declared moved the rest) passes the
-    // verdict and is still refused.
-    const moved = { postgres: '0-1', consumer: '2-5', web: '6', platform: '7', harness: '8-9' };
-    expect(reasons({ reportText: kept(measuredOn(moved, '8-9')) })).toEqual([
-      `layout: the report measured Postgres on CPUs 0-1, the screening consumer on 2-5, the web on 6, the platform on 7 and the harness with Chromium on 8-9, and decision 13 opens production only on production's layout: ${PRODUCTION_LAYOUT}`,
+  });
+
+  it('refuses a report that names no time mode, or one it does not know', () => {
+    for (const timeMode of [undefined, 'enforced', 'Binding']) {
+      const edited = JSON.parse(kept()) as Record<string, unknown>;
+      edited.timeMode = timeMode;
+      expect(reasons({ reportText: JSON.stringify(edited) })[0]).toBe(
+        `time mode: ${String(timeMode)}, not binding: decision 13 opens production only on a release's binding capacity run, where time fails the run, never on an advisory one, where time only warns (the founder's ruling of 2026-10-23, time advisory)`,
+      );
+    }
+  });
+
+  it('accepts a binding report that passes on the free 4-CPU runner’s shared layout, where the release measures, and on CPUs of their own', () => {
+    const free = kept();
+    expect(JSON.parse(free)).toMatchObject({ timeMode: 'binding', runner: { cpus: 4 }, expected: { layout: { kind: 'shared', postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' } } });
+    expect(launchCheck(input({ reportText: free }))).toEqual({ ok: true, value: `${TAG}:${reportSha256(free)}`, notes: [] });
+    const own = kept(onOwnCpus());
+    expect(JSON.parse(own)).toMatchObject({ runner: { cpus: 8 }, expected: { layout: { kind: 'own', web: '4', platform: '5', harness: '6-7' } } });
+    expect(launchCheck(input({ reportText: own }))).toEqual({ ok: true, value: `${TAG}:${reportSha256(own)}`, notes: [] });
+  });
+
+  it('refuses a binding report failing on time, on either layout', () => {
+    const slow = { scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + 48_100 })])) };
+    for (const measurements of [measured(slow), onOwnCpus(slow)]) {
+      expect(reasons({ reportText: kept(measurements) })).toEqual(['verdict: fail with time enforced; launch needs a pass with time enforced', `verdict read again: fail with time enforced (${SLOW_S1})`]);
+    }
+  });
+
+  it('refuses a layout other than the two of production’s sizes', () => {
+    // CPUs of their own for a consumer larger than production declares: the verdict passes it on ten CPUs; the launch
+    // check does not.
+    const moved = { kind: 'own' as const, postgres: '0-1', consumer: '2-5', web: '6', platform: '7', harness: '8-9' };
+    const cpusetOf: Readonly<Record<string, string>> = { web: moved.web, platform: moved.platform, 'screening-1': moved.consumer, postgres: moved.postgres };
+    const ten = measured({
+      runner: { ...measured().runner, cpus: 10, memoryMiB: 40_000 },
+      expected: { ...expected, screening: { cpus: 4, memoryMiB: 4096 }, layout: moved },
+      applied: applied({ containers: applied().containers.map((item) => ({ ...item, cpuset: cpusetOf[item.name] ?? item.cpuset, ...(item.name === 'screening-1' ? { nanoCpus: 4e9 } : {}) })) }),
+      harnessAffinity: moved.harness,
+    });
+    expect(report(ten, ENFORCED).verdict.pass).toBe(true);
+    expect(reasons({ reportText: kept(ten) })).toEqual([
+      "layout: the report measured CPUs of their own: Postgres on CPUs 0-1, the screening consumer on 2-5, the web on 6, the platform on 7 and the harness with Chromium on 8-9, and decision 13 opens production only on a layout of production's sizes: shared CPUs: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 3, the platform on 3 and the harness with Chromium on 0-1 (Postgres and the harness share CPUs 0-1; the screening consumer, the web and the platform share CPU 3), or CPUs of their own: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7",
     ]);
-    expect(launchCheck(input({ reportText: kept(measuredOn({ postgres: '0-1', consumer: '2-3', web: '4', platform: '5', harness: '6-7' }, '6-7')) })).ok).toBe(true);
   });
 
   /** S4's runs on CI, the same code (19aa09c's and 54ec890's), with runs between, near and above the line. */
@@ -178,7 +214,7 @@ describe('the launch check', () => {
     edited.repeated.middle = 'S4#1';
     expect(reasons({ reportText: JSON.stringify(edited) })).toEqual(["middle run: the report names S4#1, and its measurements make S4#3 the middle of S4's three runs"]);
     const over = JSON.parse(kept(measured({ scenarios: scenarios([SLOW, OVER, FAST]) }))) as { verdict: unknown };
-    over.verdict = { pass: true, time: 'enforced', reasons: [] };
+    over.verdict = { pass: true, time: 'enforced', reasons: [], timeWarnings: [] };
     expect(reasons({ reportText: JSON.stringify(over) })).toEqual(["verdict read again: fail with time enforced (time: S4#2 S4-1 48.1 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner))"]);
   });
 

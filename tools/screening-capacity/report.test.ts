@@ -11,7 +11,10 @@ import {
   REPETITIONS,
   REPORT_FORMAT,
   SIZING_QUESTION_MS,
+  TIME_MODES,
+  type TimeMode,
   type TimeRule,
+  jobResult,
   limitProblems,
   markdown,
   oracleKind,
@@ -27,7 +30,7 @@ import {
   verdict,
   worstTime,
 } from './report';
-import { ENFORCED, OPEN, type S4Times, applied, expected, measured, scenario, scenarios, upload, withS1, withScenario, withUpload, withoutConsumer } from './test-support/measurements';
+import { ADVISORY, ENFORCED, OPEN, type S4Times, applied, eightCpus, expected, measured, onOwnCpus, scenario, scenarios, upload, withS1, withScenario, withUpload, withoutConsumer } from './test-support/measurements';
 
 /**
  * The capacity test's verdict (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16, and of
@@ -36,29 +39,34 @@ import { ENFORCED, OPEN, type S4Times, applied, expected, measured, scenario, sc
  * settings with no consumer still read as "open, PR 6b". Everything the build controls fails the run: the consumer's
  * size, slots, the platform pricing none, the waiting tier, the time metric's bounds and the static origin among them.
  * A worst time above 44 s is a sizing question for the founder, never a pass to rely on. S4 runs three times and its
- * time is judged on the middle run, every other check in all three (the founder's ruling of 2026-10-23). The report
- * carries no link or token.
+ * time is judged on the middle run, every other check in all three (the founder's ruling of 2026-10-23). A binding run
+ * (a release's) fails on time; an advisory run (every other) reports each time verdict as a warning and fails on every
+ * other check (the founder's third ruling of 2026-10-23, "Free: time advisory"). The report carries no link or token.
  */
 
 describe('the time verdict', () => {
   it('is enforced by production’s own settings, which declare the consumer, and open for settings that declare none', () => {
     // PR 6b-3: compute.screening is declared and the harness runs it, so time is enforced; the switch works both ways.
     expect(HARNESS_RUNS_SCREENING_CONSUMER).toBe(true);
-    expect(timeRule(environmentSettings('production'), RUNNER_TO_FARGATE)).toEqual(ENFORCED);
-    expect(timeRule(withoutConsumer(), RUNNER_TO_FARGATE)).toEqual({ consumerDeclared: false, consumerRun: true, runnerToFargate: null });
-    expect(timeVerdict(120_000, timeRule(withoutConsumer(), RUNNER_TO_FARGATE))).toEqual({ status: 'open' });
+    expect(timeRule(environmentSettings('production'), RUNNER_TO_FARGATE, 'binding')).toEqual(ENFORCED);
+    expect(timeRule(environmentSettings('production'), RUNNER_TO_FARGATE, 'advisory')).toEqual(ADVISORY);
+    expect(timeRule(withoutConsumer(), RUNNER_TO_FARGATE, 'binding')).toEqual({ consumerDeclared: false, consumerRun: true, runnerToFargate: null, mode: 'binding' });
+    expect(timeVerdict(120_000, timeRule(withoutConsumer(), RUNNER_TO_FARGATE, 'binding'))).toEqual({ status: 'open' });
     expect(RUNNER_TO_FARGATE).toBeNull();
   });
 
   it('fails a run with the consumer declared while the harness does not run it as production will', () => {
     // The capacity review of PR #31: declaring compute.screening must not switch time on over the wrong topology.
-    const rule = timeRule(environmentSettings('production'), RUNNER_TO_FARGATE, false);
-    expect(rule).toEqual({ consumerDeclared: true, consumerRun: false, runnerToFargate: null });
+    const rule = timeRule(environmentSettings('production'), RUNNER_TO_FARGATE, 'binding', false);
+    expect(rule).toEqual({ consumerDeclared: true, consumerRun: false, runnerToFargate: null, mode: 'binding' });
     expect(verdict(measured(), rule)).toEqual({
       pass: false,
       time: 'enforced',
       reasons: ['consumer not run: environments.ts declares the screening consumer, and the harness still prices screenings in the platform container one at a time'],
+      timeWarnings: [],
     });
+    // Advisory too: the time mode decides only whether time fails the run.
+    expect(verdict(measured(), { ...rule, mode: 'advisory' }).pass).toBe(false);
     expect(verdict(measured({ consumer: null }), ENFORCED).reasons).toContain('consumer not measured: environments.ts declares the screening consumer, and the report names none');
   });
 
@@ -66,8 +74,8 @@ describe('the time verdict', () => {
     expect(timeVerdict(120_000, OPEN)).toEqual({ status: 'open' });
     expect(timeLabel(timeVerdict(120_000, OPEN))).toBe('open, PR 6b');
     const slow = measured({ scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + 120_000 })])) });
-    expect(verdict(slow, OPEN)).toEqual({ pass: true, time: 'open, PR 6b', reasons: [] });
-    expect(verdict(slow, ENFORCED)).toEqual({ pass: false, time: 'enforced', reasons: ['time: S1-1 120.0 s, fail (promise broken: above 60 s)'] });
+    expect(verdict(slow, OPEN)).toEqual({ pass: true, time: 'open, PR 6b', reasons: [], timeWarnings: [] });
+    expect(verdict(slow, ENFORCED)).toEqual({ pass: false, time: 'enforced', reasons: ['time: S1-1 120.0 s, fail (promise broken: above 60 s)'], timeWarnings: [] });
   });
 
   it('with the consumer declared: 47.9 s passes, 48.1 s fails as the allowance, 60.1 s fails as the promise', () => {
@@ -76,7 +84,7 @@ describe('the time verdict', () => {
     expect(timeVerdict(48_100, ENFORCED)).toEqual({ status: 'fail', reason: 'allowance' });
     expect(timeVerdict(60_100, ENFORCED)).toEqual({ status: 'fail', reason: 'promise' });
     const at = (ms: number) => verdict(measured({ scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + ms })])) }), ENFORCED);
-    expect(at(47_900)).toEqual({ pass: true, time: 'enforced', reasons: [] });
+    expect(at(47_900)).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
     expect(at(48_100).reasons).toEqual(['time: S1-1 48.1 s, fail (allowance: above 48 s on the runner)']);
     expect(at(60_100).reasons).toEqual(['time: S1-1 60.1 s, fail (promise broken: above 60 s)']);
   });
@@ -92,7 +100,7 @@ describe('the time verdict', () => {
   });
 
   it('once the runner-to-Fargate factor is measured, fails above 60 s scaled by it', () => {
-    const scaled: TimeRule = { consumerDeclared: true, consumerRun: true, runnerToFargate: 1.5 };
+    const scaled: TimeRule = { consumerDeclared: true, consumerRun: true, runnerToFargate: 1.5, mode: 'binding' };
     expect(timeVerdict(40_000, scaled)).toEqual({ status: 'pass' });
     expect(timeVerdict(40_100, scaled)).toEqual({ status: 'fail', reason: 'promise' });
   });
@@ -122,12 +130,12 @@ describe('S4 three times, its time judged on the middle run (the founder’s rul
   it('measures S4 three times in every run, as S4#1 to S4#3 with uploads S4-1 to S4-4 in each', () => {
     expect([REPEATED_SCENARIO, REPETITIONS]).toEqual(['S4', 3]);
     expect(MEASURED_SCENARIOS).toEqual(['S1', 'S2', 'S3', 'S4#1', 'S4#2', 'S4#3', 'S5']);
-    expect(verdict(measured(), ENFORCED)).toEqual({ pass: true, time: 'enforced', reasons: [] });
+    expect(verdict(measured(), ENFORCED)).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
   });
 
   it('passes when only the slowest run is above 48 s: the middle run is judged, not the slowest', () => {
     const runs = scenarios([FAST, SLOW, BETWEEN]);
-    expect(verdict(measured({ scenarios: runs }), ENFORCED)).toEqual({ pass: true, time: 'enforced', reasons: [] });
+    expect(verdict(measured({ scenarios: runs }), ENFORCED)).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
     const repeated = repeatedScenario(runs);
     expect(repeated).toEqual({
       scenario: 'S4',
@@ -151,12 +159,13 @@ describe('S4 three times, its time judged on the middle run (the founder’s rul
       pass: false,
       time: 'enforced',
       reasons: ["time: S4#2 S4-1 48.1 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner)"],
+      timeWarnings: [],
     });
   });
 
   it('raises the sizing question when the middle run is between 44 and 48 s, and passes', () => {
     const full = report(measured({ scenarios: scenarios([FAST, SLOW, NEAR]) }), ENFORCED);
-    expect(full.verdict).toEqual({ pass: true, time: 'enforced', reasons: [] });
+    expect(full.verdict).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
     expect(full.repeated.middle).toBe('S4#3');
     expect(full.sizing).toEqual({ worstUpload: 'S4#3 S4-1', worstMs: 45_200, question: true });
     expect(sizingQuestion(full.sizing, full.repeated.middle)).toBe("the worst time, S4#3 S4-1's 45.2 s (the middle of S4's three runs), is above 44 s: the consumer's size goes to the founder before merge");
@@ -206,10 +215,13 @@ describe('S4 three times, its time judged on the middle run (the founder’s rul
       ['a cold start not applied', withScenario('S4#2', (item) => ({ ...item, coldStart: { restarted: true, cacheDropped: false } }), fast), 'cold start not applied: S4#2 (Postgres restarted: yes, page cache dropped: no)'],
     ];
     for (const [what, runs, reason, overrides] of cases) {
-      const result = verdict(measured({ scenarios: runs, ...overrides }), ENFORCED);
-      expect(result.pass, what).toBe(false);
-      expect(result.reasons, what).toContain(reason);
-      expect(result.reasons.filter((line) => line.startsWith('time:')), what).toEqual([]);
+      // Binding and advisory alike: the time mode excuses no other check (the founder's ruling of 2026-10-23, time advisory).
+      for (const rule of [ENFORCED, ADVISORY]) {
+        const result = verdict(measured({ scenarios: runs, ...overrides }), rule);
+        expect(result.pass, what).toBe(false);
+        expect(result.reasons, what).toContain(reason);
+        expect(result.reasons.filter((line) => line.startsWith('time:')), what).toEqual([]);
+      }
     }
   });
 
@@ -242,6 +254,83 @@ describe('S4 three times, its time judged on the middle run (the founder’s rul
   });
 });
 
+describe('the time mode (the founder’s third ruling of 2026-10-23, “Free: time advisory”)', () => {
+  const ADVISORY_LINE =
+    "Time mode: advisory. The time verdicts are warnings on this run and do not fail it (a pull request's, the build branch's or the weekly run; the founder's ruling of 2026-10-23, time advisory). A release's capacity run is binding, and production's screening opens only on its pass (decision 13).";
+  const BINDING_LINE = "Time mode: binding. Time fails this run as every other check does (a release's capacity run, whose pass alone opens production's screening: decision 13).";
+  const SLOW_S1 = 'time: S1-1 48.1 s, fail (allowance: above 48 s on the runner)';
+  const SIZING_S1 = "the worst time, S1-1's 48.1 s, is above 44 s: the consumer's size goes to the founder before merge";
+  const slow = () => measured({ scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + 48_100 })])) });
+
+  it('is advisory or binding, set by the workflow and recorded in the report', () => {
+    expect(TIME_MODES).toEqual(['advisory', 'binding']);
+    expect(report(measured(), ADVISORY).timeMode).toBe('advisory');
+    expect(report(measured(), ENFORCED).timeMode).toBe('binding');
+  });
+
+  it('passes an advisory run failing only on time, each time verdict a warning the job annotates and hands to the gate', () => {
+    const full = report(slow(), ADVISORY);
+    expect(full.verdict).toEqual({ pass: true, time: 'advisory', reasons: [], timeWarnings: [SLOW_S1] });
+    expect(jobResult(full)).toEqual({
+      exitCode: 0,
+      annotations: [`::warning title=Time (advisory)::${SLOW_S1}`, `::warning title=Sizing question (O9)::${SIZING_S1}`],
+      outputs: { 'time-warnings': SLOW_S1, sizing: SIZING_S1 },
+    });
+    const summary = markdown(full, ADVISORY);
+    expect(summary).toContain('## Screening capacity: pass (time advisory)');
+    expect(summary).toContain(ADVISORY_LINE);
+    expect(summary).toContain('| S1-1 | worst | 50000 | 48.1 | 47.9 | normal | 0.9 | 4.0 (150000) | 20.0 | 3.0 | 0.2 | 1.1, 1.2 | fail (allowance: above 48 s on the runner) |');
+    expect(summary).toContain(`Every check the build controls passed but time, which is advisory on this run.\n\nTime warnings (advisory: they do not fail this run; a binding run fails on each):\n- ${SLOW_S1}\n`);
+  });
+
+  it('judges S4 on its middle run in both modes, and warns on the middle run alone in an advisory one', () => {
+    expect(verdict(measured({ scenarios: scenarios([SLOW, OVER, FAST]) }), ADVISORY)).toEqual({
+      pass: true,
+      time: 'advisory',
+      reasons: [],
+      timeWarnings: ["time: S4#2 S4-1 48.1 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner)"],
+    });
+    // Only the slowest run above 48 s: no warning, as no failure in a binding run.
+    expect(verdict(measured({ scenarios: scenarios([FAST, SLOW, BETWEEN]) }), ADVISORY)).toEqual({ pass: true, time: 'advisory', reasons: [], timeWarnings: [] });
+    // The 44-s question reads the middle run in both modes, and is a warning in both.
+    const near = report(measured({ scenarios: scenarios([FAST, SLOW, NEAR]) }), ADVISORY);
+    expect(near.sizing).toEqual({ worstUpload: 'S4#3 S4-1', worstMs: 45_200, question: true });
+    expect(jobResult(near).annotations).toEqual(["::warning title=Sizing question (O9)::the worst time, S4#3 S4-1's 45.2 s (the middle of S4's three runs), is above 44 s: the consumer's size goes to the founder before merge"]);
+  });
+
+  it('fails an advisory run on any check but time, the time warnings kept beside the failure', () => {
+    const both = measured({ scenarios: withUpload('S1-1', { emailedMs: 1_000 + 48_100, pendingRows: 3 }) });
+    const full = report(both, ADVISORY);
+    expect(full.verdict).toEqual({ pass: false, time: 'advisory', reasons: ['rows still pending: S1-1 (3)'], timeWarnings: [SLOW_S1] });
+    expect(jobResult(full).exitCode).toBe(1);
+    expect(markdown(full, ADVISORY)).toContain('Failing checks:\n- rows still pending: S1-1 (3)\n\nTime warnings (advisory: they do not fail this run; a binding run fails on each):\n- ');
+    // The time metric's 2-s bound is a correctness check, never a time warning.
+    const metric = verdict(measured({ scenarios: withUpload('S1-1', { logged: { elapsedMs: 30_011, atMs: 31_010, tier: 'normal' } }) }), ADVISORY);
+    expect([metric.pass, metric.timeWarnings]).toEqual([false, []]);
+  });
+
+  it('fails a binding run on time, as every run did before the ruling, with no time warning', () => {
+    const full = report(slow(), ENFORCED);
+    expect(full.verdict).toEqual({ pass: false, time: 'enforced', reasons: [SLOW_S1], timeWarnings: [] });
+    expect(jobResult(full)).toEqual({ exitCode: 1, annotations: [`::warning title=Sizing question (O9)::${SIZING_S1}`], outputs: { sizing: SIZING_S1 } });
+    const summary = markdown(full, ENFORCED);
+    expect(summary).toContain('## Screening capacity: fail (time enforced)');
+    expect(summary).toContain(BINDING_LINE);
+    expect(summary).not.toContain('Time warnings');
+  });
+
+  it('reads any mode but advisory as binding, so a run that names none is never excused its time', () => {
+    const unnamed = verdict(slow(), { ...ENFORCED, mode: undefined as unknown as TimeMode });
+    expect(unnamed).toEqual({ pass: false, time: 'enforced', reasons: [SLOW_S1], timeWarnings: [] });
+  });
+
+  it('gives a run with nothing to warn of no annotation and no output', () => {
+    expect(jobResult(report(measured(), ADVISORY))).toEqual({ exitCode: 0, annotations: [], outputs: {} });
+    expect(jobResult(report(measured(), ENFORCED))).toEqual({ exitCode: 0, annotations: [], outputs: {} });
+    expect(markdown(report(measured(), ADVISORY), ADVISORY)).toContain('Every check the build controls passed.\n');
+  });
+});
+
 describe('when an upload’s time starts', () => {
   it('starts at the harness’s click, never after the web’s receipt, and is not captured when no POST was sent', () => {
     expect(uploadStart(1_000, true)).toBe(1_000);
@@ -263,8 +352,8 @@ describe('when an upload’s time starts', () => {
 
 describe('the checks the build controls fail the run', () => {
   it('pass when everything holds, with time enforced', () => {
-    expect(verdict(measured(), ENFORCED)).toEqual({ pass: true, time: 'enforced', reasons: [] });
-    expect(verdict(measured(), OPEN)).toEqual({ pass: true, time: 'open, PR 6b', reasons: [] });
+    expect(verdict(measured(), ENFORCED)).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
+    expect(verdict(measured(), OPEN)).toEqual({ pass: true, time: 'open, PR 6b', reasons: [], timeWarnings: [] });
     expect(limitProblems(applied(), expected)).toEqual([]);
   });
 
@@ -284,15 +373,17 @@ describe('the checks the build controls fail the run', () => {
     ],
     ['the consumer on the wrong CPUs', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'screening-1' ? { ...item, cpuset: '3' } : item)) }) }), /^limit not applied: screening-1: cpuset 3, not 2-3$/],
     ['the consumer not started', measured({ applied: applied({ containers: applied().containers.filter((item) => item.name !== 'screening-1') }) }), /^limit not applied: screening-1: no limits read$/],
-    // Each service on CPUs of its own (the founder's ruling of 2026-10-23 on the runner).
-    ['the web on the consumer’s CPU', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'web' ? { ...item, cpuset: '3' } : item)) }) }), /^limit not applied: web: cpuset 3, not 4$/],
-    ['the platform on the web’s CPU', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'platform' ? { ...item, cpuset: '4' } : item)) }) }), /^limit not applied: platform: cpuset 4, not 5$/],
-    ['the harness not pinned to its own CPUs', measured({ harnessAffinity: '0-7' }), /^limit not applied: harness: CPU affinity 0-7, not 6-7$/],
-    ['the harness’s affinity not read', measured({ harnessAffinity: null }), /^limit not applied: harness: CPU affinity null, not 6-7$/],
+    // Each service where the runner's layout puts it: the free runner's shared layout here, CPUs of their own on eight.
+    ['the web off the consumer’s last CPU', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'web' ? { ...item, cpuset: '2' } : item)) }) }), /^limit not applied: web: cpuset 2, not 3$/],
+    ['the platform on Postgres’s CPUs', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'platform' ? { ...item, cpuset: '0-1' } : item)) }) }), /^limit not applied: platform: cpuset 0-1, not 3$/],
+    ['the harness not pinned to Postgres’s CPUs', measured({ harnessAffinity: '0-3' }), /^limit not applied: harness: CPU affinity 0-3, not 0-1$/],
+    ['the harness’s affinity not read', measured({ harnessAffinity: null }), /^limit not applied: harness: CPU affinity null, not 0-1$/],
+    ['the harness not on its own CPUs on an 8-CPU runner', onOwnCpus({ harnessAffinity: '0-1' }), /^limit not applied: harness: CPU affinity 0-1, not 6-7$/],
+    ['the web on the consumer’s CPU on an 8-CPU runner', onOwnCpus({ applied: { ...onOwnCpus().applied, containers: onOwnCpus().applied.containers.map((item) => (item.name === 'web' ? { ...item, cpuset: '3' } : item)) } }), /^limit not applied: web: cpuset 3, not 4$/],
     [
-      'a layout whose services share CPUs (the free 4-CPU runner’s)',
-      measured({ expected: { ...expected, layout: { postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' } }, harnessAffinity: '0-1' }),
-      /^layout: Postgres and the harness share CPUs 0-1$/,
+      'a layout other than the one the harness gives the runner (CPUs of their own recorded on the free runner)',
+      measured({ expected: { ...expected, layout: onOwnCpus().expected.layout } }),
+      /^layout: measured on CPUs of their own: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7, and the layout the harness gives a runner of 4 CPUs is shared CPUs: /,
     ],
 
     [
@@ -358,7 +449,8 @@ describe('the checks the build controls fail the run', () => {
   ];
 
   it.each(failing)('fail on %s, with its reason', (_, input, reason) => {
-    for (const rule of [ENFORCED, OPEN]) {
+    // Binding, advisory and open alike: the time mode decides only whether time fails the run.
+    for (const rule of [ENFORCED, ADVISORY, OPEN]) {
       const result = verdict(input, rule);
       expect(result.pass).toBe(false);
       expect(result.reasons.some((line) => reason.test(line)), result.reasons.join('\n')).toBe(true);
@@ -380,9 +472,9 @@ describe('the checks the build controls fail the run', () => {
 describe('the report', () => {
   it('names its format, carries the verdict, and holds no link or token', () => {
     const full = report(measured(), ENFORCED);
-    expect(full.format).toBe('tp-screening-capacity/6');
-    expect(REPORT_FORMAT).toBe('tp-screening-capacity/6');
-    expect(full.verdict).toEqual({ pass: true, time: 'enforced', reasons: [] });
+    expect(full.format).toBe('tp-screening-capacity/7');
+    expect(REPORT_FORMAT).toBe('tp-screening-capacity/7');
+    expect(full.verdict).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
     const text = `${JSON.stringify(full)}\n${markdown(full, ENFORCED)}`;
     expect(text).not.toMatch(/\/screening\/results\//);
     expect(text).not.toMatch(/(?<![a-z0-9])[a-z]{32}(?![a-z0-9])/);
@@ -400,17 +492,28 @@ describe('the report', () => {
     expect(summary).toContain('| S1 | screening-1 | 1150.0 | 4096 | 1300.0 | 0 | 0 | — |');
   });
 
-  it('records the layout it measured, each service on CPUs of its own, and the harness’s own CPUs (the founder’s ruling of 2026-10-23 on the runner)', () => {
+  it('records which layout ran: the free 4-CPU runner’s shared CPUs, which pass, and an 8-CPU runner’s CPUs of their own (the founder’s ruling of 2026-10-23, time advisory)', () => {
     const full = report(measured(), ENFORCED);
-    expect(full.expected.layout).toEqual({ postgres: '0-1', consumer: '2-3', web: '4', platform: '5', harness: '6-7' });
-    expect(full.harnessAffinity).toBe('6-7');
-    expect(full.runner.cpus).toBe(8);
+    expect(full.expected.layout).toEqual({ kind: 'shared', postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' });
+    expect(full.harnessAffinity).toBe('0-1');
+    expect(full.runner.cpus).toBe(4);
+    // A shared CPU is no failure on the free runner: the layout is the one the harness gives it.
+    expect(full.verdict).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
     expect(markdown(full, ENFORCED)).toContain(
-      'Layout: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7; the harness ran on CPUs 6-7.',
+      'Layout: shared CPUs: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 3, the platform on 3 and the harness with Chromium on 0-1 (Postgres and the harness share CPUs 0-1; the screening consumer, the web and the platform share CPU 3); the harness ran on CPUs 0-1.',
     );
-    // A layout whose services share a CPU fails, naming every CPU shared.
-    const shared = verdict(measured({ expected: { ...expected, layout: { postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' } }, harnessAffinity: '0-1' }), ENFORCED);
-    expect(shared.reasons.filter((reason) => reason.startsWith('layout: '))).toEqual(['layout: Postgres and the harness share CPUs 0-1', 'layout: the screening consumer, the web and the platform share CPU 3']);
+    const own = report(onOwnCpus(), ENFORCED);
+    expect(own.runner.cpus).toBe(eightCpus.cpus);
+    expect(own.expected.layout).toEqual({ kind: 'own', postgres: '0-1', consumer: '2-3', web: '4', platform: '5', harness: '6-7' });
+    expect(own.verdict).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
+    expect(markdown(own, ENFORCED)).toContain(
+      'Layout: CPUs of their own: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7; the harness ran on CPUs 6-7.',
+    );
+    // The free runner's layout recorded on eight CPUs is not the one the harness gives them, and fails.
+    const misplaced = verdict(onOwnCpus({ expected: { ...onOwnCpus().expected, layout: expected.layout } }), ENFORCED);
+    expect(misplaced.reasons.filter((reason) => reason.startsWith('layout: '))).toEqual([
+      "layout: measured on shared CPUs: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 3, the platform on 3 and the harness with Chromium on 0-1 (Postgres and the harness share CPUs 0-1; the screening consumer, the web and the platform share CPU 3), and the layout the harness gives a runner of 8 CPUs is CPUs of their own: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7",
+    ]);
   });
 
   it('compares the five-digit uploads with the frozen read path and the split ZIP’s with the whole release (PR 6b)', () => {

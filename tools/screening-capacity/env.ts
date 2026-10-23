@@ -1,3 +1,5 @@
+import type { CpuLayout } from './limits';
+
 /**
  * How far the capacity test's containers depart from production's configuration (audit #53 part 1; docs/adr/0062,
  * "Capacity under production limits"), and the environment each is given.
@@ -44,12 +46,34 @@ export const NODE_ENV_READS: readonly NodeEnvRead[] = [
   },
 ];
 
-/** What the harness changes from production, and which way each change moves the measurement. */
-export const DEPARTURES: readonly { readonly what: string; readonly direction: 'harsher' | 'equal or harsher' | 'gentler' | 'none' }[] = [
-  {
-    what: 'each service on CPUs of its own, as production has them (the founder’s ruling of 2026-10-23 on the runner): Postgres db.t4g.medium’s 2 vCPU on CPUs 0-1, the consumer’s 2 on 2-3, the web’s half vCPU within CPU 4, the platform’s quarter within CPU 5, and the harness and Chromium on 6-7 (the runner’s logical CPUs: which of them are threads of one core is the host’s)',
-    direction: 'none',
-  },
+/** One way the harness departs from production, and which way it moves the measurement. */
+export interface Departure {
+  readonly what: string;
+  readonly direction: 'harsher' | 'equal or harsher' | 'gentler' | 'none';
+}
+
+/**
+ * What the layout that ran changes from production (limits.ts, cpuLayout): on the free 4-CPU runner, where both capacity
+ * jobs measure (the founder's third ruling of 2026-10-23, "Free: time advisory"), two harsher departures, the CPUs the
+ * services share; on eight CPUs or more, none.
+ */
+export function layoutDepartures(layout: CpuLayout): readonly Departure[] {
+  if (layout.kind === 'own') {
+    return [
+      {
+        what: `each service on CPUs of its own, as production has them: Postgres db.t4g.medium’s 2 vCPU on CPUs ${layout.postgres}, the consumer’s 2 on ${layout.consumer}, the web’s half vCPU within CPU ${layout.web}, the platform’s quarter within CPU ${layout.platform}, and the harness and Chromium on ${layout.harness} (the runner’s logical CPUs: which of them are threads of one core is the host’s)`,
+        direction: 'none',
+      },
+    ];
+  }
+  return [
+    { what: 'Postgres gets db.t4g.medium’s 2 vCPU and 4 GiB on the runner’s first two CPUs, which the harness and Chromium share', direction: 'harsher' },
+    { what: 'web and platform share the screening consumer’s last CPU (their fractional-vCPU quotas inside it)', direction: 'harsher' },
+  ];
+}
+
+/** What the harness changes from production whatever the layout, and which way each change moves the measurement. */
+export const DEPARTURES: readonly Departure[] = [
   { what: 'one web container takes every upload where production runs two web tasks', direction: 'harsher' },
   { what: 'a 2 ms round trip to Postgres, more than an in-VPC trip plus Multi-AZ’s synchronous commit', direction: 'harsher' },
   { what: 'gp3’s I/O baseline without its burst', direction: 'equal or harsher' },

@@ -98,14 +98,6 @@ function matrixValues(matrix: unknown, key: string): unknown[] | undefined {
   return listed === undefined && listKeys(matrix).length === 0 ? include.map(named) : undefined;
 }
 
-/**
- * The larger runner both capacity jobs run on (the founder's ruling of 2026-10-23 on the runner): GitHub-hosted, Linux
- * x64, 8 cores and 32 GB, created by the founder under this name with the Ubuntu 24.04 image chosen in its settings, so
- * its image is pinned there as ubuntu-24.04 pins every other job's (audit item #19; docs/runbooks/screening-capacity.md,
- * "The 8-core runner").
- */
-const CAPACITY_RUNNER = 'paidwhole-8core';
-
 /** GitHub-hosted labels other than -latest ones that name an image without its version. */
 const UNVERSIONED_HOSTED = /^ubuntu-slim$/i;
 
@@ -163,14 +155,17 @@ describe('workflows', () => {
     expect(problems).toEqual([]);
   });
 
-  it('run both capacity jobs on GitHub’s 8-core larger runner, paidwhole-8core, and every other job on ubuntu-24.04 (the founder’s ruling of 2026-10-23 on the runner)', () => {
+  it('run every job on GitHub’s free ubuntu-24.04 runner, both capacity jobs included, and name no larger runner’s label (the founder’s third ruling of 2026-10-23, “Free: time advisory”)', () => {
     const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
     const runners = Object.fromEntries(files.flatMap((file) => Object.entries(workflow(file).jobs).map(([name, job]) => [`${file} ${name}`, job['runs-on']])));
-    const larger = Object.entries(runners).filter(([, runner]) => runner === CAPACITY_RUNNER).map(([job]) => job);
-    expect(larger.sort()).toEqual(['release.yml capacity', 'screening-capacity.yml capacity']);
-    // The gate only reads the result, so it stays on the free runner with every other job.
-    expect(runners['screening-capacity.yml gate']).toBe('ubuntu-24.04');
-    expect(Object.entries(runners).filter(([job, runner]) => !larger.includes(job) && runner !== 'ubuntu-24.04')).toEqual([]);
+    expect(runners['release.yml capacity']).toBe('ubuntu-24.04');
+    expect(runners['screening-capacity.yml capacity']).toBe('ubuntu-24.04');
+    expect(Object.entries(runners).filter(([, runner]) => runner !== 'ubuntu-24.04')).toEqual([]);
+    // GitHub's larger runners exist only for an organization on GitHub Team or Enterprise Cloud, and PureTideWater is a
+    // personal account: actionlint's configuration, which named the 8-core runner's label, is gone with it.
+    for (const config of ['.github/actionlint.yaml', '.github/actionlint.yml']) {
+      expect(existsSync(path.join(repositoryRoot, config)), config).toBe(false);
+    }
   });
 
   it('refuse a -latest or unversioned hosted runner as a label, in a list, in a group, as a matrix value or an include entry’s, and any runner they cannot resolve', () => {
@@ -307,13 +302,13 @@ describe('workflows', () => {
       expect(file).not.toMatch(/push: true/);
     });
 
-    it('measures exactly the production web image and the worker image as built, with time enforced by the harness, on the capacity workflow\'s runner', () => {
+    it('measures exactly the production web image and the worker image as built, with time binding (decision 13; the founder’s ruling of 2026-10-23, time advisory), on the capacity workflow\'s runner', () => {
       const capacity = job('capacity');
       expect(capacity.needs).toBe('build');
       expect(capacity.permissions).toBeUndefined();
       const workflowRunner = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
       expect(capacity['runs-on']).toEqual(workflowRunner);
-      expect(capacity['runs-on']).toBe(CAPACITY_RUNNER);
+      expect(capacity['runs-on']).toBe('ubuntu-24.04');
       const steps = capacity.steps;
       expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
       expect(steps.filter((step) => step.uses === PINNED.downloadArtifact).map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
@@ -324,6 +319,9 @@ describe('workflows', () => {
       expect(loaded).toBeLessThan(measure);
       expect(steps[measure]?.run).toContain('--web-image "$repository/web-production:$GITHUB_REF_NAME" --worker-image "$repository/worker:$GITHUB_REF_NAME"');
       expect(steps[measure]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity "$@"');
+      // The release's run is binding: time fails it, and only its pass opens production (decision 13). Never advisory.
+      expect(steps[measure]?.run).toContain('--time-mode binding');
+      expect(steps[measure]?.run).not.toContain('advisory');
       // Production's static host, the one the web-production image was built with, routed to the web container.
       expect((steps[measure] as Step & { env?: Record<string, string> }).env).toEqual({ PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
       expect(steps[measure]?.run).toContain('set -- "$@" --static-asset-origin "$PRODUCTION_ORIGIN"');
@@ -508,7 +506,7 @@ describe('workflows', () => {
     expect(verify).toBeLessThan(publish);
   });
 
-  it('measure the screening under production limits with time enforced on pushes, weekly and on request, and gate every pull request through one required job that measures only when a watched path changed (audit #53 part 1; the founder’s Q8 of 2026-10-21)', () => {
+  it('measure the screening under production limits with time advisory on pull requests, pushes, weekly and on request, and gate every pull request through one required job that measures only when a watched path changed (audit #53 part 1; the founder’s Q8 of 2026-10-21 and third ruling of 2026-10-23)', () => {
     const file = readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8');
     const capacity = parse(file) as Workflow & {
       permissions: unknown;
@@ -567,12 +565,12 @@ describe('workflows', () => {
     expect(script).toMatch(/case "\$file" in\s+\$pattern\)/);
     expect(script).toContain('if [ "$EVENT" != "pull_request" ]; then');
 
-    // The measurement: only when the changes say so, on GitHub's 8-core larger runner, every service on CPUs of its own
-    // (the founder's ruling of 2026-10-23 on the runner).
+    // The measurement: only when the changes say so, on GitHub's free 4-CPU runner, its CPUs shared (the founder's third
+    // ruling of 2026-10-23, "Free: time advisory").
     const measure = capacity.jobs.capacity;
     expect(measure?.needs).toBe('changes');
     expect(measure?.if).toBe("needs.changes.outputs.measure == 'true'");
-    expect(measure?.['runs-on']).toBe(CAPACITY_RUNNER);
+    expect(measure?.['runs-on']).toBe('ubuntu-24.04');
     // 100 minutes: S4 runs three times (the founder's ruling of 2026-10-23), about 3 minutes more than the 90 before.
     expect(measure?.['timeout-minutes']).toBe(100);
     expect(measure?.permissions).toBeUndefined();
@@ -602,9 +600,13 @@ describe('workflows', () => {
     const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
     expect(stepIndex(steps, (step) => step.uses === PINNED.buildPush)).toBeLessThan(run);
     expect(save).toBeLessThan(run);
-    // The harness, its children and Chromium on CPUs of their own (6-7), from the layout itself, never a service's.
+    // The harness, its children and Chromium where the runner's layout puts them (Postgres's 0-1 on the free runner),
+    // never the consumer's CPUs.
     expect(steps[run]?.run).toContain('cpus=$(pnpm -s screening:capacity --print-harness-cpus)');
     expect(steps[run]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity');
+    // Advisory on every event this workflow runs on (none is a release): time warns, every other check fails the job.
+    expect(steps[run]?.run).toContain('--time-mode advisory');
+    expect(steps[run]?.run).not.toContain('binding');
     const upload = stepIndex(steps, (step) => step.uses === PINNED.uploadArtifact);
     expect(upload).toBe(run + 1);
     expect((steps[upload] as Step & { if?: string }).if).toBe('always()');
@@ -617,8 +619,9 @@ describe('workflows', () => {
     expect(steps[upload]?.with?.['retention-days']).toBe(90);
     // The measuring job's checkout keeps no token: nothing it runs calls GitHub.
     expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
-    // A sizing question (a worst time above 44 s) leaves the job as an output the gate prints as a warning (O9).
-    expect(measure?.outputs).toEqual({ sizing: '${{ steps.measure.outputs.sizing }}' });
+    // A sizing question (a worst time above 44 s) and the time warnings leave the job as outputs the gate prints as
+    // warnings (O9; the founder's ruling of 2026-10-23, time advisory).
+    expect(measure?.outputs).toEqual({ sizing: '${{ steps.measure.outputs.sizing }}', 'time-warnings': '${{ steps.measure.outputs.time-warnings }}' });
     expect((steps[run] as Step & { id?: string }).id).toBe('measure');
 
     // The required check: one job, named for the ruleset, that runs whatever the others did, a cancelled run included (a
@@ -640,8 +643,12 @@ describe('workflows', () => {
       MEASURE: '${{ needs.changes.outputs.measure }}',
       CAPACITY: '${{ needs.capacity.result }}',
       SIZING: '${{ needs.capacity.outputs.sizing }}',
+      TIME_WARNINGS: '${{ needs.capacity.outputs.time-warnings }}',
     });
     expect(decide).toContain('echo "::warning title=Sizing question (O9)::$SIZING"');
+    // An advisory run whose only failures are time passed its job: the gate passes it with the warnings on the checks.
+    expect(decide).toContain('echo "::warning title=Time (advisory)::$TIME_WARNINGS"');
+    expect(decide.indexOf('if [ "$CAPACITY" != "success" ]; then')).toBeLessThan(decide.indexOf('$TIME_WARNINGS'));
 
     // The issue: a job of its own, the only one that may write, that needs the measurement, skips pull requests and runs no repository code.
     const notify = capacity.jobs.notify;

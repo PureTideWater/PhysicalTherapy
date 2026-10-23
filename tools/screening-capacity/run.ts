@@ -28,7 +28,7 @@ import {
   serviceCommand,
   stderrTail,
 } from './containers';
-import { DEPARTURES, HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginsEnvironment, platformEnvironment, screeningEnvironment, webEnvironment } from './env';
+import { DEPARTURES, HARNESS_LOGINS, type HarnessDirectories, harnessLogins, layoutDepartures, loginsEnvironment, platformEnvironment, screeningEnvironment, webEnvironment } from './env';
 import {
   HARNESS_DEADLINE_MS,
   MIB,
@@ -54,13 +54,15 @@ import {
   type OracleComparison,
   type OracleKind,
   type ScenarioMeasure,
+  TIME_MODES,
+  type TimeMode,
   type UploadMeasure,
+  jobResult,
   markdown,
   oracleKind,
   repeatedSummary,
   report,
   scenarioLabel,
-  sizingQuestion,
   timeRule,
   uploadLabel,
   uploadStart,
@@ -72,7 +74,8 @@ import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, s
  * "Capacity under production limits"; docs/runbooks/screening-capacity.md). Since PR 6b-3 it runs the screening's own
  * consumer as production will (WORKER_JOBS=screening, one container per declared task at its size, its threads at the
  * declared concurrency, on the screening login) beside a platform that prices no screening, so time is enforced
- * (decision 15). Steps, as the design's §3.6 numbers them:
+ * (decision 15), binding or advisory as the workflow's --time-mode says (the founder's third ruling of 2026-10-23, "Free:
+ * time advisory": binding on a release's run, advisory on every other). Steps, as the design's §3.6 numbers them:
  *
  *  1. read the limits and the runner; stop as "runner too small" if it is (`--print-harness-cpus` prints the CPUs the
  *     workflow pins the harness to, from the same layout, and exits);
@@ -99,11 +102,12 @@ import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, s
  *  9. compare S1-1, S2-1 and S3-1 with the frozen oracle and S1-2 (a ZIP split across localities, with its ZIP+4)
  *     with the whole-release oracle, in a child process, against the running Postgres (oracle.ts);
  * 10. remove Postgres; write screening-capacity.json, its SHA-256 (screening-capacity.sha256, as the launch check
- *     computes it) and summary.md (and the job summary in CI); exit non-zero on any failing check.
+ *     computes it) and summary.md (and the job summary in CI); annotate each warning (an advisory run's time verdicts,
+ *     the sizing question) and exit non-zero on any failing check (report.ts, jobResult).
  *
- * The harness and Chromium run on the CPUs the workflow gives them (taskset; 6-7 on the 8-core runner), never a
- * service's: every service has CPUs of its own (the founder's ruling of 2026-10-23 on the runner). Nothing it writes
- * carries a link, a token or a row; the services' saved logs (<out>/logs) hold IDs, codes and numbers, links masked.
+ * The harness and Chromium run on the CPUs the workflow gives them (taskset): on the free 4-CPU runner Postgres's 0-1,
+ * which they share; on eight CPUs or more 6-7, of their own; never the consumer's. Nothing it writes carries a link, a
+ * token or a row; the services' saved logs (<out>/logs) hold IDs, codes and numbers, links masked.
  */
 
 const exec = promisify(execFile);
@@ -128,6 +132,8 @@ interface Options {
   readonly keepDatabase: boolean;
   /** The static host the web image was built for (its STATIC_ASSET_ORIGIN), or null for an image built with none. */
   readonly staticAssetOrigin: string | null;
+  /** Whether time fails the run (binding: a release's) or warns (advisory: every other run's); the workflow names it. */
+  readonly timeMode: TimeMode;
 }
 
 /** An https origin with no path, as the web's STATIC_ASSET_ORIGIN takes it. */
@@ -148,10 +154,16 @@ function options(argv: readonly string[]): Options {
       'release-dir': { type: 'string' },
       scenarios: { type: 'string' },
       'keep-database': { type: 'boolean', default: false },
+      'time-mode': { type: 'string' },
     },
     strict: true,
   });
   if (values.out === undefined || (values.runtime !== 'docker' && values.runtime !== 'process')) {
+    throw new HarnessStop('USAGE');
+  }
+  // No default: a run names its mode, so neither workflow measures in one it did not choose.
+  const timeMode = TIME_MODES.find((mode) => mode === values['time-mode']);
+  if (timeMode === undefined) {
     throw new HarnessStop('USAGE');
   }
   if (values.runtime === 'process' && (values.images === undefined || values['admin-url'] === undefined)) {
@@ -173,6 +185,7 @@ function options(argv: readonly string[]): Options {
     only: values.scenarios === undefined ? [] : values.scenarios.split(','),
     keepDatabase: values['keep-database'],
     staticAssetOrigin,
+    timeMode,
   };
 }
 
@@ -768,10 +781,11 @@ async function main(): Promise<number> {
   const loadAverage = os.loadavg();
   const runner = { ...thisRunner(), loadAverage };
   const limits = productionLimits();
-  const rule = timeRule(environmentSettings('production'), RUNNER_TO_FARGATE);
+  const rule = timeRule(environmentSettings('production'), RUNNER_TO_FARGATE, opts.timeMode);
   const pgLimit = postgresLimit(runner, limits);
-  // Each service on CPUs of its own (the founder's ruling of 2026-10-23 on the runner), from environments.ts's sizes.
-  const layout = cpuLayout(limits.cpuNeeds);
+  // The runner's layout, from environments.ts's sizes: the free 4-CPU runner's shared CPUs, or on eight CPUs or more
+  // each service's own (the founder's rulings of 2026-10-23).
+  const layout = cpuLayout(limits.cpuNeeds, runner.cpus);
   const expected = {
     web: limits.web,
     platform: limits.platform,
@@ -822,7 +836,7 @@ async function main(): Promise<number> {
       expected,
       applied,
       runnerProblems,
-      departures: [...DEPARTURES, ...(opts.runtime === 'process' ? [{ what: 'process runtime: the build outputs as processes in cgroups, against an unlimited shared Postgres with a warm cache and no network delay', direction: 'gentler' }] : [])],
+      departures: [...layoutDepartures(layout), ...DEPARTURES, ...(opts.runtime === 'process' ? [{ what: 'process runtime: the build outputs as processes in cgroups, against an unlimited shared Postgres with a warm cache and no network delay', direction: 'gentler' }] : [])],
       release,
       shapes: {
         practice: shapeFacts('practice'),
@@ -844,7 +858,7 @@ async function main(): Promise<number> {
     writeFileSync(path.join(opts.out, 'summary.md'), markdown(full, rule));
     return full;
   };
-  say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity ?? 'unknown'}; runtime ${opts.runtime}`);
+  say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity ?? 'unknown'}; runtime ${opts.runtime}; time mode ${opts.timeMode}`);
   say(`layout: ${layoutText(layout)}`);
   let browser: Browser | null = null;
   let owner: OwnerConnection | null = null;
@@ -1002,16 +1016,25 @@ async function main(): Promise<number> {
   for (const reason of full.verdict.reasons) {
     say(`  ${reason}`);
   }
-  if (full.sizing.question) {
-    const question = sizingQuestion(full.sizing, full.repeated.middle);
-    say(`sizing question for the founder (O9): ${question}`);
-    // On the pull request's checks too, not in the log alone: a warning annotation here, and the gate prints it again.
-    process.stdout.write(`::warning title=Sizing question (O9)::${question}\n`);
-    if (process.env.GITHUB_OUTPUT !== undefined) {
-      appendFileSync(process.env.GITHUB_OUTPUT, `sizing=${question}\n`);
+  // An advisory run's time verdicts, worded as a binding run's failing checks, warn and fail nothing.
+  for (const warning of full.verdict.timeWarnings) {
+    say(`  time warning (advisory): ${warning}`);
+  }
+  const result = jobResult(full);
+  if (result.outputs.sizing !== undefined) {
+    say(`sizing question for the founder (O9): ${result.outputs.sizing}`);
+  }
+  // On the pull request's checks too, not in the log alone: each warning annotated here, and handed to the gate, which
+  // prints them again.
+  for (const annotation of result.annotations) {
+    process.stdout.write(`${annotation}\n`);
+  }
+  if (process.env.GITHUB_OUTPUT !== undefined) {
+    for (const [name, value] of Object.entries(result.outputs)) {
+      appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
     }
   }
-  return full.verdict.pass ? 0 : 1;
+  return result.exitCode;
 }
 
 /** This runner's CPUs and memory. */
@@ -1030,7 +1053,7 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
   } catch (error) {
     if (error instanceof HarnessStop && error.code === 'USAGE') {
       process.stderr.write(
-        'usage: pnpm screening:capacity --out <dir> [--runtime docker --web-image <tag> --worker-image <tag>] [--runtime process --images <dir> --admin-url <url> --database <name>] [--release-dir <dir>] [--scenarios S1,S2] [--static-asset-origin https://<host>]\n       pnpm -s screening:capacity --print-harness-cpus\n',
+        'usage: pnpm screening:capacity --out <dir> --time-mode advisory|binding [--runtime docker --web-image <tag> --worker-image <tag>] [--runtime process --images <dir> --admin-url <url> --database <name>] [--release-dir <dir>] [--scenarios S1,S2] [--static-asset-origin https://<host>]\n       pnpm -s screening:capacity --print-harness-cpus\n',
       );
       process.exitCode = 2;
     } else {

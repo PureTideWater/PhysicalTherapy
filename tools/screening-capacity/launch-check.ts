@@ -6,15 +6,15 @@ import { parseArgs } from 'node:util';
 
 import { type EnvironmentSettings, environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
-import { type CpuLayout, RUNNER_TO_FARGATE, cpuLayout, cpuNeeds, layoutText, screeningConsumer, taskLimit } from './limits';
+import { RUNNER_TO_FARGATE, cpuNeeds, layoutText, ownLayout, sameLayout, screeningConsumer, sharedLayout, taskLimit } from './limits';
 import { REPEATED_SCENARIO, REPORT_FORMAT, type Report, middleRunNote, repeatedScenario, sizing, timeRule, verdict } from './report';
 
 /**
  * Decision 13's launch check (the founder's rulings of 2026-10-20 and 2026-10-22; docs/adr/0062; the design's §5.4; test
- * matrix SCR-20): production's screening opens only when the latest capacity report for the image being deployed passes
- * with time enforced, on both image IDs. The release workflow keeps each tag's report as an asset of its GitHub release;
- * the deployer copies the tag's web-production and worker images to the environment's ECR repositories and deploys
- * production with that report (docs/runbooks/deploy-and-rollback.md, steps 3 and 4):
+ * matrix SCR-20): production's screening opens only when the latest capacity report for the image being deployed is a
+ * binding one that passes with time enforced, on both image IDs. The release workflow keeps each tag's report as an
+ * asset of its GitHub release; the deployer copies the tag's web-production and worker images to the environment's ECR
+ * repositories and deploys production with that report (docs/runbooks/deploy-and-rollback.md, steps 3 and 4):
  *
  *   cdk deploy tp-production -c tp:launchReport=<screening-capacity.json> -c tp:launchTag=<tag> --parameters ImageTag=<tag>
  *
@@ -30,15 +30,19 @@ import { REPEATED_SCENARIO, REPORT_FORMAT, type Report, middleRunNote, repeatedS
  * previews the same check: it prints the value the deploy will compute, or names each reason and exits non-zero. It
  * holds the report to:
  *
- * - its format (tp-screening-capacity/6), the Docker runtime (the process runtime cannot limit Postgres), a passing
- *   verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again, S4's
- *   time on the middle of its three runs (the founder's ruling of 2026-10-23), the middle run the report names being
- *   the one its measurements give; a report in an older format (S4 measured once, or /5's free 4-CPU runner, where
- *   services shared CPUs) is refused;
- * - production's layout (the founder's ruling of 2026-10-23 on the runner): the layout the report measured, which the
- *   verdict holds the containers' cpusets and the harness's affinity to, is the one this checkout derives from
- *   production's settings (cpuLayout: Postgres 0-1, the consumer 2-3, the web 4, the platform 5, the harness 6-7), each
- *   service on CPUs of its own, so production opens only on a measurement of production's layout;
+ * - its format (tp-screening-capacity/7), the Docker runtime (the process runtime cannot limit Postgres);
+ * - its time mode (the founder's third ruling of 2026-10-23, "Free: time advisory"): binding, the release workflow's
+ *   run, where time fails the run; an advisory report (a pull request's, the build branch's or the weekly run's, whose
+ *   time only warns) is refused whatever its verdict, the mode named;
+ * - a passing verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again
+ *   in binding mode whatever mode the report records, S4's time on the middle of its three runs (the founder's ruling
+ *   of 2026-10-23, median of 3), the middle run the report names being the one its measurements give; a report in an
+ *   older format (S4 measured once, or no time mode recorded) is refused;
+ * - a layout of production's sizes: the layout the report measured, which the verdict holds the containers' cpusets and
+ *   the harness's affinity to and reads again as the one the harness gives the report's runner, is one of the two this
+ *   checkout derives from production's settings: the free 4-CPU runner's shared CPUs (Postgres and the harness 0-1, the
+ *   consumer 2-3, the web and the platform 3), where the release measures, or CPUs of their own (Postgres 0-1, the
+ *   consumer 2-3, the web 4, the platform 5, the harness 6-7), an 8-CPU runner's;
  * - the tag's commit;
  * - both images, by config digest: each image's config digest as ECR's manifest names it (`docker buildx imagetools
  *   inspect --raw`, an index resolved to its one linux/amd64 image manifest, the platform the release builds and ECS
@@ -119,11 +123,19 @@ function check(input: LaunchInput): LaunchResult {
   if (parsed.runtime !== 'docker') {
     reasons.push(`runtime: ${String(parsed.runtime)}, not docker (only the Docker runtime measures under production’s limits)`);
   }
+  // Only a binding run, the release's, opens production: an advisory one's time warned and failed nothing.
+  const mode: unknown = parsed.timeMode;
+  if (mode !== 'binding') {
+    reasons.push(
+      `time mode: ${String(mode)}, not binding: decision 13 opens production only on a release's binding capacity run, where time fails the run, never on an advisory one, where time only warns (the founder's ruling of 2026-10-23, time advisory)`,
+    );
+  }
   if (parsed.verdict.pass !== true || parsed.verdict.time !== 'enforced') {
     reasons.push(`verdict: ${parsed.verdict.pass ? 'pass' : 'fail'} with time ${String(parsed.verdict.time)}; launch needs a pass with time enforced`);
   }
-  // The same measurements read again by this checkout's rules: a recorded verdict is not taken on trust.
-  const rule = timeRule(input.settings, RUNNER_TO_FARGATE);
+  // The same measurements read again by this checkout's rules, time binding whatever mode the report records: a recorded
+  // verdict or mode is not taken on trust.
+  const rule = timeRule(input.settings, RUNNER_TO_FARGATE, 'binding');
   const again = verdict(parsed, rule);
   if (!again.pass || again.time !== 'enforced') {
     reasons.push(`verdict read again: ${again.pass ? 'pass' : 'fail'} with time ${again.time}${again.reasons.length === 0 ? '' : ` (${again.reasons.slice(0, 5).join('; ')}${again.reasons.length > 5 ? '; …' : ''})`}`);
@@ -164,12 +176,13 @@ function check(input: LaunchInput): LaunchResult {
       `consumer: the report measured ${consumer === null ? 'none' : `${String(consumer.tasks)} × ${String(consumer.cpus)} vCPU, ${String(consumer.memoryMiB)} MiB, ${String(consumer.concurrency)} at once`}, and production declares ${String(declared.desiredCount)} × ${String(declared.cpu / 1024)} vCPU, ${String(declared.memoryMiB)} MiB, ${String(declared.concurrency)} at once`,
     );
   }
-  // Production's layout, each service on CPUs of its own: a report measured on any other (a shared CPU, or another
-  // service's size) is no measurement of production's (the founder's ruling of 2026-10-23 on the runner).
+  // A layout of production's sizes: the free runner's shared CPUs, where the release measures (the founder's third
+  // ruling of 2026-10-23), or CPUs of their own on eight; any other (another service's size) measured something else.
   const layout = parsed.expected.layout;
-  const declaredLayout = cpuLayout(cpuNeeds(input.settings));
-  if (!sameLayout(layout, declaredLayout)) {
-    reasons.push(`layout: the report measured ${layoutText(layout)}, and decision 13 opens production only on production's layout: ${layoutText(declaredLayout)}`);
+  const needs = cpuNeeds(input.settings);
+  const layouts = [sharedLayout(needs), ownLayout(needs)];
+  if (!layouts.some((wanted) => sameLayout(layout, wanted))) {
+    reasons.push(`layout: the report measured ${layoutText(layout)}, and decision 13 opens production only on a layout of production's sizes: ${layouts.map(layoutText).join(', or ')}`);
   }
   if (reasons.length > 0) {
     return { ok: false, reasons };
@@ -179,11 +192,6 @@ function check(input: LaunchInput): LaunchResult {
   const upload = String(worst.worstUpload);
   const notes = worst.question ? [`sizing: the worst time, ${upload}’s ${((worst.worstMs ?? 0) / 1000).toFixed(1)} s${middleRunNote(upload, middle, '’')}, is above 44 s (open item O9: the founder’s sizing question)`] : [];
   return { ok: true, value: `${input.tag}:${reportSha256(input.reportText)}`, notes };
-}
-
-/** Whether two layouts put every service on the same CPUs. */
-function sameLayout(measured: CpuLayout, declared: CpuLayout): boolean {
-  return (Object.keys(declared) as (keyof CpuLayout)[]).every((key) => measured[key] === declared[key]);
 }
 
 /** An image manifest's media types: the OCI one and Docker's v2 schema 2. */

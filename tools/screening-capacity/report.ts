@@ -10,8 +10,10 @@ import {
   TIME_ALLOWANCE_MS,
   TIME_METRIC_BELOW_MS,
   TIME_PROMISE_MS,
-  layoutProblems,
+  cpuLayout,
+  cpuNeedsOf,
   layoutText,
+  sameLayout,
   screeningConsumer,
 } from './limits';
 import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
@@ -19,14 +21,14 @@ import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS } from './scenario-r
 
 /**
  * The capacity test's verdict and report (audit #53 part 1; docs/adr/0062, "Capacity under production limits"; the
- * founder's rulings of 2026-10-20, decisions 13 to 16, and of 2026-10-21, Q1 (a) and Q7).
+ * founder's rulings of 2026-10-20, decisions 13 to 16, of 2026-10-21, Q1 (a) and Q7, and of 2026-10-23).
  *
  * The verdict: the run fails on everything the build controls (an OOM kill, a restart or exit the harness did not cause,
  * Postgres's included, anonymous memory above 90% of a task's limit, the consumer's included, a limit or a cold start
- * not applied, the harness not on its own CPUs, a layout in which two services share a CPU (the founder's ruling of
- * 2026-10-23 on the runner), the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished
- * result, a stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the
- * platform pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
+ * not applied, the harness not on the layout's CPUs for it, a layout other than the one the harness gives the runner,
+ * the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished result, a
+ * stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the platform
+ * pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
  * that left for the static origin, a submission time not captured, an oracle mismatch or an oracle that compared fewer
  * rows than the upload's Medicare rows, a partial run: every one of S1 to S5 must be measured, S4 three times, and a
  * declared screening consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
@@ -34,16 +36,29 @@ import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS } from './scenario-r
  * ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it ("promise"). S4 runs three
  * times (S4#1 to S4#3) and its time is judged on the middle run alone, ordered by each run's worst large upload; every
  * other check holds in all three, and every other scenario's time is judged as measured, once (the founder's ruling of
- * 2026-10-23, "Stay free: median of 3"). The report holds counts, times, hashes and image IDs only: no row, link, token
+ * 2026-10-23, "Stay free: median of 3"). Whether a time verdict fails the run is the time mode's (the founder's third
+ * ruling of 2026-10-23, "Free: time advisory"): binding on a release's capacity run, where it fails the run as every other
+ * check does; advisory on every other run, where it is computed, printed and annotated the same way as a warning and
+ * every other check still fails the run. The report holds counts, times, hashes and image IDs only: no row, link, token
  * or address.
  */
 
 /**
- * tp-screening-capacity/6: each service on CPUs of its own (the founder's ruling of 2026-10-23 on the runner), the
- * layout (expected.layout) and the harness's own CPUs (harnessAffinity) recorded; /5 ran S4 three times on the free
- * 4-CPU runner's shared layout, which the launch check refuses.
+ * tp-screening-capacity/7: the time mode recorded (timeMode, the founder's third ruling of 2026-10-23, "Free: time
+ * advisory"), the verdict's time warnings beside its failing checks (verdict.timeWarnings), and which layout ran
+ * (expected.layout.kind: the free runner's shared CPUs or CPUs of their own). /6 recorded the layout without its kind and
+ * no mode, /5 neither; the launch check refuses both.
  */
-export const REPORT_FORMAT = 'tp-screening-capacity/6';
+export const REPORT_FORMAT = 'tp-screening-capacity/7';
+
+/**
+ * Whether time fails the run (the founder's third ruling of 2026-10-23, "Free: time advisory"; decision 13): 'binding'
+ * on a release's capacity run (release.yml), where a time verdict fails the run as every other check does and the launch
+ * check opens production only on its pass; 'advisory' on every other run (screening-capacity.yml: pull requests, the
+ * build branch, the weekly schedule), where each time verdict is a warning and every other check fails the run as ever.
+ */
+export type TimeMode = 'advisory' | 'binding';
+export const TIME_MODES: readonly TimeMode[] = ['advisory', 'binding'];
 
 // The scenarios, S4's three runs and their names (scenario-runs.ts, which the uploads share).
 export { ALL_SCENARIOS, MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, type ScenarioId, scenarioLabel } from './scenario-runs';
@@ -66,17 +81,22 @@ export function oracleKind(upload: string): OracleKind {
 
 /**
  * How the time is judged: whether the screening's consumer is declared, whether the harness runs it as production
- * will (HARNESS_RUNS_SCREENING_CONSUMER), and the runner-to-Fargate factor once known.
+ * will (HARNESS_RUNS_SCREENING_CONSUMER), the runner-to-Fargate factor once known, and whether a failing time fails the
+ * run (the time mode, which the workflow sets: run.ts's --time-mode).
  */
 export interface TimeRule {
   readonly consumerDeclared: boolean;
   readonly consumerRun: boolean;
   readonly runnerToFargate: number | null;
+  readonly mode: TimeMode;
 }
 
-/** The rule production's settings give: the switch is environments.ts's compute.screening (PR 6b), nothing else. */
-export function timeRule(settings: EnvironmentSettings, runnerToFargate: number | null, consumerRun: boolean = HARNESS_RUNS_SCREENING_CONSUMER): TimeRule {
-  return { consumerDeclared: screeningConsumer(settings) !== null, consumerRun, runnerToFargate };
+/**
+ * The rule production's settings give: the switch is environments.ts's compute.screening (PR 6b), nothing else; the mode
+ * is the caller's to name, never a default (the launch check names 'binding').
+ */
+export function timeRule(settings: EnvironmentSettings, runnerToFargate: number | null, mode: TimeMode, consumerRun: boolean = HARNESS_RUNS_SCREENING_CONSUMER): TimeRule {
+  return { consumerDeclared: screeningConsumer(settings) !== null, consumerRun, runnerToFargate, mode };
 }
 
 export type TimeVerdict = { readonly status: 'open' } | { readonly status: 'pass' } | { readonly status: 'fail'; readonly reason: 'allowance' | 'promise' };
@@ -139,7 +159,11 @@ export interface ExpectedLimits {
   readonly screeningTasks: number;
   readonly postgres: PostgresLimit;
   readonly storage: { readonly iops: number; readonly bytesPerSecond: number };
-  /** Where each service ran: CPUs of its own (limits.ts, cpuLayout; Postgres 0-1, the consumer 2-3, web 4, platform 5, the harness 6-7). */
+  /**
+   * Where each service ran and which layout that was (limits.ts, cpuLayout): on the free 4-CPU runner shared CPUs
+   * (Postgres and the harness 0-1, the consumer 2-3, the web and the platform 3); on eight CPUs or more CPUs of their own
+   * (Postgres 0-1, the consumer 2-3, the web 4, the platform 5, the harness 6-7).
+   */
   readonly layout: CpuLayout;
 }
 
@@ -311,7 +335,7 @@ export interface Measurements {
   readonly runner: { readonly cpus: number; readonly memoryMiB: number; readonly cpuModel: string; readonly kernel: string; readonly loadAverage: readonly number[] };
   /**
    * The CPUs the harness ran on as the kernel reported them at its start (Cpus_allowed_list, the workflow's taskset), which
-   * must be the layout's harness CPUs; null when it could not be read.
+   * must be the layout's harness CPUs (Postgres's on the free runner); null when it could not be read.
    */
   readonly harnessAffinity: string | null;
   readonly expected: ExpectedLimits;
@@ -340,9 +364,14 @@ export interface Measurements {
 }
 
 export interface Verdict {
+  /** No failing check: in an advisory run, time aside. */
   readonly pass: boolean;
-  readonly time: 'open, PR 6b' | 'enforced';
+  /** 'enforced' in a binding run, 'advisory' in an advisory one, 'open, PR 6b' while no consumer is declared. */
+  readonly time: 'open, PR 6b' | 'enforced' | 'advisory';
+  /** The failing checks: every one in a binding run; every one but time in an advisory run. */
   readonly reasons: readonly string[];
+  /** An advisory run's failing time verdicts, worded as a binding run's reasons, which warn and fail nothing; empty in a binding run. */
+  readonly timeWarnings: readonly string[];
 }
 
 /** One run of the repeated scenario: its uploads' times to email and its worst large upload's (null when one has none). */
@@ -428,6 +457,10 @@ export function repeatedSummary(repeated: RepeatedScenario): string {
 /** The run's verdict under the rule (see the module comment). */
 export function verdict(measured: Measurements, rule: TimeRule): Verdict {
   const reasons: string[] = [];
+  // A failing time verdict fails a binding run and warns in an advisory one, worded the same either way; a mode that is
+  // not 'advisory' is read as binding.
+  const timeWarnings: string[] = [];
+  const timeFailures = rule.mode === 'advisory' ? timeWarnings : reasons;
   if (measured.aborted !== null) {
     reasons.push(`run not finished: ${measured.aborted}`);
   }
@@ -447,8 +480,16 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
   }
   reasons.push(...measured.runnerProblems.map((problem) => `runner too small: ${problem}`));
-  // Each service on CPUs of its own, the harness and Chromium too (the founder's ruling of 2026-10-23 on the runner).
-  reasons.push(...layoutProblems(measured.expected.layout).map((problem) => `layout: ${problem}`));
+  // The layout the harness gives this runner, read again from the report's own limits: the free runner's shared CPUs
+  // pass there, and CPUs of their own on eight or more (the founder's rulings of 2026-10-23).
+  const expected = measured.expected;
+  const wanted = cpuLayout(
+    cpuNeedsOf({ databaseVcpus: expected.postgres.cpus, web: expected.web, platform: expected.platform, screening: expected.screening, screeningTasks: expected.screeningTasks }),
+    measured.runner.cpus,
+  );
+  if (!sameLayout(expected.layout, wanted)) {
+    reasons.push(`layout: measured on ${layoutText(expected.layout)}, and the layout the harness gives a runner of ${String(measured.runner.cpus)} CPUs is ${layoutText(wanted)}`);
+  }
   reasons.push(...limitProblems(measured.applied, measured.expected).map((problem) => `limit not applied: ${problem}`));
   if (measured.harnessAffinity !== measured.expected.layout.harness) {
     reasons.push(`limit not applied: harness: CPU affinity ${String(measured.harnessAffinity)}, not ${measured.expected.layout.harness}`);
@@ -546,7 +587,7 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
         const elapsed = upload.emailedMs - upload.submittedMs;
         const time = timeVerdict(elapsed, rule);
         if (time.status === 'fail' && judgedOnTime(scenario, middle)) {
-          reasons.push(`time: ${where} ${(elapsed / 1000).toFixed(1)} s${middleRunNote(where, middle, "'")}, ${timeLabel(time)}`);
+          timeFailures.push(`time: ${where} ${(elapsed / 1000).toFixed(1)} s${middleRunNote(where, middle, "'")}, ${timeLabel(time)}`);
         }
         reasons.push(...timeMetricProblems(upload, elapsed, where));
       }
@@ -568,7 +609,7 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       reasons.push(`oracle mismatch: ${upload}`);
     }
   }
-  return { pass: reasons.length === 0, time: rule.consumerDeclared ? 'enforced' : 'open, PR 6b', reasons };
+  return { pass: reasons.length === 0, time: !rule.consumerDeclared ? 'open, PR 6b' : rule.mode === 'advisory' ? 'advisory' : 'enforced', reasons, timeWarnings };
 }
 
 /**
@@ -603,6 +644,8 @@ export function timeMetricProblems(upload: UploadMeasure, harnessMs: number, whe
 
 export interface Report extends Measurements {
   readonly format: typeof REPORT_FORMAT;
+  /** Whether time failed this run (binding: a release's) or only warned (advisory: every other run's). */
+  readonly timeMode: TimeMode;
   readonly verdict: Verdict;
   /** S4's three runs and the middle one, which its time is judged on (the founder's ruling of 2026-10-23). */
   readonly repeated: RepeatedScenario;
@@ -628,6 +671,7 @@ export function sizing(measured: Pick<Measurements, 'scenarios'>): Sizing {
 export function report(measured: Measurements, rule: TimeRule): Report {
   return {
     format: REPORT_FORMAT,
+    timeMode: rule.mode,
     ...measured,
     verdict: verdict(measured, rule),
     repeated: repeatedScenario(measured.scenarios),
@@ -651,6 +695,10 @@ export function markdown(full: Report, rule: TimeRule): string {
     }).`,
     '',
     `Layout: ${layoutText(full.expected.layout)}; the harness ran on CPUs ${String(full.harnessAffinity)}.`,
+    '',
+    full.timeMode === 'advisory'
+      ? "Time mode: advisory. The time verdicts are warnings on this run and do not fail it (a pull request's, the build branch's or the weekly run; the founder's ruling of 2026-10-23, time advisory). A release's capacity run is binding, and production's screening opens only on its pass (decision 13)."
+      : "Time mode: binding. Time fails this run as every other check does (a release's capacity run, whose pass alone opens production's screening: decision 13).",
     '',
     '| Upload | Shape | Rows | Seconds to email | Logged (TimeToEmailMs) | Tier | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
@@ -685,7 +733,12 @@ export function markdown(full: Report, rule: TimeRule): string {
       `Sizing question for the founder (open item O9): the worst time, ${worst.id}’s ${(worst.ms / 1000).toFixed(1)} s${middleRunNote(worst.id, repeated.middle, '’')}, is above ${String(SIZING_QUESTION_MS / 1000)} s, within 8% of the 48-s line. This is reported before merge as a question of the consumer's size, not a pass to rely on or a limit to widen.`,
     );
   }
-  lines.push('', full.verdict.reasons.length === 0 ? 'Every check the build controls passed.' : 'Failing checks:', ...full.verdict.reasons.map((reason) => `- ${reason}`), '');
+  const { reasons, timeWarnings } = full.verdict;
+  const passed = timeWarnings.length === 0 ? 'Every check the build controls passed.' : 'Every check the build controls passed but time, which is advisory on this run.';
+  lines.push('', reasons.length === 0 ? passed : 'Failing checks:', ...reasons.map((reason) => `- ${reason}`), '');
+  if (timeWarnings.length > 0) {
+    lines.push('Time warnings (advisory: they do not fail this run; a binding run fails on each):', ...timeWarnings.map((warning) => `- ${warning}`), '');
+  }
   return lines.join('\n');
 }
 
@@ -729,4 +782,41 @@ export function worstTime(full: Pick<Measurements, 'scenarios'>): { readonly id:
 export function sizingQuestion(worst: { readonly worstUpload: string | null; readonly worstMs: number | null }, middle: string | null = null): string {
   const upload = worst.worstUpload ?? 'an upload';
   return `the worst time, ${upload}'s ${((worst.worstMs ?? 0) / 1000).toFixed(1)} s${middleRunNote(upload, middle, "'")}, is above 44 s: the consumer's size goes to the founder before merge`;
+}
+
+/** What the harness's job does with a report: its exit code, the annotations it prints, and the outputs the gate reads. */
+export interface JobResult {
+  /** 0 on a passing verdict (an advisory run's time warnings aside), 1 on any failing check. */
+  readonly exitCode: 0 | 1;
+  /**
+   * Workflow commands, one a line, that put each warning on the pull request's checks: an advisory run's time verdicts
+   * and the sizing question (O9). A binding run's failing time is a failing check, never a warning.
+   */
+  readonly annotations: readonly string[];
+  /** GITHUB_OUTPUT's values: time-warnings (an advisory run's, joined) and sizing, each when there is one. */
+  readonly outputs: Readonly<Record<string, string>>;
+}
+
+/** A workflow command's message, its percent signs and line breaks escaped as GitHub reads them. */
+function commandMessage(text: string): string {
+  return text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+}
+
+/**
+ * The job's result from the report (run.ts writes it; the founder's ruling of 2026-10-23, time advisory): an advisory
+ * run whose only failing verdicts are time passes, each one a warning on the checks and handed to the gate, which prints
+ * them again; any other failing check fails it, as a binding run's time does.
+ */
+export function jobResult(full: Report): JobResult {
+  const annotations = full.verdict.timeWarnings.map((warning) => `::warning title=Time (advisory)::${commandMessage(warning)}`);
+  const outputs: Record<string, string> = {};
+  if (full.verdict.timeWarnings.length > 0) {
+    outputs['time-warnings'] = full.verdict.timeWarnings.join('; ');
+  }
+  if (full.sizing.question) {
+    const question = sizingQuestion(full.sizing, full.repeated.middle);
+    annotations.push(`::warning title=Sizing question (O9)::${commandMessage(question)}`);
+    outputs.sizing = question;
+  }
+  return { exitCode: full.verdict.pass ? 0 : 1, annotations, outputs };
 }

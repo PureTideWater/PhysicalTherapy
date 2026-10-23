@@ -125,24 +125,29 @@ describe('the services’ commands', () => {
 
 describe('Docker’s arguments', () => {
   const limits = productionLimits();
-  const postgres = postgresLimit({ cpus: 8, memoryMiB: 32_768, cpuModel: '', kernel: '' }, limits);
-  const layout = cpuLayout(limits.cpuNeeds);
+  // GitHub's free 4-CPU runner, where both capacity jobs measure (the founder's third ruling of 2026-10-23, time advisory).
+  const postgres = postgresLimit({ cpus: 4, memoryMiB: 16_000, cpuModel: '', kernel: '' }, limits);
+  const layout = cpuLayout(limits.cpuNeeds, 4);
+  // An 8-CPU runner's layout, each service on CPUs of its own.
+  const own = cpuLayout(limits.cpuNeeds, 8);
 
-  it('give the web production’s half CPU and 1,024 MiB on a CPU of its own (4) with no swap (the founder’s rulings of 2026-10-22, O9, and of 2026-10-23 on the runner)', () => {
+  it('give the web production’s half CPU and 1,024 MiB on the consumer’s last CPU with no swap, or a CPU of its own on eight (the founder’s rulings of 2026-10-22, O9, and of 2026-10-23)', () => {
     const args = dockerRunArgs(
       { name: 'web', env: { NODE_ENV: 'production' }, limit: limits.web, cpuset: layout.web, command: SERVICE_COMMANDS.web },
       { image: 'tp-web:capacity', network: 'tp-capacity', dataHost: '/tmp/data', dataService: '/data' },
     );
-    expect(args).toEqual(expect.arrayContaining(['--cpus=0.5', '--cpuset-cpus=4', '--memory=1024m', '--memory-swap=1024m', '--restart=no']));
+    expect(args).toEqual(expect.arrayContaining(['--cpus=0.5', '--cpuset-cpus=3', '--memory=1024m', '--memory-swap=1024m', '--restart=no']));
     expect(args.slice(-3)).toEqual(['tp-web:capacity', 'node', 'apps/web/server.js']);
+    const ownArgs = dockerRunArgs({ name: 'web', env: {}, limit: limits.web, cpuset: own.web, command: SERVICE_COMMANDS.web }, { image: 'tp-web:capacity', network: 'tp-capacity', dataHost: '/tmp/data', dataService: '/data' });
+    expect(ownArgs).toContain('--cpuset-cpus=4');
   });
 
-  it('give platform a quarter CPU on a CPU of its own (5) and 512 MiB with no swap, never restarted', () => {
+  it('give platform a quarter CPU on the consumer’s last CPU and 512 MiB with no swap, never restarted', () => {
     const args = dockerRunArgs(
       { name: 'platform', env: { NODE_ENV: 'test' }, limit: limits.platform, cpuset: layout.platform, command: SERVICE_COMMANDS.platform },
       { image: 'tp-worker:capacity', network: 'tp-capacity', dataHost: '/tmp/data', dataService: '/data', user: '1001:1001' },
     );
-    expect(args).toEqual(expect.arrayContaining(['--cpus=0.25', '--cpuset-cpus=5', '--memory=512m', '--memory-swap=512m', '--restart=no', '-e', 'NODE_ENV=test']));
+    expect(args).toEqual(expect.arrayContaining(['--cpus=0.25', '--cpuset-cpus=3', '--memory=512m', '--memory-swap=512m', '--restart=no', '-e', 'NODE_ENV=test']));
     expect(args.slice(-4)).toEqual(['tp-worker:capacity', 'node', '--enable-source-maps', 'dist/main.js']);
     expect(args.slice(args.indexOf('--user'), args.indexOf('--user') + 2)).toEqual(['--user', '1001:1001']);
   });

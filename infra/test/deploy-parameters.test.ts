@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { registryImageId, reportSha256 } from '../../tools/screening-capacity/launch-check';
 import { type Measurements, report } from '../../tools/screening-capacity/report';
-import { ENFORCED, measured, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
+import { ADVISORY, ENFORCED, measured, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
 import { NO_IMAGE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
 import { ENVIRONMENTS, type EnvironmentName } from '../lib/environments';
 import { DEPLOY_LAUNCH_READERS, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, type LaunchTarget, ecrImageReference } from '../lib/screening-launch';
@@ -158,7 +158,7 @@ describe('the screening launch value, computed at synthesis', () => {
   const LAUNCH = { [LAUNCH_REPORT_CONTEXT]: REPORT_FILE, [LAUNCH_TAG_CONTEXT]: TAG };
 
   /** A report's bytes as the harness writes them: by default a full passing run of the measured images. */
-  const kept = (measurements: Measurements = measured()) => `${JSON.stringify(report(measurements, ENFORCED), null, 2)}\n`;
+  const kept = (measurements: Measurements = measured(), rule = ENFORCED) => `${JSON.stringify(report(measurements, rule), null, 2)}\n`;
 
   interface Fake {
     readonly text?: string;
@@ -215,12 +215,20 @@ describe('the screening launch value, computed at synthesis', () => {
     expect(() => synthesizeAll(LAUNCH, readersFor({ text: kept(slow) }))).toThrow(/^decision 13 \(docs\/adr\/0062\): the launch check refused v1\.4\.0's capacity report[\s\S]*- verdict: fail with time enforced/);
   });
 
+  it('refuses an advisory report, a pull request’s, whatever its verdict, so its pass never opens production (the founder’s ruling of 2026-10-23, time advisory)', () => {
+    const slow = measured({ scenarios: withS1(scenario({}, [upload({ emailedMs: 1_000 + 48_100 })])) });
+    for (const measurements of [measured(), slow]) {
+      const readers = readersFor({ text: kept(measurements, ADVISORY) });
+      expect(() => synthesizeAll(LAUNCH, readers)).toThrow(/^decision 13 \(docs\/adr\/0062\): the launch check refused v1\.4\.0's capacity report[\s\S]*- time mode: advisory, not binding/);
+    }
+  });
+
   it('refuses a stale report: another commit than the tag’s, an older format, a web measured at the size before 2026-10-22', () => {
     expect(() => synthesizeAll(LAUNCH, readersFor({ commit: 'e'.repeat(40) }))).toThrow(new RegExp(`- commit: the report measured ${COMMIT}, and ${TAG} is ${'e'.repeat(40)}`));
-    // The formats before S4 ran three times and before each service had CPUs of its own (the founder's rulings of 2026-10-23).
-    for (const format of ['tp-screening-capacity/4', 'tp-screening-capacity/5']) {
+    // The formats before S4 ran three times and before the time mode was recorded (the founder's rulings of 2026-10-23).
+    for (const format of ['tp-screening-capacity/4', 'tp-screening-capacity/5', 'tp-screening-capacity/6']) {
       const older = { ...(JSON.parse(kept()) as Record<string, unknown>), format };
-      expect(() => synthesizeAll(LAUNCH, readersFor({ text: JSON.stringify(older) }))).toThrow(new RegExp(`- report: format ${format}, not tp-screening-capacity/6`));
+      expect(() => synthesizeAll(LAUNCH, readersFor({ text: JSON.stringify(older) }))).toThrow(new RegExp(`- report: format ${format}, not tp-screening-capacity/7`));
     }
     const base = measured();
     const quarterWeb = measured({

@@ -1,5 +1,5 @@
 import { type EnvironmentSettings, environmentSettings } from '../../../infra/lib/environments';
-import { MIB, cpuLayout, postgresLimit, productionLimits } from '../limits';
+import { MIB, type Runner, cpuLayout, postgresLimit, productionLimits } from '../limits';
 import {
   ALL_SCENARIOS,
   type AppliedLimits,
@@ -18,12 +18,16 @@ import {
 /**
  * Synthetic capacity measurements for the report's and the launch check's tests (no row, link, token or address): a full
  * passing run of S1 to S5, S4 three times (S4#1 to S4#3, the founder's ruling of 2026-10-23), under production's limits,
- * the screening consumer at its declared size, on the 8-core runner with each service on CPUs of its own (the founder's
- * ruling of 2026-10-23 on the runner), and helpers that change one part of it.
+ * the screening consumer at its declared size, on GitHub's free 4-CPU runner in its shared layout (the founder's third
+ * ruling of 2026-10-23, "Free: time advisory", put both capacity jobs back on it), an 8-CPU runner's layout of CPUs of
+ * their own beside it (onOwnCpus), and helpers that change one part of it.
  */
 
-export const OPEN: TimeRule = { consumerDeclared: false, consumerRun: false, runnerToFargate: null };
-export const ENFORCED: TimeRule = { consumerDeclared: true, consumerRun: true, runnerToFargate: null };
+export const OPEN: TimeRule = { consumerDeclared: false, consumerRun: false, runnerToFargate: null, mode: 'binding' };
+/** Time enforced and binding: the release's capacity run (release.yml), the only report the launch check accepts. */
+export const ENFORCED: TimeRule = { consumerDeclared: true, consumerRun: true, runnerToFargate: null, mode: 'binding' };
+/** The same rule, advisory: every other capacity run (screening-capacity.yml), whose time warns and does not fail it. */
+export const ADVISORY: TimeRule = { ...ENFORCED, mode: 'advisory' };
 
 /** Production's settings with the consumer taken out: what every checkout before PR 6b-3 declared. */
 export function withoutConsumer(): EnvironmentSettings {
@@ -34,34 +38,48 @@ export function withoutConsumer(): EnvironmentSettings {
 }
 
 export const limits = productionLimits();
-/** GitHub's 8-core runner: 8 CPUs and 32 GB. */
-export const runner = { cpus: 8, memoryMiB: 32_090, cpuModel: 'synthetic', kernel: 'synthetic', loadAverage: [0.5, 0.4, 0.3] };
-export const postgres = postgresLimit(runner, limits);
-export const layout = cpuLayout(limits.cpuNeeds);
-export const expected: ExpectedLimits = {
-  web: limits.web,
-  platform: limits.platform,
-  screening: limits.screening,
-  screeningTasks: limits.screeningTasks,
-  postgres,
-  storage: { iops: limits.database.iops, bytesPerSecond: limits.database.bytesPerSecond },
-  layout,
-};
+/** GitHub's free runner for a public repository (ubuntu-24.04): 4 CPUs and 16 GB. */
+export const runner = { cpus: 4, memoryMiB: 16_000, cpuModel: 'synthetic', kernel: 'synthetic', loadAverage: [0.5, 0.4, 0.3] };
+/** An 8-CPU runner (GitHub's 8-core larger runner, once an organization exists): 8 CPUs and 32 GB. */
+export const eightCpus = { ...runner, cpus: 8, memoryMiB: 32_090 };
 
-export function applied(overrides: Partial<AppliedLimits> = {}): AppliedLimits {
+/** What the harness expects on a runner: production's limits, Postgres's share of the runner, and the runner's layout. */
+function expectedOn(on: Runner): ExpectedLimits {
+  return {
+    web: limits.web,
+    platform: limits.platform,
+    screening: limits.screening,
+    screeningTasks: limits.screeningTasks,
+    postgres: postgresLimit(on, limits),
+    storage: { iops: limits.database.iops, bytesPerSecond: limits.database.bytesPerSecond },
+    layout: cpuLayout(limits.cpuNeeds, on.cpus),
+  };
+}
+
+/** The free runner's: Postgres, the harness and Chromium on 0-1, the consumer on 2-3, the web and the platform on 3. */
+export const expected: ExpectedLimits = expectedOn(runner);
+export const postgres = expected.postgres;
+export const layout = expected.layout;
+
+/** The limits the containers report on a runner, every one applied in its layout. */
+function appliedOn(on: ExpectedLimits, overrides: Partial<AppliedLimits> = {}): AppliedLimits {
   const container = (name: string, cpus: number, memoryMiB: number, cpuset: string) => ({ name, nanoCpus: Math.round(cpus * 1e9), memoryBytes: memoryMiB * MIB, memorySwapBytes: memoryMiB * MIB, cpuset });
   return {
     containers: [
       // The web as production declares it (environments.ts; half a vCPU and 1,024 MiB since the founder's ruling of 2026-10-22).
-      container('web', limits.web.cpus, limits.web.memoryMiB, layout.web),
-      container('platform', 0.25, 512, layout.platform),
-      container('screening-1', 2, 4096, layout.consumer),
-      container('postgres', postgres.cpus, postgres.memoryMiB, postgres.cpuset),
+      container('web', limits.web.cpus, limits.web.memoryMiB, on.layout.web),
+      container('platform', 0.25, 512, on.layout.platform),
+      container('screening-1', 2, 4096, on.layout.consumer),
+      container('postgres', on.postgres.cpus, on.postgres.memoryMiB, on.postgres.cpuset),
     ],
     ioMax: { riops: 3000, wiops: 3000, rbps: 125 * MIB, wbps: 125 * MIB },
     roundTripMedianMs: 2.3,
     ...overrides,
   };
+}
+
+export function applied(overrides: Partial<AppliedLimits> = {}): AppliedLimits {
+  return appliedOn(expected, overrides);
 }
 
 /**
@@ -159,6 +177,15 @@ export function scenarios(s4: readonly S4Times[] = Array.from({ length: REPETITI
 /** The full run's scenarios with S1 replaced. */
 export function withS1(s1: ScenarioMeasure): ScenarioMeasure[] {
   return [s1, ...scenarios().slice(1)];
+}
+
+/**
+ * The same passing run on an 8-CPU runner, each service on CPUs of its own (Postgres 0-1, the consumer 2-3, the web 4, the
+ * platform 5, the harness 6-7): the layout an 8-core larger runner would measure.
+ */
+export function onOwnCpus(overrides: Partial<Measurements> = {}): Measurements {
+  const own = expectedOn(eightCpus);
+  return measured({ runner: eightCpus, expected: own, applied: appliedOn(own), harnessAffinity: own.layout.harness, ...overrides });
 }
 
 export function measured(overrides: Partial<Measurements> = {}): Measurements {

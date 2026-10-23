@@ -16,11 +16,12 @@ import { type EnvironmentName, environmentSettings } from './environments';
  * and the app runs the launch check (tools/screening-capacity/launch-check.ts) on the images the stack deploys,
  * `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the account and region the deploy targets, each image's
  * config digest read from its manifest in ECR (whatever image store the deployer's Docker uses), with the tag's commit in
- * this checkout and production's declared sizes. A passing report gives the value `<tag>:<the report's SHA-256>`, which
- * the stack writes into the web's SCREENING_LAUNCH, with a rule that refuses the deploy unless ImageTag is that tag; a
- * refused report stops the synthesis, naming each reason; no report keeps production's screening closed. The value is
- * never a parameter, and context that tries to set it by hand stops the synthesis, so nothing typed by hand opens the
- * screening.
+ * this checkout and production's declared sizes. A binding report that passes with time enforced, the release
+ * workflow's (an advisory one, a pull request's, is refused whatever its verdict: the founder's ruling of 2026-10-23,
+ * time advisory), gives the value `<tag>:<the report's SHA-256>`, which the stack writes into the web's
+ * SCREENING_LAUNCH, with a rule that refuses the deploy unless ImageTag is that tag; a refused report stops the
+ * synthesis, naming each reason; no report keeps production's screening closed. The value is never a parameter, and
+ * context that tries to set it by hand stops the synthesis, so nothing typed by hand opens the screening.
  */
 
 /** The capacity report's file (`gh release download <tag> --pattern screening-capacity.json`). */

@@ -4,7 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
-import { DEPARTURES, HARNESS_LOGINS, NODE_ENV_READS, harnessLogins, loginsEnvironment, platformEnvironment, screeningEnvironment, webEnvironment } from './env';
+import { DEPARTURES, HARNESS_LOGINS, NODE_ENV_READS, harnessLogins, layoutDepartures, loginsEnvironment, platformEnvironment, screeningEnvironment, webEnvironment } from './env';
+import { cpuLayout, productionLimits } from './limits';
 
 /**
  * Production fidelity of the capacity test (audit #53 part 1): every NODE_ENV read in apps/worker/src and
@@ -114,13 +115,21 @@ describe('the containers’ environments', () => {
     expect(built).toMatchObject({ STATIC_ASSET_ORIGIN: 'https://static.capacity.invalid', SCREENING_SLOTS: '3' });
   });
 
-  it('lists the departures, each with the way it moves the measurement, and none that shares a CPU (the founder’s ruling of 2026-10-23 on the runner)', () => {
-    expect(DEPARTURES.map((departure) => departure.direction)).toEqual(['none', 'harsher', 'harsher', 'equal or harsher', 'gentler', 'gentler', 'none', 'none']);
-    expect(DEPARTURES[0]?.what).toContain('CPUs of its own');
-    // The free 4-CPU runner's two harsher departures, Postgres's CPUs shared with the harness and the web's and the
-    // platform's with the consumer, are gone with it.
-    expect(DEPARTURES.filter((departure) => /\bshare/.test(departure.what))).toEqual([]);
-    expect(DEPARTURES[4]?.what).toContain('CPU credits');
+  it('lists the departures, each with the way it moves the measurement, the layout’s from the layout that ran (the founder’s ruling of 2026-10-23, time advisory)', () => {
+    expect(DEPARTURES.map((departure) => departure.direction)).toEqual(['harsher', 'harsher', 'equal or harsher', 'gentler', 'gentler', 'none', 'none']);
+    expect(DEPARTURES[3]?.what).toContain('CPU credits');
+    expect(DEPARTURES.filter((departure) => /\bCPUs? of (?:its|their) own|\bshare/.test(departure.what))).toEqual([]);
+    const needs = productionLimits().cpuNeeds;
+    // The free 4-CPU runner's two harsher departures: Postgres's CPUs shared with the harness and Chromium, and the
+    // consumer's last with the web and the platform.
+    const shared = layoutDepartures(cpuLayout(needs, 4));
+    expect(shared.map((departure) => departure.direction)).toEqual(['harsher', 'harsher']);
+    expect(shared[0]?.what).toBe('Postgres gets db.t4g.medium’s 2 vCPU and 4 GiB on the runner’s first two CPUs, which the harness and Chromium share');
+    expect(shared[1]?.what).toBe('web and platform share the screening consumer’s last CPU (their fractional-vCPU quotas inside it)');
+    // On eight CPUs or more, none: each service on CPUs of its own, as production has them.
+    const own = layoutDepartures(cpuLayout(needs, 8));
+    expect(own.map((departure) => departure.direction)).toEqual(['none']);
+    expect(own[0]?.what).toContain('each service on CPUs of its own');
   });
 
   it('gives a run on a shared server logins of its own, which every service and the migration task use', () => {
