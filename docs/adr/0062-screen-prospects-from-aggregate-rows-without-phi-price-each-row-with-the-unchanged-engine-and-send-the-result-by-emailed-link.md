@@ -1087,10 +1087,14 @@ assets of the tag's release. The launch value is computed, never typed (the foun
 deploy names the report and its tag as context (`cdk deploy tp-production -c tp:launchReport=<file> -c tp:launchTag=<tag>
 --parameters ImageTag=<tag>`), and the CDK app (`infra/lib/screening-launch.ts`) runs the launch check
 (`tools/screening-capacity/launch-check.ts`, `launchCheck()`) at synthesis on the images the stack deploys,
-`<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each pulled from ECR
-first (the copies ECS runs). It gives `<tag>:<the report's SHA-256>` only for a Docker-runtime report of the tag's
-commit that passes with time enforced (as recorded and as this checkout's `verdict()` reads its measurements again), on
-both image IDs, with the web and platform measured at production's declared sizes and the consumer production declares;
+`<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each read by its
+manifest in ECR (the copies ECS runs). It gives `<tag>:<the report's SHA-256>` only for a Docker-runtime report of the
+tag's commit that passes with time enforced (as recorded and as this checkout's `verdict()` reads its measurements
+again), on both images by config digest (the report's IDs, `docker image inspect -f {{.Id}}` on the release runner's
+classic overlay2 image store, where an image's ID is its config's SHA-256, against the `config.digest` of each image's
+manifest in ECR, an index resolved to its linux/amd64 manifest; nothing is pulled, so the deployer's image store does
+not matter, and the containerd store's `{{.Id}}`, a manifest's digest, is never read: the verification of PR 6b-3), with
+the web and platform measured at production's declared sizes and the consumer production declares;
 the stack writes it into the web's `SCREENING_LAUNCH` and its `ScreeningLaunch` output, and its rule
 `ScreeningLaunchImageTag` refuses the deploy unless `ImageTag` is that tag. A refused report stops the synthesis, naming
 decision 13 and each reason; a deploy with no report closes the screening, since context holds for one invocation and

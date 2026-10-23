@@ -786,7 +786,10 @@ async function main(): Promise<number> {
   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
   const affinity = /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync('/proc/self/status', 'utf8'))?.[1] ?? 'unknown';
-  // The measured images' IDs, which the launch check compares with the images being deployed (decision 13).
+  // The measured images' IDs, which the launch check compares with the images being deployed (decision 13): on the
+  // runner's classic (overlay2) image store an image's ID is its config's SHA-256, the config digest the launch check
+  // reads from ECR's manifest (CI's capacity log shows it equal to buildx's containerimage.config.digest). Under the
+  // containerd image store it would be the manifest's digest instead, which the launch check would refuse.
   const imageId = async (image: string): Promise<string | null> => (await exec('docker', ['image', 'inspect', '-f', '{{.Id}}', image]).catch(() => null))?.stdout.trim() || null;
   const images = opts.runtime === 'docker' ? { web: await imageId(opts.webImage), worker: await imageId(opts.workerImage) } : { web: null, worker: null };
   const specs = scenarios().filter((spec) => opts.only.length === 0 || opts.only.includes(spec.id));

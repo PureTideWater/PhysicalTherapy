@@ -53,7 +53,8 @@ static host (its assets load from the application host), and says so in the buil
    If it does not, stop: the tag is not a reviewed release, and the deploy waits for one that is (the change-management
    policy, rule 5).
 2. **Images for the environment.** Copy the release's images unchanged, never a local build, so the environment runs
-   what was scanned and, in production, what was measured (the copy keeps each image's ID):
+   what was scanned and, in production, what was measured (the copy keeps each image's config, so its config digest,
+   which step 3 compares):
 
    ```
    docker pull ghcr.io/puretidewater/physicaltherapy/web-<env>:<tag>
@@ -70,10 +71,18 @@ static host (its assets load from the application host), and says so in the buil
    capacity report of the tag being deployed, with time enforced, on both image IDs, and only the CDK app sets its
    launch value (the founder's ruling of 2026-10-22): at synthesis it runs the launch check on the report the deploy
    names and on the images the stack deploys, `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the
-   account and region of your credentials, each pulled from ECR first (a pull resolves the tag against ECR, so the IDs
-   checked are those of the copies step 2 pushed, the images ECS runs, never a copy already on this machine), with the
-   tag's commit in this checkout (step 1 fetched the tags) and production's sizes as `infra/lib/environments.ts`
-   declares them. Download the release's report and log Docker in to the environment's registry; you may preview the
+   account and region of your credentials, with the tag's commit in this checkout (step 1 fetched the tags) and
+   production's sizes as `infra/lib/environments.ts` declares them. It compares each image by its config digest: the
+   report holds the IDs the release's runner measured (`docker image inspect -f {{.Id}}` on its classic overlay2 image
+   store, where an image's ID is its config's SHA-256), and the check reads, for each tag in ECR, the manifest ECR holds
+   (`docker buildx imagetools inspect --raw`, an index resolved to its one linux/amd64 image manifest, the platform the
+   release builds and ECS runs) and takes its `config.digest`. So the images checked are the copies step 2 pushed, the
+   images ECS runs, never a copy already on this machine; nothing is pulled, and your Docker's image store does not
+   matter: under the containerd image store (the default for new Docker Desktop and Docker Engine 29 installs) `docker
+   image inspect -f {{.Id}}` gives the manifest's digest instead, which is why the check never reads it. A registry it
+   cannot read (log in first), a platform manifest not found, an index with no linux/amd64 manifest or an unexpected
+   media type is named as the reason. Download the release's report and log Docker in to the environment's registry
+   (`docker buildx` comes with Docker Desktop and with Docker Engine's `docker-buildx-plugin`); you may preview the
    check, which prints the value the deploy will compute or each reason it refuses:
 
    ```

@@ -14,12 +14,13 @@ import { type EnvironmentName, environmentSettings } from './environments';
  *   cdk deploy tp-production -c tp:launchReport=<screening-capacity.json> -c tp:launchTag=<tag> --parameters ImageTag=<tag>
  *
  * and the app runs the launch check (tools/screening-capacity/launch-check.ts) on the images the stack deploys,
- * `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the account and region the deploy targets, each pulled
- * from ECR first, with the tag's commit in this checkout and production's declared sizes. A passing report gives the
- * value `<tag>:<the report's SHA-256>`, which the stack writes into the web's SCREENING_LAUNCH, with a rule that refuses
- * the deploy unless ImageTag is that tag; a refused report stops the synthesis, naming each reason; no report keeps
- * production's screening closed. The value is never a parameter, and context that tries to set it by hand stops the
- * synthesis, so nothing typed by hand opens the screening.
+ * `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the account and region the deploy targets, each image's
+ * config digest read from its manifest in ECR (whatever image store the deployer's Docker uses), with the tag's commit in
+ * this checkout and production's declared sizes. A passing report gives the value `<tag>:<the report's SHA-256>`, which
+ * the stack writes into the web's SCREENING_LAUNCH, with a rule that refuses the deploy unless ImageTag is that tag; a
+ * refused report stops the synthesis, naming each reason; no report keeps production's screening closed. The value is
+ * never a parameter, and context that tries to set it by hand stops the synthesis, so nothing typed by hand opens the
+ * screening.
  */
 
 /** The capacity report's file (`gh release download <tag> --pattern screening-capacity.json`). */
@@ -45,7 +46,7 @@ export interface LaunchReaders {
   readonly readReport: (file: string) => string;
   /** The commit a release tag names in this checkout. */
   readonly tagCommit: (tag: string) => string;
-  /** The ID of the image a registry reference names, pulled from the registry first. */
+  /** The config digest of the image a registry reference names, read from the registry's manifest, or why it could not be read. */
   readonly imageId: (reference: string) => string;
   /** The deploy's account and region, or null when the CDK CLI gives none (no credentials). */
   readonly target: () => LaunchTarget | null;

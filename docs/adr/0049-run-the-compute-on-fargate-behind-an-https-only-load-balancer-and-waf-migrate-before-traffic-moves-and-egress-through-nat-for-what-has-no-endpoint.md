@@ -263,7 +263,8 @@ the role.
 passing capacity report), is not a parameter (the founder's ruling of 2026-10-22): the CDK app computes it at synthesis
 from `-c tp:launchReport=<file> -c tp:launchTag=<tag>` by running `launchCheck()` on the images the stack deploys,
 `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the deploy's account and region (`CDK_DEFAULT_ACCOUNT`,
-`CDK_DEFAULT_REGION`), each pulled from ECR first, and writes it into the web's `SCREENING_LAUNCH` and the
+`CDK_DEFAULT_REGION`), each compared by the config digest its manifest in ECR names (nothing is pulled, so the
+deployer's image store does not matter), and writes it into the web's `SCREENING_LAUNCH` and the
 `ScreeningLaunch` output. The rule `ScreeningLaunchImageTag` (the template's Rules) refuses a deploy whose `ImageTag` is
 not the tag it names. A report the check refuses stops the synthesis, naming decision 13 and each reason; no report
 gives `closed`; context that would set the value by hand (`-c ScreeningLaunch`, `-c tp:screeningLaunch`) stops the

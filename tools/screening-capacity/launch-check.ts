@@ -19,9 +19,9 @@ import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
  *   cdk deploy tp-production -c tp:launchReport=<screening-capacity.json> -c tp:launchTag=<tag> --parameters ImageTag=<tag>
  *
  * The CDK app runs this check at synthesis (infra/lib/screening-launch.ts) on the images the stack deploys,
- * `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>`, each pulled from ECR first (registryImageId), and sets the
- * web's SCREENING_LAUNCH to `<tag>:<the report's SHA-256>` itself; a refused report stops the synthesis with each reason,
- * and no report keeps the screening closed. No deploy takes the value as a parameter (the founder's ruling of
+ * `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>`, each image's config digest read from its manifest in ECR
+ * (registryImageId), and sets the web's SCREENING_LAUNCH to `<tag>:<the report's SHA-256>` itself; a refused report
+ * stops the synthesis with each reason, and no report keeps the screening closed. No deploy takes the value as a parameter (the founder's ruling of
  * 2026-10-22), so nothing typed by hand can open the screening. Run on its own,
  *
  *   pnpm exec tsx tools/screening-capacity/launch-check.ts --report <screening-capacity.json> --tag <tag> \
@@ -33,8 +33,15 @@ import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
  * - its format (tp-screening-capacity/4), the Docker runtime (the process runtime cannot limit Postgres), a passing
  *   verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again;
  * - the tag's commit;
- * - both images: the IDs pulled from ECR equal the IDs measured (`docker image inspect -f {{.Id}}` after `docker pull`),
- *   so the web image measured, built with production's static origin, is the one deployed, and the worker image too;
+ * - both images, by config digest: each image's config digest as ECR's manifest names it (`docker buildx imagetools
+ *   inspect --raw`, an index resolved to its one linux/amd64 image manifest, the platform the release builds and ECS
+ *   runs) equals the ID the report measured, which the harness reads on the runner's classic (overlay2) image store
+ *   (`docker image inspect -f {{.Id}}`), where an image's ID is its config's SHA-256 (CI's capacity log shows it equal to
+ *   buildx's containerimage.config.digest), so the web image measured, built with production's static origin, is the
+ *   one deployed, and the worker image too. Nothing is pulled and the deployer's local image store is never read: under
+ *   Docker's containerd image store (the default for new Docker Desktop and Docker Engine 29 installs) `{{.Id}}` is the
+ *   manifest's or the index's digest, which would never match. A registry that cannot be read, a platform manifest not
+ *   found, an index with no linux/amd64 manifest or an unexpected media type is named as the reason;
  * - the web and platform measured at environments.ts's sizes for production (the web's half vCPU and 1,024 MiB since
  *   the founder's ruling of 2026-10-22), and the consumer at its compute.screening: its tasks, vCPUs, memory and
  *   concurrency.
@@ -47,7 +54,10 @@ import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
 
 /** A release tag as the launch value names it (infra/lib/deploy-parameters.ts, SCREENING_LAUNCH_PATTERN). */
 export const RELEASE_TAG = /^v[0-9A-Za-z.-]{1,60}$/;
-/** A Docker image ID as `docker image inspect -f {{.Id}}` prints it. */
+/**
+ * An image's config digest: as a manifest's `config.digest` names it, and as `docker image inspect -f {{.Id}}` prints it
+ * on the classic image store, where an image's ID is its config's SHA-256.
+ */
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 /** A full commit hash. */
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -58,7 +68,7 @@ export interface LaunchInput {
   readonly tag: string;
   /** The commit the tag names (`git rev-list -n 1 <tag>`). */
   readonly tagCommit: string;
-  /** The IDs of the images the deploy runs, as pulled. */
+  /** The config digests of the images the deploy runs, as their registry holds them (registryImageId). */
   readonly images: { readonly web: string; readonly worker: string };
   /** Production's settings (environmentSettings('production')). */
   readonly settings: EnvironmentSettings;
@@ -120,7 +130,7 @@ function check(input: LaunchInput): LaunchResult {
     const measured = parsed.images[image];
     const deployed = input.images[image];
     if (!IMAGE_ID.test(deployed)) {
-      reasons.push(`${image} image: the deployed image’s ID ${deployed} is not an image ID`);
+      reasons.push(`${image} image: no config digest for the image being deployed: ${deployed}`);
     } else if (measured !== deployed) {
       reasons.push(`${image} image: the report measured ${String(measured)}, and the image being deployed is ${deployed}`);
     }
@@ -148,23 +158,140 @@ function check(input: LaunchInput): LaunchResult {
   return { ok: true, value: `${input.tag}:${reportSha256(input.reportText)}`, notes };
 }
 
+/** An image manifest's media types: the OCI one and Docker's v2 schema 2. */
+const IMAGE_MANIFEST_TYPES: ReadonlySet<string> = new Set(['application/vnd.oci.image.manifest.v1+json', 'application/vnd.docker.distribution.manifest.v2+json']);
+/** An index's media types: the OCI image index and Docker's manifest list. */
+const INDEX_TYPES: ReadonlySet<string> = new Set(['application/vnd.oci.image.index.v1+json', 'application/vnd.docker.distribution.manifest.list.v2+json']);
+/** An image config's media types: what makes a manifest a container image's rather than another artifact's. */
+const CONFIG_TYPES: ReadonlySet<string> = new Set(['application/vnd.oci.image.config.v1+json', 'application/vnd.docker.container.image.v1+json']);
+
 /**
- * The ID of the image a registry reference names, as Docker gives it, or why it could not be read (which the check then
- * refuses as no image ID). The image is pulled first: a pull resolves the tag against the registry and points the local
- * tag at what the registry holds, so the ID read is that of the copy in ECR (whose tags are immutable), the image ECS
- * runs, never a copy already on this machine under the same name.
+ * The platform the images are built for and ECS runs: both workflows build them on ubuntu-24.04's native linux/amd64 with
+ * no platform named (release.yml, screening-capacity.yml; FROM node:24-slim), and every task definition declares X86_64
+ * on Linux (infra/lib/constructs/compute.ts).
  */
-export function registryImageId(reference: string): string {
+const IMAGE_PLATFORM = { os: 'linux', architecture: 'amd64' } as const;
+
+/** What one manifest from the registry gives: the image's config digest, the platform manifest to read next, or why neither. */
+export type ManifestReading =
+  | { readonly kind: 'config'; readonly digest: string }
+  | { readonly kind: 'platform'; readonly digest: string }
+  | { readonly kind: 'refused'; readonly reason: string };
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function platformName(platform: Readonly<Record<string, unknown>>): string {
+  return [platform.os, platform.architecture, platform.variant].filter((part) => typeof part === 'string' && part !== '').join('/');
+}
+
+/**
+ * Reads a manifest as the registry serves it (`docker buildx imagetools inspect --raw`; pure, launch-check.test.ts). An
+ * image manifest gives its config's digest, the image's ID on the runner's classic image store, where the harness reads
+ * the report's IDs. An index gives the digest of its one linux/amd64 image manifest, read next. Anything else, a
+ * malformed answer, another media type, an index without exactly one linux/amd64 manifest, gives its reason.
+ */
+export function readManifest(raw: string): ManifestReading {
+  const refused = (reason: string): ManifestReading => ({ kind: 'refused', reason });
+  let parsed: unknown;
   try {
-    execFileSync('docker', ['pull', '--quiet', reference], { stdio: ['ignore', 'ignore', 'ignore'] });
+    parsed = JSON.parse(raw);
   } catch {
-    return `not pulled from its registry: ${reference} (docker login to it first)`;
+    return refused('not a manifest (malformed JSON)');
   }
+  if (!isRecord(parsed)) {
+    return refused('not a manifest (not a JSON object)');
+  }
+  const { mediaType } = parsed;
+  if (typeof mediaType === 'string' && IMAGE_MANIFEST_TYPES.has(mediaType)) {
+    const { config } = parsed;
+    if (!isRecord(config)) {
+      return refused('an image manifest with no config');
+    }
+    if (typeof config.mediaType !== 'string' || !CONFIG_TYPES.has(config.mediaType)) {
+      return refused(`an unexpected config media type ${typeof config.mediaType === 'string' ? config.mediaType : '(none)'}`);
+    }
+    if (typeof config.digest !== 'string' || !IMAGE_ID.test(config.digest)) {
+      return refused('a config digest that is not sha256:<64 hex>');
+    }
+    return { kind: 'config', digest: config.digest };
+  }
+  if (typeof mediaType === 'string' && INDEX_TYPES.has(mediaType)) {
+    const { manifests } = parsed;
+    if (!Array.isArray(manifests)) {
+      return refused('an index with no manifests');
+    }
+    const entries = manifests.filter(isRecord);
+    const platformOf = (entry: Readonly<Record<string, unknown>>) => (isRecord(entry.platform) ? entry.platform : {});
+    const matching = entries.filter((entry) => platformOf(entry).os === IMAGE_PLATFORM.os && platformOf(entry).architecture === IMAGE_PLATFORM.architecture);
+    const wanted = `${IMAGE_PLATFORM.os}/${IMAGE_PLATFORM.architecture}`;
+    const [only] = matching;
+    if (only === undefined) {
+      const held = [...new Set(entries.map((entry) => platformName(platformOf(entry))).filter((name) => name !== ''))];
+      return refused(`no ${wanted} manifest in its index (it holds ${held.length === 0 ? 'none' : held.join(', ')})`);
+    }
+    if (matching.length > 1) {
+      // Variants of one platform: which one ECS pulls is the runtime's choice, so none is taken as the one measured.
+      return refused(`${String(matching.length)} ${wanted} manifests in its index, not one`);
+    }
+    if (typeof only.mediaType !== 'string' || !IMAGE_MANIFEST_TYPES.has(only.mediaType)) {
+      return refused(`an unexpected media type ${typeof only.mediaType === 'string' ? only.mediaType : '(none)'} for its ${wanted} manifest`);
+    }
+    if (typeof only.digest !== 'string' || !IMAGE_ID.test(only.digest)) {
+      return refused(`a ${wanted} manifest digest that is not sha256:<64 hex>`);
+    }
+    return { kind: 'platform', digest: only.digest };
+  }
+  return refused(`an unexpected media type ${typeof mediaType === 'string' ? mediaType : '(none)'}`);
+}
+
+/** The repository a reference names, without its tag or digest (a registry's port kept), to read a manifest by digest. */
+export function repositoryOf(reference: string): string {
+  const [name = reference] = reference.split('@');
+  const colon = name.lastIndexOf(':');
+  return colon > name.lastIndexOf('/') ? name.slice(0, colon) : name;
+}
+
+/** Runs a command and gives its standard output, or throws when it cannot run or exits non-zero; the tests give their own. */
+export type CommandRunner = (command: string, args: readonly string[]) => string;
+
+const runCommand: CommandRunner = (command, args) => execFileSync(command, [...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+
+/**
+ * The config digest of the image a registry reference names, read from the registry's manifest, or why it could not be
+ * read (which the check then refuses as no config digest). Nothing is pulled and the local image store is never read:
+ * the manifest is the one the registry holds under the tag (ECR's tags are immutable), the image ECS runs, never a copy
+ * already on this machine under the same name, and its config digest is the same whatever store this Docker uses.
+ * Under Docker's containerd image store (the default for new Docker Desktop and Docker Engine 29 installs),
+ * `docker image inspect -f {{.Id}}` gives the manifest's or the index's digest instead, which would never match.
+ */
+export function registryImageId(reference: string, run: CommandRunner = runCommand): string {
+  const inspect = (target: string): string => run('docker', ['buildx', 'imagetools', 'inspect', '--raw', target]);
+  let top: ManifestReading;
   try {
-    return execFileSync('docker', ['image', 'inspect', '-f', '{{.Id}}', reference], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    top = readManifest(inspect(reference));
   } catch {
-    return `not found: ${reference}`;
+    return `not read from its registry: ${reference} (docker login to it first)`;
   }
+  if (top.kind === 'refused') {
+    return `${reference}: ${top.reason}`;
+  }
+  if (top.kind === 'config') {
+    return top.digest;
+  }
+  const platform = `${repositoryOf(reference)}@${top.digest}`;
+  const named = `${platform} (the ${IMAGE_PLATFORM.os}/${IMAGE_PLATFORM.architecture} manifest of ${reference})`;
+  let image: ManifestReading;
+  try {
+    image = readManifest(inspect(platform));
+  } catch {
+    return `not found: ${named}`;
+  }
+  if (image.kind === 'refused') {
+    return `${named}: ${image.reason}`;
+  }
+  return image.kind === 'config' ? image.digest : `${named}: an index, not an image manifest`;
 }
 
 /** The commit a release tag names in this checkout (`git rev-list -n 1`), or why it could not be read. */

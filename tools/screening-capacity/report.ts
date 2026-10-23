@@ -278,7 +278,11 @@ export interface OracleComparison {
 export interface Measurements {
   readonly commit: string;
   readonly runtime: 'docker' | 'process';
-  /** The measured images' IDs (`docker image inspect -f {{.Id}}`); null on the process runtime, which runs no image. */
+  /**
+   * The measured images' IDs (`docker image inspect -f {{.Id}}`): on the runner's classic (overlay2) image store, each
+   * image's config digest, which the launch check compares with the config digest of the image ECR holds
+   * (launch-check.ts, registryImageId); null on the process runtime, which runs no image.
+   */
   readonly images: { readonly web: string | null; readonly worker: string | null };
   /** The consumer as measured; null when the settings declare none (the harness then stops). */
   readonly consumer: ConsumerMeasure | null;

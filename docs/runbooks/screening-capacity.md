@@ -51,7 +51,8 @@ no credential is used.
 6. Stops every service and compares S1-1, S2-1 and S3-1 (the last priced from the shared types the thread held) with the
    oracle (the old read path and adapter, frozen at 3c1b289) by SHA-256, and S1-2 (a ZIP split across localities, with
    its ZIP+4) with the whole-release oracle, each over all of its upload's Medicare rows; then removes Postgres.
-7. Writes `screening-capacity.json` (format `tp-screening-capacity/4`: the consumer as measured, both image IDs, each
+7. Writes `screening-capacity.json` (format `tp-screening-capacity/4`: the consumer as measured, both image IDs (each
+   image's config digest, `docker image inspect -f {{.Id}}` on the runner's classic overlay2 image store), each
    upload's time, logged time and tier), its SHA-256 (`screening-capacity.sha256`, the value the launch check prints)
    and `summary.md` after every scenario and at the end, and saves each container's stdout and stderr to
    `logs/<setup or scenario>-<service>.log` (IDs, codes and numbers by the logger's allowlist, result links masked)
@@ -202,8 +203,8 @@ cdk deploy tp-production -c tp:launchReport=<dir>/screening-capacity.json -c tp:
 ```
 
 The app (`infra/lib/screening-launch.ts`) reads the images the stack deploys, `<WebRepositoryUri>:<tag>` and
-`<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each pulled from ECR first, so the IDs checked are
-those ECS runs. A passing report gives `<tag>:<the report's SHA-256>`, which the stack writes into the web's
+`<WorkerRepositoryUri>:<tag>` in the deploy's account and region, each by its manifest in ECR, so the images checked are
+those ECS runs, whatever image store the deployer's Docker uses. A passing report gives `<tag>:<the report's SHA-256>`, which the stack writes into the web's
 `SCREENING_LAUNCH`, with a rule that refuses the deploy unless `ImageTag` is that tag; a refused report stops the
 synthesis, naming decision 13 and each reason; no report keeps production's screening closed. The value is never a
 parameter, and context that sets it by hand stops the synthesis. To preview the check before the deploy:
@@ -215,8 +216,10 @@ pnpm exec tsx tools/screening-capacity/launch-check.ts --report <dir>/screening-
 
 It prints the value the deploy will compute, or each reason and a non-zero exit. It checks the report's format, the
 Docker runtime, a pass with time enforced as recorded and as the checkout's own `verdict()` reads the measurements again,
-the tag's commit, both image IDs against the images pulled from ECR (`docker image inspect -f {{.Id}}` after `docker
-pull`), the web and platform measured at production's declared sizes (the web's half vCPU and 1 GiB since 2026-10-22),
+the tag's commit, both images by config digest (the report's IDs, which the harness reads with `docker image inspect -f
+{{.Id}}` on the runner's classic overlay2 image store, where an image's ID is its config's SHA-256, against the config
+digest each image's manifest in ECR names, read with `docker buildx imagetools inspect --raw` and an index resolved to
+its linux/amd64 manifest; nothing is pulled), the web and platform measured at production's declared sizes (the web's half vCPU and 1 GiB since 2026-10-22),
 and the consumer measured against `compute.screening` for production. A note of the founder's sizing question (a worst
 time above 44 s) does not stop it: the merge settles that question. The web keeps production closed unless
 `SCREENING_LAUNCH` names the tag it runs, so a deploy of another tag without its own report closes the screening.
@@ -225,7 +228,10 @@ time above 44 s) does not stop it: the merge settles that question. The web keep
 
 - With Docker: build the images as tagged in the workflow, then
   `taskset -c "$(pnpm -s screening:capacity --print-harness-cpus)" pnpm screening:capacity --out <dir> --release-dir <dir> --web-image tp-web:capacity --worker-image tp-worker:capacity`
-  (add `--static-asset-origin https://<host>` for a web image built with `STATIC_ASSET_ORIGIN`).
+  (add `--static-asset-origin https://<host>` for a web image built with `STATIC_ASSET_ORIGIN`). The report's image IDs
+  are the images' config digests only on Docker's classic image store (overlay2, as on the workflows' runners); under
+  the containerd image store (the default for new Docker Desktop and Docker Engine 29 installs) they are the manifests'
+  digests, which the launch check refuses, so such a report can never open production's screening.
 - Without Docker (a developer machine, cgroups under root): build the worker (`pnpm --filter @tp/worker build`) and the
   web app (`pnpm --filter @tp/web build`, then the static files and `public` beside the standalone server as
   `apps/web/scripts/start-standalone.sh` does), lay them out as the images do (a directory with `worker`, holding

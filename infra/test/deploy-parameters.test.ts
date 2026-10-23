@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Template } from 'aws-cdk-lib/assertions';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { reportSha256 } from '../../tools/screening-capacity/launch-check';
+import { registryImageId, reportSha256 } from '../../tools/screening-capacity/launch-check';
 import { type Measurements, report } from '../../tools/screening-capacity/report';
 import { ENFORCED, measured, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
 import { NO_IMAGE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
@@ -167,12 +167,12 @@ describe('the screening launch value, computed at synthesis', () => {
     readonly target?: LaunchTarget | null;
   }
 
-  /** Readers over the synthetic report, the tag's commit, the images' IDs in ECR and the deploy's account; records each image read. */
-  function readersFor(fake: Fake = {}): LaunchReaders & { readonly pulled: string[] } {
-    const pulled: string[] = [];
+  /** Readers over the synthetic report, the tag's commit, the images' config digests in ECR and the deploy's account; records each image read. */
+  function readersFor(fake: Fake = {}): LaunchReaders & { readonly read: string[] } {
+    const read: string[] = [];
     const ids = fake.ids ?? { [WEB_REFERENCE]: WEB_ID, [WORKER_REFERENCE]: WORKER_ID };
     return {
-      pulled,
+      read,
       readReport: (file) => {
         if (file !== REPORT_FILE) {
           throw new Error('no such file');
@@ -181,7 +181,7 @@ describe('the screening launch value, computed at synthesis', () => {
       },
       tagCommit: (tag) => (tag === TAG ? (fake.commit ?? COMMIT) : `no tag ${tag} in this checkout (git fetch --tags)`),
       imageId: (reference) => {
-        pulled.push(reference);
+        read.push(reference);
         return ids[reference] ?? `not found: ${reference}`;
       },
       target: () => (fake.target === undefined ? TARGET : fake.target),
@@ -192,8 +192,8 @@ describe('the screening launch value, computed at synthesis', () => {
     const readers = readersFor();
     const stacks = synthesizeAll(LAUNCH, readers);
     const value = `${TAG}:${reportSha256(kept())}`;
-    // The images read are the ECR copies of the tag the stack runs (WebRepositoryUri and WorkerRepositoryUri), pulled first.
-    expect(readers.pulled).toEqual([WEB_REFERENCE, WORKER_REFERENCE]);
+    // The images read are the ECR copies of the tag the stack runs (WebRepositoryUri and WorkerRepositoryUri), by their manifests.
+    expect(readers.read).toEqual([WEB_REFERENCE, WORKER_REFERENCE]);
     const production = stacks.production.template;
     expect(webLaunchValue(production, 'production')).toBe(value);
     expect(json(production).Outputs.ScreeningLaunch?.Value).toBe(value);
@@ -230,7 +230,7 @@ describe('the screening launch value, computed at synthesis', () => {
   it('refuses a report of other images than the ECR copies the stack deploys, or an image ECR does not hold', () => {
     const other = `sha256:${'c'.repeat(64)}`;
     expect(() => synthesizeAll(LAUNCH, readersFor({ ids: { [WEB_REFERENCE]: WEB_ID, [WORKER_REFERENCE]: other } }))).toThrow(new RegExp(`- worker image: the report measured ${WORKER_ID}, and the image being deployed is ${other}`));
-    expect(() => synthesizeAll(LAUNCH, readersFor({ ids: { [WORKER_REFERENCE]: WORKER_ID } }))).toThrow(/- web image: the deployed image’s ID not found: 123456789012\.dkr\.ecr\.us-east-1\.amazonaws\.com\/tp-production-web:v1\.4\.0 is not an image ID/);
+    expect(() => synthesizeAll(LAUNCH, readersFor({ ids: { [WORKER_REFERENCE]: WORKER_ID } }))).toThrow(/- web image: no config digest for the image being deployed: not found: 123456789012\.dkr\.ecr\.us-east-1\.amazonaws\.com\/tp-production-web:v1\.4\.0/);
   });
 
   it('refuses a launch value typed by hand, as context of any spelling, with or without a report', () => {
@@ -239,7 +239,7 @@ describe('the screening launch value, computed at synthesis', () => {
       const readers = readersFor();
       expect(() => synthesizeAll({ [key]: typed }, readers), key).toThrow(new RegExp(`^decision 13 \\(docs/adr/0062\\): ScreeningLaunch is computed by the CDK app from the release's capacity report and is never passed by hand; remove -c ${key}`));
       expect(() => synthesizeAll({ ...LAUNCH, [key]: typed }, readers), key).toThrow(/is never passed by hand/);
-      expect(readers.pulled).toEqual([]);
+      expect(readers.read).toEqual([]);
     }
   });
 
@@ -248,7 +248,7 @@ describe('the screening launch value, computed at synthesis', () => {
     expect(() => synthesizeAll({ [LAUNCH_TAG_CONTEXT]: TAG }, readersFor())).toThrow(/go together/);
     const latest = readersFor();
     expect(() => synthesizeAll({ ...LAUNCH, [LAUNCH_TAG_CONTEXT]: 'latest' }, latest)).toThrow(/-c tp:launchTag=latest is not a release tag/);
-    expect(latest.pulled).toEqual([]);
+    expect(latest.read).toEqual([]);
     expect(() => synthesizeAll(LAUNCH, readersFor({ target: null }))).toThrow(/CDK_DEFAULT_ACCOUNT and CDK_DEFAULT_REGION/);
     expect(() => synthesizeAll({ ...LAUNCH, [LAUNCH_REPORT_CONTEXT]: '/synthetic/missing.json' }, readersFor())).toThrow(/the capacity report \/synthetic\/missing\.json could not be read/);
   });
@@ -266,6 +266,10 @@ describe('the screening launch value, computed at synthesis', () => {
       expect(ecrImageReference({ account: TARGET.account, region: 'cn-north-1' }, 'production', 'worker', TAG)).toBe(`123456789012.dkr.ecr.cn-north-1.amazonaws.com.cn/tp-production-worker:${TAG}`);
       vi.stubEnv('CDK_DEFAULT_ACCOUNT', '');
       expect(DEPLOY_LAUNCH_READERS.target()).toBeNull();
+    });
+
+    it('read each image’s config digest from its registry’s manifest, never the deployer’s local image store (the verification of PR 6b-3)', () => {
+      expect(DEPLOY_LAUNCH_READERS.imageId).toBe(registryImageId);
     });
   });
 });
