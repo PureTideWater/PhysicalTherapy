@@ -292,15 +292,21 @@ review round of 2026-10-22 found the web's quarter vCPU the largest share of the
 at once reached the queue after 14.6 to 16.0 s on it, 6.9 s on half a vCPU), and CI's run on 7abb99c measured a worst
 of 46.0 s against the 44-s question. The consumer stays one task of 2 vCPU and 4 GiB with three threads; only if CI's
 worst time is still above 44 s with the larger web do a 4 vCPU and 8 GiB consumer and GitHub's 8-core runner go back to
-the founder, and the 48-s line and the 44-s question do not change. The capacity harness measures the web at this size,
+the founder, and the 48-s line and the 44-s question do not change. *Since the founder's ruling of 2026-10-23 on the
+runner* the measurement runs on GitHub's 8-core runner, each service on CPUs of its own; a middle S4 run's worst time
+above 44 s there takes the 4 vCPU and 8 GiB consumer back to the founder (docs/adr/0062, Owner rulings (2026-10-23)).
+The capacity harness measures the web at this size,
 read from the same declaration, and the launch check refuses a report measured at another. The web's command sets no
 heap flag: Node 24 sizes V8's heap from the container's memory limit (a 560 MiB heap limit at 1 GiB, 259 MiB at 512
 MiB, measured), so the heap follows the task.
 
 **Cost** (PRD 19, the founder's Q1 of 2026-10-21; prices read from search results, to be read again on AWS's own pages
 before the first deploy, open item O12): the consumer about $74.50 a month per environment once it runs (about $60.10 on
-ARM after #136); staging always on; production about $0.40 a month (its secret) until launch. A 4-core larger runner for
-the capacity workflow and the release's measurement once the repository is private, about $22 a month. The web at half
+ARM after #136); staging always on; production about $0.40 a month (its secret) until launch. GitHub's 8-core larger
+runner (`paidwhole-8core`) for the capacity workflow and the release's measurement now, public repository or private
+(the founder's ruling of 2026-10-23 on the runner), about $44 a month: GitHub bills it by the minute, about $0.032 a
+minute for 8-core Linux, about 1,375 runner minutes a month by the design's estimate, the price to be read again on
+GitHub's pricing page before it is relied on (O12). The web at half
 a vCPU and 1 GiB (the founder's ruling of 2026-10-22): about $18.02 a task a month instead of $9.01 (us-east-1
 on-demand, x86, 730 hours: $0.04048 a vCPU-hour and $0.004445 a GB-hour), so about $36.04 a month in production's two
 tasks instead of $18.02 (+$18.02), and about $18.02 in staging's one instead of $9.01 (+$9.01); dev's stack, when

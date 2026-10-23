@@ -340,8 +340,9 @@ no repository code. Its report (`tp-screening-capacity/2`) holds counts, times, 
 or a token. *Since PR 6b-3 time is enforced: the harness runs the consumer as production will, the workflow is a
 required check through its gate job, and the report (`tp-screening-capacity/4`) names the consumer and both image IDs
 (Amendment (PR 6b-3)). Since the founder's ruling of 2026-10-23, S4 runs three times, its time judged on the middle run,
-the report is `tp-screening-capacity/5` and the job's timeout 100 minutes (Amendment (PR 6b-3), Owner rulings
-(2026-10-23)).*
+the report is `tp-screening-capacity/5` and the job's timeout 100 minutes; since the founder's second ruling that day,
+the measurement runs on GitHub's 8-core larger runner with each service on CPUs of its own and the report, which
+records the layout, is `tp-screening-capacity/6` (Amendment (PR 6b-3), Owner rulings (2026-10-23)).*
 
 **The result page holds one page of groups (audit #53 part 1, found by the capacity test's first local run).** The
 page read and rendered every group by payer product and code, and a worst-shape result's 20,507 groups exhausted the
@@ -741,7 +742,8 @@ The founder, Tyler Williams, accepted on 2026-10-20 the recommended answer to ev
     `timeVerdict()` in `report.ts`: 47.9 s passes, 48.1 s fails as the allowance, 60.1 s as the promise. *Enforced
     from PR 6b-3:* every upload of every scenario, the small ones included. *Since the founder's ruling of 2026-10-23:*
     S4 runs three times and its time is judged on the middle run, every other check in all three; the line is unchanged
-    (Amendment (PR 6b-3), Owner rulings (2026-10-23)).
+    (Amendment (PR 6b-3), Owner rulings (2026-10-23)). *Since the founder's second ruling that day:* "GitHub's runner"
+    is the 8-core larger runner (`paidwhole-8core`), each service on CPUs of its own as production has them.
 16. **How PR 6 merges before its consumer exists:** the test fails PR 6 on everything PR 6 controls; time shows as
     "open, PR 6b" until PR 6b declares the consumer in `infra/lib/environments.ts`, which switches it on in tested
     code. *Built:* `timeRule()` reads `compute.screening`; `report.test.ts` holds today's settings to "open" and a
@@ -778,9 +780,11 @@ small upload behind the three large ones in S4 and S5; its times are not measure
 suites).
 
 What stays open: staging's runner-to-Fargate factor; the weekly schedule, which fires once the default branch carries
-workflows (audit #54); a larger runner once the repository is private (Q1 (d)); #31's check of the scale release's
+workflows (audit #54); #31's check of the scale release's
 counts against release 1's real sources. *Decided in PR 6b-3:* the consumer (Q1 (a): three at a time, not two, on one
-2 vCPU/4 GiB task) and the share, cap and honest message (Q7, Q12); the keyed-record cache, not built (the keyed read
+2 vCPU/4 GiB task) and the share, cap and honest message (Q7, Q12); the runner (Q1 (d), then the founder's second ruling
+of 2026-10-23: GitHub's 8-core larger runner for every capacity run, about $44 a month); the keyed-record cache, not
+built (the keyed read
 measured 2.3 to 3.8 s for the worst shape and 0.0 to 0.1 s for the practice shape, and the promise is sized on a cold
 cache, where a cache cannot help).
 
@@ -922,9 +926,10 @@ accepted). Those this record's consumer and its time check build:
 - **Q1 (b) and (c), before launch:** production's consumer runs no task until a deploy passes `ScreeningConsumer=running`
   (about $0.40 a month until then, its secret); staging's runs from its first released deploy, always on, so staging
   measures decision 15's runner-to-Fargate factor on production's task and runs the deployed image every day.
-- **Q1 (d), CI:** the capacity workflow and the release's capacity job run on a 4-CPU runner, `ubuntu-24.04` while the
-  repository is public; once it is private, their label becomes the 4-core larger runner the founder creates (about $22
-  a month), and until then a 2-vCPU runner is refused as too small, so production's screening cannot open.
+- **Q1 (d), CI:** the capacity workflow and the release's capacity job run on a runner large enough for the layout, and
+  a smaller one is refused as too small, so production's screening cannot open on its measurement. *As now built (the
+  founder's second ruling of 2026-10-23, below):* both run on GitHub's 8-core larger runner, `paidwhole-8core`, whether
+  the repository is public or private, about $44 a month; a runner with fewer than 8 CPUs is refused as too small.
 - **Q7, the share, the cap and fairness:** every upload is accepted. An account's share is 100,000 rows a UTC day (two
   worst-shape files) and the day's cap 1,000,000 rows of uploads within their shares (ten accounts' shares); an
   account's k-th upload past its share waits at priority -k (at most -20), so heavy accounts take turns, and one past
@@ -977,16 +982,22 @@ ADR 0049:
 
 ### Owner rulings (2026-10-23)
 
-The capacity test measured the same code twice on GitHub's free 4-CPU runner: S4 (three worst-shape uploads at once and
+The founder, Tyler Williams, ruled twice on 2026-10-23 on the capacity test's runner and its time verdict: first "Stay
+free: median of 3" (about 03:05 UTC), then, when the median of three failed on the free runner too, "8-core runner"
+(about 04:50 UTC), which replaces the first ruling's choice of runner and keeps its median of three.
+
+**The first ruling: "Stay free: median of 3".** The capacity test measured the same code twice on GitHub's free 4-CPU
+runner: S4 (three worst-shape uploads at once and
 a small one behind them) at 38.3, 37.6 and 35.3 s on 19aa09c, a pass, and at 51.4, 51.4 and 45.2 s on 54ec890, the
 founder's commit of the domain model's approval line, a fail; the second runner was slower throughout (the release
-loaded in 262 s against 219 s). The cause is the runner, not the consumer: the harness's layout (`limits.ts`,
-`postgresLimit`) puts Postgres, the harness and Chromium on CPUs 0-1 and the consumer on 2-3 with the web and the
-platform on CPU 3, a contention production does not have, which swings with the host's speed. Asked whether to move the
+loaded in 262 s against 219 s). The cause is the runner, not the consumer: the harness's layout of the time put
+Postgres, the harness and Chromium on CPUs 0-1 and the consumer on 2-3 with the web and the platform on CPU 3, a
+contention production does not have, which swings with the host's speed. Asked whether to move the
 measurement to GitHub's 8-core larger runner (about $44 a month), the founder, Tyler Williams, ruled on 2026-10-23:
 "Stay free: median of 3".
 
-- **What it does:** the capacity workflow and the release's capacity job keep the free 4-CPU runner. S4 runs three times
+- **What it does:** the capacity workflow and the release's capacity job keep the free 4-CPU runner (replaced by the
+  second ruling, below). S4 runs three times
   in every capacity run (S4#1, S4#2 and S4#3, each as S4 always ran: a cold Postgres, restarted with its page cache
   dropped, then web, platform and the consumer fresh; the same uploads from the same ZIPs, each run's under practice
   names and addresses of its own, so none replaces another). The runs are ordered by their worst large upload's time
@@ -999,9 +1010,8 @@ measurement to GitHub's 8-core larger runner (about $44 a month), the founder, T
   cold start and the limits applied hold in all three runs. The 48-s line, the 44-s question and every other verdict are
   unchanged; two runs of three above the line still fail. It still measures the runner's contention, which production
   does not have: the median takes the host's swing out of S4's verdict, not the contention out of the measurement.
-  GitHub's 8-core larger runner, with Postgres, the consumer, the web with the platform, and the harness each on CPUs of
-  their own, remains the option that measures production's layout; the 4-core larger runner still replaces
-  `ubuntu-24.04` once the repository is private (Q1 (d)).
+  GitHub's 8-core larger runner, with Postgres, the consumer, the web, the platform and the harness each on CPUs of
+  their own, remained the option that measures production's layout, and the second ruling took it.
 - **Built:** `tools/screening-capacity/scenario-runs.ts` (`REPEATED_SCENARIO`, `REPETITIONS`), `uploads.ts` (S4's three
   runs), `report.ts` (`repeatedScenario()`, the verdict, `worstTime()` and the summary's line naming every run's times
   and the middle run, which the harness also logs), the report `tp-screening-capacity/5` (each of S4's runs a scenario of
@@ -1010,6 +1020,43 @@ measurement to GitHub's 8-core larger runner (about $44 a month), the founder, T
   more runs take about 3 minutes (CI's S4 took 59 s on 19aa09c and 78 s on 54ec890 from its cold restart to S5's
   start), so both capacity jobs' timeouts went from 90 to 100 minutes; the harness's deadlines (60 and 70 minutes)
   stay. Test matrix SCR-08; docs/runbooks/screening-capacity.md, "S4's three runs".
+
+**The second ruling: "8-core runner".** The median of three failed on the free runner as well: on 35bcc56, the commit
+that built it, S4's three runs measured 52.8 to 56.9 s (the middle run, S4#2, 56.2, 55.6 and 55.3 s), with every
+correctness check holding in all three, and the release loaded in 270 s. The free runner's times followed the host's
+speed: the same code's S4 worst was 38.3 s with the release loaded in 219 s (19aa09c), 51.4 s at 262 s (54ec890) and
+56.9 s at 270 s (35bcc56), 38 to 57 s, and the three runs of one capacity run share one host, so their median cannot
+take a slow host out. Asked to choose between GitHub's 8-core larger runner (about $44 a month), the free runner with
+the pull request's time reported as a warning and enforced only at decision 13's launch gate, and the 8-core runner with
+a larger consumer, the founder, Tyler Williams, ruled on 2026-10-23: "8-core runner".
+
+- **What it does:** both capacity jobs (`.github/workflows/screening-capacity.yml`'s `capacity` and `release.yml`'s
+  `capacity`) run on GitHub's 8-core larger runner, `runs-on: paidwhole-8core` (Linux x64, Ubuntu 24.04, 8 cores and
+  32 GB, created by the founder in the organization's Actions runner settings, its runner group allowing public
+  repositories; GitHub offers larger runners to organizations on its Team or Enterprise Cloud plan, and this
+  repository's owner is a personal account today, so an organization on such a plan owns it first); every other job, the
+  gate included (it only reads the result), stays on `ubuntu-24.04`. The harness
+  measures production's layout, every service on CPUs of its own: Postgres on 0-1 (db.t4g.medium's 2 vCPU), the
+  consumer on 2-3 (`compute.screening`'s 2 vCPU), the web on 4 and the platform on 5 (each its quota within its own
+  CPU), and the harness, its child processes and Chromium on 6-7, derived from `environments.ts`'s sizes
+  (`limits.ts`, `cpuNeeds()` and `cpuLayout()`), so the contention of the free runner's layout, which production does
+  not have, is out of the measurement.
+- **What it keeps:** the median of three (the first ruling's S4 verdict, every other check in all three runs), which
+  costs about 3 minutes a run and guards against what noise the larger runner's host still has; the 48-s line; the
+  44-s question; every verdict's meaning. If the middle run's worst time is still above 44 s on the 8-core runner, the
+  4 vCPU and 8 GiB consumer goes back to the founder, as the ruling of 2026-10-22 agreed.
+- **Cost:** GitHub bills a larger runner by the minute, public repository or not: about $0.032 a minute for 8-core
+  Linux, about $44 a month by the design's estimate (about 1,375 runner minutes), in place of the 4-core larger
+  runner's $22 that Q1 (d) planned once the repository is private (PRD 19; the price to be read again on GitHub's
+  pricing page before it is relied on, O12).
+- **Built:** `runnerTooSmall()` requires 8 CPUs and names each service's need; `--print-harness-cpus` prints 6-7; the
+  report, `tp-screening-capacity/6`, records the layout (`expected.layout`) and the CPUs the harness ran on
+  (`harnessAffinity`); the verdict fails a layout in which two services share a CPU, a container on CPUs other than its
+  own, and a harness not on its own; the launch check refuses a report measured on any layout other than the one this
+  checkout derives from production's settings, and `/5` (the free runner's shared layout) as an older format, because
+  decision 13 opens production only on a measurement of production's layout. `.github/actionlint.yaml` names the
+  runner's label, which actionlint does not otherwise know. Until the founder creates the runner, the capacity job
+  waits in GitHub's queue and the gate does not pass (docs/runbooks/screening-capacity.md, "The 8-core runner").
 
 ### The consumer, as built
 
@@ -1092,14 +1139,18 @@ scenario after the load: S1-1 recorded no batch for five minutes.
 The harness (`tools/screening-capacity`) runs the consumer as production will: a `screening-1` container from the worker
 image with `WORKER_JOBS=screening`, `SCREENING_CONCURRENCY=3`, the screening and queue logins only and the production
 command with its 896 MiB heap, at `compute.screening`'s 2 vCPU and 4,096 MiB, beside a platform container that prices no
-screening (a run the platform's log shows priced fails the job). The layout gives Postgres db.t4g.medium's 2 vCPU on the
-runner's first CPUs (0-1, shared with the harness and Chromium), the consumer the next 2 (2-3) and web and platform the
-consumer's last (3), each a listed harsher departure, the web at production's half vCPU and 1 GiB read from
-`compute.web` (the founder's ruling of 2026-10-22); a runner with fewer than 4 CPUs is too small, since 3 would leave
-Postgres one CPU, which lands at the line (the design's run 9). Time is enforced (`HARNESS_RUNS_SCREENING_CONSUMER`):
+screening (a run the platform's log shows priced fails the job). On GitHub's 8-core larger runner (the founder's second
+ruling of 2026-10-23) the layout gives every service CPUs of its own, as production has them: Postgres db.t4g.medium's
+2 vCPU on CPUs 0-1, the consumer its 2 on 2-3, the web on 4 and the platform on 5 (each its fractional quota within its
+own CPU; the web at production's half vCPU and 1 GiB read from `compute.web`, the founder's ruling of 2026-10-22), and
+the harness, its child processes and Chromium on 6-7, all derived from `environments.ts`'s sizes; a runner with fewer
+than 8 CPUs is too small. *As first built,* on the free 4-CPU runner, the harness and Chromium shared Postgres's CPUs
+and the web and the platform the consumer's last, two harsher departures that swung S4's times with the host's speed.
+Time is enforced (`HARNESS_RUNS_SCREENING_CONSUMER`):
 every upload of every scenario, the small ones included, fails above 48 s on the runner, S4's on the middle of its three
 runs (the founder's ruling of 2026-10-23, Owner rulings (2026-10-23) above). The report (`tp-screening-capacity/4`, `/5`
-since that ruling) names the consumer as measured (tasks, vCPUs, MiB, threads) and both image IDs, and fails a
+since that ruling, `/6`, with the layout, since the second) names the consumer as measured (tasks, vCPUs, MiB, threads)
+and both image IDs, and fails a
 consumer measured at another size, its three threads not pricing S4's and S5's large uploads at once, an upload in the
 waiting tier (every scenario upload is a prospect of its own, at a domain of its own, so none crosses a share), and the
 consumer's time-to-email line missing or out of its bounds: never above the time from the harness's click on "Screen the
@@ -1136,7 +1187,8 @@ both images by config digest (the report's IDs, `docker image inspect -f {{.Id}}
 classic overlay2 image store, where an image's ID is its config's SHA-256, against the `config.digest` of each image's
 manifest in ECR, an index resolved to its linux/amd64 manifest; nothing is pulled, so the deployer's image store does
 not matter, and the containerd store's `{{.Id}}`, a manifest's digest, is never read: the verification of PR 6b-3), with
-the web and platform measured at production's declared sizes and the consumer production declares;
+the web and platform measured at production's declared sizes and the consumer production declares, on production's
+layout, each service on CPUs of its own (the founder's second ruling of 2026-10-23);
 the stack writes it into the web's `SCREENING_LAUNCH` and its `ScreeningLaunch` output, and its rule
 `ScreeningLaunchImageTag` refuses the deploy unless `ImageTag` is that tag. A refused report stops the synthesis, naming
 decision 13 and each reason; a deploy with no report closes the screening, since context holds for one invocation and
