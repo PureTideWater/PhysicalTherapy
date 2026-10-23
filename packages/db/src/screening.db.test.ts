@@ -179,6 +179,8 @@ interface SubmitOptions {
   readonly received?: Date | null;
   /** The rate limiter's keyed subject of the account: one of its own unless given, so no test's uploads share a share. */
   readonly rateSubject?: string | null;
+  /** The rate limiter's keyed subject of the client address (migration 20261107090000; Q10 (a)); none unless given. */
+  readonly clientSubject?: string | null;
 }
 
 /** Every row sums at least 11 claim lines (the CMS small-cell standard). */
@@ -193,10 +195,11 @@ const ROWS: NonNullable<SubmitOptions['rows']> = [
 ];
 
 /**
- * submit_screening's 30 arguments (migration 20261105090000: the ZIP+4 after the ZIP, the three out-of-content counts
- * after the left-out ones; migration 20261106090000: the receipt and the account's keyed subject before the request).
+ * submit_screening's 31 arguments (migration 20261105090000: the ZIP+4 after the ZIP, the three out-of-content counts
+ * after the left-out ones; migration 20261106090000: the receipt and the account's keyed subject before the request;
+ * migration 20261107090000: the client's keyed subject after it).
  */
-const SUBMIT_ARGUMENTS = 30;
+const SUBMIT_ARGUMENTS = 31;
 const placeholders = (count: number) => Array.from({ length: count }, (_, index) => `$${String(index + 1)}`).join(', ');
 const SUBMIT = `SELECT submit_screening(${placeholders(SUBMIT_ARGUMENTS)}) AS run_id`;
 
@@ -244,6 +247,7 @@ function submitValues(options: SubmitOptions = {}): unknown[] {
     options.received ?? null,
     options.rateSubject === undefined ? accountSubject() : options.rateSubject,
     `test-${randomUUID()}`,
+    options.clientSubject ?? null,
   ];
 }
 
@@ -568,6 +572,8 @@ describe('the roles reach the tables only through their functions', () => {
       'console_register_marketing_campaign',
       // The "sent" page's wait state (migration 20261106090000).
       'screening_wait',
+      // Whether the screening's mail is paused, and ready (migration 20261107090000; screeningOpen()).
+      'screening_mail_status',
     ];
     // The nine that price a screening stay the operator's for the one release the previous image's platform task may
     // still price in (migration 20261106090000); the first schema pull request after it is deployed takes them away.
@@ -598,9 +604,19 @@ describe('the roles reach the tables only through their functions', () => {
       'operator_screening_complete',
       'operator_screening_fail',
       'operator_screening_queue',
+      // The mail gate it reads before it claims (migration 20261107090000; section 5, D3 and D5).
+      'screening_mail_gate',
     ];
-    // Read by submit_screening() as the owner alone: no role calls them, and they run as their caller.
-    const forNone = ['screening_wait_limits', 'screening_queue_tier'];
+    // Read by submit_screening() and the triggers as the owner alone: no role calls them, and they run as their caller.
+    // The mail's triggers and screening_mail_sending() since migration 20261107090000 (D5: granted to no role).
+    const forNone = [
+      'screening_wait_limits',
+      'screening_queue_tier',
+      'screening_mail_sending',
+      'screening_upload_mail_gate',
+      'screening_run_mail_gate',
+      'screening_run_bounce_budget',
+    ];
     for (const name of [...forApp, ...forOperator, ...forScreening, ...forNone]) {
       expect(byName[name], name).toBeDefined();
     }
@@ -615,14 +631,20 @@ describe('the roles reach the tables only through their functions', () => {
       expect(row.definer, name).toBe(forApp.includes(name) || forOperator.includes(name) || forScreening.includes(name));
     }
     expect(rows.filter((row) => !row.definer && forNone.includes(row.name.replace(/\(.*$/, ''))).map((row) => row.name).sort()).toEqual([
+      'screening_mail_sending()',
       'screening_queue_tier(text,integer)',
+      'screening_run_bounce_budget()',
+      'screening_run_mail_gate()',
+      'screening_upload_mail_gate()',
       'screening_wait_limits()',
     ]);
-    // By exact name: the new signature of submit_screening() and the consumer's ten.
+    // By exact name: the new signature of submit_screening() (migration 20261107090000: the client's subject last) and the
+    // consumer's eleven.
     const exact = Object.fromEntries(rows.map((row) => [row.name, row]));
     expect(exact[
-      'submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)'
+      'submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text)'
     ]).toMatchObject({ app: true, operator: false, screening: false, definer: true });
+    expect(rows.filter((row) => row.name.startsWith('submit_screening(')).map((row) => row.name)).toHaveLength(1);
     expect(rows.filter((row) => row.screening).map((row) => row.name)).toEqual(
       [
         'operator_screening_claim(uuid)',
@@ -635,6 +657,7 @@ describe('the roles reach the tables only through their functions', () => {
         'operator_screening_rows(uuid,integer,integer,integer)',
         'operator_screening_run_keys(uuid)',
         'operator_screening_run_records(uuid)',
+        'screening_mail_gate()',
       ].sort(),
     );
     // tp_screening holds nothing else anywhere: no table, sequence or other function of the schema.
@@ -643,7 +666,8 @@ describe('the roles reach the tables only through their functions', () => {
         WHERE n.nspname = 'public' AND (has_table_privilege($1, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AND c.relkind IN ('r', 'v', 'm', 'p'))
        UNION ALL
        SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'public' AND has_function_privilege($1, p.oid, 'EXECUTE') AND left(p.proname, 19) <> 'operator_screening_'`,
+        WHERE n.nspname = 'public' AND has_function_privilege($1, p.oid, 'EXECUTE') AND left(p.proname, 19) <> 'operator_screening_'
+          AND p.oid <> 'screening_mail_gate()'::regprocedure`,
       [SCREENING_ROLE],
     );
     expect(elsewhere.rows).toEqual([]);
@@ -1274,7 +1298,8 @@ describe('the screening rules', () => {
     // The same practice again (its name in another case and spacing, the same ZIP), from another address: the first goes.
     const request = `test-${randomUUID()}`;
     const values = submitValues({ practice: `  ${name.toUpperCase().replace(' ', '   ')} `, email: `second.${letters()}@synthetic.test`, rows: row(54_517n, 11) });
-    const [second] = await as<{ run_id: string }>(APP_ROLE, SUBMIT, [...values.slice(0, -1), request]);
+    // The request, the argument before the client's keyed subject (migration 20261107090000).
+    const [second] = await as<{ run_id: string }>(APP_ROLE, SUBMIT, [...values.slice(0, -2), request, values.at(-1)]);
     expect(await gone(first, firstIds)).toBe(true);
     expect((await admin.query('SELECT claim_count, observed_allowed_cents::text AS cents FROM screening_result WHERE run_id = $1', [second?.run_id])).rows).toEqual([{ claim_count: 11, cents: '54517' }]);
     // No two rows of one key are held for the practice, so no difference of 1 claim line and $54.83 can be read.

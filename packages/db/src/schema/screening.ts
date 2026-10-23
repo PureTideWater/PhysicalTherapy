@@ -200,6 +200,11 @@ export const screeningRun = pgTable(
     queuePriority: smallint('queue_priority').notNull().default(0),
     /** When the attempt pricing the run claimed it or last recorded a batch; stale 2 minutes after. */
     progressAt: timestamp('progress_at', { withTimezone: true }),
+    /**
+     * The rate limiter's keyed HMAC of the screening bucket's client address (64 hex; null when no trusted proxy named
+     * one), for the bounce budget (Q10 (a); migration 20261107090000). The address itself is never stored.
+     */
+    clientSubject: text('client_subject'),
   },
   (table) => [
     index('screening_run_by_status').on(table.status, table.createdAt),

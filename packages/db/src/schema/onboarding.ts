@@ -118,6 +118,10 @@ export const prospectRequest = pgTable(
 /** How long an invitation (and Cognito's temporary password) lasts. */
 export const INVITATION_DAYS = 7;
 
+/** Why an invitation's Cognito message did not arrive (audit #76, D10). */
+export const INVITATION_UNDELIVERED_REASONS = ['bounced', 'suppressed', 'rejected', 'complained'] as const;
+export type InvitationUndeliveredReason = (typeof INVITATION_UNDELIVERED_REASONS)[number];
+
 export const invitation = pgTable(
   'invitation',
   {
@@ -144,6 +148,9 @@ export const invitation = pgTable(
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** When the Cognito message that did not arrive was sent (SES's mail.timestamp; migration 20261107090000), shown while at or after sent_at - 5 s. */
+    undeliveredAt: timestamp('undelivered_at', { withTimezone: true }),
+    undeliveredReason: text('undelivered_reason', { enum: INVITATION_UNDELIVERED_REASONS }),
   },
   (table) => [index('invitation_by_organization').on(table.organizationId, table.createdAt.desc()), index('invitation_by_user').on(table.userId)],
 );
