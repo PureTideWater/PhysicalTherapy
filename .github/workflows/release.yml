@@ -4,10 +4,12 @@ name: release
 # 2026-10-20 and docs/adr/0062): build each image once, scan it (any HIGH or CRITICAL finding with a fix stops the
 # release) and describe it by a software bill of materials (SPDX JSON, kept with the run), measure the screening's
 # capacity with time enforced on exactly the production web image and the worker image that were built, then push exactly
-# the images that were built and scanned, never a rebuild. The capacity report, its SHA-256 and its summary are kept as
-# assets of the tag's GitHub release (release assets do not expire), where production's deploy reads the report: the
-# CDK app runs the launch check on it at synthesis (infra/lib/screening-launch.ts, tools/screening-capacity/launch-check.ts)
-# and opens production's screening only for a pass on the images the stack deploys.
+# the images that were built and scanned, never a rebuild. The capacity report is attested by this workflow's run
+# (GitHub's artifact attestation, signed for .github/workflows/release.yml at the tag), and the report, its SHA-256, its
+# summary and the attestation's bundle are kept as assets of the tag's GitHub release (release assets do not expire),
+# where production's deploy reads them: the CDK app runs the launch check at synthesis (infra/lib/screening-launch.ts,
+# tools/screening-capacity/launch-check.ts), which verifies the attestation with gh and opens production's screening only
+# for this workflow's passing report on the images the stack deploys.
 #
 # The web image is built three times, each with its own static host (Next writes the asset prefix into the build;
 # docs/adr/0055): `web` with none (its assets load from the application host), and `web-staging` and `web-production`
@@ -119,8 +121,11 @@ jobs:
   # exactly as built and scanned (their IDs are the report's), on the same runner as
   # .github/workflows/screening-capacity.yml's measurement (GitHub's free 4-CPU runner, its CPUs shared), with its
   # timeout: 100 minutes, S4 three times (the founder's ruling of 2026-10-23, median of 3). Binding: a time above the
-  # line fails this run, and only a binding report that passes opens production's screening (the founder's third ruling
-  # of 2026-10-23, "Free: time advisory", which made every other capacity run advisory).
+  # line fails this run, and only this run's binding report that passes, attested by the report job below, opens
+  # production's screening (the founder's third ruling of 2026-10-23, "Free: time advisory", which made every other
+  # capacity run advisory). The harness records this run (GITHUB_WORKFLOW_REF, GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT) in the
+  # report, which the launch check holds to this workflow on the tag. The launch check accepts only the layout this
+  # runner gives (RELEASE_RUNNER in tools/screening-capacity/launch-check.ts; workflows.test.ts holds the two together).
   capacity:
     needs: build
     runs-on: ubuntu-24.04
@@ -231,8 +236,15 @@ jobs:
             echo "$image $id"
           done
 
-  # The report, its SHA-256 and its summary as assets of the tag's GitHub release, a failing one too (the launch check
-  # refuses it). The only job that may write to the repository, and it runs nothing but gh.
+  # The report attested and kept, with its SHA-256, its summary and the attestation's bundle, as assets of the tag's
+  # GitHub release, a failing one too (the launch check refuses it). The attestation (the verification of PR 6b-3's
+  # capacity changes) binds the report's bytes to this workflow's run on the tag: Sigstore's certificate names
+  # release.yml at refs/tags/<tag>, the commit, the run and its attempt, from GitHub's OIDC token, which the launch check
+  # verifies with gh attestation verify against the bundle kept here; a report measured anywhere else, or changed by one
+  # byte, has none. The only job that may write to the repository, mint an OIDC token or write attestations, and it runs
+  # nothing but the attestation action and gh, never the code it measured. Attestations are free for a public repository;
+  # a private one needs GitHub Enterprise Cloud (docs/runbooks/screening-capacity.md, "Provenance"). A re-run replaces
+  # the assets, and every attempt's attestation stays in the repository's attestations.
   report:
     needs: capacity
     if: ${{ !cancelled() && needs.capacity.result != 'skipped' }}
@@ -240,20 +252,31 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: screening-capacity-${{ github.ref_name }}
           path: ${{ runner.temp }}/screening-capacity
 
-      - name: Keep the capacity report with the release
+      - id: attest
+        name: Attest the capacity report as this workflow's on the tag
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/screening-capacity/screening-capacity.json
+
+      - name: Keep the capacity report and its attestation with the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
-          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --draft --title "$TAG" --notes "The release's screening capacity report is attached."
+          cp "$BUNDLE" "$RUNNER_TEMP/screening-capacity/screening-capacity.sigstore.json"
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --draft --title "$TAG" --notes "The release's screening capacity report and its attestation are attached."
           gh release upload "$TAG" --clobber \
             "$RUNNER_TEMP/screening-capacity/screening-capacity.json" \
             "$RUNNER_TEMP/screening-capacity/screening-capacity.sha256" \
-            "$RUNNER_TEMP/screening-capacity/summary.md"
+            "$RUNNER_TEMP/screening-capacity/summary.md" \
+            "$RUNNER_TEMP/screening-capacity/screening-capacity.sigstore.json"

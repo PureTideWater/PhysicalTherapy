@@ -28,9 +28,28 @@ import {
   timeVerdict,
   uploadStart,
   verdict,
+  workflowRun,
   worstTime,
 } from './report';
-import { ADVISORY, ENFORCED, OPEN, type S4Times, applied, eightCpus, expected, measured, onOwnCpus, scenario, scenarios, upload, withS1, withScenario, withUpload, withoutConsumer } from './test-support/measurements';
+import {
+  ADVISORY,
+  ENFORCED,
+  OPEN,
+  type S4Times,
+  SYNTHETIC_RUN,
+  applied,
+  eightCpus,
+  expected,
+  measured,
+  onOwnCpus,
+  scenario,
+  scenarios,
+  upload,
+  withS1,
+  withScenario,
+  withUpload,
+  withoutConsumer,
+} from './test-support/measurements';
 
 /**
  * The capacity test's verdict (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16, and of
@@ -141,9 +160,9 @@ describe('S4 three times, its time judged on the middle run (the founder’s rul
       scenario: 'S4',
       middle: 'S4#3',
       runs: [
-        { id: 'S4#1', worstLargeUpload: 'S4-1', worstLargeMs: 38_300, uploads: [{ id: 'S4-1', ms: 38_300 }, { id: 'S4-2', ms: 37_600 }, { id: 'S4-3', ms: 35_300 }, { id: 'S4-4', ms: 26_000 }] },
-        { id: 'S4#2', worstLargeUpload: 'S4-1', worstLargeMs: 51_400, uploads: [{ id: 'S4-1', ms: 51_400 }, { id: 'S4-2', ms: 51_400 }, { id: 'S4-3', ms: 45_200 }, { id: 'S4-4', ms: 32_300 }] },
-        { id: 'S4#3', worstLargeUpload: 'S4-1', worstLargeMs: 42_000, uploads: [{ id: 'S4-1', ms: 42_000 }, { id: 'S4-2', ms: 41_500 }, { id: 'S4-3', ms: 40_100 }, { id: 'S4-4', ms: 29_000 }] },
+        { id: 'S4#1', worstUpload: 'S4-1', worstMs: 38_300, uploads: [{ id: 'S4-1', ms: 38_300 }, { id: 'S4-2', ms: 37_600 }, { id: 'S4-3', ms: 35_300 }, { id: 'S4-4', ms: 26_000 }] },
+        { id: 'S4#2', worstUpload: 'S4-1', worstMs: 51_400, uploads: [{ id: 'S4-1', ms: 51_400 }, { id: 'S4-2', ms: 51_400 }, { id: 'S4-3', ms: 45_200 }, { id: 'S4-4', ms: 32_300 }] },
+        { id: 'S4#3', worstUpload: 'S4-1', worstMs: 42_000, uploads: [{ id: 'S4-1', ms: 42_000 }, { id: 'S4-2', ms: 41_500 }, { id: 'S4-3', ms: 40_100 }, { id: 'S4-4', ms: 29_000 }] },
       ],
     });
     const full = report(measured({ scenarios: runs }), ENFORCED);
@@ -172,17 +191,50 @@ describe('S4 three times, its time judged on the middle run (the founder’s rul
     expect(markdown(full, ENFORCED)).toContain('Sizing question for the founder (open item O9): the worst time, S4#3 S4-1’s 45.2 s (the middle of S4’s three runs), is above 44 s');
   });
 
-  it('orders the runs by their worst large upload, the small one aside, and judges all four of the middle run’s uploads', () => {
+  it('orders the runs by their worst upload, the small one included, and judges all four of the middle run’s uploads', () => {
     const runs = scenarios([{ large: [35_000, 35_000, 35_000], small: 50_000 }, SLOW, { large: [40_000, 40_000, 40_000], small: 48_100 }]);
-    expect(repeatedScenario(runs).middle).toBe('S4#3');
-    // S4#1's small upload at 50.0 s is not judged; the middle run's at 48.1 s is.
-    expect(verdict(measured({ scenarios: runs }), ENFORCED).reasons).toEqual(["time: S4#3 S4-4 48.1 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner)"]);
+    // S4#3's worst is its small upload's 48.1 s, S4#1's its small upload's 50.0 s, S4#2's 51.4 s: S4#1 is the middle.
+    expect(repeatedScenario(runs).middle).toBe('S4#1');
+    expect(repeatedScenario(runs).runs.map((run) => [run.id, run.worstUpload, run.worstMs])).toEqual([
+      ['S4#1', 'S4-4', 50_000],
+      ['S4#2', 'S4-1', 51_400],
+      ['S4#3', 'S4-4', 48_100],
+    ]);
+    expect(verdict(measured({ scenarios: runs }), ENFORCED).reasons).toEqual(["time: S4#1 S4-4 50.0 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner)"]);
+  });
+
+  it('fails two of three runs with an upload above 48 s even when the slow uploads are the small ones (the verification of PR 6b-3’s capacity changes)', () => {
+    // The verifier's probe: ordered by the worst large upload, S4#2 was the middle and the run passed.
+    const runs = scenarios([
+      { large: [30_000, 30_000, 30_000], small: 50_000 },
+      { large: [35_000, 35_000, 35_000], small: 30_000 },
+      { large: [40_000, 40_000, 40_000], small: 50_000 },
+    ]);
+    expect(repeatedScenario(runs).middle).toBe('S4#1');
+    const result = verdict(measured({ scenarios: runs }), ENFORCED);
+    expect(result.pass).toBe(false);
+    expect(result.reasons).toEqual(["time: S4#1 S4-4 50.0 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner)"]);
+    // Advisory, the same verdict warns.
+    expect(verdict(measured({ scenarios: runs }), ADVISORY).timeWarnings).toEqual(result.reasons);
+  });
+
+  it('judges on time every scenario that is not one of S4’s three runs, whatever repetition it carries (the verification of PR 6b-3’s capacity changes)', () => {
+    const slowS1 = (change: Partial<ScenarioMeasure>) => withScenario('S1', (item) => ({ ...item, ...change, uploads: [upload({ emailedMs: 1_000 + 60_100 })] }));
+    // S1 recorded as a first run: before, only a repetition of null was judged outside S4's middle run.
+    expect(verdict(measured({ scenarios: slowS1({ repetition: 1 }) }), ENFORCED).reasons).toEqual(['time: S1 S1-1 60.1 s, fail (promise broken: above 60 s)']);
+    // S1 recorded as S4's first run, and S4#1 as a scenario run once: neither is one of S4's three runs, so both are
+    // judged and no middle run is taken from the two left.
+    const relabelled = withScenario('S4#1', (item) => ({ ...item, repetition: null }), slowS1({ scenario: 'S4', repetition: 1 }));
+    expect(repeatedScenario(relabelled).runs.map((run) => run.id)).toEqual(['S4#2', 'S4#3']);
+    expect(repeatedScenario(relabelled).middle).toBeNull();
+    expect(verdict(measured({ scenarios: relabelled }), ENFORCED).reasons).toContain('time: S1 S1-1 60.1 s, fail (promise broken: above 60 s)');
+    expect(worstTime({ scenarios: slowS1({ repetition: 2 }) })).toEqual({ id: 'S1 S1-1', ms: 60_100 });
   });
 
   it('counts a run with a large upload never emailed as the slowest, and fails the run for it', () => {
     const runs = withUpload('S4-2', { emailedMs: null, resultStatus: null, lastPageStatus: null, runStatus: 'pricing', pendingRows: 10_000 }, 'S4#1', scenarios([FAST, SLOW, BETWEEN]));
     const repeated = repeatedScenario(runs);
-    expect(repeated.runs[0]).toEqual({ id: 'S4#1', worstLargeUpload: 'S4-2', worstLargeMs: null, uploads: [{ id: 'S4-1', ms: 38_300 }, { id: 'S4-2', ms: null }, { id: 'S4-3', ms: 35_300 }, { id: 'S4-4', ms: 26_000 }] });
+    expect(repeated.runs[0]).toEqual({ id: 'S4#1', worstUpload: 'S4-2', worstMs: null, uploads: [{ id: 'S4-1', ms: 38_300 }, { id: 'S4-2', ms: null }, { id: 'S4-3', ms: 35_300 }, { id: 'S4-4', ms: 26_000 }] });
     expect(repeated.middle).toBe('S4#2');
     const result = verdict(measured({ scenarios: runs }), ENFORCED);
     expect(result.pass).toBe(false);
@@ -241,7 +293,7 @@ describe('S4 three times, its time judged on the middle run (the founder’s rul
     const runs = scenarios([FAST, SLOW, BETWEEN]);
     const line = repeatedSummary(repeatedScenario(runs));
     expect(line).toBe(
-      "S4 ran three times (the founder's ruling of 2026-10-23): S4#1 38.3, 37.6, 35.3 and 26.0 s; S4#2 51.4, 51.4, 45.2 and 32.3 s; S4#3 42.0, 41.5, 40.1 and 29.0 s. Ordered by each run's worst large upload, the middle run is S4#3 (42.0 s): its four uploads are judged against the 48-s line and the 44-s question, and every other check holds in all three runs.",
+      "S4 ran three times (the founder's ruling of 2026-10-23): S4#1 38.3, 37.6, 35.3 and 26.0 s; S4#2 51.4, 51.4, 45.2 and 32.3 s; S4#3 42.0, 41.5, 40.1 and 29.0 s. Ordered by each run's worst upload, the small one included, the middle run is S4#3 (42.0 s): its four uploads are judged against the 48-s line and the 44-s question, and every other check holds in all three runs.",
     );
     expect(repeatedSummary(repeatedScenario(runs.filter((item) => item.id !== 'S4#3')))).toBe(
       "S4 ran 2 of three times (the founder's ruling of 2026-10-23): S4#1 38.3, 37.6, 35.3 and 26.0 s; S4#2 51.4, 51.4, 45.2 and 32.3 s. With fewer than three runs no middle run is taken: every run's uploads are judged on time.",
@@ -472,13 +524,30 @@ describe('the checks the build controls fail the run', () => {
 describe('the report', () => {
   it('names its format, carries the verdict, and holds no link or token', () => {
     const full = report(measured(), ENFORCED);
-    expect(full.format).toBe('tp-screening-capacity/7');
-    expect(REPORT_FORMAT).toBe('tp-screening-capacity/7');
+    expect(full.format).toBe('tp-screening-capacity/8');
+    expect(REPORT_FORMAT).toBe('tp-screening-capacity/8');
     expect(full.verdict).toEqual({ pass: true, time: 'enforced', reasons: [], timeWarnings: [] });
     const text = `${JSON.stringify(full)}\n${markdown(full, ENFORCED)}`;
     expect(text).not.toMatch(/\/screening\/results\//);
     expect(text).not.toMatch(/(?<![a-z0-9])[a-z]{32}(?![a-z0-9])/);
     expect(markdown(full, ENFORCED)).toContain('| S1-1 | worst | 50000 | 30.0 | 29.8 | normal | 0.9 | 4.0 (150000) | 20.0 | 3.0 | 0.2 | 1.1, 1.2 | pass |');
+  });
+
+  it('records the GitHub Actions run that measured, from the runner’s own variables, which the launch check holds to the tag’s release.yml (the verification of PR 6b-3’s capacity changes)', () => {
+    const env = {
+      GITHUB_WORKFLOW_REF: 'PureTideWater/PhysicalTherapy/.github/workflows/release.yml@refs/tags/v1.4.0',
+      GITHUB_RUN_ID: '18000000001',
+      GITHUB_RUN_ATTEMPT: '1',
+      GITHUB_TOKEN: 'never read',
+    };
+    expect(workflowRun(env)).toEqual(SYNTHETIC_RUN);
+    // Outside Actions (a local run), nothing: an empty variable is no run either.
+    expect(workflowRun({})).toEqual({ ref: null, runId: null, runAttempt: null });
+    expect(workflowRun({ GITHUB_WORKFLOW_REF: '', GITHUB_RUN_ID: '', GITHUB_RUN_ATTEMPT: '' })).toEqual({ ref: null, runId: null, runAttempt: null });
+    const full = report(measured(), ENFORCED);
+    expect(full.workflow).toEqual(SYNTHETIC_RUN);
+    expect(markdown(full, ENFORCED)).toContain(`Measured by ${SYNTHETIC_RUN.ref}, run ${SYNTHETIC_RUN.runId}, attempt 1.`);
+    expect(markdown(report(measured({ workflow: { ref: null, runId: null, runAttempt: null } }), ADVISORY), ADVISORY)).toContain('Measured outside GitHub Actions (no GITHUB_WORKFLOW_REF).');
   });
 
   it('names the consumer as measured and both image IDs, which the launch check compares (decision 13)', () => {

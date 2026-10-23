@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import { repositoryRoot } from '../content-files';
+import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
 
 /**
  * The CI gates outside ci.yml (docs/adr/0010-supply-chain-gates-beside-ci.md): no Docker daemon or
@@ -43,6 +44,8 @@ function workflow(name: string): Workflow {
  * capacity report the launch check reads. trivy-action was pinned this way already.
  */
 const PINNED = {
+  // v4.2.2, read with git ls-remote (the verification of PR 6b-3's capacity changes): the report's provenance.
+  attestBuildProvenance: 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8',
   checkout: 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
   cacheRestore: 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830',
   cacheSave: 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830',
@@ -309,6 +312,9 @@ describe('workflows', () => {
       const workflowRunner = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
       expect(capacity['runs-on']).toEqual(workflowRunner);
       expect(capacity['runs-on']).toBe('ubuntu-24.04');
+      // The launch check accepts only the layout this runner gives (launch-check.ts, RELEASE_RUNNER): moving the release
+      // to another runner fails here until the check moves with it.
+      expect(capacity['runs-on']).toBe(RELEASE_RUNNER.label);
       const steps = capacity.steps;
       expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
       expect(steps.filter((step) => step.uses === PINNED.downloadArtifact).map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
@@ -349,22 +355,34 @@ describe('workflows', () => {
       }
     });
 
-    it('keeps the report, its SHA-256 and its summary as the tag\'s release assets from a job that alone may write contents and runs nothing but gh', () => {
+    it('attests the report with GitHub\'s artifact attestation and keeps it, its SHA-256, its summary and the attestation\'s bundle as the tag\'s release assets, from a job that alone may write contents, mint an OIDC token or write attestations, and runs nothing but the attestation and gh (the verification of PR 6b-3\'s capacity changes)', () => {
       const report = job('report');
       expect(report.needs).toBe('capacity');
       expect(report.if).toBe("${{ !cancelled() && needs.capacity.result != 'skipped' }}");
-      expect(report.permissions).toEqual({ contents: 'write' });
+      expect(report.permissions).toEqual({ contents: 'write', 'id-token': 'write', attestations: 'write' });
       for (const [name, entry] of Object.entries(release.jobs)) {
-        expect(JSON.stringify(entry.permissions ?? {}).includes('"contents":"write"'), name).toBe(name === 'report');
+        const granted = JSON.stringify(entry.permissions ?? {});
+        expect(granted.includes('"contents":"write"'), name).toBe(name === 'report');
+        expect(granted.includes('id-token'), name).toBe(name === 'report');
+        expect(granted.includes('attestations'), name).toBe(name === 'report');
       }
-      expect(report.steps.map((step) => step.uses ?? 'run')).toEqual([PINNED.downloadArtifact, 'run']);
+      expect(JSON.stringify(release.permissions)).not.toMatch(/id-token|attestations/);
+      expect(report.steps.map((step) => step.uses ?? 'run')).toEqual([PINNED.downloadArtifact, PINNED.attestBuildProvenance, 'run']);
+      // The attestation's subject is the report's bytes as the harness wrote them, the file the release keeps.
+      const attest = report.steps[1] as Step & { id?: string };
+      expect(attest.id).toBe('attest');
+      expect(attest.with).toEqual({ 'subject-path': '${{ runner.temp }}/screening-capacity/screening-capacity.json' });
+      expect(file).toContain(`uses: ${PINNED.attestBuildProvenance} # v4.2.2`);
+      const keep = report.steps[2] as Step & { env?: Record<string, string> };
+      expect(keep.env?.BUNDLE).toBe('${{ steps.attest.outputs.bundle-path }}');
       const commands = runs('report')
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line !== '' && !line.startsWith('"$RUNNER_TEMP'));
-      expect(commands.every((line) => line.startsWith('gh release '))).toBe(true);
+      expect(commands.every((line) => line.startsWith('gh release ') || line === 'cp "$BUNDLE" "$RUNNER_TEMP/screening-capacity/screening-capacity.sigstore.json"'), commands.join('\n')).toBe(true);
+      expect(runs('report').indexOf('cp "$BUNDLE"')).toBeLessThan(runs('report').indexOf('gh release upload'));
       expect(runs('report')).toContain('gh release upload "$TAG" --clobber');
-      for (const asset of ['screening-capacity.json', 'screening-capacity.sha256', 'summary.md']) {
+      for (const asset of ['screening-capacity.json', 'screening-capacity.sha256', 'summary.md', 'screening-capacity.sigstore.json']) {
         expect(runs('report'), asset).toContain(`"$RUNNER_TEMP/screening-capacity/${asset}"`);
       }
       // It never makes a tag: a release is made only for the tag the founder pushed.

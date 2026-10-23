@@ -17,7 +17,7 @@ import {
   screeningConsumer,
 } from './limits';
 import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
-import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS } from './scenario-runs';
+import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, scenarioLabel } from './scenario-runs';
 
 /**
  * The capacity test's verdict and report (audit #53 part 1; docs/adr/0062, "Capacity under production limits"; the
@@ -34,22 +34,26 @@ import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS } from './scenario-r
  * declared screening consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
  * environments.ts declares no screening consumer; with it declared (PR 6b-3), above 48 s on the runner fails
  * ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it ("promise"). S4 runs three
- * times (S4#1 to S4#3) and its time is judged on the middle run alone, ordered by each run's worst large upload; every
- * other check holds in all three, and every other scenario's time is judged as measured, once (the founder's ruling of
- * 2026-10-23, "Stay free: median of 3"). Whether a time verdict fails the run is the time mode's (the founder's third
- * ruling of 2026-10-23, "Free: time advisory"): binding on a release's capacity run, where it fails the run as every other
- * check does; advisory on every other run, where it is computed, printed and annotated the same way as a warning and
- * every other check still fails the run. The report holds counts, times, hashes and image IDs only: no row, link, token
+ * times (S4#1 to S4#3) and its time is judged on the middle run alone, ordered by each run's worst upload, the small one
+ * included, so two runs with an upload above 48 s fail; every other check holds in all three, and every other
+ * scenario's time is judged as measured, whatever repetition it carries (the founder's ruling of 2026-10-23, "Stay
+ * free: median of 3"; the verification of PR 6b-3's capacity changes). Whether a time verdict fails the run is the time
+ * mode's (the founder's third ruling of 2026-10-23, "Free: time advisory"): binding on a release's capacity run, where it
+ * fails the run as every other check does; advisory on every other run, where it is computed, printed and annotated the
+ * same way as a warning and every other check still fails the run. The report holds counts, times, hashes and image IDs only: no row, link, token
  * or address.
  */
 
 /**
- * tp-screening-capacity/7: the time mode recorded (timeMode, the founder's third ruling of 2026-10-23, "Free: time
- * advisory"), the verdict's time warnings beside its failing checks (verdict.timeWarnings), and which layout ran
- * (expected.layout.kind: the free runner's shared CPUs or CPUs of their own). /6 recorded the layout without its kind and
- * no mode, /5 neither; the launch check refuses both.
+ * tp-screening-capacity/8: the GitHub Actions run that measured (workflow: GITHUB_WORKFLOW_REF, GITHUB_RUN_ID and
+ * GITHUB_RUN_ATTEMPT), which the launch check holds to the tag's release.yml beside the release's attestation of the
+ * report, and S4's runs ordered by each run's worst upload, the small one included (repeated.runs[].worstUpload; the
+ * verification of PR 6b-3's capacity changes). /7 recorded the time mode (timeMode, the founder's third ruling of
+ * 2026-10-23, "Free: time advisory"), the verdict's time warnings (verdict.timeWarnings) and which layout ran
+ * (expected.layout.kind), and no run; /6 the layout without its kind and no mode, /5 neither. The launch check refuses
+ * every format before /8.
  */
-export const REPORT_FORMAT = 'tp-screening-capacity/7';
+export const REPORT_FORMAT = 'tp-screening-capacity/8';
 
 /**
  * Whether time fails the run (the founder's third ruling of 2026-10-23, "Free: time advisory"; decision 13): 'binding'
@@ -319,8 +323,32 @@ export interface OracleComparison {
   readonly oracleSha256: string;
 }
 
+/**
+ * The GitHub Actions run that measured, as the runner names it (each null outside Actions: a local run): the launch
+ * check holds the ref to the tag's release.yml and the run to the one that attested the report (launch-check.ts).
+ */
+export interface WorkflowRun {
+  /** GITHUB_WORKFLOW_REF: `<owner>/<repository>/.github/workflows/<file>@<ref>`. */
+  readonly ref: string | null;
+  /** GITHUB_RUN_ID. */
+  readonly runId: string | null;
+  /** GITHUB_RUN_ATTEMPT: 1, or the re-run's number. */
+  readonly runAttempt: string | null;
+}
+
+/** The run that measured, from the runner's variables (process.env in run.ts); an unset or empty variable is null. */
+export function workflowRun(env: Readonly<Record<string, string | undefined>>): WorkflowRun {
+  const named = (name: string): string | null => {
+    const value = env[name];
+    return value === undefined || value === '' ? null : value;
+  };
+  return { ref: named('GITHUB_WORKFLOW_REF'), runId: named('GITHUB_RUN_ID'), runAttempt: named('GITHUB_RUN_ATTEMPT') };
+}
+
 export interface Measurements {
   readonly commit: string;
+  /** The GitHub Actions run that measured (null fields outside Actions). */
+  readonly workflow: WorkflowRun;
   readonly runtime: 'docker' | 'process';
   /**
    * The measured images' IDs (`docker image inspect -f {{.Id}}`): on the runner's classic (overlay2) image store, each
@@ -374,11 +402,14 @@ export interface Verdict {
   readonly timeWarnings: readonly string[];
 }
 
-/** One run of the repeated scenario: its uploads' times to email and its worst large upload's (null when one has none). */
+/**
+ * One run of the repeated scenario: its uploads' times to email and its worst upload's, the small one included (null
+ * when one was never emailed).
+ */
 export interface RepetitionTimes {
   readonly id: string;
-  readonly worstLargeUpload: string | null;
-  readonly worstLargeMs: number | null;
+  readonly worstUpload: string | null;
+  readonly worstMs: number | null;
   readonly uploads: readonly { readonly id: string; readonly ms: number | null }[];
 }
 
@@ -395,35 +426,53 @@ function elapsedMs(upload: Pick<UploadMeasure, 'submittedMs' | 'emailedMs'>): nu
 }
 
 /**
+ * Whether a scenario is one of the repeated scenario's runs: S4#1, S4#2 or S4#3, its scenario S4 and its repetition the
+ * one its name gives. Anything else is a scenario run once, judged on time as measured, whatever repetition it carries.
+ */
+function isRepeatedRun(scenario: Pick<ScenarioMeasure, 'id' | 'scenario' | 'repetition'>): boolean {
+  const { repetition } = scenario;
+  return (
+    scenario.scenario === REPEATED_SCENARIO &&
+    typeof repetition === 'number' &&
+    Number.isInteger(repetition) &&
+    repetition >= 1 &&
+    repetition <= REPETITIONS &&
+    scenario.id === scenarioLabel(REPEATED_SCENARIO, repetition)
+  );
+}
+
+/**
  * The repeated scenario's runs and its middle run (the founder's ruling of 2026-10-23): the runs ordered by their worst
- * large upload's time to email, a run with a large upload never emailed (or never submitted) as the slowest, ties in
- * the order they ran; the middle of the three is the one whose four uploads, the small one included, the time verdict
- * and the sizing question judge. With fewer or more than REPETITIONS runs no middle is taken, and every run's time is
+ * upload's time to email, the small one included (so two of three runs with an upload above 48 s fail, whichever upload
+ * it was: the verification of PR 6b-3's capacity changes), a run with an upload never emailed (or never submitted) as
+ * the slowest, ties in the order they ran; the middle of the three is the one whose four uploads the time verdict and
+ * the sizing question judge. With fewer or more than REPETITIONS runs no middle is taken, and every run's time is
  * judged (such a run fails as partial anyway).
  */
 export function repeatedScenario(scenarios: readonly ScenarioMeasure[]): RepeatedScenario {
-  const runs = scenarios
-    .filter((scenario) => scenario.scenario === REPEATED_SCENARIO && scenario.repetition !== null)
-    .map((scenario): RepetitionTimes => {
-      let worst: { readonly id: string; readonly ms: number | null } | null = null;
-      for (const upload of scenario.uploads.filter((item) => !item.behind)) {
-        const ms = elapsedMs(upload);
-        if (worst === null || (worst.ms !== null && (ms === null || ms > worst.ms))) {
-          worst = { id: upload.id, ms };
-        }
+  const runs = scenarios.filter(isRepeatedRun).map((scenario): RepetitionTimes => {
+    let worst: { readonly id: string; readonly ms: number | null } | null = null;
+    for (const upload of scenario.uploads) {
+      const ms = elapsedMs(upload);
+      if (worst === null || (worst.ms !== null && (ms === null || ms > worst.ms))) {
+        worst = { id: upload.id, ms };
       }
-      return { id: scenario.id, worstLargeUpload: worst?.id ?? null, worstLargeMs: worst?.ms ?? null, uploads: scenario.uploads.map((upload) => ({ id: upload.id, ms: elapsedMs(upload) })) };
-    });
+    }
+    return { id: scenario.id, worstUpload: worst?.id ?? null, worstMs: worst?.ms ?? null, uploads: scenario.uploads.map((upload) => ({ id: upload.id, ms: elapsedMs(upload) })) };
+  });
   // A stable sort: runs that tie keep the order they ran in (two never-emailed runs compare equal).
-  const slowness = (run: RepetitionTimes) => run.worstLargeMs ?? Number.POSITIVE_INFINITY;
+  const slowness = (run: RepetitionTimes) => run.worstMs ?? Number.POSITIVE_INFINITY;
   const ordered = [...runs].sort((a, b) => (slowness(a) === slowness(b) ? 0 : slowness(a) - slowness(b)));
   const middle = runs.length === REPETITIONS ? (ordered[(REPETITIONS - 1) / 2]?.id ?? null) : null;
   return { scenario: REPEATED_SCENARIO, middle, runs };
 }
 
-/** Whether a scenario's uploads are judged on time: every scenario run once, and the repeated one's middle run alone. */
+/**
+ * Whether a scenario's uploads are judged on time: every scenario but S4's three runs, whatever repetition it carries,
+ * and of S4's runs the middle one alone (every one when no middle was taken).
+ */
 function judgedOnTime(scenario: ScenarioMeasure, middle: string | null): boolean {
-  return scenario.repetition === null || middle === null || scenario.id === middle;
+  return !isRepeatedRun(scenario) || middle === null || scenario.id === middle;
 }
 
 /** An upload as the report and the log name it: S1-1, or S4#2 S4-1 in a run of the repeated scenario. */
@@ -451,7 +500,7 @@ export function repeatedSummary(repeated: RepeatedScenario): string {
   if (middle === undefined) {
     return `${head} With fewer than three runs no middle run is taken: every run's uploads are judged on time.`;
   }
-  return `${head} Ordered by each run's worst large upload, the middle run is ${middle.id} (${seconds(middle.worstLargeMs)} s): its four uploads are judged against the 48-s line and the 44-s question, and every other check holds in all three runs.`;
+  return `${head} Ordered by each run's worst upload, the small one included, the middle run is ${middle.id} (${seconds(middle.worstMs)} s): its four uploads are judged against the 48-s line and the 44-s question, and every other check holds in all three runs.`;
 }
 
 /** The run's verdict under the rule (see the module comment). */
@@ -695,6 +744,10 @@ export function markdown(full: Report, rule: TimeRule): string {
     }).`,
     '',
     `Layout: ${layoutText(full.expected.layout)}; the harness ran on CPUs ${String(full.harnessAffinity)}.`,
+    '',
+    full.workflow.ref === null
+      ? 'Measured outside GitHub Actions (no GITHUB_WORKFLOW_REF).'
+      : `Measured by ${full.workflow.ref}, run ${String(full.workflow.runId)}, attempt ${String(full.workflow.runAttempt)}.`,
     '',
     full.timeMode === 'advisory'
       ? "Time mode: advisory. The time verdicts are warnings on this run and do not fail it (a pull request's, the build branch's or the weekly run; the founder's ruling of 2026-10-23, time advisory). A release's capacity run is binding, and production's screening opens only on its pass (decision 13)."

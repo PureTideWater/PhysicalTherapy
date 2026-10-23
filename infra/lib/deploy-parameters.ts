@@ -170,7 +170,7 @@ export class DeployParameters extends Construct {
         assertions: [
           {
             assert: Fn.conditionEquals(this.imageTag, tag),
-            assertDescription: `The screening's launch value was computed from ${tag}'s capacity report (decision 13): deploy ImageTag=${tag}, or synthesize without -c tp:launchReport and -c tp:launchTag to keep the screening closed`,
+            assertDescription: `The screening's launch value was computed from ${tag}'s capacity report (decision 13): deploy ImageTag=${tag}, or synthesize without -c tp:launchReport, -c tp:launchAttestation and -c tp:launchTag to keep the screening closed`,
           },
         ],
       });

@@ -4,12 +4,13 @@ import path from 'node:path';
 import type { Template } from 'aws-cdk-lib/assertions';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { registryImageId, reportSha256 } from '../../tools/screening-capacity/launch-check';
+import { type AttestationReading, registryImageId, reportSha256, verifyReportAttestation } from '../../tools/screening-capacity/launch-check';
 import { type Measurements, report } from '../../tools/screening-capacity/report';
-import { ADVISORY, ENFORCED, measured, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
+import { attestationOutput, releaseSigner } from '../../tools/screening-capacity/test-support/attestation';
+import { ADVISORY, ENFORCED, SYNTHETIC_COMMIT, SYNTHETIC_TAG, measured, onOwnCpus, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
 import { NO_IMAGE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
 import { ENVIRONMENTS, type EnvironmentName } from '../lib/environments';
-import { DEPLOY_LAUNCH_READERS, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, type LaunchTarget, ecrImageReference } from '../lib/screening-launch';
+import { DEPLOY_LAUNCH_READERS, LAUNCH_ATTESTATION_CONTEXT, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, type LaunchTarget, ecrImageReference } from '../lib/screening-launch';
 import { SYNTH_TIMEOUT_MS, resourcesOf, synthesizeAll, templateFor } from './synth';
 
 interface CfnParameter {
@@ -147,15 +148,16 @@ describe('the screening launch value’s form', () => {
  * value itself. Synthetic reports only, built in memory; the readers stand in for the file, git, Docker and the account.
  */
 describe('the screening launch value, computed at synthesis', () => {
-  const TAG = 'v1.4.0';
-  const COMMIT = 'f'.repeat(40);
+  const TAG = SYNTHETIC_TAG;
+  const COMMIT = SYNTHETIC_COMMIT;
   const WEB_ID = `sha256:${'a'.repeat(64)}`;
   const WORKER_ID = `sha256:${'b'.repeat(64)}`;
   const TARGET: LaunchTarget = { account: '123456789012', region: 'us-east-1' };
   const WEB_REFERENCE = `123456789012.dkr.ecr.us-east-1.amazonaws.com/tp-production-web:${TAG}`;
   const WORKER_REFERENCE = `123456789012.dkr.ecr.us-east-1.amazonaws.com/tp-production-worker:${TAG}`;
   const REPORT_FILE = '/synthetic/screening-capacity.json';
-  const LAUNCH = { [LAUNCH_REPORT_CONTEXT]: REPORT_FILE, [LAUNCH_TAG_CONTEXT]: TAG };
+  const BUNDLE_FILE = '/synthetic/screening-capacity.sigstore.json';
+  const LAUNCH = { [LAUNCH_REPORT_CONTEXT]: REPORT_FILE, [LAUNCH_ATTESTATION_CONTEXT]: BUNDLE_FILE, [LAUNCH_TAG_CONTEXT]: TAG };
 
   /** A report's bytes as the harness writes them: by default a full passing run of the measured images. */
   const kept = (measurements: Measurements = measured(), rule = ENFORCED) => `${JSON.stringify(report(measurements, rule), null, 2)}\n`;
@@ -165,14 +167,28 @@ describe('the screening launch value, computed at synthesis', () => {
     readonly commit?: string;
     readonly ids?: Readonly<Record<string, string>>;
     readonly target?: LaunchTarget | null;
+    /** What gh gives for the report and the bundle; by default release.yml's attestation of the report's bytes. */
+    readonly attestation?: AttestationReading;
   }
 
-  /** Readers over the synthetic report, the tag's commit, the images' config digests in ECR and the deploy's account; records each image read. */
-  function readersFor(fake: Fake = {}): LaunchReaders & { readonly read: string[] } {
+  /**
+   * Readers over the synthetic report, its attestation as gh verifies it, the tag's commit, the images' config digests in
+   * ECR and the deploy's account; records each image read and each verification asked for.
+   */
+  function readersFor(fake: Fake = {}): LaunchReaders & { readonly read: string[]; readonly verified: string[][] } {
     const read: string[] = [];
+    const verified: string[][] = [];
     const ids = fake.ids ?? { [WEB_REFERENCE]: WEB_ID, [WORKER_REFERENCE]: WORKER_ID };
     return {
       read,
+      verified,
+      verifyAttestation: (file, bundle, tag, commit) => {
+        verified.push([file, bundle, tag, commit]);
+        if (file !== REPORT_FILE || bundle !== BUNDLE_FILE) {
+          return { kind: 'refused', reason: 'gh: open: no such file or directory' };
+        }
+        return fake.attestation ?? { kind: 'verified', output: attestationOutput(fake.text ?? kept()) };
+      },
       readReport: (file) => {
         if (file !== REPORT_FILE) {
           throw new Error('no such file');
@@ -194,6 +210,8 @@ describe('the screening launch value, computed at synthesis', () => {
     const value = `${TAG}:${reportSha256(kept())}`;
     // The images read are the ECR copies of the tag the stack runs (WebRepositoryUri and WorkerRepositoryUri), by their manifests.
     expect(readers.read).toEqual([WEB_REFERENCE, WORKER_REFERENCE]);
+    // The report's attestation, verified against the bundle the release kept, for the tag and the commit it names here.
+    expect(readers.verified).toEqual([[REPORT_FILE, BUNDLE_FILE, TAG, COMMIT]]);
     const production = stacks.production.template;
     expect(webLaunchValue(production, 'production')).toBe(value);
     expect(json(production).Outputs.ScreeningLaunch?.Value).toBe(value);
@@ -225,10 +243,11 @@ describe('the screening launch value, computed at synthesis', () => {
 
   it('refuses a stale report: another commit than the tag’s, an older format, a web measured at the size before 2026-10-22', () => {
     expect(() => synthesizeAll(LAUNCH, readersFor({ commit: 'e'.repeat(40) }))).toThrow(new RegExp(`- commit: the report measured ${COMMIT}, and ${TAG} is ${'e'.repeat(40)}`));
-    // The formats before S4 ran three times and before the time mode was recorded (the founder's rulings of 2026-10-23).
-    for (const format of ['tp-screening-capacity/4', 'tp-screening-capacity/5', 'tp-screening-capacity/6']) {
+    // The formats before S4 ran three times, before the time mode was recorded (the founder's rulings of 2026-10-23) and
+    // before the run that measured was recorded (the verification of PR 6b-3's capacity changes).
+    for (const format of ['tp-screening-capacity/4', 'tp-screening-capacity/5', 'tp-screening-capacity/6', 'tp-screening-capacity/7']) {
       const older = { ...(JSON.parse(kept()) as Record<string, unknown>), format };
-      expect(() => synthesizeAll(LAUNCH, readersFor({ text: JSON.stringify(older) }))).toThrow(new RegExp(`- report: format ${format}, not tp-screening-capacity/7`));
+      expect(() => synthesizeAll(LAUNCH, readersFor({ text: JSON.stringify(older) }))).toThrow(new RegExp(`- report: format ${format}, not tp-screening-capacity/8`));
     }
     const base = measured();
     const quarterWeb = measured({
@@ -254,9 +273,36 @@ describe('the screening launch value, computed at synthesis', () => {
     }
   });
 
+  it('refuses a binding report without its attestation, or one gh does not verify, naming why (the verification of PR 6b-3’s capacity changes)', () => {
+    // No bundle named: the report alone opens nothing.
+    const unnamed = readersFor();
+    expect(() => synthesizeAll({ [LAUNCH_REPORT_CONTEXT]: REPORT_FILE, [LAUNCH_TAG_CONTEXT]: TAG }, unnamed)).toThrow(
+      /-c tp:launchReport=<screening-capacity\.json>, -c tp:launchAttestation=<screening-capacity\.sigstore\.json> and -c tp:launchTag=<tag> go together/,
+    );
+    expect(unnamed.verified).toEqual([]);
+    expect(unnamed.read).toEqual([]);
+    expect(() => synthesizeAll(LAUNCH, readersFor({ attestation: { kind: 'refused', reason: 'gh: ✗ Verification failed' } }))).toThrow(
+      /^decision 13 \(docs\/adr\/0062\): the launch check refused v1\.4\.0's capacity report[\s\S]*- attestation: not verified: gh: ✗ Verification failed/,
+    );
+    expect(() => synthesizeAll({ ...LAUNCH, [LAUNCH_ATTESTATION_CONTEXT]: '/synthetic/other.sigstore.json' }, readersFor())).toThrow(/- attestation: not verified: gh: open: no such file or directory/);
+  });
+
+  it('refuses a report attested by another workflow, ref or repository, and accepts only release.yml’s on the tag', () => {
+    const capacity = 'https://github.com/PureTideWater/PhysicalTherapy/.github/workflows/screening-capacity.yml@refs/pull/39/merge';
+    const pullRequest = readersFor({ attestation: { kind: 'verified', output: attestationOutput(kept(), { certificate: { subjectAlternativeName: capacity, buildSignerURI: capacity, sourceRepositoryRef: 'refs/pull/39/merge' } }) } });
+    expect(() => synthesizeAll(LAUNCH, pullRequest)).toThrow(new RegExp(`- attestation: signed by ${capacity.replaceAll('.', '\\.')}, not ${releaseSigner().replaceAll('.', '\\.')}`));
+    const fork = 'https://github.com/someone/PhysicalTherapy';
+    expect(() => synthesizeAll(LAUNCH, readersFor({ attestation: { kind: 'verified', output: attestationOutput(kept(), { certificate: { sourceRepositoryURI: fork } }) } }))).toThrow(
+      /- attestation: source repository https:\/\/github\.com\/someone\/PhysicalTherapy, not https:\/\/github\.com\/PureTideWater\/PhysicalTherapy/,
+    );
+    // An 8-CPU runner's report, however attested: the release measures on the free runner's shared layout alone.
+    expect(() => synthesizeAll(LAUNCH, readersFor({ text: kept(onOwnCpus()) }))).toThrow(/- layout: the report measured CPUs of their own/);
+  });
+
   it('refuses a report without its tag, a tag without its report, a tag that is not a release’s, and a deploy with no account to name the images in', () => {
     expect(() => synthesizeAll({ [LAUNCH_REPORT_CONTEXT]: REPORT_FILE }, readersFor())).toThrow(/go together/);
     expect(() => synthesizeAll({ [LAUNCH_TAG_CONTEXT]: TAG }, readersFor())).toThrow(/go together/);
+    expect(() => synthesizeAll({ [LAUNCH_ATTESTATION_CONTEXT]: BUNDLE_FILE }, readersFor())).toThrow(/go together/);
     const latest = readersFor();
     expect(() => synthesizeAll({ ...LAUNCH, [LAUNCH_TAG_CONTEXT]: 'latest' }, latest)).toThrow(/-c tp:launchTag=latest is not a release tag/);
     expect(latest.read).toEqual([]);
@@ -281,6 +327,10 @@ describe('the screening launch value, computed at synthesis', () => {
 
     it('read each image’s config digest from its registry’s manifest, never the deployer’s local image store (the verification of PR 6b-3)', () => {
       expect(DEPLOY_LAUNCH_READERS.imageId).toBe(registryImageId);
+    });
+
+    it('verify the report against the bundle the release kept with gh attestation verify (the verification of PR 6b-3’s capacity changes)', () => {
+      expect(DEPLOY_LAUNCH_READERS.verifyAttestation).toBe(verifyReportAttestation);
     });
   });
 });

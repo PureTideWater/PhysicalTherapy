@@ -23,6 +23,15 @@ import {
  * their own beside it (onOwnCpus), and helpers that change one part of it.
  */
 
+/** The synthetic release the launch check's tests open: its tag and the commit it names. */
+export const SYNTHETIC_TAG = 'v1.4.0';
+export const SYNTHETIC_COMMIT = 'f'.repeat(40);
+/**
+ * The GitHub Actions run that measured a synthetic report, as the harness records it from GITHUB_WORKFLOW_REF,
+ * GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT: release.yml's run on the synthetic tag, its first attempt.
+ */
+export const SYNTHETIC_RUN = { ref: `PureTideWater/PhysicalTherapy/.github/workflows/release.yml@refs/tags/${SYNTHETIC_TAG}`, runId: '18000000001', runAttempt: '1' } as const;
+
 export const OPEN: TimeRule = { consumerDeclared: false, consumerRun: false, runnerToFargate: null, mode: 'binding' };
 /** Time enforced and binding: the release's capacity run (release.yml), the only report the launch check accepts. */
 export const ENFORCED: TimeRule = { consumerDeclared: true, consumerRun: true, runnerToFargate: null, mode: 'binding' };
@@ -190,7 +199,8 @@ export function onOwnCpus(overrides: Partial<Measurements> = {}): Measurements {
 
 export function measured(overrides: Partial<Measurements> = {}): Measurements {
   return {
-    commit: 'f'.repeat(40),
+    commit: SYNTHETIC_COMMIT,
+    workflow: SYNTHETIC_RUN,
     runtime: 'docker',
     images: { web: `sha256:${'a'.repeat(64)}`, worker: `sha256:${'b'.repeat(64)}` },
     consumer: { tasks: 1, cpus: 2, memoryMiB: 4096, concurrency: 3 },

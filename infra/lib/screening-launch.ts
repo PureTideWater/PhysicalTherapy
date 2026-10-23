@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { RELEASE_TAG, launchCheck, registryImageId, tagCommitOf } from '../../tools/screening-capacity/launch-check';
+import { type AttestationReading, RELEASE_TAG, launchCheck, registryImageId, tagCommitOf, verifyReportAttestation } from '../../tools/screening-capacity/launch-check';
+import { productionLimits } from '../../tools/screening-capacity/limits';
 import { type ImageName, repositoryName } from './constructs/images';
 import { SCREENING_CLOSED } from './deploy-parameters';
 import { type EnvironmentName, environmentSettings } from './environments';
@@ -9,23 +10,29 @@ import { type EnvironmentName, environmentSettings } from './environments';
 /**
  * Production's screening launch value, computed at synthesis (decision 13; docs/adr/0062; the founder's ruling of
  * 2026-10-22, about 23:00 UTC, "Do the recommended for everything if it optimizes things"). The deployer names the
- * release's capacity report and its tag as deploy-time context,
+ * release's capacity report, the bundle of its attestation and its tag as deploy-time context,
  *
- *   cdk deploy tp-production -c tp:launchReport=<screening-capacity.json> -c tp:launchTag=<tag> --parameters ImageTag=<tag>
+ *   cdk deploy tp-production -c tp:launchReport=<screening-capacity.json> \
+ *     -c tp:launchAttestation=<screening-capacity.sigstore.json> -c tp:launchTag=<tag> --parameters ImageTag=<tag>
  *
  * and the app runs the launch check (tools/screening-capacity/launch-check.ts) on the images the stack deploys,
  * `<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the account and region the deploy targets, each image's
  * config digest read from its manifest in ECR (whatever image store the deployer's Docker uses), with the tag's commit in
- * this checkout and production's declared sizes. A binding report that passes with time enforced, the release
- * workflow's (an advisory one, a pull request's, is refused whatever its verdict: the founder's ruling of 2026-10-23,
- * time advisory), gives the value `<tag>:<the report's SHA-256>`, which the stack writes into the web's
- * SCREENING_LAUNCH, with a rule that refuses the deploy unless ImageTag is that tag; a refused report stops the
- * synthesis, naming each reason; no report keeps production's screening closed. The value is never a parameter, and
- * context that tries to set it by hand stops the synthesis, so nothing typed by hand opens the screening.
+ * this checkout, production's declared sizes, and the report's attestation as `gh attestation verify` checks it against
+ * the bundle (signed by this repository's release.yml at refs/tags/<tag>: the verification of PR 6b-3's capacity
+ * changes). The release workflow's binding report that passes with time enforced, attested by its own run on the tag
+ * (an advisory one, a pull request's, is refused whatever its verdict: the founder's ruling of 2026-10-23, time
+ * advisory; a report measured or attested anywhere else, or edited, is refused), gives the value `<tag>:<the report's
+ * SHA-256>`, which the stack writes into the web's SCREENING_LAUNCH, with a rule that refuses the deploy unless ImageTag
+ * is that tag; a refused report stops the synthesis, naming each reason; no report keeps production's screening closed.
+ * The value is never a parameter, and context that tries to set it by hand stops the synthesis, so nothing typed by hand
+ * opens the screening.
  */
 
-/** The capacity report's file (`gh release download <tag> --pattern screening-capacity.json`). */
+/** The capacity report's file (`gh release download <tag> --pattern 'screening-capacity.*'`). */
 export const LAUNCH_REPORT_CONTEXT = 'tp:launchReport';
+/** The bundle of the report's artifact attestation the release kept beside it (screening-capacity.sigstore.json). */
+export const LAUNCH_ATTESTATION_CONTEXT = 'tp:launchAttestation';
 /** The release tag the report is for: the ImageTag the deploy runs. */
 export const LAUNCH_TAG_CONTEXT = 'tp:launchTag';
 
@@ -45,6 +52,8 @@ export interface LaunchTarget {
 export interface LaunchReaders {
   /** The report's bytes, as kept as the tag's release asset. */
   readonly readReport: (file: string) => string;
+  /** The report's attestation as gh verifies it against the bundle, for the tag and the commit it names here. */
+  readonly verifyAttestation: (report: string, bundle: string, tag: string, tagCommit: string) => AttestationReading;
   /** The commit a release tag names in this checkout. */
   readonly tagCommit: (tag: string) => string;
   /** The config digest of the image a registry reference names, read from the registry's manifest, or why it could not be read. */
@@ -53,9 +62,10 @@ export interface LaunchReaders {
   readonly target: () => LaunchTarget | null;
 }
 
-/** The readers a deploy uses: the file system, git, Docker and the CDK CLI's account and region. */
+/** The readers a deploy uses: the file system, gh, git, Docker and the CDK CLI's account and region. */
 export const DEPLOY_LAUNCH_READERS: LaunchReaders = {
   readReport: (file) => readFileSync(path.resolve(file), 'utf8'),
+  verifyAttestation: verifyReportAttestation,
   tagCommit: tagCommitOf,
   imageId: registryImageId,
   target: () => {
@@ -99,22 +109,25 @@ export function refuseHandTypedLaunch(contextKeys: readonly string[]): void {
   const typed = contextKeys.filter((key) => HAND_TYPED.test(key));
   if (typed.length > 0) {
     throw new ScreeningLaunchError(
-      `ScreeningLaunch is computed by the CDK app from the release's capacity report and is never passed by hand; remove ${typed.map((key) => `-c ${key}`).join(', ')} and deploy with -c ${LAUNCH_REPORT_CONTEXT}=<screening-capacity.json> -c ${LAUNCH_TAG_CONTEXT}=<tag> (docs/runbooks/deploy-and-rollback.md, step 4)`,
+      `ScreeningLaunch is computed by the CDK app from the release's capacity report and is never passed by hand; remove ${typed.map((key) => `-c ${key}`).join(', ')} and deploy with -c ${LAUNCH_REPORT_CONTEXT}=<screening-capacity.json> -c ${LAUNCH_ATTESTATION_CONTEXT}=<screening-capacity.sigstore.json> -c ${LAUNCH_TAG_CONTEXT}=<tag> (docs/runbooks/deploy-and-rollback.md, step 4)`,
     );
   }
 }
 
 /**
- * Production's launch value from the deploy-time context: closed without a report; for a report, the launch check on the
- * ECR images of the tag, or a ScreeningLaunchError naming each reason it refused.
+ * Production's launch value from the deploy-time context: closed without a report; for a report with its attestation's
+ * bundle and its tag, the launch check on the ECR images of the tag and the attestation, or a ScreeningLaunchError naming
+ * each reason it refused.
  */
-export function screeningLaunchValue(context: { readonly report?: string; readonly tag?: string }, readers: LaunchReaders): ScreeningLaunchValue {
-  const { report, tag } = context;
-  if (report === undefined && tag === undefined) {
+export function screeningLaunchValue(context: { readonly report?: string; readonly attestation?: string; readonly tag?: string }, readers: LaunchReaders): ScreeningLaunchValue {
+  const { report, attestation, tag } = context;
+  if (report === undefined && attestation === undefined && tag === undefined) {
     return CLOSED_LAUNCH;
   }
-  if (report === undefined || tag === undefined) {
-    throw new ScreeningLaunchError(`-c ${LAUNCH_REPORT_CONTEXT}=<screening-capacity.json> and -c ${LAUNCH_TAG_CONTEXT}=<tag> go together; deploy with both to open production's screening, or with neither to keep it closed`);
+  if (report === undefined || attestation === undefined || tag === undefined) {
+    throw new ScreeningLaunchError(
+      `-c ${LAUNCH_REPORT_CONTEXT}=<screening-capacity.json>, -c ${LAUNCH_ATTESTATION_CONTEXT}=<screening-capacity.sigstore.json> and -c ${LAUNCH_TAG_CONTEXT}=<tag> go together; deploy with all three to open production's screening, or with none to keep it closed`,
+    );
   }
   if (!RELEASE_TAG.test(tag)) {
     throw new ScreeningLaunchError(`-c ${LAUNCH_TAG_CONTEXT}=${tag} is not a release tag (v followed by letters, digits, dots and hyphens)`);
@@ -129,19 +142,21 @@ export function screeningLaunchValue(context: { readonly report?: string; readon
   } catch {
     throw new ScreeningLaunchError(`the capacity report ${report} could not be read`);
   }
+  const tagCommit = readers.tagCommit(tag);
   const result = launchCheck({
     reportText,
     tag,
-    tagCommit: readers.tagCommit(tag),
+    tagCommit,
     images: {
       web: readers.imageId(ecrImageReference(target, LAUNCH_ENVIRONMENT, 'web', tag)),
       worker: readers.imageId(ecrImageReference(target, LAUNCH_ENVIRONMENT, 'worker', tag)),
     },
-    settings: environmentSettings(LAUNCH_ENVIRONMENT),
+    production: productionLimits(environmentSettings(LAUNCH_ENVIRONMENT)),
+    attestation: readers.verifyAttestation(report, attestation, tag, tagCommit),
   });
   if (!result.ok) {
     throw new ScreeningLaunchError(
-      `the launch check refused ${tag}'s capacity report, so production's screening cannot open with this deploy; deploy without -c ${LAUNCH_REPORT_CONTEXT} and -c ${LAUNCH_TAG_CONTEXT} to keep it closed:\n${result.reasons.map((reason) => `- ${reason}`).join('\n')}`,
+      `the launch check refused ${tag}'s capacity report, so production's screening cannot open with this deploy; deploy without -c ${LAUNCH_REPORT_CONTEXT}, -c ${LAUNCH_ATTESTATION_CONTEXT} and -c ${LAUNCH_TAG_CONTEXT} to keep it closed:\n${result.reasons.map((reason) => `- ${reason}`).join('\n')}`,
     );
   }
   return { value: result.value, tag, notes: result.notes };

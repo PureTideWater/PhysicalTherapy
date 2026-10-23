@@ -66,6 +66,7 @@ import {
   timeRule,
   uploadLabel,
   uploadStart,
+  workflowRun,
 } from './report';
 import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
 
@@ -101,7 +102,8 @@ import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, s
  *  7. open every result link, then its last page of groups;  8. close the browsers, stop every service;
  *  9. compare S1-1, S2-1 and S3-1 with the frozen oracle and S1-2 (a ZIP split across localities, with its ZIP+4)
  *     with the whole-release oracle, in a child process, against the running Postgres (oracle.ts);
- * 10. remove Postgres; write screening-capacity.json, its SHA-256 (screening-capacity.sha256, as the launch check
+ * 10. remove Postgres; write screening-capacity.json (with the GitHub Actions run that measured: GITHUB_WORKFLOW_REF,
+ *     GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT), its SHA-256 (screening-capacity.sha256, as the launch check
  *     computes it) and summary.md (and the job summary in CI); annotate each warning (an advisory run's time verdicts,
  *     the sizing question) and exit non-zero on any failing check (report.ts, jobResult).
  *
@@ -827,6 +829,8 @@ async function main(): Promise<number> {
   const write = (final: boolean): ReturnType<typeof report> => {
     const measured: Measurements = {
       commit,
+      // The run that measured, which the launch check holds to the tag's release.yml beside the release's attestation.
+      workflow: workflowRun(process.env),
       runtime: opts.runtime,
       images,
       consumer,
