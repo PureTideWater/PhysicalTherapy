@@ -13,6 +13,7 @@ import { Monitoring, type OperatorEndpoints } from './constructs/monitoring';
 import { Network } from './constructs/network';
 import { OperatorRole } from './constructs/operator-role';
 import { PullRequestDiffRole } from './constructs/pull-request-diff-role';
+import { ScreeningRole } from './constructs/screening-role';
 import { Storage } from './constructs/storage';
 import { SupportMail } from './constructs/support-mail';
 import { Uptime } from './constructs/uptime';
@@ -30,13 +31,19 @@ export interface PlatformStackProps extends StackProps {
    * refuse the newer history. Every other deploy runs the migration task first.
    */
   readonly runMigrations?: boolean;
+  /**
+   * The screening's launch value the CDK app computed from the release's capacity report (screening-launch.ts; decision
+   * 13): `<tag>:<SHA-256>` for production when a report passed, `closed` otherwise and by default.
+   */
+  readonly screeningLaunch?: string;
 }
 
 /**
  * One stack per environment, built from the same constructs (PRD 15, infrastructure as code;
  * milestone 1: network, database, S3, KMS, secrets, identity and monitoring; milestone 11: the image
  * repositories, the Fargate services and the migration task, the load balancer with its web ACL,
- * CloudFront for static assets, and the uptime and certificate checks, docs/adr/0049). What differs
+ * CloudFront for static assets, and the uptime and certificate checks, docs/adr/0049; PR 6b-3: the screening's own
+ * consumer, its role, login, security group and alarms, docs/adr/0062). What differs
  * per deployment comes in as CloudFormation parameters (DeployParameters).
  */
 export class PlatformStack extends Stack {
@@ -52,6 +59,7 @@ export class PlatformStack extends Stack {
   readonly accountSecurity: AccountSecurity;
   readonly application: ApplicationRole;
   readonly operator: OperatorRole;
+  readonly screeningRole: ScreeningRole;
   readonly pullRequestDiff?: PullRequestDiffRole;
   readonly parameters: DeployParameters;
   readonly images: Images;
@@ -67,11 +75,11 @@ export class PlatformStack extends Stack {
     Tags.of(this).add('environment', props.environmentName);
 
     const environmentName = this.environmentName;
-    this.parameters = new DeployParameters(this, 'Parameters');
+    this.parameters = new DeployParameters(this, 'Parameters', props.screeningLaunch === undefined ? {} : { screeningLaunch: props.screeningLaunch });
     const parameters = this.parameters;
     this.key = new EnvironmentKey(this, 'EnvironmentKey', { environmentName });
     const key = this.key.key;
-    this.network = new Network(this, 'Network', { cidr: this.settings.vpcCidr, natGateways: this.settings.compute.natGateways });
+    this.network = new Network(this, 'Network', { cidr: this.settings.vpcCidr, natGateways: this.settings.compute.natGateways, key, environmentName });
     this.storage = new Storage(this, 'Storage', { key, objectLockMode: this.settings.objectLockMode, uploadOrigin: parameters.appOrigin });
     this.database = new Database(this, 'Database', { network: this.network, key, settings: this.settings.database, environmentName });
     this.identity = new Identity(this, 'Identity', {
@@ -79,7 +87,12 @@ export class PlatformStack extends Stack {
       relyingPartyId: parameters.appDomainName,
       mailFrom: { address: parameters.mailFromAddress, domain: parameters.mailFromDomain },
     });
-    this.monitoring = new Monitoring(this, 'Monitoring', { environmentName, key, operator: props.operator ?? {} });
+    this.monitoring = new Monitoring(this, 'Monitoring', {
+      environmentName,
+      key,
+      operator: props.operator ?? {},
+      ...(this.settings.compute.screening.starts === 'launch' ? { screeningRuns: parameters.screeningLaunched } : {}),
+    });
     this.accountSecurity = new AccountSecurity(this, 'AccountSecurity', {
       environmentName,
       key,
@@ -101,6 +114,7 @@ export class PlatformStack extends Stack {
       restoreDrillInstanceId: this.database.restoreDrillInstanceId,
       supportMail: this.supportMail.bucket,
     });
+    this.screeningRole = new ScreeningRole(this, 'Screening', { mailFromAddress: parameters.mailFromAddress, mailFromDomain: parameters.mailFromDomain });
     if (this.settings.pullRequestDiffRole) {
       this.pullRequestDiff = new PullRequestDiffRole(this, 'PullRequestDiff', { repository: GITHUB_REPOSITORY });
     }
@@ -130,10 +144,12 @@ export class PlatformStack extends Stack {
       repositories: this.images.repositories,
       applicationRole: this.application.role,
       operatorRole: this.operator.role,
+      screeningRole: this.screeningRole.role,
       logGroups: {
         web: this.monitoring.webLogGroup,
         worker: this.monitoring.workerLogGroup,
         platform: this.monitoring.platformLogGroup,
+        screening: this.monitoring.screeningLogGroup,
         migration: this.monitoring.migrationLogGroup,
       },
       targetGroup: this.edge.targetGroup,
@@ -189,6 +205,11 @@ export class PlatformStack extends Stack {
       WebServiceName: this.compute.web.serviceName,
       WorkerServiceName: this.compute.worker.serviceName,
       PlatformServiceName: this.compute.platform.serviceName,
+      ScreeningServiceName: this.compute.screening.serviceName,
+      ScreeningLogGroup: this.monitoring.screeningLogGroup.logGroupName,
+      ScreeningLoginSecretArn: this.database.screeningSecret.secretArn,
+      ScreeningRoleArn: this.screeningRole.role.roleArn,
+      ScreeningSecurityGroupId: this.network.screeningSecurityGroup.securityGroupId,
       MigrationTaskFamily: this.compute.migrationTask.family,
       WebLogGroup: this.monitoring.webLogGroup.logGroupName,
       PlatformLogGroup: this.monitoring.platformLogGroup.logGroupName,
@@ -197,6 +218,8 @@ export class PlatformStack extends Stack {
       StaticAssetsDistributionDomain: this.edge.distribution.distributionDomainName,
       AppOrigin: this.parameters.appOrigin,
       StaticAssetsOrigin: `https://${this.parameters.staticDomainName}`,
+      // The launch value this template carries: `closed`, or the tag and its capacity report's SHA-256 (decision 13).
+      ScreeningLaunch: this.parameters.screeningLaunch,
     };
     if (this.pullRequestDiff !== undefined) {
       values.PullRequestDiffRoleArn = this.pullRequestDiff.role.roleArn;

@@ -3,16 +3,32 @@ import path from 'node:path';
 
 import { tagline } from '@paidwhole/brand';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
+import { SCREENING_WAIT_CODES } from '@tp/worker/runtime';
 import { SCREENING_REJECTION_CODES, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ATTRIBUTION_COOKIE } from '../http/attribution';
-import { RATE_LIMITS } from '../http/rate-limit';
+import { RATE_LIMITS, rateSubjectHash } from '../http/rate-limit';
 import type { MutationResult, Outcome } from '../http/route';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_LABELS_VERSION } from './labels';
-import { NO_PATIENT_INFORMATION, SCREENING_ZIP_MESSAGES, screeningConvert, screeningOpened, screeningPage, screeningReasonMessage, screeningResult, screeningSubmit } from './routes';
+import {
+  NO_PATIENT_INFORMATION,
+  SCREENING_UPLOAD_WAIT_CODES,
+  SCREENING_WAIT_STATES,
+  SCREENING_ZIP_MESSAGES,
+  screeningConvert,
+  screeningLaunched,
+  screeningOpened,
+  screeningPage,
+  screeningReasonMessage,
+  screeningResult,
+  screeningSentPath,
+  screeningSubmit,
+  screeningWaitState,
+} from './routes';
 import { parseScreeningBytes } from './parse';
+import { screeningRateAccount } from './rate';
 import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
 /**
@@ -48,6 +64,9 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screening
  */
 
 const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
+
+/** Where an accepted upload lands while a slot is free (the world counts so many slots that one always is). */
+const SENT = screeningSentPath('soon');
 
 const sha256 = (text: string | Uint8Array) => createHash('sha256').update(text).digest('hex');
 
@@ -281,7 +300,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
   it('refuses a row of 10 claim lines and takes the same row at 11, naming every small row however many there are', async () => {
     const at = (claims: number, code = '97110') => screeningRow(code, 'medicare_ffs', { modifiers: ['GP'], allowedCents: BigInt(claims) * 3_600n, claims });
     expect(issuesOf(await submitted(submitInput({ rows: [at(10)] })))).toEqual([FLOOR_MESSAGE(1)]);
-    expect(await submitted(submitInput({ contactEmail: 'prospect.eleven@clinic-eleven.synthetic.test', rows: [at(11)] }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(await submitted(submitInput({ contactEmail: 'prospect.eleven@clinic-eleven.synthetic.test', rows: [at(11)] }))).toEqual({ status: 'ok', data: { redirect: SENT } });
     const run = await world.owner.query<{ claim_count: number }>(
       'SELECT s.claim_count FROM screening_result s JOIN screening_run r ON r.id = s.run_id JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
       ['prospect.eleven@clinic-eleven.synthetic.test'],
@@ -296,7 +315,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
 
   it('stores what the browser left out as three numbers, and the result says so apart from every figure', async () => {
     const email = 'prospect.leftout@clinic-leftout.synthetic.test';
-    expect(await submitted(submitInput({ contactEmail: email, leftOut: { rows: 3, claimLines: 16, allowedCents: 111_233n } }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(await submitted(submitInput({ contactEmail: email, leftOut: { rows: 3, claimLines: 16, allowedCents: 111_233n } }))).toEqual({ status: 'ok', data: { redirect: SENT } });
     const upload = await world.owner.query(
       'SELECT u.row_count, u.left_out_rows, u.left_out_claim_lines, u.left_out_allowed_cents::text AS left_out_allowed_cents FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
       [email],
@@ -323,7 +342,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ n: 0 }]);
     // A request built without the page names nothing left out: blank is none.
     const blank = { ...submitInput({ contactEmail: 'prospect.leftout.blank@clinic-leftout-blank.synthetic.test' }), leftOutRows: '', leftOutClaimLines: '', leftOutAllowedCents: '' };
-    expect(await submitted(blank)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(await submitted(blank)).toEqual({ status: 'ok', data: { redirect: SENT } });
   });
 
   it('keeps the hash of the rows it accepted, never of the file: two files differing only in a row left out store the same hash, and a hash the request sends is not kept', async () => {
@@ -350,7 +369,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
         // What an older page sent: the hash of the whole file, small row and all.
         fileSha256: sha256(bytes),
       };
-      expect(await submitted(input)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+      expect(await submitted(input)).toEqual({ status: 'ok', data: { redirect: SENT } });
       const stored = await world.owner.query<{ rows_sha256: string }>('SELECT u.rows_sha256 FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email]);
       // The SHA-256 of the canonical rows sent, which the database holds row by row anyway.
       expect(stored.rows).toEqual([{ rows_sha256: sha256(parsed.rows) }]);
@@ -365,13 +384,13 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     const name = practiceName();
     const row = (allowedCents: bigint, claims: number) => [screeningRow('97530', 'ma_noncontracted', { modifiers: ['GP'], units: 2, band: '2026-Q2', allowedCents, claims })];
     const firstEmail = `prospect.diff.first.${randomUUID().slice(0, 6)}@clinic-diff.synthetic.test`;
-    expect(await submitted(submitInput({ practiceName: name, contactEmail: firstEmail, rows: row(60_000n, 12) }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(await submitted(submitInput({ practiceName: name, contactEmail: firstEmail, rows: row(60_000n, 12) }))).toEqual({ status: 'ok', data: { redirect: SENT } });
     await world.price();
     const firstToken = world.tokenFor(firstEmail);
     expect((await world.call(screeningResult, { params: { resultId: firstToken } })).status).toBe('ok');
     // The same practice, its name typed in another case, from a colleague's address: the earlier screening goes.
     const secondEmail = `prospect.diff.second.${randomUUID().slice(0, 6)}@clinic-diff.synthetic.test`;
-    expect(await submitted(submitInput({ practiceName: name.toLowerCase(), contactEmail: secondEmail, rows: row(54_517n, 11) }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(await submitted(submitInput({ practiceName: name.toLowerCase(), contactEmail: secondEmail, rows: row(54_517n, 11) }))).toEqual({ status: 'ok', data: { redirect: SENT } });
     expect((await world.call(screeningResult, { params: { resultId: firstToken } })).status).toBe('not_found');
     const held = await world.owner.query<{ claim_count: number }>(
       `SELECT s.claim_count FROM screening_result s JOIN screening_run r ON r.id = s.run_id JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
@@ -414,7 +433,7 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
       ['00011-1234', 'prospect.zip9.hyphen@clinic-zip9.synthetic.test'],
       ['000111234', 'prospect.zip9.digits@clinic-zip9.synthetic.test'],
     ] as const) {
-      expect(await submitted(submitInput({ zip, contactEmail: email })), zip).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+      expect(await submitted(submitInput({ zip, contactEmail: email })), zip).toEqual({ status: 'ok', data: { redirect: SENT } });
       expect(await kept(email)).toEqual([{ zip: '00011', zip_plus_four: null }]);
     }
   });
@@ -424,7 +443,7 @@ describe('SCR-15: a ZIP split across Medicare localities (PR 6b)', () => {
     try {
       const send = (zip: string, contactEmail: string) => split.call(screeningSubmit, { input: submitInput({ zip, contactEmail }) });
       const email = 'prospect.zip9.split@clinic-zip9-split.synthetic.test';
-      expect(await send('00012-5000', email)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+      expect(await send('00012-5000', email)).toEqual({ status: 'ok', data: { redirect: SENT } });
       expect((await split.owner.query('SELECT zip, zip_plus_four FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ zip: '00012', zip_plus_four: '5000' }]);
       // The result names the ZIP+4 that chose the locality (review of PR 6b-2, finding 21).
       await split.price();
@@ -456,13 +475,13 @@ describe('SCR-16: a Medicare row in a quarter outside the loaded content (Q6 (a)
     // The code, row and field, never the quarter.
     expect(refused.rows).toEqual([{ status: 'rejected', rejection_reasons: [{ code: 'band_outside_content', row: 2, field: 'service_band' }] }]);
     const commercial = [screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'] }), screeningRow('97140', 'commercial', { band: '2025-Q4', claims: 20 })];
-    expect(await submitted(submitInput({ contactEmail: 'prospect.outside.commercial@clinic-outside.synthetic.test', rows: commercial }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(await submitted(submitInput({ contactEmail: 'prospect.outside.commercial@clinic-outside.synthetic.test', rows: commercial }))).toEqual({ status: 'ok', data: { redirect: SENT } });
   });
 
   it('stores what the browser left out for its quarter as three numbers, and the result says how many rows were not screened', async () => {
     const email = 'prospect.outside.counted@clinic-outside-counted.synthetic.test';
     const outsideContent = { rows: 12, claimLines: 380, allowedCents: 4_120_000n };
-    expect(await submitted(submitInput({ contactEmail: email, outsideContent, leftOut: { rows: 1, claimLines: 3, allowedCents: 900n } }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(await submitted(submitInput({ contactEmail: email, outsideContent, leftOut: { rows: 1, claimLines: 3, allowedCents: 900n } }))).toEqual({ status: 'ok', data: { redirect: SENT } });
     const upload = await world.owner.query(
       `SELECT u.row_count, u.left_out_rows, u.outside_content_rows, u.outside_content_claim_lines::int AS claim_lines, u.outside_content_allowed_cents::text AS allowed
          FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
@@ -482,7 +501,8 @@ describe('SCR-16: a Medicare row in a quarter outside the loaded content (Q6 (a)
     const after = new Date(Math.max(Date.now(), Date.parse('2027-05-15T12:00:00Z')));
     await world.owner.query('BEGIN');
     await world.owner.query("SET LOCAL session_replication_role = 'replica'");
-    await world.owner.query("UPDATE screening_run SET created_at = $2, expires_at = $2::timestamptz + interval '30 days' WHERE id = $1", [run, after]);
+    // received_at moves with it: a run is received in the ten minutes before it is created (screening_run_received).
+    await world.owner.query("UPDATE screening_run SET created_at = $2, received_at = $2, expires_at = $2::timestamptz + interval '30 days' WHERE id = $1", [run, after]);
     await world.owner.query('COMMIT');
     expect(ok(await world.call(screeningResult, { params: { resultId: world.tokenFor(email) } })).summary.outsideContentBefore).toBeNull();
     // Counted apart from every figure: the file's own totals are the rows sent.
@@ -521,7 +541,7 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
     expect(Date.parse(serverTime)).toBeGreaterThanOrEqual(before);
     expect(Date.parse(serverTime)).toBeLessThanOrEqual(Date.now());
     const outcome = await submitted(submitInput({ practiceName: 'Synthetic Therapy Group', contactEmail: email }));
-    expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(outcome).toEqual({ status: 'ok', data: { redirect: SENT } });
     const run = (await world.owner.query<{ id: string }>('SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email])).rows[0];
     expect(world.queue.screeningRuns).toContain(run?.id);
     await world.price();
@@ -572,12 +592,27 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
     const failing = await ScreeningWorld.create({ queue: { enqueue: () => Promise.reject(new Error('no queue')), enqueueScreeningRun: () => Promise.reject(new Error('no queue')) } });
     try {
       const email = 'prospect.unsent@clinic-unsent.synthetic.test';
-      expect(await failing.call(screeningSubmit, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+      expect(await failing.call(screeningSubmit, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: SENT } });
       expect(failing.logLines.filter((line) => line.error_code === 'SCREENING_NOT_QUEUED').map((line) => Object.keys(line).sort())).toEqual([['error_code', 'level', 'msg', 'screening_run_id', 'time']]);
       expect(await failing.price()).toEqual({ complete: 1, failed: 0, skipped: 0 });
       expect(failing.tokenFor(email)).toMatch(/^[a-z]{32}$/);
     } finally {
       await failing.close();
+    }
+  });
+
+  it('says only that the file arrived when where it stands cannot be read, and leaves its job to the sweep', async () => {
+    const unread = await ScreeningWorld.create();
+    try {
+      // The queue's read refused (as a database error would): the run is stored, its place unknown.
+      await unread.owner.query('REVOKE EXECUTE ON FUNCTION screening_wait(uuid) FROM tp_app');
+      const email = 'prospect.unread@clinic-unread.synthetic.test';
+      expect(await unread.call(screeningSubmit, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: screeningSentPath('sent') } });
+      expect(unread.logLines.filter((line) => line.error_code === 'SCREENING_NOT_QUEUED')).toHaveLength(1);
+      expect(unread.queue.screeningRuns).toEqual([]);
+      expect(await unread.price()).toEqual({ complete: 1, failed: 0, skipped: 0 });
+    } finally {
+      await unread.close();
     }
   });
 
@@ -601,6 +636,187 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
       ).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
     } finally {
       await closed.close();
+    }
+  });
+});
+
+describe('SCR-17, SCR-18 and SCR-20 through the routes: the receipt, the keyed account, the queue and the "sent" page (PR 6b-3; the founder\'s Q7 and Q12 of 2026-10-21)', () => {
+  interface StoredRun {
+    readonly id: string;
+    readonly received_at: Date;
+    readonly created_at: Date;
+    readonly rate_subject: string;
+    readonly wait_reason: string | null;
+    readonly queue_priority: number;
+    readonly text: string;
+  }
+  const runOf = async (target: ScreeningWorld, email: string): Promise<StoredRun> => {
+    const { rows } = await target.owner.query<StoredRun>(
+      `SELECT r.id, r.received_at, r.created_at, r.rate_subject, r.wait_reason, r.queue_priority, r::text AS text
+         FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
+      [email],
+    );
+    const run = rows[0];
+    if (run === undefined) {
+      throw new Error('no run for that address');
+    }
+    return run;
+  };
+  /**
+   * As the superuser with triggers off: the run is counted as a worst-shape file of 50,000 rows in the day's sums, its
+   * entry in the queue's tally with it (the one its submission wrote: the run's account, at the run's creation).
+   */
+  const countAsWorstShape = async (target: ScreeningWorld, runId: string) => {
+    await target.owner.query('BEGIN');
+    await target.owner.query("SET LOCAL session_replication_role = 'replica'");
+    await target.owner.query(
+      `WITH run AS (UPDATE screening_run SET row_count = 50000 WHERE id = $1 RETURNING rate_subject, created_at)
+       UPDATE screening_queue_tally t SET row_count = 50000 FROM run WHERE t.rate_subject = run.rate_subject AND t.created_at = run.created_at`,
+      [runId],
+    );
+    await target.owner.query('COMMIT');
+  };
+
+  it('keeps when the web received the upload, before reading it, and the rate limiter\'s keyed account, never the account itself', async () => {
+    const email = 'receipt.first@clinic-receipt.synthetic.test';
+    const before = Date.now();
+    expect(await submitted(submitInput({ contactEmail: email }))).toEqual({ status: 'ok', data: { redirect: SENT } });
+    const after = Date.now();
+    const run = await runOf(world, email);
+    // No proxy ran (a route called directly), so the handler's own clock: after the request began, no later than the run's own creation.
+    expect(run.received_at.getTime()).toBeGreaterThanOrEqual(before);
+    expect(run.received_at.getTime()).toBeLessThanOrEqual(Math.min(after, run.created_at.getTime()));
+    // The account as the rate limiter counts it (the email's domain here), keyed under the server's secret: the same
+    // HMAC the limiter keeps, so neither the database nor its backups ever hold the account in clear.
+    const account = screeningRateAccount(email);
+    expect(account).toBe('domain:clinic-receipt.synthetic.test');
+    const subject = rateSubjectHash(world.services.sealer, 'screening', 'account', account ?? '');
+    expect(run.rate_subject).toBe(subject);
+    const counted = await world.owner.query<{ subject: string }>("SELECT subject FROM rate_limit_counter WHERE bucket = 'screening' AND subject = $1", [subject]);
+    expect(counted.rows).toHaveLength(1);
+    expect(run.text).not.toMatch(/clinic-receipt|domain:/);
+    expect(run.text).not.toContain(createHash('sha256').update(account ?? '').digest('hex'));
+    // The normal tier: priority 0, no reason, and its job sent at 0.
+    expect([run.wait_reason, run.queue_priority]).toEqual([null, 0]);
+    expect(world.queue.screeningPriorities[world.queue.screeningRuns.indexOf(run.id)]).toBe(0);
+  });
+
+  it('starts the time to email when the proxy stamped the request\'s arrival, before Next read the upload, not when the handler began', async () => {
+    const email = 'receipt.stamped@clinic-receipt-stamped.synthetic.test';
+    // Three large uploads at once on a quarter-vCPU web reached the handler 3.2 to 3.9 s after they arrived (CI's
+    // capacity run on 9eb4474): the stamp keeps that share inside TimeToEmailMs.
+    const arrived = new Date(Date.now() - 3_900);
+    expect(await world.call(screeningSubmit, { input: submitInput({ contactEmail: email }), receivedAt: arrived })).toEqual({ status: 'ok', data: { redirect: SENT } });
+    const run = await runOf(world, email);
+    expect(run.received_at.toISOString()).toBe(arrived.toISOString());
+  });
+
+  it('says "a few minutes" once every slot of the consumer is busy or taken by the runs ahead, and "usually within a minute" while one is free', { timeout: 120_000 }, async () => {
+    const busy = await ScreeningWorld.create({ slots: 3 });
+    try {
+      const outcomes: unknown[] = [];
+      for (const index of [1, 2, 3, 4]) {
+        outcomes.push(await busy.call(screeningSubmit, { input: submitInput({ practiceName: `Synthetic Slot Clinic ${String(index)}`, contactEmail: `slot${String(index)}@clinic-slot${String(index)}.synthetic.test` }) }));
+      }
+      // Nothing prices here: the first three find a slot free (0, 1, then 2 ahead of them), the fourth finds three ahead.
+      expect(outcomes).toEqual([...Array.from({ length: 3 }, () => ({ status: 'ok', data: { redirect: screeningSentPath('soon') } })), { status: 'ok', data: { redirect: screeningSentPath('minutes') } }]);
+      expect(busy.queue.screeningPriorities).toEqual([0, 0, 0, 0]);
+      expect(busy.logLines.filter((line) => line.msg === 'screening upload sent to wait')).toEqual([]);
+    } finally {
+      await busy.close();
+    }
+  });
+
+  it('sends an account\'s upload over its share of the day to wait, at a lower priority, and says it waits without saying why; another account is not held', { timeout: 120_000 }, async () => {
+    const shared = await ScreeningWorld.create();
+    try {
+      // Two worst-shape files from one firm (one account: its domain) fill its 100,000-row share for the UTC day.
+      for (const person of ['first', 'second']) {
+        const email = `${person}@firm-share.synthetic.test`;
+        expect(await shared.call(screeningSubmit, { input: submitInput({ practiceName: `Synthetic Share Clinic ${person}`, contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: SENT } });
+        await countAsWorstShape(shared, (await runOf(shared, email)).id);
+      }
+      const third = 'third@firm-share.synthetic.test';
+      // The page says the file waits and not why: nothing proves the visitor owns the address, and the account's share
+      // would tell anyone typing an address at the firm's domain that the firm screened more than its share today.
+      expect(await shared.call(screeningSubmit, { input: submitInput({ practiceName: 'Synthetic Share Clinic third', contactEmail: third }) })).toEqual({
+        status: 'ok',
+        data: { redirect: screeningSentPath('waiting') },
+      });
+      const waiting = await runOf(shared, third);
+      expect([waiting.wait_reason, waiting.queue_priority]).toEqual(['account_share', -1]);
+      // Its job goes at its priority, so pg-boss takes every normal upload first.
+      expect(shared.queue.screeningPriorities[shared.queue.screeningRuns.indexOf(waiting.id)]).toBe(-1);
+      // One line for the operator's count, with the run's ID and the tier's code alone: no address, domain or subject.
+      const lines = shared.logLines.filter((line) => line.msg === 'screening upload sent to wait');
+      expect(lines).toEqual([expect.objectContaining({ level: 'info', screening_run_id: waiting.id, error_code: 'SCREENING_ACCOUNT_SHARE' })]);
+      expect(Object.keys(lines[0] ?? {}).sort()).toEqual(['error_code', 'level', 'msg', 'screening_run_id', 'time']);
+      // Another firm's first upload the same day is normal.
+      expect(await shared.call(screeningSubmit, { input: submitInput({ practiceName: 'Synthetic Other Firm Clinic', contactEmail: 'first@firm-other.synthetic.test' }) })).toEqual({
+        status: 'ok',
+        data: { redirect: SENT },
+      });
+      // The page reads the state from its link, and anything else (an old state, a typo, one of any length) as `sent`,
+      // which says only that the file arrived: never a 404.
+      const page = async (wait: string) => ok(await shared.call(screeningPage, { params: { sent: '1', wait } })).wait;
+      expect(await page('waiting')).toBe('waiting');
+      expect(await page('account')).toBe('sent');
+      expect(await page('later')).toBe('sent');
+      expect(await page('x'.repeat(200))).toBe('sent');
+      expect(ok(await shared.call(screeningPage, { params: { sent: '1' } })).wait).toBe('sent');
+      expect(ok(await shared.call(screeningPage)).wait).toBeNull();
+    } finally {
+      await shared.close();
+    }
+  });
+
+  it('sends an upload over the day\'s cap of normal-tier rows to wait at -1, and says it waits as for the account\'s share', { timeout: 120_000 }, async () => {
+    const capped = await ScreeningWorld.create();
+    try {
+      // Twenty worst-shape files from ten firms, two each: each firm within its share, the day's normal tier at 1,000,000 rows.
+      for (let index = 0; index < 20; index += 1) {
+        const email = `p${String(index)}@firm-cap${String(Math.floor(index / 2))}.synthetic.test`;
+        expect((await capped.call(screeningSubmit, { input: submitInput({ practiceName: `Synthetic Cap Clinic ${String(index)}`, contactEmail: email }) })).status).toBe('ok');
+        await countAsWorstShape(capped, (await runOf(capped, email)).id);
+      }
+      const late = 'late@firm-late.synthetic.test';
+      expect(await capped.call(screeningSubmit, { input: submitInput({ practiceName: 'Synthetic Late Clinic', contactEmail: late }) })).toEqual({ status: 'ok', data: { redirect: screeningSentPath('waiting') } });
+      const waiting = await runOf(capped, late);
+      expect([waiting.wait_reason, waiting.queue_priority]).toEqual(['daily_cap', -1]);
+      expect(capped.queue.screeningPriorities.at(-1)).toBe(-1);
+      expect(capped.logLines.filter((line) => line.msg === 'screening upload sent to wait')).toEqual([expect.objectContaining({ screening_run_id: waiting.id, error_code: 'SCREENING_DAILY_CAP' })]);
+    } finally {
+      await capped.close();
+    }
+  });
+
+  it('words the four states, logs the worker\'s codes, and keeps a production server closed unless the launch value names its own tag', () => {
+    expect(SCREENING_WAIT_STATES).toEqual(['soon', 'minutes', 'waiting', 'sent']);
+    expect(SCREENING_UPLOAD_WAIT_CODES).toEqual(SCREENING_WAIT_CODES);
+    const place = { priority: 0, reason: null, pricing: 0, queuedAhead: 0 };
+    expect(screeningWaitState(place, 3)).toBe('soon');
+    expect(screeningWaitState({ ...place, pricing: 2 }, 3)).toBe('soon');
+    expect(screeningWaitState({ ...place, pricing: 2, queuedAhead: 1 }, 3)).toBe('minutes');
+    expect(screeningWaitState({ ...place, queuedAhead: 3 }, 3)).toBe('minutes');
+    expect(screeningWaitState({ ...place, priority: -2, reason: 'account_share' }, 3)).toBe('waiting');
+    expect(screeningWaitState({ ...place, priority: -1, reason: 'daily_cap' }, 3)).toBe('waiting');
+    // Decision 13 (SCR-20): staging and development are not gated; production only for its own tag's report.
+    const sha = 'c'.repeat(64);
+    expect(screeningLaunched('staging', { imageTag: null, value: null })).toBe(true);
+    expect(screeningLaunched('dev', { imageTag: 'v2027.1.0', value: 'closed' })).toBe(true);
+    expect(screeningLaunched('production', { imageTag: 'v2027.1.0', value: `v2027.1.0:${sha}` })).toBe(true);
+    for (const [imageTag, value] of [
+      ['v2027.1.0', null],
+      ['v2027.1.0', 'closed'],
+      [null, `v2027.1.0:${sha}`],
+      ['none', `none:${sha}`],
+      // A value an earlier deploy left in place vouches for nothing on a later tag.
+      ['v2027.1.1', `v2027.1.0:${sha}`],
+      ['v2027.1.0', `v2027.1.0:${sha.slice(1)}`],
+      ['v2027.1.0', `v2027.1.0:${'C'.repeat(64)}`],
+      ['v2027.1', `v2027.1.0:${sha}`],
+    ] as const) {
+      expect(screeningLaunched('production', { imageTag, value }), `${String(imageTag)} ${String(value)}`).toBe(false);
     }
   });
 });
@@ -815,7 +1031,7 @@ describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened 
   it('keeps how the prospect heard of us, the cookieâ€™s codes and kind of click and the referring firm, with an outcome the database writes', async () => {
     const email = `attributed.${randomUUID().slice(0, 8)}@clinic-attributed.synthetic.test`;
     const outcome = await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email }), heardFrom: 'social', referringFirm: '  Synthetic   Billing Partners ' }, cookies: COOKIE });
-    expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect(outcome).toEqual({ status: 'ok', data: { redirect: SENT } });
     const { rows } = await world.owner.query(
       `SELECT p.source, p.utm_source, p.utm_medium, p.utm_campaign, p.paid_click, p.referring_firm, p.followup_consent_sha256, p.screening_terms_sha256, o.stage, o.channel, o.campaign, o.source AS outcome_source
          FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,

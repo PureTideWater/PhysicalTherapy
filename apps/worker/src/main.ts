@@ -9,18 +9,23 @@ import {
   type NotificationConfig,
   type PlatformConfig,
   type PlatformWorkerConfig,
+  type ScreeningConfig,
+  type ScreeningWorkerConfig,
   type WorkerConfig,
   WorkerConfigError,
   readIntakeConfig,
   readNotificationConfig,
   readPlatformConfig,
   readPlatformWorkerConfig,
+  readScreeningConfig,
+  readScreeningWorkerConfig,
   readWorkerConfig,
   readWorkerJobs,
 } from './config';
 import { digestHandler } from './digest/job';
 import { type JobHandlers, placeholderHandlers } from './jobs/handlers';
 import { databaseJobRuns } from './jobs/runs';
+import { SCREENING_BOSS_OPTIONS, type ScreeningJobs } from './jobs/screening';
 import { intakeHandler } from './intake/intake';
 import { intakeServices } from './intake/wiring';
 import { monitorHandler } from './monitor/job';
@@ -33,15 +38,27 @@ import { roiStatementHandler } from './reconcile/print';
 import { auditReportHandler } from './report/generate';
 import { ChromiumPdfRenderer } from './report/pdf';
 import { reportDocumentHandler } from './report/print-document';
+import { startScreeningConsumer } from './screening/consumer';
 import { installShutdownHandlers } from './shutdown';
 import { triageHandler } from './triage/job';
 import { startWorker } from './worker';
 
-const logger = createLogger({ base: { worker_id: randomUUID() } });
+const workerId = randomUUID();
+const logger = createLogger({ base: { worker_id: workerId } });
+
+/**
+ * The screening consumer's graceful stop (docs/adr/0062): pg-boss waits up to 110 seconds for the runs in hand (a
+ * worst-shape run took at most 41 s three at once), under ECS's 120-second stop timeout for its service; the process
+ * exits regardless at 115.
+ */
+const SCREENING_SHUTDOWN_MS = 110_000;
+const SCREENING_FORCE_EXIT_MS = 115_000;
 
 let config: WorkerConfig | undefined;
 let platformWorker: PlatformWorkerConfig | undefined;
+let screeningWorker: ScreeningWorkerConfig | undefined;
 let platform: PlatformConfig | null = null;
+let screening: ScreeningConfig | null = null;
 let intake: IntakeConfig | undefined;
 let notifications: NotificationConfig | undefined;
 try {
@@ -50,9 +67,14 @@ try {
     // The platform jobs alone (docs/adr/0049): the operator and queue logins, no application login.
     platformWorker = readPlatformWorkerConfig();
     platform = readPlatformConfig();
+  } else if (jobs === 'screening') {
+    // The screening consumer alone (docs/adr/0062): the screening and queue logins, nothing else.
+    screeningWorker = readScreeningWorkerConfig();
   } else {
     const worker = readWorkerConfig();
     platform = jobs === 'practice' ? null : readPlatformConfig();
+    // Development and the tests: the screening's pricing too, where its login is set.
+    screening = jobs === 'practice' ? null : readScreeningConfig();
     intake = readIntakeConfig();
     notifications = readNotificationConfig();
     config = worker;
@@ -81,9 +103,30 @@ if (platformWorker !== undefined && platform !== null) {
   }
 }
 
-if (config !== undefined && intake !== undefined && notifications !== undefined) {
+if (screeningWorker !== undefined) {
+  let consumer: ScreeningJobs | undefined;
   try {
-    const boss = new PgBoss({ connectionString: config.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
+    // LISTEN/NOTIFY: a send to a screening queue wakes a free thread's worker at once, not at its next poll.
+    const boss = new PgBoss({ connectionString: screeningWorker.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...SCREENING_BOSS_OPTIONS });
+    boss.on('error', () => {
+      logger.error('queue error', { error_code: 'QUEUE_ERROR' });
+    });
+    consumer = await startScreeningConsumer(screeningWorker.screening, boss, logger, { workerId });
+    const worker = await startWorker({ boss, logger, heartbeatMs: screeningWorker.heartbeatMs, screening: consumer, shutdownTimeoutMs: SCREENING_SHUTDOWN_MS });
+    installShutdownHandlers(worker, logger, process, SCREENING_FORCE_EXIT_MS);
+  } catch {
+    logger.error('worker failed to start', { error_code: 'WORKER_START_FAILED' });
+    process.exitCode = 1;
+    // Its threads would keep the process alive.
+    await consumer?.close();
+  }
+}
+
+if (config !== undefined && intake !== undefined && notifications !== undefined) {
+  let consumer: ScreeningJobs | undefined;
+  try {
+    // Where this worker prices screenings too (development, the tests), it listens as the consumer does.
+    const boss = new PgBoss({ connectionString: config.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS, ...(screening === null ? {} : SCREENING_BOSS_OPTIONS) });
     boss.on('error', () => {
       // pg-boss errors are logged by code only; their text can carry SQL and connection details.
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });
@@ -116,6 +159,7 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
       roi_statement: roiStatementHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
       report_document: reportDocumentHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
     };
+    consumer = screening === null ? undefined : await startScreeningConsumer(screening, boss, logger, { workerId });
     const worker = await startWorker({
       boss,
       logger,
@@ -124,10 +168,12 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
       runs: databaseJobRuns(pool),
       heartbeatMs: config.heartbeatMs,
       ...(runtime === undefined ? {} : { platform: runtime.handlers }),
+      ...(consumer === undefined ? {} : { screening: consumer }),
     });
     installShutdownHandlers(worker, logger);
   } catch {
     logger.error('worker failed to start', { error_code: 'WORKER_START_FAILED' });
     process.exitCode = 1;
+    await consumer?.close();
   }
 }

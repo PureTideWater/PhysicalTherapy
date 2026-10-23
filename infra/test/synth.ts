@@ -5,6 +5,7 @@ import type { IConstruct } from 'constructs';
 import { buildApp } from '../lib/app';
 import { ENVIRONMENTS, type EnvironmentName, stackName } from '../lib/environments';
 import type { PlatformStack } from '../lib/platform-stack';
+import type { LaunchReaders } from '../lib/screening-launch';
 
 /** One CloudFormation resource, as the synthesized template holds it. */
 export interface CfnResource {
@@ -36,9 +37,9 @@ export interface Synthesized {
  */
 export const SYNTH_TIMEOUT_MS = 60_000;
 
-/** Builds the app with the given context and synthesizes every stack. */
-export function synthesizeAll(context: Record<string, unknown> = {}): Record<EnvironmentName, Synthesized> {
-  const app = buildApp(new App({ context }));
+/** Builds the app with the given context (and, for the launch value, the given readers) and synthesizes every stack. */
+export function synthesizeAll(context: Record<string, unknown> = {}, readers?: LaunchReaders): Record<EnvironmentName, Synthesized> {
+  const app = buildApp(new App({ context }), readers);
   const result: Partial<Record<EnvironmentName, Synthesized>> = {};
   for (const environment of ENVIRONMENTS) {
     const stack = app.node.findChild(stackName(environment)) as PlatformStack;

@@ -2,7 +2,9 @@
 
 - **Status:** accepted; amends [0012](0012-aws-foundation-from-shared-cdk-constructs.md) (network, identity, monitoring),
   [0004](0004-job-singleton-keys.md) and [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
-  (pg-boss's login, the deploy job's logins, where the platform jobs run)
+  (pg-boss's login, the deploy job's logins, where the platform jobs run); amended by PR 6b-3 (below: the screening
+  consumer's service, role, login, egress, alarms and launch value, the release's images, and the web's size by the
+  founder's ruling of 2026-10-22)
 - **Date:** 2026-10-16
 - **Deciders:** founder (engineering)
 - **PRD sections:** 15 (Stack: compute, web, files, identity, email, observability, infrastructure as code; Environments;
@@ -175,9 +177,10 @@ certificates (the static one in us-east-1), a verified SES identity for the send
   the RDS bundle download in the image build (the images have not been built here: no Docker).
 - Costs over milestone 1: NAT gateways (an hourly charge each plus per-gigabyte processing; two in production), the load
   balancer, the web ACL and its rules, two canaries every five minutes and one hourly, CloudFront, and Fargate at the sizes
-  in `environments.ts` (a quarter vCPU for web and platform, half for the worker), roughly in line with PRD 19's Fargate
-  line. At list prices the interface endpoints of ADR 0012 alone come close to PRD 19's line for the load balancer,
-  endpoints, WAF, GuardDuty and logs; revisit them with the first bill.
+  in `environments.ts` (a quarter vCPU for web and platform, half for the worker; the web half a vCPU and 1 GiB since
+  the founder's ruling of 2026-10-22, the amendment below), roughly in line with PRD 19's Fargate line. At list prices
+  the interface endpoints of ADR 0012 alone come close to PRD 19's line for the load balancer, endpoints, WAF,
+  GuardDuty and logs; revisit them with the first bill.
 - Part B and later work inherit: building the web image with Next's `assetPrefix` set to `StaticAssetsOrigin` (until then
   static files load from the application host and CloudFront is unused) and allowing that origin in the security headers;
   Bedrock (`bedrock:InvokeModel`) and, once a reader is wired, Textract permissions on the application role, which the
@@ -189,3 +192,132 @@ certificates (the static one in us-east-1), a verified SES identity for the send
 
 The first staging deploy, the first bill, a confirmed Cognito endpoint for sign-in and JWKS, CI building arm64 images, or
 a decision to restrict egress by host.
+
+## Amendment (PR 6b-3, 2026-10-21): the screening's own consumer, and the release's images
+
+Audit #53 parts 3 and 4 and decisions 13 to 16 (the founder's rulings of 2026-10-20), built under the founder's answers
+of 2026-10-21 (about 22:30 UTC) to PR 6b's questions, every recommended answer accepted: Q1, the consumer's size and cost
+and production's consumer held until launch; Q7, the account's share and the day's cap; Q8, the capacity test as a
+required check; Q12, the "sent" page's wording. docs/adr/0062 holds the screening's side; 0014 and 0019 the job split and
+the role.
+
+**A fourth service.** The compute table gains a row:
+
+| Task | Runs | Task role | Logins (from Secrets Manager) |
+| --- | --- | --- | --- |
+| screening | the free screening's pricing (`WORKER_JOBS=screening`), three screenings at once, one worker thread each | ScreeningRole | screening, queue |
+
+- **Size and count** (`environments.ts`, `compute.screening`): 2 vCPU and 4,096 MiB (Fargate's least memory at 2 vCPU),
+  `concurrency` 3, `desiredCount` 1, x86_64 until arm64 images exist (audit #136). Every environment has the same size,
+  so staging measures production's task. One task per service still holds: the screening service runs one, at a fixed
+  count, with no Application Auto Scaling target (asserted in `infra/test/compute.test.ts`). Three at once replaces audit
+  #53's "two at a time": two measured 55.8 s against the 48-second line.
+- **When it runs** (`starts`): staging and development run it once released (`countOnceReleased`); production runs no
+  task until the `ScreeningConsumer` parameter is `running` or the deploy carries a launch value (condition
+  `ScreeningConsumerRunning`: released, and either running or a launch value other than `closed`, which the app
+  computes at synthesis; Q1 (b)), so no deploy can
+  open the screening with no consumer to price it (the review of 2026-10-22: a launch value with `ScreeningConsumer`
+  left at `held`, or reset to it by a rollback across PR 6b-3, would have opened the form with nothing pricing and no
+  alarm). Its heartbeat alarm counts a missing beat as missed only under that condition, so it is OK while the consumer
+  is rightly held and alarms if it does not beat whenever the screening can open.
+- **Heap** (#31's explicit limit; the plan's G3): the container runs `node --enable-source-maps
+  --max-old-space-size=896 dist/main.js` (`COMMANDS.screening`), and the main thread and each pricing thread hold at
+  most 896 MiB of old generation (`apps/worker/src/screening/threads.ts`): Node gives a worker thread its process's
+  `--max-old-space-size` whatever its `resourceLimits` ask (measured on Node 24: a thread asking 1,024 MiB under a flag
+  of 512 got 512), so one limit serves every isolate, and the design's 512 for the main thread with 1,024 for each
+  thread could not hold. 4 x 896 = 3,584 MiB stays under 90% of 4,096 (`infra/test/screening.test.ts` reads the
+  worker's own constants), so a thread out of memory fails alone.
+- **Settings**: the common ones, `WORKER_JOBS=screening`, `WORKER_HEARTBEAT_SECONDS=60`, `SCREENING_CONCURRENCY`,
+  `MAIL_FROM`, `APP_ORIGIN` and `STATIC_ASSET_ORIGIN`; `SCREENING_DATABASE_URL` (its own login) and `QUEUE_DATABASE_URL`
+  (pg-boss's, role `tp_queue`). Stop timeout 120 seconds, Fargate's most: the consumer drains up to 110 and exits at 115.
+- **ScreeningRole** (`constructs/screening-role.ts`; the plan's G4): `ses:SendEmail` on MailFromAddress's identity (its
+  domain, or the address where that is verified too) with the condition `ses:FromAddress` equal to MailFromAddress, and
+  nothing else; the login reaches the container through the execution role. PR 6b-4 narrows it to the screening's own
+  identity and configuration set.
+- **Its login** (`constructs/database.ts`): `tp_screening_login`, a seventh secret under the environment key, rotated
+  every 30 days with alternating users like the other service logins. The migration task reads its current username
+  and password (`TP_SCREENING_LOGIN_USERNAME`, `_PASSWORD`) and creates it when missing; it may `SET ROLE tp_screening`
+  and inherits nothing (ADR 0019's amendment).
+- **Egress, a deliberate exception to the app tier's "HTTPS anywhere"** (`constructs/network.ts`): the screening's
+  security group admits nothing and sends HTTPS only to the interface endpoints' security group (Secrets Manager,
+  CloudWatch Logs, ECR, SES) and to S3 by the region's S3 prefix list (the image layers, through the gateway), and
+  PostgreSQL only to the database. No rule names an address range, so the NAT gateways, and the internet behind them,
+  are out of its reach: the service that prices what strangers upload reaches no host but AWS's. The S3 prefix list's
+  ID differs by region and has no CloudFormation attribute, so a deploy-time lookup reads it by its fixed name
+  (`com.amazonaws.<region>.s3`; an `AwsCustomResource` making the one read-only call `ec2:DescribeManagedPrefixLists`,
+  logging to `/tp/<env>/network-lookup` under the environment key).
+- **Logs, metrics and alarms** (`constructs/monitoring.ts`, contract `infra/lib/screening.ts`; namespace
+  `TherapyPlatform/Screening`, no dimension on any metric): the log group `/tp/<env>/screening`; `Heartbeat` (two missed
+  beats, and on recovery); its final job failures toward the job-failure alarm; `TimeToEmailMs` from `screening result
+  emailed`, from the web's receipt of the upload until the send returned (Maximum above 60,000 in five minutes, the
+  promise; the waiting tier logs `screening result emailed after waiting` and stays out of it); `OldestQueuedMs` from the
+  sweep's `screening queue` gauge of the normal tier (Maximum above 120,000 two minutes in a row); `RunFailed` (any
+  error line, or a run out of attempts); and, from the web's group, `UploadsSentToWait` (an upload over its account's
+  share or the day's cap, any in an hour).
+- **The web** gains `IMAGE_TAG` (the `ImageTag` parameter), `SCREENING_LAUNCH` and `SCREENING_SLOTS` (tasks x threads, 3):
+  the slots decide the "sent" page's "a few minutes".
+
+**One parameter and a computed launch value** (`deploy-parameters.ts`, `screening-launch.ts`). `ScreeningConsumer`,
+`held` (the default) or `running`, counts only where the consumer starts at launch. The screening's launch value,
+`closed` or `<tag>:<SHA-256>` (pattern `^(closed|v[0-9A-Za-z.-]{1,60}:[0-9a-f]{64})$`: the tag and the SHA-256 of its
+passing capacity report), is not a parameter (the founder's ruling of 2026-10-22): the CDK app computes it at synthesis
+from `-c tp:launchReport=<file> -c tp:launchAttestation=<bundle> -c tp:launchTag=<tag>` by running `launchCheck()` on
+the report's attestation as `gh attestation verify` checks it against the bundle the release kept (only the report
+`release.yml` measured on the tag and attested in that run opens production: ADR 0062, the verification of PR 6b-3's
+capacity changes) and on the images the stack deploys,
+`<WebRepositoryUri>:<tag>` and `<WorkerRepositoryUri>:<tag>` in the deploy's account and region (`CDK_DEFAULT_ACCOUNT`,
+`CDK_DEFAULT_REGION`), each compared by the config digest its manifest in ECR names (nothing is pulled, so the
+deployer's image store does not matter), and writes it into the web's `SCREENING_LAUNCH` and the
+`ScreeningLaunch` output. The rule `ScreeningLaunchImageTag` (the template's Rules) refuses a deploy whose `ImageTag` is
+not the tag it names. A report the check refuses stops the synthesis, naming decision 13 and each reason; no report
+gives `closed`; context that would set the value by hand (`-c ScreeningLaunch`, `-c tp:screeningLaunch`) stops the
+synthesis, and with no such parameter declared CloudFormation refuses `--parameters ScreeningLaunch=…`. A production web
+opens the screening only when the value names the `IMAGE_TAG` it runs (decision 13). A launch value starts the consumer
+(the condition `ScreeningConsumerRunning`, settled at synthesis: released, and `ScreeningConsumer=running` or a launch
+value), and a deploy without one stops it only while `ScreeningConsumer` is still `held` (from launch on, every deploy
+passes `running`). *As first built*, `ScreeningLaunch` was a parameter the deployer passed from the check's printed
+value: the stack checked its form and the web its tag, but neither could tell a printed value from one typed by hand.
+
+**The release's images** (`.github/workflows/release.yml`; decision 13 bound to both images). The release builds the
+worker image and the web image three times (`web` with no static host, `web-staging` and `web-production` with each
+environment's, from the repository variables `STAGING_STATIC_ASSET_ORIGIN` and `PRODUCTION_STATIC_ASSET_ORIGIN`), scans
+each and writes its SBOM, measures the screening with time enforced and binding on exactly `web-production` and `worker`
+as built, on the capacity workflow's runner (GitHub's free 4-CPU runner; every other capacity run is advisory, the
+founder's third ruling of 2026-10-23, and only the release's binding report can open production), and pushes exactly the images it scanned (loaded from the build's saved copies, each
+ID checked), never a rebuild. Before this, the release pushed a second build of what it scanned, and the deploy built the
+web image locally, unscanned. The report, its SHA-256 and its summary are the tag's release assets, from the one job that
+may write contents. A failed measurement does not hold a security fix back; it keeps the screening closed. The deploy
+copies the images into the environment's repositories unchanged and names the report to the CDK app, which runs the
+launch check at synthesis (docs/runbooks/deploy-and-rollback.md, steps 3 and 4).
+
+**The web's size (the founder's ruling of 2026-10-22 on the sizing question, O9).** The web task is half a vCPU and
+1,024 MiB in every environment (`compute.web`: `cpu: 512, memoryMiB: 1024`), from a quarter vCPU and 512 MiB: the
+review round of 2026-10-22 found the web's quarter vCPU the largest share of the worst capacity time (three 11-MB uploads
+at once reached the queue after 14.6 to 16.0 s on it, 6.9 s on half a vCPU), and CI's run on 7abb99c measured a worst
+of 46.0 s against the 44-s question. The consumer stays one task of 2 vCPU and 4 GiB with three threads; only if CI's
+worst time is still above 44 s with the larger web do a 4 vCPU and 8 GiB consumer and GitHub's 8-core runner go back to
+the founder, and the 48-s line and the 44-s question do not change. *Since the founder's rulings of 2026-10-23*
+(docs/adr/0062, Owner rulings (2026-10-23)) the measurement runs on GitHub's free 4-CPU runner, its CPUs shared, S4's
+time judged on the middle of three runs, advisory on pull requests and binding on a release's run; the 8-core runner,
+which the second ruling chose, needs an organization and stays the faithful option once one owns the repository. The
+capacity harness measures the web at this size, read from the same declaration, and the launch check refuses a report measured at another. The web's command sets no
+heap flag: Node 24 sizes V8's heap from the container's memory limit (a 560 MiB heap limit at 1 GiB, 259 MiB at 512
+MiB, measured), so the heap follows the task.
+
+**Cost** (PRD 19, the founder's Q1 of 2026-10-21; prices read from search results, to be read again on AWS's own pages
+before the first deploy, open item O12): the consumer about $74.50 a month per environment once it runs (about $60.10 on
+ARM after #136); staging always on; production about $0.40 a month (its secret) until launch. The capacity workflow and
+the release's measurement run on GitHub's free 4-CPU runner, at no cost while the repository is public (the founder's
+third ruling of 2026-10-23, "Free: time advisory", which replaced the second ruling's 8-core larger runner, about $44 a
+month, because larger runners need an organization). Once the repository is private its standard runner has 2 CPUs,
+too small for the harness, and the capacity test needs a 4-core larger runner, about $22 a month, which itself needs an
+organization on GitHub Team (the price to be read again on GitHub's pricing page before it is relied on, O12). The web
+at half
+a vCPU and 1 GiB (the founder's ruling of 2026-10-22): about $18.02 a task a month instead of $9.01 (us-east-1
+on-demand, x86, 730 hours: $0.04048 a vCPU-hour and $0.004445 a GB-hour), so about $36.04 a month in production's two
+tasks instead of $18.02 (+$18.02), and about $18.02 in staging's one instead of $9.01 (+$9.01); dev's stack, when
+deployed, likewise +$9.01. Every price is to be read again on AWS's pages before it is relied on (O12).
+
+**Revisit when** staging measures the runner-to-Fargate factor (decision 15), arm64 images exist (#136), the screening's
+own sending identity arrives (PR 6b-4), or a zone's loss costing about 3 minutes of screening is no longer acceptable
+(a second task, about $72 a month more).

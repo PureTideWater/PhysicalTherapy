@@ -26,7 +26,7 @@ import { billingProvider, memoryBillingProvider } from '../billing/provider';
 import type { BillingPool } from '@tp/worker/billing';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
-import { type WebConfig, readWebConfig } from './config';
+import { DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
 
 /**
  * What every route handler and server action runs with: the application role's pool, the identity
@@ -86,6 +86,10 @@ export interface Services {
   readonly compliancePlatform: CompliancePlatform | null;
   /** The deployment this server runs in: dev, staging or production. */
   readonly environment: 'dev' | 'staging' | 'production';
+  /** The deploy's word on the screening (decision 13): a production server opens it only for its own tag's launch value. */
+  readonly screeningLaunch: ScreeningLaunch;
+  /** Screenings the consumer prices at once (WebConfig.screeningSlots). */
+  readonly screeningSlots: number;
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -146,6 +150,8 @@ export interface ServiceParts {
   readonly agreementDocuments?: AgreementDocuments;
   readonly compliancePlatform?: CompliancePlatform | null;
   readonly environment?: 'dev' | 'staging' | 'production';
+  readonly screeningLaunch?: ScreeningLaunch;
+  readonly screeningSlots?: number;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -187,6 +193,8 @@ export function createServices(parts: ServiceParts): Services {
     agreementDocuments: parts.agreementDocuments ?? new LocalAgreementDocuments(path.join(tmpdir(), `tp-agreements-${randomUUID()}`)),
     compliancePlatform: parts.compliancePlatform === undefined ? new FileCompliancePlatform(path.join(tmpdir(), `tp-compliance-export-${randomUUID()}`)) : parts.compliancePlatform,
     environment: parts.environment ?? 'dev',
+    screeningLaunch: parts.screeningLaunch ?? { imageTag: null, value: null },
+    screeningSlots: parts.screeningSlots ?? DEFAULT_SCREENING_SLOTS,
   };
 }
 
@@ -221,6 +229,8 @@ export function servicesFromConfig(config: WebConfig): Services {
       documents.kind === 's3' ? new S3AgreementDocuments({ client: new S3Client({}), bucket: documents.bucket, kmsKeyId: documents.kmsKeyId }) : new LocalAgreementDocuments(config.agreementsDir),
     compliancePlatform: config.complianceExportDir === null ? null : new FileCompliancePlatform(config.complianceExportDir),
     environment: config.environment,
+    screeningLaunch: config.screeningLaunch,
+    screeningSlots: config.screeningSlots,
   });
 }
 

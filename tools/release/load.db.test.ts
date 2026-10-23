@@ -128,6 +128,28 @@ describe('loading the synthetic release', () => {
     });
   });
 
+  it('leaves the release analyzed and frozen once loaded, so the first screening after a load reads it by its indexes', async () => {
+    // CI's capacity run on 9eb4474 read a release just loaded, before any ANALYZE: with no statistics each keyed read
+    // hash-joined all 2.2 million records of the release, setting every page's hint bits as it went, and S1-1 recorded
+    // no batch for five minutes. The loader now analyzes rule_record and freezes the records it wrote, which never change.
+    await withLoadedRelease(async (url) => {
+      const admin = await connect(url);
+      try {
+        const stats = await admin.query<{ n: number }>("SELECT count(*)::integer AS n FROM pg_stats WHERE schemaname = 'public' AND tablename = 'rule_record'");
+        expect(stats.rows[0]?.n).toBeGreaterThan(0);
+        const table = await admin.query<{ reltuples: number; relpages: number; relallvisible: number; relallfrozen: number }>(
+          "SELECT reltuples, relpages, relallvisible, relallfrozen FROM pg_class WHERE oid = 'rule_record'::regclass",
+        );
+        expect(table.rows[0]?.reltuples).toBe(fixtureRecords.length);
+        // Every page all-visible and all-frozen: no reader sets a hint bit, and no anti-wraparound vacuum rewrites them.
+        expect(table.rows[0]?.relallvisible).toBe(table.rows[0]?.relpages);
+        expect(table.rows[0]?.relallfrozen).toBe(table.rows[0]?.relpages);
+      } finally {
+        await admin.end();
+      }
+    });
+  });
+
   it('loads the same release again as a no-op', async () => {
     await withLoadedRelease(async (url) => {
       const owner = await connect(url, OWNER_ROLE);

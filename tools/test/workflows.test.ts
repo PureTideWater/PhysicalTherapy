@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import { repositoryRoot } from '../content-files';
+import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
 
 /**
  * The CI gates outside ci.yml (docs/adr/0010-supply-chain-gates-beside-ci.md): no Docker daemon or
@@ -36,6 +37,26 @@ interface Workflow {
 function workflow(name: string): Workflow {
   return parse(readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8')) as Workflow;
 }
+
+/**
+ * The actions the release and capacity workflows run, each pinned to a full commit SHA with its version in a comment
+ * (the review of 2026-10-22): a moved tag cannot run code in the push job, which holds packages: write, nor write the
+ * capacity report the launch check reads. trivy-action was pinned this way already.
+ */
+const PINNED = {
+  // v4.2.2, read with git ls-remote (the verification of PR 6b-3's capacity changes): the report's provenance.
+  attestBuildProvenance: 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8',
+  checkout: 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
+  cacheRestore: 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830',
+  cacheSave: 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830',
+  downloadArtifact: 'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093',
+  uploadArtifact: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
+  setupNode: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020',
+  buildPush: 'docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8',
+  login: 'docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9',
+  setupBuildx: 'docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f',
+  pnpm: 'pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1',
+} as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isList = (value: unknown): value is readonly unknown[] => Array.isArray(value);
@@ -137,6 +158,19 @@ describe('workflows', () => {
     expect(problems).toEqual([]);
   });
 
+  it('run every job on GitHub’s free ubuntu-24.04 runner, both capacity jobs included, and name no larger runner’s label (the founder’s third ruling of 2026-10-23, “Free: time advisory”)', () => {
+    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
+    const runners = Object.fromEntries(files.flatMap((file) => Object.entries(workflow(file).jobs).map(([name, job]) => [`${file} ${name}`, job['runs-on']])));
+    expect(runners['release.yml capacity']).toBe('ubuntu-24.04');
+    expect(runners['screening-capacity.yml capacity']).toBe('ubuntu-24.04');
+    expect(Object.entries(runners).filter(([, runner]) => runner !== 'ubuntu-24.04')).toEqual([]);
+    // GitHub's larger runners exist only for an organization on GitHub Team or Enterprise Cloud, and PureTideWater is a
+    // personal account: actionlint's configuration, which named the 8-core runner's label, is gone with it.
+    for (const config of ['.github/actionlint.yaml', '.github/actionlint.yml']) {
+      expect(existsSync(path.join(repositoryRoot, config)), config).toBe(false);
+    }
+  });
+
   it('refuse a -latest or unversioned hosted runner as a label, in a list, in a group, as a matrix value or an include entry’s, and any runner they cannot resolve', () => {
     const problems = (job: string) => jobRunnerProblems(parse(job) as Job, ['build.yml']);
     expect(problems('runs-on: ubuntu-latest')).toEqual(['"ubuntu-latest" is a -latest label, whose image GitHub moves']);
@@ -230,16 +264,130 @@ describe('workflows', () => {
     expect(steps.some((step) => step.run === 'pnpm licenses:check')).toBe(true);
   });
 
-  it('scan each release image and write its SBOM before pushing it', () => {
-    const steps = workflow('release.yml').jobs.images?.steps ?? [];
-    const scan = stepIndex(steps, isScan);
-    const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
-    const upload = stepIndex(steps, (step) => step.uses?.startsWith('actions/upload-artifact@') === true);
-    const push = stepIndex(steps, (step) => step.with?.push === true);
-    expect(scan).toBeLessThan(push);
-    expect(sbom).toBeLessThan(push);
-    expect(upload).toBeLessThan(push);
-    expect(steps.filter((step) => step.with?.push === true)).toHaveLength(1);
+  describe('release (decision 13; docs/adr/0062): build each image once, scan it, measure the screening on exactly the production web image and the worker image, and push exactly what was built', () => {
+    const file = readFileSync(path.join(repositoryRoot, '.github/workflows/release.yml'), 'utf8');
+    type ReleaseJob = Job & { needs?: unknown; if?: string; permissions?: unknown; 'timeout-minutes'?: number };
+    const release = parse(file) as Workflow & { permissions: unknown; jobs: Record<string, ReleaseJob> };
+    const job = (name: string) => release.jobs[name] as ReleaseJob;
+    const runs = (name: string) => job(name).steps.map((step) => step.run ?? '').join('\n');
+
+    it('runs on a release tag with a read-only token, four jobs, each with a timeout', () => {
+      expect(release.on).toEqual({ push: { tags: ['v*'] } });
+      expect(release.permissions).toEqual({ contents: 'read' });
+      expect(Object.keys(release.jobs).sort()).toEqual(['build', 'capacity', 'push', 'report']);
+      // The capacity job's 100 minutes hold S4's three runs (the founder's ruling of 2026-10-23), as the workflow's own.
+      expect(Object.fromEntries(Object.entries(release.jobs).map(([name, entry]) => [name, entry['timeout-minutes']]))).toEqual({ build: 60, capacity: 100, push: 30, report: 10 });
+    });
+
+    it('builds the worker image and three web images, each with its own static host, and scans each and writes its SBOM before anything leaves the job', () => {
+      const build = job('build');
+      expect(build.strategy?.matrix?.image).toEqual(['web', 'web-staging', 'web-production', 'worker']);
+      expect(build.permissions).toBeUndefined();
+      const steps = build.steps;
+      const built = stepIndex(steps, (step) => step.uses === PINNED.buildPush);
+      expect(steps.filter((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toHaveLength(1);
+      expect(steps[built]?.with).toMatchObject({ push: false, load: true, file: '${{ steps.image.outputs.dockerfile }}', tags: '${{ steps.image.outputs.ref }}' });
+      expect(String(steps[built]?.with?.['build-args']).trim()).toBe('STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}');
+      // Each environment's CloudFront origin from its repository variable; the plain web image has none.
+      const naming = steps.find((step) => (step as Step & { id?: string }).id === 'image') as Step & { env?: Record<string, string> };
+      expect(naming.env).toMatchObject({ STAGING_ORIGIN: '${{ vars.STAGING_STATIC_ASSET_ORIGIN }}', PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
+      expect(naming.run).toContain('web-production) echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"; origin="$PRODUCTION_ORIGIN" ;;');
+      expect(naming.run).toContain('worker) echo "dockerfile=apps/worker/Dockerfile" >> "$GITHUB_OUTPUT"; origin="" ;;');
+      const scan = stepIndex(steps, isScan);
+      const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
+      const saved = stepIndex(steps, (step) => step.run?.includes('docker save') === true);
+      const kept = steps.findLastIndex((step) => step.uses === PINNED.uploadArtifact);
+      expect(steps[scan]?.with).toMatchObject({ 'image-ref': '${{ steps.image.outputs.ref }}', severity: 'HIGH,CRITICAL', 'exit-code': '1' });
+      expect([built < scan, scan < sbom, sbom < saved, saved < kept]).toEqual([true, true, true, true]);
+      // The image ID beside the image, so the jobs that load it can prove it is the one scanned.
+      expect(steps[saved]?.run).toContain(`docker image inspect -f '{{.Id}}' "$REF" > "$RUNNER_TEMP/image/$IMAGE.id"`);
+      expect(String(steps[kept]?.with?.path).trim().split('\n')).toEqual(['${{ runner.temp }}/image/${{ matrix.image }}.tar.gz', '${{ runner.temp }}/image/${{ matrix.image }}.id']);
+      expect(file).not.toMatch(/push: true/);
+    });
+
+    it('measures exactly the production web image and the worker image as built, with time binding (decision 13; the founder’s ruling of 2026-10-23, time advisory), on the capacity workflow\'s runner', () => {
+      const capacity = job('capacity');
+      expect(capacity.needs).toBe('build');
+      expect(capacity.permissions).toBeUndefined();
+      const workflowRunner = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
+      expect(capacity['runs-on']).toEqual(workflowRunner);
+      expect(capacity['runs-on']).toBe('ubuntu-24.04');
+      // The launch check accepts only the layout this runner gives (launch-check.ts, RELEASE_RUNNER): moving the release
+      // to another runner fails here until the check moves with it.
+      expect(capacity['runs-on']).toBe(RELEASE_RUNNER.label);
+      const steps = capacity.steps;
+      expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
+      expect(steps.filter((step) => step.uses === PINNED.downloadArtifact).map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
+      expect(steps.some((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toBe(false);
+      expect(runs('capacity')).not.toMatch(/docker (?:buildx )?build/);
+      const measure = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
+      const loaded = stepIndex(steps, (step) => step.run?.includes('docker load') === true);
+      expect(loaded).toBeLessThan(measure);
+      expect(steps[measure]?.run).toContain('--web-image "$repository/web-production:$GITHUB_REF_NAME" --worker-image "$repository/worker:$GITHUB_REF_NAME"');
+      expect(steps[measure]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity "$@"');
+      // The release's run is binding: time fails it, and only its pass opens production (decision 13). Never advisory.
+      expect(steps[measure]?.run).toContain('--time-mode binding');
+      expect(steps[measure]?.run).not.toContain('advisory');
+      // Production's static host, the one the web-production image was built with, routed to the web container.
+      expect((steps[measure] as Step & { env?: Record<string, string> }).env).toEqual({ PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
+      expect(steps[measure]?.run).toContain('set -- "$@" --static-asset-origin "$PRODUCTION_ORIGIN"');
+      const kept = steps[measure + 1] as Step & { if?: string };
+      expect(kept.uses).toBe(PINNED.uploadArtifact);
+      expect(kept.if).toBe('always()');
+      expect(String(kept.with?.path)).toContain('screening-capacity.sha256');
+    });
+
+    it('pushes exactly the images that were scanned, checking each ID, with packages: write in that job alone and no build', () => {
+      const push = job('push');
+      // A failed measurement does not hold a security fix back: the push needs the build alone.
+      expect(push.needs).toBe('build');
+      expect(push.permissions).toEqual({ contents: 'read', packages: 'write' });
+      expect(push.steps.some((step) => step.uses?.startsWith('docker/build-push-action@') === true || step.uses?.startsWith('actions/checkout') === true)).toBe(false);
+      const script = runs('push');
+      expect(script).not.toMatch(/docker (?:buildx )?build/);
+      expect(script).toContain('for image in web web-staging web-production worker; do');
+      expect(script).toContain('docker load --input "$RUNNER_TEMP/image/$image.tar.gz"');
+      expect(script).toContain('if [ "$id" != "$(cat "$RUNNER_TEMP/image/$image.id")" ]; then');
+      expect(script.indexOf('exit 1')).toBeLessThan(script.indexOf('docker push'));
+      expect([...script.matchAll(/docker push "([^"]+)"/g)].map((match) => match[1])).toEqual(['$ref', '$repository/$image:sha-$GITHUB_SHA']);
+      for (const [name, entry] of Object.entries(release.jobs)) {
+        expect(JSON.stringify(entry.permissions ?? {}).includes('packages'), name).toBe(name === 'push');
+      }
+    });
+
+    it('attests the report with GitHub\'s artifact attestation and keeps it, its SHA-256, its summary and the attestation\'s bundle as the tag\'s release assets, from a job that alone may write contents, mint an OIDC token or write attestations, and runs nothing but the attestation and gh (the verification of PR 6b-3\'s capacity changes)', () => {
+      const report = job('report');
+      expect(report.needs).toBe('capacity');
+      expect(report.if).toBe("${{ !cancelled() && needs.capacity.result != 'skipped' }}");
+      expect(report.permissions).toEqual({ contents: 'write', 'id-token': 'write', attestations: 'write' });
+      for (const [name, entry] of Object.entries(release.jobs)) {
+        const granted = JSON.stringify(entry.permissions ?? {});
+        expect(granted.includes('"contents":"write"'), name).toBe(name === 'report');
+        expect(granted.includes('id-token'), name).toBe(name === 'report');
+        expect(granted.includes('attestations'), name).toBe(name === 'report');
+      }
+      expect(JSON.stringify(release.permissions)).not.toMatch(/id-token|attestations/);
+      expect(report.steps.map((step) => step.uses ?? 'run')).toEqual([PINNED.downloadArtifact, PINNED.attestBuildProvenance, 'run']);
+      // The attestation's subject is the report's bytes as the harness wrote them, the file the release keeps.
+      const attest = report.steps[1] as Step & { id?: string };
+      expect(attest.id).toBe('attest');
+      expect(attest.with).toEqual({ 'subject-path': '${{ runner.temp }}/screening-capacity/screening-capacity.json' });
+      expect(file).toContain(`uses: ${PINNED.attestBuildProvenance} # v4.2.2`);
+      const keep = report.steps[2] as Step & { env?: Record<string, string> };
+      expect(keep.env?.BUNDLE).toBe('${{ steps.attest.outputs.bundle-path }}');
+      const commands = runs('report')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('"$RUNNER_TEMP'));
+      expect(commands.every((line) => line.startsWith('gh release ') || line === 'cp "$BUNDLE" "$RUNNER_TEMP/screening-capacity/screening-capacity.sigstore.json"'), commands.join('\n')).toBe(true);
+      expect(runs('report').indexOf('cp "$BUNDLE"')).toBeLessThan(runs('report').indexOf('gh release upload'));
+      expect(runs('report')).toContain('gh release upload "$TAG" --clobber');
+      for (const asset of ['screening-capacity.json', 'screening-capacity.sha256', 'summary.md', 'screening-capacity.sigstore.json']) {
+        expect(runs('report'), asset).toContain(`"$RUNNER_TEMP/screening-capacity/${asset}"`);
+      }
+      // It never makes a tag: a release is made only for the tag the founder pushed.
+      expect(runs('report')).toContain('--verify-tag');
+    });
   });
 
   it('run the intake test on a 2 GiB zip of 835s weekly against PostgreSQL (the milestone 3 done check)', () => {
@@ -376,75 +524,77 @@ describe('workflows', () => {
     expect(verify).toBeLessThan(publish);
   });
 
-  it('measure the screening under production limits on pushes, pull requests, weekly and on request, failing on what PR 6 controls and opening an issue from a job of its own (audit #53 part 1)', () => {
+  it('measure the screening under production limits with time advisory on pull requests, pushes, weekly and on request, and gate every pull request through one required job that measures only when a watched path changed (audit #53 part 1; the founder’s Q8 of 2026-10-21 and third ruling of 2026-10-23)', () => {
     const file = readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8');
-    const capacity = parse(file) as Workflow & { permissions: unknown; concurrency: Record<string, unknown>; jobs: Record<string, Job & { 'timeout-minutes'?: number; needs?: unknown; if?: string; permissions?: unknown }> };
+    const capacity = parse(file) as Workflow & {
+      permissions: unknown;
+      concurrency: Record<string, unknown>;
+      jobs: Record<string, Job & { name?: string; 'timeout-minutes'?: number; needs?: unknown; if?: string; permissions?: unknown; outputs?: Record<string, string> }>;
+    };
     const on = capacity.on as Record<string, { branches?: string[]; paths?: string[] } | null | { cron: string }[]>;
     expect(Object.keys(on).sort()).toEqual(['pull_request', 'push', 'schedule', 'workflow_dispatch']);
     expect(on.schedule).toEqual([{ cron: '41 6 * * 1' }]);
     expect(on.workflow_dispatch).toBeNull();
     const push = on.push as { branches: string[]; paths: string[] };
     expect(push.branches).toEqual(['claude/build-platform']);
-    // Pushes measure every change that can move the result, migrations and the lockfile included.
-    expect(push.paths).toEqual([
-      'apps/worker/src/screening/**',
-      'apps/worker/src/price/**',
-      'apps/worker/src/jobs/**',
-      'apps/worker/src/worker.ts',
-      'apps/worker/src/mail/**',
-      'apps/web/src/lib/screening/**',
-      'apps/web/src/app/screening/**',
-      'apps/web/src/components/screening/**',
-      'apps/web/src/proxy.ts',
-      'packages/pricing/src/**',
-      'packages/rules/src/**',
-      'packages/contracts/src/**',
-      'packages/money/src/**',
-      'packages/db/migrations/**',
-      'packages/synth/src/release/**',
-      'packages/synth/src/screening/**',
+    // A push to the build branch measures any change to what the images or the harness are built from.
+    const pushPaths = [
+      'apps/web/**',
+      'apps/worker/**',
+      'packages/**',
       'tools/screening-capacity/**',
-      'tools/release/scale.ts',
-      'infra/lib/environments.ts',
-      'infra/lib/constructs/database.ts',
-      'apps/web/Dockerfile',
-      'apps/worker/Dockerfile',
+      'tools/release/**',
+      'tools/content-files.ts',
+      'tools/verify-content/**',
+      'infra/lib/**',
+      'fixtures/synthetic/rules/**',
+      'package.json',
       'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
       '.github/workflows/screening-capacity.yml',
-    ]);
-    // Pull requests only where the screening, pricing, the harness or the images change: no lockfile, no other migration.
-    expect((on.pull_request as { paths: string[] }).paths).toEqual([
-      'apps/worker/src/screening/**',
-      'apps/worker/src/price/**',
-      'apps/web/src/lib/screening/**',
-      'apps/web/src/app/screening/**',
-      'apps/web/src/components/screening/**',
-      'packages/pricing/src/**',
-      'packages/rules/src/**',
-      'packages/synth/src/release/**',
-      'packages/synth/src/screening/**',
-      'packages/db/migrations/*screening*.sql',
-      'tools/screening-capacity/**',
-      'tools/release/scale.ts',
-      'infra/lib/environments.ts',
-      'apps/web/Dockerfile',
-      'apps/worker/Dockerfile',
-      '.github/workflows/screening-capacity.yml',
-    ]);
+    ];
+    expect(push.paths).toEqual(pushPaths);
+    // Every pull request runs it, so the required gate is always reported: no path filter on the trigger.
+    expect(on.pull_request).toBeNull();
     expect(capacity.permissions).toEqual({ contents: 'read' });
     // Pushes group by commit and are never cancelled; only a pull request's older run is.
     expect(capacity.concurrency).toEqual({
       group: "screening-capacity-${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
       'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
     });
-    expect(Object.keys(capacity.jobs).sort()).toEqual(['capacity', 'notify']);
+    expect(Object.keys(capacity.jobs).sort()).toEqual(['capacity', 'changes', 'gate', 'notify']);
+
+    // The changed paths: file names only, from a checkout that keeps no token; a pull request measures when it changes a
+    // path of the derived watched list as the base keeps it or as the pull request does (tools/screening-capacity/
+    // watched.ts; its own test holds the list to the import graph and the push paths to the list).
+    const changes = capacity.jobs.changes;
+    expect(changes?.['runs-on']).toBe('ubuntu-24.04');
+    expect(changes?.permissions).toBeUndefined();
+    expect(changes?.outputs).toEqual({ measure: '${{ steps.watched.outputs.measure }}' });
+    expect(changes?.steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
+    const watched = changes?.steps.find((step) => (step as Step & { id?: string }).id === 'watched');
+    const script = watched?.run ?? '';
+    expect(script).toContain('git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"');
+    expect(script).toContain('list=tools/screening-capacity/watched-paths.txt');
+    // A base with no list measures; the list is read from the base and from the head, so a pull request cannot drop its own path.
+    expect(script).toContain('if ! git cat-file -e "$BASE:$list" 2>/dev/null; then');
+    expect(script).toContain('{ git show "$BASE:$list"; git show "$HEAD:$list" 2>/dev/null || true; }');
+    expect(script).toContain('if [ "$file" = "$pattern" ]; then');
+    expect(script).toMatch(/case "\$file" in\s+\$pattern\)/);
+    expect(script).toContain('if [ "$EVENT" != "pull_request" ]; then');
+
+    // The measurement: only when the changes say so, on GitHub's free 4-CPU runner, its CPUs shared (the founder's third
+    // ruling of 2026-10-23, "Free: time advisory").
     const measure = capacity.jobs.capacity;
+    expect(measure?.needs).toBe('changes');
+    expect(measure?.if).toBe("needs.changes.outputs.measure == 'true'");
     expect(measure?.['runs-on']).toBe('ubuntu-24.04');
-    expect(measure?.['timeout-minutes']).toBe(90);
+    // 100 minutes: S4 runs three times (the founder's ruling of 2026-10-23), about 3 minutes more than the 90 before.
+    expect(measure?.['timeout-minutes']).toBe(100);
     expect(measure?.permissions).toBeUndefined();
     const steps = measure?.steps ?? [];
     // Both production images built from their Dockerfiles before the harness runs.
-    const builds = steps.filter((step) => step.uses === 'docker/build-push-action@v6');
+    const builds = steps.filter((step) => step.uses === PINNED.buildPush);
     expect(builds.map((step) => [step.with?.file, step.with?.load, step.with?.tags])).toEqual([
       ['apps/web/Dockerfile', true, 'tp-web:capacity'],
       ['apps/worker/Dockerfile', true, 'tp-worker:capacity'],
@@ -458,26 +608,66 @@ describe('workflows', () => {
     );
     // The scale release: restored, built in a step of its own when missing, and saved straight after, before the
     // measurement, so a failing measurement still caches it.
-    const restore = stepIndex(steps, (step) => step.uses === 'actions/cache/restore@v4');
+    const restore = stepIndex(steps, (step) => step.uses === PINNED.cacheRestore);
     const build = stepIndex(steps, (step) => step.run?.includes('tools/release/scale.ts') === true);
-    const save = stepIndex(steps, (step) => step.uses === 'actions/cache/save@v4');
+    const save = stepIndex(steps, (step) => step.uses === PINNED.cacheSave);
     expect([restore < build, build < save]).toEqual([true, true]);
     expect(steps.some((step) => step.uses === 'actions/cache@v4')).toBe(false);
     expect((steps[build] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
     expect((steps[save] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
     const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
-    expect(stepIndex(steps, (step) => step.uses === 'docker/build-push-action@v6')).toBeLessThan(run);
+    expect(stepIndex(steps, (step) => step.uses === PINNED.buildPush)).toBeLessThan(run);
     expect(save).toBeLessThan(run);
-    expect(steps[run]?.run).toContain('taskset -c');
-    const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
+    // The harness, its children and Chromium where the runner's layout puts them (Postgres's 0-1 on the free runner),
+    // never the consumer's CPUs.
+    expect(steps[run]?.run).toContain('cpus=$(pnpm -s screening:capacity --print-harness-cpus)');
+    expect(steps[run]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity');
+    // Advisory on every event this workflow runs on (none is a release): time warns, every other check fails the job.
+    expect(steps[run]?.run).toContain('--time-mode advisory');
+    expect(steps[run]?.run).not.toContain('binding');
+    const upload = stepIndex(steps, (step) => step.uses === PINNED.uploadArtifact);
     expect(upload).toBe(run + 1);
     expect((steps[upload] as Step & { if?: string }).if).toBe('always()');
     expect(String(steps[upload]?.with?.path).trim().split('\n')).toEqual([
       '${{ runner.temp }}/screening-capacity/screening-capacity.json',
+      '${{ runner.temp }}/screening-capacity/screening-capacity.sha256',
       '${{ runner.temp }}/screening-capacity/summary.md',
       '${{ runner.temp }}/screening-capacity/logs/',
     ]);
     expect(steps[upload]?.with?.['retention-days']).toBe(90);
+    // The measuring job's checkout keeps no token: nothing it runs calls GitHub.
+    expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
+    // A sizing question (a worst time above 44 s) and the time warnings leave the job as outputs the gate prints as
+    // warnings (O9; the founder's ruling of 2026-10-23, time advisory).
+    expect(measure?.outputs).toEqual({ sizing: '${{ steps.measure.outputs.sizing }}', 'time-warnings': '${{ steps.measure.outputs.time-warnings }}' });
+    expect((steps[run] as Step & { id?: string }).id).toBe('measure');
+
+    // The required check: one job, named for the ruleset, that runs whatever the others did, a cancelled run included (a
+    // job its condition skips reports success to a required check), passes when nothing watched changed and otherwise
+    // only on a passing measurement; it checks nothing out.
+    const gate = capacity.jobs.gate;
+    expect(gate?.name).toBe('screening-capacity gate');
+    expect(gate?.needs).toEqual(['changes', 'capacity']);
+    expect(gate?.if).toBe('${{ always() }}');
+    expect(gate?.permissions).toBeUndefined();
+    expect(gate?.steps.every((step) => step.uses === undefined)).toBe(true);
+    const decide = gate?.steps.map((step) => step.run ?? '').join('\n') ?? '';
+    expect(decide).toContain('if [ "$CHANGES" != "success" ]; then');
+    expect(decide).toContain('if [ "$MEASURE" != "true" ]; then');
+    expect(decide).toContain('if [ "$CAPACITY" != "success" ]; then');
+    const decision: Step & { readonly env?: unknown } = gate?.steps[0] ?? {};
+    expect(decision.env).toEqual({
+      CHANGES: '${{ needs.changes.result }}',
+      MEASURE: '${{ needs.changes.outputs.measure }}',
+      CAPACITY: '${{ needs.capacity.result }}',
+      SIZING: '${{ needs.capacity.outputs.sizing }}',
+      TIME_WARNINGS: '${{ needs.capacity.outputs.time-warnings }}',
+    });
+    expect(decide).toContain('echo "::warning title=Sizing question (O9)::$SIZING"');
+    // An advisory run whose only failures are time passed its job: the gate passes it with the warnings on the checks.
+    expect(decide).toContain('echo "::warning title=Time (advisory)::$TIME_WARNINGS"');
+    expect(decide.indexOf('if [ "$CAPACITY" != "success" ]; then')).toBeLessThan(decide.indexOf('$TIME_WARNINGS'));
+
     // The issue: a job of its own, the only one that may write, that needs the measurement, skips pull requests and runs no repository code.
     const notify = capacity.jobs.notify;
     expect(notify?.['runs-on']).toBe('ubuntu-24.04');
@@ -485,11 +675,28 @@ describe('workflows', () => {
     expect(notify?.if).toBe("failure() && github.event_name != 'pull_request'");
     expect(notify?.permissions).toEqual({ issues: 'write' });
     expect(notify?.['timeout-minutes']).toBe(5);
-    // The measuring job's checkout keeps no token: nothing it runs calls GitHub.
-    expect(steps[0]).toEqual({ uses: 'actions/checkout@v4', with: { 'persist-credentials': false } });
     expect(notify?.steps.some((step) => step.uses?.startsWith('actions/checkout') === true)).toBe(false);
     expect(notify?.steps.every((step) => step.uses === undefined)).toBe(true);
     expect(notify?.steps.map((step) => step.run ?? '').join('\n')).toContain('--label screening-capacity');
+  });
+});
+
+describe('the release and capacity workflows\' actions (the review of 2026-10-22)', () => {
+  it('pin every action to a full commit SHA with its version beside it, so no moved tag runs in a job that pushes images or writes the report', () => {
+    for (const name of ['release.yml', 'screening-capacity.yml']) {
+      const lines = readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8')
+        .split('\n')
+        .filter((line) => /^\s*(?:-\s+)?uses:/.test(line));
+      expect(lines.length, name).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line, `${name}: ${line.trim()}`).toMatch(/uses: [\w./-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
+      }
+    }
+    const pinned = new Set(Object.values(PINNED));
+    for (const name of ['release.yml', 'screening-capacity.yml']) {
+      const used = [...readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8').matchAll(/uses: ([\w./-]+@[0-9a-f]{40})/g)].map((match) => match[1] ?? '');
+      expect(used.filter((ref) => !ref.startsWith('aquasecurity/trivy-action@') && !pinned.has(ref as (typeof PINNED)[keyof typeof PINNED])), name).toEqual([]);
+    }
   });
 });
 
@@ -594,8 +801,9 @@ describe('job timeouts', () => {
       'mutation.yml': { mutation: 120 },
       'supply-chain.yml': { licenses: 15, images: 15 },
       'approval-of-record.yml': { 'approval-of-record': 5 },
-      // A pull request that touches the screening, pricing, the harness or the images runs it (audit #53 part 1).
-      'screening-capacity.yml': { capacity: 90, notify: 5 },
+      // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8), S4 three
+      // times since the founder's ruling of 2026-10-23.
+      'screening-capacity.yml': { changes: 5, capacity: 100, gate: 5, notify: 5 },
     });
   });
 });

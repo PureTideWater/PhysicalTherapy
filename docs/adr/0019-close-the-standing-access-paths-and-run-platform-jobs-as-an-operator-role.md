@@ -1,6 +1,6 @@
 # 0019. Close the standing-access paths the milestone 1 review found, and run platform jobs as an operator role that owns nothing
 
-- **Status:** accepted (amends 0012, 0013, 0014, 0016 and 0017 where they say otherwise); amended by [0049](0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md) (the deploy job's logins, pg-boss's login)
+- **Status:** accepted (amends 0012, 0013, 0014, 0016 and 0017 where they say otherwise); amended by [0049](0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md) (the deploy job's logins, pg-boss's login), and by PR 6b-3 (below: the screening consumer's role and login)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (Personas: the platform administrator "must not read PHI without a support grant", support must
@@ -124,3 +124,29 @@ state goes inside a page's content, below its route's access check, when a scree
 
 Milestone 3 (the first screen needing a loading state; uploads), milestone 11 (compute, the operator task, egress),
 milestone 12 (firm invitations, deletion), or a reviewer finds another path to a practice without a grant.
+
+## Amendment (PR 6b-3, 2026-10-21): the free screening prices as its own role, `tp_screening`
+
+Audit #53 parts 3 and 4, built under the founder's answers of 2026-10-21 (about 22:30 UTC) to PR 6b's Q1 (a), the
+screening's own consumer, and Q7, the queue it works in; migration 20261106090000; docs/adr/0062 and 0014.
+
+- **A role that prices screenings and does nothing else.** `tp_screening` is NOLOGIN, NOSUPERUSER, NOBYPASSRLS, a
+  member of nothing and owner of nothing, created by the role bootstrap (`packages/db/src/roles.ts`) like
+  `tp_operator`. It holds EXECUTE on the nine functions that price a screening (`operator_screening_due`, `_claim`,
+  `_release`, `_run_keys`, `_run_records`, `_rows`, `_record`, `_complete`, `_fail`) and on the queue's gauge
+  (`operator_screening_queue()`), and on nothing else: no table, not the expiry (which stays `tp_operator`'s), not the
+  reminders (PR 6e decides). The catalog keeps it owning nothing, and the application role from switching to it.
+- **Its login switches; it does not inherit.** `tp_screening_login` (`apps/worker/src/deploy/logins.ts`, from
+  `TP_SCREENING_LOGIN_USERNAME` and `_PASSWORD`, its own rotated secret) may `SET ROLE tp_screening` without
+  inheriting it, as billing's login does, and holds nothing until it switches; every screening transaction does
+  `SET LOCAL ROLE tp_screening` (`apps/worker/src/screening/operator.ts`). The dev and test login is
+  `tp_screening_dev`. The consumer's task holds that login and pg-boss's, and never the application's or the
+  operator's (`WORKER_JOBS=screening` refuses them).
+- **The operator keeps the nine for one release.** So the previous image's platform task, still running in the deploy
+  window, finishes or loses what it holds to the fenced claim without permission errors. The first schema pull request
+  after PR 6b-3 is deployed revokes them from `tp_operator` (add, then remove; docs/runbooks/deploy-and-rollback.md).
+- **What it reads is counts and the run's own values.** Staleness is 2 minutes without progress (the claim and each
+  recorded batch move `screening_run.progress_at`), not 10 after the claim; `operator_screening_complete()` also
+  returns when the web received the upload and why the run waited, for the time to email; the gauge returns counts and
+  the oldest normal run's wait. No name, address or row reaches a log, a payload or an error.
+

@@ -112,6 +112,23 @@ export const QUEUE_OPTIONS = {
 } as const;
 
 /**
+ * The screening consumer's job heartbeat (docs/adr/0062; PR 6b-3): pg-boss refreshes a screening job's heartbeat every
+ * 30 seconds while its worker holds it, and fails a job whose heartbeat is older than this on its next supervision,
+ * which frees the run's singleton key. So a consumer that dies (a crash, a lost task, a lost zone) leaves its runs to be
+ * claimed again within about three minutes (this, pg-boss's minute of supervision, and the run's 2 minutes without
+ * progress), not after pg-boss's fifteen-minute expiry. Every send carries it too, so a job sent before any consumer
+ * set it on the queue has it.
+ */
+export const SCREENING_JOB_HEARTBEAT_SECONDS = 60;
+
+/**
+ * The screening queues' settings: the shared ones, the heartbeat, and pg-boss's notify, so every send to them (the
+ * web's, the sweep's, the schedule's) commits a NOTIFY with the job and wakes the consumer's idle workers at once
+ * instead of at their next poll (SCREENING_BOSS_OPTIONS; CI's S5 on 7abb99c). The NOTIFY carries the queue's name only.
+ */
+export const SCREENING_QUEUE_OPTIONS = { ...QUEUE_OPTIONS, heartbeatSeconds: SCREENING_JOB_HEARTBEAT_SECONDS, notify: true } as const;
+
+/**
  * Each queue's settings: the shared ones, and for intake an hour before pg-boss expires an attempt
  * (its default is fifteen minutes): an attempt may wait up to ten minutes for the malware scan and then
  * stream a 2 GiB zip into its entries.

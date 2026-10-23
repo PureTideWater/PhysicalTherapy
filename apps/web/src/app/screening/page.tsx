@@ -3,11 +3,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { PublicHeader } from '../../components/public-header';
+import { ScrollTable } from '../../components/scroll-table';
 import { ScreeningUploadForm } from '../../components/screening/upload-form';
 import { loadPublicPage } from '../../lib/http/next';
 import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, REDUCED_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
 import { SENT_KEPT } from '../../lib/screening/retention';
 import { screeningPage } from '../../lib/screening/routes';
+import { SCREENING_SENT_LINK, SCREENING_SENT_WAIT } from '../../lib/screening/sent';
 import { TEMPLATE_COLUMNS, TEMPLATE_RULES } from '../../lib/screening/template';
 import { submitScreeningAction } from './actions';
 
@@ -38,11 +40,11 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
           </p>
         </div>
         {data.sent ? (
-          <Alert data-state="sent">
+          <Alert data-state="sent" data-wait={data.wait ?? 'sent'}>
             <AlertTitle>Check your email</AlertTitle>
             <AlertDescription>
-              We are screening your file. The result is emailed to the address you gave as a link, usually within a few minutes, and the link opens it for 30 days, or until a later screening for the same
-              practice or from the same email address replaces it. <span data-copy="kept" data-legal-surface="screening-kept-sent">
+              <span data-copy="wait">{SCREENING_SENT_WAIT[data.wait ?? 'sent']}</span> {SCREENING_SENT_LINK}{' '}
+              <span data-copy="kept" data-legal-surface="screening-kept-sent">
                 {SENT_KEPT}
               </span> If nothing arrives, check your spam folder, or{' '}
               <Link className="underline" href="/screening">
@@ -89,7 +91,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
                 </li>
               ))}
             </ul>
-            <div className="overflow-x-auto">
+            <ScrollTable label="The screening columns">
               <table className="w-full text-left text-sm" aria-label="The screening columns">
                 <thead className="text-muted-foreground">
                   <tr>
@@ -108,7 +110,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           </CardContent>
         </Card>
         <Card>

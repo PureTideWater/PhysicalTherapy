@@ -61,6 +61,11 @@ export interface RouteRequest {
   readonly clientAddress?: string | null;
   /** The CSRF token a script sent in the x-csrf-token header (a form sends it as input.csrfToken). */
   readonly csrfToken?: string | null;
+  /**
+   * When the web received the request, as the proxy stamped it at header time, before any body was read
+   * (src/lib/http/received.ts); absent where no proxy ran.
+   */
+  readonly receivedAt?: Date | null;
 }
 
 export interface Actor {

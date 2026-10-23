@@ -103,7 +103,9 @@ describe('the legal surfaces list', () => {
     const open = routes.slice(routes.indexOf('async function screeningOpen('), routes.indexOf('const status', routes.indexOf('async function screeningOpen(')));
     expect(open).toContain('environment: Environment');
     expect(open).toContain('if (!showsLegalSurfaces(SCREENING_LEGAL_SURFACES, environment)) {\n    return { open: false, releaseNo: null };');
-    expect(routes.match(/screeningOpen\(services\.pool, services\.environment\)/g)).toHaveLength(2);
+    // And, once counsel's review is recorded, decision 13's launch value for the tag the server runs (PR 6b-3).
+    expect(open).toContain('if (!screeningLaunched(environment, launch)) {\n    return { open: false, releaseNo: null };');
+    expect(routes.match(/screeningOpen\(services\.pool, services\.environment, services\.screeningLaunch\)/g)).toHaveLength(2);
     const attribution = readFileSync(path.join(SOURCE, 'lib/http/attribution.ts'), 'utf8');
     expect(attribution).toContain('return attributionCookieAllowed(environment) ? decodeAttribution(cookies.get(ATTRIBUTION_COOKIE)) : NO_ATTRIBUTION;');
     expect(attribution).toContain('!attributionCookieAllowed(request.environment)');

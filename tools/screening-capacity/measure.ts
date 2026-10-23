@@ -1,6 +1,7 @@
 /**
- * What the capacity test reads off the containers and the platform's log (audit #53 part 1; docs/adr/0062): pure
- * readers of the cgroup files (v2, the runner's; v1 kept for a local machine), the platform job's phase lines, and the
+ * What the capacity test reads off the containers and the services' logs (audit #53 part 1; docs/adr/0062): pure
+ * readers of the cgroup files (v2, the runner's; v1 kept for a local machine), the screening job's phase lines and its
+ * time-to-email lines (the consumer's since PR 6b-3; on the platform's log, a screening the platform priced), and the
  * figures a report shows. No row, link, token or address is read here: the log lines carry IDs and numbers only.
  */
 
@@ -56,7 +57,7 @@ export function cpuThrottling(text: string, version: CgroupVersion): CpuThrottli
   };
 }
 
-/** The platform job's phase lines (apps/worker/src/screening/job.ts) and what each measures. */
+/** The screening job's phase lines (apps/worker/src/screening/job.ts) and what each measures. */
 export const PHASE_MESSAGES: Readonly<Record<string, PhaseName>> = {
   'screening release shared types read': 'shared_load',
   'screening release shared types held from an earlier run': 'shared_held',
@@ -80,13 +81,8 @@ export interface PhaseLine {
 export function phaseLines(lines: Iterable<string>): PhaseLine[] {
   const found: PhaseLine[] = [];
   for (const line of lines) {
-    if (!line.startsWith('{')) {
-      continue;
-    }
-    let entry: Record<string, unknown>;
-    try {
-      entry = JSON.parse(line) as Record<string, unknown>;
-    } catch {
+    const entry = jsonLine(line);
+    if (entry === null) {
       continue;
     }
     const phase = typeof entry.msg === 'string' ? PHASE_MESSAGES[entry.msg] : undefined;
@@ -97,7 +93,7 @@ export function phaseLines(lines: Iterable<string>): PhaseLine[] {
   return found;
 }
 
-/** The worker's start line: the platform container is ready. */
+/** The worker's start line: the platform or consumer container is ready. */
 export function workerStarted(lines: Iterable<string>): boolean {
   for (const line of lines) {
     if (line.includes('"msg":"worker started"')) {
@@ -105,6 +101,53 @@ export function workerStarted(lines: Iterable<string>): boolean {
     }
   }
   return false;
+}
+
+/**
+ * The time-to-email lines (apps/worker/src/screening/job.ts; TimeToEmailMs): `screening result emailed` for a run in the
+ * normal tier, `screening result emailed after waiting` for one in the waiting tier (Q7), each with the run, elapsed_ms
+ * from the web's received_at, and the line's time.
+ */
+export const EMAILED_MESSAGES: Readonly<Record<string, 'normal' | 'waiting'>> = {
+  'screening result emailed': 'normal',
+  'screening result emailed after waiting': 'waiting',
+};
+
+export interface EmailedLine {
+  readonly runId: string;
+  readonly elapsedMs: number;
+  readonly tier: 'normal' | 'waiting';
+  /** The line's time (ISO). */
+  readonly at: string;
+}
+
+function jsonLine(line: string): Record<string, unknown> | null {
+  if (!line.startsWith('{')) {
+    return null;
+  }
+  try {
+    return JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** The time-to-email lines among a container's log lines (JSON lines; anything else is skipped). */
+export function emailedLines(lines: Iterable<string>): EmailedLine[] {
+  const found: EmailedLine[] = [];
+  for (const line of lines) {
+    const entry = jsonLine(line);
+    const tier = entry !== null && typeof entry.msg === 'string' ? EMAILED_MESSAGES[entry.msg] : undefined;
+    if (entry !== null && tier !== undefined && typeof entry.screening_run_id === 'string' && typeof entry.elapsed_ms === 'number' && typeof entry.time === 'string') {
+      found.push({ runId: entry.screening_run_id, elapsedMs: entry.elapsed_ms, tier, at: entry.time });
+    }
+  }
+  return found;
+}
+
+/** The runs a container's log shows it pricing or emailing: any phase line or time-to-email line names the run. */
+export function pricedRuns(lines: readonly string[]): Set<string> {
+  return new Set([...phaseLines(lines).map((line) => line.runId), ...emailedLines(lines).map((line) => line.runId)]);
 }
 
 /** Each run's phases, by run: elapsed milliseconds and records per phase. */

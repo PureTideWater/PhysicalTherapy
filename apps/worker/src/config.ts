@@ -73,13 +73,20 @@ export function readWorkerConfig(env: Env = process.env): WorkerConfig {
 }
 
 /**
- * Which jobs this worker works (WORKER_JOBS; docs/adr/0049). Deployed, the practice jobs and the
- * platform jobs run in separate services under separate task roles: `practice` works the practice
- * queues only and refuses the operator login; `platform` works the platform queues only, with the
- * operator login and pg-boss's own login and never the application login. Unset (development and
- * the tests), one worker works both, the platform jobs where OPERATOR_DATABASE_URL is set.
+ * Which jobs this worker works (WORKER_JOBS; docs/adr/0049). Deployed, the practice jobs, the
+ * platform jobs and the free screening's pricing run in separate services under separate task roles:
+ * `practice` works the practice queues only and refuses the operator and screening logins; `platform`
+ * works the platform queues only, with the operator login and pg-boss's own login and never the
+ * application or screening login; `screening` (docs/adr/0062; PR 6b-3) works the screening's queues
+ * only, with the screening login (SCREENING_DATABASE_URL, which switches to tp_screening) and pg-boss's
+ * own, never the application or operator login. Unset (development and the tests), one worker works
+ * the practice jobs, the platform jobs where OPERATOR_DATABASE_URL is set and the screening's where
+ * SCREENING_DATABASE_URL is.
  */
-export type WorkerJobs = 'all' | 'practice' | 'platform';
+export type WorkerJobs = 'all' | 'practice' | 'platform' | 'screening';
+
+/** The value of WORKER_JOBS that runs the screening consumer (the infrastructure's screening service sets it). */
+export const SCREENING_WORKER_JOBS = 'screening';
 
 export function readWorkerJobs(env: Env = process.env): WorkerJobs {
   const jobs = value(env, 'WORKER_JOBS');
@@ -88,14 +95,23 @@ export function readWorkerJobs(env: Env = process.env): WorkerJobs {
   }
   if (jobs === 'practice') {
     refused(env, 'OPERATOR_DATABASE_URL', 'when WORKER_JOBS is practice (the platform jobs hold the operator login)');
+    refused(env, 'SCREENING_DATABASE_URL', 'when WORKER_JOBS is practice (the screening consumer holds the screening login)');
     return jobs;
   }
   if (jobs === 'platform') {
     required(env, 'OPERATOR_DATABASE_URL', 'when WORKER_JOBS is platform');
     refused(env, 'DATABASE_URL', 'when WORKER_JOBS is platform (the practice jobs hold the application login)');
+    refused(env, 'SCREENING_DATABASE_URL', 'when WORKER_JOBS is platform (the screening consumer holds the screening login)');
     return jobs;
   }
-  throw new WorkerConfigError('WORKER_JOBS is practice or platform');
+  if (jobs === SCREENING_WORKER_JOBS) {
+    required(env, 'SCREENING_DATABASE_URL', 'when WORKER_JOBS is screening');
+    required(env, 'QUEUE_DATABASE_URL', 'when WORKER_JOBS is screening');
+    refused(env, 'DATABASE_URL', 'when WORKER_JOBS is screening (the practice jobs hold the application login)');
+    refused(env, 'OPERATOR_DATABASE_URL', 'when WORKER_JOBS is screening (the platform jobs hold the operator login)');
+    return jobs;
+  }
+  throw new WorkerConfigError('WORKER_JOBS is practice, platform or screening');
 }
 
 /** A platform-only worker's own settings: pg-boss's login (QUEUE_DATABASE_URL, required) and the heartbeat. */
@@ -111,6 +127,58 @@ export function readPlatformWorkerConfig(env: Env = process.env): PlatformWorker
     queueDatabaseUrl: required(env, 'QUEUE_DATABASE_URL', 'when WORKER_JOBS is platform'),
     heartbeatMs: heartbeatMs(env),
   };
+}
+
+/** Screenings priced at once by one consumer when SCREENING_CONCURRENCY is unset: three, one thread each (Q1 (a)). */
+export const DEFAULT_SCREENING_CONCURRENCY = 3;
+
+/** The screening consumer's settings: its login, how many runs it prices at once, and where its email goes. */
+export interface ScreeningConfig {
+  /** A login that can SET ROLE to tp_screening (tp_screening_login in AWS, tp_screening_dev locally); every transaction runs as it. */
+  readonly databaseUrl: string;
+  /** Runs priced at once, one worker thread each (SCREENING_CONCURRENCY, 1 to 8). */
+  readonly concurrency: number;
+  readonly notifications: NotificationConfig;
+}
+
+/** A screening-only worker's settings (WORKER_JOBS=screening): the consumer's, pg-boss's login and the heartbeat. */
+export interface ScreeningWorkerConfig {
+  readonly production: boolean;
+  readonly queueDatabaseUrl: string;
+  readonly heartbeatMs: number;
+  readonly screening: ScreeningConfig;
+}
+
+function screeningConcurrency(env: Env): number {
+  const raw = value(env, 'SCREENING_CONCURRENCY');
+  if (raw !== undefined && !/^[1-8]$/.test(raw)) {
+    throw new WorkerConfigError('SCREENING_CONCURRENCY is a whole number from 1 to 8');
+  }
+  return raw === undefined ? DEFAULT_SCREENING_CONCURRENCY : Number.parseInt(raw, 10);
+}
+
+/**
+ * The screening consumer's settings where SCREENING_DATABASE_URL is set, or null (a development worker that prices no
+ * screening): the login, SCREENING_CONCURRENCY and the email settings readNotificationConfig() reads (MAIL_FROM or
+ * MAIL_OUTBOX_DIR, APP_ORIGIN, STATIC_ASSET_ORIGIN).
+ */
+export function readScreeningConfig(env: Env = process.env): ScreeningConfig | null {
+  const databaseUrl = value(env, 'SCREENING_DATABASE_URL');
+  if (databaseUrl === undefined) {
+    return null;
+  }
+  return { databaseUrl, concurrency: screeningConcurrency(env), notifications: readNotificationConfig(env) };
+}
+
+/** A screening-only worker's settings (WORKER_JOBS=screening): the screening login and pg-boss's are both required. */
+export function readScreeningWorkerConfig(env: Env = process.env): ScreeningWorkerConfig {
+  const why = 'when WORKER_JOBS is screening';
+  required(env, 'SCREENING_DATABASE_URL', why);
+  const screening = readScreeningConfig(env);
+  if (screening === null) {
+    throw new WorkerConfigError(`SCREENING_DATABASE_URL is required ${why}`);
+  }
+  return { production: isProduction(env), queueDatabaseUrl: required(env, 'QUEUE_DATABASE_URL', why), heartbeatMs: heartbeatMs(env), screening };
 }
 
 export type AuditStoreConfig =

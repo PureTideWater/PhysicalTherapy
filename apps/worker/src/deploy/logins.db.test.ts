@@ -17,6 +17,7 @@ function syntheticLogins(): DeployLogins {
     operator: { username: `tp_operator_login_t${suffix}`, password: password() },
     queue: { username: `tp_queue_login_t${suffix}`, password: password() },
     billing: { username: `tp_billing_login_t${suffix}`, password: password() },
+    screening: { username: `tp_screening_login_t${suffix}`, password: password() },
   };
 }
 
@@ -42,25 +43,25 @@ async function asSuperuser<T>(url: string, run: (client: ReturnType<typeof datab
 
 async function dropLogins(logins: DeployLogins): Promise<void> {
   await asSuperuser(readDatabaseUrl(), async (client) => {
-    for (const login of [logins.app, logins.worker, logins.operator, logins.queue, logins.billing]) {
+    for (const login of [logins.app, logins.worker, logins.operator, logins.queue, logins.billing, logins.screening]) {
       await client.query(`DROP ROLE IF EXISTS ${client.escapeIdentifier(login.username)}`);
     }
   });
 }
 
 describe('provisionLogins (the migration task, docs/adr/0049)', () => {
-  it('creates the queue role and schema and the five logins, each in its own role only', { timeout: 120_000 }, async () => {
+  it('creates the queue role and schema and the six logins, each in its own role only', { timeout: 120_000 }, async () => {
     const logins = syntheticLogins();
     const database = await createMigratedDatabase(readDatabaseUrl());
     try {
       const first = await asSuperuser(database.url, (client) => provisionLogins(client, logins));
-      expect(first.created).toEqual([logins.app.username, logins.worker.username, logins.operator.username, logins.queue.username, logins.billing.username]);
+      expect(first.created).toEqual([logins.app.username, logins.worker.username, logins.operator.username, logins.queue.username, logins.billing.username, logins.screening.username]);
       await asSuperuser(database.url, async (client) => {
         const memberships = await client.query<{ login: string; role: string; inherits: boolean; switches: boolean }>(
           `SELECT m.rolname AS login, r.rolname AS role, a.inherit_option AS inherits, a.set_option AS switches FROM pg_auth_members a
              JOIN pg_roles m ON m.oid = a.member JOIN pg_roles r ON r.oid = a.roleid
             WHERE m.rolname = ANY($1) ORDER BY 1, 2`,
-          [[logins.app.username, logins.worker.username, logins.operator.username, logins.queue.username, logins.billing.username]],
+          [[logins.app.username, logins.worker.username, logins.operator.username, logins.queue.username, logins.billing.username, logins.screening.username]],
         );
         expect(memberships.rows).toEqual(
           [
@@ -72,11 +73,13 @@ describe('provisionLogins (the migration task, docs/adr/0049)', () => {
             { login: logins.queue.username, role: QUEUE_ROLE, inherits: true, switches: true },
             // Billing's login switches to tp_billing and holds nothing of its own (docs/adr/0055).
             { login: logins.billing.username, role: 'tp_billing', inherits: false, switches: true },
+            // The screening consumer's login switches to tp_screening, and to nothing else (docs/adr/0062).
+            { login: logins.screening.username, role: 'tp_screening', inherits: false, switches: true },
           ].sort((a, b) => (a.login < b.login ? -1 : a.login > b.login ? 1 : a.role < b.role ? -1 : 1)),
         );
         const attributes = await client.query<{ rolname: string; rolcanlogin: boolean; rolsuper: boolean; rolbypassrls: boolean; rolcreaterole: boolean }>(
           'SELECT rolname, rolcanlogin, rolsuper, rolbypassrls, rolcreaterole FROM pg_roles WHERE rolname = ANY($1) ORDER BY 1',
-          [[logins.app.username, logins.worker.username, logins.operator.username, logins.queue.username, QUEUE_ROLE]],
+          [[logins.app.username, logins.worker.username, logins.operator.username, logins.queue.username, logins.screening.username, QUEUE_ROLE]],
         );
         for (const row of attributes.rows) {
           expect(row, row.rolname).toMatchObject({ rolcanlogin: row.rolname !== QUEUE_ROLE, rolsuper: false, rolbypassrls: false, rolcreaterole: false });
@@ -119,6 +122,21 @@ describe('provisionLogins (the migration task, docs/adr/0049)', () => {
         await client.query('SET ROLE tp_billing');
         expect((await client.query('SELECT count(*)::int AS n FROM invoice')).rows).toEqual([{ n: 0 }]);
       });
+      // The screening consumer's login holds nothing until it switches to tp_screening, which runs the screening's
+      // pricing functions and reads no table; it may switch to nothing else.
+      await asSuperuser(loginUrl(database.url, logins.screening.username, logins.screening.password), async (client) => {
+        await expect(client.query('SELECT count(*) FROM screening_run')).rejects.toThrow(/permission denied/);
+        await expect(client.query('SELECT * FROM operator_screening_queue()')).rejects.toThrow(/permission denied/);
+        await expect(client.query('SET ROLE tp_operator')).rejects.toThrow(/permission denied/);
+        await expect(client.query('SET ROLE tp_app')).rejects.toThrow(/permission denied/);
+        await client.query('SET ROLE tp_screening');
+        expect((await client.query('SELECT queued, pricing FROM operator_screening_queue()')).rows).toEqual([{ queued: 0, pricing: 0 }]);
+        expect((await client.query('SELECT run_id FROM operator_screening_due(0, 100)')).rows).toEqual([]);
+        expect((await client.query('SELECT * FROM operator_screening_claim(gen_random_uuid())')).rows).toEqual([]);
+        await expect(client.query('SELECT count(*) FROM screening_run')).rejects.toThrow(/permission denied/);
+        await expect(client.query('SELECT 1 FROM rule_record LIMIT 1')).rejects.toThrow(/permission denied/);
+        await expect(client.query("SELECT * FROM operator_screening_expire(1, 'x')")).rejects.toThrow(/permission denied/);
+      });
 
       // pg-boss installs its schema and queues work on the queue login alone, everything owned by the role.
       const boss = new PgBoss(loginUrl(database.url, logins.queue.username, logins.queue.password, QUEUE_ROLE));
@@ -154,8 +172,9 @@ describe('provisionLogins (the migration task, docs/adr/0049)', () => {
     // A fresh cluster has no tp_app yet; this one may, so the order check is exercised with a name check first.
     await expect(provisionLogins({} as never, { ...logins, app: { username: 'Bad-Name', password: logins.app.password } })).rejects.toThrow(LoginProvisionError);
     await expect(provisionLogins({} as never, { ...logins, operator: { username: logins.operator.username, password: 'short' } })).rejects.toThrow(/shorter than 16/);
-    await expect(provisionLogins({} as never, { ...logins, queue: logins.app })).rejects.toThrow(/five different names/);
-    await expect(provisionLogins({} as never, { ...logins, worker: logins.app })).rejects.toThrow(/five different names/);
+    await expect(provisionLogins({} as never, { ...logins, queue: logins.app })).rejects.toThrow(/six different names/);
+    await expect(provisionLogins({} as never, { ...logins, worker: logins.app })).rejects.toThrow(/six different names/);
+    await expect(provisionLogins({} as never, { ...logins, screening: logins.operator })).rejects.toThrow(/six different names/);
     await withScratchDatabase(readDatabaseUrl(), async (url) => {
       await asSuperuser(url, async (client) => {
         const missing = { query: (text: string, values?: unknown[]) => (text.includes('FROM pg_roles WHERE rolname') ? Promise.resolve({ rows: [] }) : client.query(text, values)) };
@@ -168,11 +187,14 @@ describe('provisionLogins (the migration task, docs/adr/0049)', () => {
 });
 
 describe('readDeployLogins', () => {
-  it('reads the five logins from the ten secret fields and names a missing one', () => {
+  it('reads the six logins from the twelve secret fields and names a missing one', () => {
     const env = Object.fromEntries(Object.values(LOGIN_VARIABLES).flatMap((pair) => [[pair.username, `${pair.username.toLowerCase()}`], [pair.password, 'synthetic-password-0123']]));
     expect(readDeployLogins(env).queue).toEqual({ username: 'tp_queue_login_username', password: 'synthetic-password-0123' });
     expect(readDeployLogins(env).worker).toEqual({ username: 'tp_worker_login_username', password: 'synthetic-password-0123' });
     expect(() => readDeployLogins({ ...env, TP_OPERATOR_LOGIN_PASSWORD: '' })).toThrow('TP_OPERATOR_LOGIN_PASSWORD is not set');
     expect(() => readDeployLogins({ ...env, TP_WORKER_LOGIN_USERNAME: '' })).toThrow('TP_WORKER_LOGIN_USERNAME is not set');
+    expect(readDeployLogins(env).screening).toEqual({ username: 'tp_screening_login_username', password: 'synthetic-password-0123' });
+    expect(() => readDeployLogins({ ...env, TP_SCREENING_LOGIN_PASSWORD: '' })).toThrow('TP_SCREENING_LOGIN_PASSWORD is not set');
+    expect(Object.keys(LOGIN_VARIABLES)).toEqual(['app', 'worker', 'operator', 'queue', 'billing', 'screening']);
   });
 });

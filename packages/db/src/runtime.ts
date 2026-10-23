@@ -21,7 +21,7 @@ export {
   tenantTables,
 } from './catalog';
 export { readDatabaseUrl } from './config';
-export { BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, billingDevLoginUrl, esignDevLoginUrl } from './roles';
+export { BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, SCREENING_ROLE, billingDevLoginUrl, esignDevLoginUrl, screeningDevLoginUrl } from './roles';
 export * from './crypto';
 export * from './schema';
 export { RETENTION_CLASSES, type RetentionClass, RetentionError, type RetentionStart, retainUntil } from './retention';

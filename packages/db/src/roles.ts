@@ -23,9 +23,14 @@
  *   SET ROLE and SECURITY DEFINER change current_user, never the login a connection signed in as) tells a
  *   job's connection from a person's request whatever the job sets app.actor_id to. The database refuses a
  *   packet export's download evidence and its attestation on such a connection (app_session_is_job()).
- * - `tp_app_dev`, `tp_worker_dev`, `tp_billing_dev` and `tp_esign_dev` are the dev and test logins for the
- *   application role, the worker's login, billing's login and the e-signature webhook's login, with fixed
- *   local passwords. They are created only when asked (`pnpm db:migrate --dev-login`); production logins
+ * - `tp_screening` is the free screening's consumer role (docs/adr/0062; PR 6b-3): NOLOGIN, NOSUPERUSER,
+ *   NOBYPASSRLS, owns nothing and is a member of nothing. It holds EXECUTE on the screening's pricing functions
+ *   and its queue gauge alone (migration 20261106090000) and reads no table. Its login, `tp_screening_login`
+ *   in AWS (apps/worker/src/deploy/logins.ts), may SET ROLE to it without inheriting it, as billing's does, and
+ *   holds nothing of its own until it switches; the application role may not switch to it (catalog.ts).
+ * - `tp_app_dev`, `tp_worker_dev`, `tp_billing_dev`, `tp_esign_dev` and `tp_screening_dev` are the dev and test
+ *   logins for the application role, the worker's login, billing's login, the e-signature webhook's login and
+ *   the screening consumer's login, with fixed local passwords. They are created only when asked (`pnpm db:migrate --dev-login`); production logins
  *   come from Secrets Manager (apps/worker/src/deploy/logins.ts).
  *
  * Roles belong to the whole PostgreSQL cluster, so the bootstrap is idempotent and tolerates another
@@ -41,6 +46,8 @@ export const BILLING_ROLE = 'tp_billing';
 export const ESIGN_ROLE = 'tp_esign';
 /** The marker of the worker's own login (a member of tp_app and of this role); it holds no privilege. */
 export const JOB_ROLE = 'tp_job';
+/** The free screening's consumer (WORKER_JOBS=screening): EXECUTE on the screening's pricing functions alone. */
+export const SCREENING_ROLE = 'tp_screening';
 export const APP_DEV_LOGIN = 'tp_app_dev';
 /** Local only: the dev and test login's password. Never used outside a developer machine or CI. */
 export const APP_DEV_PASSWORD = 'tp_app_dev';
@@ -50,8 +57,10 @@ export const WORKER_DEV_LOGIN = 'tp_worker_dev';
 export const BILLING_DEV_LOGIN = 'tp_billing_dev';
 /** Local only: the e-signature webhook's dev and test login. */
 export const ESIGN_DEV_LOGIN = 'tp_esign_dev';
+/** Local only: the screening consumer's dev and test login, which may SET ROLE tp_screening (its password is its name). */
+export const SCREENING_DEV_LOGIN = 'tp_screening_dev';
 /** The dev logins, each with the role it may switch to (the application's inherits its role). */
-const DEV_LOGINS = [APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN] as const;
+const DEV_LOGINS = [APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN, SCREENING_DEV_LOGIN] as const;
 
 /** The pg_roles columns the bootstrap manages, and the keyword that sets each. */
 const ATTRIBUTES = {
@@ -79,10 +88,12 @@ export const WANTED_ROLES: Readonly<Record<string, RoleAttributes>> = {
   [BILLING_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [ESIGN_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [JOB_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
+  [SCREENING_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [APP_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
   [WORKER_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
   [BILLING_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
   [ESIGN_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
+  [SCREENING_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
 };
 
 function attributeWords(attributes: RoleAttributes): string {
@@ -120,9 +131,12 @@ EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
 END $$`;
 }
 
-/** The roles the bootstrap creates, in order: the owner, the application, operator, billing, e-signature and job roles and, when asked, the dev logins. */
+/**
+ * The roles the bootstrap creates, in order: the owner, the application, operator, billing, e-signature, job and
+ * screening roles and, when asked, the dev logins.
+ */
 export function managedRoles(options: { readonly devLogin: boolean }): string[] {
-  return [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, ...(options.devLogin ? DEV_LOGINS : [])];
+  return [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, SCREENING_ROLE, ...(options.devLogin ? DEV_LOGINS : [])];
 }
 
 /** CREATE ROLE for one managed role; a role that already exists is left for roleAlteration. */
@@ -144,13 +158,13 @@ export function grantStatements(options: { readonly devLogin: boolean }): string
     EXECUTE format('GRANT ${OWNER_ROLE} TO %I', current_user);
   END IF;
 END $$`,
-    `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}, ${ESIGN_ROLE}', current_database()); END $$`,
+    `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}, ${ESIGN_ROLE}, ${SCREENING_ROLE}', current_database()); END $$`,
     // No temporary tables for anyone but the database's owner and superusers: a temporary table could
     // otherwise stand in for a real one in a function that does not search pg_temp last.
     `DO $$ BEGIN EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database()); END $$`,
     'REVOKE CREATE ON SCHEMA public FROM PUBLIC',
     `GRANT USAGE, CREATE ON SCHEMA public TO ${OWNER_ROLE}`,
-    `GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}, ${ESIGN_ROLE}`,
+    `GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}, ${ESIGN_ROLE}, ${SCREENING_ROLE}`,
     // Billing code runs as tp_billing: the operator role switches to it with SET ROLE without inheriting
     // its privileges (docs/adr/0050); so does billing's own login (logins.ts). The application role never
     // may (docs/adr/0055): a membership an earlier bootstrap granted it is revoked.
@@ -165,7 +179,8 @@ END $$`,
     // The web's dev login and the worker's both inherit the application role; the worker's is also marked as a
     // job's (docs/adr/0061), and the web's never is.
     statements.push(inherits(APP_DEV_LOGIN, APP_ROLE), inherits(WORKER_DEV_LOGIN, APP_ROLE), marks(WORKER_DEV_LOGIN, JOB_ROLE));
-    statements.push(switchesTo(BILLING_DEV_LOGIN, BILLING_ROLE), switchesTo(ESIGN_DEV_LOGIN, ESIGN_ROLE));
+    // The screening consumer's dev login switches to tp_screening, as its login does in AWS (logins.ts).
+    statements.push(switchesTo(BILLING_DEV_LOGIN, BILLING_ROLE), switchesTo(ESIGN_DEV_LOGIN, ESIGN_ROLE), switchesTo(SCREENING_DEV_LOGIN, SCREENING_ROLE));
   }
   return statements;
 }
@@ -287,4 +302,9 @@ export function billingDevLoginUrl(databaseUrl: string): string {
 /** The URL of the e-signature webhook's dev and test login (it may SET ROLE tp_esign), on the same server and database. */
 export function esignDevLoginUrl(databaseUrl: string): string {
   return devLoginUrl(databaseUrl, ESIGN_DEV_LOGIN);
+}
+
+/** The URL of the screening consumer's dev and test login (it may SET ROLE tp_screening), on the same server and database. */
+export function screeningDevLoginUrl(databaseUrl: string): string {
+  return devLoginUrl(databaseUrl, SCREENING_DEV_LOGIN);
 }

@@ -35,7 +35,7 @@ class MemoryJar implements CookieJar {
   }
 }
 
-export function screeningServices(pool: DatabasePool, options: { readonly queue?: JobQueue; readonly sink?: (line: string) => void } = {}): Services {
+export function screeningServices(pool: DatabasePool, options: { readonly queue?: JobQueue; readonly sink?: (line: string) => void; readonly screeningSlots?: number } = {}): Services {
   const sealer = new Sealer(randomBytes(32));
   return createServices({
     origin: SCREENING_ORIGIN,
@@ -51,6 +51,7 @@ export function screeningServices(pool: DatabasePool, options: { readonly queue?
     sealer,
     logger: createLogger({ sink: options.sink ?? (() => undefined) }),
     queue: options.queue ?? new MemoryQueue(),
+    ...(options.screeningSlots === undefined ? {} : { screeningSlots: options.screeningSlots }),
   });
 }
 
@@ -61,6 +62,8 @@ export interface PageRequestOptions {
   readonly address?: string | null;
   /** The browser's cookies (the attribution cookie, audit #57). */
   readonly cookies?: Readonly<Record<string, string>>;
+  /** When the proxy stamped the request's arrival (src/lib/http/received.ts), or none, as a request that met no proxy. */
+  readonly receivedAt?: Date;
 }
 
 /** A request as the application's own page makes it: same origin, no session. */
@@ -74,5 +77,6 @@ export function pageRequest(options: PageRequestOptions = {}): RouteRequest {
     origin: SCREENING_ORIGIN,
     fetchSite: 'same-origin',
     clientAddress: options.address ?? null,
+    ...(options.receivedAt === undefined ? {} : { receivedAt: options.receivedAt }),
   };
 }

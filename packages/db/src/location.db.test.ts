@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { withActor, withJobScope, withPracticeScope } from './authz';
 import { readDatabaseUrl } from './config';
-import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE } from './roles';
+import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, SCREENING_ROLE } from './roles';
 import type { MembershipRole } from './schema';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createPracticeWithLocation, createTenantWorld, createUser, endPool } from './testing';
 
@@ -921,14 +921,14 @@ describe('every function of the migration, by its exact name: the definer flag, 
       'practice_site_required()': { definer: true, grantees: [] },
       'pricing_run_rules()': { definer: false, grantees: [] },
       'screening_band_days(text)': { definer: false, grantees: [] },
-      'submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,text)': {
-        definer: true,
-        grantees: [APP_ROLE],
-      },
+      // Recreated by migration 20261106090000 with the receipt and the account's keyed subject before the request.
+      'submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)':
+        { definer: true, grantees: [APP_ROLE] },
       'screening_result_summary(text)': { definer: true, grantees: [APP_ROLE] },
-      'operator_screening_claim(uuid)': { definer: true, grantees: [OPERATOR_ROLE] },
-      'operator_screening_release(uuid)': { definer: true, grantees: [OPERATOR_ROLE] },
-      'operator_screening_run_records(uuid)': { definer: true, grantees: [OPERATOR_ROLE] },
+      // The screening consumer's too since migration 20261106090000; the operator's for its one-release overlap.
+      'operator_screening_claim(uuid)': { definer: true, grantees: [OPERATOR_ROLE, SCREENING_ROLE] },
+      'operator_screening_release(uuid)': { definer: true, grantees: [OPERATOR_ROLE, SCREENING_ROLE] },
+      'operator_screening_run_records(uuid)': { definer: true, grantees: [OPERATOR_ROLE, SCREENING_ROLE] },
       'screening_rejection_valid(jsonb)': { definer: false, grantees: [] },
       'screening_refusal_codes_valid(text[])': { definer: false, grantees: [] },
       'screening_labels_version()': { definer: false, grantees: [] },

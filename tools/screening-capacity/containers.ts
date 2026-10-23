@@ -5,12 +5,14 @@ import { promisify } from 'node:util';
 
 import pg from 'pg';
 
+import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
 import { type ContainerLimit, MIB, NETWORK_DELAY_MS, type PostgresLimit } from './limits';
 import { type CgroupVersion, ioMax, median, psqlTimings } from './measure';
 import type { AppliedContainer, AppliedLimits } from './report';
 
 /**
- * Where the capacity test's three services run (audit #53 part 1; docs/adr/0062, "Capacity under production limits").
+ * Where the capacity test's services run (audit #53 part 1; docs/adr/0062, "Capacity under production limits"): web,
+ * platform, and the screening consumer's tasks (screening-1 to screening-N, PR 6b-3), beside Postgres.
  *
  * DockerRuntime (CI, the measurement): the production images as containers under cgroup v2 limits equal to production's
  * task sizes; Postgres 18 with its CPUs, memory, a 1 GiB /dev/shm (its parallel queries' shared memory; RDS has no 64
@@ -24,7 +26,10 @@ import type { AppliedContainer, AppliedLimits } from './report';
  * (dist and migrations for the worker, the standalone server for the web), run as processes in cgroups with the same
  * CPU quota, cpuset and memory with no swap (v2, or v1's cpu, cpuset and memory controllers), against a Postgres
  * server the caller names, which the harness cannot limit: its run reports Postgres's limits as not applied, so it
- * never passes for a CI run.
+ * never passes for a CI run. Each service is exec'd under `taskset -c <its cpuset>` after joining its cgroups: under
+ * cgroup v1 a process that joins a cpuset keeps the intersection of the affinity it inherited and the cpuset, so a
+ * service started from a harness pinned to other CPUs would otherwise run on the overlap alone (the design's affinity
+ * finding: three pricing processes on one CPU).
  */
 
 const exec = promisify(execFile);
@@ -67,7 +72,34 @@ async function run(command: string, args: readonly string[], options: { readonly
   }
 }
 
-export type ServiceName = 'web' | 'platform';
+/** A screening consumer task's service: screening-1 to screening-N, one per declared task. */
+export type ScreeningServiceName = `screening-${number}`;
+export type ServiceName = 'web' | 'platform' | ScreeningServiceName;
+
+/** The consumer's task services, one per declared task (production's desiredCount). */
+export function screeningServices(tasks: number): ScreeningServiceName[] {
+  return Array.from({ length: tasks }, (_, index) => `screening-${String(index + 1)}` as ScreeningServiceName);
+}
+
+export function isScreeningService(name: string): name is ScreeningServiceName {
+  return /^screening-[1-9]\d*$/.test(name);
+}
+
+/**
+ * What each service runs, as production's task definitions run it: the images' own commands (infra/lib/constructs/
+ * compute.ts, COMMANDS), and for the screening consumer the worker's command with the main thread's heap limit
+ * (SCREENING_MAIN_HEAP_FLAG, #31's explicit heap limit; its pricing threads carry their own).
+ */
+export const SERVICE_COMMANDS = {
+  web: ['node', 'apps/web/server.js'],
+  platform: ['node', '--enable-source-maps', 'dist/main.js'],
+  screening: ['node', '--enable-source-maps', SCREENING_MAIN_HEAP_FLAG, 'dist/main.js'],
+} as const;
+
+/** A service's command (SERVICE_COMMANDS). */
+export function serviceCommand(name: ServiceName): readonly string[] {
+  return isScreeningService(name) ? SERVICE_COMMANDS.screening : SERVICE_COMMANDS[name];
+}
 
 export interface ServiceStatus {
   readonly restarts: number;
@@ -88,12 +120,14 @@ export interface ColdStart {
   readonly cacheDropped: boolean;
 }
 
-/** One service's environment and limits. */
+/** One service's environment, limits and command. */
 export interface ServiceSpec {
   readonly name: ServiceName;
   readonly env: Readonly<Record<string, string>>;
   readonly limit: ContainerLimit;
   readonly cpuset: string;
+  /** What it runs (serviceCommand): the image's command, or the consumer's with its heap limit. */
+  readonly command: readonly string[];
 }
 
 export interface Runtime {
@@ -101,8 +135,11 @@ export interface Runtime {
   readonly cgroupVersion: CgroupVersion;
   /** The directory the services share with the harness (outbox, local stores), as the harness sees it and as the services see it. */
   readonly dataDir: { readonly host: string; readonly service: string };
-  /** Starts Postgres; its admin URL as the harness reaches it and as the services do. */
-  startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }>;
+  /**
+   * Starts Postgres; its admin URL as the harness reaches it and as the services do. `clientCpuset` is where the client
+   * that measures the round trip runs (the platform's CPU: the round trip a service sees).
+   */
+  startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number, clientCpuset: string): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }>;
   /** Restarts Postgres with a cold cache (the operating system's page cache dropped where the runner allows); what was done. */
   restartPostgres(): Promise<ColdStart>;
   /** The migration task: the migrations, then the logins, as the owner. A failure is a CommandError with its stderr. */
@@ -110,7 +147,7 @@ export interface Runtime {
   /** Starts a service; `label` names the part of the run it serves (setup, or a scenario), as its saved log is named. */
   startService(spec: ServiceSpec, label: string): Promise<void>;
   stopService(name: ServiceName): Promise<void>;
-  /** Stops web and platform, leaving Postgres running (the oracle reads it after the services stop). */
+  /** Stops every service, leaving Postgres running (the oracle reads it after the services stop). */
   stopServices(): Promise<void>;
   /** Postgres's own OOM kills and restarts. */
   postgresStatus(): Promise<PostgresStatus>;
@@ -119,7 +156,7 @@ export interface Runtime {
   /** A file of the service's cgroup (memory.stat and the like), or null when it cannot be read. */
   cgroupFile(name: ServiceName, file: string): Promise<string | null>;
   status(name: ServiceName): Promise<ServiceStatus>;
-  /** The limits as applied, read back. */
+  /** The limits as applied to every service started and to Postgres, read back. */
   applied(postgresServiceUrl: string): Promise<AppliedLimits>;
   /** The web's origin as the harness's browser reaches it. */
   readonly webOrigin: string;
@@ -153,6 +190,7 @@ export function dockerRunArgs(
     ...(options.publish === undefined ? [] : ['-p', options.publish]),
     ...Object.entries(spec.env).flatMap(([name, value]) => ['-e', `${name}=${value}`]),
     options.image,
+    ...spec.command,
   ];
 }
 
@@ -276,15 +314,15 @@ export class DockerRuntime implements Runtime {
     return parent.trim() === '' ? partition : `/dev/${parent.trim()}`;
   }
 
-  private postgresLimit: PostgresLimit | null = null;
+  private clientCpuset = '0';
   private delayMs = 0;
 
   private get harnessUrl(): string {
     return `postgres://postgres:test@127.0.0.1:${String(this.postgresPort)}/postgres`;
   }
 
-  async startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }> {
-    this.postgresLimit = limit;
+  async startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number, clientCpuset: string): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }> {
+    this.clientCpuset = clientCpuset;
     this.delayMs = delayMs;
     this.labels.set('postgres', 'run');
     await docker('network', 'create', this.network).catch(() => '');
@@ -371,10 +409,14 @@ export class DockerRuntime implements Runtime {
     appendFileSync(file, `${masked(output.stdout)}${output.stderr === '' ? '' : `\n[harness] ${name}'s stderr:\n${masked(output.stderr)}`}`);
   }
 
+  /** The services started and not stopped since, in the order they started. */
+  private readonly services = new Set<ServiceName>();
+
   async startService(spec: ServiceSpec, label: string): Promise<void> {
     await this.saveLogs(spec.name);
     await docker('rm', '-f', `tp-capacity-${spec.name}`).catch(() => '');
     this.labels.set(spec.name, label);
+    this.services.add(spec.name);
     await docker(
       ...dockerRunArgs(spec, {
         image: spec.name === 'web' ? this.images.web : this.images.worker,
@@ -392,11 +434,13 @@ export class DockerRuntime implements Runtime {
     await this.saveLogs(name);
     await docker('rm', '-f', `tp-capacity-${name}`).catch(() => '');
     this.labels.delete(name);
+    this.services.delete(name);
   }
 
   async stopServices(): Promise<void> {
-    await this.stopService('web');
-    await this.stopService('platform');
+    for (const name of [...this.services]) {
+      await this.stopService(name);
+    }
   }
 
   async logs(name: ServiceName): Promise<string[]> {
@@ -454,7 +498,7 @@ export class DockerRuntime implements Runtime {
   }
 
   async applied(_postgresServiceUrl?: string): Promise<AppliedLimits> {
-    const inspect = async (name: 'web' | 'platform' | 'postgres'): Promise<AppliedContainer> => {
+    const inspect = async (name: AppliedContainer['name']): Promise<AppliedContainer> => {
       const text = (await docker('inspect', '-f', '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.CpusetCpus}}', `tp-capacity-${name}`)).trim();
       const [cpus, memory, swap, cpuset] = text.split(' ');
       const number = (value: string | undefined) => (value === undefined || value === '0' ? null : Number.parseInt(value, 10));
@@ -462,20 +506,21 @@ export class DockerRuntime implements Runtime {
     };
     const ioText = await docker('exec', 'tp-capacity-postgres', 'cat', '/sys/fs/cgroup/io.max').catch(() => '');
     const line = ioMax(ioText)[0];
-    const { stdout: timing } = await exec('sh', ['-c', `printf '%s\\n' "$1" | docker run --rm -i --network ${this.network} --cpuset-cpus=${this.postgresLimit?.taskCpuset ?? '0'} postgres:18 psql -X -q postgres://postgres:test@db:5432/postgres`, 'sh', ROUND_TRIP_SCRIPT]).catch(() => ({ stdout: '' }));
+    const { stdout: timing } = await exec('sh', ['-c', `printf '%s\\n' "$1" | docker run --rm -i --network ${this.network} --cpuset-cpus=${this.clientCpuset} postgres:18 psql -X -q postgres://postgres:test@db:5432/postgres`, 'sh', ROUND_TRIP_SCRIPT]).catch(() => ({ stdout: '' }));
     return {
-      containers: [await inspect('web'), await inspect('platform'), await inspect('postgres')],
+      containers: [...(await Promise.all([...this.services].map((name) => inspect(name)))), await inspect('postgres')],
       ioMax: line === undefined ? null : { riops: line.riops, wiops: line.wiops, rbps: line.rbps, wbps: line.wbps },
       roundTripMedianMs: median(psqlTimings(timing)),
     };
   }
 
   async stopAll(): Promise<void> {
-    for (const name of ['web', 'platform', 'postgres']) {
+    for (const name of [...this.services, 'postgres']) {
       await this.saveLogs(name);
       await docker('rm', '-f', `tp-capacity-${name}`).catch(() => '');
       this.labels.delete(name);
     }
+    this.services.clear();
     await docker('network', 'rm', this.network).catch(() => '');
   }
 }
@@ -485,10 +530,46 @@ function cgroupVersion(): CgroupVersion {
   return existsSync('/sys/fs/cgroup/cgroup.controllers') ? 2 : 1;
 }
 
-/** The images' layout of the build outputs, under a directory: worker/dist and worker/migrations, web/ the standalone server. */
+/**
+ * The images' layout of the build outputs, under a directory, as the Dockerfiles lay them out: worker/dist,
+ * worker/migrations and worker/node_modules/playwright-core (apps/worker/Dockerfile installs it beside the bundle, which
+ * imports it at its top, at the version apps/worker/package.json pins: `npm install --no-save playwright-core@<version>`
+ * in worker/), and web/ the standalone server with its static files and public.
+ */
 export interface ProcessImages {
   readonly worker: string;
   readonly web: string;
+}
+
+/** The playwright-core version the worker image installs beside its bundle (apps/worker/package.json, as the Dockerfile pins it). */
+export function workerPlaywrightVersion(root: string = path.resolve(import.meta.dirname, '../..')): string {
+  const manifest = JSON.parse(readFileSync(path.join(root, 'apps/worker/package.json'), 'utf8')) as { dependencies?: Record<string, string> };
+  return manifest.dependencies?.['playwright-core'] ?? '';
+}
+
+/**
+ * What the process runtime's layout lacks of what the images hold, each by its path, or nothing: without
+ * playwright-core every worker process stops as it loads its bundle, and the run stopped with PLATFORM_NOT_READY (the
+ * integrator's first smoke run), which said nothing of why.
+ */
+export function processImagesProblems(images: ProcessImages, playwrightVersion: string = workerPlaywrightVersion()): string[] {
+  const problems: string[] = [];
+  for (const needed of ['dist/main.js', 'dist/screening-thread.js', 'dist/migrate.js', 'dist/logins.js', 'migrations']) {
+    if (!existsSync(path.join(images.worker, needed))) {
+      problems.push(`${path.join(images.worker, needed)} is missing (pnpm --filter @tp/worker build, then copy dist and packages/db/migrations)`);
+    }
+  }
+  const playwright = path.join(images.worker, 'node_modules/playwright-core/package.json');
+  const installed = existsSync(playwright) ? (JSON.parse(readFileSync(playwright, 'utf8')) as { version?: string }).version : undefined;
+  if (installed !== playwrightVersion) {
+    problems.push(
+      `${path.join(images.worker, 'node_modules/playwright-core')} is ${installed === undefined ? 'missing' : `at ${installed}`}, not ${playwrightVersion}, which the worker image installs beside its bundle (npm install --no-save playwright-core@${playwrightVersion} in ${images.worker})`,
+    );
+  }
+  if (!existsSync(path.join(images.web, 'apps/web/server.js'))) {
+    problems.push(`${path.join(images.web, 'apps/web/server.js')} is missing (the web's standalone server, with .next/static and public beside it)`);
+  }
+  return problems;
 }
 
 export class ProcessRuntime implements Runtime {
@@ -577,11 +658,11 @@ export class ProcessRuntime implements Runtime {
     await this.stopService(spec.name);
     const dirs = this.limit(spec);
     this.cgroups.set(spec.name, dirs);
-    const join = dirs.map((dir) => `echo $$ > ${dir}/cgroup.procs`).join(' && ');
-    const [command, cwd] = spec.name === 'web' ? ['node apps/web/server.js', this.images.web] : ['node --enable-source-maps dist/main.js', this.images.worker];
+    const cwd = spec.name === 'web' ? this.images.web : this.images.worker;
     const env = { ...spec.env, PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...(spec.name === 'web' ? { PORT: String(this.webPort), HOSTNAME: '127.0.0.1' } : {}) };
-    // The shell joins the cgroups before it becomes the service, so nothing runs outside the limits.
-    const child = spawn('sh', ['-c', `${join} && exec ${command}`], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // The shell joins the cgroups, then becomes the service under taskset (processShellCommand), so nothing runs
+    // outside the limits and its affinity is its whole cpuset.
+    const child = spawn('sh', ['-c', processShellCommand(dirs, spec.cpuset, spec.command)], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const entry = { child, lines: [] as string[], exited: false };
     // The service's output beside the data directory, as `docker logs` keeps a container's: IDs, codes and numbers
     // only (the services' logger allowlist), synthetic data, never uploaded with the report.
@@ -632,8 +713,9 @@ export class ProcessRuntime implements Runtime {
   }
 
   async stopServices(): Promise<void> {
-    await this.stopService('web');
-    await this.stopService('platform');
+    for (const name of [...this.children.keys()]) {
+      await this.stopService(name);
+    }
   }
 
   postgresStatus(): Promise<PostgresStatus> {
@@ -675,6 +757,7 @@ export class ProcessRuntime implements Runtime {
 
   async applied(postgresServiceUrl: string): Promise<AppliedLimits> {
     const read = async (name: ServiceName): Promise<AppliedContainer> => {
+      const affinity = this.affinity(name);
       if (this.cgroupVersion === 2) {
         const [quota, period] = ((await this.cgroupFile(name, 'cpu.max')) ?? 'max 100000').trim().split(' ');
         const memory = (await this.cgroupFile(name, 'memory.max'))?.trim();
@@ -686,6 +769,7 @@ export class ProcessRuntime implements Runtime {
           memoryBytes,
           memorySwapBytes: memoryBytes === null || swap !== '0' ? null : memoryBytes,
           cpuset: (await this.cgroupFile(name, 'cpuset.cpus'))?.trim() ?? null,
+          affinity,
         };
       }
       const quota = Number.parseInt((await this.cgroupFile(name, 'cpu.cfs_quota_us')) ?? '-1', 10);
@@ -699,6 +783,7 @@ export class ProcessRuntime implements Runtime {
         // Without swap accounting (memsw), no swap limit can be read back; the runner has no swap configured.
         memorySwapBytes: swap === undefined ? (existsSync('/proc/swaps') && readFileSync('/proc/swaps', 'utf8').trim().split('\n').length <= 1 && memory !== undefined ? Number.parseInt(memory, 10) : null) : Number.parseInt(swap, 10),
         cpuset: (await this.cgroupFile(name, 'cpuset.cpus'))?.trim() ?? null,
+        affinity,
       };
     };
     // The caller's Postgres is not limited here; its round trip is measured as it is.
@@ -715,13 +800,39 @@ export class ProcessRuntime implements Runtime {
       await client.end();
     }
     return {
-      containers: [await read('web'), await read('platform'), { name: 'postgres', nanoCpus: null, memoryBytes: null, memorySwapBytes: null, cpuset: null }],
+      containers: [...(await Promise.all([...this.children.keys()].map((name) => read(name)))), { name: 'postgres', nanoCpus: null, memoryBytes: null, memorySwapBytes: null, cpuset: null }],
       ioMax: null,
       roundTripMedianMs: median(trips),
     };
   }
 
+  /** The service's process's CPU affinity as the kernel reports it (Cpus_allowed_list), or null when it is not running. */
+  private affinity(name: ServiceName): string | null {
+    const pid = this.children.get(name)?.child.pid;
+    if (pid === undefined) {
+      return null;
+    }
+    try {
+      return /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync(`/proc/${String(pid)}/status`, 'utf8'))?.[1] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async stopAll(): Promise<void> {
     await this.stopServices();
   }
+}
+
+/**
+ * The process runtime's shell command for a service (pure: the test checks it): join each of its cgroups, then exec the
+ * service under `taskset -c <cpuset>`, so its affinity is its whole cpuset whatever the harness's own was (see the
+ * module comment).
+ */
+export function processShellCommand(cgroupDirs: readonly string[], cpuset: string, command: readonly string[]): string {
+  if (!/^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/.test(cpuset)) {
+    throw new RangeError('a cpuset is a list of CPUs and ranges, such as 2-3');
+  }
+  const join = cgroupDirs.map((dir) => `echo $$ > ${dir}/cgroup.procs`);
+  return [...join, `exec taskset -c ${cpuset} ${command.join(' ')}`].join(' && ');
 }

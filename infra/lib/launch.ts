@@ -1,7 +1,8 @@
 /**
  * How a task's connection URLs are built (docs/adr/0049). The applications read whole PostgreSQL URLs
- * (DATABASE_URL, QUEUE_DATABASE_URL, OPERATOR_DATABASE_URL, BILLING_DATABASE_URL), but ECS injects a secret's fields one by
- * one, and an alternating-users rotation changes the username as well as the password. So each task
+ * (DATABASE_URL, QUEUE_DATABASE_URL, OPERATOR_DATABASE_URL, BILLING_DATABASE_URL, SCREENING_DATABASE_URL), but ECS
+ * injects a secret's fields one by one, and an alternating-users rotation changes the username as well as the password.
+ * So each task
  * gets `<VARIABLE>_USERNAME` and `<VARIABLE>_PASSWORD` from the login's secret, the database host,
  * port and name as plain settings, and its command is a short POSIX shell script that joins them,
  * drops the parts and execs the application. Generated passwords leave out every character that
@@ -20,7 +21,7 @@ export const DATABASE_SETTINGS = { host: 'DATABASE_HOST', port: 'DATABASE_PORT',
 
 export interface ConnectionUrl {
   /** The variable the application reads, e.g. DATABASE_URL. */
-  readonly variable: 'DATABASE_URL' | 'QUEUE_DATABASE_URL' | 'OPERATOR_DATABASE_URL' | 'BILLING_DATABASE_URL';
+  readonly variable: 'DATABASE_URL' | 'QUEUE_DATABASE_URL' | 'OPERATOR_DATABASE_URL' | 'BILLING_DATABASE_URL' | 'SCREENING_DATABASE_URL';
   /** A role every session of this login sets at sign-in (PostgreSQL's `role` connection option). */
   readonly role?: string;
 }

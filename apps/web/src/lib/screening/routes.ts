@@ -1,4 +1,13 @@
-import { PROSPECT_BILLING_ARRANGEMENTS, PROSPECT_SOURCES, type ProspectSource, type ScopeClient, type ScopePool, withPublicSnapshot } from '@tp/db/runtime';
+import {
+  PROSPECT_BILLING_ARRANGEMENTS,
+  PROSPECT_SOURCES,
+  type ProspectSource,
+  SCREENING_WAIT_REASONS,
+  type ScopeClient,
+  type ScopePool,
+  type ScreeningWaitReason,
+  withPublicSnapshot,
+} from '@tp/db/runtime';
 import { type Cents, cents } from '@tp/money';
 import { textPhiFindings } from '@tp/observability';
 import {
@@ -31,15 +40,18 @@ import { KEPT_WITH, type KeptWith } from '@tp/worker/screening-wording';
 import { z } from 'zod';
 
 import { attributionValues, readAttribution } from '../http/attribution';
+import { rateSubjectHash } from '../http/rate-limit';
 import { type Environment, SCREENING_LEGAL_SURFACES, showsLegalSurfaces } from '../legal-surfaces';
 import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
 import { optionalText } from '../routes/schemas';
+import type { ScreeningLaunch } from '../server/config';
 import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
+import { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath, screeningWaitStateOf } from './sent';
 
 /**
  * The free screening's routes (Change Order 001, CO-04; reconciliation-001 D18 to D21; docs/adr/0062):
@@ -124,6 +136,8 @@ export const SCREENING_LIMITS: ScreeningLimits = {
 
 export interface ScreeningPageData {
   readonly sent: boolean;
+  /** After an upload, how long its result is likely to take (SCREENING_WAIT_STATES); null on the form itself. */
+  readonly wait: ScreeningWaitState | null;
   /** A rule release is in force and a place-of-service split is approved. */
   readonly open: boolean;
   readonly releaseNo: number | null;
@@ -169,12 +183,16 @@ export const screeningPage = publicRoute({
   kind: 'page',
   path: '/screening',
   phi: false,
-  params: z.object({ sent: optionalText(z.literal('1')) }),
+  // `wait` is read leniently, at any length: a link from before it existed, or one edited by hand, says only that the
+  // file arrived (screeningWaitStateOf), and never answers 404.
+  params: z.object({ sent: optionalText(z.literal('1')), wait: optionalText(z.string()) }),
   handle: async ({ params, services }): Promise<ScreeningPageData> => {
-    const { open, releaseNo } = await screeningOpen(services.pool, services.environment);
+    const { open, releaseNo } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
     const now = services.now();
+    const sent = params.sent !== undefined;
     return {
-      sent: params.sent !== undefined,
+      sent,
+      wait: sent ? screeningWaitStateOf(params.wait) : null,
       open,
       releaseNo,
       columns: SCREENING_COLUMNS,
@@ -340,13 +358,39 @@ function reasonIssues(reasons: readonly ScreeningRejection[], total: number): Is
 
 const SCREENING_CLOSED: Issue = { field: 'input', message: 'screening is not open yet; try again later' };
 
+/** A launch value's report hash: the SHA-256 of the tag's passing capacity report, in lowercase hex. */
+const REPORT_SHA256 = /^[0-9a-f]{64}$/;
+
+/**
+ * Decision 13 (docs/adr/0062; SCR-20): a production server screens only when the deploy's launch value (ScreeningLaunch,
+ * which the launch check prints once the tag's capacity report passed with time enforced on both image IDs) names the
+ * release tag this server runs. CloudFormation keeps a parameter's value when a deploy leaves it out, so a value from an
+ * earlier tag vouches for nothing here and keeps the screening closed. Closing never stops the consumer: runs already
+ * queued are still priced. Staging and development are not gated (the end-to-end journey and the factor measurement
+ * need them open).
+ */
+export function screeningLaunched(environment: Environment, launch: ScreeningLaunch): boolean {
+  if (environment !== 'production') {
+    return true;
+  }
+  const { imageTag, value } = launch;
+  if (imageTag === null || value === null || imageTag === '' || imageTag === 'none' || !value.startsWith(`${imageTag}:`)) {
+    return false;
+  }
+  return REPORT_SHA256.test(value.slice(imageTag.length + 1));
+}
+
 /**
  * Whether screening is open: a rule release in force and a place-of-service split approved, and, on a production
  * server, counsel's review of what the screening says is kept recorded (src/lib/legal-surfaces.ts: until then nothing is
- * screened or kept there under wording counsel has not confirmed).
+ * screened or kept there under wording counsel has not confirmed) and the deploy's launch value for this server's
+ * release (screeningLaunched).
  */
-async function screeningOpen(pool: ScopePool<ScopeClient>, environment: Environment): Promise<{ readonly open: boolean; readonly releaseNo: number | null }> {
+async function screeningOpen(pool: ScopePool<ScopeClient>, environment: Environment, launch: ScreeningLaunch): Promise<{ readonly open: boolean; readonly releaseNo: number | null }> {
   if (!showsLegalSurfaces(SCREENING_LEGAL_SURFACES, environment)) {
+    return { open: false, releaseNo: null };
+  }
+  if (!screeningLaunched(environment, launch)) {
     return { open: false, releaseNo: null };
   }
   const status = await withClient(pool, async (client) => {
@@ -469,8 +513,13 @@ export const screeningSubmit = publicRoute({
     referringFirm: field(400),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
+    // When the web received this upload: the proxy's stamp at header time, before Next read the multipart body, copied
+    // the rows, parsed the input and counted the rate limit (src/lib/http/received.ts), so the time to its email covers
+    // the web's whole share (decision 14; TimeToEmailMs); this handler's own clock where no proxy ran.
+    // submit_screening() clamps it into the ten minutes before its own clock.
+    const receivedAt = request.receivedAt ?? new Date();
     // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
-    const { open, releaseNo } = await screeningOpen(services.pool, services.environment);
+    const { open, releaseNo } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
     if (!open || releaseNo === null) {
       throw new InputError([SCREENING_CLOSED]);
     }
@@ -520,13 +569,20 @@ export const screeningSubmit = publicRoute({
     if (!leftOutPlausible(leftOut, rows.length) || !outsideContentPlausible(outside, rows.length, leftOut.rows)) {
       throw new InputError([{ field: 'upload', message: UPLOAD_UNREADABLE }]);
     }
+    // The account the rate limiter counts this upload against, as the limiter keeps it: its keyed HMAC, never the
+    // address or the domain (the database sums the account's rows of the day by it; the founder's Q7).
+    const account = screeningRateAccount(input.contactEmail);
+    if (account === null) {
+      throw new InputError([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
+    }
+    const rateAccountSubject = rateSubjectHash(services.sealer, 'screening', 'account', account);
     let runId: string;
     try {
       runId = await withClient(services.pool, async (client) => {
         // The database hashes the rows it stores (their canonical form); no hash is taken from the browser.
         const result = await client.query<{ run_id: string }>(
           `SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-                                   $28) AS run_id`,
+                                   $28, $29, $30) AS run_id`,
           [
           prospect.practiceName,
           prospect.state,
@@ -551,6 +607,8 @@ export const screeningSubmit = publicRoute({
           ...attribution,
           consentSha256,
           termsSha256,
+          receivedAt.toISOString(),
+          rateAccountSubject,
           request.requestId,
           ],
         );
@@ -563,15 +621,73 @@ export const screeningSubmit = publicRoute({
       }
       throw error;
     }
+    // Where the run stands in the queue: its tier (Q7), and how many runs are pricing or ahead of it.
+    let wait: ScreeningQueuePlace | null;
     try {
-      await services.queue.enqueueScreeningRun(runId);
+      wait = await withClient(services.pool, (client) => screeningQueuePlace(client, runId));
     } catch {
-      // Not fatal: the run stays queued and the minute's sweep prices it.
-      services.logger.warn('screening run not queued; the sweep will price it', { screening_run_id: runId, error_code: 'SCREENING_NOT_QUEUED' });
+      // Not fatal: the run is stored, and the minute's sweep sends its job at its own priority. Where it stands is not
+      // known, so the page says only that the file arrived.
+      services.logger.warn('screening run not queued; the sweep will send it', { screening_run_id: runId, error_code: 'SCREENING_NOT_QUEUED' });
+      return { redirect: screeningSentPath('sent') };
     }
-    return { redirect: '/screening?sent=1' };
+    const place = wait ?? { priority: 0, reason: null, pricing: 0, queuedAhead: 0 };
+    if (place.reason !== null) {
+      services.logger.info('screening upload sent to wait', { screening_run_id: runId, error_code: SCREENING_UPLOAD_WAIT_CODES[place.reason] });
+    }
+    try {
+      await services.queue.enqueueScreeningRun(runId, { priority: place.priority });
+    } catch {
+      // Not fatal: the run stays queued and the minute's sweep sends its job again at its priority.
+      services.logger.warn('screening run not queued; the sweep will send it', { screening_run_id: runId, error_code: 'SCREENING_NOT_QUEUED' });
+    }
+    return { redirect: screeningSentPath(screeningWaitState(place, services.screeningSlots)) };
   },
 });
+
+/** The "sent" page's four states and its path (src/lib/screening/sent.ts holds their words). */
+export { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath };
+
+/** Where a stored run stands (screening_wait()): its queue priority and tier, the runs pricing, and those ahead of it. */
+export interface ScreeningQueuePlace {
+  readonly priority: number;
+  readonly reason: ScreeningWaitReason | null;
+  readonly pricing: number;
+  readonly queuedAhead: number;
+}
+
+/**
+ * The code an upload sent to wait is logged with, by its tier (the worker's SCREENING_WAIT_CODES; routes.db.test.ts
+ * holds the two equal). The line counts toward the UploadsSentToWait metric (infra/lib/screening.ts).
+ */
+export const SCREENING_UPLOAD_WAIT_CODES: Readonly<Record<ScreeningWaitReason, string>> = { account_share: 'SCREENING_ACCOUNT_SHARE', daily_cap: 'SCREENING_DAILY_CAP' };
+
+/** The run's place, or null when there is no such run (one a later screening already replaced). */
+async function screeningQueuePlace(client: ScopeClient, runId: string): Promise<ScreeningQueuePlace | null> {
+  const { rows } = await client.query<{ queue_priority: number; wait_reason: string | null; pricing: number; queued_ahead: number }>(
+    'SELECT queue_priority, wait_reason, pricing, queued_ahead FROM screening_wait($1)',
+    [runId],
+  );
+  const row = rows[0];
+  if (row === undefined) {
+    return null;
+  }
+  const reason = row.wait_reason === null ? null : (SCREENING_WAIT_REASONS as readonly string[]).includes(row.wait_reason) ? (row.wait_reason as ScreeningWaitReason) : null;
+  return { priority: row.queue_priority, reason, pricing: row.pricing, queuedAhead: row.queued_ahead };
+}
+
+/**
+ * The state the "sent" page shows: `waiting` when the upload waits (past its account's share or the day's cap, which the
+ * page does not tell apart: sent.ts); otherwise `minutes` when the runs pricing and those ahead of it fill every slot
+ * the consumer has (its tasks times its threads), so this one cannot start at once; `soon` when one is free.
+ */
+export function screeningWaitState(place: ScreeningQueuePlace, slots: number): ScreeningWaitState {
+  // Past the account's share or the day's cap alike: the page says it waits, the email says why (sent.ts).
+  if (place.reason !== null) {
+    return 'waiting';
+  }
+  return place.pricing + place.queuedAhead >= slots ? 'minutes' : 'soon';
+}
 
 /**
  * What the screening says when the ZIP code needs more than five digits, or Medicare's list for it is not loaded

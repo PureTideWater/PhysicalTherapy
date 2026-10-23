@@ -42,12 +42,17 @@ export class MemoryQueue {
     start: () => Promise.resolve(this.client as never),
     stop: () => Promise.resolve(),
     createQueue: () => Promise.resolve(),
+    updateQueue: () => Promise.resolve(),
     schedule: () => Promise.resolve(),
+    unschedule: () => Promise.resolve(),
     work: ((name: string, _options: unknown, handler: WorkHandler) => {
       this.handlers.set(name, handler);
       return Promise.resolve(name);
     }) as QueueClient['work'],
     send: ((name: string, data: object | null, options?: { singletonKey?: string; startAfter?: unknown }) => this.send(name, data, options)) as QueueClient['send'],
+    // No polling workers to list or wake: drain() hands each job to its handler.
+    getWipData: () => [],
+    notifyWorker: () => undefined,
   };
 
   send(name: string, data: unknown, options: { singletonKey?: string; startAfter?: unknown } = {}): Promise<string | null> {

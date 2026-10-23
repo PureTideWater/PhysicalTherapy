@@ -1,6 +1,6 @@
 import { CONNECTION_TIMEOUT_MS } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
-import { type JobPayload, type JobType, SCREENING_PRICE_PAYLOAD, enqueue, enqueueScreeningRun, parsePayload } from '@tp/worker/jobs';
+import { type JobPayload, type JobType, SCREENING_PRICE_PAYLOAD, SCREENING_PRIORITY, type ScreeningRunJobOptions, enqueue, enqueueScreeningRun, parsePayload } from '@tp/worker/jobs';
 import { PgBoss } from 'pg-boss';
 
 /**
@@ -12,8 +12,11 @@ import { PgBoss } from 'pg-boss';
 export interface JobQueue {
   /** Queues the job; null when one with the same singleton key is already queued or active. */
   enqueue<T extends JobType>(type: T, payload: JobPayload<T>): Promise<string | null>;
-  /** Queues a free screening's pricing (a platform job, docs/adr/0062); null when that run's job is already queued or active. */
-  enqueueScreeningRun(runId: string): Promise<string | null>;
+  /**
+   * Queues a free screening's pricing for the screening consumer (docs/adr/0062) at the run's queue priority (0, or below
+   * for an upload over its account's share or the day's cap); null when that run's job is already queued or active.
+   */
+  enqueueScreeningRun(runId: string, options?: ScreeningRunJobOptions): Promise<string | null>;
 }
 
 /**
@@ -48,8 +51,8 @@ export class PgBossQueue implements JobQueue {
     return enqueue(await this.boss(), type, payload);
   }
 
-  async enqueueScreeningRun(runId: string): Promise<string | null> {
-    return enqueueScreeningRun(await this.boss(), runId);
+  async enqueueScreeningRun(runId: string, options: ScreeningRunJobOptions = {}): Promise<string | null> {
+    return enqueueScreeningRun(await this.boss(), runId, options);
   }
 }
 
@@ -59,14 +62,17 @@ export class MemoryQueue implements JobQueue {
 
   /** The screening runs queued for pricing, in order. */
   readonly screeningRuns: string[] = [];
+  /** Each one's queue priority, in the same order. */
+  readonly screeningPriorities: number[] = [];
 
   enqueue<T extends JobType>(type: T, payload: JobPayload<T>): Promise<string | null> {
     this.jobs.push({ type, payload: parsePayload(type, payload) });
     return Promise.resolve(`memory-${String(this.jobs.length)}`);
   }
 
-  enqueueScreeningRun(runId: string): Promise<string | null> {
+  enqueueScreeningRun(runId: string, options: ScreeningRunJobOptions = {}): Promise<string | null> {
     this.screeningRuns.push(SCREENING_PRICE_PAYLOAD.parse({ screening_run_id: runId }).screening_run_id ?? '');
+    this.screeningPriorities.push(SCREENING_PRIORITY.parse(options.priority ?? 0));
     return Promise.resolve(`memory-screening-${String(this.screeningRuns.length)}`);
   }
 }

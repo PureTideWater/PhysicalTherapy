@@ -13,7 +13,7 @@ import {
   tenantTables,
 } from './catalog';
 import { readDatabaseUrl } from './config';
-import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE, SCREENING_ROLE } from './roles';
 import { type MigratedDatabase, createMigratedDatabase } from './testing';
 
 /**
@@ -368,6 +368,34 @@ describe('the catalog test', () => {
       ).rejects.toMatchObject({ code: '42501' });
     } finally {
       await app.end();
+    }
+  });
+
+  it('fails when the application role may switch to the screening consumer’s role, or that role owns anything (migration 20261106090000)', async () => {
+    expect(await problemsAfter(`RESET ROLE; GRANT ${SCREENING_ROLE} TO ${APP_ROLE} WITH INHERIT FALSE, SET TRUE;`)).toEqual([`the application role ${APP_ROLE} may SET ROLE ${SCREENING_ROLE}`]);
+    const owned = await problemsAfter(`CREATE TABLE throwaway_owned (id uuid PRIMARY KEY); RESET ROLE; ALTER TABLE throwaway_owned OWNER TO ${SCREENING_ROLE};`);
+    expect(owned).toEqual(expect.arrayContaining([`the screening role ${SCREENING_ROLE} owns relation throwaway_owned`]));
+    // As the dev login every request uses: no switch to the consumer's role. Its own dev login switches and inherits nothing.
+    const app = new pg.Client({ connectionString: database.appUrl });
+    await app.connect();
+    try {
+      await expect(app.query(`SET ROLE ${SCREENING_ROLE}`)).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await app.end();
+    }
+    const consumer = new pg.Client({ connectionString: database.screeningUrl });
+    await consumer.connect();
+    try {
+      // Before it switches it holds nothing: not the queue's gauge, not a table.
+      await expect(consumer.query('SELECT * FROM operator_screening_queue()')).rejects.toMatchObject({ code: '42501' });
+      await expect(consumer.query('SELECT count(*) FROM screening_run')).rejects.toMatchObject({ code: '42501' });
+      await consumer.query(`SET ROLE ${SCREENING_ROLE}`);
+      expect((await consumer.query('SELECT queued FROM operator_screening_queue()')).rows).toEqual([{ queued: 0 }]);
+      await expect(consumer.query('SELECT count(*) FROM screening_run')).rejects.toMatchObject({ code: '42501' });
+      await expect(consumer.query(`SET ROLE ${OPERATOR_ROLE}`)).rejects.toMatchObject({ code: '42501' });
+      await expect(consumer.query(`SET ROLE ${APP_ROLE}`)).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await consumer.end();
     }
   });
 

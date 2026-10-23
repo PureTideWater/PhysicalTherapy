@@ -83,8 +83,8 @@ describe('platform wiring', () => {
       'billing_dunning',
       'monitoring_schedule',
       'restore_drill',
+      // The screening's pricing is the consumer's since PR 6b-3 (jobs/screening.ts); its expiry stays here.
       'screening_expiry',
-      'screening_price',
       'support_grant_notices',
       'support_mail',
       'usage_snapshot',

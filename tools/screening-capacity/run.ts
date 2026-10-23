@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,8 +13,22 @@ import { type Browser, type BrowserContext, type Page, chromium } from 'playwrig
 
 import { environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
-import { type ColdStart, CommandError, DockerRuntime, type PostgresStatus, ProcessRuntime, type Runtime, type ServiceName, type ServiceSpec, masked, stderrTail } from './containers';
-import { DEPARTURES, HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginsEnvironment, platformEnvironment, webEnvironment } from './env';
+import {
+  type ColdStart,
+  CommandError,
+  DockerRuntime,
+  type PostgresStatus,
+  ProcessRuntime,
+  type Runtime,
+  type ServiceName,
+  type ServiceSpec,
+  masked,
+  processImagesProblems,
+  screeningServices,
+  serviceCommand,
+  stderrTail,
+} from './containers';
+import { DEPARTURES, HARNESS_LOGINS, type HarnessDirectories, harnessLogins, layoutDepartures, loginsEnvironment, platformEnvironment, screeningEnvironment, webEnvironment } from './env';
 import {
   HARNESS_DEADLINE_MS,
   MIB,
@@ -23,54 +37,79 @@ import {
   SCENARIO_CAP_MS,
   SCENARIO_START_DEADLINE_MS,
   STALL_MS,
+  cpuLayout,
+  harnessCpus,
+  layoutText,
   postgresLimit,
   productionLimits,
   runnerTooSmall,
 } from './limits';
-import { anonBytes, cpuThrottling, memoryEvents, peak, phaseLines, phasesByRun, workerStarted } from './measure';
+import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, workerStarted } from './measure';
 import {
   type AppliedLimits,
+  type ConsumerMeasure,
   type ContainerMeasure,
   type Measurements,
   ORACLE_UPLOADS,
   type OracleComparison,
   type OracleKind,
   type ScenarioMeasure,
+  TIME_MODES,
+  type TimeMode,
   type UploadMeasure,
+  jobResult,
   markdown,
   oracleKind,
+  repeatedSummary,
   report,
+  scenarioLabel,
   timeRule,
+  uploadLabel,
+  uploadStart,
+  workflowRun,
 } from './report';
-import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
+import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
 
 /**
  * `pnpm screening:capacity`: the screening's capacity test under production limits (audit #53 part 1; docs/adr/0062,
- * "Capacity under production limits"; docs/runbooks/screening-capacity.md). Steps, as the design's §3.6 numbers them:
+ * "Capacity under production limits"; docs/runbooks/screening-capacity.md). Since PR 6b-3 it runs the screening's own
+ * consumer as production will (WORKER_JOBS=screening, one container per declared task at its size, its threads at the
+ * declared concurrency, on the screening login) beside a platform that prices no screening, so time is enforced
+ * (decision 15), binding or advisory as the workflow's --time-mode says (the founder's third ruling of 2026-10-23, "Free:
+ * time advisory": binding on a release's run, advisory on every other). Steps, as the design's §3.6 numbers them:
  *
- *  1. read the limits and the runner; stop as "runner too small" if it is;
+ *  1. read the limits and the runner; stop as "runner too small" if it is (`--print-harness-cpus` prints the CPUs the
+ *     workflow pins the harness to, from the same layout, and exits);
  *  2. build the SYNTHETIC scale release in a child process (or take one already built);
  *  3. start Postgres with its limits, io.max and netem (Docker), or take a scratch database on the caller's server;
  *  4. run the migration task (migrations, then logins; a failure's stderr goes to the job's log and its last lines to
  *     the report), load the release in a child process, approve the place-of-service split as a synthetic contract
  *     specialist;
- *  5. start web and platform and wait for the health route and the worker's start line; read the limits back;
- *  6. run S1 to S5: S1, S4 and S5 first stop web and platform, restart Postgres with the page cache dropped (recorded)
- *     and start both again; a fresh platform where a scenario says; each upload's page parses its file first (not
- *     timed), then the uploads are submitted (three at once in S4 and S5, and the small one once the large runs' jobs are queued);
- *     memory sampled every 500 ms, the outbox polled every 250 ms, a run in pricing that records no batch for five
- *     minutes, or a run still queued while nothing in its scenario moved for five minutes, called stalled, a 30-minute
- *     cap; then the cgroups' peaks, events and throttling, Postgres's OOM kills and restarts, the phase lines, each
- *     pricing job's place in the queue, the platform jobs that ran, the stored rows; the report is written after each;
- *     no scenario starts after 60 minutes, and one still running at 70 ends there (limits.ts);
- *  7. open every result link, then its last page of groups;  8. close the browsers, stop web and platform;
+ *  5. start web, platform and the consumer and wait for the health route and each worker's start line; read the limits
+ *     back;
+ *  6. run S1 to S5, S4 three times (S4#1 to S4#3, each with the same uploads from prospects of their own; its time is
+ *     judged on the middle run, the founder's ruling of 2026-10-23): S1, each S4 run and S5 first stop every service,
+ *     restart Postgres with the page cache dropped (recorded) and start them again; a fresh consumer where a scenario
+ *     says; each upload's page parses its file first (not timed),
+ *     then the uploads are submitted (three at once in S4 and S5, and the small one once the large runs' jobs are
+ *     queued); with a static asset origin, the pages' requests to it are served from the web container's own
+ *     /_next/static/; memory sampled every 500 ms, the outbox polled every 250 ms, a run in pricing that records no
+ *     batch for five minutes, or a run still queued while nothing in its scenario moved for five minutes, called stalled,
+ *     a 30-minute cap; then the cgroups' peaks, events and throttling, Postgres's OOM kills and restarts, the consumer's
+ *     phase and time-to-email lines, any screening the platform's log shows it pricing, each run's tier, each pricing
+ *     job's place in the queue, the jobs that ran, the stored rows; the report is written after each; no scenario
+ *     starts after 60 minutes, and one still running at 70 ends there (limits.ts);
+ *  7. open every result link, then its last page of groups;  8. close the browsers, stop every service;
  *  9. compare S1-1, S2-1 and S3-1 with the frozen oracle and S1-2 (a ZIP split across localities, with its ZIP+4)
  *     with the whole-release oracle, in a child process, against the running Postgres (oracle.ts);
- * 10. remove Postgres; write screening-capacity.json and summary.md (and the job summary in CI); exit non-zero on any
- *     failing check.
+ * 10. remove Postgres; write screening-capacity.json (with the GitHub Actions run that measured: GITHUB_WORKFLOW_REF,
+ *     GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT), its SHA-256 (screening-capacity.sha256, as the launch check
+ *     computes it) and summary.md (and the job summary in CI); annotate each warning (an advisory run's time verdicts,
+ *     the sizing question) and exit non-zero on any failing check (report.ts, jobResult).
  *
- * The harness and Chromium run on the CPUs the workflow gives them (taskset), never the tasks' CPU. Nothing it writes
- * carries a link, a token or a row; the services' saved logs (<out>/logs) hold IDs, codes and numbers, links masked.
+ * The harness and Chromium run on the CPUs the workflow gives them (taskset): on the free 4-CPU runner Postgres's 0-1,
+ * which they share; on eight CPUs or more 6-7, of their own; never the consumer's. Nothing it writes carries a link, a
+ * token or a row; the services' saved logs (<out>/logs) hold IDs, codes and numbers, links masked.
  */
 
 const exec = promisify(execFile);
@@ -93,13 +132,21 @@ interface Options {
   readonly releaseDir: string | null;
   readonly only: readonly string[];
   readonly keepDatabase: boolean;
+  /** The static host the web image was built for (its STATIC_ASSET_ORIGIN), or null for an image built with none. */
+  readonly staticAssetOrigin: string | null;
+  /** Whether time fails the run (binding: a release's) or warns (advisory: every other run's); the workflow names it. */
+  readonly timeMode: TimeMode;
 }
+
+/** An https origin with no path, as the web's STATIC_ASSET_ORIGIN takes it. */
+const STATIC_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d+)?$/;
 
 function options(argv: readonly string[]): Options {
   const { values } = parseArgs({
     args: [...argv],
     options: {
       out: { type: 'string' },
+      'static-asset-origin': { type: 'string' },
       runtime: { type: 'string', default: 'docker' },
       'web-image': { type: 'string', default: 'tp-web:capacity' },
       'worker-image': { type: 'string', default: 'tp-worker:capacity' },
@@ -109,13 +156,23 @@ function options(argv: readonly string[]): Options {
       'release-dir': { type: 'string' },
       scenarios: { type: 'string' },
       'keep-database': { type: 'boolean', default: false },
+      'time-mode': { type: 'string' },
     },
     strict: true,
   });
   if (values.out === undefined || (values.runtime !== 'docker' && values.runtime !== 'process')) {
     throw new HarnessStop('USAGE');
   }
+  // No default: a run names its mode, so neither workflow measures in one it did not choose.
+  const timeMode = TIME_MODES.find((mode) => mode === values['time-mode']);
+  if (timeMode === undefined) {
+    throw new HarnessStop('USAGE');
+  }
   if (values.runtime === 'process' && (values.images === undefined || values['admin-url'] === undefined)) {
+    throw new HarnessStop('USAGE');
+  }
+  const staticAssetOrigin = values['static-asset-origin'] ?? null;
+  if (staticAssetOrigin !== null && !STATIC_ORIGIN.test(staticAssetOrigin)) {
     throw new HarnessStop('USAGE');
   }
   return {
@@ -129,6 +186,8 @@ function options(argv: readonly string[]): Options {
     releaseDir: values['release-dir'] === undefined ? null : path.resolve(values['release-dir']),
     only: values.scenarios === undefined ? [] : values.scenarios.split(','),
     keepDatabase: values['keep-database'],
+    staticAssetOrigin,
+    timeMode,
   };
 }
 
@@ -279,6 +338,8 @@ function readOutbox(dir: string, seen: Map<string, Mail>): void {
 }
 
 const RESULT_LINK = /https?:\/\/[^\s]+\/screening\/results\/[a-z]{32}/;
+/** How long the harness waits for the consumer's time-to-email line of a run already emailed. */
+const LOG_WAIT_MS = 30_000;
 /** How long the harness waits for a result page; one that takes longer counts as not opening. */
 const RESULT_PAGE_MS = 60_000;
 
@@ -287,7 +348,16 @@ interface Prepared {
   readonly rows: number;
   readonly context: BrowserContext;
   readonly page: Page;
-  submittedAt: number | null;
+  /**
+   * When the harness clicked "Screen the file", by the host's clock: the start of the upload's time. It is no later than
+   * the web's receipt, which the proxy stamps when the POST's headers arrive, so the consumer's logged time can never
+   * exceed the harness's for a reason of the harness's own. Playwright's request event, which the harness used before,
+   * reaches it after the POST has left (the browser reports it over its debugging protocol): under S1 and S4 the web
+   * received the POST up to 81 ms before the harness heard of it, and the logged time came out above the harness's.
+   */
+  clickedAt: number | null;
+  /** Whether the page sent its POST to /screening at all (an upload whose page never did has no submission time). */
+  posted: boolean;
   emailedAt: number | null;
   link: string | null;
   failedNotice: boolean;
@@ -301,11 +371,14 @@ interface RunFacts {
   readonly stored: number;
   readonly pending: number;
   readonly engineErrors: number;
+  /** The tier submit_screening set (Q7): null in the normal tier. */
+  readonly waitReason: string | null;
+  readonly queuePriority: number;
 }
 
 async function runFacts(owner: pg.Client, email: string): Promise<RunFacts | null> {
   const { rows } = await owner.query<RunFacts>(
-    `SELECT r.id, r.status,
+    `SELECT r.id, r.status, r.wait_reason AS "waitReason", r.queue_priority::int AS "queuePriority",
             (SELECT count(*)::int FROM screening_result s WHERE s.run_id = r.id) AS stored,
             (SELECT count(*)::int FROM screening_result s WHERE s.run_id = r.id AND s.disposition = 'pending') AS pending,
             (SELECT count(*)::int FROM screening_result s WHERE s.run_id = r.id AND s.unpriced_reason = 'ENGINE_ERROR') AS "engineErrors"
@@ -323,6 +396,10 @@ interface Context {
   readonly outbox: string;
   readonly web: ServiceSpec;
   readonly platform: ServiceSpec;
+  /** The consumer's tasks, one service each (screening-1 to screening-N). */
+  readonly consumers: readonly ServiceSpec[];
+  /** The static host the web image was built for, routed to the web container; null for none. */
+  readonly staticAssetOrigin: string | null;
   /** When the harness's deadline ends a scenario still running (limits.ts, HARNESS_DEADLINE_MS). */
   readonly until: number;
 }
@@ -332,9 +409,18 @@ async function startWeb(runtime: Runtime, spec: ServiceSpec, label: string): Pro
   await waitUntil('WEB', async () => (await fetch(`${runtime.webOrigin}/api/health`)).status === 200, 300_000);
 }
 
-async function startPlatform(runtime: Runtime, spec: ServiceSpec, label: string): Promise<void> {
+/** Starts a worker service (platform or a consumer task) and waits for its start line. */
+async function startWorker(runtime: Runtime, spec: ServiceSpec, label: string): Promise<void> {
   await runtime.startService(spec, label);
-  await waitUntil('PLATFORM', async () => workerStarted(await runtime.logs('platform')), 180_000);
+  await waitUntil(spec.name.toUpperCase().replaceAll('-', '_'), async () => workerStarted(await runtime.logs(spec.name)), 180_000);
+}
+
+/** Starts the consumer's tasks afresh (their threads' release caches cold). */
+async function startConsumers(runtime: Runtime, consumers: readonly ServiceSpec[], label: string): Promise<void> {
+  for (const spec of consumers) {
+    await runtime.stopService(spec.name);
+    await startWorker(runtime, spec, label);
+  }
 }
 
 /** A run's pricing job in pg-boss: when it was created (its place in the queue) and started, null when not found. */
@@ -377,29 +463,59 @@ async function readContainer(runtime: Runtime, name: ServiceName, limitMiB: numb
 
 const clientAddress = (scenario: number, upload: number) => `198.51.100.${String(10 + scenario * 10 + upload)}`;
 
-async function runScenario(spec: ScenarioSpec, index: number, context: Context, limits: { readonly web: number; readonly platform: number }): Promise<{ readonly measure: ScenarioMeasure; readonly runs: Map<string, string> }> {
+/**
+ * The static origin's requests from one browser context, served from the web container's own /_next/static/ (the image
+ * keeps them; production's CloudFront serves the same files): anything else for the static host, or a file the web
+ * did not serve, is counted as having left for it and aborted.
+ */
+async function routeStaticOrigin(context: BrowserContext, origin: string, webOrigin: string, counts: { routed: number; left: number }): Promise<void> {
+  await context.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/_next/static/')) {
+      // Playwright's own route.fetch keeps the protocol; the web container is plain HTTP on the runner, so Node fetches it.
+      const response = await fetch(`${webOrigin}${url.pathname}${url.search}`, { headers: { 'X-Forwarded-For': '198.51.100.251' } }).catch(() => null);
+      if (response?.ok === true) {
+        const headers = Object.fromEntries([...response.headers.entries()].filter(([name]) => name !== 'content-encoding' && name !== 'content-length' && name !== 'transfer-encoding'));
+        await route.fulfill({ status: response.status, headers, body: Buffer.from(await response.arrayBuffer()) });
+        counts.routed += 1;
+        return;
+      }
+    }
+    counts.left += 1;
+    await route.abort();
+  });
+}
+
+async function runScenario(spec: ScenarioSpec, index: number, context: Context, limits: Readonly<Record<string, number>>): Promise<{ readonly measure: ScenarioMeasure; readonly runs: Map<string, string> }> {
   const { runtime, browser, owner } = context;
+  // S4#2 for the repeated scenario's second run, in the log, the services' log files and the report.
+  const label = scenarioLabel(spec.id, spec.repetition);
   let coldStart: ColdStart | null = null;
   if (spec.freshPostgres) {
     // A cold database: the services stop first (their pools would lose every connection), the harness lets go of its
-    // own, Postgres restarts with the page cache dropped and the delay applied again, and both services start fresh.
-    say(`${spec.id}: a cold Postgres (restarted, page cache dropped), then web and platform fresh`);
+    // own, Postgres restarts with the page cache dropped and the delay applied again, and every service starts fresh.
+    say(`${label}: a cold Postgres (restarted, page cache dropped), then web, platform and the consumer fresh`);
     await runtime.stopServices();
     await owner.end();
     coldStart = await runtime.restartPostgres();
-    await startWeb(runtime, context.web, spec.id);
-    await startPlatform(runtime, context.platform, spec.id);
+    await startWeb(runtime, context.web, label);
+    await startWorker(runtime, context.platform, label);
+    await startConsumers(runtime, context.consumers, label);
   } else {
     // A service that exited in an earlier scenario (counted there) is started again, as production's service would
     // start a new task, so one failure does not leave the later scenarios unmeasured.
     if (!(await runtime.status('web')).running) {
-      say(`${spec.id}: web had exited; starting it again`);
-      await startWeb(runtime, context.web, spec.id);
+      say(`${label}: web had exited; starting it again`);
+      await startWeb(runtime, context.web, label);
     }
-    if (spec.freshPlatform || !(await runtime.status('platform')).running) {
-      say(`${spec.id}: a fresh platform container`);
-      await runtime.stopService('platform');
-      await startPlatform(runtime, context.platform, spec.id);
+    if (!(await runtime.status('platform')).running) {
+      say(`${label}: platform had exited; starting it again`);
+      await startWorker(runtime, context.platform, label);
+    }
+    const exited = (await Promise.all(context.consumers.map(async (consumer) => (await runtime.status(consumer.name)).running))).some((running) => !running);
+    if (spec.freshConsumer || exited) {
+      say(`${label}: a fresh consumer${exited ? ' (a task had exited)' : ''}`);
+      await startConsumers(runtime, context.consumers, label);
     }
   }
   const postgresBefore = await runtime.postgresStatus();
@@ -407,14 +523,18 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
   const capUntil = Math.min(scenarioStart + SCENARIO_CAP_MS, context.until);
   const since = new Date(scenarioStart);
   const prepared: Prepared[] = [];
+  const staticCounts = { routed: 0, left: 0 };
   for (const [at, upload] of spec.uploads.entries()) {
     const rows = shapeRows(upload.shape, undefined, upload.variant);
     const browserContext = await browser.newContext({ extraHTTPHeaders: { 'X-Forwarded-For': clientAddress(index, at) } });
+    if (context.staticAssetOrigin !== null) {
+      await routeStaticOrigin(browserContext, context.staticAssetOrigin, runtime.webOrigin, staticCounts);
+    }
     const page = await browserContext.newPage();
-    const entry: Prepared = { upload, rows: rows.length, context: browserContext, page, submittedAt: null, emailedAt: null, link: null, failedNotice: false, accepted: true };
+    const entry: Prepared = { upload, rows: rows.length, context: browserContext, page, clickedAt: null, posted: false, emailedAt: null, link: null, failedNotice: false, accepted: true };
     page.on('request', (request) => {
-      if (entry.submittedAt === null && request.method() === 'POST' && new URL(request.url()).pathname === '/screening') {
-        entry.submittedAt = Date.now();
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/screening') {
+        entry.posted = true;
       }
     });
     await page.goto(`${runtime.webOrigin}/screening`, { timeout: 180_000 });
@@ -428,22 +548,26 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     await page.locator('[data-state="file-ready"]').waitFor({ timeout: 600_000 });
     prepared.push(entry);
   }
-  say(`${spec.id}: ${String(prepared.length)} pages ready; submitting`);
-  const samples: Record<ServiceName, number[]> = { web: [], platform: [] };
+  say(`${label}: ${String(prepared.length)} pages ready; submitting`);
+  const measured: readonly ServiceName[] = ['web', 'platform', ...context.consumers.map((consumer) => consumer.name)];
+  const samples = new Map<ServiceName, number[]>(measured.map((name) => [name, []]));
   let sampling = true;
   const sampler = (async () => {
     while (sampling) {
-      for (const name of ['web', 'platform'] as const) {
+      for (const name of measured) {
         const text = await runtime.cgroupFile(name, 'memory.stat');
         if (text !== null) {
-          samples[name].push(anonBytes(text, runtime.cgroupVersion));
+          samples.get(name)?.push(anonBytes(text, runtime.cgroupVersion));
         }
       }
       await sleep(500);
     }
   })();
-  const click = (entry: Prepared) => entry.page.getByRole('button', { name: 'Screen the file' }).click({ timeout: 60_000 });
-  const sentPage = (entry: Prepared) => entry.page.waitForURL(/\/screening\?sent=1$/, { timeout: Math.max(1_000, Math.min(600_000, capUntil - Date.now())) });
+  const click = (entry: Prepared) => {
+    entry.clickedAt = Date.now();
+    return entry.page.getByRole('button', { name: 'Screen the file' }).click({ timeout: 60_000 });
+  };
+  const sentPage = (entry: Prepared) => entry.page.waitForURL(SENT_PAGE, { timeout: Math.max(1_000, Math.min(600_000, capUntil - Date.now())) });
   const large = prepared.filter((entry) => !entry.upload.behind);
   const behind = prepared.filter((entry) => entry.upload.behind);
   await Promise.all(large.map(click));
@@ -465,7 +589,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       }
       await sleep(500);
     }
-    say(`${spec.id}: the large uploads' jobs are queued after ${((Date.now() - waitUntilQueued) / 1000).toFixed(1)} s; sending the small one behind them`);
+    say(`${label}: the large uploads' jobs are queued after ${((Date.now() - waitUntilQueued) / 1000).toFixed(1)} s; sending the small one behind them`);
     await Promise.all(behind.map(click));
   }
   const sent = [...(await largeSent), ...(await Promise.allSettled(behind.map(sentPage)))];
@@ -474,7 +598,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     const entry = order[at];
     if (result.status === 'rejected' && entry !== undefined) {
       entry.accepted = false;
-      say(`${spec.id}: upload ${entry.upload.id} was not accepted by the page`);
+      say(`${label}: upload ${entry.upload.id} was not accepted by the page`);
     }
   });
   const mails = new Map<string, Mail>();
@@ -553,11 +677,37 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       resultStatuses.set(entry.upload.id, { first, last: first === 200 ? await open(`${url}?groups=999999`) : null });
     }
   }
+  // The consumer logs each run's time to email once its completion commits, a moment after the mail file is written
+  // (and a thread's lines reach the process's output through the main thread): wait for every emailed run's line, at
+  // most LOG_WAIT_MS, so a line still on its way is never read as missing.
+  const emailedRuns: string[] = [];
+  for (const entry of prepared.filter((item) => item.emailedAt !== null)) {
+    const facts = await runFacts(await owner.client(), entry.upload.contactEmail);
+    if (facts !== null) {
+      emailedRuns.push(facts.id);
+    }
+  }
+  const logsUntil = Date.now() + LOG_WAIT_MS;
+  for (;;) {
+    const logged = new Set(emailedLines((await Promise.all(context.consumers.map((consumer) => runtime.logs(consumer.name)))).flat()).map((line) => line.runId));
+    if (emailedRuns.every((run) => logged.has(run)) || Date.now() > logsUntil) {
+      break;
+    }
+    await sleep(250);
+  }
   sampling = false;
   await sampler;
-  const containers = [await readContainer(runtime, 'web', limits.web, samples.web, false), await readContainer(runtime, 'platform', limits.platform, samples.platform, false)];
+  const containers: ContainerMeasure[] = [];
+  for (const name of measured) {
+    containers.push(await readContainer(runtime, name, limits[name] ?? 0, samples.get(name) ?? [], false));
+  }
   const postgres = postgresOver(postgresBefore, await runtime.postgresStatus());
-  const phases = phasesByRun(phaseLines(await runtime.logs('platform')));
+  // The consumer's lines (every task's), and the platform's, which since PR 6b-3 shows no screening.
+  const consumerLog = (await Promise.all(context.consumers.map((consumer) => runtime.logs(consumer.name)))).flat();
+  const consumerPhases = phaseLines(consumerLog);
+  const phases = phasesByRun(consumerPhases);
+  const emailed = emailedLines(consumerLog);
+  const platformRuns = pricedRuns(await runtime.logs('platform'));
   const runs = new Map<string, string>();
   const uploads: UploadMeasure[] = [];
   const client = await owner.client();
@@ -569,8 +719,10 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     const queue = facts === null ? { created: null, started: null } : await queueTimes(client, facts.id);
     const lines = facts === null ? undefined : phases.get(facts.id);
     const opened = resultStatuses.get(entry.upload.id);
-    const phaseLog = phaseLines(await runtime.logs('platform')).filter((line) => line.runId === facts?.id);
+    const phaseLog = consumerPhases.filter((line) => line.runId === facts?.id);
     const firstPhase = phaseLog[0] === undefined ? null : Date.parse(phaseLog[0].at);
+    const logged = facts === null ? undefined : emailed.find((line) => line.runId === facts.id);
+    const start = uploadStart(entry.clickedAt, entry.posted);
     uploads.push({
       id: entry.upload.id,
       shape: entry.upload.shape,
@@ -578,9 +730,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       behind: entry.upload.behind,
       jobCreatedMs: queue.created === null ? null : queue.created - scenarioStart,
       jobStartedMs: queue.started === null ? null : queue.started - scenarioStart,
-      submittedMs: entry.submittedAt === null ? null : entry.submittedAt - scenarioStart,
+      submittedMs: start === null ? null : start - scenarioStart,
       emailedMs: entry.emailedAt === null ? null : entry.emailedAt - scenarioStart,
-      queueWaitMs: firstPhase === null || entry.submittedAt === null ? null : Math.max(0, firstPhase - entry.submittedAt),
+      queueWaitMs: firstPhase === null || start === null ? null : Math.max(0, firstPhase - start),
       phases: lines ?? {},
       resultStatus: opened?.first ?? null,
       lastPageStatus: opened?.last ?? null,
@@ -589,6 +741,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       engineErrorRows: facts?.engineErrors ?? null,
       stalled: stalled.has(entry.upload.id),
       runStatus: facts?.status ?? null,
+      waitReason: facts?.waitReason ?? null,
+      queuePriority: facts?.queuePriority ?? null,
+      logged: logged === undefined ? null : { elapsedMs: logged.elapsedMs, atMs: Date.parse(logged.at) - scenarioStart, tier: logged.tier },
     });
   }
   for (const entry of prepared) {
@@ -602,7 +757,23 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     )
     .then((result) => result.rows)
     .catch(() => []);
-  return { measure: { id: spec.id, what: spec.what, coldStart, uploads, containers, postgres, platformJobs: jobs }, runs };
+  const platformPricedRuns = [...runs.values()].filter((run) => platformRuns.has(run)).length;
+  return {
+    measure: {
+      id: label,
+      scenario: spec.id,
+      repetition: spec.repetition,
+      what: spec.what,
+      coldStart,
+      uploads,
+      containers,
+      postgres,
+      jobs,
+      platformPricedRuns,
+      staticOrigin: context.staticAssetOrigin === null ? null : { ...staticCounts },
+    },
+    runs,
+  };
 }
 
 async function main(): Promise<number> {
@@ -610,11 +781,24 @@ async function main(): Promise<number> {
   const opts = options(process.argv.slice(2));
   mkdirSync(opts.out, { recursive: true });
   const loadAverage = os.loadavg();
-  const runner = { cpus: os.cpus().length, memoryMiB: Math.floor(os.totalmem() / MIB), cpuModel: os.cpus()[0]?.model ?? 'unknown', kernel: os.release(), loadAverage };
+  const runner = { ...thisRunner(), loadAverage };
   const limits = productionLimits();
-  const rule = timeRule(environmentSettings('production'), RUNNER_TO_FARGATE);
+  const rule = timeRule(environmentSettings('production'), RUNNER_TO_FARGATE, opts.timeMode);
   const pgLimit = postgresLimit(runner, limits);
-  const expected = { web: limits.web, platform: limits.platform, postgres: pgLimit, storage: { iops: limits.database.iops, bytesPerSecond: limits.database.bytesPerSecond } };
+  // The runner's layout, from environments.ts's sizes: the free 4-CPU runner's shared CPUs, or on eight CPUs or more
+  // each service's own (the founder's rulings of 2026-10-23).
+  const layout = cpuLayout(limits.cpuNeeds, runner.cpus);
+  const expected = {
+    web: limits.web,
+    platform: limits.platform,
+    screening: limits.screening,
+    screeningTasks: limits.screeningTasks,
+    postgres: pgLimit,
+    storage: { iops: limits.database.iops, bytesPerSecond: limits.database.bytesPerSecond },
+    layout,
+  };
+  const consumer: ConsumerMeasure | null =
+    limits.screening === null ? null : { tasks: limits.screeningTasks, cpus: limits.screening.cpus, memoryMiB: limits.screening.memoryMiB, concurrency: limits.screeningConcurrency };
   const runnerProblems = runnerTooSmall(runner, limits);
   const dataHost = path.join(opts.out, 'data');
   const logins = opts.runtime === 'process' ? harnessLogins(randomBytes(4).toString('hex')) : HARNESS_LOGINS;
@@ -632,23 +816,31 @@ async function main(): Promise<number> {
   // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
-  const affinity = /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync('/proc/self/status', 'utf8'))?.[1] ?? 'unknown';
-  const imageDigests =
-    opts.runtime === 'docker'
-      ? Object.fromEntries(await Promise.all([opts.webImage, opts.workerImage].map(async (image) => [image, (await exec('docker', ['image', 'inspect', '-f', '{{.Id}}', image]).catch(() => ({ stdout: 'unknown' }))).stdout.trim()] as const)))
-      : {};
+  // The CPUs the workflow pinned the harness to (taskset), recorded and held to the layout's harness CPUs by the verdict.
+  const affinity = /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync('/proc/self/status', 'utf8'))?.[1] ?? null;
+  // The measured images' IDs, which the launch check compares with the images being deployed (decision 13): on the
+  // runner's classic (overlay2) image store an image's ID is its config's SHA-256, the config digest the launch check
+  // reads from ECR's manifest (CI's capacity log shows it equal to buildx's containerimage.config.digest). Under the
+  // containerd image store it would be the manifest's digest instead, which the launch check would refuse.
+  const imageId = async (image: string): Promise<string | null> => (await exec('docker', ['image', 'inspect', '-f', '{{.Id}}', image]).catch(() => null))?.stdout.trim() || null;
+  const images = opts.runtime === 'docker' ? { web: await imageId(opts.webImage), worker: await imageId(opts.workerImage) } : { web: null, worker: null };
   const specs = scenarios().filter((spec) => opts.only.length === 0 || opts.only.includes(spec.id));
   // The report as it stands, written after every scenario as well as at the end, so a run that stops leaves its figures.
   const write = (final: boolean): ReturnType<typeof report> => {
     const measured: Measurements = {
       commit,
+      // The run that measured, which the launch check holds to the tag's release.yml beside the release's attestation.
+      workflow: workflowRun(process.env),
       runtime: opts.runtime,
-      imageDigests,
+      images,
+      consumer,
+      staticAssetOrigin: opts.staticAssetOrigin,
       runner,
+      harnessAffinity: affinity,
       expected,
       applied,
       runnerProblems,
-      departures: [...DEPARTURES, ...(opts.runtime === 'process' ? [{ what: 'process runtime: the build outputs as processes in cgroups, against an unlimited shared Postgres with a warm cache and no network delay', direction: 'gentler' }] : [])],
+      departures: [...layoutDepartures(layout), ...DEPARTURES, ...(opts.runtime === 'process' ? [{ what: 'process runtime: the build outputs as processes in cgroups, against an unlimited shared Postgres with a warm cache and no network delay', direction: 'gentler' }] : [])],
       release,
       shapes: {
         practice: shapeFacts('practice'),
@@ -663,22 +855,39 @@ async function main(): Promise<number> {
       aborted: final ? aborted : (aborted ?? 'run in progress: the report is written again after each scenario and at the end'),
     };
     const full = report(measured, rule);
-    const json = JSON.stringify(full, (_, value: unknown) => (typeof value === 'bigint' ? value.toString() : value), 2);
-    writeFileSync(path.join(opts.out, 'screening-capacity.json'), `${json}\n`);
+    const json = `${JSON.stringify(full, (_, value: unknown) => (typeof value === 'bigint' ? value.toString() : value), 2)}\n`;
+    writeFileSync(path.join(opts.out, 'screening-capacity.json'), json);
+    // As sha256sum writes it, over the bytes kept: the value the launch check prints in ScreeningLaunch (launch-check.ts).
+    writeFileSync(path.join(opts.out, 'screening-capacity.sha256'), `${createHash('sha256').update(json).digest('hex')}  screening-capacity.json\n`);
     writeFileSync(path.join(opts.out, 'summary.md'), markdown(full, rule));
     return full;
   };
-  say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity}; runtime ${opts.runtime}`);
+  say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity ?? 'unknown'}; runtime ${opts.runtime}; time mode ${opts.timeMode}`);
+  say(`layout: ${layoutText(layout)}`);
   let browser: Browser | null = null;
   let owner: OwnerConnection | null = null;
   try {
     if (runnerProblems.length > 0) {
       throw new HarnessStop('RUNNER_TOO_SMALL');
     }
+    if (limits.screening === null || limits.screeningTasks < 1) {
+      // Production's settings declare the consumer since PR 6b-3; without it there is nothing to measure as production runs.
+      throw new HarnessStop('CONSUMER_NOT_DECLARED');
+    }
+    if (opts.runtime === 'process') {
+      // The layout must hold what the images hold, or every worker stops as it loads its bundle.
+      const missing = processImagesProblems({ worker: path.join(opts.images ?? '', 'worker'), web: path.join(opts.images ?? '', 'web') });
+      for (const problem of missing) {
+        say(`process images: ${problem}`);
+      }
+      if (missing.length > 0) {
+        throw new HarnessStop('PROCESS_IMAGES_INCOMPLETE');
+      }
+    }
     const built = await ensureRelease(opts.releaseDir ?? path.join(opts.out, 'release'));
     release = { ...release, releaseNo: built.releaseNo, manifestSha256: built.manifestSha256, records: built.records };
     say(`release ${String(release.releaseNo)}: ${String(release.records)} records`);
-    const urls = await runtime.startPostgres(pgLimit, expected.storage, NETWORK_DELAY_MS);
+    const urls = await runtime.startPostgres(pgLimit, expected.storage, NETWORK_DELAY_MS, layout.platform);
     let ownerService = urls.serviceUrl;
     let ownerHarness = urls.harnessUrl;
     if (opts.runtime === 'docker') {
@@ -701,41 +910,57 @@ async function main(): Promise<number> {
     }
     const serviceDirs = directories(runtime.dataDir.service);
     const secrets = { cookieSecret: randomBytes(32).toString('base64'), masterKey: developmentMasterKey().toString('base64') };
-    const web: ServiceSpec = { name: 'web', env: webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets, logins), limit: limits.web, cpuset: pgLimit.taskCpuset };
-    const platform: ServiceSpec = { name: 'platform', env: platformEnvironment(ownerService, runtime.webOrigin, serviceDirs, logins), limit: limits.platform, cpuset: pgLimit.taskCpuset };
-    say('starting web and platform');
+    const web: ServiceSpec = {
+      name: 'web',
+      env: webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets, logins, { staticAssetOrigin: opts.staticAssetOrigin, screeningSlots: limits.screeningTasks * limits.screeningConcurrency }),
+      limit: limits.web,
+      cpuset: layout.web,
+      command: serviceCommand('web'),
+    };
+    const platform: ServiceSpec = { name: 'platform', env: platformEnvironment(ownerService, runtime.webOrigin, serviceDirs, logins), limit: limits.platform, cpuset: layout.platform, command: serviceCommand('platform') };
+    const screening = limits.screening;
+    const consumers: ServiceSpec[] = screeningServices(limits.screeningTasks).map((name) => ({
+      name,
+      env: screeningEnvironment(ownerService, runtime.webOrigin, serviceDirs, limits.screeningConcurrency, logins),
+      limit: screening,
+      cpuset: layout.consumer,
+      command: serviceCommand(name),
+    }));
+    say(`starting web, platform and the screening consumer (${String(consumers.length)} task of ${String(screening.cpus)} vCPU and ${String(screening.memoryMiB)} MiB, ${String(limits.screeningConcurrency)} at once)`);
     await startWeb(runtime, web, 'setup');
-    await startPlatform(runtime, platform, 'setup');
+    await startWorker(runtime, platform, 'setup');
+    await startConsumers(runtime, consumers, 'setup');
     applied = await runtime.applied(ownerHarness);
     owner = new OwnerConnection(ownerHarness);
     browser = await chromium.launch({ headless: true });
     const runIds = new Map<string, string>();
     for (const [index, spec] of specs.entries()) {
       if (Date.now() - harnessStart > SCENARIO_START_DEADLINE_MS) {
-        notStarted.push(...specs.slice(index).map((item) => item.id));
+        notStarted.push(...specs.slice(index).map((item) => scenarioLabel(item.id, item.repetition)));
         say(`deadline: ${notStarted.join(', ')} not started`);
         break;
       }
-      say(`${spec.id}: ${spec.what}`);
+      say(`${scenarioLabel(spec.id, spec.repetition)}: ${spec.what}`);
       const { measure, runs } = await runScenario(
         spec,
         index,
-        { runtime, browser, owner, outbox: hostDirs.outbox, web, platform, until: harnessStart + HARNESS_DEADLINE_MS },
-        { web: limits.web.memoryMiB, platform: limits.platform.memoryMiB },
+        { runtime, browser, owner, outbox: hostDirs.outbox, web, platform, consumers, staticAssetOrigin: opts.staticAssetOrigin, until: harnessStart + HARNESS_DEADLINE_MS },
+        Object.fromEntries([web, platform, ...consumers].map((service) => [service.name, service.limit.memoryMiB])),
       );
       scenarioMeasures.push(measure);
       for (const [upload, run] of runs) {
-        runIds.set(upload, run);
+        // S1-1 as the oracle names it; S4#2 S4-1 for a run of the repeated scenario, so no run's ID replaces another's.
+        runIds.set(uploadLabel(measure, { id: upload }), run);
       }
       for (const upload of measure.uploads) {
         const elapsed = upload.submittedMs !== null && upload.emailedMs !== null ? ((upload.emailedMs - upload.submittedMs) / 1000).toFixed(1) : 'none';
-        say(`${upload.id} (${upload.shape}): ${elapsed} s to email; run ${upload.runStatus ?? 'none'}`);
+        say(`${uploadLabel(measure, upload)} (${upload.shape}): ${elapsed} s to email (logged ${upload.logged === null ? 'none' : (upload.logged.elapsedMs / 1000).toFixed(1)}, ${upload.waitReason ?? upload.logged?.tier ?? 'no tier'}); run ${upload.runStatus ?? 'none'}`);
       }
       write(false);
     }
     await browser.close();
     browser = null;
-    // The services stop and the harness lets go of its connection; Postgres keeps running for the oracle and is
+    // Every service stops and the harness lets go of its connection; Postgres keeps running for the oracle and is
     // removed after it.
     await runtime.stopServices();
     await owner.end();
@@ -787,20 +1012,52 @@ async function main(): Promise<number> {
   if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   }
+  // Every S4 run's times and the middle one, which its time is judged on (the founder's ruling of 2026-10-23).
+  if (full.repeated.runs.length > 0) {
+    say(repeatedSummary(full.repeated));
+  }
   say(`verdict: ${full.verdict.pass ? 'pass' : 'fail'} (time ${full.verdict.time})`);
   for (const reason of full.verdict.reasons) {
     say(`  ${reason}`);
   }
-  return full.verdict.pass ? 0 : 1;
+  // An advisory run's time verdicts, worded as a binding run's failing checks, warn and fail nothing.
+  for (const warning of full.verdict.timeWarnings) {
+    say(`  time warning (advisory): ${warning}`);
+  }
+  const result = jobResult(full);
+  if (result.outputs.sizing !== undefined) {
+    say(`sizing question for the founder (O9): ${result.outputs.sizing}`);
+  }
+  // On the pull request's checks too, not in the log alone: each warning annotated here, and handed to the gate, which
+  // prints them again.
+  for (const annotation of result.annotations) {
+    process.stdout.write(`${annotation}\n`);
+  }
+  if (process.env.GITHUB_OUTPUT !== undefined) {
+    for (const [name, value] of Object.entries(result.outputs)) {
+      appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+    }
+  }
+  return result.exitCode;
+}
+
+/** This runner's CPUs and memory. */
+function thisRunner(): { readonly cpus: number; readonly memoryMiB: number; readonly cpuModel: string; readonly kernel: string } {
+  return { cpus: os.cpus().length, memoryMiB: Math.floor(os.totalmem() / MIB), cpuModel: os.cpus()[0]?.model ?? 'unknown', kernel: os.release() };
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
   try {
-    process.exitCode = await main();
+    if (process.argv.slice(2).includes('--print-harness-cpus')) {
+      // The workflow pins the harness, its children and Chromium here (taskset), from the same layout the run applies.
+      process.stdout.write(`${harnessCpus(thisRunner(), productionLimits())}\n`);
+    } else {
+      process.exitCode = await main();
+    }
   } catch (error) {
     if (error instanceof HarnessStop && error.code === 'USAGE') {
       process.stderr.write(
-        'usage: pnpm screening:capacity --out <dir> [--runtime docker --web-image <tag> --worker-image <tag>] [--runtime process --images <dir> --admin-url <url> --database <name>] [--release-dir <dir>] [--scenarios S1,S2]\n',
+        'usage: pnpm screening:capacity --out <dir> --time-mode advisory|binding [--runtime docker --web-image <tag> --worker-image <tag>] [--runtime process --images <dir> --admin-url <url> --database <name>] [--release-dir <dir>] [--scenarios S1,S2] [--static-asset-origin https://<host>]\n       pnpm -s screening:capacity --print-harness-cpus\n',
       );
       process.exitCode = 2;
     } else {

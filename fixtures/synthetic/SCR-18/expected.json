@@ -1,0 +1,23 @@
+{
+  "case": "SCR-18",
+  "module": "SCR",
+  "title": "The \"sent\" page's four wait states",
+  "assertion": "After an upload the page tells the prospect, in the wording the founder approved on 2026-10-22, counsel to confirm before the screening opens, that the result usually comes within a minute of when it was sent (a slot free), that it can take a few minutes because other screenings were ahead of it when it arrived (runs pricing and queued ahead at least the consumer's slots), or, for either waiting tier, one neutral sentence that it is screened after the files sent within today's limits (the reason only in the emailed result, which also says why it waited); a missing or unknown state, or a wait that could not be read, shows only that the file arrived; each sentence stays true on a reload or a bookmark; the page passes axe at 390 px in every state (the columns table a focusable scroll region); the wait read from the database after the submission; an upload sent to wait logged by its code alone; the time to email measured from the proxy's stamp, which overwrites any copy a client sent",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/src/lib/http/received.test.ts",
+    "apps/web/src/proxy.test.ts",
+    "apps/worker/src/screening/message.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The wait states are read from runs the tests submit in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -7,7 +7,7 @@ import { shapeRows, screeningRows } from '@tp/tools/screening-capacity/uploads';
 import { screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { SCREENING_GROUPS_PER_PAGE, type ScreeningResultData, screeningResult, screeningSubmit } from './routes';
+import { SCREENING_GROUPS_PER_PAGE, type ScreeningResultData, screeningResult, screeningSentPath, screeningSubmit } from './routes';
 import { ScreeningWorld, submitInput } from './test-support/screening-world';
 
 /**
@@ -15,7 +15,8 @@ import { ScreeningWorld, submitInput } from './test-support/screening-world';
  * limits"): 50,000 priced rows over 15,000 and more codes, which group into 20,507 groups by payer product and code.
  * Its first local run found the page reading and rendering every group, which exhausted the web task's heap, so the
  * link did not open and the task exited. Here the database pages the groups and sums the rest; the route reads one
- * page; and the page, read and rendered in a process of its own under a 512 MiB heap (the web task's memory), lists 50
+ * page; and the page, read and rendered in a process of its own under a 512 MiB heap (less than the 560 MiB Node gives
+ * the web task at its 1,024 MiB since the founder's ruling of 2026-10-22, so harsher than production), lists 50
  * groups and stays small whichever page is asked. The worst shape's rows are uploaded through the route; their
  * figures are SYNTHETIC, recorded by the operator functions the pricing job calls (this test is about the page's
  * read, not the engine, which the capacity test runs at this shape). Synthetic data only.
@@ -73,7 +74,7 @@ beforeAll(async () => {
   await world.publishContentFrom2025(900021);
   const email = 'prospect.worst@clinic-worst.synthetic.test';
   const outcome = await world.call(screeningSubmit, { input: submitInput({ rows: screeningRows(shapeRows('worst')), zip: '00011', contactEmail: email }) });
-  expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+  expect(outcome).toEqual({ status: 'ok', data: { redirect: screeningSentPath('soon') } });
   const { owner } = world;
   const run = (
     await owner.query<{ id: string }>(
@@ -288,7 +289,7 @@ describe('the result page at the worst shape (audit #53 part 1)', () => {
     const args = ['--tsconfig', path.join(support, 'render-result.tsconfig.json'), path.join(support, 'render-result.tsx'), world.database.appUrl, token, `1,${middle},${String(PAGES)},999999`];
     const { stdout } = await exec(path.join(REPOSITORY, 'node_modules/.bin/tsx'), args, {
       cwd: WEB,
-      // The whole heap at 512 MiB, the web task's memory: 464 MiB of old space and three 16 MiB semi-spaces of young
+      // The whole heap at 512 MiB, under the web task's 560 MiB at 1 GiB: 464 MiB of old space and three 16 MiB semi-spaces of young
       // (V8's heap_size_limit, which --max-old-space-size=512 alone would put at 704 MiB).
       env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=464 --max-semi-space-size=16 --expose-gc' },
       maxBuffer: 1024 * 1024,

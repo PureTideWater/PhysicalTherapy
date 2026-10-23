@@ -18,8 +18,8 @@ export { SCREENING_ORIGIN } from './page-services';
 /**
  * Test support for the free screening's routes (docs/adr/0062), against a scratch database with SYNTHETIC release
  * 900001 loaded and a place-of-service split a contract specialist approved: services as the web app builds them
- * (a memory queue), the routes called as a browser on the application's page would call them, the minute's sweep
- * run as the platform worker runs it, and the emails it sends kept in memory. Synthetic data only: invented
+ * (a memory queue), the routes called as a browser on the application's page would call them, every queued run priced
+ * at once inline, as the consumer's threads price each, and the emails it sends kept in memory. Synthetic data only: invented
  * practices at the SYNTHETIC ZIPs 00011 and 00012 (00012 needs its ZIP+4; release 900006 adds the ZIP+4 list),
  * addresses at synthetic.test domains.
  */
@@ -120,7 +120,7 @@ export class ScreeningWorld {
     readonly owner: DatabaseClient,
     /** The application's login, as every request uses it. */
     readonly app: DatabasePool,
-    /** The operator's login (the superuser here; every platform transaction switches to tp_operator). */
+    /** The pricing login (the superuser here; every pricing transaction switches to tp_screening). */
     readonly operator: DatabasePool,
     readonly services: Services,
     readonly specialistId: string,
@@ -132,9 +132,10 @@ export class ScreeningWorld {
 
   /**
    * A migrated database with the releases loaded in order (900001 unless told; the last is in force), and (unless
-   * `open` is false) the split approved.
+   * `open` is false) the split approved. The consumer's slots (the "sent" page's "every slot is busy") are so many that
+   * one is always free, unless `slots` says otherwise: the routes' tests leave runs queued that no consumer takes.
    */
-  static async create(options: { readonly open?: boolean; readonly queue?: JobQueue; readonly releases?: readonly number[] } = {}): Promise<ScreeningWorld> {
+  static async create(options: { readonly open?: boolean; readonly queue?: JobQueue; readonly releases?: readonly number[]; readonly slots?: number } = {}): Promise<ScreeningWorld> {
     const database = await createMigratedDatabase(readDatabaseUrl());
     const owner = databaseClient(database.url);
     await owner.connect();
@@ -148,7 +149,7 @@ export class ScreeningWorld {
     const operator = openPool(database.url, 4);
     const lines: Record<string, unknown>[] = [];
     const memory = new MemoryQueue();
-    const services = screeningServices(app, { queue: options.queue ?? memory, sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) });
+    const services = screeningServices(app, { queue: options.queue ?? memory, sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>), screeningSlots: options.slots ?? 99 });
     const world = new ScreeningWorld(database, owner, app, operator, services, specialistId, memory, lines);
     if (options.open !== false) {
       await world.approveSplit(SCREENING_SPLIT);
@@ -210,7 +211,7 @@ export class ScreeningWorld {
     return route.invoke(pageRequest(options), this.services);
   }
 
-  /** The minute's sweep, as the platform worker runs it, taking every queued run at once. */
+  /** Every queued run priced at once, inline (sweepScreeningRuns, kept for callers with no consumer; the consumer itself prices in its threads). */
   price(): Promise<SweepResult> {
     return sweepScreeningRuns({ operator: this.operator, mail: this.mail, appOrigin: SCREENING_ORIGIN, logger: this.services.logger, jobId: randomUUID() }, { minQueuedAgeSeconds: 0 });
   }
@@ -231,9 +232,11 @@ export class ScreeningWorld {
     try {
       await this.owner.query('SET LOCAL session_replication_role = replica');
       const shift = `${String(days)} days`;
-      for (const table of ['screening_prospect', 'screening_upload', 'screening_run']) {
+      for (const table of ['screening_prospect', 'screening_upload']) {
         await this.owner.query(`UPDATE ${table} SET created_at = created_at - $1::interval, expires_at = expires_at - $1::interval`, [shift]);
       }
+      // A run is received in the ten minutes before it is created (screening_run_received), so its receipt moves too.
+      await this.owner.query('UPDATE screening_run SET created_at = created_at - $1::interval, received_at = received_at - $1::interval, expires_at = expires_at - $1::interval', [shift]);
       await this.owner.query('COMMIT');
     } catch (error) {
       await this.owner.query('ROLLBACK');

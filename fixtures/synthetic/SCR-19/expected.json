@@ -1,0 +1,22 @@
+{
+  "case": "SCR-19",
+  "module": "SCR",
+  "title": "A screening whose consumer died",
+  "assertion": "A run cut off while pricing (the consumer killed after a recorded batch, or a thread out of memory, its failure logged by code) is claimed again and emailed within about 3 minutes (about 15 for a job queued before the consumer first started, which carries no heartbeat), its recorded batches kept and only its pending rows priced, at most three attempts: the job's 60-second heartbeat set on the existing queue and on every send, a run stale after 2 minutes without progress, and the sweep sending due runs again at their priority",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/screening/consumer.db.test.ts",
+    "apps/worker/src/screening/threads.test.ts",
+    "apps/worker/src/jobs/enqueue.test.ts",
+    "packages/db/src/screening-queue.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A consumer is killed mid-run over a screening the tests submit in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

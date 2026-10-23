@@ -1,52 +1,81 @@
 name: release
 
-# On a release tag, build and tag the web and worker container images (PRD sections 15 and 18:
-# promotion is by tagged image). Each image is built, scanned (any HIGH or CRITICAL finding with a fix
-# stops the release) and described by a software bill of materials (SPDX JSON, kept with the run)
-# before it is pushed (PRD section 16). Images are pushed to the repository's GitHub container
-# registry; no workflow has credentials to an environment that holds PHI.
+# On a release tag (PRD sections 15 and 18: promotion is by tagged image; decision 13 of the founder's rulings of
+# 2026-10-20 and docs/adr/0062): build each image once, scan it (any HIGH or CRITICAL finding with a fix stops the
+# release) and describe it by a software bill of materials (SPDX JSON, kept with the run), measure the screening's
+# capacity with time enforced on exactly the production web image and the worker image that were built, then push exactly
+# the images that were built and scanned, never a rebuild. The capacity report is attested by this workflow's run
+# (GitHub's artifact attestation, signed for .github/workflows/release.yml at the tag), and the report, its SHA-256, its
+# summary and the attestation's bundle are kept as assets of the tag's GitHub release (release assets do not expire),
+# where production's deploy reads them: the CDK app runs the launch check at synthesis (infra/lib/screening-launch.ts,
+# tools/screening-capacity/launch-check.ts), which verifies the attestation with gh and opens production's screening only
+# for this workflow's passing report on the images the stack deploys.
+#
+# The web image is built three times, each with its own static host (Next writes the asset prefix into the build;
+# docs/adr/0055): `web` with none (its assets load from the application host), and `web-staging` and `web-production`
+# with each environment's CloudFront origin from a repository variable, set once that environment's StaticAssetsOrigin
+# output exists. Images are pushed to the repository's GitHub container registry; no workflow has credentials to an
+# environment that holds PHI. A capacity run that fails does not stop the push, because a security fix must ship: it
+# keeps production's screening closed instead (no passing report, no launch value).
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  images:
+  build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     strategy:
       matrix:
-        app: [web, worker]
+        image: [web, web-staging, web-production, worker]
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - id: image
-        name: Name the image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.app }}" >> "$GITHUB_OUTPUT"
+        name: Name the image, its Dockerfile and its static host
+        env:
+          IMAGE: ${{ matrix.image }}
+          STAGING_ORIGIN: ${{ vars.STAGING_STATIC_ASSET_ORIGIN }}
+          PRODUCTION_ORIGIN: ${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}
+        run: |
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/$IMAGE:$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          case "$IMAGE" in
+            worker) echo "dockerfile=apps/worker/Dockerfile" >> "$GITHUB_OUTPUT"; origin="" ;;
+            web) echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"; origin="" ;;
+            web-staging) echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"; origin="$STAGING_ORIGIN" ;;
+            web-production) echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"; origin="$PRODUCTION_ORIGIN" ;;
+          esac
+          if [ "$IMAGE" != "web" ] && [ "$IMAGE" != "worker" ] && [ -z "$origin" ]; then
+            echo "::warning::$IMAGE is built with no static host: its repository variable is not set yet, so its assets load from the application host"
+          fi
+          echo "origin=$origin" >> "$GITHUB_OUTPUT"
 
       - name: Build the image without pushing it
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
-          file: apps/${{ matrix.app }}/Dockerfile
+          file: ${{ steps.image.outputs.dockerfile }}
           load: true
           push: false
-          tags: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+          tags: ${{ steps.image.outputs.ref }}
+          build-args: |
+            STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
 
       - name: Scan the image (fails on HIGH or CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+          image-ref: ${{ steps.image.outputs.ref }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -55,27 +84,199 @@ jobs:
       - name: Write the software bill of materials
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+          image-ref: ${{ steps.image.outputs.ref }}
           format: spdx-json
-          output: sbom-${{ matrix.app }}-${{ github.ref_name }}.spdx.json
+          output: sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json
           exit-code: "0"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: sbom-${{ matrix.app }}-${{ github.ref_name }}
-          path: sbom-${{ matrix.app }}-${{ github.ref_name }}.spdx.json
+          name: sbom-${{ matrix.image }}-${{ github.ref_name }}
+          path: sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json
           if-no-files-found: error
 
-      - name: Push the scanned image
-        uses: docker/build-push-action@v6
+      # The image as scanned, kept for the jobs below, which load it and never build: docker save and docker load keep
+      # its ID, so what is measured and pushed is what was scanned.
+      - name: Save the scanned image
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/image"
+          docker save "$REF" | gzip -1 > "$RUNNER_TEMP/image/$IMAGE.tar.gz"
+          docker image inspect -f '{{.Id}}' "$REF" > "$RUNNER_TEMP/image/$IMAGE.id"
+          echo "$IMAGE: $(cat "$RUNNER_TEMP/image/$IMAGE.id")"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          context: .
-          file: apps/${{ matrix.app }}/Dockerfile
-          push: true
-          tags: |
-            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
-            ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+          name: image-${{ matrix.image }}
+          path: |
+            ${{ runner.temp }}/image/${{ matrix.image }}.tar.gz
+            ${{ runner.temp }}/image/${{ matrix.image }}.id
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  # Decision 13: the capacity test with time enforced and binding, on the production web image and the worker image
+  # exactly as built and scanned (their IDs are the report's), on the same runner as
+  # .github/workflows/screening-capacity.yml's measurement (GitHub's free 4-CPU runner, its CPUs shared), with its
+  # timeout: 100 minutes, S4 three times (the founder's ruling of 2026-10-23, median of 3). Binding: a time above the
+  # line fails this run, and only this run's binding report that passes, attested by the report job below, opens
+  # production's screening (the founder's third ruling of 2026-10-23, "Free: time advisory", which made every other
+  # capacity run advisory). The harness records this run (GITHUB_WORKFLOW_REF, GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT) in the
+  # report, which the launch check holds to this workflow on the tag. The launch check accepts only the layout this
+  # runner gives (RELEASE_RUNNER in tools/screening-capacity/launch-check.ts; workflows.test.ts holds the two together).
+  capacity:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-web-production
+          path: ${{ runner.temp }}/image
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-worker
+          path: ${{ runner.temp }}/image
+
+      - name: Load the production web image and the worker image
+        run: |
+          for image in web-production worker; do
+            docker load --input "$RUNNER_TEMP/image/$image.tar.gz"
+          done
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+
+      - name: Restore the scale release
+        id: scale-release
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/scale-release
+          key: screening-scale-release-${{ hashFiles('packages/synth/src/release/**', 'tools/release/scale.ts', 'packages/rules/src/**', 'fixtures/synthetic/rules/release-synth-900001/**') }}
+      - name: Build the scale release
+        if: steps.scale-release.outputs.cache-hit != 'true'
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm exec tsx tools/release/scale.ts --out "$RUNNER_TEMP/scale-release"
+
+      # The harness's browser serves the web image's own /_next/static/ for production's static host, so the pages load
+      # as they will in production and a request that would leave for CloudFront fails the run.
+      - name: Measure the release's images under production limits
+        env:
+          PRODUCTION_ORIGIN: ${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}
+        run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          cpus=$(pnpm -s screening:capacity --print-harness-cpus)
+          echo "harness on CPUs $cpus"
+          set -- --out "$RUNNER_TEMP/screening-capacity" --release-dir "$RUNNER_TEMP/scale-release" \
+            --web-image "$repository/web-production:$GITHUB_REF_NAME" --worker-image "$repository/worker:$GITHUB_REF_NAME" \
+            --time-mode binding
+          if [ -n "$PRODUCTION_ORIGIN" ]; then
+            set -- "$@" --static-asset-origin "$PRODUCTION_ORIGIN"
+          fi
+          taskset -c "$cpus" pnpm screening:capacity "$@"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: screening-capacity-${{ github.ref_name }}
+          path: |
+            ${{ runner.temp }}/screening-capacity/screening-capacity.json
+            ${{ runner.temp }}/screening-capacity/screening-capacity.sha256
+            ${{ runner.temp }}/screening-capacity/summary.md
+            ${{ runner.temp }}/screening-capacity/logs/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # The images as built and scanned, never a rebuild: loaded from the build's artifacts and pushed under the tag and the
+  # commit. It does not wait for the capacity run (a security fix ships whatever the measurement says).
+  push:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}/image
+          merge-multiple: true
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the scanned images
+        run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for image in web web-staging web-production worker; do
+            docker load --input "$RUNNER_TEMP/image/$image.tar.gz"
+            ref="$repository/$image:$GITHUB_REF_NAME"
+            id=$(docker image inspect -f '{{.Id}}' "$ref")
+            if [ "$id" != "$(cat "$RUNNER_TEMP/image/$image.id")" ]; then
+              echo "::error::$image is not the image that was scanned"
+              exit 1
+            fi
+            docker tag "$ref" "$repository/$image:sha-$GITHUB_SHA"
+            docker push "$ref"
+            docker push "$repository/$image:sha-$GITHUB_SHA"
+            echo "$image $id"
+          done
+
+  # The report attested and kept, with its SHA-256, its summary and the attestation's bundle, as assets of the tag's
+  # GitHub release, a failing one too (the launch check refuses it). The attestation (the verification of PR 6b-3's
+  # capacity changes) binds the report's bytes to this workflow's run on the tag: Sigstore's certificate names
+  # release.yml at refs/tags/<tag>, the commit, the run and its attempt, from GitHub's OIDC token, which the launch check
+  # verifies with gh attestation verify against the bundle kept here; a report measured anywhere else, or changed by one
+  # byte, has none. The only job that may write to the repository, mint an OIDC token or write attestations, and it runs
+  # nothing but the attestation action and gh, never the code it measured. Attestations are free for a public repository;
+  # a private one needs GitHub Enterprise Cloud (docs/runbooks/screening-capacity.md, "Provenance"). A re-run replaces
+  # the assets, and every attempt's attestation stays in the repository's attestations.
+  report:
+    needs: capacity
+    if: ${{ !cancelled() && needs.capacity.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: screening-capacity-${{ github.ref_name }}
+          path: ${{ runner.temp }}/screening-capacity
+
+      - id: attest
+        name: Attest the capacity report as this workflow's on the tag
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/screening-capacity/screening-capacity.json
+
+      - name: Keep the capacity report and its attestation with the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "$RUNNER_TEMP/screening-capacity/screening-capacity.sigstore.json"
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --draft --title "$TAG" --notes "The release's screening capacity report and its attestation are attached."
+          gh release upload "$TAG" --clobber \
+            "$RUNNER_TEMP/screening-capacity/screening-capacity.json" \
+            "$RUNNER_TEMP/screening-capacity/screening-capacity.sha256" \
+            "$RUNNER_TEMP/screening-capacity/summary.md" \
+            "$RUNNER_TEMP/screening-capacity/screening-capacity.sigstore.json"

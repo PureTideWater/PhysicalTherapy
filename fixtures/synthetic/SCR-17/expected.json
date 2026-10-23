@@ -1,0 +1,27 @@
+{
+  "case": "SCR-17",
+  "module": "SCR",
+  "title": "Queue order by an account's share and the daily cap (the founder's Q7 of 2026-10-21)",
+  "assertion": "Every upload accepted; an account's k-th upload past its 100,000-row share of the UTC day waits at priority -k (at most -20), and an upload past the day's 1,000,000-row cap of normal-tier rows at -1; the account kept only as the rate limiter's keyed subject; the cap counts the normal tier only; both sums read an append-only tally of the day's uploads, so an upload a later screening of the same practice or address replaced still counts (one mailbox resubmitting 50,000-row files gets 0, 0, -1, -2), the tally granted to no role and purged after the next UTC day; the waiting tier on a queue of its own, worked with one thread fewer than the consumer has, so a normal upload never waits behind waiting-tier runs holding every thread; a sweep fails a run out of attempts only while it is still stale under its lock; the due runs, the queue gauge and the wait ordered by priority, then age; a waiting run's time to email logged apart from the promise's metric; no upload of the capacity test waits",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "packages/db/src/screening-queue.db.test.ts",
+    "apps/worker/src/jobs/enqueue.test.ts",
+    "apps/worker/src/jobs/screening.test.ts",
+    "apps/worker/src/screening/threads.test.ts",
+    "apps/worker/src/worker.test.ts",
+    "apps/worker/src/screening/screening.db.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "tools/screening-capacity/report.test.ts",
+    "tools/screening-capacity/uploads.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The tiers come from uploads the tests submit in memory under synthetic accounts; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

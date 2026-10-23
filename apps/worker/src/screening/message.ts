@@ -1,3 +1,5 @@
+import type { ScreeningWaitReason } from '@tp/db';
+
 import type { MailMessage } from '../mail/mail';
 import { type KeptWith, emailKept } from './wording';
 
@@ -66,25 +68,41 @@ function rowsText(rows: number): string {
 }
 
 /**
+ * Why a waiting-tier upload waited (Q7; the founder's Q12 wording process: for the founder and then counsel), said in its
+ * result's email, which reaches the mailbox's owner: the "sent" page says only that it waits, since nothing proves the
+ * visitor owns the address typed there.
+ */
+export const SCREENING_WAITED: Readonly<Record<ScreeningWaitReason, string>> = {
+  account_share:
+    'It waited behind other screenings because, with it, your email address or its organization had sent more than one day’s share of rows for screening that day.',
+  daily_cap: 'It waited behind other screenings because the screening had reached its limit for that day.',
+};
+
+/**
  * The email that carries a completed screening's link, which opens the result for 30 days from the upload, and what
- * this screening's summary is kept with, as the completion said (none by default).
+ * this screening's summary is kept with, as the completion said (none by default), with why it waited for a run of the
+ * waiting tier.
  */
 export function screeningResultMessage({
   to,
   link,
   rows,
   keptWith = 'none',
+  waited = null,
 }: {
   readonly to: string | readonly string[];
   readonly link: string;
   readonly rows: number;
   readonly keptWith?: Exclude<KeptWith, 'own_request'>;
+  /** The run's wait reason, for an upload of the waiting tier; null for a normal one. */
+  readonly waited?: ScreeningWaitReason | null;
 }): MailMessage {
   return {
     to: recipients(to),
     subject: 'Your screening is ready',
     lines: [
       `The screening you started on the PaidWhole screening page is ready. It covers the ${rowsText(rows)} of your upload.`,
+      ...(waited === null ? [] : [SCREENING_WAITED[waited]]),
       emailKept(keptWith),
       'Anyone with the link can open it, so share it only with people at your practice.',
       'If you did not start a screening, ignore this message; nothing more will be sent.',

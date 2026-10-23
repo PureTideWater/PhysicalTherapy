@@ -1,36 +1,71 @@
 import type { EnvironmentSettings } from '../../infra/lib/environments';
 import {
   type ContainerLimit,
+  type CpuLayout,
   HARNESS_RUNS_SCREENING_CONSUMER,
   MEMORY_LIMIT_PERCENT,
   MIB,
   MIN_ROUND_TRIP_MS,
   type PostgresLimit,
   TIME_ALLOWANCE_MS,
+  TIME_METRIC_BELOW_MS,
   TIME_PROMISE_MS,
+  cpuLayout,
+  cpuNeedsOf,
+  layoutText,
+  sameLayout,
   screeningConsumer,
 } from './limits';
 import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
+import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, scenarioLabel } from './scenario-runs';
 
 /**
  * The capacity test's verdict and report (audit #53 part 1; docs/adr/0062, "Capacity under production limits"; the
- * founder's rulings of 2026-10-20, decisions 13 to 16).
+ * founder's rulings of 2026-10-20, decisions 13 to 16, of 2026-10-21, Q1 (a) and Q7, and of 2026-10-23).
  *
- * The split verdict: the run fails on everything PR 6 controls (an OOM kill, a restart or exit the harness did not
- * cause, Postgres's included, anonymous memory above 90% of a task's limit, a limit or a cold start not applied, a
- * runner too small, a wrong or unfinished result, a stalled run, a small upload not queued behind the large ones, a
- * submission time not captured, an oracle mismatch or an oracle that compared fewer rows than the upload's Medicare
- * rows, a partial run: every one of S1 to S5 must be measured, and a declared screening consumer the harness does not
- * run as production will). Time is measured always and judged by timeVerdict(): "open, PR 6b"
- * while environments.ts declares no screening consumer, so it cannot fail the run; once PR 6b declares one, above 48 s
- * on the runner fails ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it
- * ("promise"). The report holds counts, times and hashes only: no row, link, token or address.
+ * The verdict: the run fails on everything the build controls (an OOM kill, a restart or exit the harness did not cause,
+ * Postgres's included, anonymous memory above 90% of a task's limit, the consumer's included, a limit or a cold start
+ * not applied, the harness not on the layout's CPUs for it, a layout other than the one the harness gives the runner,
+ * the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished result, a
+ * stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the platform
+ * pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
+ * that left for the static origin, a submission time not captured, an oracle mismatch or an oracle that compared fewer
+ * rows than the upload's Medicare rows, a partial run: every one of S1 to S5 must be measured, S4 three times, and a
+ * declared screening consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
+ * environments.ts declares no screening consumer; with it declared (PR 6b-3), above 48 s on the runner fails
+ * ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it ("promise"). S4 runs three
+ * times (S4#1 to S4#3) and its time is judged on the middle run alone, ordered by each run's worst upload, the small one
+ * included, so two runs with an upload above 48 s fail; every other check holds in all three, and every other
+ * scenario's time is judged as measured, whatever repetition it carries (the founder's ruling of 2026-10-23, "Stay
+ * free: median of 3"; the verification of PR 6b-3's capacity changes). Whether a time verdict fails the run is the time
+ * mode's (the founder's third ruling of 2026-10-23, "Free: time advisory"): binding on a release's capacity run, where it
+ * fails the run as every other check does; advisory on every other run, where it is computed, printed and annotated the
+ * same way as a warning and every other check still fails the run. The report holds counts, times, hashes and image IDs only: no row, link, token
+ * or address.
  */
 
-export const REPORT_FORMAT = 'tp-screening-capacity/3';
+/**
+ * tp-screening-capacity/8: the GitHub Actions run that measured (workflow: GITHUB_WORKFLOW_REF, GITHUB_RUN_ID and
+ * GITHUB_RUN_ATTEMPT), which the launch check holds to the tag's release.yml beside the release's attestation of the
+ * report, and S4's runs ordered by each run's worst upload, the small one included (repeated.runs[].worstUpload; the
+ * verification of PR 6b-3's capacity changes). /7 recorded the time mode (timeMode, the founder's third ruling of
+ * 2026-10-23, "Free: time advisory"), the verdict's time warnings (verdict.timeWarnings) and which layout ran
+ * (expected.layout.kind), and no run; /6 the layout without its kind and no mode, /5 neither. The launch check refuses
+ * every format before /8.
+ */
+export const REPORT_FORMAT = 'tp-screening-capacity/8';
 
-/** The scenarios a passing run measures, every one of them. */
-export const ALL_SCENARIOS = ['S1', 'S2', 'S3', 'S4', 'S5'] as const;
+/**
+ * Whether time fails the run (the founder's third ruling of 2026-10-23, "Free: time advisory"; decision 13): 'binding'
+ * on a release's capacity run (release.yml), where a time verdict fails the run as every other check does and the launch
+ * check opens production only on its pass; 'advisory' on every other run (screening-capacity.yml: pull requests, the
+ * build branch, the weekly schedule), where each time verdict is a warning and every other check fails the run as ever.
+ */
+export type TimeMode = 'advisory' | 'binding';
+export const TIME_MODES: readonly TimeMode[] = ['advisory', 'binding'];
+
+// The scenarios, S4's three runs and their names (scenario-runs.ts, which the uploads share).
+export { ALL_SCENARIOS, MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, type ScenarioId, scenarioLabel } from './scenario-runs';
 
 /**
  * The uploads compared with an oracle: the worst shape priced from a fresh platform's first read (S1-1), the practice
@@ -50,17 +85,22 @@ export function oracleKind(upload: string): OracleKind {
 
 /**
  * How the time is judged: whether the screening's consumer is declared, whether the harness runs it as production
- * will (HARNESS_RUNS_SCREENING_CONSUMER), and the runner-to-Fargate factor once known.
+ * will (HARNESS_RUNS_SCREENING_CONSUMER), the runner-to-Fargate factor once known, and whether a failing time fails the
+ * run (the time mode, which the workflow sets: run.ts's --time-mode).
  */
 export interface TimeRule {
   readonly consumerDeclared: boolean;
   readonly consumerRun: boolean;
   readonly runnerToFargate: number | null;
+  readonly mode: TimeMode;
 }
 
-/** The rule production's settings give: the switch is environments.ts's compute.screening (PR 6b), nothing else. */
-export function timeRule(settings: EnvironmentSettings, runnerToFargate: number | null, consumerRun: boolean = HARNESS_RUNS_SCREENING_CONSUMER): TimeRule {
-  return { consumerDeclared: screeningConsumer(settings) !== null, consumerRun, runnerToFargate };
+/**
+ * The rule production's settings give: the switch is environments.ts's compute.screening (PR 6b), nothing else; the mode
+ * is the caller's to name, never a default (the launch check names 'binding').
+ */
+export function timeRule(settings: EnvironmentSettings, runnerToFargate: number | null, mode: TimeMode, consumerRun: boolean = HARNESS_RUNS_SCREENING_CONSUMER): TimeRule {
+  return { consumerDeclared: screeningConsumer(settings) !== null, consumerRun, runnerToFargate, mode };
 }
 
 export type TimeVerdict = { readonly status: 'open' } | { readonly status: 'pass' } | { readonly status: 'fail'; readonly reason: 'allowance' | 'promise' };
@@ -93,12 +133,18 @@ export function timeLabel(verdict: TimeVerdict): string {
 
 /** The limits as the containers report them (docker inspect, or the cgroup's own files). */
 export interface AppliedContainer {
-  readonly name: 'web' | 'platform' | 'postgres';
+  /** web, platform, screening-1 to screening-N, or postgres. */
+  readonly name: string;
   /** CPU quota in billionths of a CPU (Docker's NanoCpus); null when none applies. */
   readonly nanoCpus: number | null;
   readonly memoryBytes: number | null;
   readonly memorySwapBytes: number | null;
   readonly cpuset: string | null;
+  /**
+   * The process's CPU affinity as the kernel reports it (the process runtime, which execs each service under taskset;
+   * absent for Docker, whose cpuset is the container's own); null when it could not be read.
+   */
+  readonly affinity?: string | null;
 }
 
 export interface AppliedLimits {
@@ -112,21 +158,44 @@ export interface AppliedLimits {
 export interface ExpectedLimits {
   readonly web: ContainerLimit;
   readonly platform: ContainerLimit;
+  /** One consumer task's limits, and how many tasks (screening-1 to screening-N); null and 0 without a consumer. */
+  readonly screening: ContainerLimit | null;
+  readonly screeningTasks: number;
   readonly postgres: PostgresLimit;
   readonly storage: { readonly iops: number; readonly bytesPerSecond: number };
+  /**
+   * Where each service ran and which layout that was (limits.ts, cpuLayout): on the free 4-CPU runner shared CPUs
+   * (Postgres and the harness 0-1, the consumer 2-3, the web and the platform 3); on eight CPUs or more CPUs of their own
+   * (Postgres 0-1, the consumer 2-3, the web 4, the platform 5, the harness 6-7).
+   */
+  readonly layout: CpuLayout;
+}
+
+/** The consumer as measured (the design's §5.1): its tasks, each task's size, and the screenings each prices at once. */
+export interface ConsumerMeasure {
+  readonly tasks: number;
+  readonly cpus: number;
+  readonly memoryMiB: number;
+  readonly concurrency: number;
+}
+
+/** The containers a run measures with the limits each must have: web, platform, every consumer task, Postgres. */
+export function expectedContainers(expected: ExpectedLimits): { readonly name: string; readonly cpus: number; readonly memoryMiB: number; readonly cpuset: string }[] {
+  const screening = expected.screening;
+  return [
+    { name: 'web', ...expected.web, cpuset: expected.layout.web },
+    { name: 'platform', ...expected.platform, cpuset: expected.layout.platform },
+    ...(screening === null ? [] : Array.from({ length: expected.screeningTasks }, (_, index) => ({ name: `screening-${String(index + 1)}`, ...screening, cpuset: expected.layout.consumer }))),
+    { name: 'postgres', cpus: expected.postgres.cpus, memoryMiB: expected.postgres.memoryMiB, cpuset: expected.postgres.cpuset },
+  ];
 }
 
 /** Each limit the run should have applied and did not ("limit not applied"); empty when all hold. */
 export function limitProblems(applied: AppliedLimits, expected: ExpectedLimits): string[] {
   const problems: string[] = [];
-  const want: Record<AppliedContainer['name'], { readonly cpus: number; readonly memoryMiB: number; readonly cpuset: string }> = {
-    web: { ...expected.web, cpuset: expected.postgres.taskCpuset },
-    platform: { ...expected.platform, cpuset: expected.postgres.taskCpuset },
-    postgres: { cpus: expected.postgres.cpus, memoryMiB: expected.postgres.memoryMiB, cpuset: expected.postgres.cpuset },
-  };
-  for (const name of ['web', 'platform', 'postgres'] as const) {
+  for (const target of expectedContainers(expected)) {
+    const name = target.name;
     const container = applied.containers.find((item) => item.name === name);
-    const target = want[name];
     if (container === undefined) {
       problems.push(`${name}: no limits read`);
       continue;
@@ -141,6 +210,14 @@ export function limitProblems(applied: AppliedLimits, expected: ExpectedLimits):
     if (container.cpuset !== target.cpuset) {
       problems.push(`${name}: cpuset ${String(container.cpuset)}, not ${target.cpuset}`);
     }
+    // The process runtime's services run under taskset; an affinity narrower than the cpuset is the cgroup-v1 collapse.
+    if (container.affinity !== undefined && container.affinity !== target.cpuset) {
+      problems.push(`${name}: CPU affinity ${String(container.affinity)}, not ${target.cpuset}`);
+    }
+  }
+  const extra = applied.containers.filter((container) => !expectedContainers(expected).some((target) => target.name === container.name));
+  for (const container of extra) {
+    problems.push(`${container.name}: a container the run does not declare`);
   }
   const io = applied.ioMax;
   if (io === null || io.riops !== expected.storage.iops || io.wiops !== expected.storage.iops || io.rbps !== expected.storage.bytesPerSecond || io.wbps !== expected.storage.bytesPerSecond) {
@@ -182,10 +259,20 @@ export interface UploadMeasure {
   readonly stalled: boolean;
   /** The run's status at the end (complete, failed, pricing, queued), or null when no run was found. */
   readonly runStatus: string | null;
+  /** The run's tier as submit_screening set it (Q7): its wait reason (null in the normal tier) and pg-boss priority. */
+  readonly waitReason: string | null;
+  readonly queuePriority: number | null;
+  /**
+   * The consumer's time-to-email line for the run (TimeToEmailMs): its elapsed_ms (from the web's received_at until the
+   * send returned and the completion committed), the line's own time from the scenario's start, and whether it was the
+   * normal line or the waiting tier's; null when no consumer logged one.
+   */
+  readonly logged: { readonly elapsedMs: number; readonly atMs: number; readonly tier: 'normal' | 'waiting' } | null;
 }
 
 export interface ContainerMeasure {
-  readonly name: 'web' | 'platform';
+  /** web, platform, or a consumer task (screening-1 to screening-N). */
+  readonly name: string;
   readonly limitBytes: number;
   readonly anonPeakBytes: number;
   readonly anonSamples: number;
@@ -200,7 +287,12 @@ export interface ContainerMeasure {
 }
 
 export interface ScenarioMeasure {
+  /** The scenario as the report and the log name it: S1, or S4#2 for the repeated scenario's second run. */
   readonly id: string;
+  /** The scenario it runs (S1 to S5). */
+  readonly scenario: string;
+  /** Which run of the repeated scenario (1 to REPETITIONS), or null for a scenario run once. */
+  readonly repetition: number | null;
   readonly what: string;
   /** The cold start asked for before it (null when none was): whether Postgres was restarted and the page cache dropped. */
   readonly coldStart: { readonly restarted: boolean; readonly cacheDropped: boolean } | null;
@@ -208,8 +300,15 @@ export interface ScenarioMeasure {
   readonly containers: readonly ContainerMeasure[];
   /** Postgres's OOM kills during the scenario, its restarts and whether it ran at the end (null where not read). */
   readonly postgres: { readonly oomKills: number | null; readonly restarts: number | null; readonly running: boolean | null };
-  /** Platform jobs that ran during the scenario, from pg-boss's job table, with their seconds. */
-  readonly platformJobs: readonly { readonly name: string; readonly count: number; readonly seconds: number }[];
+  /** Jobs that ran during the scenario, from pg-boss's job table, by queue, with their seconds. */
+  readonly jobs: readonly { readonly name: string; readonly count: number; readonly seconds: number }[];
+  /** The scenario's runs the platform's log shows it pricing or emailing (none since PR 6b-3: the consumer prices them). */
+  readonly platformPricedRuns: number;
+  /**
+   * With a static asset origin: requests the pages made to it that the harness served from the web container's own
+   * /_next/static/, and those that would have left for it (anything else, or a fetch that failed); null without one.
+   */
+  readonly staticOrigin: { readonly routed: number; readonly left: number } | null;
 }
 
 export interface OracleComparison {
@@ -224,11 +323,49 @@ export interface OracleComparison {
   readonly oracleSha256: string;
 }
 
+/**
+ * The GitHub Actions run that measured, as the runner names it (each null outside Actions: a local run): the launch
+ * check holds the ref to the tag's release.yml and the run to the one that attested the report (launch-check.ts).
+ */
+export interface WorkflowRun {
+  /** GITHUB_WORKFLOW_REF: `<owner>/<repository>/.github/workflows/<file>@<ref>`. */
+  readonly ref: string | null;
+  /** GITHUB_RUN_ID. */
+  readonly runId: string | null;
+  /** GITHUB_RUN_ATTEMPT: 1, or the re-run's number. */
+  readonly runAttempt: string | null;
+}
+
+/** The run that measured, from the runner's variables (process.env in run.ts); an unset or empty variable is null. */
+export function workflowRun(env: Readonly<Record<string, string | undefined>>): WorkflowRun {
+  const named = (name: string): string | null => {
+    const value = env[name];
+    return value === undefined || value === '' ? null : value;
+  };
+  return { ref: named('GITHUB_WORKFLOW_REF'), runId: named('GITHUB_RUN_ID'), runAttempt: named('GITHUB_RUN_ATTEMPT') };
+}
+
 export interface Measurements {
   readonly commit: string;
+  /** The GitHub Actions run that measured (null fields outside Actions). */
+  readonly workflow: WorkflowRun;
   readonly runtime: 'docker' | 'process';
-  readonly imageDigests: Readonly<Record<string, string>>;
+  /**
+   * The measured images' IDs (`docker image inspect -f {{.Id}}`): on the runner's classic (overlay2) image store, each
+   * image's config digest, which the launch check compares with the config digest of the image ECR holds
+   * (launch-check.ts, registryImageId); null on the process runtime, which runs no image.
+   */
+  readonly images: { readonly web: string | null; readonly worker: string | null };
+  /** The consumer as measured; null when the settings declare none (the harness then stops). */
+  readonly consumer: ConsumerMeasure | null;
+  /** The static host the web image was built for, which the harness routed to the web container; null for none. */
+  readonly staticAssetOrigin: string | null;
   readonly runner: { readonly cpus: number; readonly memoryMiB: number; readonly cpuModel: string; readonly kernel: string; readonly loadAverage: readonly number[] };
+  /**
+   * The CPUs the harness ran on as the kernel reported them at its start (Cpus_allowed_list, the workflow's taskset), which
+   * must be the layout's harness CPUs (Postgres's on the free runner); null when it could not be read.
+   */
+  readonly harnessAffinity: string | null;
   readonly expected: ExpectedLimits;
   readonly applied: AppliedLimits;
   readonly runnerProblems: readonly string[];
@@ -255,29 +392,157 @@ export interface Measurements {
 }
 
 export interface Verdict {
+  /** No failing check: in an advisory run, time aside. */
   readonly pass: boolean;
-  readonly time: 'open, PR 6b' | 'enforced';
+  /** 'enforced' in a binding run, 'advisory' in an advisory one, 'open, PR 6b' while no consumer is declared. */
+  readonly time: 'open, PR 6b' | 'enforced' | 'advisory';
+  /** The failing checks: every one in a binding run; every one but time in an advisory run. */
   readonly reasons: readonly string[];
+  /** An advisory run's failing time verdicts, worded as a binding run's reasons, which warn and fail nothing; empty in a binding run. */
+  readonly timeWarnings: readonly string[];
+}
+
+/**
+ * One run of the repeated scenario: its uploads' times to email and its worst upload's, the small one included (null
+ * when one was never emailed).
+ */
+export interface RepetitionTimes {
+  readonly id: string;
+  readonly worstUpload: string | null;
+  readonly worstMs: number | null;
+  readonly uploads: readonly { readonly id: string; readonly ms: number | null }[];
+}
+
+/** The repeated scenario's runs as measured and its middle run, the one its time is judged on (null without all three). */
+export interface RepeatedScenario {
+  readonly scenario: string;
+  readonly middle: string | null;
+  readonly runs: readonly RepetitionTimes[];
+}
+
+/** An upload's time from its submission to its email, or null when it has no submission or no email. */
+function elapsedMs(upload: Pick<UploadMeasure, 'submittedMs' | 'emailedMs'>): number | null {
+  return upload.submittedMs === null || upload.emailedMs === null ? null : upload.emailedMs - upload.submittedMs;
+}
+
+/**
+ * Whether a scenario is one of the repeated scenario's runs: S4#1, S4#2 or S4#3, its scenario S4 and its repetition the
+ * one its name gives. Anything else is a scenario run once, judged on time as measured, whatever repetition it carries.
+ */
+function isRepeatedRun(scenario: Pick<ScenarioMeasure, 'id' | 'scenario' | 'repetition'>): boolean {
+  const { repetition } = scenario;
+  return (
+    scenario.scenario === REPEATED_SCENARIO &&
+    typeof repetition === 'number' &&
+    Number.isInteger(repetition) &&
+    repetition >= 1 &&
+    repetition <= REPETITIONS &&
+    scenario.id === scenarioLabel(REPEATED_SCENARIO, repetition)
+  );
+}
+
+/**
+ * The repeated scenario's runs and its middle run (the founder's ruling of 2026-10-23): the runs ordered by their worst
+ * upload's time to email, the small one included (so two of three runs with an upload above 48 s fail, whichever upload
+ * it was: the verification of PR 6b-3's capacity changes), a run with an upload never emailed (or never submitted) as
+ * the slowest, ties in the order they ran; the middle of the three is the one whose four uploads the time verdict and
+ * the sizing question judge. With fewer or more than REPETITIONS runs no middle is taken, and every run's time is
+ * judged (such a run fails as partial anyway).
+ */
+export function repeatedScenario(scenarios: readonly ScenarioMeasure[]): RepeatedScenario {
+  const runs = scenarios.filter(isRepeatedRun).map((scenario): RepetitionTimes => {
+    let worst: { readonly id: string; readonly ms: number | null } | null = null;
+    for (const upload of scenario.uploads) {
+      const ms = elapsedMs(upload);
+      if (worst === null || (worst.ms !== null && (ms === null || ms > worst.ms))) {
+        worst = { id: upload.id, ms };
+      }
+    }
+    return { id: scenario.id, worstUpload: worst?.id ?? null, worstMs: worst?.ms ?? null, uploads: scenario.uploads.map((upload) => ({ id: upload.id, ms: elapsedMs(upload) })) };
+  });
+  // A stable sort: runs that tie keep the order they ran in (two never-emailed runs compare equal).
+  const slowness = (run: RepetitionTimes) => run.worstMs ?? Number.POSITIVE_INFINITY;
+  const ordered = [...runs].sort((a, b) => (slowness(a) === slowness(b) ? 0 : slowness(a) - slowness(b)));
+  const middle = runs.length === REPETITIONS ? (ordered[(REPETITIONS - 1) / 2]?.id ?? null) : null;
+  return { scenario: REPEATED_SCENARIO, middle, runs };
+}
+
+/**
+ * Whether a scenario's uploads are judged on time: every scenario but S4's three runs, whatever repetition it carries,
+ * and of S4's runs the middle one alone (every one when no middle was taken).
+ */
+function judgedOnTime(scenario: ScenarioMeasure, middle: string | null): boolean {
+  return !isRepeatedRun(scenario) || middle === null || scenario.id === middle;
+}
+
+/** An upload as the report and the log name it: S1-1, or S4#2 S4-1 in a run of the repeated scenario. */
+export function uploadLabel(scenario: Pick<ScenarioMeasure, 'id' | 'repetition'>, upload: Pick<UploadMeasure, 'id'>): string {
+  return scenario.repetition === null ? upload.id : `${scenario.id} ${upload.id}`;
+}
+
+/**
+ * What an upload's label says when it is of S4's middle run (S4#2 S4-1 with S4#2 the middle, say), with the apostrophe
+ * of the sentence it goes in; nothing for any other upload, or when no middle run was taken.
+ */
+export function middleRunNote(label: string, middle: string | null, apostrophe: "'" | '’'): string {
+  return middle !== null && label.startsWith(`${middle} `) ? ` (the middle of ${REPEATED_SCENARIO}${apostrophe}s three runs)` : '';
+}
+
+/** The repeated scenario's runs in one line, for the job's log and the summary: every run's times and which was the middle. */
+export function repeatedSummary(repeated: RepeatedScenario): string {
+  const count = repeated.runs.length === REPETITIONS ? 'three times' : `${String(repeated.runs.length)} of three times`;
+  const runs = repeated.runs.map((run) => {
+    const times = run.uploads.map((upload) => seconds(upload.ms));
+    return `${run.id} ${times.length > 1 ? `${times.slice(0, -1).join(', ')} and ${times.at(-1) ?? ''}` : (times[0] ?? 'no upload')} s`;
+  });
+  const head = `${repeated.scenario} ran ${count} (the founder's ruling of 2026-10-23): ${runs.length === 0 ? 'no run measured' : runs.join('; ')}.`;
+  const middle = repeated.runs.find((run) => run.id === repeated.middle);
+  if (middle === undefined) {
+    return `${head} With fewer than three runs no middle run is taken: every run's uploads are judged on time.`;
+  }
+  return `${head} Ordered by each run's worst upload, the small one included, the middle run is ${middle.id} (${seconds(middle.worstMs)} s): its four uploads are judged against the 48-s line and the 44-s question, and every other check holds in all three runs.`;
 }
 
 /** The run's verdict under the rule (see the module comment). */
 export function verdict(measured: Measurements, rule: TimeRule): Verdict {
   const reasons: string[] = [];
+  // A failing time verdict fails a binding run and warns in an advisory one, worded the same either way; a mode that is
+  // not 'advisory' is read as binding.
+  const timeWarnings: string[] = [];
+  const timeFailures = rule.mode === 'advisory' ? timeWarnings : reasons;
   if (measured.aborted !== null) {
     reasons.push(`run not finished: ${measured.aborted}`);
   }
   if (rule.consumerDeclared && !rule.consumerRun) {
     reasons.push('consumer not run: environments.ts declares the screening consumer, and the harness still prices screenings in the platform container one at a time');
   }
-  const ids = measured.scenarios.map((scenario) => scenario.id);
-  if (ids.join(',') !== ALL_SCENARIOS.join(',')) {
-    reasons.push(`partial run: measured ${ids.length === 0 ? 'no scenario' : ids.join(', ')}; a verdict needs ${ALL_SCENARIOS.join(', ')}${measured.only.length === 0 ? '' : ` (asked for ${measured.only.join(', ')})`}`);
+  if (rule.consumerDeclared && measured.consumer === null) {
+    reasons.push('consumer not measured: environments.ts declares the screening consumer, and the report names none');
   }
+  const ids = measured.scenarios.map((scenario) => scenario.id);
+  if (ids.join(',') !== MEASURED_SCENARIOS.join(',')) {
+    reasons.push(`partial run: measured ${ids.length === 0 ? 'no scenario' : ids.join(', ')}; a verdict needs ${MEASURED_SCENARIOS.join(', ')}${measured.only.length === 0 ? '' : ` (asked for ${measured.only.join(', ')})`}`);
+  }
+  // S4's time is judged on its middle run; every other check below holds in each of its runs.
+  const { middle } = repeatedScenario(measured.scenarios);
   if (measured.notStarted.length > 0) {
     reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
   }
   reasons.push(...measured.runnerProblems.map((problem) => `runner too small: ${problem}`));
+  // The layout the harness gives this runner, read again from the report's own limits: the free runner's shared CPUs
+  // pass there, and CPUs of their own on eight or more (the founder's rulings of 2026-10-23).
+  const expected = measured.expected;
+  const wanted = cpuLayout(
+    cpuNeedsOf({ databaseVcpus: expected.postgres.cpus, web: expected.web, platform: expected.platform, screening: expected.screening, screeningTasks: expected.screeningTasks }),
+    measured.runner.cpus,
+  );
+  if (!sameLayout(expected.layout, wanted)) {
+    reasons.push(`layout: measured on ${layoutText(expected.layout)}, and the layout the harness gives a runner of ${String(measured.runner.cpus)} CPUs is ${layoutText(wanted)}`);
+  }
   reasons.push(...limitProblems(measured.applied, measured.expected).map((problem) => `limit not applied: ${problem}`));
+  if (measured.harnessAffinity !== measured.expected.layout.harness) {
+    reasons.push(`limit not applied: harness: CPU affinity ${String(measured.harnessAffinity)}, not ${measured.expected.layout.harness}`);
+  }
   for (const scenario of measured.scenarios) {
     if (scenario.coldStart !== null && (!scenario.coldStart.restarted || !scenario.coldStart.cacheDropped)) {
       reasons.push(`cold start not applied: ${scenario.id} (Postgres restarted: ${scenario.coldStart.restarted ? 'yes' : 'no'}, page cache dropped: ${scenario.coldStart.cacheDropped ? 'yes' : 'no'})`);
@@ -296,11 +561,36 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     for (const small of scenario.uploads.filter((item) => item.behind)) {
       const times = [small, ...large].map((item) => [item.jobCreatedMs, item.jobStartedMs]);
       if (times.some(([created, started]) => created === null || started === null)) {
-        reasons.push(`queue order not recorded: ${small.id}`);
+        reasons.push(`queue order not recorded: ${uploadLabel(scenario, small)}`);
       } else if (large.some((item) => (item.jobCreatedMs ?? 0) > (small.jobCreatedMs ?? 0) || (item.jobStartedMs ?? 0) > (small.jobStartedMs ?? 0))) {
-        // One run at a time (the platform's consumer): the small one is queued, and starts, after every large one.
-        reasons.push(`queue order: ${small.id} was not queued and started behind the scenario's large uploads`);
+        // pg-boss takes jobs by priority, then age: the small one, queued last at the same priority, starts last.
+        reasons.push(`queue order: ${uploadLabel(scenario, small)} was not queued and started behind the scenario's large uploads`);
       }
+    }
+    const slots = measured.consumer === null ? 0 : measured.consumer.tasks * measured.consumer.concurrency;
+    const atOnce = Math.min(large.length, slots);
+    if (atOnce > 1) {
+      // The consumer's slots, used at once (the design's binding case: three worst uploads priced in parallel): none of
+      // the first `atOnce` large uploads waits for another to finish, so each starts before the next email of the
+      // scenario's other large uploads after its job was queued. One queued after another had finished waited for none.
+      const first = [...large].sort((a, b) => (a.jobCreatedMs ?? Number.POSITIVE_INFINITY) - (b.jobCreatedMs ?? Number.POSITIVE_INFINITY)).slice(0, atOnce);
+      const waited = first.filter((item) => {
+        if (item.jobCreatedMs === null || item.jobStartedMs === null) {
+          return true;
+        }
+        const queued = item.jobCreatedMs;
+        const nextEmail = Math.min(...large.filter((other) => other !== item && other.emailedMs !== null && other.emailedMs >= queued).map((other) => other.emailedMs ?? Number.POSITIVE_INFINITY));
+        return item.jobStartedMs >= nextEmail;
+      });
+      if (waited.length > 0) {
+        reasons.push(`slots not used: ${scenario.id}'s first ${String(atOnce)} large uploads were not priced at once (${String(slots)} declared; ${waited.map((item) => item.id).join(', ')} waited)`);
+      }
+    }
+    if (scenario.platformPricedRuns > 0) {
+      reasons.push(`platform priced a screening: ${scenario.id} (${String(scenario.platformPricedRuns)} run${scenario.platformPricedRuns === 1 ? '' : 's'})`);
+    }
+    if (scenario.staticOrigin !== null && scenario.staticOrigin.left > 0) {
+      reasons.push(`request left for the static origin: ${scenario.id} (${String(scenario.staticOrigin.left)})`);
     }
     for (const container of scenario.containers) {
       const where = `${scenario.id} ${container.name}`;
@@ -315,7 +605,7 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       }
     }
     for (const upload of scenario.uploads) {
-      const where = `${upload.id}`;
+      const where = uploadLabel(scenario, upload);
       if (upload.emailedMs === null) {
         reasons.push(`not emailed when the scenario's cap ended: ${where}`);
       } else if (upload.resultStatus !== 200) {
@@ -338,11 +628,17 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       if (upload.emailedMs !== null && upload.submittedMs === null) {
         reasons.push(`submission time not captured: ${where}`);
       }
+      if (upload.waitReason !== null || upload.logged?.tier === 'waiting') {
+        // Every scenario upload is a different prospect's (one account each) inside the day's cap: none may wait (Q7).
+        reasons.push(`waiting tier: ${where} (${upload.waitReason ?? 'logged as waiting'}, priority ${String(upload.queuePriority)})`);
+      }
       if (upload.submittedMs !== null && upload.emailedMs !== null) {
-        const time = timeVerdict(upload.emailedMs - upload.submittedMs, rule);
-        if (time.status === 'fail') {
-          reasons.push(`time: ${where} ${((upload.emailedMs - upload.submittedMs) / 1000).toFixed(1)} s, ${timeLabel(time)}`);
+        const elapsed = upload.emailedMs - upload.submittedMs;
+        const time = timeVerdict(elapsed, rule);
+        if (time.status === 'fail' && judgedOnTime(scenario, middle)) {
+          timeFailures.push(`time: ${where} ${(elapsed / 1000).toFixed(1)} s${middleRunNote(where, middle, "'")}, ${timeLabel(time)}`);
         }
+        reasons.push(...timeMetricProblems(upload, elapsed, where));
       }
     }
   }
@@ -362,42 +658,118 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       reasons.push(`oracle mismatch: ${upload}`);
     }
   }
-  return { pass: reasons.length === 0, time: rule.consumerDeclared ? 'enforced' : 'open, PR 6b', reasons };
+  return { pass: reasons.length === 0, time: !rule.consumerDeclared ? 'open, PR 6b' : rule.mode === 'advisory' ? 'advisory' : 'enforced', reasons, timeWarnings };
+}
+
+/**
+ * When an upload's time starts for the harness: the moment it clicked "Screen the file", once the page has sent its POST
+ * (null when it never did: the submission was not captured). The click comes before the POST leaves the browser, so the
+ * start is never later than the web's receipt, which the proxy stamps when the POST's headers arrive. The request event
+ * Playwright raises is not: it reaches the harness after the POST has left, and the web received S1-1's 81 ms before
+ * the harness heard of it.
+ */
+export function uploadStart(clickedAt: number | null, posted: boolean): number | null {
+  return posted ? clickedAt : null;
+}
+
+/**
+ * The time metric's bounds (the design's §5.3): the consumer's logged elapsed_ms for the upload's run is never above the
+ * time from the harness's click to the line itself (the metric starts at the web's received_at, after the click and the
+ * POST, and ends before its line is written), and never more than TIME_METRIC_BELOW_MS below the harness's time (the
+ * browser's send and the transfer before received_at), so the metric covers the web's share and the send.
+ */
+export function timeMetricProblems(upload: UploadMeasure, harnessMs: number, where: string = upload.id): string[] {
+  if (upload.logged === null) {
+    return [`time metric not logged: ${where}`];
+  }
+  const ceiling = upload.submittedMs === null ? null : upload.logged.atMs - upload.submittedMs;
+  if ((ceiling !== null && upload.logged.elapsedMs > ceiling) || upload.logged.elapsedMs < harnessMs - TIME_METRIC_BELOW_MS) {
+    return [
+      `time metric out of bounds: ${where} logged ${(upload.logged.elapsedMs / 1000).toFixed(3)} s against the harness's ${(harnessMs / 1000).toFixed(3)} s (at most ${ceiling === null ? '—' : (ceiling / 1000).toFixed(3)} s, at least ${((harnessMs - TIME_METRIC_BELOW_MS) / 1000).toFixed(3)} s)`,
+    ];
+  }
+  return [];
 }
 
 export interface Report extends Measurements {
   readonly format: typeof REPORT_FORMAT;
+  /** Whether time failed this run (binding: a release's) or only warned (advisory: every other run's). */
+  readonly timeMode: TimeMode;
   readonly verdict: Verdict;
+  /** S4's three runs and the middle one, which its time is judged on (the founder's ruling of 2026-10-23). */
+  readonly repeated: RepeatedScenario;
+  /**
+   * The slowest time the verdict judges (S4's middle run's, not its other runs'), and whether it is above
+   * SIZING_QUESTION_MS: a sizing question for the founder before merge (open item O9), which never changes the verdict.
+   */
+  readonly sizing: Sizing;
+}
+
+export interface Sizing {
+  readonly worstUpload: string | null;
+  readonly worstMs: number | null;
+  readonly question: boolean;
+}
+
+/** The sizing question as the measurements give it (report() records it; the launch check reads it again). */
+export function sizing(measured: Pick<Measurements, 'scenarios'>): Sizing {
+  const worst = worstTime(measured);
+  return { worstUpload: worst?.id ?? null, worstMs: worst?.ms ?? null, question: worst !== null && worst.ms > SIZING_QUESTION_MS };
 }
 
 export function report(measured: Measurements, rule: TimeRule): Report {
-  return { format: REPORT_FORMAT, ...measured, verdict: verdict(measured, rule) };
+  return {
+    format: REPORT_FORMAT,
+    timeMode: rule.mode,
+    ...measured,
+    verdict: verdict(measured, rule),
+    repeated: repeatedScenario(measured.scenarios),
+    sizing: sizing(measured),
+  };
 }
 
-const seconds = (ms: number | null | undefined): string => (ms === null || ms === undefined ? '—' : (ms / 1000).toFixed(1));
+function seconds(ms: number | null | undefined): string {
+  return ms === null || ms === undefined ? '—' : (ms / 1000).toFixed(1);
+}
 
 /** The report as Markdown, for the job's summary: one table of uploads, one of containers, then the verdict. */
 export function markdown(full: Report, rule: TimeRule): string {
   const lines = [
     `## Screening capacity: ${full.verdict.pass ? 'pass' : 'fail'} (time ${full.verdict.time})`,
     '',
-    `Commit \`${full.commit}\`, ${full.runtime} runtime, runner ${String(full.runner.cpus)} CPUs and ${String(full.runner.memoryMiB)} MiB (${full.runner.cpuModel}), load average ${full.runner.loadAverage.map((value) => value.toFixed(2)).join(' ')}. Release ${String(full.release.releaseNo)} (${String(full.release.records)} records${
+    `Commit \`${full.commit}\`, ${full.runtime} runtime, runner ${String(full.runner.cpus)} CPUs and ${String(full.runner.memoryMiB)} MiB (${full.runner.cpuModel}), load average ${full.runner.loadAverage.map((value) => value.toFixed(2)).join(' ')}. ${consumerLine(full)} Images: web \`${full.images.web ?? 'none (process runtime)'}\`, worker \`${full.images.worker ?? 'none (process runtime)'}\`${full.staticAssetOrigin === null ? '' : `; static origin ${full.staticAssetOrigin} routed to the web container`}. Release ${String(full.release.releaseNo)} (${String(full.release.records)} records${
       full.release.zip9 === undefined
         ? ''
         : `; ZIP9: ${String(full.release.zip9.records)} records of ${String(full.release.zip9.rangesPerRecord)} ranges, ${String(full.release.zip9.linesPerYear)} lines and ${(full.release.zip9.bytesPerYear / MIB).toFixed(1)} MiB a year`
     }).`,
     '',
-    '| Upload | Shape | Rows | Seconds to email | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    `Layout: ${layoutText(full.expected.layout)}; the harness ran on CPUs ${String(full.harnessAffinity)}.`,
+    '',
+    full.workflow.ref === null
+      ? 'Measured outside GitHub Actions (no GITHUB_WORKFLOW_REF).'
+      : `Measured by ${full.workflow.ref}, run ${String(full.workflow.runId)}, attempt ${String(full.workflow.runAttempt)}.`,
+    '',
+    full.timeMode === 'advisory'
+      ? "Time mode: advisory. The time verdicts are warnings on this run and do not fail it (a pull request's, the build branch's or the weekly run; the founder's ruling of 2026-10-23, time advisory). A release's capacity run is binding, and production's screening opens only on its pass (decision 13)."
+      : "Time mode: binding. Time fails this run as every other check does (a release's capacity run, whose pass alone opens production's screening: decision 13).",
+    '',
+    '| Upload | Shape | Rows | Seconds to email | Logged (TimeToEmailMs) | Tier | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
+  // S4's time is judged on its middle run, read from the measurements as the verdict reads them.
+  const repeated = repeatedScenario(full.scenarios);
   for (const scenario of full.scenarios) {
     for (const upload of scenario.uploads) {
-      const elapsed = upload.submittedMs !== null && upload.emailedMs !== null ? upload.emailedMs - upload.submittedMs : null;
+      const elapsed = elapsedMs(upload);
       const shared = upload.phases.shared_load ?? upload.phases.shared_held;
+      const time = elapsed === null ? '—' : judgedOnTime(scenario, repeated.middle) ? timeLabel(timeVerdict(elapsed, rule)) : `not judged (${String(repeated.middle)} is the middle run)`;
       lines.push(
-        `| ${upload.id} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${seconds(upload.jobCreatedMs)}, ${seconds(upload.jobStartedMs)} | ${elapsed === null ? '—' : timeLabel(timeVerdict(elapsed, rule))} |`,
+        `| ${uploadLabel(scenario, upload)} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(upload.logged?.elapsedMs)} | ${upload.waitReason ?? upload.logged?.tier ?? '—'} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${seconds(upload.jobCreatedMs)}, ${seconds(upload.jobStartedMs)} | ${time} |`,
       );
     }
+  }
+  if (repeated.runs.length > 0) {
+    lines.push('', repeatedSummary(repeated));
   }
   lines.push('', '| Scenario | Container | Anonymous peak (MiB) | Limit (MiB) | memory.peak (MiB) | Limit reached | OOM kills | Throttled periods |', '| --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const scenario of full.scenarios) {
@@ -407,6 +779,97 @@ export function markdown(full: Report, rule: TimeRule): string {
       );
     }
   }
-  lines.push('', full.verdict.reasons.length === 0 ? 'Every check PR 6 controls passed.' : 'Failing checks:', ...full.verdict.reasons.map((reason) => `- ${reason}`), '');
+  const worst = worstTime(full);
+  if (worst !== null && worst.ms > SIZING_QUESTION_MS) {
+    lines.push(
+      '',
+      `Sizing question for the founder (open item O9): the worst time, ${worst.id}’s ${(worst.ms / 1000).toFixed(1)} s${middleRunNote(worst.id, repeated.middle, '’')}, is above ${String(SIZING_QUESTION_MS / 1000)} s, within 8% of the 48-s line. This is reported before merge as a question of the consumer's size, not a pass to rely on or a limit to widen.`,
+    );
+  }
+  const { reasons, timeWarnings } = full.verdict;
+  const passed = timeWarnings.length === 0 ? 'Every check the build controls passed.' : 'Every check the build controls passed but time, which is advisory on this run.';
+  lines.push('', reasons.length === 0 ? passed : 'Failing checks:', ...reasons.map((reason) => `- ${reason}`), '');
+  if (timeWarnings.length > 0) {
+    lines.push('Time warnings (advisory: they do not fail this run; a binding run fails on each):', ...timeWarnings.map((warning) => `- ${warning}`), '');
+  }
   return lines.join('\n');
+}
+
+/** The consumer as the summary states it. */
+function consumerLine(full: Report): string {
+  const consumer = full.consumer;
+  return consumer === null
+    ? 'No screening consumer measured.'
+    : `Screening consumer: ${String(consumer.tasks)} task${consumer.tasks === 1 ? '' : 's'} of ${String(consumer.cpus)} vCPU and ${String(consumer.memoryMiB)} MiB, ${String(consumer.concurrency)} screenings at once each.`;
+}
+
+/**
+ * Above this, a passing worst time is within 8% of the 48-s allowance: the design's §2.4 and open item O9 send it to the
+ * founder as a sizing question before merge, never as a tuning or a wider limit.
+ */
+export const SIZING_QUESTION_MS = 44_000;
+
+/**
+ * The slowest time to email the verdict judges, or null when none was emailed: every scenario's uploads but S4's, and
+ * S4's middle run's (S4#2 S4-1, say), never its other runs' (the founder's ruling of 2026-10-23).
+ */
+export function worstTime(full: Pick<Measurements, 'scenarios'>): { readonly id: string; readonly ms: number } | null {
+  const { middle } = repeatedScenario(full.scenarios);
+  let worst: { readonly id: string; readonly ms: number } | null = null;
+  for (const scenario of full.scenarios.filter((item) => judgedOnTime(item, middle))) {
+    for (const upload of scenario.uploads) {
+      const ms = elapsedMs(upload);
+      if (ms !== null && (worst === null || ms > worst.ms)) {
+        worst = { id: uploadLabel(scenario, upload), ms };
+      }
+    }
+  }
+  return worst;
+}
+
+/**
+ * The sizing question's one line (O9; the design's §2.4): the worst upload the verdict judges and its time (S4's from its
+ * middle run), above the 44-s line, numbers and an upload's label only. run.ts says it in the job's log, annotates the job with it as a warning and hands it to the
+ * gate, so it reaches the pull request's checks and not the log alone.
+ */
+export function sizingQuestion(worst: { readonly worstUpload: string | null; readonly worstMs: number | null }, middle: string | null = null): string {
+  const upload = worst.worstUpload ?? 'an upload';
+  return `the worst time, ${upload}'s ${((worst.worstMs ?? 0) / 1000).toFixed(1)} s${middleRunNote(upload, middle, "'")}, is above 44 s: the consumer's size goes to the founder before merge`;
+}
+
+/** What the harness's job does with a report: its exit code, the annotations it prints, and the outputs the gate reads. */
+export interface JobResult {
+  /** 0 on a passing verdict (an advisory run's time warnings aside), 1 on any failing check. */
+  readonly exitCode: 0 | 1;
+  /**
+   * Workflow commands, one a line, that put each warning on the pull request's checks: an advisory run's time verdicts
+   * and the sizing question (O9). A binding run's failing time is a failing check, never a warning.
+   */
+  readonly annotations: readonly string[];
+  /** GITHUB_OUTPUT's values: time-warnings (an advisory run's, joined) and sizing, each when there is one. */
+  readonly outputs: Readonly<Record<string, string>>;
+}
+
+/** A workflow command's message, its percent signs and line breaks escaped as GitHub reads them. */
+function commandMessage(text: string): string {
+  return text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+}
+
+/**
+ * The job's result from the report (run.ts writes it; the founder's ruling of 2026-10-23, time advisory): an advisory
+ * run whose only failing verdicts are time passes, each one a warning on the checks and handed to the gate, which prints
+ * them again; any other failing check fails it, as a binding run's time does.
+ */
+export function jobResult(full: Report): JobResult {
+  const annotations = full.verdict.timeWarnings.map((warning) => `::warning title=Time (advisory)::${commandMessage(warning)}`);
+  const outputs: Record<string, string> = {};
+  if (full.verdict.timeWarnings.length > 0) {
+    outputs['time-warnings'] = full.verdict.timeWarnings.join('; ');
+  }
+  if (full.sizing.question) {
+    const question = sizingQuestion(full.sizing, full.repeated.middle);
+    annotations.push(`::warning title=Sizing question (O9)::${commandMessage(question)}`);
+    outputs.sizing = question;
+  }
+  return { exitCode: full.verdict.pass ? 0 : 1, annotations, outputs };
 }

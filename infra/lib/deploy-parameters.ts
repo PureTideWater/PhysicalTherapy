@@ -1,4 +1,4 @@
-import { CfnCondition, CfnParameter, Fn, Token } from 'aws-cdk-lib';
+import { CfnCondition, CfnParameter, CfnRule, Fn, Token } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 /** The ImageTag value before any image is released: the services run no task and no migration runs. */
@@ -17,7 +17,24 @@ export const PARAMETER_NAMES = {
   supportEmail: 'SupportEmail',
   securityEmail: 'SecurityEmail',
   imageTag: 'ImageTag',
+  screeningConsumer: 'ScreeningConsumer',
 } as const;
+
+/** The launch value before the screening opens in production: the web keeps it closed (decision 13). */
+export const SCREENING_CLOSED = 'closed';
+
+/**
+ * A launch value: the release tag the capacity report measured and the report's SHA-256, as the launch check gives it
+ * (tools/screening-capacity/launch-check.ts), or `closed`. The CDK app computes it at synthesis (screening-launch.ts);
+ * the web reads it with the same pattern (apps/web/src/lib/server/config.ts).
+ */
+export const SCREENING_LAUNCH_PATTERN = '^(closed|v[0-9A-Za-z.-]{1,60}:[0-9a-f]{64})$';
+
+/** The rule that refuses a deploy whose ImageTag is not the tag its launch value was computed for. */
+export const SCREENING_LAUNCH_RULE = 'ScreeningLaunchImageTag';
+
+/** ScreeningConsumer: production's consumer runs no task until the first launch deploy says `running` (Q1 (b)). */
+export const SCREENING_CONSUMER_STATES = ['held', 'running'] as const;
 
 /**
  * What differs per deployment and is never in the repository (docs/adr/0049): the application's host
@@ -41,6 +58,16 @@ export const PARAMETER_NAMES = {
  *   the support address, whose mail opens tickets only for accounts (the web app refuses the two equal).
  * - ImageTag: the release tag of the web and worker images in this environment's repositories.
  *   `none` (the default) is the first deploy, before any image exists: the services run no task.
+ * - ScreeningConsumer (Q1 (b)): `held` (the default) or `running`. Only where the screening consumer starts at launch
+ *   (production) does it count: the consumer runs no task until it is `running` or the launch value is not `closed`, so
+ *   a deploy that can open the screening always runs its consumer (a launch value with ScreeningConsumer left at
+ *   `held`, or reset to it by a rollback across PR 6b-3, still runs it). Elsewhere it runs once released.
+ *
+ * The screening's launch value (decision 13; docs/adr/0062) is not a parameter: the CDK app computes it at synthesis
+ * from the release's capacity report and the ECR images the stack deploys (screening-launch.ts; the founder's ruling of
+ * 2026-10-22) and gives it here, `closed` or `<tag>:<SHA-256>`. A production web keeps the screening closed unless it
+ * names the ImageTag the deploy runs, and the rule ScreeningLaunchImageTag refuses a deploy whose ImageTag is another
+ * tag. No stack declares a ScreeningLaunch parameter, so CloudFormation refuses one passed with `--parameters`.
  */
 export class DeployParameters extends Construct {
   readonly appDomainName: string;
@@ -53,11 +80,24 @@ export class DeployParameters extends Construct {
   readonly supportEmail: string;
   readonly securityEmail: string;
   readonly imageTag: string;
+  /** `closed` or `<tag>:<report SHA-256>`, computed at synthesis (the web's SCREENING_LAUNCH). */
+  readonly screeningLaunch: string;
+  /** `held` or `running` (ScreeningConsumer). */
+  readonly screeningConsumer: string;
   /** True once ImageTag names a release. */
   readonly released: CfnCondition;
+  private launchedCondition: CfnCondition | undefined;
+  private readonly parameterScope: Construct;
 
-  constructor(scope: Construct, id: string) {
+  /** `screeningLaunch`: the launch value the CDK app computed (screening-launch.ts); `closed` when none. */
+  constructor(scope: Construct, id: string, props: { readonly screeningLaunch?: string } = {}) {
     super(scope, id);
+    this.parameterScope = scope;
+    const launch = props.screeningLaunch ?? SCREENING_CLOSED;
+    if (Token.isUnresolved(launch) || !new RegExp(SCREENING_LAUNCH_PATTERN).test(launch)) {
+      throw new Error(`the screening launch value must be ${SCREENING_CLOSED} or <tag>:<64 hex>, as the launch check computes it`);
+    }
+    this.screeningLaunch = launch;
     const parameter = (name: string, props: ConstructorParameters<typeof CfnParameter>[2]) => {
       const created = new CfnParameter(scope, name, props);
       created.overrideLogicalId(name);
@@ -115,8 +155,53 @@ export class DeployParameters extends Construct {
       allowedPattern: '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$',
       constraintDescription: 'an image tag',
     });
+    this.screeningConsumer = parameter(PARAMETER_NAMES.screeningConsumer, {
+      type: 'String',
+      description: 'held or running: where the screening consumer starts at launch (production), it runs no task until this is running',
+      default: SCREENING_CONSUMER_STATES[0],
+      allowedValues: [...SCREENING_CONSUMER_STATES],
+    });
     this.released = new CfnCondition(scope, 'Released', { expression: Fn.conditionNot(Fn.conditionEquals(this.imageTag, NO_IMAGE)) });
     this.released.overrideLogicalId('Released');
+    if (launch !== SCREENING_CLOSED) {
+      // The value names the report of one tag: CloudFormation refuses the deploy before any change unless ImageTag is it.
+      const tag = launch.slice(0, launch.lastIndexOf(':'));
+      const rule = new CfnRule(scope, SCREENING_LAUNCH_RULE, {
+        assertions: [
+          {
+            assert: Fn.conditionEquals(this.imageTag, tag),
+            assertDescription: `The screening's launch value was computed from ${tag}'s capacity report (decision 13): deploy ImageTag=${tag}, or synthesize without -c tp:launchReport, -c tp:launchAttestation and -c tp:launchTag to keep the screening closed`,
+          },
+        ],
+      });
+      rule.overrideLogicalId(SCREENING_LAUNCH_RULE);
+    }
+  }
+
+  /**
+   * True once ImageTag names a release and either ScreeningConsumer is `running` or the launch value is not `closed`:
+   * the consumer runs whenever the screening can open, so no deploy opens it with no task to price what prospects send
+   * (the web opens it only for a launch value naming its own tag, which the rule ScreeningLaunchImageTag holds ImageTag
+   * to). The launch value is known at synthesis, so its part of the condition is settled here rather than compared as
+   * two literals in the template: with a launch value the consumer runs once released, whatever ScreeningConsumer says;
+   * without one, once released and ScreeningConsumer is `running`. Created where a service starts at launch (the
+   * screening consumer in production), and nowhere else.
+   */
+  get screeningLaunched(): CfnCondition {
+    if (this.launchedCondition === undefined) {
+      const consumerRunning = Fn.conditionEquals(this.screeningConsumer, 'running');
+      this.launchedCondition = new CfnCondition(this.parameterScope, 'ScreeningConsumerRunning', {
+        // Released's own expression where a launch value is set (a condition is defined by a function, not by a name).
+        expression: this.screeningLaunch === SCREENING_CLOSED ? Fn.conditionAnd(this.released, consumerRunning) : Fn.conditionNot(Fn.conditionEquals(this.imageTag, NO_IMAGE)),
+      });
+      this.launchedCondition.overrideLogicalId('ScreeningConsumerRunning');
+    }
+    return this.launchedCondition;
+  }
+
+  /** `count` once released and ScreeningConsumer is `running` or a launch value is given, 0 until then (the screening consumer's count at launch). */
+  countOnceLaunched(count: number): number {
+    return Token.asNumber(Fn.conditionIf(this.screeningLaunched.logicalId, count, 0));
   }
 
   /** `count` once ImageTag names a release, 0 until then (a service's desired count). */

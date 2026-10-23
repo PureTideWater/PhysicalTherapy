@@ -1,5 +1,5 @@
 import { ENCRYPTED_COLUMNS } from './crypto/cipher';
-import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, OPERATOR_ROLE, OWNER_ROLE, SCREENING_ROLE } from './roles';
 
 /**
  * The catalog test (PRD 8 Invariants; PRD 16 Tenant isolation; test matrix SEC-01), as a function so
@@ -24,8 +24,9 @@ import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, OPERATOR_ROLE, OWNER_ROLE
  * - Every SECURITY DEFINER function sets its search_path with pg_temp last, and one that sets
  *   app.practice_ids (it runs as the owner, so a scope it widens reads across practices for whoever may
  *   call it) is one of REVIEWED_SCOPE_FUNCTIONS, each with its reason.
- * - The application, operator and billing roles own nothing; no column is real, double precision, float or
- *   money; money columns (_cents) are bigint; rate columns (rate, *_rate) are numeric(14,6).
+ * - The application, operator, billing, e-signature, job and screening roles own nothing, and the application role
+ *   may SET ROLE to none of billing, e-signature, operator, owner and screening; no column is real, double
+ *   precision, float or money; money columns (_cents) are bigint; rate columns (rate, *_rate) are numeric(14,6).
  * - Every column the application encrypts with the practice's key (ENCRYPTED_COLUMNS) exists and has a
  *   CHECK that admits enc:v1 ciphertext alone, so a code path that skipped the cipher stores nothing in
  *   clear (docs/adr/0047).
@@ -468,8 +469,9 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
   }
 
   // The application role switches to no other role: not billing's (an invoice rewritten from any request), not the
-  // e-signature webhook's, not the operator's or the owner's (docs/adr/0050, 0055).
-  for (const role of [billingRole, ESIGN_ROLE, operatorRole, ownerRole]) {
+  // e-signature webhook's, not the operator's or the owner's (docs/adr/0050, 0055), and not the screening consumer's
+  // (a request that could claim, record and complete a prospect's screening; migration 20261106090000).
+  for (const role of [billingRole, ESIGN_ROLE, operatorRole, ownerRole, SCREENING_ROLE]) {
     const switches = await rows<{ switches: boolean }>(client, "SELECT to_regrole($2) IS NOT NULL AND pg_has_role($1, $2, 'SET') AS switches", [appRole, role]);
     if (switches[0]?.switches === true) {
       problems.push(`the application role ${appRole} may SET ROLE ${role}`);
@@ -503,6 +505,7 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     ['billing', billingRole],
     ['e-signature', ESIGN_ROLE],
     ['job', JOB_ROLE],
+    ['screening', SCREENING_ROLE],
   ] as const) {
     const roleExists = await rows<{ exists: boolean }>(client, 'SELECT to_regrole($1) IS NOT NULL AS exists', [role]);
     if (roleExists[0]?.exists === true) {

@@ -9,7 +9,7 @@ import { type RuleRecord, recordSha256 } from '@tp/rules';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { MemoryMailSender } from '../mail/mail';
-import { type RequestedKeys, isKeyedRecordType, keyIdentity } from '../price/keyed-release';
+import { KEYED_RECORD_TYPES, type RequestedKeys, isKeyedRecordType, keyIdentity } from '../price/keyed-release';
 import { releaseChangeDays } from './adapter';
 import { RELEASES_KEPT, type ScreeningJobDependencies, forgetScreeningReleases, heldScreeningReleases, priceScreeningRun } from './job';
 import { legacyOutcomes, outcomesSha256, storedOutcomes } from './test-support/legacy-release';
@@ -155,7 +155,8 @@ async function submit(rows: readonly Row[], zip: string): Promise<string> {
                              places => $8, products => $9, bands => $10, allowed_cents => $11, claim_counts => $12, rows_left_out => $13, claim_lines_left_out => $14,
                              allowed_cents_left_out => $15, rows_outside_content => 0, claim_lines_outside_content => 0, allowed_cents_outside_content => 0,
                              heard_from => NULL, campaign_source => NULL, campaign_medium => NULL, campaign_name => NULL,
-                             click_kind => NULL, firm => NULL, consent_sha256 => NULL, terms_sha256 => $16, request => $17) AS id`,
+                             click_kind => NULL, firm => NULL, consent_sha256 => NULL, terms_sha256 => $16, received => NULL, rate_account_subject => $18,
+                             request => $17) AS id`,
     [
       practiceName(),
       'MN',
@@ -174,6 +175,8 @@ async function submit(rows: readonly Row[], zip: string): Promise<string> {
       '0',
       hex('SYNTHETIC screening terms'),
       `test-${randomUUID()}`,
+      // An account of its own (migration 20261106090000).
+      hex(`account ${randomUUID()}`),
     ],
   );
   return created?.id ?? '';
@@ -314,6 +317,18 @@ describe('one copy of a release’s shared types, keyed reads per run', () => {
         expect(Object.keys(line).sort()).toEqual(['elapsed_ms', 'job_id', 'level', 'msg', 'record_count', 'screening_run_id', 'time']);
       }
     }
+  });
+});
+
+describe('the shared read leaves out exactly the keyed types (#31; migration 20261106090000)', () => {
+  it('names in operator_screening_release() the six types a line looks up by its own key, KEYED_RECORD_TYPES, and no other', async () => {
+    const body = (await owner.query<{ body: string }>("SELECT prosrc AS body FROM pg_proc WHERE proname = 'operator_screening_release'")).rows[0]?.body ?? '';
+    const list = /NOT IN \(([^)]*)\)/.exec(body)?.[1] ?? '';
+    expect([...list.matchAll(/'([a-z_0-9]+)'/g)].map((match) => match[1]).sort()).toEqual([...KEYED_RECORD_TYPES].sort());
+    expect(KEYED_RECORD_TYPES).toHaveLength(6);
+    // It probes the record-type index one type at a time rather than filtering a scan of every release's records.
+    expect(body).toMatch(/WITH RECURSIVE types/);
+    expect(body).toMatch(/rr\.record_type = shared/);
   });
 });
 

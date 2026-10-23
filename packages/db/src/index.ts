@@ -18,6 +18,8 @@ export {
   OWNER_ROLE,
   type RoleAttributes,
   RoleBootstrapError,
+  SCREENING_DEV_LOGIN,
+  SCREENING_ROLE,
   WANTED_ROLES,
   WORKER_DEV_LOGIN,
   appDevLoginUrl,
@@ -28,6 +30,7 @@ export {
   managedRoles,
   marks,
   roleAlteration,
+  screeningDevLoginUrl,
   switchesTo,
   workerDevLoginUrl,
 } from './roles';

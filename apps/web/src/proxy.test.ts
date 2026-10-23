@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ATTRIBUTION_COOKIE } from './lib/http/attribution';
+import { RECEIVED_AT_HEADER } from './lib/http/received';
 import { proxy } from './proxy';
 
 /**
@@ -28,8 +29,11 @@ afterEach(() => {
   }
 });
 
-function request(path: string, options: { readonly method?: string; readonly cookie?: string; readonly origin?: string } = {}): NextRequest {
-  const headers = new Headers();
+function request(
+  path: string,
+  options: { readonly method?: string; readonly cookie?: string; readonly origin?: string; readonly headers?: Readonly<Record<string, string>> } = {},
+): NextRequest {
+  const headers = new Headers(options.headers);
   if (options.cookie !== undefined) {
     headers.set('cookie', options.cookie);
   }
@@ -80,5 +84,29 @@ describe('the proxy', () => {
     expect(setCookie(proxy(request('/screening?utm_source=newsletter&utm_medium=email')))).toBeNull();
     process.env.TP_ENVIRONMENT = 'staging';
     expect(setCookie(proxy(request('/screening?utm_source=newsletter&utm_medium=email')))).toMatch(/^pw_first_touch=/);
+  });
+});
+
+describe('the receipt stamp (decision 14; TimeToEmailMs starts when the web receives the upload)', () => {
+  /** The request headers the proxy passes on to the page or action, as Next carries them (x-middleware-request-*). */
+  const passedOn = (response: Response, name: string) => {
+    expect((response.headers.get('x-middleware-override-headers') ?? '').split(',')).toContain(name);
+    return response.headers.get(`x-middleware-request-${name}`);
+  };
+
+  it('stamps when the request arrived, by the server\'s clock, before any action reads its body', () => {
+    const before = Date.now();
+    const stamped = Number(passedOn(proxy(request('/screening', { method: 'POST' })), RECEIVED_AT_HEADER));
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('overwrites any copy the client sent, so no browser can move the start of its own time to email', () => {
+    for (const forged of ['1', '0', String(Date.now() - 600_000), 'not-a-time', '']) {
+      const before = Date.now();
+      const stamped = passedOn(proxy(request('/screening', { method: 'POST', headers: { [RECEIVED_AT_HEADER]: forged } })), RECEIVED_AT_HEADER);
+      expect(stamped).not.toBe(forged);
+      expect(Number(stamped)).toBeGreaterThanOrEqual(before);
+    }
   });
 });
