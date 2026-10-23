@@ -1,4 +1,4 @@
-import { MAIL_STREAM_KINDS, type MailKind, type MailStream } from '@tp/db';
+import { MAIL_STREAM_KINDS, type MailKind, type MailStream } from '@tp/db/runtime';
 
 /**
  * The mail streams (audit #76; docs/adr/0065; migration 20261107090000): every message goes through exactly one SES
