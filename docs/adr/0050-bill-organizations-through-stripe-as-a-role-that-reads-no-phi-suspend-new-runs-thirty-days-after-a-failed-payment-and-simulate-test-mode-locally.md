@@ -124,3 +124,27 @@ with placeholders the app refuses; only the web task names it. Stripe is reached
   requests are tested against the SDK's types with a mocked client; a person with test keys runs the flows once in Stripe's
   test mode (a test ACH payment through Elements, a declined card, a webhook from the Stripe CLI) before launch.
 - The plan and audit prices are placeholders until the company confirms them.
+
+## Amendment (PR 6b-4, 2026-10-21): dunning one message per owner from a recorded outbox
+
+Audit #76, built under the founder's answers of 2026-10-21 (about 22:30 UTC) to PR 6b's Q1 and Q12 (the mail streams);
+migration 20261107090000; docs/adr/0065.
+
+- **The stage records its outbox.** The stage's transaction (`runDunning()`) also calls
+  `billing_open_dunning_notice()`, which records one pending recipient per current billing owner (an active user whose
+  role holds `organization.billing`), once a stage. With none, it writes `notice_undelivered` on the invoice (purpose:
+  the stage) and the job logs `NOTICE_UNDELIVERABLE` with the invoice's ID. `billing_owner_emails()` is dropped.
+- **One message per owner, each in its own transaction.** `billing_dunning_notice_claim()` locks the owner's row and
+  gives the address, the message goes through the notices stream tagged with the invoice and the owner (never an
+  address), and `billing_dunning_notice_sent()` keeps SES's message ID. A send that throws is recorded in a new
+  transaction (`billing_dunning_notice_failed()`): tried again after 1, 5, 15 and 60 minutes by the minute's
+  `dunning_notices` job (docs/adr/0014), and failed after the fifth or at once on a permanent SES error. A retry reaches
+  only the owners still pending.
+- **Delivery recorded.** Each owner's row takes its message's state from SES's events (the platform's `mail_events`
+  job); the stage's first undelivered owner (bounced, suppressed, rejected or failed) writes `notice_undelivered` on the
+  invoice once and logs `NOTICE_UNDELIVERED` with its ID.
+- **No change to when an organization is suspended.** The suspension still takes effect 30 days after the failure
+  whether or not a notice was delivered; whether it should wait for a delivered notice is Q13, for the billing pull
+  request.
+- **Billing still reads no PHI.** `tp_billing` gains EXECUTE on the five outbox functions alone; the outbox table
+  (`dunning_notice_recipient`) has no policy or privilege for any role but the owner's.
