@@ -45,7 +45,7 @@ import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
  * token is read.
  */
 
-/** A release tag as the ScreeningLaunch parameter takes it (infra/lib/deploy-parameters.ts, SCREENING_LAUNCH_PATTERN). */
+/** A release tag as the launch value names it (infra/lib/deploy-parameters.ts, SCREENING_LAUNCH_PATTERN). */
 export const RELEASE_TAG = /^v[0-9A-Za-z.-]{1,60}$/;
 /** A Docker image ID as `docker image inspect -f {{.Id}}` prints it. */
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;

@@ -108,7 +108,8 @@ no credential is used.
    4 GiB; a thread out of memory logs `screening thread failed` with
    `SCREENING_THREAD_OUT_OF_MEMORY` and is replaced (`screening thread replaced`), its run claimed again. `restart or
    exit` with "JavaScript heap out of memory" in web's or platform's log (the artifact's `logs/`) is Node's heap limit,
-   which it sets from the task's memory (about half of 512 MiB), reached before the cgroup's: no OOM kill is counted. A
+   which it sets from the task's memory (about 560 MiB at web's 1 GiB, about 259 MiB at platform's 512 MiB), reached
+   before the cgroup's: no OOM kill is counted. A
    service that exited is started again before the next scenario, so the later scenarios are still measured. `OOM
    kill: … postgres` or `restart or exit: … postgres`: a backend met Postgres's memory limit, or the server went down;
    the runs that retried after it are not a measurement.
