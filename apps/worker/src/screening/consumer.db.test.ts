@@ -237,7 +237,7 @@ describe('the screening consumer in one process', () => {
     });
     const boss = consumerBoss();
     const consumer = await startScreeningConsumer(
-      { databaseUrl: database.screeningUrl, concurrency: 2, notifications: { mail: { kind: 'local', dir: outbox }, appOrigin: ORIGIN, staticAssetOrigin: null } },
+      { databaseUrl: database.screeningUrl, concurrency: 2, notifications: { mail: { kind: 'local', dir: outbox, eventsDir: null, streamPrefix: 'tp-dev' }, appOrigin: ORIGIN, staticAssetOrigin: null } },
       boss,
       logger,
       { workerId: randomUUID() },
@@ -393,7 +393,7 @@ async function timedConsumer(): Promise<{ readonly dir: string; readonly boss: P
   const boss = consumerBoss();
   const logger = createLogger({ sink: () => undefined });
   const consumer = await startScreeningConsumer(
-    { databaseUrl: database.screeningUrl, concurrency: 3, notifications: { mail: { kind: 'local', dir }, appOrigin: ORIGIN, staticAssetOrigin: null } },
+    { databaseUrl: database.screeningUrl, concurrency: 3, notifications: { mail: { kind: 'local', dir, eventsDir: null, streamPrefix: 'tp-dev' }, appOrigin: ORIGIN, staticAssetOrigin: null } },
     boss,
     logger,
     { workerId: randomUUID(), thread: { script: pathToFileURL(path.join(dir, 'thread.mjs')), execArgv: [] } },

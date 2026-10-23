@@ -4,7 +4,7 @@ import { openPool } from '@tp/db';
 import { createLogger } from '@tp/observability';
 
 import type { NotificationConfig } from '../config';
-import { LocalMailSender, type MailSender, sesMailSender } from '../mail/mail';
+import { configuredMailSender } from '../mail/mail';
 import { priceScreeningRun } from './job';
 import type { ScreeningThreadReply, ScreeningThreadRequest } from './threads';
 
@@ -39,10 +39,6 @@ function isSettings(value: unknown): value is ScreeningThreadSettings {
   return typeof settings.databaseUrl === 'string' && typeof settings.workerId === 'string' && typeof settings.notifications?.appOrigin === 'string';
 }
 
-function threadMail(notifications: NotificationConfig): MailSender {
-  return notifications.mail.kind === 'ses' ? sesMailSender(notifications.mail.from, notifications.staticAssetOrigin) : new LocalMailSender(notifications.mail.dir, notifications.staticAssetOrigin);
-}
-
 /**
  * The code a run's failure in its thread is logged by: SCREENING_RUN_FAILED, with the error's own code when it has one
  * shaped like a code (PostgreSQL's SQLSTATE, such as 57014 for a cancelled statement, or Node's, such as ECONNRESET),
@@ -56,7 +52,8 @@ export function screeningRunFailureCode(error: unknown): string {
 /** Starts answering the main thread; called once, as the thread's module loads. */
 export function serveScreeningThread(port: NonNullable<typeof parentPort>, settings: ScreeningThreadSettings): void {
   const operator = openPool(settings.databaseUrl, SCREENING_THREAD_CONNECTIONS);
-  const mail = threadMail(settings.notifications);
+  // The screening stream's set and sender, with Reply-To the support address (Q12).
+  const mail = configuredMailSender(settings.notifications.mail, settings.notifications.staticAssetOrigin);
   const logger = createLogger({ base: { worker_id: settings.workerId } });
   const reply = (message: ScreeningThreadReply) => {
     port.postMessage(message);

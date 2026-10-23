@@ -61,7 +61,20 @@ const schema = z.object({
   SCREENING_LAUNCH: z.string().regex(/^(closed|v[0-9A-Za-z.-]{1,60}:[0-9a-f]{64})$/, 'closed, or a tag and a 64-hex SHA-256').optional(),
   // Screenings the consumer prices at once (its tasks times its threads): the "sent" page's "every slot is busy".
   SCREENING_SLOTS: z.string().regex(/^[1-9][0-9]?$/, 'a whole number from 1 to 99').optional(),
+  // The screening's address checks (docs/adr/0065, D9; Q1 (g)): SES's validation and the VPC's DNS (required on a
+  // deployed server), or the local stand-ins, which call no one; and the validations a UTC day may make.
+  MAIL_VALIDATION: z.enum(['ses', 'local']).optional(),
+  MAIL_VALIDATION_DAILY_CAP: z.string().regex(/^[1-9][0-9]{0,5}$/, 'a whole number from 1 to 999999').optional(),
+  // The local stand-ins answer after this many milliseconds (0 to 5,000): the capacity harness charges the checks' worst
+  // case, one 2-second timeout, to every upload (the plan's G1). Refused on a deployed server.
+  MAIL_CHECK_DELAY_MS: z.string().regex(/^[0-9]{1,4}$/, 'a whole number of milliseconds').optional(),
 });
+
+/** Address validations a day where MAIL_VALIDATION_DAILY_CAP is unset (development and tests): staging's cap (Q1 (g)). */
+export const DEFAULT_MAIL_VALIDATION_DAILY_CAP = 50;
+
+/** How the server checks a screening's address: SES and DNS, or the local stand-ins (after `delayMs`). */
+export type MailValidationSettings = { readonly kind: 'ses'; readonly dailyCap: number } | { readonly kind: 'local'; readonly dailyCap: number; readonly delayMs: number };
 
 export type AuthProviderSettings =
   | { readonly kind: 'dev'; readonly directory: string }
@@ -161,6 +174,8 @@ export interface WebConfig {
   readonly screeningLaunch: ScreeningLaunch;
   /** SCREENING_SLOTS: when this many screenings are queued or pricing ahead, the "sent" page says it can take minutes. */
   readonly screeningSlots: number;
+  /** MAIL_VALIDATION, MAIL_VALIDATION_DAILY_CAP and MAIL_CHECK_DELAY_MS: how the screening's address is checked. */
+  readonly mailValidation: MailValidationSettings;
 }
 
 export class ConfigError extends Error {
@@ -192,6 +207,28 @@ function esignSettings(settings: z.output<typeof schema>, production: boolean): 
     throw new ConfigError('ESIGN_PROVIDER=local is refused in production (no vendor is chosen yet; record agreements in the console)');
   }
   return { kind: 'local', secret: settings.ESIGN_LOCAL_SECRET ?? DEVELOPMENT_ESIGN_SECRET, directory: settings.ESIGN_LOCAL_DIR ?? path.join(tmpdir(), 'tp-esign') };
+}
+
+/** The screening's address checks: SES and DNS on a deployed server (both settings required), the stand-ins elsewhere. */
+function mailValidationSettings(settings: z.output<typeof schema>, deployed: boolean): MailValidationSettings {
+  if (!deployed) {
+    const delayMs = Number.parseInt(settings.MAIL_CHECK_DELAY_MS ?? '0', 10);
+    if (delayMs > 5_000) {
+      throw new ConfigError('MAIL_CHECK_DELAY_MS is at most 5000');
+    }
+    const dailyCap = Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP ?? String(DEFAULT_MAIL_VALIDATION_DAILY_CAP), 10);
+    return settings.MAIL_VALIDATION === 'ses' ? { kind: 'ses', dailyCap } : { kind: 'local', dailyCap, delayMs };
+  }
+  if (settings.MAIL_VALIDATION === undefined || settings.MAIL_VALIDATION_DAILY_CAP === undefined) {
+    throw new ConfigError(`${settings.MAIL_VALIDATION === undefined ? 'MAIL_VALIDATION' : 'MAIL_VALIDATION_DAILY_CAP'} is required in production`);
+  }
+  if (settings.MAIL_VALIDATION === 'local') {
+    throw new ConfigError('MAIL_VALIDATION=local is refused in production (SES and DNS only, outside the e2e suite)');
+  }
+  if (settings.MAIL_CHECK_DELAY_MS !== undefined) {
+    throw new ConfigError('MAIL_CHECK_DELAY_MS is refused in production (it slows the local stand-ins only)');
+  }
+  return { kind: 'ses', dailyCap: Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP, 10) };
 }
 
 export function readWebConfig(env: Readonly<Record<string, string | undefined>> = process.env): WebConfig {
@@ -275,6 +312,8 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     securityEmail: deployed ? needed(settings.SECURITY_EMAIL, 'SECURITY_EMAIL') : (settings.SECURITY_EMAIL ?? 'security@synthetic.test'),
     screeningLaunch: { imageTag: settings.IMAGE_TAG ?? null, value: settings.SCREENING_LAUNCH ?? null },
     screeningSlots: settings.SCREENING_SLOTS === undefined ? DEFAULT_SCREENING_SLOTS : Number.parseInt(settings.SCREENING_SLOTS, 10),
+    // Last, so a deployed server missing an earlier setting names that one first.
+    mailValidation: mailValidationSettings(settings, deployed),
   };
   if (deployed) {
     // What the public pages and security.txt name (audit item #20 (f)): never the development defaults.

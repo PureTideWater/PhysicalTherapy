@@ -3,12 +3,27 @@
  * app against the same local document directory and database, and for the web app's database tests:
  * the worker loop, the intake job, the parse_835 job (the parser and the loader), the monitoring chain
  * (monitor, price, triage, reconcile), the digest job, the audit report job, the ROI statement job and the report document job as they run in
- * production, wired to their local implementations.
+ * production, wired to their local implementations; and the mail record's (docs/adr/0065): the local sender and its
+ * simulator-shaped events, the platform's handlers with the mail_events job's local source and SES control in memory.
  */
 export { type IntakeConfig, type NotificationConfig, readIntakeConfig, readNotificationConfig } from './config';
 export { type DigestServices, digestHandler, digestLink, digestMessage, prepareDigest } from './digest/job';
 export { DIGEST_QUERIES, digestFigures } from './digest/figures';
-export { LocalMailSender, type MailMessage, type MailSender, MemoryMailSender } from './mail/mail';
+export { type LocalMailOptions, LocalMailSender, type MailContent, type MailMessage, type MailSender, MemoryMailSender, type SentMail } from './mail/mail';
+export { type MailEventRecord, type MailQueueEntry, parseMailQueueMessage, simulatorOutcome } from './mail/events';
+export { MAIL_LOG_CODES, MAIL_PROBE_RECIPIENTS, MAIL_TAGS, type MailIdentity, configurationSetName } from './mail/streams';
+export {
+  LocalMailEventSource,
+  type MailControl,
+  type MailEventSource,
+  type MailEventsOptions,
+  type MailEventsResult,
+  MemoryMailControl,
+  expireMail,
+  runMailEvents,
+} from './platform/mail-events';
+export { type SupportNoticeOptions, type SupportNoticeResult, sendSupportGrantNotices } from './platform/support-notices';
+export { type MailEventsDependencies, type PlatformDependencies, type PlatformHandlers, createPlatformHandlers } from './jobs/platform';
 export { createdByMonitoring, notifyRun, runFigures } from './monitor/chain';
 export { monitorHandler } from './monitor/job';
 export { BATCH_WINDOW_MINUTES, MONITOR_DELAY_SECONDS, type MonitorPlan, planMonitoring } from './monitor/plan';
@@ -35,6 +50,7 @@ export { type QueueClient, type RunningWorker, startWorker } from './worker';
 export {
   type ResendResult,
   SCREENING_BATCH,
+  SCREENING_MAIL_PAUSED_CODE,
   SCREENING_STALE_SECONDS,
   SCREENING_WAIT_CODES,
   type ScreeningJobDependencies,

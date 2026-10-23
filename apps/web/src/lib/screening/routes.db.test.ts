@@ -8,12 +8,16 @@ import { SCREENING_REJECTION_CODES, encodeScreeningRows, screeningTokenHash } fr
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ATTRIBUTION_COOKIE } from '../http/attribution';
+import type { Services } from '../server/services';
+import { ADDRESS_REFUSED, MAILBOX_UNCONFIRMED, type DomainResolver } from './address';
 import { RATE_LIMITS, rateSubjectHash } from '../http/rate-limit';
 import type { MutationResult, Outcome } from '../http/route';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_LABELS_VERSION } from './labels';
 import {
   NO_PATIENT_INFORMATION,
+  SCREENING_BOUNCE_BUDGET,
+  SCREENING_PAUSED,
   SCREENING_UPLOAD_WAIT_CODES,
   SCREENING_WAIT_STATES,
   SCREENING_ZIP_MESSAGES,
@@ -29,6 +33,8 @@ import {
 } from './routes';
 import { parseScreeningBytes } from './parse';
 import { screeningRateAccount } from './rate';
+import { type AddressCheckServices, type MailboxVerdicts } from './validation';
+import { pageRequest } from './test-support/page-services';
 import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
 /**
@@ -1177,5 +1183,157 @@ describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened 
     expect(page.sources[0]).toEqual({ value: '', label: 'Choose one (optional)' });
     expect(page.sources.map((option) => option.value).slice(1)).toEqual(['search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other']);
     expect((await world.owner.query<{ v: string }>('SELECT screening_labels_version() AS v')).rows[0]?.v).toBe(SCREENING_LABELS_VERSION);
+  });
+});
+
+describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, the address checks and the bounce budget (audit #76; the founder\'s Q9 to Q12 of 2026-10-21)', () => {
+  /** The world's services with other address checks, or another environment. */
+  const withServices = (changes: Partial<Services>): Services => ({ ...world.services, ...changes });
+  const call = <R>(route: { invoke: (request: ReturnType<typeof pageRequest>, services: Services) => Promise<Outcome<R>> }, services: Services, options: Parameters<typeof pageRequest>[0] = {}) =>
+    route.invoke(pageRequest(options), services);
+
+  /** Checks that refuse one domain by DNS and give `verdicts` for every mailbox, counting the validations asked. */
+  function checks(refusedDomain: string | null, verdicts: (address: string) => MailboxVerdicts, calls: string[] = []): AddressCheckServices {
+    const resolver: DomainResolver = {
+      resolveMx: (domain) => (domain === refusedDomain ? Promise.reject(Object.assign(new Error('nx'), { code: 'ENOTFOUND' })) : Promise.resolve([{ exchange: `mx.${domain}`, priority: 10 }])),
+      resolve4: () => Promise.resolve([]),
+      resolve6: () => Promise.resolve([]),
+    };
+    return {
+      resolver,
+      insights: {
+        verdicts: (address) => {
+          calls.push(address);
+          return Promise.resolve(verdicts(address));
+        },
+      },
+      dailyCap: 1_000,
+    };
+  }
+  const HIGH: MailboxVerdicts = { isValid: 'HIGH', hasValidSyntax: 'HIGH', hasValidDnsRecords: 'HIGH', mailboxExists: 'HIGH' };
+
+  const pause = () =>
+    world.owner.query(
+      "UPDATE mail_stream SET paused_at = now(), paused_reason = 'bounce_rate', pause_sends = 7, pause_bounces = 7, pause_complaints = 0, ses_enabled_confirmed_at = NULL WHERE stream = 'screening'",
+    );
+  const resume = () =>
+    world.owner.query(
+      "UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL, resumed_at = now(), window_starts_at = now(), ses_enabled_confirmed_at = now() WHERE stream = 'screening'",
+    );
+  const prospects = async (email: string) => (await world.owner.query('SELECT 1 FROM screening_prospect WHERE contact_email = $1', [email])).rowCount ?? 0;
+
+  it('closes the page while the screening stream is paused, says so, and records nothing of an upload sent anyway', async () => {
+    await pause();
+    try {
+      const page = ok(await world.call(screeningPage));
+      expect([page.open, page.closedReason, page.releaseNo]).toEqual([false, 'mail_paused', null]);
+      const email = 'paused.upload@clinic-paused.synthetic.test';
+      expect(issuesOf(await submitted(submitInput({ contactEmail: email })))).toEqual([{ field: 'input', message: SCREENING_PAUSED.refusal }]);
+      expect(await prospects(email)).toBe(0);
+    } finally {
+      await resume();
+    }
+    expect(ok(await world.call(screeningPage))).toMatchObject({ open: true, closedReason: null });
+    expect(SCREENING_PAUSED.text).toBe(
+      'Too many of our recent result emails could not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.',
+    );
+  });
+
+  it('keeps staging closed until the mail path is proven (both probes back within 48 hours, since the last resume); development ignores readiness', async () => {
+    const staging = withServices({ environment: 'staging' });
+    await world.owner.query("UPDATE mail_stream SET probe_delivered_at = NULL, probe_bounced_at = NULL WHERE stream = 'screening'");
+    expect(ok(await call(screeningPage, staging))).toMatchObject({ open: false, closedReason: 'not_ready' });
+    expect(issuesOf(await call(screeningSubmit, staging, { input: submitInput() }))).toEqual([{ field: 'input', message: 'screening is not open yet; try again later' }]);
+    expect(ok(await world.call(screeningPage))).toMatchObject({ open: true });
+    await world.owner.query("UPDATE mail_stream SET probe_delivered_at = now(), probe_bounced_at = now() WHERE stream = 'screening'");
+    expect(ok(await call(screeningPage, staging))).toMatchObject({ open: true, closedReason: null });
+    // A probe from before the last resume proves nothing about the resumed stream.
+    await world.owner.query("UPDATE mail_stream SET probe_delivered_at = now() - interval '1 hour', resumed_at = now() WHERE stream = 'screening'");
+    expect(ok(await call(screeningPage, staging))).toMatchObject({ open: false, closedReason: 'not_ready' });
+  });
+
+  it('answers a refusal by DNS, by SES\'s validation and by the refusal list with the one sentence, and stores nothing of the address', async () => {
+    const services = withServices({ addressChecks: checks('nomail.synthetic.test', (address) => (address.startsWith('gone.') ? { ...HIGH, mailboxExists: 'LOW' } : HIGH)) });
+    const refused = [
+      'someone@nomail.synthetic.test',
+      'gone.mailbox@clinic-gone.synthetic.test',
+    ];
+    for (const email of refused) {
+      expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: email }) })), email).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+      expect(await prospects(email), email).toBe(0);
+    }
+    // An address a screening email bounced from (its keyed hash on the refusal list): the same sentence, from the database.
+    const bounced = 'Bounced.Before@Clinic-Bounced.synthetic.test';
+    await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [bounced]);
+    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: ` ${bounced} ` }) }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    expect(await prospects(bounced.toLowerCase())).toBe(0);
+    expect(await storedText()).not.toMatch(/nomail|clinic-gone|clinic-bounced/i);
+  });
+
+  it('asks again for an address SES could not confirm, or one that looks mistyped, and takes it once the prospect keeps it', async () => {
+    const services = withServices({ addressChecks: checks(null, (address) => (address.startsWith('maybe.') ? { ...HIGH, mailboxExists: 'MEDIUM' } : HIGH)) });
+    const maybe = 'maybe.there@clinic-maybe.synthetic.test';
+    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: maybe }) }))).toEqual([{ field: 'contactEmail', message: MAILBOX_UNCONFIRMED }]);
+    expect(await call(screeningSubmit, services, { input: { ...submitInput({ contactEmail: maybe }), keepAddress: '1' } })).toEqual({ status: 'ok', data: { redirect: SENT } });
+    const typo = 'prospect.typo@gmial.com';
+    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: typo }) }))).toEqual([
+      { field: 'contactEmail', message: 'Did you mean @gmail.com? Check the address, or keep it as typed.' },
+    ]);
+    expect(await prospects(typo)).toBe(0);
+  });
+
+  it('never asks SES about an upload that fails its own checks or the rate limit', async () => {
+    const calls: string[] = [];
+    const services = withServices({ addressChecks: checks(null, () => HIGH, calls) });
+    const address = '198.51.100.77';
+    const limit = RATE_LIMITS.screening.address?.hits ?? 0;
+    for (let index = 0; index < limit; index += 1) {
+      // A row of one claim line: refused by the row checks after the limit counted it.
+      const input = submitInput({ contactEmail: `rows.${String(index)}@clinic-rows.synthetic.test`, rows: [screeningRow('97110', 'medicare_ffs', { claims: 1 })] });
+      expect((await call(screeningSubmit, services, { input, address })).status).toBe('invalid');
+    }
+    expect((await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'limited@clinic-limited.synthetic.test' }), address })).status).toBe('rate_limited');
+    expect(calls).toEqual([]);
+    // A clean upload is asked about once.
+    expect((await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'clean@clinic-clean.synthetic.test' }) })).status).toBe('ok');
+    expect(calls).toEqual(['clean@clinic-clean.synthetic.test']);
+  });
+
+  it('keeps the client\'s keyed subject with the run, and refuses a client past its bounce budget with the budget\'s sentence, naming no address', async () => {
+    const address = '198.51.100.88';
+    const email = 'client.subject@clinic-client.synthetic.test';
+    expect(await world.call(screeningSubmit, { input: submitInput({ contactEmail: email }), address })).toEqual({ status: 'ok', data: { redirect: SENT } });
+    const subject = rateSubjectHash(world.services.sealer, 'screening', 'address', address);
+    const { rows } = await world.owner.query<{ client_subject: string | null }>(
+      'SELECT r.client_subject FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+      [email],
+    );
+    expect(rows[0]?.client_subject).toBe(subject);
+    // A run with no trusted proxy's address keeps none, and is held to its account's budget alone.
+    const anonymous = 'client.none@clinic-client-none.synthetic.test';
+    await world.call(screeningSubmit, { input: submitInput({ contactEmail: anonymous }) });
+    const none = await world.owner.query<{ client_subject: string | null }>(
+      'SELECT r.client_subject FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+      [anonymous],
+    );
+    expect(none.rows[0]?.client_subject).toBeNull();
+    // Three hard bounces of screening results to this client in 7 days (the founder's Q10 (a)): its fourth is refused.
+    for (let index = 0; index < 3; index += 1) {
+      const messageId = `synthetic-bounce-${String(index)}-${randomUUID()}`;
+      await world.owner.query(
+        "INSERT INTO mail_send (ses_message_id, stream, kind, subject_id, state, bounce_kind, bounce_subtype, sent_at, undelivered_at) VALUES ($1, 'screening', 'screening_result', $2, 'bounced', 'permanent', 'general', now(), now())",
+        [messageId, randomUUID()],
+      );
+      await world.owner.query("INSERT INTO screening_bounce_mark (subject, subject_kind, ses_message_id, bounced_at, expires_at) VALUES ($1, 'client', $2, now(), now() + interval '7 days')", [
+        subject,
+        messageId,
+      ]);
+    }
+    const fourth = 'client.fourth@clinic-client-fourth.synthetic.test';
+    expect(issuesOf(await world.call(screeningSubmit, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
+    expect(await prospects(fourth)).toBe(0);
+    // Another client is not held by this one's budget.
+    expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
+    expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
   });
 });

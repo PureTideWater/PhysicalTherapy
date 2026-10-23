@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
+import { SESv2Client } from '@aws-sdk/client-sesv2';
 import type { BillingProvider } from '@tp/billing';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
@@ -24,9 +25,10 @@ import { SignInFlow } from '../auth/sign-in';
 import { readBillingConfig } from '../billing/config';
 import { billingProvider, memoryBillingProvider } from '../billing/provider';
 import type { BillingPool } from '@tp/worker/billing';
+import { type AddressCheckServices, localAddressChecks, sesAddressInsights, systemDomainResolver } from '../screening/validation';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
-import { DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
+import { DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
 
 /**
  * What every route handler and server action runs with: the application role's pool, the identity
@@ -90,6 +92,11 @@ export interface Services {
   readonly screeningLaunch: ScreeningLaunch;
   /** Screenings the consumer prices at once (WebConfig.screeningSlots). */
   readonly screeningSlots: number;
+  /**
+   * The screening's address checks (docs/adr/0065, D9): the VPC's DNS and SES's validation under the day's cap on a
+   * deployed server, the stand-ins elsewhere (WebConfig.mailValidation).
+   */
+  readonly addressChecks: AddressCheckServices;
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -152,6 +159,8 @@ export interface ServiceParts {
   readonly environment?: 'dev' | 'staging' | 'production';
   readonly screeningLaunch?: ScreeningLaunch;
   readonly screeningSlots?: number;
+  /** Tests that check addresses give their own; otherwise the stand-ins, which call no one, at the default cap. */
+  readonly addressChecks?: AddressCheckServices;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -195,6 +204,7 @@ export function createServices(parts: ServiceParts): Services {
     environment: parts.environment ?? 'dev',
     screeningLaunch: parts.screeningLaunch ?? { imageTag: null, value: null },
     screeningSlots: parts.screeningSlots ?? DEFAULT_SCREENING_SLOTS,
+    addressChecks: parts.addressChecks ?? localAddressChecks(DEFAULT_MAIL_VALIDATION_DAILY_CAP),
   };
 }
 
@@ -231,6 +241,10 @@ export function servicesFromConfig(config: WebConfig): Services {
     environment: config.environment,
     screeningLaunch: config.screeningLaunch,
     screeningSlots: config.screeningSlots,
+    addressChecks:
+      config.mailValidation.kind === 'ses'
+        ? { resolver: systemDomainResolver(), insights: sesAddressInsights(new SESv2Client({})), dailyCap: config.mailValidation.dailyCap }
+        : localAddressChecks(config.mailValidation.dailyCap, config.mailValidation.delayMs),
   });
 }
 

@@ -389,6 +389,45 @@ export interface Measurements {
   readonly notStarted: readonly string[];
   /** A step that could not finish, with what stopped it (a code and a short reason of the harness's own). */
   readonly aborted: string | null;
+  /**
+   * The screening's mail as the harness ran it (PR 6b-4; audit #76): the time the web's address checks (the DNS check
+   * and SES's validation, run together, D9) took to answer on every upload, charged inside each time to email (the
+   * plan's G1: ADDRESS_CHECK_CHARGE_MS, their worst case, one 2-second timeout); whether the screening stream was seeded
+   * sending and ready (its delivered and bounced probes back), so the mail gate holds no run; and how many lines the
+   * consumers logged of a run waiting on the mail gate, which must be none. Absent from a report written before PR 6b-4,
+   * which the verdict fails.
+   */
+  readonly mail?: { readonly addressCheckMs: number; readonly screeningReady: boolean; readonly heldLines: number };
+}
+
+/**
+ * How long the web's stand-in address checks take to answer on every measured upload (MAIL_CHECK_DELAY_MS): the worst
+ * case of the DNS check and SES's validation, run together after the row checks and the rate limit, each bounded by one
+ * 2-second timeout (the plan's section 5, G1). Run 7's 41.1 s becomes about 43.1 s; the 48-s line is unchanged.
+ */
+export const ADDRESS_CHECK_CHARGE_MS = 2_000;
+
+/**
+ * The code the screening consumer logs a run by while the screening's mail is not sending (the worker's
+ * SCREENING_MAIL_PAUSED_CODE: `screening run waits: email paused`), and when an email went after a pause held its run.
+ */
+export const SCREENING_MAIL_HELD_CODE = 'SCREENING_MAIL_PAUSED';
+
+/** How many of the consumers' log lines (JSON lines; anything else is skipped) name a run the mail gate held. */
+export function mailHeldLines(lines: Iterable<string>): number {
+  let held = 0;
+  for (const line of lines) {
+    if (!line.startsWith('{')) {
+      continue;
+    }
+    try {
+      const entry = JSON.parse(line) as { readonly error_code?: unknown };
+      held += entry.error_code === SCREENING_MAIL_HELD_CODE ? 1 : 0;
+    } catch {
+      // Not a log line.
+    }
+  }
+  return held;
 }
 
 export interface Verdict {
@@ -529,6 +568,19 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
   }
   reasons.push(...measured.runnerProblems.map((problem) => `runner too small: ${problem}`));
+  // The screening's mail (PR 6b-4): every upload charged the address checks' worst case, and no run held by the mail gate.
+  const mail = measured.mail;
+  if ((mail?.addressCheckMs ?? 0) < ADDRESS_CHECK_CHARGE_MS) {
+    reasons.push(
+      `address checks not charged: the web's DNS check and address validation answered after ${String(mail?.addressCheckMs ?? 'no')} ms; every upload is charged their worst case, ${String(ADDRESS_CHECK_CHARGE_MS)} ms, inside its time to email (G1)`,
+    );
+  }
+  if (mail?.screeningReady !== true) {
+    reasons.push("screening mail not ready: the harness seeds the screening stream sending with its probes back, so the mail gate holds no measured run");
+  }
+  if ((mail?.heldLines ?? 0) > 0) {
+    reasons.push(`screening mail held runs: the consumer logged ${String(mail?.heldLines)} line${mail?.heldLines === 1 ? '' : 's'} of a run waiting while the screening's mail was not sending`);
+  }
   // The layout the harness gives this runner, read again from the report's own limits: the free runner's shared CPUs
   // pass there, and CPUs of their own on eight or more (the founder's rulings of 2026-10-23).
   const expected = measured.expected;
@@ -744,6 +796,10 @@ export function markdown(full: Report, rule: TimeRule): string {
     }).`,
     '',
     `Layout: ${layoutText(full.expected.layout)}; the harness ran on CPUs ${String(full.harnessAffinity)}.`,
+    '',
+    full.mail === undefined
+      ? 'Screening mail: not recorded (a report written before PR 6b-4).'
+      : `Screening mail: every upload's address checks answered after ${(full.mail.addressCheckMs / 1000).toFixed(1)} s, inside its time to email (G1); the screening stream ${full.mail.screeningReady ? 'was seeded sending and ready' : 'was not ready'}, and ${String(full.mail.heldLines)} run line${full.mail.heldLines === 1 ? '' : 's'} waited on the mail gate.`,
     '',
     full.workflow.ref === null
       ? 'Measured outside GitHub Actions (no GITHUB_WORKFLOW_REF).'

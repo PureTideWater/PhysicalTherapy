@@ -46,6 +46,7 @@ import {
 } from './limits';
 import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, workerStarted } from './measure';
 import {
+  ADDRESS_CHECK_CHARGE_MS,
   type AppliedLimits,
   type ConsumerMeasure,
   type ContainerMeasure,
@@ -58,6 +59,7 @@ import {
   type TimeMode,
   type UploadMeasure,
   jobResult,
+  mailHeldLines,
   markdown,
   oracleKind,
   repeatedSummary,
@@ -283,6 +285,29 @@ async function approveSplit(ownerUrl: string): Promise<void> {
     await owner.query("SELECT set_config('app.actor_id', $1, true)", [specialist]);
     await owner.query('SELECT console_approve_place_of_service_split($1)', [JSON.stringify({ '11': 'non_facility', '22': 'facility' })]);
     await owner.query('COMMIT');
+  } finally {
+    await owner.end();
+  }
+}
+
+/**
+ * The screening stream seeded sending and ready (PR 6b-4; audit #76): the migration seeds every stream open and SES
+ * confirmed, and the harness sets the screening's delivered and bounced probes to now, as SES's simulator answers them
+ * on a deployed stack, so the web opens the screening and the consumer's mail gate holds no run. True when the stream
+ * reads sending and ready afterwards (screening_mail_status()'s rule).
+ */
+async function readyScreeningMail(ownerUrl: string): Promise<boolean> {
+  const owner = databaseClient(ownerUrl);
+  await owner.connect();
+  try {
+    await owner.query("UPDATE mail_stream SET probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream = 'screening'");
+    const { rows } = await owner.query<{ ready: boolean }>(
+      `SELECT paused_at IS NULL AND ses_enabled_confirmed_at IS NOT NULL
+              AND probe_delivered_at >= greatest(now() - interval '48 hours', coalesce(resumed_at, '-infinity'))
+              AND probe_bounced_at >= greatest(now() - interval '48 hours', coalesce(resumed_at, '-infinity')) AS ready
+         FROM mail_stream WHERE stream = 'screening'`,
+    );
+    return rows[0]?.ready === true;
   } finally {
     await owner.end();
   }
@@ -813,6 +838,9 @@ async function main(): Promise<number> {
   // The ZIP9 file's size (open item O8): the release is built at the production shape.
   let release: Measurements['release'] = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0, zip9: scaleZip9Size(SCALE_RELEASE_SHAPE) };
   let aborted: string | null = null;
+  // The screening's mail as the harness runs it (PR 6b-4): the address checks' charge given to the web, the stream seeded
+  // ready, and the consumers' lines of a run the mail gate held (none, or the run is not production's).
+  let mail: NonNullable<Measurements['mail']> = { addressCheckMs: 0, screeningReady: false, heldLines: 0 };
   // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
@@ -853,6 +881,7 @@ async function main(): Promise<number> {
       only: opts.only,
       notStarted,
       aborted: final ? aborted : (aborted ?? 'run in progress: the report is written again after each scenario and at the end'),
+      mail,
     };
     const full = report(measured, rule);
     const json = `${JSON.stringify(full, (_, value: unknown) => (typeof value === 'bigint' ? value.toString() : value), 2)}\n`;
@@ -903,6 +932,8 @@ async function main(): Promise<number> {
     say('loading the release');
     say(`loaded: ${(await child('tools/screening-capacity/load.ts', [ownerHarness, built.dir], 6144)).trim()}`);
     await approveSplit(ownerHarness);
+    mail = { ...mail, screeningReady: await readyScreeningMail(ownerHarness) };
+    say(`screening mail: ${mail.screeningReady ? 'seeded sending and ready' : 'not ready'}`);
     const hostDirs = directories(runtime.dataDir.host);
     for (const dir of Object.values(hostDirs) as string[]) {
       mkdirSync(dir, { recursive: true });
@@ -912,7 +943,12 @@ async function main(): Promise<number> {
     const secrets = { cookieSecret: randomBytes(32).toString('base64'), masterKey: developmentMasterKey().toString('base64') };
     const web: ServiceSpec = {
       name: 'web',
-      env: webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets, logins, { staticAssetOrigin: opts.staticAssetOrigin, screeningSlots: limits.screeningTasks * limits.screeningConcurrency }),
+      env: {
+        ...webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets, logins, { staticAssetOrigin: opts.staticAssetOrigin, screeningSlots: limits.screeningTasks * limits.screeningConcurrency }),
+        // The address checks (the DNS check and SES's validation, run together after the row checks and the rate limit)
+        // answer after their worst case on every upload, inside each time to email: the plan's G1 (PR 6b-4).
+        MAIL_CHECK_DELAY_MS: String(ADDRESS_CHECK_CHARGE_MS),
+      },
       limit: limits.web,
       cpuset: layout.web,
       command: serviceCommand('web'),
@@ -926,6 +962,7 @@ async function main(): Promise<number> {
       cpuset: layout.consumer,
       command: serviceCommand(name),
     }));
+    mail = { ...mail, addressCheckMs: Number(web.env.MAIL_CHECK_DELAY_MS ?? '0') };
     say(`starting web, platform and the screening consumer (${String(consumers.length)} task of ${String(screening.cpus)} vCPU and ${String(screening.memoryMiB)} MiB, ${String(limits.screeningConcurrency)} at once)`);
     await startWeb(runtime, web, 'setup');
     await startWorker(runtime, platform, 'setup');
@@ -948,6 +985,8 @@ async function main(): Promise<number> {
         Object.fromEntries([web, platform, ...consumers].map((service) => [service.name, service.limit.memoryMiB])),
       );
       scenarioMeasures.push(measure);
+      // A run the mail gate held is not production's run: counted from every consumer's log so far, after each scenario.
+      mail = { ...mail, heldLines: mailHeldLines((await Promise.all(consumers.map((service) => runtime.logs(service.name)))).flat()) };
       for (const [upload, run] of runs) {
         // S1-1 as the oracle names it; S4#2 S4-1 for a run of the repeated scenario, so no run's ID replaces another's.
         runIds.set(uploadLabel(measure, { id: upload }), run);

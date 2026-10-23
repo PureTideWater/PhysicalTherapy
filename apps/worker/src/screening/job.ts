@@ -5,11 +5,13 @@ import type { Logger } from '@tp/observability';
 
 import { type JobSender, enqueueScreeningRun } from '../jobs/enqueue';
 import type { MailSender } from '../mail/mail';
+import { SENDING_PAUSED_ERROR } from '../mail/streams';
 import { ReleaseReadOutsideFetch, type RequestedKeys, keyedRelease, screeningRequestedKeys } from '../price/keyed-release';
 import { indexStoredRelease } from '../price/release';
 import { ReleaseKeysMismatch, ScreeningPricer, pricesAsMedicare, releaseChangeDays } from './adapter';
 import { screeningFailedMessage, screeningResultLink, screeningResultMessage, screeningStartLink } from './message';
 import {
+  type OperatorClient,
   type OperatorPool,
   type RunKeys,
   asOperator,
@@ -69,6 +71,17 @@ import { newScreeningToken, screeningTokenHash } from './token';
  * The sweep takes each due run on its own: a run that throws (its contact's address refused by the mail service,
  * say) is logged and the sweep goes on to the next, so no one run holds up the others.
  *
+ * The screening's mail (audit #76; docs/adr/0065, D3 and D7): a run is claimed only while the screening stream is
+ * sending (not paused, and SES confirmed since the last pause), which the job reads first (screening_mail_gate()) in the
+ * claim's transaction. A run found not sending is not claimed, so no attempt is spent: the job ends `mail_paused`
+ * (`screening run waits: email paused`, SCREENING_MAIL_PAUSED), and the sweep, which sends and fails nothing while the
+ * stream is not sending, sends its job again once the stream is resumed and SES confirms. The database refuses a claim,
+ * a completion or a failure while not sending (screening_run_mail_gate, screening_mail_paused), and SES refuses a send
+ * through a disabled set (SendingPausedException): either rolls the step back, the run waits as above, and the stale
+ * rule claims it again after the resume. A run the web received before the stream's last resume was held by the pause:
+ * its email is logged `screening result emailed after waiting`, outside the 60-second promise's metric. Each message goes
+ * through the screening stream, from its own sender with Reply-To the support address, tagged with the run's ID.
+ *
  * The token reaches the email alone: never the database (its hash only), a log, a job payload or an audit event.
  * Logs carry the job's ID and the run's ID.
  */
@@ -88,6 +101,37 @@ export const SCREENING_STALE_SECONDS = 120;
 
 /** The codes a run's wait reason is logged by, as the web logs an upload it sends to wait. */
 export const SCREENING_WAIT_CODES = { account_share: 'SCREENING_ACCOUNT_SHARE', daily_cap: 'SCREENING_DAILY_CAP' } as const;
+
+/** The code a run is logged by while the screening's mail is not sending, and when its email went after a pause held it. */
+export const SCREENING_MAIL_PAUSED_CODE = 'SCREENING_MAIL_PAUSED';
+
+/** The screening's mail gate (screening_mail_gate()): whether it is sending, and its last resume. */
+export interface ScreeningMailGate {
+  readonly sending: boolean;
+  readonly resumedAt: Date | null;
+}
+
+/** Reads the gate, as tp_screening (D3): granted to the consumer's role alone. */
+export async function screeningMailGate(client: OperatorClient): Promise<ScreeningMailGate> {
+  const { rows } = await client.query('SELECT sending, resumed_at FROM screening_mail_gate()');
+  const row = rows[0] as { sending: boolean | null; resumed_at: Date | null } | undefined;
+  return { sending: row?.sending === true, resumedAt: row?.resumed_at ?? null };
+}
+
+/**
+ * Whether a step failed because the screening's mail is not sending: the database refused a claim, completion or
+ * failure (screening_mail_paused), or SES refused a send through a disabled set (SendingPausedException).
+ */
+export function screeningMailPaused(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  if (error instanceof Error && error.name === SENDING_PAUSED_ERROR) {
+    return true;
+  }
+  const { code, constraint } = error as { readonly code?: unknown; readonly constraint?: unknown };
+  return code === '23514' && constraint === 'screening_mail_paused';
+}
 
 export interface ScreeningJobDependencies {
   readonly operator: OperatorPool;
@@ -113,7 +157,8 @@ export interface ScreeningJobDependencies {
   readonly now?: () => number;
 }
 
-export type ScreeningPriceOutcome = 'complete' | 'already_complete' | 'not_claimed' | 'failed';
+/** How one run's job ended; `mail_paused`: the screening's mail is not sending, the run was left as it was (D3). */
+export type ScreeningPriceOutcome = 'complete' | 'already_complete' | 'not_claimed' | 'failed' | 'mail_paused';
 
 /** A release's shared types as screening prices under them: indexed, with the days their records change. */
 interface SharedRelease {
@@ -170,17 +215,44 @@ export async function failScreeningRun(dependencies: ScreeningJobDependencies, r
     return false;
   }
   try {
-    await dependencies.mail.send(screeningFailedMessage({ to: failed.contactEmail, startOver: screeningStartLink(dependencies.appOrigin) }));
+    await dependencies.mail.send({
+      ...screeningFailedMessage({ to: failed.contactEmail, startOver: screeningStartLink(dependencies.appOrigin) }),
+      identity: { stream: 'screening', kind: 'screening_failed', subjectId: runId },
+    });
   } catch {
     dependencies.logger.warn('screening run failed and its notice could not be sent', { job_id: dependencies.jobId, screening_run_id: runId, error_code: 'SCREENING_NOTICE_UNDELIVERABLE' });
   }
   return true;
 }
 
-/** Prices one run, if it is there to claim, and sends its link. */
+/**
+ * Prices one run, if it is there to claim and the screening's mail is sending, and sends its link. A step the screening's
+ * mail refuses (the stream paused, or SES's set disabled) leaves the run as it was: `mail_paused`.
+ */
 export async function priceScreeningRun(dependencies: ScreeningJobDependencies, runId: string): Promise<ScreeningPriceOutcome> {
+  try {
+    return await priceWhileSending(dependencies, runId);
+  } catch (error) {
+    if (!screeningMailPaused(error)) {
+      throw error;
+    }
+    return mailPaused(dependencies, runId);
+  }
+}
+
+/** A run left as it was while the screening's mail is not sending; the sweep sends its job again after the resume. */
+function mailPaused(dependencies: ScreeningJobDependencies, runId: string): 'mail_paused' {
+  dependencies.logger.info('screening run waits: email paused', { job_id: dependencies.jobId, screening_run_id: runId, error_code: SCREENING_MAIL_PAUSED_CODE });
+  return 'mail_paused';
+}
+
+async function priceWhileSending(dependencies: ScreeningJobDependencies, runId: string): Promise<ScreeningPriceOutcome> {
   const { operator, logger } = dependencies;
-  const claimed = await asOperator(operator, (client) => claimRun(client, runId));
+  // The gate first, in the claim's transaction (D3): a run is not claimed, and spends no attempt, while not sending.
+  const claimed = await asOperator(operator, async (client) => ((await screeningMailGate(client)).sending ? claimRun(client, runId) : ('mail_paused' as const)));
+  if (claimed === 'mail_paused') {
+    return mailPaused(dependencies, runId);
+  }
   if (claimed === null) {
     logger.info('screening run not claimed: it is being priced, done or out of attempts', { job_id: dependencies.jobId, screening_run_id: runId });
     return 'not_claimed';
@@ -302,17 +374,20 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
   logger.info('screening run rows priced', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(pricingMs), record_count: pricedRows });
   logger.info('screening run rows recorded', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(recordingMs), record_count: recordedRows });
   const token = (dependencies.newToken ?? newScreeningToken)();
-  let sent: CompletedRun | null;
+  let sent: (CompletedRun & { readonly gate: ScreeningMailGate }) | null;
   try {
     sent = await asOperator(operator, async (client) => {
       const done = await completeRun(client, runId, screeningTokenHash(token), ENGINE_VERSION, dependencies.jobId, attempt);
       if (done === null) {
         return null;
       }
-      await dependencies.mail.send(
-        screeningResultMessage({ to: done.contactEmail, link: screeningResultLink(dependencies.appOrigin, token), rows: done.rowCount, keptWith: done.keptWith, waited: done.waitReason }),
-      );
-      return done;
+      // Its last resume, read where the completion is (the completion was refused were the stream not sending).
+      const gate = await screeningMailGate(client);
+      await dependencies.mail.send({
+        ...screeningResultMessage({ to: done.contactEmail, link: screeningResultLink(dependencies.appOrigin, token), rows: done.rowCount, keptWith: done.keptWith, waited: done.waitReason }),
+        identity: { stream: 'screening', kind: 'screening_result', subjectId: runId },
+      });
+      return { ...done, gate };
     });
   } catch (error) {
     if (attemptSuperseded(error)) {
@@ -334,15 +409,17 @@ export async function priceScreeningRun(dependencies: ScreeningJobDependencies, 
   // The time to email (decision 14's 60 seconds; TimeToEmailMs): from when the web began receiving the upload until the
   // send returned and the completion committed. A run that waited behind the normal tier is outside the promise and is
   // logged apart, with its reason's code, so it never breaches the promise's alarm.
+  // A run the web received before the stream's last resume was held by a pause (D3): outside the promise, as a waiting one.
   const elapsedMs = Math.max(0, Math.round((dependencies.now ?? Date.now)() - sent.receivedAt.getTime()));
-  if (sent.waitReason === null) {
+  const heldByPause = sent.gate.resumedAt !== null && sent.receivedAt.getTime() < sent.gate.resumedAt.getTime();
+  if (sent.waitReason === null && !heldByPause) {
     logger.info('screening result emailed', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: elapsedMs });
   } else {
     logger.info('screening result emailed after waiting', {
       job_id: dependencies.jobId,
       screening_run_id: runId,
       elapsed_ms: elapsedMs,
-      error_code: SCREENING_WAIT_CODES[sent.waitReason],
+      error_code: sent.waitReason === null ? SCREENING_MAIL_PAUSED_CODE : SCREENING_WAIT_CODES[sent.waitReason],
     });
   }
   return 'complete';
@@ -379,7 +456,12 @@ async function sweepOne(dependencies: ScreeningJobDependencies, run: { readonly 
  * sweep goes on.
  */
 export async function sweepScreeningRuns(dependencies: ScreeningJobDependencies, options: SweepOptions): Promise<SweepResult> {
-  const due = await asOperator(dependencies.operator, (client) => dueRuns(client, options.minQueuedAgeSeconds, 100));
+  const due = await asOperator(dependencies.operator, async (client) => ((await screeningMailGate(client)).sending ? dueRuns(client, options.minQueuedAgeSeconds, 100) : null));
+  if (due === null) {
+    // Nothing is priced, sent or failed while the screening's mail is not sending: every due run waits for the resume.
+    dependencies.logger.info('screening runs wait: email paused', { job_id: dependencies.jobId, error_code: SCREENING_MAIL_PAUSED_CODE });
+    return { complete: 0, failed: 0, skipped: 0 };
+  }
   let complete = 0;
   let failed = 0;
   let skipped = 0;
@@ -387,7 +469,12 @@ export async function sweepScreeningRuns(dependencies: ScreeningJobDependencies,
     let outcome: ScreeningPriceOutcome;
     try {
       outcome = await sweepOne(dependencies, run);
-    } catch {
+    } catch (error) {
+      if (screeningMailPaused(error)) {
+        mailPaused(dependencies, run.runId);
+        skipped += 1;
+        continue;
+      }
       dependencies.logger.error('screening run could not be priced or sent in this sweep; a later claim takes it', {
         job_id: dependencies.jobId,
         screening_run_id: run.runId,
@@ -426,7 +513,13 @@ export interface ResendResult {
  */
 export async function resendScreeningRuns(dependencies: ScreeningJobDependencies, queue: JobSender, options: SweepOptions): Promise<ResendResult> {
   const { logger, jobId } = dependencies;
-  const due = await asOperator(dependencies.operator, (client) => dueRuns(client, options.minQueuedAgeSeconds, 100));
+  const read = await asOperator(dependencies.operator, async (client) => ((await screeningMailGate(client)).sending ? dueRuns(client, options.minQueuedAgeSeconds, 100) : null));
+  if (read === null) {
+    // While the screening's mail is not sending, no job is sent again and no run is failed (D3): the first sweep after
+    // the resume and SES's confirmation sends every due run's job again.
+    logger.info('screening runs wait: email paused', { job_id: jobId, error_code: SCREENING_MAIL_PAUSED_CODE });
+  }
+  const due = read ?? [];
   let sent = 0;
   let held = 0;
   let failed = 0;
@@ -444,7 +537,12 @@ export async function resendScreeningRuns(dependencies: ScreeningJobDependencies
       } else {
         sent += 1;
       }
-    } catch {
+    } catch (error) {
+      if (screeningMailPaused(error)) {
+        // The stream paused between the gate and a stale run's failure: it is failed after the resume.
+        mailPaused(dependencies, run.runId);
+        continue;
+      }
       logger.error('screening run could not be sent again in this sweep; the next sweep tries it', { job_id: jobId, screening_run_id: run.runId, error_code: 'SCREENING_NOT_QUEUED' });
     }
   }

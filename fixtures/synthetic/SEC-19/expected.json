@@ -1,0 +1,25 @@
+{
+  "case": "SEC-19",
+  "module": "SEC",
+  "title": "A break-glass notice, or an invitation, that reaches no one (audit #76)",
+  "assertion": "A support-access notice goes one message per current practice administrator, from recipient rows recorded before any send, each sent in its own transaction with its message ID kept and retried only to pending recipients after 1, 5, 15 and 60 minutes, so no administrator gets two (a send that throws is sent again to that administrator alone); the first accepted send writes notice_sent, and each recipient's delivery is recorded by message ID in either order; a notice not delivered to every administrator writes notice_undelivered once, notifies each administrator in the app (which notice, linked to its grant, with no figure and no address), reads not delivered to n of m administrators on the grant's page and on the console's support list, and logs NOTICE_UNDELIVERED, which pages the operator; a notice with no administrator writes notice_undelivered, never notice_sent, and logs NOTICE_UNDELIVERABLE; dunning goes the same way, its undelivered stage reported once on the invoice; an invitation whose latest message bounced, was suppressed, rejected or reported reads not delivered on the users page, and the late bounce of a message a resend replaced flags nothing",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "packages/db/src/mail.db.test.ts",
+    "apps/worker/src/platform/support-notices.db.test.ts",
+    "apps/worker/src/billing/billing.db.test.ts",
+    "apps/web/src/components/monitoring/display.test.tsx",
+    "apps/web/src/lib/routes/mail-routes.db.test.ts",
+    "infra/test/monitoring.test.ts",
+    "apps/web/e2e/mail-notices.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The notices and invitations are sent to synthetic administrators at SES's simulator by the tests and the journey; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -12,6 +12,7 @@ import { SCREENING_SENT_LINK, SCREENING_SENT_WAIT, SCREENING_WAIT_STATES } from 
 import { atPhoneWidth, expectAccessible } from './a11y';
 import { personaEmail } from '../scripts/synthetic-personas';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
+import { holdScreeningStream } from './mail';
 import { outboxFor } from './outbox';
 import { PREPARED_SPLIT } from './split';
 import {
@@ -35,10 +36,29 @@ import {
  * The journey's screening consumer (WORKER_JOBS=screening, in process; PR 6b-3): the platform no longer prices a
  * screening, so the upload is priced only if the consumer runs. Started before the journey, stopped after it.
  */
-const screeningTest = test.extend<{ consumer: Awaited<ReturnType<typeof startLocalScreeningConsumer>> }>({
-  consumer: [
+/**
+ * The one screening stream, held shared for each screening test: the mail cut-off journey (e2e/mail-cutoff.spec.ts)
+ * pauses it, and holds it alone while it does (docs/adr/0065).
+ */
+const streamTest = test.extend<{ stream: undefined }>({
+  stream: [
     // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from its first parameter's pattern.
     async ({}, provide) => {
+      const release = await holdScreeningStream('shared');
+      try {
+        await provide(undefined);
+      } finally {
+        await release();
+      }
+    },
+    { auto: true },
+  ],
+});
+
+const screeningTest = streamTest.extend<{ consumer: Awaited<ReturnType<typeof startLocalScreeningConsumer>> }>({
+  consumer: [
+    async ({ stream }, provide) => {
+      void stream;
       const consumer = await startLocalScreeningConsumer();
       try {
         await provide(consumer);
@@ -689,7 +709,7 @@ screeningTest('a specialist approves the split; a file with patient information 
   await context.close();
 });
 
-test('a ZIP that spans more than one Medicare payment area, whose ZIP+4 list is not loaded, is told so before any ZIP+4 is asked for, and never to check the digits; the file stays chosen (SCR-15)', async ({ page }) => {
+streamTest('a ZIP that spans more than one Medicare payment area, whose ZIP+4 list is not loaded, is told so before any ZIP+4 is asked for, and never to check the digits; the file stays chosen (SCR-15)', async ({ page }) => {
   const contact = `screening-zip4-${randomBytes(4).toString('hex')}@clinic-zip4.synthetic.test`;
   await page.goto('/screening');
   await page.getByLabel('Practice name').fill('SYNTHETIC SPLIT ZIP CLINIC');

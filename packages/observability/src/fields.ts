@@ -38,6 +38,11 @@ export const ALLOWED_LOG_FIELDS = [
   'rate_record_id',
   'release_no',
   'screening_run_id',
+  // The mail record's (audit #76, docs/adr/0065): a dunning notice's invoice, an undelivered invitation, and a mail
+  // event's queue message (SQS's own ID, logged when the event cannot be read). Opaque IDs, never an address.
+  'invoice_id',
+  'invitation_id',
+  'queue_message_id',
   'error_code',
 ] as const;
 

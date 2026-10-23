@@ -6,7 +6,7 @@ import { ZodError } from 'zod';
 import { MemoryMailSender } from '../mail/mail';
 import { RestoreDrillFailedError } from '../platform/restore-drill';
 import type { ObjectStore, PutImmutableRequest } from '../storage/object-store';
-import { NoQueueError, PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, createPlatformHandlers, parsePlatformPayload } from './platform';
+import { NoMailEventsError, NoQueueError, PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, createPlatformHandlers, parsePlatformPayload } from './platform';
 
 function capture() {
   const lines: Record<string, unknown>[] = [];
@@ -26,6 +26,9 @@ describe('platform job registry', () => {
       'usage_snapshot',
       'support_mail',
       'screening_expiry',
+      'mail_events',
+      'mail_expiry',
+      'dunning_notices',
     ]);
     // The screening's pricing is the consumer's since PR 6b-3 (jobs/screening.ts): the platform neither schedules nor works it.
     expect(PLATFORM_JOB_TYPES).not.toContain('screening_price');
@@ -54,6 +57,20 @@ describe('platform job registry', () => {
     expect(() => parsePlatformPayload('support_mail', { sender: 'someone@synthetic.test' })).toThrow(ZodError);
     assertNoPhi('job_payload', parsePlatformPayload('screening_expiry', {}));
     expect(() => parsePlatformPayload('screening_expiry', { screening_run_id: JOB })).toThrow(ZodError);
+    // The mail record's jobs carry nothing: never an address, a message or a queue's message (docs/adr/0065).
+    for (const type of ['mail_events', 'mail_expiry', 'dunning_notices'] as const) {
+      assertNoPhi('job_payload', parsePlatformPayload(type, {}));
+      expect(() => parsePlatformPayload(type, { recipient: 'someone@synthetic.test' })).toThrow(ZodError);
+    }
+  });
+
+  it('records mail events and sends the dunning notices due again every minute, and expires the mail records nightly at 03:50 UTC', () => {
+    const boss = new PgBoss('postgres://nobody@localhost:1/none');
+    const from = new Date('2026-10-15T00:00:30Z');
+    for (const type of ['mail_events', 'dunning_notices'] as const) {
+      expect(boss.previewSchedule(PLATFORM_SCHEDULES[type], { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T00:01:00Z'), new Date('2026-10-15T00:02:00Z')]);
+    }
+    expect(boss.previewSchedule(PLATFORM_SCHEDULES.mail_expiry, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T03:50:00Z'), new Date('2026-10-16T03:50:00Z')]);
   });
 
   it('deletes expired screenings nightly at 03:35 UTC', () => {
@@ -262,5 +279,34 @@ describe('platform handlers', () => {
     expect(lines.at(-1)).toMatchObject({ msg: 'screening expiry deleted expired screenings', job_id: JOB });
     // The expiry stays the platform's: tp_operator, never the screening consumer's role (migration 20261106090000).
     expect([...roles]).toEqual(['SET LOCAL ROLE tp_operator']);
+  });
+
+  it('expires the mail records 1,000 of each a call until a call takes none, as the operator, and refuses the mail events without their queue', async () => {
+    const batches = [3000, 12, 0];
+    const calls: unknown[][] = [];
+    const roles = new Set<string>();
+    const pool = {
+      connect: () =>
+        Promise.resolve({
+          query: (text: string, values?: unknown[]) => {
+            if (text.startsWith('SET LOCAL ROLE')) {
+              roles.add(text);
+            }
+            if (text.includes('operator_mail_expire')) {
+              calls.push(values ?? []);
+              return Promise.resolve({ rows: [{ removed: batches.shift() ?? 0 }] });
+            }
+            return Promise.resolve({ rows: [] });
+          },
+          release: () => undefined,
+        }),
+    };
+    const handlers = createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, ...notices });
+    const { lines, logger } = capture();
+    await handlers.mail_expiry({}, { jobId: JOB, logger });
+    expect(calls).toEqual([[1000], [1000], [1000]]);
+    expect(lines.at(-1)).toMatchObject({ msg: 'mail expiry deleted expired mail records', job_id: JOB, record_count: 3012 });
+    expect([...roles]).toEqual(['SET LOCAL ROLE tp_operator']);
+    await expect(handlers.mail_events({}, { jobId: JOB, logger })).rejects.toThrow(NoMailEventsError);
   });
 });

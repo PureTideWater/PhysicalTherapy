@@ -19,6 +19,7 @@ import type { EnvironmentName, EnvironmentSettings, ServiceSettings, TaskSize } 
 import { HEARTBEAT_INTERVAL_SECONDS } from '../heartbeat';
 import { type ConnectionUrl, DATABASE_SETTINGS, RDS_CA_BUNDLE_PATH, launchScript, secretVariables } from '../launch';
 import { logGroupName } from '../log-groups';
+import { MAIL_VALIDATION_DAILY_CAP, mailStreamPrefix } from '../mail';
 import { SCREENING_MAIN_HEAP_FLAG, SCREENING_STOP_TIMEOUT_SECONDS, screeningSlots } from '../screening';
 import { DATABASE_NAME, QUEUE_ROLE } from './database';
 import type { Database } from './database';
@@ -87,6 +88,8 @@ export interface ComputeProps {
     readonly migration: logs.ILogGroup;
   };
   readonly targetGroup: elbv2.ApplicationTargetGroup;
+  /** The mail events queue the platform's mail_events job drains (MailStreams; docs/adr/0065). */
+  readonly mailEventsQueueUrl: string;
   /** False only for a deploy that redeploys a previous image (`-c tp:skipMigrations=true`). */
   readonly runMigrations: boolean;
 }
@@ -128,6 +131,12 @@ interface ContainerSpec {
  *   logins the services connect as, created from their secrets when missing (it reads their current
  *   username and password, and sets a password only when it creates the login); run by the
  *   migration run before any service moves to a new task definition.
+ *
+ * Mail (docs/adr/0065; audit #76): every sender names its stream's configuration set from MAIL_STREAM_PREFIX
+ * (`tp-<env>`); the screening consumer and the platform's probes send the screening's results from
+ * SCREENING_MAIL_FROM (results@screening.<domain>, Q12) with Reply-To the support address (SCREENING_REPLY_TO); the
+ * platform drains MAIL_EVENTS_QUEUE_URL and sends probes only once MAIL_IDENTITIES_VERIFIED is `true` (phase 2); the web
+ * validates a screening's address with SES (MAIL_VALIDATION=ses) at most MAIL_VALIDATION_DAILY_CAP times a UTC day.
  *
  * Secrets reach a container only from Secrets Manager (ECS reads them at start through each task's
  * execution role); every other setting is plain configuration. The worker and platform tasks beat
@@ -193,6 +202,10 @@ export class Compute extends Construct {
     // The model path (packages/model-gateway/src/config.ts): Bedrock in the task's own region, through
     // the VPC's interface endpoint, on the models the application role may invoke (docs/adr/0048).
     const modelPath = { MODEL_PROVIDER: 'bedrock', BEDROCK_REGION: stack.region };
+    // Every sender's configuration sets, by name (tp-<env>-<stream>; infra/lib/mail.ts).
+    const mailStreams = { MAIL_STREAM_PREFIX: mailStreamPrefix(environmentName) };
+    // The screening stream's sender and where a prospect's reply goes (Q12).
+    const screeningSender = { SCREENING_MAIL_FROM: parameters.screeningMailFromAddress, SCREENING_REPLY_TO: parameters.supportEmail };
 
     // The CloudFront static host (infra/lib/constructs/edge.ts): the web image's assets and the brand art email embeds.
     const staticAssetOrigin = `https://${parameters.staticDomainName}`;
@@ -245,6 +258,9 @@ export class Compute extends Construct {
         // Screenings priced at once across the consumer: more queued and pricing than this, and the "sent" page says
         // it can take a few minutes (Q12).
         SCREENING_SLOTS: String(screeningSlots(compute.screening)),
+        // A screening's address is checked with SES at submit, at most this many times a UTC day (Q1 (g)).
+        MAIL_VALIDATION: 'ses',
+        MAIL_VALIDATION_DAILY_CAP: String(MAIL_VALIDATION_DAILY_CAP[environmentName]),
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
@@ -275,6 +291,7 @@ export class Compute extends Construct {
         TP_KEY_PROVIDER: 'kms',
         KMS_KEY_ID: keyArn,
         MAIL_FROM: parameters.mailFromAddress,
+        ...mailStreams,
         APP_ORIGIN: appOrigin,
         // The static host email embeds the brand's lockup from (/brand/*; infra/lib/constructs/edge.ts, reconciliation-001 D7).
         STATIC_ASSET_ORIGIN: staticAssetOrigin,
@@ -308,6 +325,12 @@ export class Compute extends Construct {
         RESTORE_DRILL_SECURITY_GROUPS: database.securityGroup.securityGroupId,
         SUPPORT_MAIL_BUCKET: props.supportMail.bucketName,
         MAIL_FROM: parameters.mailFromAddress,
+        ...mailStreams,
+        ...screeningSender,
+        // The mail_events job (D5): the queue it drains, and whether the identities are verified (phase 2), before which
+        // it sends no probe and the screening stays closed.
+        MAIL_EVENTS_QUEUE_URL: props.mailEventsQueueUrl,
+        MAIL_IDENTITIES_VERIFIED: parameters.mailIdentitiesVerifiedFlag,
         APP_ORIGIN: appOrigin,
         // The support-grant notices embed the brand's lockup from the static host too.
         STATIC_ASSET_ORIGIN: staticAssetOrigin,
@@ -332,6 +355,8 @@ export class Compute extends Construct {
         WORKER_HEARTBEAT_SECONDS: String(HEARTBEAT_INTERVAL_SECONDS),
         SCREENING_CONCURRENCY: String(compute.screening.concurrency),
         MAIL_FROM: parameters.mailFromAddress,
+        ...mailStreams,
+        ...screeningSender,
         APP_ORIGIN: appOrigin,
         // The result email's header embeds the prospect lockup from the static host.
         STATIC_ASSET_ORIGIN: staticAssetOrigin,

@@ -75,6 +75,8 @@ describe('the content checkout of the Rule releases screen', () => {
       SECURITY_EMAIL: 'security@synthetic.test',
       APP_ORIGIN: 'https://app.synthetic.test',
       TP_ENVIRONMENT: 'staging',
+      MAIL_VALIDATION: 'ses',
+      MAIL_VALIDATION_DAILY_CAP: '50',
     };
     expect(readWebConfig(production).contentRoot).toBeNull();
     const scratch = mkdtempSync(path.join(tmpdir(), 'tp-content-root-test-'));

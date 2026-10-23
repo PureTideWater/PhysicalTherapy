@@ -5,7 +5,7 @@ import { createLogger } from '@tp/observability';
 import { type ExpiryResult, type RunningWorker, SCREENING_THREADS, expireScreenings, startScreeningConsumer, startWorker } from '@tp/worker/runtime';
 import { PgBoss } from 'pg-boss';
 
-import { E2E_MAIL_OUTBOX_DIR, E2E_ORIGIN, e2eDatabaseUrl } from './env';
+import { E2E_MAIL_EVENTS_DIR, E2E_MAIL_OUTBOX_DIR, E2E_MAIL_STREAM_PREFIX, E2E_ORIGIN, e2eDatabaseUrl } from './env';
 import type { OutboxMessage } from './outbox';
 
 /**
@@ -132,7 +132,8 @@ export async function startLocalScreeningConsumer(): Promise<{ worker: RunningWo
     {
       databaseUrl: screeningDevLoginUrl(e2eDatabaseUrl()),
       concurrency: SCREENING_THREADS,
-      notifications: { mail: { kind: 'local', dir: E2E_MAIL_OUTBOX_DIR }, appOrigin: E2E_ORIGIN, staticAssetOrigin: null },
+      // Each message's SES-shaped events go beside the outbox, for the mail journeys' platform job (docs/adr/0065).
+      notifications: { mail: { kind: 'local', dir: E2E_MAIL_OUTBOX_DIR, eventsDir: E2E_MAIL_EVENTS_DIR, streamPrefix: E2E_MAIL_STREAM_PREFIX }, appOrigin: E2E_ORIGIN, staticAssetOrigin: null },
     },
     boss,
     logger,

@@ -148,8 +148,9 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   it('has the worker, platform and web metric filters and the stack\'s alarms, and no other', () => {
     // Worker: heartbeat, final job failures, pricing engine errors, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
-    // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait.
-    expect(filters).toHaveLength(14);
+    // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
+    // the platform's five codes and the web's validation cap.
+    expect(filters).toHaveLength(20);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -166,6 +167,17 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.uptime.webAlarm,
       stack.uptime.apiAlarm,
       stack.uptime.certificateAlarm,
+      ...Object.values(stack.monitoring.mailCodeAlarms),
+      stack.monitoring.mailValidationCapAlarm,
+      stack.mailStreams.accountBounceWarningAlarm,
+      stack.mailStreams.accountBounceHighAlarm,
+      stack.mailStreams.accountComplaintWarningAlarm,
+      stack.mailStreams.accountComplaintHighAlarm,
+      stack.mailStreams.screeningBounceAlarm,
+      stack.mailStreams.screeningComplaintAlarm,
+      stack.mailStreams.transactionalBounceAlarm,
+      stack.mailStreams.deadLetterAlarm,
+      stack.mailStreams.queueAgeAlarm,
     ].map((alarm) => logicalIdOf(stack, alarm));
     expect(resourcesOf(template, 'AWS::CloudWatch::Alarm').map(([id]) => id).sort()).toEqual(alarms.sort());
   });

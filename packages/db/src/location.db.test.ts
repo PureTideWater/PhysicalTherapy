@@ -921,8 +921,9 @@ describe('every function of the migration, by its exact name: the definer flag, 
       'practice_site_required()': { definer: true, grantees: [] },
       'pricing_run_rules()': { definer: false, grantees: [] },
       'screening_band_days(text)': { definer: false, grantees: [] },
-      // Recreated by migration 20261106090000 with the receipt and the account's keyed subject before the request.
-      'submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)':
+      // Recreated by migration 20261106090000 with the receipt and the account's keyed subject before the request, and by
+      // 20261107090000 with the client's keyed subject after it (Q10 (a)).
+      'submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text)':
         { definer: true, grantees: [APP_ROLE] },
       'screening_result_summary(text)': { definer: true, grantees: [APP_ROLE] },
       // The screening consumer's too since migration 20261106090000; the operator's for its one-release overlap.
