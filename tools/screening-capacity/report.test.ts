@@ -1,9 +1,12 @@
+import { SCREENING_MAIL_PAUSED_CODE } from '@tp/worker/runtime';
 import { describe, expect, it } from 'vitest';
 
 import { environmentSettings } from '../../infra/lib/environments';
 import { HARNESS_RUNS_SCREENING_CONSUMER, MIB, RUNNER_TO_FARGATE, TIME_ALLOWANCE_MS, TIME_METRIC_BELOW_MS, TIME_PROMISE_MS } from './limits';
 import {
+  ADDRESS_CHECK_CHARGE_MS,
   MEASURED_SCENARIOS,
+  SCREENING_MAIL_HELD_CODE,
   type Measurements,
   type ScenarioMeasure,
   ORACLE_UPLOADS,
@@ -16,6 +19,7 @@ import {
   type TimeRule,
   jobResult,
   limitProblems,
+  mailHeldLines,
   markdown,
   oracleKind,
   repeatedScenario,
@@ -468,6 +472,11 @@ describe('the checks the build controls fail the run', () => {
     ['a CPU quota not applied', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'platform' ? { ...item, nanoCpus: null } : item)) }) }), /^limit not applied: platform: CPU quota none/],
     ['a memory limit not applied', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'web' ? { ...item, memorySwapBytes: (item.memoryBytes ?? 0) * 2 } : item)) }) }), /^limit not applied: web: memory/],
     ['io.max not applied', measured({ applied: applied({ ioMax: null }) }), /^limit not applied: postgres: io\.max not set/],
+    // The screening's mail (PR 6b-4): the address checks' worst case charged to every upload (G1), no run held by the gate.
+    ['the address checks not charged', measured({ mail: { addressCheckMs: 0, screeningReady: true, heldLines: 0 } }), /^address checks not charged: the web's DNS check and address validation answered after 0 ms; every upload is charged their worst case, 2000 ms, inside its time to email \(G1\)$/],
+    ['a report written before the mail streams', measured({ mail: undefined }), /^address checks not charged: the web's DNS check and address validation answered after no ms/],
+    ['the screening stream not seeded ready', measured({ mail: { addressCheckMs: 2_000, screeningReady: false, heldLines: 0 } }), /^screening mail not ready: /],
+    ['a run held by the mail gate', measured({ mail: { addressCheckMs: 2_000, screeningReady: true, heldLines: 1 } }), /^screening mail held runs: the consumer logged 1 line of a run waiting while the screening's mail was not sending$/],
     ['a round trip under 2 ms', measured({ applied: applied({ roundTripMedianMs: 0.4 }) }), /^limit not applied: postgres: median round trip 0\.40 ms, under 2 ms$/],
     ['a runner too small', measured({ runnerProblems: ['the runner has 1 CPU; the test needs 2'] }), /^runner too small: the runner has 1 CPU/],
     ['a wrong row count', measured({ scenarios: withS1(scenario({}, [upload({ storedRows: 49_999 })])) }), /^row count: S1-1 stored 49999 of 50000$/],
@@ -547,6 +556,24 @@ describe('the report', () => {
     const full = report(measured(), ENFORCED);
     expect(full.workflow).toEqual(SYNTHETIC_RUN);
     expect(markdown(full, ENFORCED)).toContain(`Measured by ${SYNTHETIC_RUN.ref}, run ${SYNTHETIC_RUN.runId}, attempt 1.`);
+    // The screening's mail as the harness ran it (PR 6b-4): the address checks charged, the stream seeded ready.
+    expect(markdown(full, ENFORCED)).toContain(
+      "Screening mail: every upload's address checks answered after 2.0 s, inside its time to email (G1); the screening stream was seeded sending and ready, and 0 run lines waited on the mail gate.",
+    );
+    expect(ADDRESS_CHECK_CHARGE_MS).toBe(2_000);
+  });
+
+  it('counts the consumers’ lines of a run the mail gate held, by the worker’s own code', () => {
+    expect(SCREENING_MAIL_HELD_CODE).toBe(SCREENING_MAIL_PAUSED_CODE);
+    const lines = [
+      JSON.stringify({ msg: 'screening run waits: email paused', screening_run_id: 'r-1', error_code: 'SCREENING_MAIL_PAUSED' }),
+      JSON.stringify({ msg: 'screening result emailed after waiting', screening_run_id: 'r-2', error_code: 'SCREENING_ACCOUNT_SHARE' }),
+      JSON.stringify({ msg: 'screening result emailed', screening_run_id: 'r-3', elapsed_ms: 1 }),
+      'not a log line',
+      '{ not json',
+    ];
+    expect(mailHeldLines(lines)).toBe(1);
+    expect(mailHeldLines([])).toBe(0);
     expect(markdown(report(measured({ workflow: { ref: null, runId: null, runAttempt: null } }), ADVISORY), ADVISORY)).toContain('Measured outside GitHub Actions (no GITHUB_WORKFLOW_REF).');
   });
 

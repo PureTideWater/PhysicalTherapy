@@ -1,6 +1,7 @@
 import { type EnvironmentSettings, environmentSettings } from '../../../infra/lib/environments';
 import { MIB, type Runner, cpuLayout, postgresLimit, productionLimits } from '../limits';
 import {
+  ADDRESS_CHECK_CHARGE_MS,
   ALL_SCENARIOS,
   type AppliedLimits,
   type ExpectedLimits,
@@ -218,6 +219,8 @@ export function measured(overrides: Partial<Measurements> = {}): Measurements {
     only: [],
     notStarted: [],
     aborted: null,
+    // The address checks' worst case charged to every upload, the screening stream seeded ready, no run held (PR 6b-4).
+    mail: { addressCheckMs: ADDRESS_CHECK_CHARGE_MS, screeningReady: true, heldLines: 0 },
     ...overrides,
   };
 }

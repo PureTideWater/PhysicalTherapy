@@ -133,7 +133,9 @@ apps/worker/src/jobs/public.ts
 apps/worker/src/jobs/registry.ts
 apps/worker/src/jobs/runs.ts
 apps/worker/src/jobs/screening.ts
+apps/worker/src/mail/events.ts
 apps/worker/src/mail/mail.ts
+apps/worker/src/mail/streams.ts
 apps/worker/src/mail/template.ts
 apps/worker/src/main.ts
 apps/worker/src/monitor/chain.ts
@@ -164,6 +166,7 @@ apps/worker/src/parse/loader.ts
 apps/worker/src/parse/plan.ts
 apps/worker/src/parse/report.ts
 apps/worker/src/platform/audit-copy.ts
+apps/worker/src/platform/mail-events.ts
 apps/worker/src/platform/monitoring-schedule.ts
 apps/worker/src/platform/pg-dump-restorer.ts
 apps/worker/src/platform/rds-restorer.ts
