@@ -863,6 +863,22 @@ stand-in; 6.9 s locally on the half vCPU the founder chose on 2026-10-22) domina
 the day reaches its cap for days on end; or lone files near the line (then splitting one run across threads, considered
 and not built).
 
+Since PR 6b-4, also when:
+- **The capacity decision is revisited** (GitHub issue
+  [#41](https://github.com/PureTideWater/PhysicalTherapy/issues/41), label "revisit"). How the screening's 60-second
+  promise is measured was chosen to save cost, not as the best option: GitHub's free 4-CPU runner, the time advisory
+  on a pull request and binding on a release behind its attested report (the founder's third ruling of 2026-10-23,
+  "Free: time advisory"). The free runner shares its CPUs among the consumer, Postgres and the harness, which
+  production does not, and its times follow the host (S4 took 38 to 57 s on the same code). On 2026-10-23 the founder
+  asked that this decision be kept in view, although it was not the most optimized one, so that it is taken up again
+  once the platform is in production. Revisit it twice: before the screening opens, and again once production has
+  traffic. Measure on AWS staging (recommended: production's own task sizes, which also gives decision 15's
+  runner-to-Fargate factor) or on an 8-core runner, which needs an organization on GitHub Team. Then settle the sizing
+  question O9 (a worst time above 44 s). Until then, production's screening opens only on a release's attested
+  binding report that passes (decision 13). The address checks PR 6b-4 adds (DNS and SES validation, run together, at
+  most one 2-s timeout) fall inside the promise, and the harness charges them (ADR 0065).
+- the screening stream is paused in production (ADR 0065): read the reason and the window's counts before resuming.
+
 ## Amendment (PR 6b)
 
 ADR [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) records how a screening takes the ZIP+4 of a ZIP that Medicare splits between payment localities, keeps it only
