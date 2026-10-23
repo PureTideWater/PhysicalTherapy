@@ -7,16 +7,18 @@ import { PgDumpRestorer } from './pg-dump-restorer';
 import { RdsSnapshotRestorer } from './rds-restorer';
 import { LocalMailSender, SesMailSender } from '../mail/mail';
 import { LocalSupportInbox, S3SupportInbox } from '../support/inbox';
-import { auditStore, mailSender, platformRuntime, snapshotRestorer, supportInbox } from './wiring';
+import { LocalMailEventSource, MemoryMailControl, SesMailControl, SqsMailEventSource } from './mail-events';
+import { auditStore, mailEvents, mailSender, platformRuntime, snapshotRestorer, supportInbox } from './wiring';
 
 const local: PlatformConfig = {
   operatorDatabaseUrl: 'postgres://operator:synthetic@localhost:5432/tp',
   auditStore: { kind: 'local', dir: '/tmp/tp-audit' },
   restoreDrill: { kind: 'local', workDir: '/tmp/tp-drill', binDir: '/usr/lib/postgresql/18/bin', adminUrl: 'postgres://admin:synthetic@localhost:5432/tp' },
   supportInbox: { kind: 'local', dir: '/tmp/tp-support-inbox' },
-  mail: { kind: 'local', dir: '/tmp/tp-mail' },
+  mail: { kind: 'local', dir: '/tmp/tp-mail', eventsDir: '/tmp/tp-mail-events', streamPrefix: 'tp-dev' },
   appOrigin: 'http://localhost:3000',
   staticAssetOrigin: null,
+  mailEvents: { kind: 'local', dir: '/tmp/tp-mail-events', identitiesVerified: true },
 };
 
 const deployed: PlatformConfig = {
@@ -31,9 +33,10 @@ const deployed: PlatformConfig = {
     securityGroupIds: ['sg-a'],
   },
   supportInbox: { kind: 's3', bucket: 'support-mail' },
-  mail: { kind: 'ses', from: 'notices@synthetic.test' },
+  mail: { kind: 'ses', from: 'notices@synthetic.test', screening: { from: 'results@screening.synthetic.test', replyTo: 'support@synthetic.test' }, streamPrefix: 'tp-production' },
   appOrigin: 'https://app.synthetic.test',
   staticAssetOrigin: 'https://static.synthetic.test',
+  mailEvents: { kind: 'sqs', queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events', identitiesVerified: false },
 };
 
 describe('platform wiring', () => {
@@ -61,10 +64,33 @@ describe('platform wiring', () => {
   it('sends notices through SES when deployed and to a local outbox in development, their art from the static host when there is one', () => {
     const ses = mailSender(deployed);
     expect(ses).toBeInstanceOf(SesMailSender);
-    expect((ses as unknown as { options: { staticOrigin: string | null } }).options.staticOrigin).toBe('https://static.synthetic.test');
+    const { client: _client, ...options } = (ses as unknown as { options: { client: unknown } & Record<string, unknown> }).options;
+    // Each stream's sender: MAIL_FROM on the customer streams, the screening's own with Reply-To the support address (Q12).
+    expect(options).toEqual({
+      staticOrigin: 'https://static.synthetic.test',
+      streamPrefix: 'tp-production',
+      senders: {
+        transactional: { from: 'notices@synthetic.test' },
+        notices: { from: 'notices@synthetic.test' },
+        screening: { from: 'results@screening.synthetic.test', replyTo: 'support@synthetic.test' },
+      },
+    });
     const outbox = mailSender(local);
     expect(outbox).toBeInstanceOf(LocalMailSender);
     expect((outbox as unknown as { staticOrigin: string | null }).staticOrigin).toBeNull();
+    expect((outbox as unknown as { options: unknown }).options).toEqual({ eventsDir: '/tmp/tp-mail-events', streamPrefix: 'tp-dev' });
+  });
+
+  it('reads SES’s events from the mail-events queue and controls only the screening’s set when deployed, and the local events directory in development', () => {
+    const deployedEvents = mailEvents(deployed);
+    expect(deployedEvents.source).toBeInstanceOf(SqsMailEventSource);
+    expect(deployedEvents.control).toBeInstanceOf(SesMailControl);
+    // Phase 1: the identities are not verified yet, so no probe goes.
+    expect(deployedEvents).toMatchObject({ streamPrefix: 'tp-production', probes: false });
+    const localEvents = mailEvents(local);
+    expect(localEvents.source).toBeInstanceOf(LocalMailEventSource);
+    expect(localEvents.control).toBeInstanceOf(MemoryMailControl);
+    expect(localEvents).toMatchObject({ streamPrefix: 'tp-dev', probes: true });
   });
 
   it('reads support mail from the bucket SES writes it to when deployed, verifying senders, and from a directory in development', () => {
@@ -81,6 +107,9 @@ describe('platform wiring', () => {
     expect(Object.keys(runtime.handlers).sort()).toEqual([
       'audit_copy',
       'billing_dunning',
+      'dunning_notices',
+      'mail_events',
+      'mail_expiry',
       'monitoring_schedule',
       'restore_drill',
       // The screening's pricing is the consumer's since PR 6b-3 (jobs/screening.ts); its expiry stays here.

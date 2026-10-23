@@ -1,10 +1,11 @@
 import type { Logger } from '@tp/observability';
 import { z } from 'zod';
 
-import { runDunning } from '../billing/dunning';
+import { runDunning, sendDunningNotices } from '../billing/dunning';
 import { recordUsageSnapshots } from '../billing/usage';
 import { copyAuditDay, previousDay } from '../platform/audit-copy';
 import type { MailSender } from '../mail/mail';
+import { type MailControl, type MailEventSource, expireMail, runMailEvents } from '../platform/mail-events';
 import { queueMonitoringSchedule } from '../platform/monitoring-schedule';
 import { type RestoreDrillResult, RestoreDrillFailedError, type SnapshotRestorer, runRestoreDrill } from '../platform/restore-drill';
 import { sendSupportGrantNotices } from '../platform/support-notices';
@@ -27,7 +28,12 @@ import type { JobSender } from './enqueue';
  * (docs/adr/0055) reads the support inbox and opens tickets through one function that names no sender. The free
  * screening's expiry (docs/adr/0062) deletes screenings 30 days after their upload through
  * operator_screening_expire(); a screening holds no PHI and names no practice. Its pricing is the screening consumer's
- * since PR 6b-3 (jobs/screening.ts, WORKER_JOBS=screening). They run on the operator connection, every
+ * since PR 6b-3 (jobs/screening.ts, WORKER_JOBS=screening). The mail record's (audit #76, docs/adr/0065): mail_events
+ * reconciles the screening's SES set with its stream, sends the daily probes and records each SES event of each message
+ * by its message ID (IDs and codes; the destination address only to resolve a Cognito user and to hash a refused
+ * screening address, never kept); mail_expiry deletes the expired mail records; dunning_notices sends each billing owner
+ * a stage notice whose send is due again (as tp_billing). The support-grant notices and the dunning notices each go one
+ * message per recipient from a recorded outbox. They run on the operator connection, every
  * transaction as tp_operator (which owns nothing and cannot bypass row-level security), which the
  * worker holds only where OPERATOR_DATABASE_URL is configured; the restore drill alone uses an owner
  * login, and only on its scratch copy. A practice job (jobs/registry.ts) never runs this way.
@@ -41,6 +47,9 @@ export const PLATFORM_JOB_TYPES = [
   'usage_snapshot',
   'support_mail',
   'screening_expiry',
+  'mail_events',
+  'mail_expiry',
+  'dunning_notices',
 ] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
 
@@ -58,6 +67,9 @@ export const PLATFORM_JOB_PAYLOADS = {
   usage_snapshot: z.strictObject({ day: day.optional() }),
   support_mail: z.strictObject({}),
   screening_expiry: z.strictObject({}),
+  mail_events: z.strictObject({}),
+  mail_expiry: z.strictObject({}),
+  dunning_notices: z.strictObject({}),
 } satisfies Record<PlatformJobType, z.ZodType>;
 
 export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
@@ -72,8 +84,10 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
  * support-grant notices every minute, so a notice goes out within a minute of a grant opening or
  * ending; the monitoring schedule daily at 05:10, so the month's digest goes out on its first morning;
  * the dunning notices daily at 14:10 (a morning in the United States); the usage snapshot nightly at 00:40;
- * support mail every five minutes, well inside the published response target (docs/adr/0055); and the screening
- * expiry nightly at 03:35 (docs/adr/0062).
+ * support mail every five minutes, well inside the published response target (docs/adr/0055); the screening
+ * expiry nightly at 03:35 (docs/adr/0062); the mail events every minute, so a pause disables the screening's set within a
+ * minute and a notice's delivery is recorded within one; the mail expiry nightly at 03:50; and the dunning notices' sends
+ * every minute, so a send that threw is tried again after 1, 5, 15 and 60 minutes (docs/adr/0065).
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
@@ -84,6 +98,9 @@ export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   usage_snapshot: '40 0 * * *',
   support_mail: '*/5 * * * *',
   screening_expiry: '35 3 * * *',
+  mail_events: '* * * * *',
+  mail_expiry: '50 3 * * *',
+  dunning_notices: '* * * * *',
 };
 
 export interface PlatformContext {
@@ -110,7 +127,18 @@ export interface PlatformDependencies {
   readonly queue?: JobSender;
   /** Where mail to the support address waits (SES's bucket, or a local directory). */
   readonly inbox?: SupportInbox;
+  /** The mail_events job's queue and SES control, the sets' prefix and whether probes go (docs/adr/0065). */
+  readonly mailEvents?: MailEventsDependencies;
   readonly now?: () => Date;
+}
+
+export interface MailEventsDependencies {
+  readonly source: MailEventSource;
+  readonly control: MailControl;
+  /** The configuration sets' prefix (MAIL_STREAM_PREFIX). */
+  readonly streamPrefix: string;
+  /** Whether probes go: the stack's mail identities are verified (MAIL_IDENTITIES_VERIFIED). */
+  readonly probes: boolean;
 }
 
 /** The monitoring schedule ran on a worker that has no queue to send to. */
@@ -121,6 +149,11 @@ export class NoQueueError extends Error {
 /** The support mail job ran on a worker that has no inbox to read. */
 export class NoInboxError extends Error {
   override readonly name = 'NoInboxError';
+}
+
+/** The mail_events job ran on a worker that has no queue of SES's events to read. */
+export class NoMailEventsError extends Error {
+  override readonly name = 'NoMailEventsError';
 }
 
 async function withOperator<T>(pool: OperatorPool, use: (client: Awaited<ReturnType<OperatorPool['connect']>>) => Promise<T>): Promise<T> {
@@ -173,11 +206,16 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
       }
     },
     billing_dunning: async (_payload, context) => {
-      const result = await runDunning({ pool: dependencies.operator, mail: dependencies.mail, origin: dependencies.appOrigin, requestId: context.jobId, now: now() });
-      if (result.undeliverable > 0) {
-        context.logger.error('dunning notice had no organization administrator to send to', { job_id: context.jobId, error_code: 'NOTICE_UNDELIVERABLE' });
+      // Each stage's notice with no billing owner is NOTICE_UNDELIVERABLE, and one not delivered NOTICE_UNDELIVERED, by
+      // the invoice's ID (logged as they are found).
+      const result = await runDunning({ pool: dependencies.operator, mail: dependencies.mail, origin: dependencies.appOrigin, requestId: context.jobId, now: now(), logger: context.logger.child({ job_id: context.jobId }) });
+      if (result.sent > 0) {
+        context.logger.info('dunning notices sent', { job_id: context.jobId });
       }
-      if (result.notices > 0) {
+    },
+    dunning_notices: async (_payload, context) => {
+      const result = await sendDunningNotices({ pool: dependencies.operator, mail: dependencies.mail, origin: dependencies.appOrigin, requestId: context.jobId, logger: context.logger.child({ job_id: context.jobId }) });
+      if (result.sent > 0) {
         context.logger.info('dunning notices sent', { job_id: context.jobId });
       }
     },
@@ -212,13 +250,40 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
       }
     },
     support_grant_notices: async (_payload, context) => {
-      const result = await withOperator(dependencies.operator, (client) => sendSupportGrantNotices({ client, mail: dependencies.mail, origin: dependencies.appOrigin, requestId: context.jobId }));
-      if (result.undeliverable > 0) {
-        // A practice with no administrator to tell: the operator follows up (PRD 19, Break-glass access).
-        context.logger.error('support grant notice had no practice administrator to send to', { job_id: context.jobId, error_code: 'NOTICE_UNDELIVERABLE' });
-      }
-      if (result.opened + result.closed > 0) {
+      // A practice with no administrator to tell is NOTICE_UNDELIVERABLE, and a notice not delivered NOTICE_UNDELIVERED,
+      // by the grant's ID (logged as they are found): the operator follows up (PRD 19, Break-glass access).
+      const result = await withOperator(dependencies.operator, (client) =>
+        sendSupportGrantNotices({ client, mail: dependencies.mail, origin: dependencies.appOrigin, requestId: context.jobId, logger: context.logger.child({ job_id: context.jobId }) }),
+      );
+      if (result.sent > 0) {
         context.logger.info('support grant notices sent', { job_id: context.jobId });
+      }
+    },
+    mail_events: async (_payload, context) => {
+      const events = dependencies.mailEvents;
+      if (events === undefined) {
+        throw new NoMailEventsError('the mail events job needs the mail-events queue');
+      }
+      const result = await withOperator(dependencies.operator, (client) =>
+        runMailEvents({
+          client,
+          source: events.source,
+          control: events.control,
+          mail: dependencies.mail,
+          streamPrefix: events.streamPrefix,
+          probes: events.probes,
+          requestId: context.jobId,
+          logger: context.logger,
+        }),
+      );
+      if (result.recorded > 0) {
+        context.logger.info('mail events recorded', { job_id: context.jobId, record_count: result.recorded });
+      }
+    },
+    mail_expiry: async (_payload, context) => {
+      const removed = await withOperator(dependencies.operator, (client) => expireMail(client));
+      if (removed > 0) {
+        context.logger.info('mail expiry deleted expired mail records', { job_id: context.jobId, record_count: removed });
       }
     },
   };

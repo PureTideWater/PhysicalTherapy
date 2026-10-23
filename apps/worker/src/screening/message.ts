@@ -1,6 +1,6 @@
 import type { ScreeningWaitReason } from '@tp/db';
 
-import type { MailMessage } from '../mail/mail';
+import type { MailContent } from '../mail/mail';
 import { type KeptWith, emailKept } from './wording';
 
 /**
@@ -96,7 +96,7 @@ export function screeningResultMessage({
   readonly keptWith?: Exclude<KeptWith, 'own_request'>;
   /** The run's wait reason, for an upload of the waiting tier; null for a normal one. */
   readonly waited?: ScreeningWaitReason | null;
-}): MailMessage {
+}): MailContent {
   return {
     to: recipients(to),
     subject: 'Your screening is ready',
@@ -114,7 +114,7 @@ export function screeningResultMessage({
 }
 
 /** The email sent when a screening could not be completed: a link to start again, nothing else. */
-export function screeningFailedMessage({ to, startOver }: { readonly to: string | readonly string[]; readonly startOver: string }): MailMessage {
+export function screeningFailedMessage({ to, startOver }: { readonly to: string | readonly string[]; readonly startOver: string }): MailContent {
   return {
     to: recipients(to),
     subject: 'Your screening could not be completed',
