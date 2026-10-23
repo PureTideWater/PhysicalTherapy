@@ -33,7 +33,7 @@ MILESTONES = [
   ("M9", "Recovery ledger and reconciliation", "Monitoring v1", 60, 90, "Built", "Met", ""),
   ("M10", "Model gateway", "Monitoring v1", 50, 70, "Built", "Needs a person", "Evaluation gates need model access"),
   ("M11", "Sign-in, billing, production readiness", "Monitoring v1", 60, 90, "Built", "Needs a person", "Real Stripe test ACH; AWS deploy"),
-  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, 5b, 6b-1, 6b-2 and 6b-3, governance and the screen fixes merged; PR 6b-4 next"),
+  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, 5b, 6b-1, 6b-2 and 6b-3, governance and the screen fixes merged; PR 6b-4 built (draft #42), reviews next"),
   ("M11b", "Firm grants and minimal portfolio (change order PR 17)", "Change order 001", 34, 60, "Queued", "Not yet", "Inserted by the change order before milestone 12"),
   ("M12", "Firm organizations and portfolio", "Firm v1.5", 60, 90, "Queued", "Not yet", "Starts after the change order's 17 pull requests"),
   ("M13", "Intelligence and hardening", "Intelligence v2", 70, 100, "Queued", "Not yet", "Pen test and SOC 2 Type II are outside work"),
@@ -221,6 +221,7 @@ MANUAL = {
   "PR 6b-1, ZIP+4 in the engine: build, draft PR, two reviews, fix, verify, merge": ("Done", "2026-10-21T22:55:00Z", "2026-10-22T05:20:00Z"),
   "PR 6b-2, pricing location and onboarding: build, reviews, fix, verify, your approval, merge": ("Done", "2026-10-21T23:55:00Z", "2026-10-22T16:31:00Z"),
   "PR 6b-3, the screening's own consumer and the time check: build, reviews, fix, verify, your approval, merge": ("Done", "2026-10-22T16:51:00Z", "2026-10-23T15:21:00Z"),
+  "PR 6b-4, mail streams: build, reviews, fix, verify, your approval, merge": ("Running", "2026-10-23T16:45:00Z", None),
 }
 # Steps whose label repeats across batches ("fix review findings"), kept by hand: (batch, label) -> (status, started, finished).
 BATCH_MANUAL = {
