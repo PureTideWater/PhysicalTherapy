@@ -1,6 +1,6 @@
 # 0062. Screen prospects from aggregate rows without PHI, price each row with the unchanged engine, and send the result by emailed link
 
-- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (ZIP+4 localities and quarters outside the loaded content, PR 6b)
+- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (ZIP+4 localities and quarters outside the loaded content, PR 6b) and by [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md) (the screening's mail stream: its sender, cut-off, readiness, address checks, refusal list and bounce budget, PR 6b-4; below)
 - **Date:** 2026-10-18
 - **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams, and the founder's approval of 2026-10-18 after the best-option audit, items 6 and 1, with the ruling of 11:47 UTC that supersedes ruling 3); the build (PR 6 of Change Order 001) and its review of 2026-10-20
 - **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17; SCR-07 added by the founder's ruling), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
@@ -1367,3 +1367,99 @@ what `watched.ts` derives, and the changes job reads it from the base and the he
 above 44 s (S4's from its middle run) posts a warning annotation and the gate prints the sizing question, so it shows on
 the pull request's checks. A path filter on the trigger would leave a required check pending on every other pull request.
 
+## Amendment (PR 6b-4): the screening's mail stream
+
+Audit #76 found the screening's result mail unfit for addresses a stranger types: one shared sender, nothing recorded
+of delivery, and nothing to stop a run of bad addresses from costing the account the mail every customer depends on.
+ADR [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md)
+records the three streams; this records what changes for the screening, built under the founder's rulings of
+2026-10-21 (Q1 (g), Q9, Q10 (a), Q11 (b) and Q12, every recommended answer accepted), with counsel to confirm the
+wording before the screening opens (open item O4; `docs/product/legal-surfaces.md`, `screening-mail-paused` and
+`screening-mail-address`, which keep production's screening closed until their review is recorded).
+
+**The sender (Q12).** Results and failure notices go from `results@screening.<domain>` (display name "PaidWhole"), an
+identity of its own on its own SES configuration set, with Reply-To the support address, so the screening's
+reputation is its own and a prospect's reply reaches the support desk. The screening set uses no SES suppression list:
+SES keeps no prospect's address.
+
+**The cut-off (Q9; D6).** In a 7-day window since the last resume, the screening stream pauses when its permanent
+bounces pass 3% of its sends (floor 200) or its complaints other than `not_spam` pass 0.08% (floor 2,500), when the
+account's bounce or complaint rate reaches half of SES's review level (2.5%, 0.05%), or when SES puts the account under
+review. Only a platform administrator resumes it, in the console, with a reason (the cause fixed, or a false alarm).
+The other streams never pause.
+
+**Closed while the mail cannot go (D7, D8).** `screeningOpen()` reads `screening_mail_status()`: while the stream is
+paused the page is closed everywhere and says so, and `submit_screening()` refuses an upload that raced the pause
+(`screening_paused`); in staging and production it is also closed until the mail path is proven (the stream sending,
+SES confirmed, and a delivered and a bounced probe within 48 hours and since the last resume); development ignores
+readiness, which has no probes. A run queued before the pause is neither claimed, completed nor failed while the stream
+is not sending: it waits, and is priced and emailed after the resume if that is within its 30 days.
+
+**The address checks (Q1 (g); D9).** In order, each only after the one before passes:
+
+1. the browser, as the prospect leaves the field: a likely typo of a large mail provider's domain (within one edit, or
+   two for a domain of eight characters or more) suggests the provider, and an ending that is no top-level domain in
+   use warns (a snapshot of the ICANN list; `tlds.ts`); both are soft, and the prospect may keep the address as typed;
+2. the server runs the rate limit and the upload's own checks, unchanged (nothing below runs for an upload they
+   refuse), then repeats the browser's two hints unless the prospect kept the address;
+3. DNS (the domain does not exist, has only a null MX, or has neither an MX nor an address: refused) and SES's
+   validation (a LOW verdict on validity, syntax, DNS records or the mailbox: refused; a MEDIUM on validity or the
+   mailbox: a warning the prospect may answer by keeping the address), together, so the added worst case is one
+   2-second timeout; a timeout or an error accepts and logs a warning by code; SES is asked at most 1,000 times a day in
+   production and 50 in staging (the rate limiter's global bucket `screening_validation`), then DNS alone, with
+   `MAIL_VALIDATION_CAP_REACHED` paging the operator;
+4. `submit_screening()`'s refusal list and bounce budget (below).
+
+Every refused address, whatever refused it, gets one sentence, so the form says nothing about any earlier screening,
+and nothing about a customer's mail, which the refusal list never holds. No log line, issue or error names the address
+or its domain. The harness charges the checks' worst case on every upload, so the 60-second promise holds with them
+(the plan's G1; ADR 0065).
+
+**The delivery state (D11; the plan's D9).** A prospect's delivery state is its result mail's record (`mail_send`,
+keyed to the prospect, set null when the prospect goes), not a column on the immutable prospect; PR 7 adds its read
+function with the lead list.
+
+**What is kept of a refused address (Q11 (b)).** A keyed hash (the pepper in an owner-only table no role reads) of a
+screening address that bounced permanently or was reported as spam on the screening stream, kept 365 days from its
+latest such outcome, used only to refuse a new screening to it. The pages say so and never call it deleted:
+`REFUSED_ADDRESS_KEPT` joins the result page's notice (with no request), the closed link's page, the upload form's hint
+and the "sent" alert. It is the only value derived from a screening address kept past its prospect, with the budget's
+marks.
+
+**The bounce budget (Q10 (a)).** Each run keeps, for its 30 days, the rate limiter's keyed hash of the client address
+(`client_subject`, new, passed by the web as `submit_screening()`'s last parameter) beside the email account's
+(`rate_subject`); a screening permanent bounce leaves a 7-day mark on each, and a subject with 3 live marks is refused a
+new screening (`screening_bounce_budget`), so one client or one email account cannot close the screening for everyone.
+
+**The wording (Q12, the recommended wording; counsel confirms it before the screening opens).** The new sentences a
+prospect reads, word for word:
+
+- the page while the stream is paused, under "New screenings are paused": "Too many of our recent result emails could
+  not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and
+  will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.",
+  then "Meanwhile, you can request an audit.";
+- an upload that raced the pause: "New screenings are paused while we fix our result emails. Try again later.";
+- every refused address: "We cannot send email to this address. Check it, or use another address.";
+- a mailbox SES could not confirm: "We could not confirm this mailbox exists. Check the address, or keep it as
+  typed.";
+- a likely typo of a large provider's domain: "Did you mean @gmail.com? Check the address, or keep it as typed.", with
+  the button "Use jane@gmail.com" (the message names no address, so the server's answer carries none);
+- an ending one edit from a common one: "This address ends in “.cmo”. Did you mean “.com”? Check it, or keep it as
+  typed.", with the button "Use office@harborpt.com";
+- any other ending in no use: "This address ends in “.qqq”, which is not a domain ending in use. Check it, or keep it
+  as typed.";
+- the box that keeps a questioned address: "Keep this address as typed";
+- the bounce budget: "Several recent screening results sent from this connection, or to this email account, could not
+  be delivered, so we cannot take another screening from it for up to 7 days. Check the email address, or request an
+  audit instead.";
+- what is kept: "If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of
+  it that cannot be read back as the address, for 12 months, only so that we never send to it again."
+
+**What proves it.** `apps/web/src/lib/screening/address.test.ts` and `validation.test.ts` (the hints, the DNS
+verdicts, the validation table, the cap, the timeouts and the logs), `routes.db.test.ts` (paused and not ready closing
+the page, one sentence for DNS, validation and the refusal list, the checks never run for an upload the row checks or
+the rate limit refuse, the client subject and the budget), `packages/db/src/screening.db.test.ts` and `mail.db.test.ts`
+(the refusal order, the list, the budget, the run's gate), and the end-to-end cut-off journey
+(`apps/web/e2e/mail-cutoff.spec.ts`: a seventh hard bounce in a week pauses the stream, the page says so, a platform
+administrator resumes it, and the screening opens once SES and the probes confirm); test matrix SCR-21, SCR-22 and
+SEC-18.
