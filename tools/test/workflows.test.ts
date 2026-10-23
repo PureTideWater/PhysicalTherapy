@@ -98,6 +98,14 @@ function matrixValues(matrix: unknown, key: string): unknown[] | undefined {
   return listed === undefined && listKeys(matrix).length === 0 ? include.map(named) : undefined;
 }
 
+/**
+ * The larger runner both capacity jobs run on (the founder's ruling of 2026-10-23 on the runner): GitHub-hosted, Linux
+ * x64, 8 cores and 32 GB, created by the founder under this name with the Ubuntu 24.04 image chosen in its settings, so
+ * its image is pinned there as ubuntu-24.04 pins every other job's (audit item #19; docs/runbooks/screening-capacity.md,
+ * "The 8-core runner").
+ */
+const CAPACITY_RUNNER = 'paidwhole-8core';
+
 /** GitHub-hosted labels other than -latest ones that name an image without its version. */
 const UNVERSIONED_HOSTED = /^ubuntu-slim$/i;
 
@@ -153,6 +161,16 @@ describe('workflows', () => {
     expect(files).toContain('ci.yml');
     const problems = files.flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([name, job]) => jobRunnerProblems(job, files).map((problem) => `${file} ${name}: ${problem}`)));
     expect(problems).toEqual([]);
+  });
+
+  it('run both capacity jobs on GitHub’s 8-core larger runner, paidwhole-8core, and every other job on ubuntu-24.04 (the founder’s ruling of 2026-10-23 on the runner)', () => {
+    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
+    const runners = Object.fromEntries(files.flatMap((file) => Object.entries(workflow(file).jobs).map(([name, job]) => [`${file} ${name}`, job['runs-on']])));
+    const larger = Object.entries(runners).filter(([, runner]) => runner === CAPACITY_RUNNER).map(([job]) => job);
+    expect(larger.sort()).toEqual(['release.yml capacity', 'screening-capacity.yml capacity']);
+    // The gate only reads the result, so it stays on the free runner with every other job.
+    expect(runners['screening-capacity.yml gate']).toBe('ubuntu-24.04');
+    expect(Object.entries(runners).filter(([job, runner]) => !larger.includes(job) && runner !== 'ubuntu-24.04')).toEqual([]);
   });
 
   it('refuse a -latest or unversioned hosted runner as a label, in a list, in a group, as a matrix value or an include entry’s, and any runner they cannot resolve', () => {
@@ -295,6 +313,7 @@ describe('workflows', () => {
       expect(capacity.permissions).toBeUndefined();
       const workflowRunner = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
       expect(capacity['runs-on']).toEqual(workflowRunner);
+      expect(capacity['runs-on']).toBe(CAPACITY_RUNNER);
       const steps = capacity.steps;
       expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
       expect(steps.filter((step) => step.uses === PINNED.downloadArtifact).map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
@@ -548,12 +567,12 @@ describe('workflows', () => {
     expect(script).toMatch(/case "\$file" in\s+\$pattern\)/);
     expect(script).toContain('if [ "$EVENT" != "pull_request" ]; then');
 
-    // The measurement: only when the changes say so, on a 4-CPU runner (a public repository's standard one; the 4-core
-    // larger runner once the repository is private, Q1 (d)).
+    // The measurement: only when the changes say so, on GitHub's 8-core larger runner, every service on CPUs of its own
+    // (the founder's ruling of 2026-10-23 on the runner).
     const measure = capacity.jobs.capacity;
     expect(measure?.needs).toBe('changes');
     expect(measure?.if).toBe("needs.changes.outputs.measure == 'true'");
-    expect(measure?.['runs-on']).toBe('ubuntu-24.04');
+    expect(measure?.['runs-on']).toBe(CAPACITY_RUNNER);
     // 100 minutes: S4 runs three times (the founder's ruling of 2026-10-23), about 3 minutes more than the 90 before.
     expect(measure?.['timeout-minutes']).toBe(100);
     expect(measure?.permissions).toBeUndefined();
@@ -583,7 +602,7 @@ describe('workflows', () => {
     const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
     expect(stepIndex(steps, (step) => step.uses === PINNED.buildPush)).toBeLessThan(run);
     expect(save).toBeLessThan(run);
-    // The harness on Postgres's CPUs, from the layout itself, never the consumer's.
+    // The harness, its children and Chromium on CPUs of their own (6-7), from the layout itself, never a service's.
     expect(steps[run]?.run).toContain('cpus=$(pnpm -s screening:capacity --print-harness-cpus)');
     expect(steps[run]?.run).toContain('taskset -c "$cpus" pnpm screening:capacity');
     const upload = stepIndex(steps, (step) => step.uses === PINNED.uploadArtifact);

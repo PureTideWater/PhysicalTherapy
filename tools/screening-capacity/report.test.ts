@@ -284,6 +284,17 @@ describe('the checks the build controls fail the run', () => {
     ],
     ['the consumer on the wrong CPUs', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'screening-1' ? { ...item, cpuset: '3' } : item)) }) }), /^limit not applied: screening-1: cpuset 3, not 2-3$/],
     ['the consumer not started', measured({ applied: applied({ containers: applied().containers.filter((item) => item.name !== 'screening-1') }) }), /^limit not applied: screening-1: no limits read$/],
+    // Each service on CPUs of its own (the founder's ruling of 2026-10-23 on the runner).
+    ['the web on the consumer’s CPU', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'web' ? { ...item, cpuset: '3' } : item)) }) }), /^limit not applied: web: cpuset 3, not 4$/],
+    ['the platform on the web’s CPU', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'platform' ? { ...item, cpuset: '4' } : item)) }) }), /^limit not applied: platform: cpuset 4, not 5$/],
+    ['the harness not pinned to its own CPUs', measured({ harnessAffinity: '0-7' }), /^limit not applied: harness: CPU affinity 0-7, not 6-7$/],
+    ['the harness’s affinity not read', measured({ harnessAffinity: null }), /^limit not applied: harness: CPU affinity null, not 6-7$/],
+    [
+      'a layout whose services share CPUs (the free 4-CPU runner’s)',
+      measured({ expected: { ...expected, layout: { postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' } }, harnessAffinity: '0-1' }),
+      /^layout: Postgres and the harness share CPUs 0-1$/,
+    ],
+
     [
       'a process whose affinity collapsed to the overlap with the harness’s CPUs (cgroup v1)',
       measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'screening-1' ? { ...item, affinity: '2' } : item)) }) }),
@@ -369,8 +380,8 @@ describe('the checks the build controls fail the run', () => {
 describe('the report', () => {
   it('names its format, carries the verdict, and holds no link or token', () => {
     const full = report(measured(), ENFORCED);
-    expect(full.format).toBe('tp-screening-capacity/5');
-    expect(REPORT_FORMAT).toBe('tp-screening-capacity/5');
+    expect(full.format).toBe('tp-screening-capacity/6');
+    expect(REPORT_FORMAT).toBe('tp-screening-capacity/6');
     expect(full.verdict).toEqual({ pass: true, time: 'enforced', reasons: [] });
     const text = `${JSON.stringify(full)}\n${markdown(full, ENFORCED)}`;
     expect(text).not.toMatch(/\/screening\/results\//);
@@ -387,6 +398,19 @@ describe('the report', () => {
     expect(summary).toContain('Screening consumer: 1 task of 2 vCPU and 4096 MiB, 3 screenings at once each.');
     expect(summary).toContain(`Images: web \`sha256:${'a'.repeat(64)}\`, worker \`sha256:${'b'.repeat(64)}\`.`);
     expect(summary).toContain('| S1 | screening-1 | 1150.0 | 4096 | 1300.0 | 0 | 0 | — |');
+  });
+
+  it('records the layout it measured, each service on CPUs of its own, and the harness’s own CPUs (the founder’s ruling of 2026-10-23 on the runner)', () => {
+    const full = report(measured(), ENFORCED);
+    expect(full.expected.layout).toEqual({ postgres: '0-1', consumer: '2-3', web: '4', platform: '5', harness: '6-7' });
+    expect(full.harnessAffinity).toBe('6-7');
+    expect(full.runner.cpus).toBe(8);
+    expect(markdown(full, ENFORCED)).toContain(
+      'Layout: Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7; the harness ran on CPUs 6-7.',
+    );
+    // A layout whose services share a CPU fails, naming every CPU shared.
+    const shared = verdict(measured({ expected: { ...expected, layout: { postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' } }, harnessAffinity: '0-1' }), ENFORCED);
+    expect(shared.reasons.filter((reason) => reason.startsWith('layout: '))).toEqual(['layout: Postgres and the harness share CPUs 0-1', 'layout: the screening consumer, the web and the platform share CPU 3']);
   });
 
   it('compares the five-digit uploads with the frozen read path and the split ZIP’s with the whole release (PR 6b)', () => {

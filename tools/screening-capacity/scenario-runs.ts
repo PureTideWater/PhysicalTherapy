@@ -4,8 +4,10 @@
  *
  * S4, the three worst uploads at once with a small one behind them, runs three times in every capacity run, each run
  * from a cold Postgres and fresh services with the same uploads, and its time is judged on the middle run: the founder's
- * ruling of 2026-10-23 ("Stay free: median of 3"), which keeps GitHub's free 4-CPU runner, whose shared CPUs swing S4's
- * times with the host's speed. Every other scenario runs once.
+ * ruling of 2026-10-23 ("Stay free: median of 3"), made when GitHub's free 4-CPU runner's shared CPUs swung S4's times
+ * with the host's speed. The founder's second ruling that day moved the measurement to GitHub's 8-core runner, each
+ * service on CPUs of its own, and kept the three runs: about 3 minutes, against what noise the larger runner's host
+ * still has. Every other scenario runs once.
  */
 
 /** The scenarios a passing run measures, every one of them. */

@@ -1,6 +1,7 @@
 import type { EnvironmentSettings } from '../../infra/lib/environments';
 import {
   type ContainerLimit,
+  type CpuLayout,
   HARNESS_RUNS_SCREENING_CONSUMER,
   MEMORY_LIMIT_PERCENT,
   MIB,
@@ -9,6 +10,8 @@ import {
   TIME_ALLOWANCE_MS,
   TIME_METRIC_BELOW_MS,
   TIME_PROMISE_MS,
+  layoutProblems,
+  layoutText,
   screeningConsumer,
 } from './limits';
 import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
@@ -20,7 +23,8 @@ import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS } from './scenario-r
  *
  * The verdict: the run fails on everything the build controls (an OOM kill, a restart or exit the harness did not cause,
  * Postgres's included, anonymous memory above 90% of a task's limit, the consumer's included, a limit or a cold start
- * not applied, the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished
+ * not applied, the harness not on its own CPUs, a layout in which two services share a CPU (the founder's ruling of
+ * 2026-10-23 on the runner), the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished
  * result, a stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the
  * platform pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
  * that left for the static origin, a submission time not captured, an oracle mismatch or an oracle that compared fewer
@@ -34,8 +38,12 @@ import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS } from './scenario-r
  * or address.
  */
 
-/** tp-screening-capacity/5: S4 three times, each run its own scenario with its repetition, and the middle run named. */
-export const REPORT_FORMAT = 'tp-screening-capacity/5';
+/**
+ * tp-screening-capacity/6: each service on CPUs of its own (the founder's ruling of 2026-10-23 on the runner), the
+ * layout (expected.layout) and the harness's own CPUs (harnessAffinity) recorded; /5 ran S4 three times on the free
+ * 4-CPU runner's shared layout, which the launch check refuses.
+ */
+export const REPORT_FORMAT = 'tp-screening-capacity/6';
 
 // The scenarios, S4's three runs and their names (scenario-runs.ts, which the uploads share).
 export { ALL_SCENARIOS, MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, type ScenarioId, scenarioLabel } from './scenario-runs';
@@ -131,6 +139,8 @@ export interface ExpectedLimits {
   readonly screeningTasks: number;
   readonly postgres: PostgresLimit;
   readonly storage: { readonly iops: number; readonly bytesPerSecond: number };
+  /** Where each service ran: CPUs of its own (limits.ts, cpuLayout; Postgres 0-1, the consumer 2-3, web 4, platform 5, the harness 6-7). */
+  readonly layout: CpuLayout;
 }
 
 /** The consumer as measured (the design's §5.1): its tasks, each task's size, and the screenings each prices at once. */
@@ -145,9 +155,9 @@ export interface ConsumerMeasure {
 export function expectedContainers(expected: ExpectedLimits): { readonly name: string; readonly cpus: number; readonly memoryMiB: number; readonly cpuset: string }[] {
   const screening = expected.screening;
   return [
-    { name: 'web', ...expected.web, cpuset: expected.postgres.taskCpuset },
-    { name: 'platform', ...expected.platform, cpuset: expected.postgres.taskCpuset },
-    ...(screening === null ? [] : Array.from({ length: expected.screeningTasks }, (_, index) => ({ name: `screening-${String(index + 1)}`, ...screening, cpuset: expected.postgres.consumerCpuset }))),
+    { name: 'web', ...expected.web, cpuset: expected.layout.web },
+    { name: 'platform', ...expected.platform, cpuset: expected.layout.platform },
+    ...(screening === null ? [] : Array.from({ length: expected.screeningTasks }, (_, index) => ({ name: `screening-${String(index + 1)}`, ...screening, cpuset: expected.layout.consumer }))),
     { name: 'postgres', cpus: expected.postgres.cpus, memoryMiB: expected.postgres.memoryMiB, cpuset: expected.postgres.cpuset },
   ];
 }
@@ -299,6 +309,11 @@ export interface Measurements {
   /** The static host the web image was built for, which the harness routed to the web container; null for none. */
   readonly staticAssetOrigin: string | null;
   readonly runner: { readonly cpus: number; readonly memoryMiB: number; readonly cpuModel: string; readonly kernel: string; readonly loadAverage: readonly number[] };
+  /**
+   * The CPUs the harness ran on as the kernel reported them at its start (Cpus_allowed_list, the workflow's taskset), which
+   * must be the layout's harness CPUs; null when it could not be read.
+   */
+  readonly harnessAffinity: string | null;
   readonly expected: ExpectedLimits;
   readonly applied: AppliedLimits;
   readonly runnerProblems: readonly string[];
@@ -432,7 +447,12 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
   }
   reasons.push(...measured.runnerProblems.map((problem) => `runner too small: ${problem}`));
+  // Each service on CPUs of its own, the harness and Chromium too (the founder's ruling of 2026-10-23 on the runner).
+  reasons.push(...layoutProblems(measured.expected.layout).map((problem) => `layout: ${problem}`));
   reasons.push(...limitProblems(measured.applied, measured.expected).map((problem) => `limit not applied: ${problem}`));
+  if (measured.harnessAffinity !== measured.expected.layout.harness) {
+    reasons.push(`limit not applied: harness: CPU affinity ${String(measured.harnessAffinity)}, not ${measured.expected.layout.harness}`);
+  }
   for (const scenario of measured.scenarios) {
     if (scenario.coldStart !== null && (!scenario.coldStart.restarted || !scenario.coldStart.cacheDropped)) {
       reasons.push(`cold start not applied: ${scenario.id} (Postgres restarted: ${scenario.coldStart.restarted ? 'yes' : 'no'}, page cache dropped: ${scenario.coldStart.cacheDropped ? 'yes' : 'no'})`);
@@ -629,6 +649,8 @@ export function markdown(full: Report, rule: TimeRule): string {
         ? ''
         : `; ZIP9: ${String(full.release.zip9.records)} records of ${String(full.release.zip9.rangesPerRecord)} ranges, ${String(full.release.zip9.linesPerYear)} lines and ${(full.release.zip9.bytesPerYear / MIB).toFixed(1)} MiB a year`
     }).`,
+    '',
+    `Layout: ${layoutText(full.expected.layout)}; the harness ran on CPUs ${String(full.harnessAffinity)}.`,
     '',
     '| Upload | Shape | Rows | Seconds to email | Logged (TimeToEmailMs) | Tier | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',

@@ -1,5 +1,5 @@
 import { type EnvironmentSettings, environmentSettings } from '../../../infra/lib/environments';
-import { MIB, postgresLimit, productionLimits } from '../limits';
+import { MIB, cpuLayout, postgresLimit, productionLimits } from '../limits';
 import {
   ALL_SCENARIOS,
   type AppliedLimits,
@@ -18,7 +18,8 @@ import {
 /**
  * Synthetic capacity measurements for the report's and the launch check's tests (no row, link, token or address): a full
  * passing run of S1 to S5, S4 three times (S4#1 to S4#3, the founder's ruling of 2026-10-23), under production's limits,
- * the screening consumer at its declared size, and helpers that change one part of it.
+ * the screening consumer at its declared size, on the 8-core runner with each service on CPUs of its own (the founder's
+ * ruling of 2026-10-23 on the runner), and helpers that change one part of it.
  */
 
 export const OPEN: TimeRule = { consumerDeclared: false, consumerRun: false, runnerToFargate: null };
@@ -33,8 +34,10 @@ export function withoutConsumer(): EnvironmentSettings {
 }
 
 export const limits = productionLimits();
-export const runner = { cpus: 4, memoryMiB: 16_000, cpuModel: 'synthetic', kernel: 'synthetic', loadAverage: [0.5, 0.4, 0.3] };
+/** GitHub's 8-core runner: 8 CPUs and 32 GB. */
+export const runner = { cpus: 8, memoryMiB: 32_090, cpuModel: 'synthetic', kernel: 'synthetic', loadAverage: [0.5, 0.4, 0.3] };
 export const postgres = postgresLimit(runner, limits);
+export const layout = cpuLayout(limits.cpuNeeds);
 export const expected: ExpectedLimits = {
   web: limits.web,
   platform: limits.platform,
@@ -42,6 +45,7 @@ export const expected: ExpectedLimits = {
   screeningTasks: limits.screeningTasks,
   postgres,
   storage: { iops: limits.database.iops, bytesPerSecond: limits.database.bytesPerSecond },
+  layout,
 };
 
 export function applied(overrides: Partial<AppliedLimits> = {}): AppliedLimits {
@@ -49,9 +53,9 @@ export function applied(overrides: Partial<AppliedLimits> = {}): AppliedLimits {
   return {
     containers: [
       // The web as production declares it (environments.ts; half a vCPU and 1,024 MiB since the founder's ruling of 2026-10-22).
-      container('web', limits.web.cpus, limits.web.memoryMiB, postgres.taskCpuset),
-      container('platform', 0.25, 512, postgres.taskCpuset),
-      container('screening-1', 2, 4096, postgres.consumerCpuset),
+      container('web', limits.web.cpus, limits.web.memoryMiB, layout.web),
+      container('platform', 0.25, 512, layout.platform),
+      container('screening-1', 2, 4096, layout.consumer),
       container('postgres', postgres.cpus, postgres.memoryMiB, postgres.cpuset),
     ],
     ioMax: { riops: 3000, wiops: 3000, rbps: 125 * MIB, wbps: 125 * MIB },
@@ -165,6 +169,7 @@ export function measured(overrides: Partial<Measurements> = {}): Measurements {
     consumer: { tasks: 1, cpus: 2, memoryMiB: 4096, concurrency: 3 },
     staticAssetOrigin: null,
     runner,
+    harnessAffinity: layout.harness,
     expected,
     applied: applied(),
     runnerProblems: [],

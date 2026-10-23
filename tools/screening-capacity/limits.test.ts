@@ -3,16 +3,18 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { environmentSettings } from '../../infra/lib/environments';
+import { type EnvironmentSettings, environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
-import { MIB, consumerCpus, databaseClass, harnessCpus, postgresLimit, productionLimits, requiredCpus, runnerTooSmall, screeningConsumer, storageBaseline, storageTypeOf, taskLimit } from './limits';
+import { HARNESS_CPUS, MIB, cpuLayout, cpuNeeds, databaseClass, harnessCpus, layoutProblems, layoutText, postgresLimit, productionLimits, requiredCpus, runnerTooSmall, screeningConsumer, storageBaseline, storageTypeOf, taskLimit } from './limits';
 import { withoutConsumer } from './test-support/measurements';
 
 /**
  * The capacity test's limits come from production's own settings (audit #53 part 1; PR 6b-3): the tasks, the screening
  * consumer among them, from environmentSettings('production'), the database class and storage type from the stack's
- * settings and construct, through tables that throw on what they do not know; the layout puts Postgres on the class's
- * vCPUs, the consumer on the next CPUs and web and platform on the consumer's last.
+ * settings and construct, through tables that throw on what they do not know; the layout gives every service CPUs of its
+ * own, as production has them (the founder's ruling of 2026-10-23 on the runner): Postgres the class's vCPUs, the
+ * consumer its tasks', the web and the platform one each, and the harness with Chromium the last two, eight on GitHub's
+ * 8-core runner.
  */
 
 const runner = (cpus: number, memoryMiB: number) => ({ cpus, memoryMiB, cpuModel: '', kernel: '' });
@@ -45,7 +47,7 @@ describe('production’s limits', () => {
     const without = withoutConsumer();
     expect(screeningConsumer(without)).toBeNull();
     const limits = productionLimits(without);
-    expect([limits.screening, limits.screeningTasks, limits.screeningConcurrency, consumerCpus(limits)]).toEqual([null, 0, 0, 0]);
+    expect([limits.screening, limits.screeningTasks, limits.screeningConcurrency, limits.cpuNeeds.consumer]).toEqual([null, 0, 0, 0]);
   });
 
   it('are db.t4g.medium (2 vCPU, 4 GiB) on gp3 (3,000 IOPS, 125 MiB/s), from the stack’s settings and construct', () => {
@@ -62,34 +64,67 @@ describe('production’s limits', () => {
   });
 });
 
-describe('the layout on the runner', () => {
+describe('the layout on the runner (the founder’s ruling of 2026-10-23 on the runner: GitHub’s 8-core runner, each service on CPUs of its own)', () => {
   const limits = productionLimits();
+  const layout = cpuLayout(limits.cpuNeeds);
 
-  it('gives Postgres the class’s 2 vCPU and 4 GiB on CPUs 0-1, the consumer 2-3, and web and platform 3 (a 4-CPU runner)', () => {
-    expect(postgresLimit(runner(4, 16_000), limits)).toEqual({ cpus: 2, memoryMiB: 4096, cpuset: '0-1', consumerCpuset: '2-3', taskCpuset: '3' });
-    // The harness and Chromium share Postgres's CPUs, never the tasks'.
-    expect(harnessCpus(runner(4, 16_000), limits)).toBe('0-1');
+  /** The CPUs a cpuset names ("2-3" is 2 and 3). */
+  const cpus = (set: string): number[] => {
+    const [first = '', last = first] = set.split('-');
+    return Array.from({ length: Number(last) - Number(first) + 1 }, (_, index) => Number(first) + index);
+  };
+
+  it('gives Postgres db.t4g.medium’s 2 vCPU on CPUs 0-1, the consumer compute.screening’s 2 on 2-3, the web 4 and the platform 5 (each its quota within its own CPU) and the harness with Chromium 6-7', () => {
+    expect(limits.cpuNeeds).toEqual({ postgres: 2, consumer: 2, web: 1, platform: 1, harness: HARNESS_CPUS });
+    expect(HARNESS_CPUS).toBe(2);
+    expect(layout).toEqual({ postgres: '0-1', consumer: '2-3', web: '4', platform: '5', harness: '6-7' });
+    expect(requiredCpus(limits)).toBe(8);
+    expect(postgresLimit(runner(8, 32_768), limits)).toEqual({ cpus: 2, memoryMiB: 4096, cpuset: '0-1' });
+    // No two services share a CPU: the eight CPUs, each named once.
+    const named = Object.values(layout).flatMap(cpus);
+    expect(named.sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(layoutProblems(layout)).toEqual([]);
+    expect(layoutText(layout)).toBe('Postgres on CPUs 0-1, the screening consumer on 2-3, the web on 4, the platform on 5 and the harness with Chromium on 6-7');
     // A larger runner changes nothing: the spare CPUs stay idle, so every runner measures the same layout.
-    expect(postgresLimit(runner(8, 32_000), limits)).toEqual({ cpus: 2, memoryMiB: 4096, cpuset: '0-1', consumerCpuset: '2-3', taskCpuset: '3' });
-    expect([consumerCpus(limits), requiredCpus(limits)]).toEqual([2, 4]);
+    expect(postgresLimit(runner(16, 65_536), limits)).toEqual({ cpus: 2, memoryMiB: 4096, cpuset: '0-1' });
+  });
+
+  it('pins the harness, its child processes and Chromium to CPUs of their own (6-7), never a service’s', () => {
+    expect(harnessCpus(runner(8, 32_768), limits)).toBe('6-7');
+    expect(harnessCpus(runner(16, 65_536), limits)).toBe('6-7');
+    // A runner too small still starts the harness, on every CPU it has, which then reports it.
+    expect(harnessCpus(runner(4, 16_384), limits)).toBe('0-3');
+    expect(harnessCpus(runner(1, 16_384), limits)).toBe('0');
+  });
+
+  it('derives the layout from the sizes environments.ts declares, never typed numbers: a larger consumer moves every CPU after it', () => {
+    const production = environmentSettings('production');
+    const larger = { ...production, compute: { ...production.compute, screening: { ...production.compute.screening, cpu: 4096, memoryMiB: 8192 } } } as EnvironmentSettings;
+    expect(cpuNeeds(larger)).toEqual({ postgres: 2, consumer: 4, web: 1, platform: 1, harness: 2 });
+    expect(cpuLayout(cpuNeeds(larger))).toEqual({ postgres: '0-1', consumer: '2-5', web: '6', platform: '7', harness: '8-9' });
+    expect(cpuNeeds(production)).toEqual(limits.cpuNeeds);
+  });
+
+  it('names every CPU two services share, as the free 4-CPU runner’s layout had them', () => {
+    const shared = { postgres: '0-1', consumer: '2-3', web: '3', platform: '3', harness: '0-1' };
+    expect(layoutProblems(shared)).toEqual(['Postgres and the harness share CPUs 0-1', 'the screening consumer, the web and the platform share CPU 3']);
+    expect(layoutProblems({ ...layout, platform: '4' })).toEqual(['the web and the platform share CPU 4']);
+    expect(layoutProblems({ ...layout, web: 'four' })).toEqual(['the web’s CPUs four are not a list of CPUs']);
   });
 
   it('takes Postgres’s memory from what the runner leaves after every task, the consumer’s 4 GiB included, and the reserve', () => {
     // 10,000 MiB less web, platform and the consumer (5,632 MiB) and the 2,560 MiB reserve.
-    expect(postgresLimit(runner(4, 10_000), limits).memoryMiB).toBe(1808);
+    expect(postgresLimit(runner(8, 10_000), limits).memoryMiB).toBe(1808);
   });
 
-  it('calls a runner too small with fewer CPUs than the class’s and the consumer’s, or one that leaves Postgres under 2 GiB', () => {
-    expect(runnerTooSmall(runner(4, 16_000), limits)).toEqual([]);
-    // A private repository's standard runner, 2 vCPU and 7 GB, until the founder sets the 4-core larger runner (Q1 (d)).
-    expect(runnerTooSmall(runner(2, 7_168), limits)).toEqual([
-      'the runner has 2 CPUs; the test needs 4 (2 for Postgres, db.t4g.medium’s, and 2 for the screening consumer)',
-      'Postgres would have -1024 MiB; the test needs 2048 MiB',
-    ]);
-    // Three CPUs would leave Postgres one, which lands at the line (the design's run 9).
-    expect(runnerTooSmall(runner(3, 16_000), limits)).toEqual(['the runner has 3 CPUs; the test needs 4 (2 for Postgres, db.t4g.medium’s, and 2 for the screening consumer)']);
-    expect(runnerTooSmall(runner(4, 9_000), limits)).toEqual(['Postgres would have 808 MiB; the test needs 2048 MiB']);
-    // The workflow still starts the harness on a runner too small, which then reports it.
-    expect(harnessCpus(runner(1, 16_000), limits)).toBe('0');
+  it('calls a runner too small with fewer CPUs than every service’s own, naming each service’s need, or one that leaves Postgres under 2 GiB', () => {
+    expect(runnerTooSmall(runner(8, 32_768), limits)).toEqual([]);
+    const needs = 'each service on CPUs of its own: 2 for Postgres (db.t4g.medium’s), 2 for the screening consumer (compute.screening’s), 1 for the web, 1 for the platform and 2 for the harness, its child processes and Chromium';
+    // GitHub's free 4-CPU runner, where the services shared CPUs until the founder's ruling of 2026-10-23 on the runner.
+    expect(runnerTooSmall(runner(4, 16_384), limits)).toEqual([`the runner has 4 CPUs; the test needs 8, ${needs}`]);
+    // A private repository's standard runner, 2 vCPU and 7 GB.
+    expect(runnerTooSmall(runner(2, 7_168), limits)).toEqual([`the runner has 2 CPUs; the test needs 8, ${needs}`, 'Postgres would have -1024 MiB; the test needs 2048 MiB']);
+    expect(runnerTooSmall(runner(7, 32_768), limits)).toEqual([`the runner has 7 CPUs; the test needs 8, ${needs}`]);
+    expect(runnerTooSmall(runner(8, 9_000), limits)).toEqual(['Postgres would have 808 MiB; the test needs 2048 MiB']);
   });
 });

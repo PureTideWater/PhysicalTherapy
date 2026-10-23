@@ -6,10 +6,11 @@ import { repositoryRoot } from '../content-files';
 
 /**
  * The limits the screening capacity test runs under (audit #53 part 1; docs/adr/0062, "Capacity under production
- * limits"; the founder's rulings of 2026-10-20, decisions 13 to 16, and of 2026-10-21, Q1 (a)): production's task sizes
- * and database class, read from infra/lib/environments.ts and infra/lib/constructs/database.ts, never typed here,
- * through tables that throw on a class or storage type they do not know; the layout that puts each on the runner's CPUs;
- * and the time verdict's thresholds and its switch.
+ * limits"; the founder's rulings of 2026-10-20, decisions 13 to 16, of 2026-10-21, Q1 (a), and of 2026-10-23 on the
+ * runner): production's task sizes and database class, read from infra/lib/environments.ts and
+ * infra/lib/constructs/database.ts, never typed here, through tables that throw on a class or storage type they do not
+ * know; the layout that gives each service CPUs of its own on GitHub's 8-core runner, as production has them; and the
+ * time verdict's thresholds and its switch.
  *
  * The time verdict is "open, PR 6b" while environments.ts declares no screening consumer (compute.screening) and fails
  * the job from the moment it does: the switch is screeningConsumer() below, read from the same settings the stacks
@@ -111,6 +112,8 @@ export interface ProductionLimits {
   /** Screenings each consumer task prices at once (0 without a consumer). */
   readonly screeningConcurrency: number;
   readonly database: { readonly instanceType: string; readonly vcpus: number; readonly memoryMiB: number; readonly storageType: string; readonly iops: number; readonly bytesPerSecond: number };
+  /** The CPUs each service takes on the runner (cpuNeeds), from the same settings. */
+  readonly cpuNeeds: CpuNeeds;
 }
 
 export function productionLimits(settings: EnvironmentSettings = environmentSettings('production'), databaseSource: string = readFileSync(path.join(repositoryRoot, 'infra/lib/constructs/database.ts'), 'utf8')): ProductionLimits {
@@ -125,6 +128,43 @@ export function productionLimits(settings: EnvironmentSettings = environmentSett
     screeningTasks: consumer?.desiredCount ?? 0,
     screeningConcurrency: consumer?.concurrency ?? 0,
     database: { instanceType, ...databaseClass(instanceType), storageType, ...storageBaseline(storageType) },
+    cpuNeeds: cpuNeeds(settings),
+  };
+}
+
+/**
+ * The CPUs the harness, its child processes (the release's build and load, the oracles) and Chromium take: two of their
+ * own, after every service's, where the free 4-CPU runner put them on Postgres's.
+ */
+export const HARNESS_CPUS = 2;
+
+/** The CPUs each service takes on the runner, in the layout's order. */
+export interface CpuNeeds {
+  /** The database class's vCPUs (db.t4g.medium's 2). */
+  readonly postgres: number;
+  /** ⌈vCPUs × tasks⌉ of the screening consumer (compute.screening's 2), 0 without one. */
+  readonly consumer: number;
+  /** ⌈the web task's vCPU⌉ (half a vCPU: 1); the harness runs one web container where production runs two. */
+  readonly web: number;
+  /** ⌈the platform task's vCPU⌉ (a quarter vCPU: 1). */
+  readonly platform: number;
+  /** HARNESS_CPUS. */
+  readonly harness: number;
+}
+
+/**
+ * Each service's CPUs, from the sizes environments.ts declares for the settings given (production's for the harness and
+ * the launch check): never a typed number, so a resized task moves the layout and what the runner needs with it. Reads
+ * no construct source, so the launch check computes production's layout at synthesis from the settings alone.
+ */
+export function cpuNeeds(settings: EnvironmentSettings): CpuNeeds {
+  const consumer = screeningConsumer(settings);
+  return {
+    postgres: databaseClass(settings.database.instanceType.toString()).vcpus,
+    consumer: consumer === null ? 0 : Math.ceil(taskLimit(consumer).cpus * consumer.desiredCount),
+    web: Math.ceil(taskLimit(settings.compute.web).cpus),
+    platform: Math.ceil(taskLimit(settings.compute.platform).cpus),
+    harness: HARNESS_CPUS,
   };
 }
 
@@ -142,22 +182,31 @@ export const RUNNER_RESERVE_MIB = 2560;
 export const MIN_POSTGRES_MIB = 2048;
 
 /**
- * Where everything runs on the runner (the design's §5.1): Postgres gets the database class's vCPUs (2 for db.t4g.medium)
- * on the first CPUs, which the harness and Chromium share (a listed harsher departure); the consumer's tasks get
- * ⌈vCPUs × tasks⌉ CPUs after them; web and platform share the consumer's last CPU (another). On a 4-CPU runner:
- * Postgres and the harness 0-1, the consumer 2-3, web and platform 3. Postgres's memory is the class's, or what the
- * runner leaves after every task and the reserve.
+ * Where everything runs on the runner (the design's §5.1, as the founder's ruling of 2026-10-23 on the runner changed
+ * it): each service on CPUs of its own, as production has them, laid out from cpuNeeds in order. On GitHub's 8-core
+ * runner: Postgres 0-1 (db.t4g.medium's 2 vCPU), the consumer 2-3 (compute.screening's 2 vCPU), the web 4 and the
+ * platform 5 (each its fractional quota within a CPU of its own), and the harness, its child processes and Chromium
+ * 6-7. A larger runner leaves its spare CPUs idle, so every runner measures the same layout. On the free 4-CPU runner
+ * the harness shared Postgres's CPUs and the web and the platform the consumer's last, a contention production does not
+ * have, which swung the same code's S4 from 38 to 57 s with the host's speed.
  */
-export interface PostgresLimit {
-  readonly cpus: number;
-  readonly memoryMiB: number;
-  /** The CPUs Postgres, the harness and the browsers are pinned to: the first, as many as the class has vCPUs. */
-  readonly cpuset: string;
-  /** The CPUs the consumer's tasks share: the next ones. */
-  readonly consumerCpuset: string;
-  /** The CPU web and platform share (their quotas are fractions of it): the consumer's last. */
-  readonly taskCpuset: string;
+export interface CpuLayout {
+  readonly postgres: string;
+  readonly consumer: string;
+  readonly web: string;
+  readonly platform: string;
+  /** The harness, its child processes and Chromium (the workflow pins them here with taskset: --print-harness-cpus). */
+  readonly harness: string;
 }
+
+/** The services of a layout in its order, as its sentences name them. */
+const LAYOUT_SERVICES: readonly { readonly key: keyof CpuLayout; readonly name: string }[] = [
+  { key: 'postgres', name: 'Postgres' },
+  { key: 'consumer', name: 'the screening consumer' },
+  { key: 'web', name: 'the web' },
+  { key: 'platform', name: 'the platform' },
+  { key: 'harness', name: 'the harness' },
+];
 
 /** A run of CPUs as a cpuset and taskset take it ("2-3", or "3" for one). */
 function cpuRange(first: number, count: number): string {
@@ -165,46 +214,131 @@ function cpuRange(first: number, count: number): string {
   return last === first ? String(first) : `${String(first)}-${String(last)}`;
 }
 
-/** The CPUs the consumer's tasks take: ⌈vCPUs × tasks⌉, none without a consumer. */
-export function consumerCpus(limits: ProductionLimits): number {
-  return limits.screening === null ? 0 : Math.ceil(limits.screening.cpus * limits.screeningTasks);
+/** The layout: each service's CPUs after the one before's, each at least one CPU. */
+export function cpuLayout(needs: CpuNeeds): CpuLayout {
+  let next = 0;
+  const take = (count: number): string => {
+    const range = cpuRange(next, count);
+    next += Math.max(1, count);
+    return range;
+  };
+  return { postgres: take(needs.postgres), consumer: take(needs.consumer), web: take(needs.web), platform: take(needs.platform), harness: take(needs.harness) };
 }
 
-/** The CPUs the measurement needs: the database class's vCPUs and the consumer's. */
-export function requiredCpus(limits: ProductionLimits): number {
-  return limits.database.vcpus + consumerCpus(limits);
+/** The CPUs the measurement needs: every service's own, as the layout takes them (eight for production's sizes). */
+export function requiredCpus(limits: Pick<ProductionLimits, 'cpuNeeds'>): number {
+  const { postgres, consumer, web, platform, harness } = limits.cpuNeeds;
+  return [postgres, consumer, web, platform, harness].reduce((sum, count) => sum + Math.max(1, count), 0);
+}
+
+/** The CPUs a cpuset names ("0-1,4" is 0, 1 and 4), or null when it is not a list of CPUs and ranges. */
+function cpusOf(cpuset: string): number[] | null {
+  if (!/^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/.test(cpuset)) {
+    return null;
+  }
+  return cpuset.split(',').flatMap((part) => {
+    const [first = 0, last = first] = part.split('-').map(Number);
+    return Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => first + index);
+  });
+}
+
+/** CPUs as a cpuset names them, runs of consecutive CPUs as ranges ("0-1,4"). */
+function cpusetOf(cpus: readonly number[]): string {
+  const runs: string[] = [];
+  let start = cpus[0];
+  for (let index = 0; start !== undefined && index < cpus.length; index += 1) {
+    const current = cpus[index] as number;
+    const next = cpus[index + 1];
+    if (next !== current + 1) {
+      runs.push(cpuRange(start, current - start + 1));
+      start = next;
+    }
+  }
+  return runs.join(',');
+}
+
+/** "a, b and c". */
+function listed(names: readonly string[]): string {
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
+}
+
+/**
+ * Why a layout is not one of CPUs of their own: each set of CPUs two or more services share, named once with every
+ * service on it, and a service whose CPUs are not a list of CPUs; empty when every service has CPUs of its own. The
+ * verdict fails a report whose layout this names, and the launch check refuses it.
+ */
+export function layoutProblems(layout: CpuLayout): string[] {
+  const problems: string[] = [];
+  const onCpu = new Map<number, string[]>();
+  for (const { key, name } of LAYOUT_SERVICES) {
+    const cpus = cpusOf(String(layout[key]));
+    if (cpus === null) {
+      problems.push(`${name}’s CPUs ${String(layout[key])} are not a list of CPUs`);
+      continue;
+    }
+    for (const cpu of cpus) {
+      onCpu.set(cpu, [...(onCpu.get(cpu) ?? []), name]);
+    }
+  }
+  // The CPUs each group of services shares, in the order of their first CPU.
+  const shared = new Map<string, { readonly names: readonly string[]; readonly cpus: number[] }>();
+  for (const [cpu, names] of [...onCpu.entries()].sort(([a], [b]) => a - b)) {
+    if (names.length > 1) {
+      const group = shared.get(names.join('\n')) ?? { names, cpus: [] };
+      group.cpus.push(cpu);
+      shared.set(names.join('\n'), group);
+    }
+  }
+  for (const { names, cpus } of shared.values()) {
+    problems.push(`${listed(names)} share CPU${cpus.length === 1 ? '' : 's'} ${cpusetOf(cpus)}`);
+  }
+  return problems;
+}
+
+/** The layout in one sentence, for the summary and the launch check's reasons. */
+export function layoutText(layout: CpuLayout): string {
+  const [postgres, ...rest] = LAYOUT_SERVICES.map(({ key, name }) => `${name === 'the harness' ? 'the harness with Chromium' : name} on ${key === 'postgres' ? 'CPUs ' : ''}${String(layout[key])}`);
+  return `${postgres ?? ''}, ${listed(rest)}`;
+}
+
+/** Postgres's limits on the runner: the class's vCPUs on its own CPUs, and its memory. */
+export interface PostgresLimit {
+  readonly cpus: number;
+  /** The class's memory, or what the runner leaves after every task and the reserve. */
+  readonly memoryMiB: number;
+  /** Postgres's own CPUs: the layout's first, as many as the class has vCPUs. */
+  readonly cpuset: string;
 }
 
 export function postgresLimit(runner: Runner, limits: ProductionLimits): PostgresLimit {
   const tasksMiB = limits.web.memoryMiB + limits.platform.memoryMiB + (limits.screening?.memoryMiB ?? 0) * limits.screeningTasks;
   const memory = Math.min(limits.database.memoryMiB, runner.memoryMiB - tasksMiB - RUNNER_RESERVE_MIB);
-  const postgresCpus = limits.database.vcpus;
-  const consumer = Math.max(1, consumerCpus(limits));
-  return {
-    cpus: postgresCpus,
-    memoryMiB: memory,
-    cpuset: cpuRange(0, postgresCpus),
-    consumerCpuset: cpuRange(postgresCpus, consumer),
-    taskCpuset: String(postgresCpus + consumer - 1),
-  };
+  return { cpus: limits.database.vcpus, memoryMiB: memory, cpuset: cpuLayout(limits.cpuNeeds).postgres };
 }
 
 /**
- * The CPUs the workflow pins the harness, its child processes and Chromium to (`--print-harness-cpus`): Postgres's,
- * cut to the CPUs the runner has, so a runner too small still starts the harness, which then reports it.
+ * The CPUs the workflow pins the harness, its child processes and Chromium to (`--print-harness-cpus`): the layout's
+ * own, never a service's. On a runner too small for the layout, every CPU it has, so the harness still starts and
+ * reports it ("runner too small") instead of taskset refusing CPUs the runner lacks.
  */
 export function harnessCpus(runner: Runner, limits: ProductionLimits): string {
-  return cpuRange(0, Math.max(1, Math.min(runner.cpus, limits.database.vcpus)));
+  return runner.cpus >= requiredCpus(limits) ? cpuLayout(limits.cpuNeeds).harness : cpuRange(0, runner.cpus);
 }
 
-/** Why the runner is too small to measure on; empty when it is not. */
+/** Why the runner is too small to measure on, each service's need named; empty when it is not. */
 export function runnerTooSmall(runner: Runner, limits: ProductionLimits): string[] {
   const reasons: string[] = [];
   const needed = requiredCpus(limits);
   if (runner.cpus < needed) {
-    reasons.push(
-      `the runner has ${String(runner.cpus)} CPU${runner.cpus === 1 ? '' : 's'}; the test needs ${String(needed)} (${String(limits.database.vcpus)} for Postgres, db.${limits.database.instanceType}’s, and ${String(consumerCpus(limits))} for the screening consumer)`,
-    );
+    const needs = limits.cpuNeeds;
+    const each = [
+      `${String(needs.postgres)} for Postgres (db.${limits.database.instanceType}’s)`,
+      `${String(needs.consumer)} for the screening consumer (compute.screening’s)`,
+      `${String(needs.web)} for the web`,
+      `${String(needs.platform)} for the platform`,
+      `${String(needs.harness)} for the harness, its child processes and Chromium`,
+    ];
+    reasons.push(`the runner has ${String(runner.cpus)} CPU${runner.cpus === 1 ? '' : 's'}; the test needs ${String(needed)}, each service on CPUs of its own: ${listed(each)}`);
   }
   const postgres = postgresLimit(runner, limits);
   if (postgres.memoryMiB < MIN_POSTGRES_MIB) {

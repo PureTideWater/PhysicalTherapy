@@ -37,7 +37,9 @@ import {
   SCENARIO_CAP_MS,
   SCENARIO_START_DEADLINE_MS,
   STALL_MS,
+  cpuLayout,
   harnessCpus,
+  layoutText,
   postgresLimit,
   productionLimits,
   runnerTooSmall,
@@ -99,7 +101,8 @@ import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, s
  * 10. remove Postgres; write screening-capacity.json, its SHA-256 (screening-capacity.sha256, as the launch check
  *     computes it) and summary.md (and the job summary in CI); exit non-zero on any failing check.
  *
- * The harness and Chromium run on the CPUs the workflow gives them (taskset), never the tasks' CPU. Nothing it writes
+ * The harness and Chromium run on the CPUs the workflow gives them (taskset; 6-7 on the 8-core runner), never a
+ * service's: every service has CPUs of its own (the founder's ruling of 2026-10-23 on the runner). Nothing it writes
  * carries a link, a token or a row; the services' saved logs (<out>/logs) hold IDs, codes and numbers, links masked.
  */
 
@@ -767,6 +770,8 @@ async function main(): Promise<number> {
   const limits = productionLimits();
   const rule = timeRule(environmentSettings('production'), RUNNER_TO_FARGATE);
   const pgLimit = postgresLimit(runner, limits);
+  // Each service on CPUs of its own (the founder's ruling of 2026-10-23 on the runner), from environments.ts's sizes.
+  const layout = cpuLayout(limits.cpuNeeds);
   const expected = {
     web: limits.web,
     platform: limits.platform,
@@ -774,6 +779,7 @@ async function main(): Promise<number> {
     screeningTasks: limits.screeningTasks,
     postgres: pgLimit,
     storage: { iops: limits.database.iops, bytesPerSecond: limits.database.bytesPerSecond },
+    layout,
   };
   const consumer: ConsumerMeasure | null =
     limits.screening === null ? null : { tasks: limits.screeningTasks, cpus: limits.screening.cpus, memoryMiB: limits.screening.memoryMiB, concurrency: limits.screeningConcurrency };
@@ -794,7 +800,8 @@ async function main(): Promise<number> {
   // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
-  const affinity = /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync('/proc/self/status', 'utf8'))?.[1] ?? 'unknown';
+  // The CPUs the workflow pinned the harness to (taskset), recorded and held to the layout's harness CPUs by the verdict.
+  const affinity = /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync('/proc/self/status', 'utf8'))?.[1] ?? null;
   // The measured images' IDs, which the launch check compares with the images being deployed (decision 13): on the
   // runner's classic (overlay2) image store an image's ID is its config's SHA-256, the config digest the launch check
   // reads from ECR's manifest (CI's capacity log shows it equal to buildx's containerimage.config.digest). Under the
@@ -811,6 +818,7 @@ async function main(): Promise<number> {
       consumer,
       staticAssetOrigin: opts.staticAssetOrigin,
       runner,
+      harnessAffinity: affinity,
       expected,
       applied,
       runnerProblems,
@@ -836,7 +844,8 @@ async function main(): Promise<number> {
     writeFileSync(path.join(opts.out, 'summary.md'), markdown(full, rule));
     return full;
   };
-  say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity}; runtime ${opts.runtime}`);
+  say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity ?? 'unknown'}; runtime ${opts.runtime}`);
+  say(`layout: ${layoutText(layout)}`);
   let browser: Browser | null = null;
   let owner: OwnerConnection | null = null;
   try {
@@ -860,7 +869,7 @@ async function main(): Promise<number> {
     const built = await ensureRelease(opts.releaseDir ?? path.join(opts.out, 'release'));
     release = { ...release, releaseNo: built.releaseNo, manifestSha256: built.manifestSha256, records: built.records };
     say(`release ${String(release.releaseNo)}: ${String(release.records)} records`);
-    const urls = await runtime.startPostgres(pgLimit, expected.storage, NETWORK_DELAY_MS);
+    const urls = await runtime.startPostgres(pgLimit, expected.storage, NETWORK_DELAY_MS, layout.platform);
     let ownerService = urls.serviceUrl;
     let ownerHarness = urls.harnessUrl;
     if (opts.runtime === 'docker') {
@@ -887,16 +896,16 @@ async function main(): Promise<number> {
       name: 'web',
       env: webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets, logins, { staticAssetOrigin: opts.staticAssetOrigin, screeningSlots: limits.screeningTasks * limits.screeningConcurrency }),
       limit: limits.web,
-      cpuset: pgLimit.taskCpuset,
+      cpuset: layout.web,
       command: serviceCommand('web'),
     };
-    const platform: ServiceSpec = { name: 'platform', env: platformEnvironment(ownerService, runtime.webOrigin, serviceDirs, logins), limit: limits.platform, cpuset: pgLimit.taskCpuset, command: serviceCommand('platform') };
+    const platform: ServiceSpec = { name: 'platform', env: platformEnvironment(ownerService, runtime.webOrigin, serviceDirs, logins), limit: limits.platform, cpuset: layout.platform, command: serviceCommand('platform') };
     const screening = limits.screening;
     const consumers: ServiceSpec[] = screeningServices(limits.screeningTasks).map((name) => ({
       name,
       env: screeningEnvironment(ownerService, runtime.webOrigin, serviceDirs, limits.screeningConcurrency, logins),
       limit: screening,
-      cpuset: pgLimit.consumerCpuset,
+      cpuset: layout.consumer,
       command: serviceCommand(name),
     }));
     say(`starting web, platform and the screening consumer (${String(consumers.length)} task of ${String(screening.cpus)} vCPU and ${String(screening.memoryMiB)} MiB, ${String(limits.screeningConcurrency)} at once)`);

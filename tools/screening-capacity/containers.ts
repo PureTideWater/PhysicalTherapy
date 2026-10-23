@@ -135,8 +135,11 @@ export interface Runtime {
   readonly cgroupVersion: CgroupVersion;
   /** The directory the services share with the harness (outbox, local stores), as the harness sees it and as the services see it. */
   readonly dataDir: { readonly host: string; readonly service: string };
-  /** Starts Postgres; its admin URL as the harness reaches it and as the services do. */
-  startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }>;
+  /**
+   * Starts Postgres; its admin URL as the harness reaches it and as the services do. `clientCpuset` is where the client
+   * that measures the round trip runs (the platform's CPU: the round trip a service sees).
+   */
+  startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number, clientCpuset: string): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }>;
   /** Restarts Postgres with a cold cache (the operating system's page cache dropped where the runner allows); what was done. */
   restartPostgres(): Promise<ColdStart>;
   /** The migration task: the migrations, then the logins, as the owner. A failure is a CommandError with its stderr. */
@@ -311,15 +314,15 @@ export class DockerRuntime implements Runtime {
     return parent.trim() === '' ? partition : `/dev/${parent.trim()}`;
   }
 
-  private postgresLimit: PostgresLimit | null = null;
+  private clientCpuset = '0';
   private delayMs = 0;
 
   private get harnessUrl(): string {
     return `postgres://postgres:test@127.0.0.1:${String(this.postgresPort)}/postgres`;
   }
 
-  async startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }> {
-    this.postgresLimit = limit;
+  async startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number, clientCpuset: string): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }> {
+    this.clientCpuset = clientCpuset;
     this.delayMs = delayMs;
     this.labels.set('postgres', 'run');
     await docker('network', 'create', this.network).catch(() => '');
@@ -503,7 +506,7 @@ export class DockerRuntime implements Runtime {
     };
     const ioText = await docker('exec', 'tp-capacity-postgres', 'cat', '/sys/fs/cgroup/io.max').catch(() => '');
     const line = ioMax(ioText)[0];
-    const { stdout: timing } = await exec('sh', ['-c', `printf '%s\\n' "$1" | docker run --rm -i --network ${this.network} --cpuset-cpus=${this.postgresLimit?.taskCpuset ?? '0'} postgres:18 psql -X -q postgres://postgres:test@db:5432/postgres`, 'sh', ROUND_TRIP_SCRIPT]).catch(() => ({ stdout: '' }));
+    const { stdout: timing } = await exec('sh', ['-c', `printf '%s\\n' "$1" | docker run --rm -i --network ${this.network} --cpuset-cpus=${this.clientCpuset} postgres:18 psql -X -q postgres://postgres:test@db:5432/postgres`, 'sh', ROUND_TRIP_SCRIPT]).catch(() => ({ stdout: '' }));
     return {
       containers: [...(await Promise.all([...this.services].map((name) => inspect(name)))), await inspect('postgres')],
       ioMax: line === undefined ? null : { riops: line.riops, wiops: line.wiops, rbps: line.rbps, wbps: line.wbps },

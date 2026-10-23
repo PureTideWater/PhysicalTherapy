@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 
 import { type EnvironmentSettings, environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
-import { RUNNER_TO_FARGATE, screeningConsumer, taskLimit } from './limits';
+import { type CpuLayout, RUNNER_TO_FARGATE, cpuLayout, cpuNeeds, layoutText, screeningConsumer, taskLimit } from './limits';
 import { REPEATED_SCENARIO, REPORT_FORMAT, type Report, middleRunNote, repeatedScenario, sizing, timeRule, verdict } from './report';
 
 /**
@@ -30,10 +30,15 @@ import { REPEATED_SCENARIO, REPORT_FORMAT, type Report, middleRunNote, repeatedS
  * previews the same check: it prints the value the deploy will compute, or names each reason and exits non-zero. It
  * holds the report to:
  *
- * - its format (tp-screening-capacity/5), the Docker runtime (the process runtime cannot limit Postgres), a passing
+ * - its format (tp-screening-capacity/6), the Docker runtime (the process runtime cannot limit Postgres), a passing
  *   verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again, S4's
  *   time on the middle of its three runs (the founder's ruling of 2026-10-23), the middle run the report names being
- *   the one its measurements give; a report in an older format, S4 measured once, is refused;
+ *   the one its measurements give; a report in an older format (S4 measured once, or /5's free 4-CPU runner, where
+ *   services shared CPUs) is refused;
+ * - production's layout (the founder's ruling of 2026-10-23 on the runner): the layout the report measured, which the
+ *   verdict holds the containers' cpusets and the harness's affinity to, is the one this checkout derives from
+ *   production's settings (cpuLayout: Postgres 0-1, the consumer 2-3, the web 4, the platform 5, the harness 6-7), each
+ *   service on CPUs of its own, so production opens only on a measurement of production's layout;
  * - the tag's commit;
  * - both images, by config digest: each image's config digest as ECR's manifest names it (`docker buildx imagetools
  *   inspect --raw`, an index resolved to its one linux/amd64 image manifest, the platform the release builds and ECS
@@ -159,6 +164,13 @@ function check(input: LaunchInput): LaunchResult {
       `consumer: the report measured ${consumer === null ? 'none' : `${String(consumer.tasks)} × ${String(consumer.cpus)} vCPU, ${String(consumer.memoryMiB)} MiB, ${String(consumer.concurrency)} at once`}, and production declares ${String(declared.desiredCount)} × ${String(declared.cpu / 1024)} vCPU, ${String(declared.memoryMiB)} MiB, ${String(declared.concurrency)} at once`,
     );
   }
+  // Production's layout, each service on CPUs of its own: a report measured on any other (a shared CPU, or another
+  // service's size) is no measurement of production's (the founder's ruling of 2026-10-23 on the runner).
+  const layout = parsed.expected.layout;
+  const declaredLayout = cpuLayout(cpuNeeds(input.settings));
+  if (!sameLayout(layout, declaredLayout)) {
+    reasons.push(`layout: the report measured ${layoutText(layout)}, and decision 13 opens production only on production's layout: ${layoutText(declaredLayout)}`);
+  }
   if (reasons.length > 0) {
     return { ok: false, reasons };
   }
@@ -167,6 +179,11 @@ function check(input: LaunchInput): LaunchResult {
   const upload = String(worst.worstUpload);
   const notes = worst.question ? [`sizing: the worst time, ${upload}’s ${((worst.worstMs ?? 0) / 1000).toFixed(1)} s${middleRunNote(upload, middle, '’')}, is above 44 s (open item O9: the founder’s sizing question)`] : [];
   return { ok: true, value: `${input.tag}:${reportSha256(input.reportText)}`, notes };
+}
+
+/** Whether two layouts put every service on the same CPUs. */
+function sameLayout(measured: CpuLayout, declared: CpuLayout): boolean {
+  return (Object.keys(declared) as (keyof CpuLayout)[]).every((key) => measured[key] === declared[key]);
 }
 
 /** An image manifest's media types: the OCI one and Docker's v2 schema 2. */

@@ -114,11 +114,13 @@ describe('the containers’ environments', () => {
     expect(built).toMatchObject({ STATIC_ASSET_ORIGIN: 'https://static.capacity.invalid', SCREENING_SLOTS: '3' });
   });
 
-  it('lists the departures the consumer’s layout adds, each with the way it moves the measurement', () => {
-    expect(DEPARTURES.map((departure) => departure.direction)).toEqual(['harsher', 'harsher', 'harsher', 'harsher', 'equal or harsher', 'gentler', 'gentler', 'none', 'none']);
-    expect(DEPARTURES[0]?.what).toContain('first two CPUs');
-    expect(DEPARTURES[1]?.what).toContain('consumer’s last CPU');
-    expect(DEPARTURES[5]?.what).toContain('CPU credits');
+  it('lists the departures, each with the way it moves the measurement, and none that shares a CPU (the founder’s ruling of 2026-10-23 on the runner)', () => {
+    expect(DEPARTURES.map((departure) => departure.direction)).toEqual(['none', 'harsher', 'harsher', 'equal or harsher', 'gentler', 'gentler', 'none', 'none']);
+    expect(DEPARTURES[0]?.what).toContain('CPUs of its own');
+    // The free 4-CPU runner's two harsher departures, Postgres's CPUs shared with the harness and the web's and the
+    // platform's with the consumer, are gone with it.
+    expect(DEPARTURES.filter((departure) => /\bshare/.test(departure.what))).toEqual([]);
+    expect(DEPARTURES[4]?.what).toContain('CPU credits');
   });
 
   it('gives a run on a shared server logins of its own, which every service and the migration task use', () => {

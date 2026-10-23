@@ -6,9 +6,11 @@ name: screening-capacity
 # platform; the screening consumer, WORKER_JOBS=screening, at 2 vCPU and 4 GiB pricing three at once), Postgres at
 # db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms delay each way, the SYNTHETIC scale release
 # 900100 and the practice and worst 50,000-row uploads, alone and three at once with a small one behind them. Time is enforced: above 48 s on the runner fails (decisions 13 to 16, the founder's
-# rulings of 2026-10-20; PR 6b-3). The three worst at once (S4) run three times and their time is judged on the middle
-# run, every other check in all three (the founder's ruling of 2026-10-23: the free 4-CPU runner kept, median of 3).
-# Synthetic data only, no credentials.
+# rulings of 2026-10-20; PR 6b-3). The measurement runs on GitHub's 8-core larger runner with Postgres, the consumer,
+# the web, the platform and the harness each on CPUs of their own, as production has them (the founder's second ruling
+# of 2026-10-23, "8-core runner"). The three worst at once (S4) run three times and their time is judged on the middle
+# run, every other check in all three (the founder's first ruling of 2026-10-23, median of 3, kept on the larger
+# runner). Synthetic data only, no credentials.
 #
 # A required check from PR 6b-3 on (the founder's Q8 of 2026-10-21; the founder sets the ruleset, runbook
 # screening-capacity "Making it required"): every pull request runs the workflow, and its "screening-capacity gate" job
@@ -115,12 +117,14 @@ jobs:
     if: needs.changes.outputs.measure == 'true'
     outputs:
       sizing: ${{ steps.measure.outputs.sizing }}
-    # A 4-CPU runner: Postgres keeps db.t4g.medium's 2 vCPU and the consumer its 2 (a smaller one stops as "runner too
-    # small"). A public repository's standard runner has 4. Once the repository is private its standard runner has 2,
-    # so this label (and the release's capacity job's, the same runner) becomes the 4-core larger runner the founder
-    # creates (Q1 (d)), pinned to its image like every label here (audit #19); until then a private run is refused as
-    # too small and the screening cannot open.
-    runs-on: ubuntu-24.04
+    # GitHub's 8-core larger runner (the founder's ruling of 2026-10-23 on the runner; Linux x64, 8 cores, 32 GB), which
+    # the founder creates under this name with the Ubuntu 24.04 image chosen in its settings, so its image is pinned
+    # there as ubuntu-24.04 pins the other jobs' (audit #19). Each service on CPUs of its own: Postgres 0-1 (db.t4g.medium's
+    # 2 vCPU), the consumer 2-3, the web 4, the platform 5, the harness and Chromium 6-7 (limits.ts, cpuLayout); a runner
+    # with fewer than 8 CPUs stops as "runner too small". The release's capacity job runs on the same runner. Until the
+    # runner exists this job waits in GitHub's queue and the gate does not pass (docs/runbooks/screening-capacity.md,
+    # "The 8-core runner").
+    runs-on: paidwhole-8core
     # A run takes 30 to 60 minutes (the scale release, two image builds, five scenarios, S4 three times); a hung scenario
     # stops at 100 instead of GitHub's 360 (docs/adr/0063). S4's two more runs (the founder's ruling of 2026-10-23) need
     # about 3 minutes: CI's S4 took 59 s on 19aa09c and 78 s on 54ec890 from its cold restart (about 20 s) to S5's start;
@@ -187,8 +191,8 @@ jobs:
           path: ${{ runner.temp }}/scale-release
           key: ${{ steps.scale-release.outputs.cache-primary-key }}
 
-      # The harness, its child processes and Chromium on Postgres's CPUs (0-1 on a 4-CPU runner), never the consumer's
-      # (2-3) or the CPU web and platform share (3): the layout's own answer (limits.ts, harnessCpus).
+      # The harness, its child processes and Chromium on CPUs of their own (6-7 on the 8-core runner), never a service's:
+      # the layout's own answer (limits.ts, harnessCpus), which the report records and the verdict holds them to.
       - name: Measure under production limits
         id: measure
         run: |

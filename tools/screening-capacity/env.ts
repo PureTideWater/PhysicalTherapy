@@ -46,8 +46,10 @@ export const NODE_ENV_READS: readonly NodeEnvRead[] = [
 
 /** What the harness changes from production, and which way each change moves the measurement. */
 export const DEPARTURES: readonly { readonly what: string; readonly direction: 'harsher' | 'equal or harsher' | 'gentler' | 'none' }[] = [
-  { what: 'Postgres gets db.t4g.medium’s 2 vCPU and 4 GiB on the runner’s first two CPUs, which the harness and Chromium share', direction: 'harsher' },
-  { what: 'web and platform share the screening consumer’s last CPU (their fractional-vCPU quotas inside it)', direction: 'harsher' },
+  {
+    what: 'each service on CPUs of its own, as production has them (the founder’s ruling of 2026-10-23 on the runner): Postgres db.t4g.medium’s 2 vCPU on CPUs 0-1, the consumer’s 2 on 2-3, the web’s half vCPU within CPU 4, the platform’s quarter within CPU 5, and the harness and Chromium on 6-7 (the runner’s logical CPUs: which of them are threads of one core is the host’s)',
+    direction: 'none',
+  },
   { what: 'one web container takes every upload where production runs two web tasks', direction: 'harsher' },
   { what: 'a 2 ms round trip to Postgres, more than an in-VPC trip plus Multi-AZ’s synchronous commit', direction: 'harsher' },
   { what: 'gp3’s I/O baseline without its burst', direction: 'equal or harsher' },
