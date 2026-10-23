@@ -247,10 +247,12 @@ export const SCENARIO_CAP_MS = 30 * 60_000;
  */
 export const STALL_MS = 5 * 60_000;
 /**
- * The harness's own deadlines inside the job's 90 minutes (screening-capacity.yml's timeout-minutes; the image builds,
+ * The harness's own deadlines inside the job's 100 minutes (screening-capacity.yml's timeout-minutes; the image builds,
  * the install, the browser and the release take up to about 15 before the harness starts): no scenario starts after 60
  * minutes of the harness, and one still running at 70 ends there, its uploads not emailed by then failing, so the oracle
- * and the report always have time to be written. The report is also written after every scenario.
+ * and the report always have time to be written. The report is also written after every scenario. S4's two more runs
+ * (the founder's ruling of 2026-10-23) add about 3 minutes to a harness that took 9 to 11 on CI, far inside them, so
+ * the deadlines stay where they were and the job's 10 more minutes are margin.
  */
 export const SCENARIO_START_DEADLINE_MS = 60 * 60_000;
 export const HARNESS_DEADLINE_MS = 70 * 60_000;

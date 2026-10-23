@@ -55,9 +55,12 @@ import {
   type UploadMeasure,
   markdown,
   oracleKind,
+  repeatedSummary,
   report,
+  scenarioLabel,
   sizingQuestion,
   timeRule,
+  uploadLabel,
   uploadStart,
 } from './report';
 import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, typedZip, uploadCsv } from './uploads';
@@ -78,8 +81,10 @@ import { SENT_PAGE, type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, s
  *     specialist;
  *  5. start web, platform and the consumer and wait for the health route and each worker's start line; read the limits
  *     back;
- *  6. run S1 to S5: S1, S4 and S5 first stop every service, restart Postgres with the page cache dropped (recorded) and
- *     start them again; a fresh consumer where a scenario says; each upload's page parses its file first (not timed),
+ *  6. run S1 to S5, S4 three times (S4#1 to S4#3, each with the same uploads from prospects of their own; its time is
+ *     judged on the middle run, the founder's ruling of 2026-10-23): S1, each S4 run and S5 first stop every service,
+ *     restart Postgres with the page cache dropped (recorded) and start them again; a fresh consumer where a scenario
+ *     says; each upload's page parses its file first (not timed),
  *     then the uploads are submitted (three at once in S4 and S5, and the small one once the large runs' jobs are
  *     queued); with a static asset origin, the pages' requests to it are served from the web container's own
  *     /_next/static/; memory sampled every 500 ms, the outbox polled every 250 ms, a run in pricing that records no
@@ -465,32 +470,34 @@ async function routeStaticOrigin(context: BrowserContext, origin: string, webOri
 
 async function runScenario(spec: ScenarioSpec, index: number, context: Context, limits: Readonly<Record<string, number>>): Promise<{ readonly measure: ScenarioMeasure; readonly runs: Map<string, string> }> {
   const { runtime, browser, owner } = context;
+  // S4#2 for the repeated scenario's second run, in the log, the services' log files and the report.
+  const label = scenarioLabel(spec.id, spec.repetition);
   let coldStart: ColdStart | null = null;
   if (spec.freshPostgres) {
     // A cold database: the services stop first (their pools would lose every connection), the harness lets go of its
     // own, Postgres restarts with the page cache dropped and the delay applied again, and every service starts fresh.
-    say(`${spec.id}: a cold Postgres (restarted, page cache dropped), then web, platform and the consumer fresh`);
+    say(`${label}: a cold Postgres (restarted, page cache dropped), then web, platform and the consumer fresh`);
     await runtime.stopServices();
     await owner.end();
     coldStart = await runtime.restartPostgres();
-    await startWeb(runtime, context.web, spec.id);
-    await startWorker(runtime, context.platform, spec.id);
-    await startConsumers(runtime, context.consumers, spec.id);
+    await startWeb(runtime, context.web, label);
+    await startWorker(runtime, context.platform, label);
+    await startConsumers(runtime, context.consumers, label);
   } else {
     // A service that exited in an earlier scenario (counted there) is started again, as production's service would
     // start a new task, so one failure does not leave the later scenarios unmeasured.
     if (!(await runtime.status('web')).running) {
-      say(`${spec.id}: web had exited; starting it again`);
-      await startWeb(runtime, context.web, spec.id);
+      say(`${label}: web had exited; starting it again`);
+      await startWeb(runtime, context.web, label);
     }
     if (!(await runtime.status('platform')).running) {
-      say(`${spec.id}: platform had exited; starting it again`);
-      await startWorker(runtime, context.platform, spec.id);
+      say(`${label}: platform had exited; starting it again`);
+      await startWorker(runtime, context.platform, label);
     }
     const exited = (await Promise.all(context.consumers.map(async (consumer) => (await runtime.status(consumer.name)).running))).some((running) => !running);
     if (spec.freshConsumer || exited) {
-      say(`${spec.id}: a fresh consumer${exited ? ' (a task had exited)' : ''}`);
-      await startConsumers(runtime, context.consumers, spec.id);
+      say(`${label}: a fresh consumer${exited ? ' (a task had exited)' : ''}`);
+      await startConsumers(runtime, context.consumers, label);
     }
   }
   const postgresBefore = await runtime.postgresStatus();
@@ -523,7 +530,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     await page.locator('[data-state="file-ready"]').waitFor({ timeout: 600_000 });
     prepared.push(entry);
   }
-  say(`${spec.id}: ${String(prepared.length)} pages ready; submitting`);
+  say(`${label}: ${String(prepared.length)} pages ready; submitting`);
   const measured: readonly ServiceName[] = ['web', 'platform', ...context.consumers.map((consumer) => consumer.name)];
   const samples = new Map<ServiceName, number[]>(measured.map((name) => [name, []]));
   let sampling = true;
@@ -564,7 +571,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       }
       await sleep(500);
     }
-    say(`${spec.id}: the large uploads' jobs are queued after ${((Date.now() - waitUntilQueued) / 1000).toFixed(1)} s; sending the small one behind them`);
+    say(`${label}: the large uploads' jobs are queued after ${((Date.now() - waitUntilQueued) / 1000).toFixed(1)} s; sending the small one behind them`);
     await Promise.all(behind.map(click));
   }
   const sent = [...(await largeSent), ...(await Promise.allSettled(behind.map(sentPage)))];
@@ -573,7 +580,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     const entry = order[at];
     if (result.status === 'rejected' && entry !== undefined) {
       entry.accepted = false;
-      say(`${spec.id}: upload ${entry.upload.id} was not accepted by the page`);
+      say(`${label}: upload ${entry.upload.id} was not accepted by the page`);
     }
   });
   const mails = new Map<string, Mail>();
@@ -735,7 +742,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
   const platformPricedRuns = [...runs.values()].filter((run) => platformRuns.has(run)).length;
   return {
     measure: {
-      id: spec.id,
+      id: label,
+      scenario: spec.id,
+      repetition: spec.repetition,
       what: spec.what,
       coldStart,
       uploads,
@@ -900,11 +909,11 @@ async function main(): Promise<number> {
     const runIds = new Map<string, string>();
     for (const [index, spec] of specs.entries()) {
       if (Date.now() - harnessStart > SCENARIO_START_DEADLINE_MS) {
-        notStarted.push(...specs.slice(index).map((item) => item.id));
+        notStarted.push(...specs.slice(index).map((item) => scenarioLabel(item.id, item.repetition)));
         say(`deadline: ${notStarted.join(', ')} not started`);
         break;
       }
-      say(`${spec.id}: ${spec.what}`);
+      say(`${scenarioLabel(spec.id, spec.repetition)}: ${spec.what}`);
       const { measure, runs } = await runScenario(
         spec,
         index,
@@ -913,11 +922,12 @@ async function main(): Promise<number> {
       );
       scenarioMeasures.push(measure);
       for (const [upload, run] of runs) {
-        runIds.set(upload, run);
+        // S1-1 as the oracle names it; S4#2 S4-1 for a run of the repeated scenario, so no run's ID replaces another's.
+        runIds.set(uploadLabel(measure, { id: upload }), run);
       }
       for (const upload of measure.uploads) {
         const elapsed = upload.submittedMs !== null && upload.emailedMs !== null ? ((upload.emailedMs - upload.submittedMs) / 1000).toFixed(1) : 'none';
-        say(`${upload.id} (${upload.shape}): ${elapsed} s to email (logged ${upload.logged === null ? 'none' : (upload.logged.elapsedMs / 1000).toFixed(1)}, ${upload.waitReason ?? upload.logged?.tier ?? 'no tier'}); run ${upload.runStatus ?? 'none'}`);
+        say(`${uploadLabel(measure, upload)} (${upload.shape}): ${elapsed} s to email (logged ${upload.logged === null ? 'none' : (upload.logged.elapsedMs / 1000).toFixed(1)}, ${upload.waitReason ?? upload.logged?.tier ?? 'no tier'}); run ${upload.runStatus ?? 'none'}`);
       }
       write(false);
     }
@@ -975,12 +985,16 @@ async function main(): Promise<number> {
   if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   }
+  // Every S4 run's times and the middle one, which its time is judged on (the founder's ruling of 2026-10-23).
+  if (full.repeated.runs.length > 0) {
+    say(repeatedSummary(full.repeated));
+  }
   say(`verdict: ${full.verdict.pass ? 'pass' : 'fail'} (time ${full.verdict.time})`);
   for (const reason of full.verdict.reasons) {
     say(`  ${reason}`);
   }
   if (full.sizing.question) {
-    const question = sizingQuestion(full.sizing);
+    const question = sizingQuestion(full.sizing, full.repeated.middle);
     say(`sizing question for the founder (O9): ${question}`);
     // On the pull request's checks too, not in the log alone: a warning annotation here, and the gate prints it again.
     process.stdout.write(`::warning title=Sizing question (O9)::${question}\n`);

@@ -12,6 +12,7 @@ import {
   screeningConsumer,
 } from './limits';
 import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
+import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS } from './scenario-runs';
 
 /**
  * The capacity test's verdict and report (audit #53 part 1; docs/adr/0062, "Capacity under production limits"; the
@@ -23,17 +24,21 @@ import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
  * result, a stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the
  * platform pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
  * that left for the static origin, a submission time not captured, an oracle mismatch or an oracle that compared fewer
- * rows than the upload's Medicare rows, a partial run: every one of S1 to S5 must be measured, and a declared screening
- * consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
+ * rows than the upload's Medicare rows, a partial run: every one of S1 to S5 must be measured, S4 three times, and a
+ * declared screening consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
  * environments.ts declares no screening consumer; with it declared (PR 6b-3), above 48 s on the runner fails
- * ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it ("promise"). The report
- * holds counts, times, hashes and image IDs only: no row, link, token or address.
+ * ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it ("promise"). S4 runs three
+ * times (S4#1 to S4#3) and its time is judged on the middle run alone, ordered by each run's worst large upload; every
+ * other check holds in all three, and every other scenario's time is judged as measured, once (the founder's ruling of
+ * 2026-10-23, "Stay free: median of 3"). The report holds counts, times, hashes and image IDs only: no row, link, token
+ * or address.
  */
 
-export const REPORT_FORMAT = 'tp-screening-capacity/4';
+/** tp-screening-capacity/5: S4 three times, each run its own scenario with its repetition, and the middle run named. */
+export const REPORT_FORMAT = 'tp-screening-capacity/5';
 
-/** The scenarios a passing run measures, every one of them. */
-export const ALL_SCENARIOS = ['S1', 'S2', 'S3', 'S4', 'S5'] as const;
+// The scenarios, S4's three runs and their names (scenario-runs.ts, which the uploads share).
+export { ALL_SCENARIOS, MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, type ScenarioId, scenarioLabel } from './scenario-runs';
 
 /**
  * The uploads compared with an oracle: the worst shape priced from a fresh platform's first read (S1-1), the practice
@@ -244,7 +249,12 @@ export interface ContainerMeasure {
 }
 
 export interface ScenarioMeasure {
+  /** The scenario as the report and the log name it: S1, or S4#2 for the repeated scenario's second run. */
   readonly id: string;
+  /** The scenario it runs (S1 to S5). */
+  readonly scenario: string;
+  /** Which run of the repeated scenario (1 to REPETITIONS), or null for a scenario run once. */
+  readonly repetition: number | null;
   readonly what: string;
   /** The cold start asked for before it (null when none was): whether Postgres was restarted and the page cache dropped. */
   readonly coldStart: { readonly restarted: boolean; readonly cacheDropped: boolean } | null;
@@ -320,6 +330,86 @@ export interface Verdict {
   readonly reasons: readonly string[];
 }
 
+/** One run of the repeated scenario: its uploads' times to email and its worst large upload's (null when one has none). */
+export interface RepetitionTimes {
+  readonly id: string;
+  readonly worstLargeUpload: string | null;
+  readonly worstLargeMs: number | null;
+  readonly uploads: readonly { readonly id: string; readonly ms: number | null }[];
+}
+
+/** The repeated scenario's runs as measured and its middle run, the one its time is judged on (null without all three). */
+export interface RepeatedScenario {
+  readonly scenario: string;
+  readonly middle: string | null;
+  readonly runs: readonly RepetitionTimes[];
+}
+
+/** An upload's time from its submission to its email, or null when it has no submission or no email. */
+function elapsedMs(upload: Pick<UploadMeasure, 'submittedMs' | 'emailedMs'>): number | null {
+  return upload.submittedMs === null || upload.emailedMs === null ? null : upload.emailedMs - upload.submittedMs;
+}
+
+/**
+ * The repeated scenario's runs and its middle run (the founder's ruling of 2026-10-23): the runs ordered by their worst
+ * large upload's time to email, a run with a large upload never emailed (or never submitted) as the slowest, ties in
+ * the order they ran; the middle of the three is the one whose four uploads, the small one included, the time verdict
+ * and the sizing question judge. With fewer or more than REPETITIONS runs no middle is taken, and every run's time is
+ * judged (such a run fails as partial anyway).
+ */
+export function repeatedScenario(scenarios: readonly ScenarioMeasure[]): RepeatedScenario {
+  const runs = scenarios
+    .filter((scenario) => scenario.scenario === REPEATED_SCENARIO && scenario.repetition !== null)
+    .map((scenario): RepetitionTimes => {
+      let worst: { readonly id: string; readonly ms: number | null } | null = null;
+      for (const upload of scenario.uploads.filter((item) => !item.behind)) {
+        const ms = elapsedMs(upload);
+        if (worst === null || (worst.ms !== null && (ms === null || ms > worst.ms))) {
+          worst = { id: upload.id, ms };
+        }
+      }
+      return { id: scenario.id, worstLargeUpload: worst?.id ?? null, worstLargeMs: worst?.ms ?? null, uploads: scenario.uploads.map((upload) => ({ id: upload.id, ms: elapsedMs(upload) })) };
+    });
+  // A stable sort: runs that tie keep the order they ran in (two never-emailed runs compare equal).
+  const slowness = (run: RepetitionTimes) => run.worstLargeMs ?? Number.POSITIVE_INFINITY;
+  const ordered = [...runs].sort((a, b) => (slowness(a) === slowness(b) ? 0 : slowness(a) - slowness(b)));
+  const middle = runs.length === REPETITIONS ? (ordered[(REPETITIONS - 1) / 2]?.id ?? null) : null;
+  return { scenario: REPEATED_SCENARIO, middle, runs };
+}
+
+/** Whether a scenario's uploads are judged on time: every scenario run once, and the repeated one's middle run alone. */
+function judgedOnTime(scenario: ScenarioMeasure, middle: string | null): boolean {
+  return scenario.repetition === null || middle === null || scenario.id === middle;
+}
+
+/** An upload as the report and the log name it: S1-1, or S4#2 S4-1 in a run of the repeated scenario. */
+export function uploadLabel(scenario: Pick<ScenarioMeasure, 'id' | 'repetition'>, upload: Pick<UploadMeasure, 'id'>): string {
+  return scenario.repetition === null ? upload.id : `${scenario.id} ${upload.id}`;
+}
+
+/**
+ * What an upload's label says when it is of S4's middle run (S4#2 S4-1 with S4#2 the middle, say), with the apostrophe
+ * of the sentence it goes in; nothing for any other upload, or when no middle run was taken.
+ */
+export function middleRunNote(label: string, middle: string | null, apostrophe: "'" | '’'): string {
+  return middle !== null && label.startsWith(`${middle} `) ? ` (the middle of ${REPEATED_SCENARIO}${apostrophe}s three runs)` : '';
+}
+
+/** The repeated scenario's runs in one line, for the job's log and the summary: every run's times and which was the middle. */
+export function repeatedSummary(repeated: RepeatedScenario): string {
+  const count = repeated.runs.length === REPETITIONS ? 'three times' : `${String(repeated.runs.length)} of three times`;
+  const runs = repeated.runs.map((run) => {
+    const times = run.uploads.map((upload) => seconds(upload.ms));
+    return `${run.id} ${times.length > 1 ? `${times.slice(0, -1).join(', ')} and ${times.at(-1) ?? ''}` : (times[0] ?? 'no upload')} s`;
+  });
+  const head = `${repeated.scenario} ran ${count} (the founder's ruling of 2026-10-23): ${runs.length === 0 ? 'no run measured' : runs.join('; ')}.`;
+  const middle = repeated.runs.find((run) => run.id === repeated.middle);
+  if (middle === undefined) {
+    return `${head} With fewer than three runs no middle run is taken: every run's uploads are judged on time.`;
+  }
+  return `${head} Ordered by each run's worst large upload, the middle run is ${middle.id} (${seconds(middle.worstLargeMs)} s): its four uploads are judged against the 48-s line and the 44-s question, and every other check holds in all three runs.`;
+}
+
 /** The run's verdict under the rule (see the module comment). */
 export function verdict(measured: Measurements, rule: TimeRule): Verdict {
   const reasons: string[] = [];
@@ -333,9 +423,11 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     reasons.push('consumer not measured: environments.ts declares the screening consumer, and the report names none');
   }
   const ids = measured.scenarios.map((scenario) => scenario.id);
-  if (ids.join(',') !== ALL_SCENARIOS.join(',')) {
-    reasons.push(`partial run: measured ${ids.length === 0 ? 'no scenario' : ids.join(', ')}; a verdict needs ${ALL_SCENARIOS.join(', ')}${measured.only.length === 0 ? '' : ` (asked for ${measured.only.join(', ')})`}`);
+  if (ids.join(',') !== MEASURED_SCENARIOS.join(',')) {
+    reasons.push(`partial run: measured ${ids.length === 0 ? 'no scenario' : ids.join(', ')}; a verdict needs ${MEASURED_SCENARIOS.join(', ')}${measured.only.length === 0 ? '' : ` (asked for ${measured.only.join(', ')})`}`);
   }
+  // S4's time is judged on its middle run; every other check below holds in each of its runs.
+  const { middle } = repeatedScenario(measured.scenarios);
   if (measured.notStarted.length > 0) {
     reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
   }
@@ -359,10 +451,10 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     for (const small of scenario.uploads.filter((item) => item.behind)) {
       const times = [small, ...large].map((item) => [item.jobCreatedMs, item.jobStartedMs]);
       if (times.some(([created, started]) => created === null || started === null)) {
-        reasons.push(`queue order not recorded: ${small.id}`);
+        reasons.push(`queue order not recorded: ${uploadLabel(scenario, small)}`);
       } else if (large.some((item) => (item.jobCreatedMs ?? 0) > (small.jobCreatedMs ?? 0) || (item.jobStartedMs ?? 0) > (small.jobStartedMs ?? 0))) {
         // pg-boss takes jobs by priority, then age: the small one, queued last at the same priority, starts last.
-        reasons.push(`queue order: ${small.id} was not queued and started behind the scenario's large uploads`);
+        reasons.push(`queue order: ${uploadLabel(scenario, small)} was not queued and started behind the scenario's large uploads`);
       }
     }
     const slots = measured.consumer === null ? 0 : measured.consumer.tasks * measured.consumer.concurrency;
@@ -403,7 +495,7 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       }
     }
     for (const upload of scenario.uploads) {
-      const where = `${upload.id}`;
+      const where = uploadLabel(scenario, upload);
       if (upload.emailedMs === null) {
         reasons.push(`not emailed when the scenario's cap ended: ${where}`);
       } else if (upload.resultStatus !== 200) {
@@ -433,10 +525,10 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       if (upload.submittedMs !== null && upload.emailedMs !== null) {
         const elapsed = upload.emailedMs - upload.submittedMs;
         const time = timeVerdict(elapsed, rule);
-        if (time.status === 'fail') {
-          reasons.push(`time: ${where} ${(elapsed / 1000).toFixed(1)} s, ${timeLabel(time)}`);
+        if (time.status === 'fail' && judgedOnTime(scenario, middle)) {
+          reasons.push(`time: ${where} ${(elapsed / 1000).toFixed(1)} s${middleRunNote(where, middle, "'")}, ${timeLabel(time)}`);
         }
-        reasons.push(...timeMetricProblems(upload, elapsed));
+        reasons.push(...timeMetricProblems(upload, elapsed, where));
       }
     }
   }
@@ -476,14 +568,14 @@ export function uploadStart(clickedAt: number | null, posted: boolean): number |
  * POST, and ends before its line is written), and never more than TIME_METRIC_BELOW_MS below the harness's time (the
  * browser's send and the transfer before received_at), so the metric covers the web's share and the send.
  */
-export function timeMetricProblems(upload: UploadMeasure, harnessMs: number): string[] {
+export function timeMetricProblems(upload: UploadMeasure, harnessMs: number, where: string = upload.id): string[] {
   if (upload.logged === null) {
-    return [`time metric not logged: ${upload.id}`];
+    return [`time metric not logged: ${where}`];
   }
   const ceiling = upload.submittedMs === null ? null : upload.logged.atMs - upload.submittedMs;
   if ((ceiling !== null && upload.logged.elapsedMs > ceiling) || upload.logged.elapsedMs < harnessMs - TIME_METRIC_BELOW_MS) {
     return [
-      `time metric out of bounds: ${upload.id} logged ${(upload.logged.elapsedMs / 1000).toFixed(3)} s against the harness's ${(harnessMs / 1000).toFixed(3)} s (at most ${ceiling === null ? '—' : (ceiling / 1000).toFixed(3)} s, at least ${((harnessMs - TIME_METRIC_BELOW_MS) / 1000).toFixed(3)} s)`,
+      `time metric out of bounds: ${where} logged ${(upload.logged.elapsedMs / 1000).toFixed(3)} s against the harness's ${(harnessMs / 1000).toFixed(3)} s (at most ${ceiling === null ? '—' : (ceiling / 1000).toFixed(3)} s, at least ${((harnessMs - TIME_METRIC_BELOW_MS) / 1000).toFixed(3)} s)`,
     ];
   }
   return [];
@@ -492,24 +584,40 @@ export function timeMetricProblems(upload: UploadMeasure, harnessMs: number): st
 export interface Report extends Measurements {
   readonly format: typeof REPORT_FORMAT;
   readonly verdict: Verdict;
+  /** S4's three runs and the middle one, which its time is judged on (the founder's ruling of 2026-10-23). */
+  readonly repeated: RepeatedScenario;
   /**
-   * The slowest upload's time, and whether it is above SIZING_QUESTION_MS: a sizing question for the founder before
-   * merge (open item O9), which never changes the verdict.
+   * The slowest time the verdict judges (S4's middle run's, not its other runs'), and whether it is above
+   * SIZING_QUESTION_MS: a sizing question for the founder before merge (open item O9), which never changes the verdict.
    */
-  readonly sizing: { readonly worstUpload: string | null; readonly worstMs: number | null; readonly question: boolean };
+  readonly sizing: Sizing;
+}
+
+export interface Sizing {
+  readonly worstUpload: string | null;
+  readonly worstMs: number | null;
+  readonly question: boolean;
+}
+
+/** The sizing question as the measurements give it (report() records it; the launch check reads it again). */
+export function sizing(measured: Pick<Measurements, 'scenarios'>): Sizing {
+  const worst = worstTime(measured);
+  return { worstUpload: worst?.id ?? null, worstMs: worst?.ms ?? null, question: worst !== null && worst.ms > SIZING_QUESTION_MS };
 }
 
 export function report(measured: Measurements, rule: TimeRule): Report {
-  const worst = worstTime(measured);
   return {
     format: REPORT_FORMAT,
     ...measured,
     verdict: verdict(measured, rule),
-    sizing: { worstUpload: worst?.id ?? null, worstMs: worst?.ms ?? null, question: worst !== null && worst.ms > SIZING_QUESTION_MS },
+    repeated: repeatedScenario(measured.scenarios),
+    sizing: sizing(measured),
   };
 }
 
-const seconds = (ms: number | null | undefined): string => (ms === null || ms === undefined ? '—' : (ms / 1000).toFixed(1));
+function seconds(ms: number | null | undefined): string {
+  return ms === null || ms === undefined ? '—' : (ms / 1000).toFixed(1);
+}
 
 /** The report as Markdown, for the job's summary: one table of uploads, one of containers, then the verdict. */
 export function markdown(full: Report, rule: TimeRule): string {
@@ -525,14 +633,20 @@ export function markdown(full: Report, rule: TimeRule): string {
     '| Upload | Shape | Rows | Seconds to email | Logged (TimeToEmailMs) | Tier | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
+  // S4's time is judged on its middle run, read from the measurements as the verdict reads them.
+  const repeated = repeatedScenario(full.scenarios);
   for (const scenario of full.scenarios) {
     for (const upload of scenario.uploads) {
-      const elapsed = upload.submittedMs !== null && upload.emailedMs !== null ? upload.emailedMs - upload.submittedMs : null;
+      const elapsed = elapsedMs(upload);
       const shared = upload.phases.shared_load ?? upload.phases.shared_held;
+      const time = elapsed === null ? '—' : judgedOnTime(scenario, repeated.middle) ? timeLabel(timeVerdict(elapsed, rule)) : `not judged (${String(repeated.middle)} is the middle run)`;
       lines.push(
-        `| ${upload.id} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(upload.logged?.elapsedMs)} | ${upload.waitReason ?? upload.logged?.tier ?? '—'} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${seconds(upload.jobCreatedMs)}, ${seconds(upload.jobStartedMs)} | ${elapsed === null ? '—' : timeLabel(timeVerdict(elapsed, rule))} |`,
+        `| ${uploadLabel(scenario, upload)} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(upload.logged?.elapsedMs)} | ${upload.waitReason ?? upload.logged?.tier ?? '—'} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${seconds(upload.jobCreatedMs)}, ${seconds(upload.jobStartedMs)} | ${time} |`,
       );
     }
+  }
+  if (repeated.runs.length > 0) {
+    lines.push('', repeatedSummary(repeated));
   }
   lines.push('', '| Scenario | Container | Anonymous peak (MiB) | Limit (MiB) | memory.peak (MiB) | Limit reached | OOM kills | Throttled periods |', '| --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const scenario of full.scenarios) {
@@ -544,7 +658,10 @@ export function markdown(full: Report, rule: TimeRule): string {
   }
   const worst = worstTime(full);
   if (worst !== null && worst.ms > SIZING_QUESTION_MS) {
-    lines.push('', `Sizing question for the founder (open item O9): the worst time, ${worst.id}’s ${(worst.ms / 1000).toFixed(1)} s, is above ${String(SIZING_QUESTION_MS / 1000)} s, within 8% of the 48-s line. This is reported before merge as a question of the consumer's size, not a pass to rely on or a limit to widen.`);
+    lines.push(
+      '',
+      `Sizing question for the founder (open item O9): the worst time, ${worst.id}’s ${(worst.ms / 1000).toFixed(1)} s${middleRunNote(worst.id, repeated.middle, '’')}, is above ${String(SIZING_QUESTION_MS / 1000)} s, within 8% of the 48-s line. This is reported before merge as a question of the consumer's size, not a pass to rely on or a limit to widen.`,
+    );
   }
   lines.push('', full.verdict.reasons.length === 0 ? 'Every check the build controls passed.' : 'Failing checks:', ...full.verdict.reasons.map((reason) => `- ${reason}`), '');
   return lines.join('\n');
@@ -564,13 +681,18 @@ function consumerLine(full: Report): string {
  */
 export const SIZING_QUESTION_MS = 44_000;
 
-/** The slowest upload's time to email across the run, or null when none was emailed. */
+/**
+ * The slowest time to email the verdict judges, or null when none was emailed: every scenario's uploads but S4's, and
+ * S4's middle run's (S4#2 S4-1, say), never its other runs' (the founder's ruling of 2026-10-23).
+ */
 export function worstTime(full: Pick<Measurements, 'scenarios'>): { readonly id: string; readonly ms: number } | null {
+  const { middle } = repeatedScenario(full.scenarios);
   let worst: { readonly id: string; readonly ms: number } | null = null;
-  for (const scenario of full.scenarios) {
+  for (const scenario of full.scenarios.filter((item) => judgedOnTime(item, middle))) {
     for (const upload of scenario.uploads) {
-      if (upload.submittedMs !== null && upload.emailedMs !== null && (worst === null || upload.emailedMs - upload.submittedMs > worst.ms)) {
-        worst = { id: upload.id, ms: upload.emailedMs - upload.submittedMs };
+      const ms = elapsedMs(upload);
+      if (ms !== null && (worst === null || ms > worst.ms)) {
+        worst = { id: uploadLabel(scenario, upload), ms };
       }
     }
   }
@@ -578,10 +700,11 @@ export function worstTime(full: Pick<Measurements, 'scenarios'>): { readonly id:
 }
 
 /**
- * The sizing question's one line (O9; the design's §2.4): the worst upload and its time, above the 44-s line, numbers and
- * an upload's label only. run.ts says it in the job's log, annotates the job with it as a warning and hands it to the
+ * The sizing question's one line (O9; the design's §2.4): the worst upload the verdict judges and its time (S4's from its
+ * middle run), above the 44-s line, numbers and an upload's label only. run.ts says it in the job's log, annotates the job with it as a warning and hands it to the
  * gate, so it reaches the pull request's checks and not the log alone.
  */
-export function sizingQuestion(sizing: { readonly worstUpload: string | null; readonly worstMs: number | null }): string {
-  return `the worst time, ${sizing.worstUpload ?? 'an upload'}'s ${((sizing.worstMs ?? 0) / 1000).toFixed(1)} s, is above 44 s: the consumer's size goes to the founder before merge`;
+export function sizingQuestion(worst: { readonly worstUpload: string | null; readonly worstMs: number | null }, middle: string | null = null): string {
+  const upload = worst.worstUpload ?? 'an upload';
+  return `the worst time, ${upload}'s ${((worst.worstMs ?? 0) / 1000).toFixed(1)} s${middleRunNote(upload, middle, "'")}, is above 44 s: the consumer's size goes to the founder before merge`;
 }

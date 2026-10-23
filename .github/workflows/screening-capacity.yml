@@ -6,7 +6,9 @@ name: screening-capacity
 # platform; the screening consumer, WORKER_JOBS=screening, at 2 vCPU and 4 GiB pricing three at once), Postgres at
 # db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms delay each way, the SYNTHETIC scale release
 # 900100 and the practice and worst 50,000-row uploads, alone and three at once with a small one behind them. Time is enforced: above 48 s on the runner fails (decisions 13 to 16, the founder's
-# rulings of 2026-10-20; PR 6b-3). Synthetic data only, no credentials.
+# rulings of 2026-10-20; PR 6b-3). The three worst at once (S4) run three times and their time is judged on the middle
+# run, every other check in all three (the founder's ruling of 2026-10-23: the free 4-CPU runner kept, median of 3).
+# Synthetic data only, no credentials.
 #
 # A required check from PR 6b-3 on (the founder's Q8 of 2026-10-21; the founder sets the ruleset, runbook
 # screening-capacity "Making it required"): every pull request runs the workflow, and its "screening-capacity gate" job
@@ -119,9 +121,11 @@ jobs:
     # creates (Q1 (d)), pinned to its image like every label here (audit #19); until then a private run is refused as
     # too small and the screening cannot open.
     runs-on: ubuntu-24.04
-    # A run takes 30 to 60 minutes (the scale release, two image builds, five scenarios); a hung scenario stops at 90
-    # instead of GitHub's 360 (docs/adr/0063).
-    timeout-minutes: 90
+    # A run takes 30 to 60 minutes (the scale release, two image builds, five scenarios, S4 three times); a hung scenario
+    # stops at 100 instead of GitHub's 360 (docs/adr/0063). S4's two more runs (the founder's ruling of 2026-10-23) need
+    # about 3 minutes: CI's S4 took 59 s on 19aa09c and 78 s on 54ec890 from its cold restart (about 20 s) to S5's start;
+    # 10 minutes more than the 90 before them leave the margin.
+    timeout-minutes: 100
     steps:
       # The harness calls no GitHub API and pushes nothing, so the token is not left in the checkout.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -214,8 +218,8 @@ jobs:
   # whatever the other jobs did, a cancelled run included: GitHub reports a job its condition skipped as a success for a
   # required check, so a gate skipped on a cancel would pass with no measurement; run, it fails (CAPACITY=cancelled).
   # A run a newer push superseded fails only on the older commit, which no longer gates the pull request. A passing
-  # measurement whose worst time is above 44 s also carries the founder's sizing question (O9) here, as a warning on the
-  # pull request's checks.
+  # measurement whose worst judged time (S4's from its middle run of three) is above 44 s also carries the founder's
+  # sizing question (O9) here, as a warning on the pull request's checks.
   gate:
     name: screening-capacity gate
     needs: [changes, capacity]

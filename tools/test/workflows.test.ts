@@ -259,7 +259,8 @@ describe('workflows', () => {
       expect(release.on).toEqual({ push: { tags: ['v*'] } });
       expect(release.permissions).toEqual({ contents: 'read' });
       expect(Object.keys(release.jobs).sort()).toEqual(['build', 'capacity', 'push', 'report']);
-      expect(Object.fromEntries(Object.entries(release.jobs).map(([name, entry]) => [name, entry['timeout-minutes']]))).toEqual({ build: 60, capacity: 90, push: 30, report: 10 });
+      // The capacity job's 100 minutes hold S4's three runs (the founder's ruling of 2026-10-23), as the workflow's own.
+      expect(Object.fromEntries(Object.entries(release.jobs).map(([name, entry]) => [name, entry['timeout-minutes']]))).toEqual({ build: 60, capacity: 100, push: 30, report: 10 });
     });
 
     it('builds the worker image and three web images, each with its own static host, and scans each and writes its SBOM before anything leaves the job', () => {
@@ -553,7 +554,8 @@ describe('workflows', () => {
     expect(measure?.needs).toBe('changes');
     expect(measure?.if).toBe("needs.changes.outputs.measure == 'true'");
     expect(measure?.['runs-on']).toBe('ubuntu-24.04');
-    expect(measure?.['timeout-minutes']).toBe(90);
+    // 100 minutes: S4 runs three times (the founder's ruling of 2026-10-23), about 3 minutes more than the 90 before.
+    expect(measure?.['timeout-minutes']).toBe(100);
     expect(measure?.permissions).toBeUndefined();
     const steps = measure?.steps ?? [];
     // Both production images built from their Dockerfiles before the harness runs.
@@ -755,8 +757,9 @@ describe('job timeouts', () => {
       'mutation.yml': { mutation: 120 },
       'supply-chain.yml': { licenses: 15, images: 15 },
       'approval-of-record.yml': { 'approval-of-record': 5 },
-      // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8).
-      'screening-capacity.yml': { changes: 5, capacity: 90, gate: 5, notify: 5 },
+      // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8), S4 three
+      // times since the founder's ruling of 2026-10-23.
+      'screening-capacity.yml': { changes: 5, capacity: 100, gate: 5, notify: 5 },
     });
   });
 });

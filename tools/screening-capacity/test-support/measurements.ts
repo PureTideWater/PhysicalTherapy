@@ -1,11 +1,24 @@
 import { type EnvironmentSettings, environmentSettings } from '../../../infra/lib/environments';
 import { MIB, postgresLimit, productionLimits } from '../limits';
-import { ALL_SCENARIOS, type AppliedLimits, type ExpectedLimits, type Measurements, ORACLE_UPLOADS, type ScenarioMeasure, type TimeRule, type UploadMeasure, oracleKind } from '../report';
+import {
+  ALL_SCENARIOS,
+  type AppliedLimits,
+  type ExpectedLimits,
+  type Measurements,
+  ORACLE_UPLOADS,
+  REPEATED_SCENARIO,
+  REPETITIONS,
+  type ScenarioMeasure,
+  type TimeRule,
+  type UploadMeasure,
+  oracleKind,
+  scenarioLabel,
+} from '../report';
 
 /**
  * Synthetic capacity measurements for the report's and the launch check's tests (no row, link, token or address): a full
- * passing run of S1 to S5 under production's limits, the screening consumer at its declared size, and helpers that
- * change one part of it.
+ * passing run of S1 to S5, S4 three times (S4#1 to S4#3, the founder's ruling of 2026-10-23), under production's limits,
+ * the screening consumer at its declared size, and helpers that change one part of it.
  */
 
 export const OPEN: TimeRule = { consumerDeclared: false, consumerRun: false, runnerToFargate: null };
@@ -89,6 +102,8 @@ export function uploadBase(overrides: Partial<UploadMeasure>): UploadMeasure {
 export function scenario(overrides: Partial<ScenarioMeasure> = {}, uploads: readonly UploadMeasure[] = [upload()]): ScenarioMeasure {
   return {
     id: 'S1',
+    scenario: 'S1',
+    repetition: null,
     what: 'worst shape alone',
     coldStart: null,
     postgres: { oomKills: 0, restarts: 0, running: true },
@@ -105,17 +120,35 @@ export function scenario(overrides: Partial<ScenarioMeasure> = {}, uploads: read
   };
 }
 
-/** S1 to S5, each one upload, S4 with three large ones and a small one queued behind them. */
-export function scenarios(): ScenarioMeasure[] {
-  return ALL_SCENARIOS.map((id) =>
-    id === 'S4'
-      ? scenario({ id, coldStart: { restarted: true, cacheDropped: true } }, [
-          upload({ id: 'S4-1', jobCreatedMs: 1_100, jobStartedMs: 1_200 }),
-          upload({ id: 'S4-2', jobCreatedMs: 1_200, jobStartedMs: 10_000 }),
-          upload({ id: 'S4-3', jobCreatedMs: 1_300, jobStartedMs: 20_000 }),
-          upload({ id: 'S4-4', shape: 'small', rows: 25, behind: true, storedRows: 25, submittedMs: 9_000, emailedMs: 39_000, jobCreatedMs: 9_100, jobStartedMs: 30_000 }),
-        ])
-      : scenario({ id, coldStart: id === 'S1' ? { restarted: true, cacheDropped: true } : null }, [upload({ id: `${id}-1` })]),
+/** One S4 run's times to email, in milliseconds: its three large uploads' (S4-1 to S4-3) and the small one's behind them (S4-4). */
+export interface S4Times {
+  readonly large: readonly [number, number, number];
+  readonly small: number;
+}
+
+/** Every S4 run at 30 s, as every other upload. */
+export const S4_AT_30: S4Times = { large: [30_000, 30_000, 30_000], small: 30_000 };
+
+/**
+ * One of S4's runs (S4#1 to S4#3): from a cold Postgres, its three worst uploads queued at once and priced in the
+ * consumer's three slots, each submitted at 1 s, and the small one submitted at 9 s, queued and started behind them.
+ */
+export function s4Run(repetition: number, times: S4Times = S4_AT_30): ScenarioMeasure {
+  const [first, second, third] = times.large;
+  return scenario({ id: scenarioLabel(REPEATED_SCENARIO, repetition), scenario: REPEATED_SCENARIO, repetition, what: 'worst shape, three at once', coldStart: { restarted: true, cacheDropped: true } }, [
+    upload({ id: 'S4-1', jobCreatedMs: 1_100, jobStartedMs: 1_200, emailedMs: 1_000 + first }),
+    upload({ id: 'S4-2', jobCreatedMs: 1_200, jobStartedMs: 10_000, emailedMs: 1_000 + second }),
+    upload({ id: 'S4-3', jobCreatedMs: 1_300, jobStartedMs: 20_000, emailedMs: 1_000 + third }),
+    upload({ id: 'S4-4', shape: 'small', rows: 25, behind: true, storedRows: 25, submittedMs: 9_000, emailedMs: 9_000 + times.small, jobCreatedMs: 9_100, jobStartedMs: 30_000 }),
+  ]);
+}
+
+/** S1 to S5, each one upload, S4 three times (S4#1 to S4#3) with three large uploads and a small one queued behind them. */
+export function scenarios(s4: readonly S4Times[] = Array.from({ length: REPETITIONS }, () => S4_AT_30)): ScenarioMeasure[] {
+  return ALL_SCENARIOS.flatMap((id) =>
+    id === REPEATED_SCENARIO
+      ? s4.map((times, at) => s4Run(at + 1, times))
+      : [scenario({ id, scenario: id, coldStart: id === 'S1' ? { restarted: true, cacheDropped: true } : null }, [upload({ id: `${id}-1` })])],
   );
 }
 
@@ -147,16 +180,24 @@ export function measured(overrides: Partial<Measurements> = {}): Measurements {
   };
 }
 
-/** The full run's scenarios with one upload of one scenario changed (its time-to-email line recomputed unless given). */
-export function withUpload(id: string, overrides: Partial<UploadMeasure>): ScenarioMeasure[] {
-  return scenarios().map((item) => ({
+/**
+ * The full run's scenarios with one upload changed (its time-to-email line recomputed unless given): in the scenario named
+ * (S4#2, say), or in every scenario that sends it when none is named.
+ */
+export function withUpload(id: string, overrides: Partial<UploadMeasure>, scenarioId: string | null = null, from: readonly ScenarioMeasure[] = scenarios()): ScenarioMeasure[] {
+  return from.map((item) => ({
     ...item,
     uploads: item.uploads.map((entry) => {
-      if (entry.id !== id) {
+      if (entry.id !== id || (scenarioId !== null && item.id !== scenarioId)) {
         return entry;
       }
       const { logged: _logged, ...rest } = entry;
       return upload({ ...rest, ...overrides });
     }),
   }));
+}
+
+/** The full run's scenarios with one scenario changed (S4#3, say). */
+export function withScenario(scenarioId: string, change: (item: ScenarioMeasure) => ScenarioMeasure, from: readonly ScenarioMeasure[] = scenarios()): ScenarioMeasure[] {
+  return from.map((item) => (item.id === scenarioId ? change(item) : item));
 }

@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 import { type EnvironmentSettings, environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
 import { RUNNER_TO_FARGATE, screeningConsumer, taskLimit } from './limits';
-import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
+import { REPEATED_SCENARIO, REPORT_FORMAT, type Report, middleRunNote, repeatedScenario, sizing, timeRule, verdict } from './report';
 
 /**
  * Decision 13's launch check (the founder's rulings of 2026-10-20 and 2026-10-22; docs/adr/0062; the design's §5.4; test
@@ -30,8 +30,10 @@ import { REPORT_FORMAT, type Report, timeRule, verdict } from './report';
  * previews the same check: it prints the value the deploy will compute, or names each reason and exits non-zero. It
  * holds the report to:
  *
- * - its format (tp-screening-capacity/4), the Docker runtime (the process runtime cannot limit Postgres), a passing
- *   verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again;
+ * - its format (tp-screening-capacity/5), the Docker runtime (the process runtime cannot limit Postgres), a passing
+ *   verdict with time enforced, as recorded and as this checkout's verdict() reads the same measurements again, S4's
+ *   time on the middle of its three runs (the founder's ruling of 2026-10-23), the middle run the report names being
+ *   the one its measurements give; a report in an older format, S4 measured once, is refused;
  * - the tag's commit;
  * - both images, by config digest: each image's config digest as ECR's manifest names it (`docker buildx imagetools
  *   inspect --raw`, an index resolved to its one linux/amd64 image manifest, the platform the release builds and ECS
@@ -121,6 +123,12 @@ function check(input: LaunchInput): LaunchResult {
   if (!again.pass || again.time !== 'enforced') {
     reasons.push(`verdict read again: ${again.pass ? 'pass' : 'fail'} with time ${again.time}${again.reasons.length === 0 ? '' : ` (${again.reasons.slice(0, 5).join('; ')}${again.reasons.length > 5 ? '; …' : ''})`}`);
   }
+  // The middle run S4's time was judged on, read again from the same measurements.
+  const middle = repeatedScenario(parsed.scenarios).middle;
+  const recordedMiddle: unknown = (parsed.repeated as Partial<Report['repeated']> | undefined)?.middle;
+  if (recordedMiddle !== middle) {
+    reasons.push(`middle run: the report names ${String(recordedMiddle)}, and its measurements make ${String(middle)} the middle of ${REPEATED_SCENARIO}'s three runs`);
+  }
   if (!COMMIT.test(input.tagCommit)) {
     reasons.push(`commit: the tag’s commit ${input.tagCommit} is not a full commit hash`);
   } else if (parsed.commit !== input.tagCommit) {
@@ -154,7 +162,10 @@ function check(input: LaunchInput): LaunchResult {
   if (reasons.length > 0) {
     return { ok: false, reasons };
   }
-  const notes = parsed.sizing.question ? [`sizing: the worst time, ${String(parsed.sizing.worstUpload)}’s ${((parsed.sizing.worstMs ?? 0) / 1000).toFixed(1)} s, is above 44 s (open item O9: the founder’s sizing question)`] : [];
+  // The sizing question read again from the measurements, S4's from its middle run, as the gate's warning gives it.
+  const worst = sizing(parsed);
+  const upload = String(worst.worstUpload);
+  const notes = worst.question ? [`sizing: the worst time, ${upload}’s ${((worst.worstMs ?? 0) / 1000).toFixed(1)} s${middleRunNote(upload, middle, '’')}, is above 44 s (open item O9: the founder’s sizing question)`] : [];
   return { ok: true, value: `${input.tag}:${reportSha256(input.reportText)}`, notes };
 }
 

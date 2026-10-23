@@ -118,11 +118,11 @@ jobs:
   # Decision 13: the capacity test with time enforced, on the production web image and the worker image exactly as built
   # and scanned (their IDs are the report's), on the same runner as .github/workflows/screening-capacity.yml's
   # measurement (a public repository's 4-CPU standard runner; the 4-core larger runner once the repository is private,
-  # the founder's Q1 (d)).
+  # the founder's Q1 (d)), with its timeout: 100 minutes, S4 three times (the founder's ruling of 2026-10-23).
   capacity:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

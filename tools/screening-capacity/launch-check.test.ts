@@ -7,7 +7,7 @@ import * as deployParameters from '../../infra/lib/deploy-parameters';
 import { type CommandRunner, type LaunchInput, RELEASE_TAG, launchCheck, readManifest, registryImageId, reportSha256, repositoryOf } from './launch-check';
 import { MIB } from './limits';
 import { type Measurements, report } from './report';
-import { ENFORCED, OPEN, applied, expected, measured, scenario, upload, withS1, withoutConsumer } from './test-support/measurements';
+import { ENFORCED, OPEN, type S4Times, applied, expected, measured, scenario, scenarios, upload, withS1, withoutConsumer } from './test-support/measurements';
 
 /**
  * Decision 13's launch check (docs/adr/0062; the design's §5.4; test matrix SCR-20), on synthetic reports: production's
@@ -108,10 +108,48 @@ describe('the launch check', () => {
   it('fails a malformed tag, an older format, and a file that is not a complete report', () => {
     expect(RELEASE_TAG.test(TAG)).toBe(true);
     expect(reasons({ tag: 'latest' })).toEqual(['tag: latest is not a release tag (v followed by letters, digits, dots and hyphens)']);
-    const older = { ...(JSON.parse(kept()) as Record<string, unknown>), format: 'tp-screening-capacity/3' };
-    expect(reasons({ reportText: JSON.stringify(older) })).toEqual(['report: format tp-screening-capacity/3, not tp-screening-capacity/4']);
+    for (const format of ['tp-screening-capacity/3', 'tp-screening-capacity/4']) {
+      // A report in the format before S4 ran three times (the founder's ruling of 2026-10-23) is refused as any other.
+      const older = { ...(JSON.parse(kept()) as Record<string, unknown>), format };
+      expect(reasons({ reportText: JSON.stringify(older) })).toEqual([`report: format ${format}, not tp-screening-capacity/5`]);
+    }
     expect(reasons({ reportText: 'not json' })).toEqual(['report: not JSON']);
-    expect(reasons({ reportText: JSON.stringify({ format: 'tp-screening-capacity/4' }) })).toEqual(['report: not a complete capacity report']);
+    expect(reasons({ reportText: JSON.stringify({ format: 'tp-screening-capacity/5' }) })).toEqual(['report: not a complete capacity report']);
+  });
+
+  /** S4's runs on CI, the same code (19aa09c's and 54ec890's), with runs between, near and above the line. */
+  const FAST: S4Times = { large: [38_300, 37_600, 35_300], small: 26_000 };
+  const SLOW: S4Times = { large: [51_400, 51_400, 45_200], small: 32_300 };
+  const BETWEEN: S4Times = { large: [42_000, 41_500, 40_100], small: 29_000 };
+  const NEAR: S4Times = { large: [45_200, 44_100, 43_000], small: 30_000 };
+  const OVER: S4Times = { large: [48_100, 47_000, 46_500], small: 31_000 };
+
+  it('applies the founder’s median of three to S4 (2026-10-23): only the slowest run above 48 s passes, the middle run above it fails', () => {
+    const text = kept(measured({ scenarios: scenarios([FAST, SLOW, BETWEEN]) }));
+    expect(launchCheck(input({ reportText: text }))).toEqual({ ok: true, value: `${TAG}:${reportSha256(text)}`, notes: [] });
+    expect(reasons({ reportText: kept(measured({ scenarios: scenarios([SLOW, OVER, FAST]) })) })).toEqual([
+      'verdict: fail with time enforced; launch needs a pass with time enforced',
+      "verdict read again: fail with time enforced (time: S4#2 S4-1 48.1 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner))",
+    ]);
+  });
+
+  it('reads the middle run again from the measurements rather than trust the one recorded', () => {
+    const edited = JSON.parse(kept(measured({ scenarios: scenarios([FAST, SLOW, NEAR]) }))) as { repeated: { middle: string } };
+    edited.repeated.middle = 'S4#1';
+    expect(reasons({ reportText: JSON.stringify(edited) })).toEqual(["middle run: the report names S4#1, and its measurements make S4#3 the middle of S4's three runs"]);
+    const over = JSON.parse(kept(measured({ scenarios: scenarios([SLOW, OVER, FAST]) }))) as { verdict: unknown };
+    over.verdict = { pass: true, time: 'enforced', reasons: [] };
+    expect(reasons({ reportText: JSON.stringify(over) })).toEqual(["verdict read again: fail with time enforced (time: S4#2 S4-1 48.1 s (the middle of S4's three runs), fail (allowance: above 48 s on the runner))"]);
+  });
+
+  it('notes the sizing question from the middle run’s worst time, read from the measurements', () => {
+    const result = launchCheck(input({ reportText: kept(measured({ scenarios: scenarios([FAST, SLOW, NEAR]) })) }));
+    expect(result.ok && result.notes).toEqual(['sizing: the worst time, S4#3 S4-1’s 45.2 s (the middle of S4’s three runs), is above 44 s (open item O9: the founder’s sizing question)']);
+    // A recorded question is not taken on trust either way: the note follows the measurements.
+    const edited = JSON.parse(kept(measured({ scenarios: scenarios([FAST, SLOW, BETWEEN]) }))) as { sizing: unknown };
+    edited.sizing = { worstUpload: 'S4#2 S4-1', worstMs: 51_400, question: true };
+    const reread = launchCheck(input({ reportText: JSON.stringify(edited) }));
+    expect(reread.ok && reread.notes).toEqual([]);
   });
 
   it('passes a worst time above 44 s with a note of the founder’s sizing question, which the merge settles, not the launch', () => {

@@ -16,6 +16,8 @@ import {
 } from '@tp/synth';
 import { SCREENING_COLUMNS, type ScreeningRow } from '@tp/worker/screening-format';
 
+import { REPEATED_SCENARIO, REPETITIONS, type ScenarioId } from './scenario-runs';
+
 /**
  * The capacity test's uploads and scenarios (audit #53 part 1; docs/adr/0062, "Capacity under production limits"):
  * the SYNTHETIC rows packages/synth generates as the screening's own rows, as the CSV a prospect uploads (the
@@ -24,7 +26,9 @@ import { SCREENING_COLUMNS, type ScreeningRow } from '@tp/worker/screening-forma
  * account (a different prospect, as audit #53 intends) and none crosses an account's daily share into the waiting tier
  * (the founder's Q7 of 2026-10-21). S1, S4 and S5 start from a cold Postgres (restarted, the page cache dropped), and
  * S1, S2, S4 and S5 from a fresh consumer (its threads' shared types cold); S4's three worst uploads are worst-shape variants 1 to 3, so they differ from S1's rows and from each other
- * in most of their codes, sharing the release's pooled and corrected codes, which every worst upload prices. S1's
+ * in most of their codes, sharing the release's pooled and corrected codes, which every worst upload prices. S4 runs
+ * three times, each run cold with the same uploads from the same ZIPs, each run's from prospects of their own (names
+ * and addresses), so no run replaces or is counted with another (the founder's ruling of 2026-10-23). S1's
  * second upload (S1-2, the small shape behind S1-1) is sent from a ZIP the release splits across localities, with a
  * ZIP+4 in the next locality's range (PR 6b, docs/adr/0064): its run's keyed read must hold the ZIP's ZIP9 record, and
  * its rows are compared with a whole-release oracle (oracle.ts), since the frozen 3c1b289 pricer takes a five-digit ZIP
@@ -86,7 +90,9 @@ export interface UploadSpec {
 }
 
 export interface ScenarioSpec {
-  readonly id: 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
+  readonly id: ScenarioId;
+  /** Which run of the repeated scenario (S4) this is, 1 to REPETITIONS; null for a scenario run once. */
+  readonly repetition: number | null;
   readonly what: string;
   readonly uploads: readonly UploadSpec[];
   /** Start fresh screening consumer containers before the scenario, so its threads hold no shared types. */
@@ -96,9 +102,9 @@ export interface ScenarioSpec {
 }
 
 const LETTERS = 'abcdefghij';
-/** A practice name of letters only (no digits, which the form refuses in a name), distinct per upload. */
-function practiceName(scenario: string, upload: number): string {
-  const digits = `${scenario.slice(1)}${String(upload)}`;
+/** A practice name of letters only (no digits, which the form refuses in a name), distinct per upload and per run. */
+function practiceName(scenario: string, upload: number, repetition: number | null): string {
+  const digits = `${scenario.slice(1)}${String(upload)}${repetition === null ? '' : String(repetition)}`;
   return `Synthetic Capacity Therapy ${[...digits].map((digit) => LETTERS.charAt(Number.parseInt(digit, 10))).join('')}`;
 }
 
@@ -135,42 +141,55 @@ export function uploadAccountDomain(upload: Pick<UploadSpec, 'contactEmail'>): s
  */
 export const SENT_PAGE = /\/screening\?sent=1&wait=(?:soon|minutes|waiting|sent)$/;
 
-/** The five scenarios (the design's §3.4): each upload with its own ZIP in its own locality, name, address and domain. */
+/**
+ * The five scenarios (the design's §3.4), S4 three times (S4#1 to S4#3, the founder's ruling of 2026-10-23): each upload
+ * with its own ZIP in its own locality, name, address and domain; S4's runs send the same uploads from the same ZIPs, each
+ * run's under names and addresses of its own.
+ */
 export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): ScenarioSpec[] {
   // Five ZIPs per scenario at most (three large, one small; S1 to S3 use one), each set in distinct localities.
   const zips = uploadZips(release, 5, 4);
-  const upload = (scenario: string, index: number, shape: UploadShape, behind = false, variant = 0): UploadSpec => ({
-    id: `${scenario}-${String(index + 1)}`,
-    shape,
-    zip: zips[Number.parseInt(scenario.slice(1), 10) - 1]?.[index] ?? '',
-    zipPlusFour: null,
-    practiceName: practiceName(scenario, index + 1),
-    // One domain per upload, so one rate-limit account each (the design's §3.4).
-    contactEmail: `capacity.${scenario.toLowerCase()}.upload${String(index + 1)}@capacity-${scenario.toLowerCase()}-upload${String(index + 1)}.synthetic.test`,
-    behind,
-    variant,
-  });
+  const upload = (scenario: string, index: number, shape: UploadShape, behind = false, variant = 0, repetition: number | null = null): UploadSpec => {
+    // An address part of its own for each run of the repeated scenario (s4r2), so no run replaces another.
+    const part = `${scenario.toLowerCase()}${repetition === null ? '' : `r${String(repetition)}`}`;
+    return {
+      id: `${scenario}-${String(index + 1)}`,
+      shape,
+      zip: zips[Number.parseInt(scenario.slice(1), 10) - 1]?.[index] ?? '',
+      zipPlusFour: null,
+      practiceName: practiceName(scenario, index + 1, repetition),
+      // One domain per upload, so one rate-limit account each (the design's §3.4).
+      contactEmail: `capacity.${part}.upload${String(index + 1)}@capacity-${part}-upload${String(index + 1)}.synthetic.test`,
+      behind,
+      variant,
+    };
+  };
   const split = splitZip(release);
+  const s4 = (repetition: number): ScenarioSpec => ({
+    id: REPEATED_SCENARIO,
+    repetition,
+    what: `worst shape, three at once (variants 1 to 3, three prospects), a small one behind them: fresh Postgres, fresh consumer (run ${String(repetition)} of ${String(REPETITIONS)})`,
+    uploads: [upload('S4', 0, 'worst', false, 1, repetition), upload('S4', 1, 'worst', false, 2, repetition), upload('S4', 2, 'worst', false, 3, repetition), upload('S4', 3, 'small', true, 0, repetition)],
+    freshConsumer: true,
+    freshPostgres: true,
+  });
   return [
     {
       id: 'S1',
+      repetition: null,
       what: 'worst shape, one upload alone, then a small one behind it from a ZIP split across localities with its ZIP+4: fresh Postgres, fresh consumer',
       uploads: [upload('S1', 0, 'worst'), { ...upload('S1', 1, 'small', true), ...split }],
       freshConsumer: true,
       freshPostgres: true,
     },
-    { id: 'S2', what: 'practice shape, one upload alone: fresh consumer', uploads: [upload('S2', 0, 'practice')], freshConsumer: true, freshPostgres: false },
+    { id: 'S2', repetition: null, what: 'practice shape, one upload alone: fresh consumer', uploads: [upload('S2', 0, 'practice')], freshConsumer: true, freshPostgres: false },
     // The consumer hands a run to its first idle thread, so S3's run goes to the thread that priced S2's.
-    { id: 'S3', what: 'practice shape again in the same consumer (shared types held by the thread that priced S2)', uploads: [upload('S3', 0, 'practice')], freshConsumer: false, freshPostgres: false },
-    {
-      id: 'S4',
-      what: 'worst shape, three at once (variants 1 to 3, three prospects), a small one behind them: fresh Postgres, fresh consumer',
-      uploads: [upload('S4', 0, 'worst', false, 1), upload('S4', 1, 'worst', false, 2), upload('S4', 2, 'worst', false, 3), upload('S4', 3, 'small', true)],
-      freshConsumer: true,
-      freshPostgres: true,
-    },
+    { id: 'S3', repetition: null, what: 'practice shape again in the same consumer (shared types held by the thread that priced S2)', uploads: [upload('S3', 0, 'practice')], freshConsumer: false, freshPostgres: false },
+    // Three runs, each from a cold Postgres and fresh services (the founder's ruling of 2026-10-23).
+    ...Array.from({ length: REPETITIONS }, (_, at) => s4(at + 1)),
     {
       id: 'S5',
+      repetition: null,
       what: 'practice shape, three at once (three prospects), a small one behind them: fresh Postgres, fresh consumer',
       uploads: [upload('S5', 0, 'practice'), upload('S5', 1, 'practice'), upload('S5', 2, 'practice'), upload('S5', 3, 'small', true)],
       freshConsumer: true,

@@ -217,8 +217,9 @@ describe('the screening launch value, computed at synthesis', () => {
 
   it('refuses a stale report: another commit than the tag’s, an older format, a web measured at the size before 2026-10-22', () => {
     expect(() => synthesizeAll(LAUNCH, readersFor({ commit: 'e'.repeat(40) }))).toThrow(new RegExp(`- commit: the report measured ${COMMIT}, and ${TAG} is ${'e'.repeat(40)}`));
-    const older = { ...(JSON.parse(kept()) as Record<string, unknown>), format: 'tp-screening-capacity/3' };
-    expect(() => synthesizeAll(LAUNCH, readersFor({ text: JSON.stringify(older) }))).toThrow(/- report: format tp-screening-capacity\/3, not tp-screening-capacity\/4/);
+    // The format before S4 ran three times (the founder's ruling of 2026-10-23).
+    const older = { ...(JSON.parse(kept()) as Record<string, unknown>), format: 'tp-screening-capacity/4' };
+    expect(() => synthesizeAll(LAUNCH, readersFor({ text: JSON.stringify(older) }))).toThrow(/- report: format tp-screening-capacity\/4, not tp-screening-capacity\/5/);
     const base = measured();
     const quarterWeb = measured({
       expected: { ...base.expected, web: { cpus: 0.25, memoryMiB: 512 } },
