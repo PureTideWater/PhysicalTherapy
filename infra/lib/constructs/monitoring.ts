@@ -25,6 +25,15 @@ import {
   workerLogGroupName,
 } from '../heartbeat';
 import { logGroupName } from '../log-groups';
+import {
+  MAIL_NAMESPACE,
+  MAIL_PLATFORM_ALARM_CODES,
+  MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
+  MAIL_VALIDATION_CAP_CODE,
+  MAIL_VALIDATION_CAP_PERIOD_SECONDS,
+  type MailPlatformAlarmCode,
+  mailCodeMetricName,
+} from '../mail';
 import { MODEL_BUDGET_ERROR_CODES, MODEL_BUDGET_METRIC, MODEL_BUDGET_PERIOD_SECONDS } from '../models';
 import {
   OLDEST_QUEUED_LIMIT_MS,
@@ -100,6 +109,13 @@ export interface MonitoringProps {
  * above the 60-second promise; the oldest normal-tier run's wait in the queue, which alarms above two minutes, two
  * minutes in a row; and its failed runs (any error line, or a run out of attempts). The web app's uploads sent to wait
  * (over an account's share or the day's cap, Q7) are counted from the web's group. No metric has a dimension.
+ *
+ * The mail streams (docs/adr/0065; audit #76) add six metric filters, each with its alarm: five codes the platform jobs
+ * log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a recipient,
+ * a notice with no recipient, an invitation not delivered, a probe not back), each alarmed at one in five minutes, and
+ * the web's code for the day's address validations reaching their cap, alarmed at one in a day. Each is matched on the
+ * line's `error_code` and named by it, never by a value from the line; MailStreams holds the reputation and queue
+ * alarms.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
@@ -119,6 +135,9 @@ export class Monitoring extends Construct {
   readonly screeningQueueAlarm: cloudwatch.Alarm;
   readonly screeningRunFailedAlarm: cloudwatch.Alarm;
   readonly screeningUploadsSentToWaitAlarm: cloudwatch.Alarm;
+  /** One alarm per platform mail code (MAIL_PLATFORM_ALARM_CODES). */
+  readonly mailCodeAlarms: Readonly<Record<MailPlatformAlarmCode, cloudwatch.Alarm>>;
+  readonly mailValidationCapAlarm: cloudwatch.Alarm;
   /** Notifies the operator topic; every alarm in the stack uses it. */
   readonly notify: cloudwatchActions.SnsAction;
 
@@ -392,5 +411,41 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.screeningUploadsSentToWaitAlarm.addAlarmAction(notify);
+
+    const mailCodeDescriptions: Readonly<Record<MailPlatformAlarmCode, string>> = {
+      MAIL_STREAM_PAUSED: `The ${props.environmentName} screening mail stream paused: new screenings are refused until a platform administrator resumes it with a reason (docs/runbooks/deliverability.md).`,
+      NOTICE_UNDELIVERED: `A ${props.environmentName} support-access or dunning notice did not reach a recipient: reach the practice or organization another way.`,
+      NOTICE_UNDELIVERABLE: `A ${props.environmentName} support-access or dunning notice had no one to send to: reach the practice or organization another way.`,
+      INVITATION_UNDELIVERED: `A ${props.environmentName} invitation email was not delivered: tell the inviting administrator.`,
+      MAIL_PROBE_MISSED: `A ${props.environmentName} mail probe did not come back within 26 hours: check the identity, the event destination, the rule and the queue.`,
+    };
+    const codeAlarms: Partial<Record<MailPlatformAlarmCode, cloudwatch.Alarm>> = {};
+    for (const code of MAIL_PLATFORM_ALARM_CODES) {
+      const metricName = mailCodeMetricName(code);
+      const filter = counted(this.platformLogGroup, metricName, { namespace: MAIL_NAMESPACE, metricName }, logs.FilterPattern.stringValue('$.error_code', '=', code));
+      const alarm = new cloudwatch.Alarm(this, `Mail${metricName}`, {
+        alarmDescription: mailCodeDescriptions[code],
+        metric: filter.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(MAIL_PLATFORM_ALARM_PERIOD_SECONDS) }),
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        threshold: 1,
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      alarm.addAlarmAction(notify);
+      codeAlarms[code] = alarm;
+    }
+    this.mailCodeAlarms = codeAlarms as Record<MailPlatformAlarmCode, cloudwatch.Alarm>;
+
+    const capMetricName = mailCodeMetricName(MAIL_VALIDATION_CAP_CODE);
+    const capReached = counted(this.webLogGroup, capMetricName, { namespace: MAIL_NAMESPACE, metricName: capMetricName }, logs.FilterPattern.stringValue('$.error_code', '=', MAIL_VALIDATION_CAP_CODE));
+    this.mailValidationCapAlarm = new cloudwatch.Alarm(this, `Mail${capMetricName}`, {
+      alarmDescription: `The ${props.environmentName} screening reached the day's cap on address validations: check the day's submissions for abuse, and raise the cap only with the founder.`,
+      metric: capReached.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(MAIL_VALIDATION_CAP_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.mailValidationCapAlarm.addAlarmAction(notify);
   }
 }

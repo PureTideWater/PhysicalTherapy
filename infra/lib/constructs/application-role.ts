@@ -19,11 +19,16 @@ export const MODEL_INVOKE_ACTIONS = ['bedrock:InvokeModel'] as const;
 /** The Textract calls intake's scan reader makes (packages/contracts/src/evidence/scan.ts: TextractPageReader). */
 export const TEXTRACT_ACTIONS = ['textract:StartDocumentTextDetection', 'textract:GetDocumentTextDetection'] as const;
 
+/** The SES call the screening's submit makes to check a prospect's address (apps/web/src/lib/screening/validation.ts; Q1 (g)). */
+export const ADDRESS_VALIDATION_ACTIONS = ['ses:GetEmailAddressInsights'] as const;
+
 export interface ApplicationRoleProps {
   readonly key: kms.IKey;
   readonly documents: s3.IBucket;
   readonly packets: s3.IBucket;
   readonly userPool: cognito.IUserPool;
+  /** The digests' sender and stream (docs/adr/0065): MailFromAddress, its identity and the transactional set. */
+  readonly digestMail: { readonly mailFromAddress: string; readonly identityArn: string; readonly configurationSetArn: string };
 }
 
 /**
@@ -47,8 +52,11 @@ export interface ApplicationRoleProps {
  *   the worker share this role, and with it the worker could otherwise read the web's application login and
  *   connect as it, where the database tells the worker's own login from the web's (tp_job).
  * - Digest email (PRD 5, J17; docs/adr/0039): the worker sends a practice's digests through SES
- *   (SESv2 SendEmail) from this account's verified identities in this region only. A digest carries
- *   counts and a sign-in link, never a patient's data.
+ *   (SESv2 SendEmail) through MailFromAddress's identity and the transactional stream's set only, from
+ *   MailFromAddress alone (docs/adr/0065). A digest carries counts and a sign-in link, never a patient's data.
+ * - Address validation (Q1 (g); docs/adr/0065, D9): the screening's submit asks SES whether a prospect's address
+ *   can receive mail (GetEmailAddressInsights, $0.01 a call, under the web's daily cap). The action takes no
+ *   resource. The worker shares this role and never calls it.
  * - The user pool (docs/adr/0049): the three administrative calls the web app makes, on this
  *   environment's pool only (USER_POOL_ADMIN_ACTIONS).
  * - Models (PRD 14, Provider and data path; docs/adr/0048 and 0054): bedrock:InvokeModel, the one call
@@ -69,7 +77,7 @@ export class ApplicationRole extends Construct {
     const buckets = [props.documents, props.packets];
 
     this.role = new iam.Role(this, 'Role', {
-      description: 'Web and worker tasks: practice data keys, documents, packets, digest email, pinned models, scanned pages',
+      description: 'Web and worker tasks: practice data keys, documents, packets, digest email, address validation, pinned models, scanned pages',
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
       }),
@@ -107,7 +115,13 @@ export class ApplicationRole extends Construct {
       new iam.PolicyStatement({
         sid: 'DigestEmail',
         actions: ['ses:SendEmail'],
-        resources: [`arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/*`],
+        resources: [props.digestMail.identityArn, props.digestMail.configurationSetArn],
+        conditions: { StringEquals: { 'ses:FromAddress': props.digestMail.mailFromAddress } },
+      }),
+      new iam.PolicyStatement({
+        sid: 'ScreeningAddressValidation',
+        actions: [...ADDRESS_VALIDATION_ACTIONS],
+        resources: ['*'],
       }),
       new iam.PolicyStatement({
         sid: 'UserPoolAdministration',

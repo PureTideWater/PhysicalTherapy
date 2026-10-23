@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { MODEL_INVOKE_ACTIONS, PRACTICE_CONTEXT_KEY, TEXTRACT_ACTIONS, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
+import { ADDRESS_VALIDATION_ACTIONS, MODEL_INVOKE_ACTIONS, PRACTICE_CONTEXT_KEY, TEXTRACT_ACTIONS, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
+import { PARAMETER_NAMES } from '../lib/deploy-parameters';
 import { bedrockModelArns, pinnedBedrockModels } from '../lib/models';
 import { ENVIRONMENTS } from '../lib/environments';
 import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf, resourceById, roleStatements, synthesized } from './synth';
@@ -18,6 +19,14 @@ describe('the application role\'s Cognito actions match what the web app sends',
     const source = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/auth/cognito-provider.ts'), 'utf8');
     const admin = [...new Set([...source.matchAll(/new (Admin\w+)Command\(/g)].map((match) => `cognito-idp:${match[1] ?? ''}`))].sort();
     expect(admin).toEqual([...USER_POOL_ADMIN_ACTIONS].sort());
+  });
+});
+
+describe('the application role\'s SES actions match what the web and the worker send (docs/adr/0065)', () => {
+  it('covers the one SES command the screening\'s address validation makes, and the digests\' send', () => {
+    const validation = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/screening/validation.ts'), 'utf8');
+    const commands = [...new Set([...validation.matchAll(/new (\w+)Command\(/g)].map((match) => `ses:${match[1] ?? ''}`))].sort();
+    expect(commands).toEqual([...ADDRESS_VALIDATION_ACTIONS]);
   });
 });
 
@@ -128,14 +137,23 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     expect(text).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
   });
 
-  it('sends digest email from this account’s SES identities in its region, and nothing else of SES', () => {
+  it('sends digest email only through MailFromAddress\'s identity and the transactional set, from MailFromAddress, and validates screening addresses; nothing else of SES', () => {
     const ses = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('ses:')));
-    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail']);
-    expect(actionsOf(ses[0] as CfnStatement)).toEqual(['ses:SendEmail']);
-    const resource = JSON.stringify(ses[0]?.Resource);
-    expect(resource).toContain(':identity/*');
-    expect(resource).toContain('AWS::AccountId');
-    expect(resource).toContain('AWS::Region');
+    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail', 'ScreeningAddressValidation']);
+    const [digest, validation] = ses as [CfnStatement, CfnStatement];
+    expect(actionsOf(digest)).toEqual(['ses:SendEmail']);
+    expect(digest.Condition).toEqual({ StringEquals: { 'ses:FromAddress': { Ref: PARAMETER_NAMES.mailFromAddress } } });
+    const resource = JSON.stringify(digest.Resource);
+    expect(resource).toContain(logicalIdOf(stack, stack.mailStreams.mailIdentity));
+    expect(resource).toContain(`configuration-set/tp-${environment}-transactional`);
+    expect(resource).not.toContain('identity/*');
+    expect(resource).not.toContain(logicalIdOf(stack, stack.mailStreams.screeningIdentity));
+    for (const other of ['notices', 'screening']) {
+      expect(resource).not.toContain(`tp-${environment}-${other}`);
+    }
+    // GetEmailAddressInsights takes no resource.
+    expect(validation).toEqual({ Sid: 'ScreeningAddressValidation', Effect: 'Allow', Action: 'ses:GetEmailAddressInsights', Resource: '*' });
+    expect([...ADDRESS_VALIDATION_ACTIONS]).toEqual(['ses:GetEmailAddressInsights']);
   });
 
   it('makes the web app\'s administrative Cognito calls on this environment\'s user pool only', () => {
@@ -159,8 +177,8 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
   it('runs Textract’s text detection for scanned pages, and nothing else of Textract', () => {
     const textract = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('textract:')));
     expect(textract).toEqual([{ Sid: 'ScannedPages', Effect: 'Allow', Action: [...TEXTRACT_ACTIONS], Resource: '*' }]);
-    // Every other statement names its resources.
-    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => statement.Sid)).toEqual(['ScannedPages']);
+    // Every other statement names its resources, but the address validation's, whose action takes none.
+    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => statement.Sid)).toEqual(['ScreeningAddressValidation', 'ScannedPages']);
   });
 
   it('cannot delete objects, change retention or bypass Object Lock', () => {

@@ -8,7 +8,7 @@ import { type AttestationReading, registryImageId, reportSha256, verifyReportAtt
 import { type Measurements, report } from '../../tools/screening-capacity/report';
 import { attestationOutput, releaseSigner } from '../../tools/screening-capacity/test-support/attestation';
 import { ADVISORY, ENFORCED, SYNTHETIC_COMMIT, SYNTHETIC_TAG, measured, onOwnCpus, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
-import { NO_IMAGE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
+import { MAIL_IDENTITIES_VERIFIED_CONDITION, NO_IMAGE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
 import { ENVIRONMENTS, type EnvironmentName } from '../lib/environments';
 import { DEPLOY_LAUNCH_READERS, LAUNCH_ATTESTATION_CONTEXT, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, type LaunchTarget, ecrImageReference } from '../lib/screening-launch';
 import { SYNTH_TIMEOUT_MS, resourcesOf, synthesizeAll, templateFor } from './synth';
@@ -68,14 +68,28 @@ describe.each(ENVIRONMENTS)('%s: deploy-time parameters', (environment) => {
     expect(own).not.toContain('ScreeningLaunch');
   });
 
-  it('has no default for anything but the image tag, which starts at none (no task runs), and the consumer, which starts held', () => {
-    const defaulted: readonly string[] = [PARAMETER_NAMES.imageTag, PARAMETER_NAMES.screeningConsumer];
+  it('has no default for anything but the image tag, which starts at none (no task runs), the consumer, which starts held, and the mail phase, which starts at 1', () => {
+    const defaulted: readonly string[] = [PARAMETER_NAMES.imageTag, PARAMETER_NAMES.screeningConsumer, PARAMETER_NAMES.mailIdentitiesVerified];
     for (const name of Object.values(PARAMETER_NAMES).filter((candidate) => !defaulted.includes(candidate))) {
       expect(declared[name]?.Default, name).toBeUndefined();
     }
     expect(declared[PARAMETER_NAMES.imageTag]?.Default).toBe(NO_IMAGE);
     expect(declared[PARAMETER_NAMES.screeningConsumer]?.Default).toBe('held');
+    expect(declared[PARAMETER_NAMES.mailIdentitiesVerified]?.Default).toBe('false');
     expect(json(templateFor(environment)).Conditions.Released).toEqual({ 'Fn::Not': [{ 'Fn::Equals': [{ Ref: PARAMETER_NAMES.imageTag }, NO_IMAGE] }] });
+  });
+
+  it('takes the mail phase as false (phase 1: the identities wait for their DNS records) or true (phase 2), and nothing else (docs/adr/0065, D2)', () => {
+    expect(declared[PARAMETER_NAMES.mailIdentitiesVerified]).toMatchObject({ Type: 'String', Default: 'false', AllowedValues: ['false', 'true'] });
+    expect(json(templateFor(environment)).Conditions[MAIL_IDENTITIES_VERIFIED_CONDITION]).toEqual({ 'Fn::Equals': [{ Ref: PARAMETER_NAMES.mailIdentitiesVerified }, 'true'] });
+  });
+
+  it('derives the screening\'s sender from MailFromAddress as results@screening.<its domain>, so the two identities can never be one (Q12)', () => {
+    const outputs = json(templateFor(environment)).Outputs;
+    const domain = { 'Fn::Select': [1, { 'Fn::Split': ['@', { Ref: PARAMETER_NAMES.mailFromAddress }] }] };
+    expect(outputs.ScreeningMailFromAddress?.Value).toEqual({ 'Fn::Join': ['', ['results@screening.', domain]] });
+    expect(outputs.ScreeningMailIdentityDomain?.Value).toEqual({ 'Fn::Join': ['', ['screening.', domain]] });
+    expect(outputs.MailIdentityDomain?.Value).toEqual(domain);
   });
 
   it('accepts host names of at most 63 characters for the application (the passkey relying-party ID)', () => {
