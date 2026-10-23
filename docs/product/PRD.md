@@ -650,7 +650,7 @@ Browser to CloudFront (static) and the load balancer (dynamic); WAF; the Next.js
 
 ### Cost
 
-About $1,371 to $2,021 a month at ten customers and $2,371 to $3,571 at fifty, including the compliance platform, model calls and the free screening's consumer (section 19); model spend is cents per document. Reserved capacity is not bought before fifty customers.
+About $1,398 to $2,048 a month at ten customers and $2,398 to $3,598 at fifty, including the compliance platform, model calls and the free screening's consumer (section 19); model spend is cents per document. Reserved capacity is not bought before fifty customers.
 
 ## 16. Security and compliance engineering
 
