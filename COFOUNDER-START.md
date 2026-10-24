@@ -15,7 +15,17 @@ You run the build from your own Claude Max 20x account, beside the founder's ses
 
    The founder's environment uses full network access. With limited access, allow those hosts and leave "Allow package managers" ticked (https://code.claude.com/docs/en/cloud-environments#network-access).
 4. **Usage.** Your account has its own weekly allowance. Your session asks you for your usage % and the reset time before each heavy run, and stops starting heavy runs past about 80%. Extra usage (usage credits) is optional and your choice.
-5. **Who decides.** Product, cost, wording, legal and approval decisions are the founder's (Tyler Williams), unless the founder delegates one to you in `LANES.md`. Your session will ask you its questions. Answer what is delegated, and take the rest to the founder.
+5. **Session settings, every session:**
+   - Select only `PureTideWater/PhysicalTherapy`. A session with one repository reads its `.claude/settings.json` (the build's hooks and permissions).
+   - Pick **Auto** in the mode menu next to the prompt box, so long runs don't stop for every command.
+   - Pick the most capable model in the picker, the same one the founder's sessions use, at the highest effort offered (the founder's run at extra-high).
+   - Keep the word `ultracode` in the first message.
+6. **Nothing else to hand over.**
+   - **Secrets:** no keys, tokens or environment variables. The build uses no secrets of its own, and nothing is deployed to AWS yet.
+   - **Logins:** no copy of the founder's.
+   - **Memory or chat history:** everything a session needs is on this branch and in the repository.
+   - **The build tracker** is the founder's dashboard. They can share a view of it with you from claude.ai if you want to watch progress; your sessions don't need it.
+7. **Who decides.** Product, cost, wording, legal and approval decisions are the founder's (Tyler Williams), unless the founder delegates one to you in `LANES.md`. Your session will ask you its questions. Answer what is delegated, and take the rest to the founder.
 
 ## Every session: paste this as the first message
 Start a new session on `PureTideWater/PhysicalTherapy` in that environment, and paste this unchanged:
