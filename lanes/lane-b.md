@@ -8,7 +8,7 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
 ## In flight
-**The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC: branch `co-001/ci`, worktree `/home/user/ci`, ADR 0066, test-matrix CI-01 to CI-20. Stage: design (not started; waits on the co-founder's usage reading).
+**The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC: branch `co-001/ci`, worktree `/home/user/ci`, ADR 0066, test-matrix CI-01 to CI-20. Stage: **design running**, wf_8628914e-6b9 (started 2026-10-24 ~21:15 UTC; script `workflow-scripts/lane-b-ci-design-wf_8628914e-6b9.js`): four read-only scouts (CI structure #109, mutation #54, Playwright and runner #19, dependency policy #112), the design author writing `designs/lane-b-ci.md`, one adversarial reviewer, one revision. A workflow cannot be resumed from another session: if this session ends mid-run, the design stage starts again.
 
 ## Next
 After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane B's queue in `../LANES.md`.
@@ -40,3 +40,10 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - GitHub state: #42 (Lane A, draft, head 13f59b1, untouched since 2026-10-23 20:51); Dependabot #40, #38, #33 open; issue #41 open. This session's GitHub connection acts as `PureTideWater`.
   - Claimed the CI PR in LANES.md: `co-001/ci`, ADR 0066, CI-01 to CI-20. Next free ADR 0067.
   - **Next:** the co-founder's weekly usage % and reset time, then the CI PR's design (one reviewer).
+- **2026-10-24 ~21:10 UTC: the co-founder's first reading and rulings.**
+  - **Usage 0%** (Saturday); the weekly reset is **Friday 2026-10-30** (time of day not given; asked at the next reading). Pace about 11% a day; no new heavy run past about 80%.
+  - **Ruling (co-founder, 2026-10-24 ~21:10 UTC):** Lane B may use the `PureTideWater` GitHub account, the identity this session's GitHub connection has, the same one Lane A uses until runbook 3i.
+  - **Direction (co-founder, same time):** "do whatever you need to build this fully optimized app": proceed under the standing rule. Founder decisions still go to the founder through the co-founder (LANES.md lists no delegation yet).
+  - **Network:** the co-founder asked the session to allow the package-manager hosts itself; a session cannot change its environment's network policy. The two Playwright hosts (`cdn.playwright.dev`, `playwright.download.prss.microsoft.com`) stay refused (re-checked 21:09 UTC) until the co-founder adds them under the environment's Network access. Steps given in chat.
+  - Started the CI PR's design, wf_8628914e-6b9 (see In flight).
+  - **Next:** the design's result: its founder questions go to the co-founder in one batch, then the builders.
