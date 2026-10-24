@@ -24,7 +24,7 @@ Both lanes read this file before starting any pull request. They change it only 
 4. **Reserve shared numbers in the claim.**
    - **ADR:** take the next ADR number free both in `docs/adr` on `claude/build-platform` and in every claim here.
    - **Other numbers:** reserve the new `docs/product/test-matrix.md` row IDs and the `packages/synth` case IDs the design adds.
-   - **Next free ADR:** at 2026-10-24 it is **0066** (PR 6b-4 holds 0065).
+   - **Next free ADR:** at 2026-10-24 21:00 UTC it is **0067** (PR 6b-4 holds 0065, the CI PR 0066).
 5. **Branches.** Cut each `co-001/<name>` branch from the latest `claude/build-platform`. Each change gets one PR into `claude/build-platform`, opened as a draft first, worked in a worktree `/home/user/<name>`. Never open a PR into `main`. Never create a release tag.
 6. **Merging.**
    - Before a merge, merge the latest `claude/build-platform` into the PR branch with a merge commit. Never rebase or force-push.
@@ -100,6 +100,7 @@ If Lane B runs dry, Lane A hands it items from this list that need no migration.
 | Item | Lane | Branch / PR | Started (UTC) | Reserved | State |
 |---|---|---|---|---|---|
 | PR 6b-4, mail streams (audit #76) | A | `co-001/pr-06b-mail-streams` / #42 | 2026-10-23 16:45 | ADR 0065; SCR-21, SCR-22, SEC-18, SEC-19, JOB-05 | Reviewed; fix round after the 2026-10-27 reset |
+| The CI PR (audit #19's upgrade part, #54, #109, #112; Dependabot #40, #38, #33 and the versions dismissed on 2026-10-18; postgres and minio coverage) | B | `co-001/ci` (a split into several PRs, if the design makes one, is recorded here) | 2026-10-24 21:00 | ADR 0066; test-matrix CI-01 to CI-20 (a new series, Lane B's); no `packages/synth` case IDs (any the design needs are added here first) | Claimed; design next, after the co-founder's usage reading |
 
 ## Handed to Lane A
 None yet.
