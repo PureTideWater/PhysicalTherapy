@@ -464,7 +464,8 @@ Every pull request above passes these checks. A pull request that cannot pass on
 - PR 8, PR 14 and PR 17 are reviewed by the security-reviewer agent.
 
 **Milestones and gate dates**
-- The fourteen milestones and their checks in PRD 17 are unchanged, apart from 11b being inserted (CO-08) and the red-team exit added to milestones 6 and 11 (CO-10).
+- The fourteen milestones and their checks in PRD 17 are unchanged, apart from 11b being inserted (CO-08), the red-team exit added to milestones 6 and 11 (CO-10), and the 85% mutation exit added to milestone 6 and Gate 1 (combined audit #54, adopted 2026-10-20).
+  - *Ruled by the founder, Tyler Williams, on October 25, 2026, relayed by the co-founder: the 85% mutation exit is an exception to this check* (the CI series' question F6). His adoption of the whole combined audit on October 20, 2026 covers item #54's "Make 85% an exit condition of milestone 6 and Gate 1", which this check did not name. PRD 17's milestone 6 check now ends "every money package's mutation score is above 85% with no unexplained survivor (the `mutation` gate)", and its opening prompt says the same (`docs/product/milestone-prompts.md`). PRD 18's mutation row and CI line say what the gate measures and when. PR 7 writes the same condition into Gate 1 in `docs/product/gates.md`. No other milestone, check or gate date changes. Recorded in `docs/adr/0066`, Part 4.
 - AUDIT-01 (`apps/web/src/lib/routes/audit-e2e.db.test.ts`), the stand-in for milestone 6's check, keeps matching its worksheet line for line.
 - Gate 1 stays July 15, 2027, and Gate 2 stays March 31, 2028.
 - The pace assumption stays 13 hours a week until the full-time trigger.

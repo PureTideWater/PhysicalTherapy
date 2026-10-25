@@ -1,0 +1,38 @@
+{
+  "$comment": "The recorded equivalents that rest on the engine's Unicode data (docs/adr/0066, Part 4; docs/runbooks/ci.md, \"Recording an equivalent\"), each keyed as in tools/stryker/equivalent/<package>.json, and the Node, Unicode and ICU versions they were checked on over every code point. The gate fails them, naming each, when a shard that scores them ran on other Unicode or ICU data (its canary verdict names its runtime), and tools/test/workflows.test.ts holds mutation.yml's pinned Node to checkedOn.node: moving the pin means checking these again on the new Node first. readable.ts's three: NFKC neither adds nor removes a hidden character in any cluster; mismatches.ts's: no grapheme cluster joins a sentence end's whitespace to the mark before it or to a marker's bracket.",
+  "checkedOn": {
+    "node": "24.22.0",
+    "unicode": "17.0",
+    "icu": "78.3"
+  },
+  "records": [
+    {
+      "file": "packages/packets/src/readable.ts",
+      "mutator": "ConditionalExpression",
+      "original": "shown !== normalized",
+      "occurrence": 1,
+      "replacement": "false"
+    },
+    {
+      "file": "packages/packets/src/readable.ts",
+      "mutator": "LogicalOperator",
+      "original": "shown !== normalized || withoutHidden(segment) !== segment",
+      "occurrence": 1,
+      "replacement": "shown !== normalized && withoutHidden(segment) !== segment"
+    },
+    {
+      "file": "packages/packets/src/readable.ts",
+      "mutator": "ConditionalExpression",
+      "original": "withoutHidden(segment) !== segment",
+      "occurrence": 1,
+      "replacement": "false"
+    },
+    {
+      "file": "packages/packets/src/verifier/mismatches.ts",
+      "mutator": "EqualityOperator",
+      "original": "marker.start < span.end",
+      "occurrence": 1,
+      "replacement": "marker.start <= span.end"
+    }
+  ]
+}

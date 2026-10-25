@@ -173,6 +173,61 @@ describe('formatUnroundedUsd', () => {
       expect(() => formatUnroundedUsd(text)).toThrow(MoneyError);
     }
   });
+
+  it.each([
+    ['0', '$0.00'],
+    ['7', '$0.07'],
+    ['100', '$1.00'],
+    ['-100', '-$1.00'],
+    ['0.5', '$0.005'],
+    ['-0.5', '-$0.005'],
+    ['-0.0', '$0.00'],
+    ['-0.000', '$0.00'],
+    ['-100.00', '-$1.00'],
+    ['100.10', '$1.001'],
+    ['10000.05', '$100.0005'],
+    ['10000.050', '$100.0005'],
+    ['10000.0050', '$100.00005'],
+    ['10000.505', '$100.00505'],
+    ['12345678.0050', '$123,456.78005'],
+    ['900719925474099399.25', '$9,007,199,254,740,993.9925'],
+  ])('writes %s cents as %s: every whole-cent digit read, only the fraction’s trailing zeros dropped', (text, expected) => {
+    expect(formatUnroundedUsd(text)).toBe(expected);
+  });
+});
+
+/** The error `run` throws, so a test can hold its class, its name and its exact message. */
+function refusalOf(run: () => unknown): Error {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof Error) {
+      return error;
+    }
+    throw new Error('the refusal is not an Error', { cause: error });
+  }
+  throw new Error('expected a refusal, and nothing was thrown');
+}
+
+describe('MoneyError', () => {
+  it('names itself, so a log line or a caught error reads as a money refusal', () => {
+    const error = new MoneyError('a refusal');
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('MoneyError');
+    expect(String(error)).toBe('MoneyError: a refusal');
+  });
+
+  it.each([
+    ['cents', () => cents(12 as unknown as bigint), 'cents are built from a bigint, never a number'],
+    ['parseAmount', () => parseAmount('12.345'), 'amount is not a decimal with at most two places'],
+    ['parseCents', () => parseCents('01'), 'cents text is not a canonical integer'],
+    ['formatUnroundedUsd', () => formatUnroundedUsd('1.'), 'an unrounded amount is cents as decimal text'],
+  ])('%s refuses with a MoneyError and its own message', (_name, run, message) => {
+    const error = refusalOf(run);
+    expect(error).toBeInstanceOf(MoneyError);
+    expect(error.name).toBe('MoneyError');
+    expect(error.message).toBe(message);
+  });
 });
 
 describe('arithmetic', () => {

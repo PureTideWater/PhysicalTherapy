@@ -450,6 +450,10 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-08': none(0, 'The groups and the scheduler are planned for hosts the test describes; no file.', ['tools/lint/groups.test.ts']),
   'CI-09': none(0, 'The workflow and the database suite are read; the drift case migrates a scratch database; no file.', ['tools/test/workflows.test.ts', 'packages/db/src/domain-model/domain-model.db.test.ts']),
   'CI-10': none(0, 'Every workflow file is read; no file.', ['tools/test/workflows.test.ts']),
+  // The mutation workflow's (docs/adr/0066, Part 4).
+  'CI-15': none(0, "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.", ['tools/stryker/canary/verdict.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-16': none(0, "The gate judges shards' reports and equivalents the test builds in memory; no file.", ['tools/stryker/gate.test.ts', 'tools/stryker/mutants.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-17': none(0, 'The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.', ['tools/stryker/affected.test.ts', 'tools/stryker/shards.test.ts', 'tools/screening-capacity/watched.test.ts', 'tools/test/workflows.test.ts']),
 };
 
 export interface CaseDefinition {

@@ -203,9 +203,9 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 
 ## Continuous integration (CI)
 
-The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gate and the
-test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-20 are reserved for the
-series' later pull requests.
+The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
+test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-14 and CI-18 to CI-20 are
+reserved for the series' later pull requests; CI-15 to CI-17 are the mutation workflow's (docs/adr/0066, Part 4).
 
 | ID | Case | Assertion |
 | --- | --- | --- |
@@ -219,4 +219,7 @@ series' later pull requests.
 | CI-08 | Lint in memory-bounded groups | The groups cover every linted file exactly once; the scheduler fits 16 GiB and 8 GiB hosts and always runs at least one group; any group's warning or error fails the run |
 | CI-09 | The domain model's approval as its own check | `domain model` runs `--check --strict --require-approval`; the database suite carries no approval case |
 | CI-10 | A timeout on every job | Every job of every workflow has the timeout its table names |
+| CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score |
+| CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
+| CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
 

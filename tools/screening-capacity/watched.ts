@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { repositoryRoot } from '../content-files';
+import { type WorkspacePackage, inWorkspaceScope, resolveWorkspaceImport, workspacePackages } from '../stryker/workspace';
 
 /**
  * What the screening-capacity gate watches on a pull request (the founder's Q8 of 2026-10-21; docs/runbooks/
@@ -83,55 +84,15 @@ export const WATCHED_FIXED = [
 /** An import or re-export's module specifier, or a dynamic import's. */
 const IMPORT = /(?:^|[\s;])(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\sfrom\s+)?['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;
 
-interface WorkspacePackage {
-  readonly dir: string;
-  readonly exports: Readonly<Record<string, string>>;
-}
-
-/** Each workspace package by name: its directory and its exports, as package.json gives them. */
-function workspacePackages(root: string): Map<string, WorkspacePackage> {
-  const found = new Map<string, WorkspacePackage>();
-  for (const base of ['apps', 'packages']) {
-    const parent = path.join(root, base);
-    for (const name of existsSync(parent) ? readdirSync(parent) : []) {
-      const manifest = path.join(parent, name, 'package.json');
-      if (!existsSync(manifest)) {
-        continue;
-      }
-      const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string; exports?: Record<string, unknown> | string };
-      const exports: Record<string, string> = {};
-      if (typeof parsed.exports === 'string') {
-        exports['.'] = parsed.exports;
-      } else {
-        for (const [key, value] of Object.entries(parsed.exports ?? {})) {
-          const target = typeof value === 'string' ? value : ((value as { import?: string; default?: string } | null)?.import ?? (value as { default?: string } | null)?.default);
-          if (typeof target === 'string') {
-            exports[key] = target;
-          }
-        }
-      }
-      if (parsed.name !== undefined) {
-        found.set(parsed.name, { dir: `${base}/${name}`, exports });
-      }
-    }
-  }
-  return found;
-}
-
-/** A module specifier resolved to a source file of the repository, relative to its root, or null (a dependency, a built-in). */
-function resolveSpecifier(root: string, packages: Map<string, WorkspacePackage>, specifier: string, from: string): string | null {
+/** A module specifier resolved to a source file of the repository, relative to its root, or null (a dependency, a built-in, or nothing). */
+function resolveSpecifier(root: string, packages: readonly WorkspacePackage[], specifier: string, from: string): string | null {
   if (specifier.startsWith('.')) {
     const base = path.posix.normalize(path.posix.join(path.posix.dirname(from), specifier));
     const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`, base.endsWith('.js') ? `${base.slice(0, -3)}.ts` : null];
     return candidates.find((candidate): candidate is string => candidate !== null && isFile(path.join(root, candidate))) ?? null;
   }
-  const named = /^(@[^/]+\/[^/]+)(\/.*)?$/.exec(specifier);
-  const workspace = named?.[1] === undefined ? undefined : packages.get(named[1]);
-  if (workspace === undefined) {
-    return null;
-  }
-  const target = workspace.exports[`.${named?.[2] ?? ''}`];
-  return target === undefined ? null : path.posix.normalize(path.posix.join(workspace.dir, target));
+  const workspace = resolveWorkspaceImport(packages, specifier);
+  return workspace?.file !== null && workspace?.file !== undefined && isFile(path.join(root, workspace.file)) ? workspace.file : null;
 }
 
 function isFile(file: string): boolean {
@@ -142,25 +103,50 @@ function isFile(file: string): boolean {
   }
 }
 
-/** Every repository source file the entry points reach through their imports, tests left out, sorted. */
-export function importClosure(entries: readonly string[], root: string = repositoryRoot): string[] {
+/** An import of the closure that reaches no repository file although it should: a relative path, or a workspace package's name or scope. */
+export interface UnresolvedImport {
+  readonly file: string;
+  readonly specifier: string;
+}
+
+/**
+ * The entry points' import graph: every repository source file they reach, sorted, and the imports that should reach
+ * one and do not (a relative path to no file; a specifier in a workspace package's scope that names no package, or
+ * that its package exports no file for). Workspace specifiers resolve as vitest.mutation.config.ts aliases them
+ * (tools/stryker/workspace.ts): every package pnpm-workspace.yaml lists, their exports' conditions, arrays and `*`
+ * patterns. Tests are left out unless `includeTests` is set.
+ */
+export function importGraph(entries: readonly string[], root: string = repositoryRoot, options: { readonly includeTests?: boolean } = {}): { readonly files: string[]; readonly unresolved: UnresolvedImport[] } {
   const packages = workspacePackages(root);
   const seen = new Set<string>();
+  const unresolved: UnresolvedImport[] = [];
   const stack = [...entries];
   for (let file = stack.pop(); file !== undefined; file = stack.pop()) {
-    if (seen.has(file) || /\.test\.tsx?$/.test(file)) {
+    if (seen.has(file) || (options.includeTests !== true && /\.test\.tsx?$/.test(file))) {
       continue;
     }
     seen.add(file);
     const source = readFileSync(path.join(root, file), 'utf8');
     for (const match of source.matchAll(IMPORT)) {
-      const resolved = resolveSpecifier(root, packages, match[1] ?? match[2] ?? '', file);
-      if (resolved !== null && !seen.has(resolved)) {
+      const specifier = match[1] ?? match[2] ?? '';
+      const resolved = resolveSpecifier(root, packages, specifier, file);
+      if (resolved === null) {
+        if (specifier.startsWith('.') || resolveWorkspaceImport(packages, specifier) !== undefined || inWorkspaceScope(packages, specifier)) unresolved.push({ file, specifier });
+      } else if (!seen.has(resolved)) {
         stack.push(resolved);
       }
     }
   }
-  return [...seen].sort();
+  return { files: [...seen].sort(), unresolved: unresolved.sort((a, b) => (a.file === b.file ? (a.specifier < b.specifier ? -1 : 1) : a.file < b.file ? -1 : 1)) };
+}
+
+/**
+ * Every repository source file the entry points reach through their imports, sorted (importGraph's files). Tests are
+ * left out unless `includeTests` is set (the mutation workflow's closures, tools/stryker/affected.ts, which follow a
+ * package's tests and what they import); the watched list leaves it off.
+ */
+export function importClosure(entries: readonly string[], root: string = repositoryRoot, options: { readonly includeTests?: boolean } = {}): string[] {
+  return importGraph(entries, root, options).files;
 }
 
 /**
