@@ -1,28 +1,6 @@
 [
   {
     "file": "packages/ledger/src/allocation.ts",
-    "mutator": "ArithmeticOperator",
-    "original": "a.index - b.index",
-    "occurrence": 1,
-    "replacement": "a.index + b.index",
-    "reason": "On a tie the mutant's comparator returns a.index + b.index where the original returns a.index - b.index. V8’s stable sort (TimSort) calls the comparator only with the element that started later first (0 of 6,482,857 calls on Node 24, over 3,000 random arrays of up to 5,000 elements, passed the earlier one first), where both are positive, so ties keep index order either way.",
-    "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/ledger/src/allocation.ts",
-    "mutator": "ConditionalExpression",
-    "original": "a.remainder === b.remainder",
-    "occurrence": 1,
-    "replacement": "false",
-    "reason": "On a tie the mutant's comparator returns 1 where the original returns a.index - b.index. V8’s stable sort (TimSort) calls the comparator only with the element that started later first (0 of 6,482,857 calls on Node 24, over 3,000 random arrays of up to 5,000 elements, passed the earlier one first), where both are positive, so ties keep index order either way.",
-    "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/ledger/src/allocation.ts",
     "mutator": "EqualityOperator",
     "original": "a.remainder > b.remainder",
     "occurrence": 1,
