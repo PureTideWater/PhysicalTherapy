@@ -28,6 +28,9 @@ export const REQUIRED_CHECKS: readonly RequiredCheck[] = [
 
 export const REQUIRED_CHECK_NAMES: readonly string[] = REQUIRED_CHECKS.map((check) => check.name);
 
+const ADR_0063 = 'docs/adr/0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md';
+const ADR_0066 = 'docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md';
+
 /** The documents that list the required checks; each holds at least one marked listing. */
 export const REQUIRED_CHECK_LISTINGS: readonly string[] = [
   '.github/pull_request_template.md',
@@ -35,8 +38,8 @@ export const REQUIRED_CHECK_LISTINGS: readonly string[] = [
   'docs/runbooks/screening-capacity.md',
   'docs/runbooks/ci.md',
   'docs/policies/change-management.md',
-  'docs/adr/0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md',
-  'docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md',
+  ADR_0063,
+  ADR_0066,
 ];
 
 export const OPEN_MARKER = '<!-- required-checks -->';
@@ -93,13 +96,49 @@ export function readListings(text: string): ListingsRead {
   return { listings, problems, unmarked };
 }
 
+/** The paragraphs of a text that name at least `least` of `names`, each in backticks, trimmed. */
+function paragraphsNaming(text: string, names: readonly string[], least: number): string[] {
+  return text
+    .split(/\n\s*\n/)
+    .filter((paragraph) => new Set([...paragraph.matchAll(/`([^`\n]+)`/g)].map((match) => match[1]).filter((name) => name !== undefined && names.includes(name))).size >= least)
+    .map((paragraph) => paragraph.trim());
+}
+
 /**
  * Paragraphs outside the marked listings that name three or more of the required checks in backticks: a listing
- * someone left unmarked, which the marked-listing check would never read.
+ * someone left unmarked, which the marked-listing check would never read. Each by its first line.
  */
 export function unmarkedListings(unmarked: string, names: readonly string[] = REQUIRED_CHECK_NAMES): string[] {
-  return unmarked
-    .split(/\n\s*\n/)
-    .filter((paragraph) => new Set([...paragraph.matchAll(/`([^`\n]+)`/g)].map((match) => match[1]).filter((name) => name !== undefined && names.includes(name))).size >= 3)
-    .map((paragraph) => paragraph.trim().split('\n')[0] ?? '');
+  return paragraphsNaming(unmarked, names, 3).map((paragraph) => paragraph.split('\n')[0] ?? '');
 }
+
+/** The checks the ruleset was to require before docs/adr/0066, Part 1: ci.yml's one job and supply-chain.yml's three. */
+export const OLD_CHECK_NAMES: readonly string[] = ['check', 'images (web)', 'images (worker)', 'licenses'];
+
+/** Paragraphs that name two or more of the old checks in backticks: a listing of the set ADR 0066 replaced, whole. */
+export function oldListings(text: string): string[] {
+  return paragraphsNaming(text, OLD_CHECK_NAMES, 2);
+}
+
+/**
+ * The old checks' other names, as the CI series' design searches for them (`git grep -nE`, section 3.1.6): the old
+ * check as GitHub showed it, the old job described, the old count, the image checks and the deleted workflow.
+ */
+export const STALE_NAMES = 'ci / check|`check` \\(the|five (green )?checks|images \\(web\\)|images \\(worker\\)|supply-chain\\.yml';
+
+/**
+ * Where the repository may still name the old checks, each by its file and a text of the line (or the paragraph) that
+ * does: an ADR's context, alternatives, notices or dated amendment, which record what was, and a test that the old
+ * workflow is gone. Each entry must match exactly one line or paragraph, so none outlives what it allows. This module
+ * and tools/test/required-checks.test.ts hold the names as data and are not searched.
+ */
+export const OLD_NAMES_HISTORY: readonly { readonly file: string; readonly text: string }[] = [
+  { file: 'docs/adr/0010-supply-chain-gates-beside-ci.md', text: '(amended 2026-10-25, ADR 0066; it was `.github/workflows/supply-chain.yml`' },
+  { file: 'docs/adr/0010-supply-chain-gates-beside-ci.md', text: '`supply-chain.yml` is deleted:' },
+  { file: ADR_0063, text: 'folds `supply-chain.yml` into it' },
+  { file: ADR_0066, text: '- `supply-chain.yml` ran beside ci.yml because' },
+  { file: ADR_0066, text: 'so the documents named five required checks (`check`, the two image checks, `licenses` and' },
+  { file: ADR_0066, text: '| Keep `supply-chain.yml` beside ci.yml |' },
+  { file: ADR_0066, text: '- **N1.** `supply-chain.yml` folds into ci.yml under `all green`' },
+  { file: 'tools/test/workflows.test.ts', text: "expect(existsSync(path.join(WORKFLOWS, 'supply-chain.yml'))).toBe(false);" },
+];
