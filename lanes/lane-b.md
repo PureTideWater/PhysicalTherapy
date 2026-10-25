@@ -217,6 +217,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - Resume each stopped workflow with `resumeFromRunId`, after editing its script with a RESUMED note and the lock rule. Only the same session can resume them.
   - **If the session itself ended,** a new session starts again from this section, and a stage cut off mid-run starts again from its worktree.
 - **If auto mode becomes unavailable,** workflow agents stop mid-run. Wait for the person, then resume the same way.
+- **An interrupt of the main session stops background workflow agents too** (2026-10-25 21:27 UTC: four agents lost, and nothing showed it for 73 minutes). The stop button and a message sent while a reply is running both count. So:
+  - every workflow agent keeps a progress file and continues from it (the SAVE rule in `workflow-scripts/lane-b-ux-capture-wf_b56fe7b4-652.js`);
+  - a monitor reports each agent's finish and any 10 minutes with no agent writing;
+  - after any interrupt, read the running workflows' journals at once, and resume the stopped ones.
 - **Counting tests:** take a PR's count changes from CI's run totals or a full local run, never from `vitest list`. That lists a parametric test once: PR 15 added seven per-835 parse cases that `vitest list` missed, and its description had to be corrected before the verification passed.
 - **Waiting:** the Bash tool blocks a foreground `sleep`. Run long commands with `run_in_background` and wait for their notification, or use Monitor with an until-loop. A PR's events arrive through `subscribe_pr_activity`.
 - **PR descriptions:**
