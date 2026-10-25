@@ -56,15 +56,21 @@ protection or roles.
    needs, with room to spare.
 
 Why $60: GitHub Team includes 3,000 Actions minutes a month for private repositories, and 2 GB of storage for what CI
-keeps. Measured on this repository on 17 and 18 October: one push to a pull request costs about 35 minutes (the `ci`
-check 25 to 35, the image and license checks about 5, `approval-of-record` about 1), so 3,000 minutes is about 85
+keeps. Measured on this repository on 17 and 18 October: one push to a pull request cost about 35 minutes (the `ci`
+check 25 to 35, the image and license checks about 5, `approval-of-record` about 1), so 3,000 minutes was about 85
 pushes. In those 34 hours CI used about 1,100 minutes: about 410 for the build's own pull requests, about 340 for
 Dependabot's dependency-update pull requests (15 `ci` runs in two bursts), and 360 for one image check that hung until
-GitHub stopped it. The pull request that added this guide stops a hung job after 15 or 60 minutes. Plan on the build's
-own rate, about 300 minutes a day: the included minutes last about ten days, and a month needs about 6,000 more.
-GitHub charges under a cent a minute for the Linux machines CI runs on (the billing page shows today's price), so $60
-buys more than 6,000 minutes. With a $0 budget, or one too small, CI stops when the minutes run out, and with step 4's
-required checks nothing merges until the next month. The build tells you if a month is running short.
+GitHub stopped it. Every job now stops at its own timeout (5 to 25 minutes for ci's jobs). Since ci's jobs run in
+parallel behind one gate (docs/adr/0066), a push finishes in about 10 minutes instead of 35 but bills about as many
+runner minutes, about 45 on a public repository's runners. On a private repository's 2-CPU runners, which run six
+database shards and three end-to-end shards, plan on about 70 to 80 a push, plus the capacity measurement's 13 to 16 on
+a pull request that touches a watched path (docs/runbooks/ci.md, "A private repository"): about twice the public rate,
+which step 8 above reads after the first week. Plan on the build's own rate, about 300 minutes a day as measured while
+public: the included minutes last about ten days, and a month needs about 6,000 more. GitHub charges under a cent a
+minute for the Linux machines CI runs on (the billing page shows today's price), so $60 buys more than 6,000 minutes;
+if the private runners double the rate, the week's reading shows it, and the budget follows. With a $0 budget, or one
+too small, CI stops when the minutes run out, and with step 4's required checks nothing merges until the next month.
+The build tells you if a month is running short.
 
 If you upgraded your own account to GitHub Pro under this guide's first version: once step 2 is done, the
 organization's plan is the one that counts for this repository, and you can downgrade your own account if nothing
@@ -97,18 +103,18 @@ What it changes for the build:
   role (3c). Nothing else from you.
 
 What it costs: a private repository no longer gets GitHub's own secret scanning and push protection unless you add
-GitHub Secret Protection. The secret checks stay CI's gitleaks scan in every pull request's `check` and the pre-push
+GitHub Secret Protection. The secret checks stay CI's gitleaks scan in every pull request's `static` job and the pre-push
 hook (`.githooks/pre-push`), which every build session installs when it starts. CI runs the same pinned gitleaks the
 hook runs, so the move changes nothing for it once the pull request that added this guide is merged (2a); the gitleaks
-GitHub Action, which CI used before, needs a paid licence key for an organization's repository and fails every `check`
+GitHub Action, which CI used before, needs a paid licence key for an organization's repository and fails every CI run
 still on it from the move.
 
 **2a. First, the pull request that added this guide is merged, and every build session told.** Ask the build: "Is the
 pull request that added the GitHub governance runbook merged into `claude/build-platform`?" Do not go on to 2b until it
 says yes; if it is still open, the build merges it first. It replaces the gitleaks GitHub Action in CI, which fails the
-`check` of every pull request in a repository an organization owns unless a paid licence key is set: transferred before
-it is merged, every other open pull request's `check` goes red. Once it is merged, the build brings
-each open pull request up to date with `claude/build-platform`, so its next `check` runs the new scan. Then send every
+CI of every pull request in a repository an organization owns unless a paid licence key is set: transferred before
+it is merged, every other open pull request's CI goes red. Once it is merged, the build brings
+each open pull request up to date with `claude/build-platform`, so its next CI run runs the new scan. Then send every
 build session: "Push what you have and pause; I am moving the repository to <organization>." Wait until each says it
 has paused.
 
@@ -266,7 +272,7 @@ Do this after step 2 and after the pull request that added this guide is merged 
 `main` brings the workflows with it.
 
 `main` holds only the plan files until launch, with no workflows, so its rulesets require no check until then: a check
-that cannot run there would block every pull request into it, a repair like #18 included. Step 8 adds the five checks
+that cannot run there would block every pull request into it, a repair like #18 included. Step 8 adds the required checks
 once the launch pull request is open. No ruleset requires an approval yet: until step 3, your account opens the build's pull requests and cannot
 approve them. From 3i the build waits for your approval anyway, and step 5 makes GitHub require it on both branches.
 
@@ -287,17 +293,24 @@ approve them. From 3i the build waits for your approval anyway, and step 5 makes
      turns two of them on. Leave the allowed merge methods as they are, with **Merge commit** among them: step 8
      needs it.
    - **Require status checks to pass**, with **Require branches to be up to date before merging** on. Tap **Add
-     checks** and add these five, one at a time. After adding each, set its source (the menu beside it, which starts
+     checks** and add these four, one at a time. After adding each, set its source (the menu beside it, which starts
      at "any source") to **GitHub Actions**. Every one must have that source: a check from any source can be faked by
      anyone who can push, with a plain status of the same name.
-     - `check` (the `ci` workflow)
-     - `images (web)` (the `supply-chain` workflow)
-     - `images (worker)` (the `supply-chain` workflow)
-     - `licenses` (the `supply-chain` workflow)
-     - `approval-of-record` (the `approval-of-record` workflow; it passes until step 5, and says why)
+     <!-- required-checks -->
+     - `all green` (from the ci workflow: it passes only when every ci job passed, the image and license checks and
+       every database and end-to-end shard among them)
+     - `mutation` (from the mutation workflow)
+     - `screening-capacity gate` (from the screening-capacity workflow; it passes at once when the pull request
+       changes nothing the capacity test watches)
+     - `approval-of-record` (from the approval-of-record workflow; it passes until step 5, and says why)
+     <!-- /required-checks -->
 
-     On a pull request's checks list they appear as "ci / check (pull_request)", "supply-chain / images (web)
-     (pull_request)" and so on; in the ruleset they are the names above.
+     On a pull request's checks list they appear as "ci / all green (pull_request)", "mutation / mutation
+     (pull_request)" and so on; in the ruleset they are the names above. Add them once the build tells you the pull
+     request that made `all green` (docs/adr/0066) has passed its first run on `claude/build-platform`: added before
+     that, the ruleset would wait for a check no workflow reports yet. The other jobs (`static`, `db (1/4)` and the
+     rest) are not added: `all green` holds them all, so adding a shard by name would block every pull request the day
+     the number of shards changes.
    - **Block force pushes**.
 7. Tap **Create**.
 
@@ -334,8 +347,8 @@ publish** → **Target**: `main` → **Publish release**. Before launch there is
 
 Check: **Rulesets** lists five, all Active: "Protect the build branch", "Protect main history" and "Protect main", each
 targeting 1 branch, and the two release-tag rulesets, each targeting `v*`. Open "Protect the build branch": each of the
-five checks shows **GitHub Actions** as its source, not "any source". "Protect main history" and "Release tags are
-permanent" list no bypass. On the next pull request into the build branch, the merge button stays grey until the five
+four checks shows **GitHub Actions** as its source, not "any source". "Protect main history" and "Release tags are
+permanent" list no bypass. On the next pull request into the build branch, the merge button stays grey until the four
 checks are green and the branch is up to date.
 
 What a required check cannot stop: a collaborator with Write, the build agent included, can produce a check with the
@@ -348,7 +361,7 @@ Three effects to know:
 - A pull request whose branch is behind its base must be brought up to date (**Update branch**) before it merges,
   and its checks run again. The build does this.
 - From 3i the build merges nothing without your approval, though GitHub requires it only from step 5. Before 3i a pull
-  request into the build branch merges on its five green checks (reconciliation 001, D4 (a)). A pull request into `main`
+  request into the build branch merges on its green required checks (reconciliation 001, D4 (a)). A pull request into `main`
   waits for your ruling either way, and only a pull request can change either branch.
 - The `publish-content` workflow pushes content releases to `main` directly, and "Protect main" refuses that push. It
   runs only from `main`, which has no workflows until launch, so nothing is refused yet; step 7 sets up the one
@@ -421,10 +434,10 @@ Install the GitHub app (App Store or Google Play) and sign in as yourself, never
 
 **A pull request that asks you to approve the domain model** (it regenerates `docs/product/domain-model.md`):
 
-1. Read **Changes since the last approved document** in the `ci` check's summary (in the browser: **Checks** → **ci** →
-   **check** → **Summary**): row-level security, policies, the PHI registry and grants come first, then tables,
-   columns, constraints, functions, triggers and the divergence rows, one line each, with the old and new document
-   SHA-256. That copy is the one that counts: the code wrote it. The build also puts it at the top of the description,
+1. Read **Changes since the last approved document** in the `domain model` check's summary (in the browser:
+   **Checks** → **ci** → **domain model** → **Summary**): row-level security, policies, the PHI registry and grants
+   come first, then tables, columns, constraints, functions, triggers and the divergence rows, one line each, with the
+   old and new document SHA-256. That copy is the one that counts: the code wrote it. The build also puts it at the top of the description,
    but the build wrote that copy; if the two differ, request changes. If anything surprises you, request changes.
 2. Sign the approval line yourself. The build posts the exact line, with your name, today's date and the document's
    SHA-256, as a suggested change: one comment on the document's approval line, posted with the GitHub API, which
@@ -433,7 +446,7 @@ Install the GitHub app (App Store or Google Play) and sign in as yourself, never
    **Commit suggestion** → **Commit changes**. (If the app shows a **Commit suggestion** button, that works too.)
 3. Wait a moment for the page to show your commit as the latest. Then approve as above (**Review** → **Approve** →
    **Submit**). Your approval of that commit is the approval of record: the `approval-of-record` check turns green,
-   and the domain model check in `ci` passes once its run on your commit finishes.
+   and the `domain model` check in `ci`, and with it `all green`, passes once its run on your commit finishes.
 4. If the build pushes anything after your approval, GitHub dismisses it (step 5) and the check goes red again:
    approve the new latest commit.
 
@@ -522,20 +535,21 @@ build.
    again under the merge's own hash (any other finding stops the preparation). Approve it as in step 6. The build merges
    it with **Create a merge commit**, never squash or rebase, which would drop `main` as a parent.
 2. The build checks `git merge-base --is-ancestor origin/main origin/claude/build-platform`, then opens one pull request
-   from `claude/build-platform` into `main`, filled in from the template. Of `main`'s 10 files, only `README.md` and
-   `.github/dependabot.yml` differ from the build branch's copies (the other eight, the plan files, are the same), and
-   the build's copies replace `main`'s; every other file of the build is new to `main`. It brings the workflows,
+   from `claude/build-platform` into `main`, filled in from the template. Of `main`'s 11 files, the build branch has
+   changed `README.md`, `.github/dependabot.yml`, `.github/pull_request_template.md`, `docs/product/PRD.md` and
+   `docs/product/test-matrix.md` (the other six plan files are the same), and the build's copies replace `main`'s;
+   every other file of the build is new to `main`. It brings the workflows,
    `.github/CODEOWNERS`, the approver list, the pull request template and the build branch's Dependabot settings, which
    have no `target-branch` lines, so from the merge on Dependabot opens its updates against `main`. If `main` changes
    after the preparation (a pull request you ruled on), the build repeats step 1 rather than tap **Update branch** on
    the launch pull request, which would push a merge to `claude/build-platform`, and its ruleset refuses that.
 3. When the build tells you the launch pull request is open, and not before: **Rulesets** → **Protect main** → turn on **Require status
-   checks to pass**, with **Require branches to be up to date before merging** on, and add the same five checks as 4A,
+   checks to pass**, with **Require branches to be up to date before merging** on, and add the same four checks as 4A,
    each with the source **GitHub Actions** → **Save changes**. They run on the launch pull request itself, since its
    workflows come with it. Added any earlier, they would block every other pull request into `main` until launch,
    since `main` holds no workflow to run them (a repair like #18 among them).
 4. Approve the launch pull request at its latest commit (step 6). `approval-of-record` judges it against the build branch's approver list,
-   since `main` has none until the merge. The build merges it with **Create a merge commit** once the five checks are
+   since `main` has none until the merge. The build merges it with **Create a merge commit** once the four checks are
    green.
 5. Leave **Settings** → **General** → **Default branch** at `main`. From then on every pull request targets `main`, Code
    Owners review reads `main`'s CODEOWNERS, and GitHub offers the pull request template. `claude/build-platform` keeps
@@ -553,8 +567,9 @@ your approval. GitHub reads `.github/pull_request_template.md` from `main` too, 
 pull request form; the build fills the template in because CLAUDE.md tells it to.
 
 Until then `main`'s copy stays in force: npm minor and patch updates in one pull request, up to 10 open; each action
-and each base image in a pull request of its own, up to 5 open each (Dependabot's default). Each runs about 35 minutes
-of CI and, after step 5, needs your approval.
+and each base image in a pull request of its own, up to 5 open each (Dependabot's default). Each runs about 10 minutes
+of ci (about 35 before docs/adr/0066), plus the capacity measurement on a watched path, and, after step 5, needs your
+approval.
 
 The build opens one pull request into `main` that changes `.github/dependabot.yml` and adds
 `.github/pull_request_template.md`. Its branch is cut from `main`, which has no pre-push hook until launch, so the build
@@ -618,7 +633,7 @@ launch. At launch, the launch pull request brings the build branch's copies of b
 | The build | Only you |
 | --- | --- |
 | Opens pull requests as its own account (after step 3), fills in the template, keeps branches up to date, and from 3i merges only once you have approved and the checks are green | Steps 1 to 8 and any change to them |
-| Regenerates the domain model; the `ci` check writes the summary, and the build copies it to the description | Commits the approval line (from the build's suggestion) and approves the pull request |
+| Regenerates the domain model; ci's `domain model` check writes the summary, and the build copies it to the description | Commits the approval line (from the build's suggestion) and approves the pull request |
 | Proposes changes to CODEOWNERS, the workflows or this runbook in a pull request | Approves those pull requests |
 | Never writes an "Approved by:" line or `approvers.json` itself: its edit tools refuse it; it posts the text as a suggested change, in one comment on the approval line posted with the GitHub API (`gh api .../pulls/<n>/comments`), since a hook refuses the connector's review tools | Commits that suggestion, and approves the pull request |
 | Never approves a pull request or requests changes on one: what it posts on a pull request is a comment, a hook refuses the GitHub connector's review tools, and after step 3 no Claude session holds your account | Reviews, from your own account |

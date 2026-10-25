@@ -104,9 +104,11 @@ writes it, and only with a commit of 7 to 40 hexadecimal digits (or `unknown`) a
 (letters, digits, `.`, `_`, `/`, `-`); the tool refuses any other `--commit` or `--branch` (exit 2), and a provenance
 line moved elsewhere or with other text in those fields is compared and hashed like any other line. `pnpm test:db` makes
 the same comparison on its own scratch database (`domain-model.db.test.ts`), so a migration merged without regenerating
-the document fails. Its second case is the approval: the founder's name, a `YYYY-MM-DD` date (from 2026-10-16, when the
-change order was issued, to today) and the document's SHA-256 on the "Approved by" line (`--require-approval`, which
-prints the hash to sign when it refuses). The name must be exactly an entry of the reviewed approver list,
+the document fails. The approval is CI's `domain model` check, which runs `pnpm db:domain-model --check --strict
+--require-approval` on a freshly migrated database (docs/adr/0066): the founder's name, a `YYYY-MM-DD` date (from
+2026-10-16, when the change order was issued, to today) and the document's SHA-256 on the "Approved by" line
+(`--require-approval` prints the hash to sign when it refuses), so an unsigned document turns that check red and leaves
+the database suite to report on the database alone. The name must be exactly an entry of the reviewed approver list,
 `packages/db/domain-model/approvers.json` (apart from spaces at either end, in the same case), and never a placeholder
 (TBD, N/A, name, first name, last name, full name, founder, approver, VERIFY ONLY, Claude, in any case and their common
 spellings such as T.B.D., N.A., VERIFY-ONLY or ClaudeCode, or text in angle brackets) or a name with no letters. The
@@ -128,8 +130,8 @@ Each approval opens with the changes since the last approved document (docs/adr/
 --summary-since <ref>` compares the document at a git ref (the base branch, whose document is approved) with the working
 tree's, or with the text `--out` or `--check` generates, and prints one line per change, row-level security, policies,
 the PHI registry and grants first, then tables, columns, constraints, functions, triggers and the divergence rows, with
-both documents' SHA-256 and approval state. CI's `check` job writes it into its job summary, and a pull request that
-regenerates the document opens its description with it.
+both documents' SHA-256 and approval state. CI's `domain model` job writes it into its job summary and its log, and a
+pull request that regenerates the document opens its description with it.
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
 thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds
@@ -548,8 +550,8 @@ The security contact (audit item #20 (f)): `/.well-known/security.txt` (RFC 9116
 the public disclosure page `/security` as its Policy, English as its language and its own address under `APP_ORIGIN` as
 Canonical, with an `Expires` date set in `apps/web/src/lib/security/disclosure.ts`; `disclosure.test.ts` fails 30 days
 before that date, when the address is checked and the date moved on, less than a year ahead. That failure is in `pnpm
-test`, so from 30 days before the date (2027-03-31 for today's 2027-04-30) every pull request's `check` is red until the
-renewal merges; the change-management policy's quarterly review renews it when fewer than 120 days remain. The page says
+test`, so from 30 days before the date (2027-03-31 for today's 2027-04-30) every pull request's `unit` job, and with it
+`all green`, is red until the renewal merges; the change-management policy's quarterly review renews it when fewer than 120 days remain. The page says
 how to report, what to include, what not to do and what to expect, with no sign-in and no form. Production refuses to
 start without `SECURITY_EMAIL`, or with it equal to the support address, whose mail opens tickets only for accounts. Its
 response times and its good-faith research statement are drafts for the security official and counsel, listed in

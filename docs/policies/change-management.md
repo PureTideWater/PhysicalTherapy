@@ -37,20 +37,22 @@ until a setting is in place, the rule that relies on it is not met.
      their own pull request, and the build agent, which authors pull requests under its own GitHub account, never
      approves or requests changes: what it posts on a pull request, the approval line's suggestion included, is a
      comment.
-   - **Required checks.** A pull request into `claude/build-platform` also needs five checks from GitHub Actions to pass
-     on its latest commit, with the branch up to date with its base: `check` (the `ci` workflow) and `images (web)`,
-     `images (worker)` and `licenses` (the `supply-chain` workflow), which together run the gates of rule 2, and
-     `approval-of-record`. Once enforced (`APPROVAL_REVIEW_REQUIRED`), `approval-of-record` fails a pull request that
-     changes the domain model's approval line or the approver list until an approver other than its author approves its
-     latest commit. `main` holds no workflow until launch, so it requires no check until then; at launch it requires the
-     same five.
+   - **Required checks.** A pull request into `claude/build-platform` also needs four checks from GitHub Actions to pass
+     on its latest commit, with the branch up to date with its base: <!-- required-checks -->`all green` (from the ci
+     workflow, which passes only when every one of its jobs passed: together they run the gates of rule 2, the image
+     scan and the license allowlist among them), `mutation` (the money paths' mutation score),
+     `screening-capacity gate` (the free screening's capacity under production limits) and
+     `approval-of-record`<!-- /required-checks -->. Once enforced (`APPROVAL_REVIEW_REQUIRED`), `approval-of-record`
+     fails a pull request that changes the domain model's approval line or the approver list until an approver other
+     than its author approves its latest commit. `main` holds no workflow until launch, so it requires no check until
+     then; at launch it requires the same four.
    - **The build merges.** Once the approval and the checks are in place, the build performs the merge. The founder
      approves; the founder does not need to merge.
 
    The approval applies from the day the build agent works under its own GitHub account (runbook step 3i): from then on
    the build merges no pull request without it, and from runbook step 5, set as soon as the rulesets of step 4 exist,
    GitHub requires it. Until 3i the build works as the founder's account, which cannot approve its own pull requests, so
-   a pull request into `claude/build-platform` merges on its five checks. Both dates are written in docs/adr/0063, and
+   a pull request into `claude/build-platform` merges on its required checks. Both dates are written in docs/adr/0063, and
    the first quarterly review (rule 9) checks every pull request merged from the first.
 
    What Write still allows: a collaborator with Write, the build agent included, can push other branches and run a
