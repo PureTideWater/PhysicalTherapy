@@ -9,7 +9,8 @@ import { signInWithTotp, withDatabase } from '/home/user/screens/apps/web/e2e/he
  * PDF, uploaded on screen: its rate record with the cited page's text and the quote marked. Read by a billing manager
  * of the group (era-manager, whom no journey signed in, so no authenticator code is shared).
  */
-const OUT = '/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens';
+const OUT = process.env.TOUR_DIR ?? '';
+if (OUT === '') throw new Error('Set TOUR_DIR to the tour working directory (README, Set-up).');
 
 test('the contract version with its citation', async ({ browser }) => {
   const { practice, version } = await withDatabase(async (client) => {

@@ -4,7 +4,7 @@ import os
 import struct
 import sys
 
-S = '/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens'
+S = os.environ['TOUR_DIR']  # the tour's working directory (README, Set-up)
 ids = json.load(open(f'{S}/ids.json'))
 shots = {os.path.basename(s['file']): s for s in json.load(open(f'{S}/shots.json'))['shots']}
 contract = json.load(open(f'{S}/contract-shot.json')) if os.path.exists(f'{S}/contract-shot.json') else None

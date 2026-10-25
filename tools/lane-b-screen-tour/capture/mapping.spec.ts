@@ -5,7 +5,8 @@ import { expect, test } from '@playwright/test';
 import { signInWithTotp } from '/home/user/screens/apps/web/e2e/helpers';
 
 /** The payer and plan mapping, its "All plans" view chosen in its filter (the default shows only plans waiting on one). */
-const OUT = '/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens';
+const OUT = process.env.TOUR_DIR ?? '';
+if (OUT === '') throw new Error('Set TOUR_DIR to the tour working directory (README, Set-up).');
 
 test('mapping, all plans', async ({ browser }) => {
   const { layout } = JSON.parse(readFileSync(`${OUT}/ids.json`, 'utf8')) as { layout: string };

@@ -2,7 +2,7 @@
 # Holds the shared lock for the server's lifetime: starts the standalone build, waits for the stop file
 # (or 22 minutes), then stops it.
 set -uo pipefail
-S=/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens
+S="${TOUR_DIR:?set TOUR_DIR to the tour's working directory, a folder in this session's scratchpad (README, Set-up)}"
 source $S/env.sh
 rm -f $S/stop $S/ready
 echo "server starting at $(date -u +%T)"

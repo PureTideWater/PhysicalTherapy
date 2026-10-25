@@ -17,7 +17,8 @@ import { personaEmail } from '/home/user/screens/apps/web/scripts/synthetic-pers
  * (requesting a packet's approval, sending the free screening) and the PDF download of the payer's copy.
  */
 
-const OUT = '/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens';
+const OUT = process.env.TOUR_DIR ?? '';
+if (OUT === '') throw new Error('Set TOUR_DIR to the tour working directory (README, Set-up).');
 const PNG = `${OUT}/png`;
 const PROBE = `${OUT}/probe`;
 const DESKTOP = { width: 1280, height: 800 };

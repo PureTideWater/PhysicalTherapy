@@ -7,37 +7,157 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
-## In flight
-**The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC; ADR 0066; test-matrix and synth cases CI-01 to CI-20. **Design done and reviewed** (wf_8628914e-6b9, finished 2026-10-25 ~00:40 UTC): `designs/lane-b-ci.md`, with the scout reports and the review in `designs/lane-b-ci/`. Four PRs, in merge order:
-1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **MERGED: PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43) as 9c57d2d (2026-10-25 ~14:00 UTC, merge commit), head b5ff4c7, CI all green in 6:17, fresh-clone verification passed. Next: the first push run on 9c57d2d, then the founder's F7 ruleset.** Built by wf_aa18ae8a-848 (started 2026-10-25 ~01:05 UTC; script `workflow-scripts/lane-b-ci-speed-build-wf_aa18ae8a-848.js`). Builders S1, S2 and S3 work in parallel in `/home/user/ci-speed-s1`, `-s2` and `-s3` (local branches, never pushed); the integrator merges them in `/home/user/ci-speed`, pushes once and opens the draft PR; then two adversarial reviews run in fresh clones (CI and test infrastructure; security and supply chain). Heavy commands share `flock /tmp/laneb-heavy.lock`. If the session ends mid-run, this stage starts again from the four worktrees.
-2. `co-001/ci-deps` (#112, #19's asserts, groups and licence fix, Dependabot #40, #38's tooling, #33; CI-11 to CI-14): after ci-speed merges; needs F1, F2 and F4.
-3. `co-001/ci-browser` (#19's upgrade part; CI-18 to CI-20): after ci-speed and ci-deps; needs F4 and F5.
-4. `co-001/ci-mutation` (#54; CI-15 to CI-17). **MERGED: PR [#44](https://github.com/PureTideWater/PhysicalTherapy/pull/44) as de8f9b5 (2026-10-25 ~18:50 UTC, merge commit)**, head 7542aae, CI all green, the mutation gate passing (money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%; 164 reviewed equivalents), fresh-clone verification passed. Worktrees removed.
+## Start here (Lane B): the state at 2026-10-25 ~19:55 UTC
+A new Lane B session reads this section first, after `../LANES.md`. It is complete on its own: what is merged, what
+runs next and in what order, what waits on whom, and the conventions that kept the build safe. The dated log below it
+is the record; nothing in it is needed to continue.
 
-**PR 15, ledger tests LED-12 and LED-13** (Lane B queue item 2), claimed 2026-10-25 01:15 UTC: branch `co-001/pr-15-ledger-tests`. **Building: wf_c2a31a50-55d** (started 2026-10-25 ~14:05 UTC; worktree `/home/user/pr15` from 9c57d2d): the design's one adversarial review (payment-engine), then one builder applies the pre-validated patch (clean on 9c57d2d), records L1 (a) and opens the draft PR, then two reviews (payment-engine; test integrity). Earlier: stopped on the owner's question L1 (design wf_3851b95a-f1c, 2026-10-25 01:05-01:50 UTC, 0.41M subagent tokens): LED-12 as written failed against the frozen ledger, so reconciliation-001 item 15's stop applied; L1 (a) ruled. Design `designs/lane-b-pr15-ledger-tests.md`; the probe record and the pre-validated patch for L1 (a) in `designs/lane-b-pr15/`. The design's adversarial review (payment-engine checklist) runs after the ruling, against the answer chosen.
+### The state in one screen
+- **Merged by Lane B into `claude/build-platform`** (each a merge commit, after a fresh-clone verification that read CI):
+  - [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43) ci-speed (CI 1 of 4), as 9c57d2d. CI went from 29-41 minutes to about 6-8. Parallel jobs behind one `all green` gate, db in 4 shards, e2e in 2 shards over one stamped build.
+  - [#44](https://github.com/PureTideWater/PhysicalTherapy/pull/44) ci-mutation (CI 4 of 4), as de8f9b5. Mutation testing of every money package, gated above 85% with no unexplained survivor. Scores: money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%; 164 reviewed equivalents.
+  - [#45](https://github.com/PureTideWater/PhysicalTherapy/pull/45) PR 15 (ledger tests LED-12 and LED-13) is closing out: its head merged de8f9b5 cleanly (f4d125b); the checks, CI, the fresh-clone verification and the merge follow (the log's last entry says where it stands). Tests only, under the founder's ruling L1 (a).
+- **Open in Lane B:** only #45 until it merges (worktree `/home/user/pr15`). If this session ended before the merge, the next one continues it: setup argument `co-001/pr-15-ledger-tests:/home/user/pr15`, then the merge procedure below from the step the log names.
+- **`main` is unchanged, by rule.** It holds the plan documents until launch. No PR goes into `main` and no release tag
+  is created before launch unless the founder rules otherwise (CLAUDE.md "Merging", ADR 0063). "Up to date" means
+  merged into `claude/build-platform`. The default branch moves to `claude/build-platform` when ci-deps merges (F1 (a)).
+- **Lane A:** [#42](https://github.com/PureTideWater/PhysicalTherapy/pull/42) (PR 6b-4, mail streams, a schema PR) is a draft at 13f59b1. Its fix round comes after the 2026-10-27 reset. Lane B leaves #42's files alone (LANES.md, "Not while #42 is open").
+- **Dependabot:** #40 (actions) and #33 (base images) are open. Never merge one as it stands; ci-deps takes their
+  versions in.
+- **CI on `claude/build-platform` de8f9b5:** the push runs are green (ci 40223130551, mutation 40223130477, screening-capacity 40223130509).
+- **Test counts at de8f9b5 (#44's suite):** unit 4,986 and 3 skipped; golden 188; db 9,040 and 1 skipped; e2e 51; the pyx12 oracle on every synthetic 835.
+- **Usage:** last read 17% (2026-10-25, the co-founder). The weekly reset is Friday 2026-10-30; its time of day is not yet recorded, so ask for it at the first reading.
 
-## Next
-After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane B's queue in `../LANES.md`.
+### Next actions, in order
+1. **Machine and reading.** Follow COFOUNDER-START.md's message.
+   - The setup script needs no branch arguments: no Lane B branch is open.
+   - Then ask the co-founder for the usage % and the reset time (rule 9).
+2. **The UX/UI and brand baseline review: the first task** (the co-founder's decision, 2026-10-25 ~16:50 UTC).
+   - **Brief:** `designs/lane-b-ux-review-brief.md`. Read it whole. It is a review, not a PR, and changes no product code.
+   - **Claim:** pull, then add a row under Claims and push it before starting. Suggested row:
+     - item: "UX/UI and brand baseline review, then the reviewer checklist (the co-founder, 2026-10-25)";
+     - lane: B;
+     - branch: none for the review, `co-001/ux-brand-reviewer` for the checklist PR;
+     - reserved: no ADR expected (reserve one first if the design needs it); no test-matrix or synth IDs.
+   - **Capture:** `tools/lane-b-screen-tour`.
+     - Its README's Set-up runs in any session: `TOUR_DIR` in the new scratchpad, then `setup.sh`.
+     - Extend `capture/tour.spec.ts` from today's 30 screens to all 83 `page.tsx` routes, at 1280 px and 390 px, in light and dark where the app offers it, with the empty, loading and error states the journeys reach.
+     - Synthetic data only. One heavy command at a time under the lock.
+   - **Output:**
+     - `designs/lane-b-ux-review.md`: the findings, ranked and grouped into proposed PRs;
+     - the PRs added to Lane B's queue, and anything needing a migration under "Handed to Lane A";
+     - one batch of wording and brand choices for the co-founder, recommended option first.
+     - The screen tour's five defects (log, 2026-10-25 ~15:40 UTC) and the combined audit's UX items are inputs.
+   - **Then the checklist PR:** `.claude/agents/ux-brand-reviewer.md`, in the form of `security-reviewer.md`, in its own small PR (brief, "Then", item 1). From then on, every Lane B PR that changes a screen has the UX and brand review as one of its two adversarial reviews, with before and after screenshots.
+   - **Cost:** about 3-4% of the weekly allowance.
+3. **ci-deps (CI 2 of 4; audit #112; claimed in the CI series' row).** It may run beside step 2 as the second heavy workflow, if usage allows (at most two at once).
+   - **Design:** `designs/lane-b-ci.md` §3.2, already reviewed. Rulings: F1 (a), F2 (a) and (b), F4 yes, all as recommended (founder, relayed 2026-10-25 ~01:10 UTC).
+   - **Carry in (verifier nits, fixed in the next commit that touches each file):**
+     - ADR 0066:333 still says a red mutation result "blocks the merge". Until F7 it is ADR 0063's merge rule, not GitHub, that blocks it.
+     - ADR 0066's "Measured" figure should be 146 new tests less 12 renamed (4,658 and 1 skipped on CI), not 132 less 12.
+     - `.github/dependabot.yml` says "about 45 runner minutes". Measured, it is 36-38 (43-44 billed).
+     - The CI runbook (`ci.md:97`) and `github-governance.md:66` give the capacity gate as "13 to 16 minutes". Up to 16:35 has been measured.
+   - **Dependabot:** #40's and #33's versions come in here (#38 is no longer open).
+   - **When it merges, the founder** (owner-admin settings, not delegated):
+     - makes `claude/build-platform` the default branch (F1 (a));
+     - turns on Dependabot alerts and security updates (F2 (a));
+     - then, with F4's pins in, requires actions pinned to a full SHA (F3).
+4. **ci-browser (CI 3 of 4; audit #19's upgrade part).** After ci-deps.
+   - **Design:** §3.3. Rulings: F4 yes; F5, the capacity chain stays on ubuntu-24.04.
+   - **Carry in:**
+     - V3: cache the e2e jobs' system packages (`playwright install --with-deps`), so a slow apt mirror cannot push CI past its target (#44's verification);
+     - O6: the axe sweep over #42's journeys, if #42 merged first;
+     - O7: rebalance `stryker/shards.json` if packets-rest nears 15 minutes (5:50 to 10:06 measured).
+   - **Browsers:** the setup script lays out chromium-1248 (CfT 156.0.8078.4) as well as 1194, so the upgrade needs no manual browser work.
+5. **PR 15b: ledger amounts in payment terms** (queue item 3; audit #12). It lands before any ROI statement reaches a customer.
+   - **Two rulings first, both the co-founder's** (delegated): the ledger freeze exception, and what "approved" means in PRD 13.
+   - **From PR 15's review:** N-5, a line with two approvals; LED-12's last clause is pinned only on lines with one approval.
+   - **Unchanged by rule:** LED-06's "not resolved" check (`ledger.db.test.ts:221`) stays as it is, because LED-01 to LED-11 must not change.
+   - Payment-engine review.
+6. **Then Lane B's queue in LANES.md from item 4**, in order.
+   - Items 15 to 17 and every "Not while #42 is open" part wait for #42 to merge.
+   - Item 18, the formatter, needs both lanes idle.
 
-## Notes for Lane B's first session (from Lane A, 2026-10-24)
-- **The machine.** The setup script creates:
-  - `/home/user/ops` (this branch);
-  - `/home/user/PhysicalTherapy`, the main checkout of `claude/build-platform`;
-  - PostgreSQL 18 on 5433 (postgres:test, socket /tmp) and PostgreSQL 16 on 5432;
-  - Node 24 in `/opt/node24`, the venvs, gitleaks 8.24.3 and actionlint.
+### Waiting on someone
+- **The founder** (owner-admin or Lane A's, so not delegated):
+  - **F7, due now:** the `claude/build-platform` ruleset of governance runbook §4 (step 4A).
+    - It requires `all green`, `mutation`, `screening-capacity gate` and `approval-of-record` (each from GitHub Actions), a PR, no force pushes, and up-to-date branches.
+    - ci-speed's push runs have been green since 9c57d2d. At ~19:55 UTC the rulesets API still returns `[]`.
+    - Until it is applied, a session checks every required check by hand before merging.
+  - **Lane A and the UX reviewer:** whether Lane A's screen-changing PRs take the same reviewer. The co-founder recommends it and was given a line to paste in the founder's chat; Lane B does not edit LANES.md's rules.
+  - **O12:** the PR capacity run's length (13:20 to 16:35 measured), after five push runs. The two options and their costs are in `designs/lane-b-ci.md` §11.
+  - **O1:** the account's plan (Free or Pro), a fact that sets the concurrent-job limit.
+  - **Lane A's PR 6c:** four frozen-engine defects found by #44's review (LANES.md, "Handed to Lane A").
+- **The co-founder** (delegated, LANES.md 2026-10-25):
+  - payment-engine/S1, from #44: an explicit MoneyError guard in `multiplyCents` for text cast past `Cents`. It would be a later money change, in its own PR, with payment-engine review.
+  - 15b's two rulings (step 5).
+  - The UX review's batch of wording and brand choices, when it comes.
 
-  Use `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH`. A container restart stops PostgreSQL. Start it again with `(cd / && runuser -u postgres -- /opt/pg18/bin/pg_ctl -D /root/pgdata18 -o "-p 5433 -k /tmp" -l /tmp/pg18.log -w start)`.
-- **How the build is run.** Read `HANDOFF.md`'s "How this session worked" before the first workflow. Reviews run on the default workflow agent, given the checklist in `.claude/agents/<type>.md`: the custom agent types twice stopped without returning a result.
-  - Keep at most two heavy workflows at once on a 4-CPU machine.
-  - Open the draft PR early, so CI runs during the reviews.
-  - Run one full local suite, in the fix round.
-- **CI today.**
-  - It runs on free GitHub-hosted `ubuntu-24.04` runners and takes about 35 minutes. The CI PR's own target is about 10.
-  - The `capacity` job's time is advisory on pull requests and binding only on a release (issue #41).
-  - `gh api` works through the proxy. Read CI logs with the GitHub MCP tool `get_job_logs` (`return_content`, a large `tail_lines`); the proxy refuses `gh run view --log` and the raw log URLs.
-- **Open Dependabot PRs:** #40 (GitHub Actions; it replaced #37), #38 (npm minor and patch) and #33 (Docker base images). Never merge one as it stands. The CI PR checks their versions like any change.
-- **Lane A's open PR:** #42 (PR 6b-4, mail streams, a schema PR). It changes `infra/lib/**`, `apps/worker/src/mail/**`, the screening routes and one migration. Leave the infrastructure PRs until it has merged.
-- **Gitleaks** once read a document hash in an archived script as a key. If it refuses a push of this branch, rewrite the unpushed commit without the file. Never push past the hook.
+### Rulings and decisions of record (all in the log below, with who and when)
+- **The founder (Tyler Williams), relayed by the co-founder:**
+  - F1 to F7 as recommended, 2026-10-25 ~01:10 UTC;
+  - L1 (a), ~02:05 UTC;
+  - the delegation in LANES.md, 2026-10-25.
+- **The co-founder:**
+  - Lane B uses the `PureTideWater` GitHub account, 2026-10-24 ~21:10 UTC;
+  - "every recommended option", 2026-10-25;
+  - LED-12's row wording approved as recommended, in reconciliation-001 item 15;
+  - the UX/UI baseline review is the next session's first task, ~16:50 UTC;
+  - the review also runs with the build, ~17:00 UTC;
+  - the recommendation that Lane A take the same reviewer, ~17:05 UTC, for the founder to decide.
+
+### How Lane B runs: conventions and pitfalls (each one cost time once)
+- **Node.** The shell's default `node` is 22. Run `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` in every command or script.
+  - pnpm comes from `/opt/node22/bin` but then runs on Node 24.
+  - The mutation canary and the gate record the Node they ran on, and the repository requires `>=24`.
+- **One heavy command at a time:** `flock /tmp/laneb-heavy.lock <command>`, for install, build, typecheck, lint, test, test:db, e2e with `--workers=2`, and Stryker.
+  - Keep at most two heavy workflows at once, and tell every workflow agent the same.
+  - The full local suite runs once, in the fix round: unit; golden; oracle; test:db in shards one after another; build, stamp, then e2e with `E2E_PREBUILT=1`; the mutation shards a change affects, then the gate.
+- **A container restart** stops PostgreSQL and every running workflow. Disk, worktrees and the scratchpad survive.
+  - Run `bash tools/setup-container.sh` again: it restarts both clusters.
+  - Resume each workflow with `resumeFromRunId` (same session only), after editing the script with a RESUMED note and the lock rule.
+  - From a new session, a cut-off stage starts again from its worktree.
+- **If auto mode becomes unavailable,** workflow agents stop mid-run. Wait for the person, then resume the same way.
+- **Waiting:** the Bash tool blocks a foreground `sleep`. Run long commands with `run_in_background` and wait for their notification, or use Monitor with an until-loop. A PR's events arrive by `subscribe_pr_activity`.
+- **PR descriptions:** write them only with the MCP `update_pull_request` tool, then read them back. A `gh api` PATCH rewrote #43's footer. Follow `.github/pull_request_template.md`; end with the attribution lines.
+- **CI logs:** use `get_job_logs` (`return_content`, a large `tail_lines`). The proxy refuses artifact downloads, so read Stryker's results from the job logs.
+- **Merging:**
+  1. Merge the latest `claude/build-platform` into the PR branch with a merge commit (rule 6, keeping both lanes' changes).
+  2. Re-check what the merge touched, the affected mutation shard included, and push.
+  3. Wait for CI green on that head, every check including `mutation` and `screening-capacity gate`.
+  4. Run the fresh-clone verification (one agent in a fresh clone, reading CI).
+  5. Mark the PR ready (`update_pull_request` draft false), then `merge_pull_request` with method `merge` and `expectedHeadSha`.
+  6. Unsubscribe from the PR, fast-forward the main checkout, remove the worktrees and branches, archive the summaries, and log.
+- **Pushing:**
+  - Every push goes through the pre-push hook (the fixture check and gitleaks). Never `--no-verify` or force.
+  - Gitleaks refused the development master key once (keep keys in the environment, as `tools/lane-b-screen-tour/env.sh` does), and once read a document hash in an archived script as a key.
+  - A refused push is fixed by rewriting only commits not yet pushed.
+- **Money code:**
+  - The engine freeze: no non-test change under `packages/pricing`. Lane B pins defects with tests and hands them to Lane A's 6c.
+  - The ledger: additions only.
+  - A new pricing or ledger source file needs its shard in `stryker/shards.json`.
+  - A survivor is killed with a test, or recorded as equivalent only when no input can tell it apart, with a reviewer who is not its proposer.
+- **Records:**
+  - workflow scripts go in `workflow-scripts/lane-b-*.js`, summaries in `approval-summaries/lane-b-*`, designs in `designs/lane-b-*`;
+  - this log after each step;
+  - LANES.md's claim rows when a state changes.
+  - Push `claude/build-ops` with rule 10's command.
+
+### Where things are
+- **Branches and checkouts:**
+  - `/home/user/ops`: this branch, `claude/build-ops`;
+  - `/home/user/PhysicalTherapy`: the main checkout of `claude/build-platform`, with the pre-push hook;
+  - worktrees: `/home/user/<name>`, one per PR.
+- **Designs:**
+  - the CI series: `designs/lane-b-ci.md`, with its scouts and review in `designs/lane-b-ci/`;
+  - PR 15: `designs/lane-b-pr15-ledger-tests.md` and `designs/lane-b-pr15/`;
+  - the UX brief: `designs/lane-b-ux-review-brief.md`.
+- **Records:**
+  - summaries and reviews: `approval-summaries/lane-b-{ci-speed,ci-mutation,pr15}-*`;
+  - workflow scripts: `workflow-scripts/lane-b-*`.
+- **Tools:**
+  - the screen tour: `tools/lane-b-screen-tour/` (its README). The published gallery: https://claude.ai/artifact/3WudgKdMPDcRik4Z5bxU3c, 30 screens of 9c57d2d, private to the co-founder.
+  - the machine: `tools/setup-container.sh`. It checks everything with `SETUP_CHECK=1`, and lays out Chrome for Testing for Playwright's pinned revisions, because the proxy refuses Playwright's own download hosts.
 
 ## Log
 - **2026-10-24 21:00 UTC: Lane B's first session; machine built; the CI PR claimed.**
@@ -264,3 +384,16 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
     - V4: O7, rebalance stryker/shards.json if packets-rest nears 15 minutes.
   - **Merge:** marked ready and merged with a merge commit (base 9c57d2d, unchanged since its rule-6 merge). Unsubscribed #44; the main checkout fast-forwarded to de8f9b5; the eight ci-mutation worktrees and branches removed.
   - **PR #45 (PR 15) now merges claude/build-platform at de8f9b5 under rule 6 before its own merge:** the test matrix, the synth registry, totals.test.ts, README and reconciliation-001, keeping both.
+- **2026-10-25 ~19:55 UTC: PR #45 closing out; the handoff written.**
+  - **PR #45's fix round** (wf_bc33f972-a3a) is done: head b7e15e8, all ten nits fixed, and the full local suite passed once.
+    - The fixer committed 539cd23 and 8eeef29; the suite runner's re-read added b7e15e8.
+    - Unit: 4,664 and 3 skipped, ledger branches 415/415. Golden 38. Oracle 637.
+    - test:db in six shards: 9,049 and 1 skipped, the two ledger files 51/51. e2e 51.
+    - CI on b7e15e8 was green, with every mutation shard passing on the merge ref.
+  - **Rule 6:** merged claude/build-platform at de8f9b5 into the branch as f4d125b. The merge was clean and touched no file of the PR's. The checks on the merged head are running under the lock, on Node 24: install, fixtures, typecheck, lint, synth, unit, the ledger db files, the money-ledger canary, shard and gate. Then the push, CI, the fresh-clone verification and the merge.
+  - **Handoff:**
+    - the "Start here (Lane B)" section above replaces "In flight", "Next" and Lane A's first-session notes;
+    - COFOUNDER-START.md's message points at it;
+    - LANES.md's CI series row and queue item 1 now record the two merges.
+  - **The screen tour no longer names this session's scratchpad.** Every script and spec reads `TOUR_DIR`, and a new `setup.sh` builds the worktree and the working directory (its README, Set-up). Shell and Python syntax checked.
+  - **Pitfall found:** the shell's default `node` is 22. A check script started without the PATH line ran on it, and was stopped and re-run on Node 24 (now in Start here).

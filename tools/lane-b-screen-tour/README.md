@@ -17,7 +17,18 @@ How it ran (workflow-scripts/lane-b-screen-tour-wf_8f5524d1-dad.js is the brief)
 5. `manifest.py` writes manifest.json; a second agent opened every PNG and wrote `gallery.json` (captions, checks).
 6. `gallery-build.py <dir>` fills `gallery-page.html` from gallery.json; publish it with the PNGs as `files`.
 
-`env.sh` needs TP_LOCAL_MASTER_KEY in the environment: the development master key the repository's e2e config gives
-its server (apps/web/playwright.config.ts, developmentMasterKey); it is not kept here. Before reusing: these files name the session scratchpad of 2026-10-25
-(`/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens`); point them at the
-new session's scratchpad first. Drop tp_e2e_screens and stop the server afterwards.
+## Set-up (any session)
+1. `export TOUR_DIR=<this session's scratchpad>/screens` (every script and spec reads it; nothing names a session).
+2. `bash tools/lane-b-screen-tour/setup.sh`: the detached worktree `/home/user/screens` of the latest
+   claude/build-platform, its `pnpm install` under the lock, and these files copied into `$TOUR_DIR` with its
+   `node_modules` link and `package.json`.
+3. `export TP_LOCAL_MASTER_KEY=<the development master key>`: the one the repository's e2e config gives its server
+   (`apps/web/playwright.config.ts`, developmentMasterKey in `apps/web/src/lib/server/config.ts`). It is not kept here,
+   so gitleaks never meets it.
+4. From `$TOUR_DIR`: `flock /tmp/laneb-heavy.lock bash build.sh > build.log 2>&1` in the background (one hold of the
+   lock for the build and the server's life), then `bash run.sh`; `touch $TOUR_DIR/stop` ends the server. Afterwards drop `tp_e2e_screens` and remove
+   `/tmp/tp-e2e-tp_e2e_screens-*` (redo.sh's last lines do both).
+
+`gallery.json` is the record of the 2026-10-25 tour (its `file` paths name that session's scratchpad); a new tour writes
+its own. The capture covers the 30 screens of `capture/tour.spec.ts` at both widths in the light theme; the UX/UI review
+(`designs/lane-b-ux-review-brief.md`) extends it to every page, the dark theme and the empty, loading and error states.

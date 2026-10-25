@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Once the server is ready: the repository's journeys that populate the practices, then the tour.
 set -uo pipefail
-S=/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens
+S="${TOUR_DIR:?set TOUR_DIR to the tour's working directory, a folder in this session's scratchpad (README, Set-up)}"
 source $S/env.sh
 until [ -f $S/ready ]; do
-  if ! pgrep -f "scratchpad/screens/(build|serve).sh" >/dev/null && [ ! -f $S/ready ]; then echo "SERVER NOT READY"; tail -20 $S/build.log; exit 1; fi
+  if ! pgrep -f "$S/(build|serve).sh" >/dev/null && [ ! -f $S/ready ]; then echo "SERVER NOT READY"; tail -20 $S/build.log; exit 1; fi
   sleep 2
 done
 cd $S

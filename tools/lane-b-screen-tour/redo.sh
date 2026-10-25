@@ -2,7 +2,7 @@
 # The second hold of the shared lock: a fresh synthetic database, the existing build served, the contracts journey,
 # the one shot, then the server stopped and the database dropped.
 set -uo pipefail
-S=/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens
+S="${TOUR_DIR:?set TOUR_DIR to the tour's working directory, a folder in this session's scratchpad (README, Set-up)}"
 source $S/env.sh
 echo "lock acquired for retake at $(date -u +%T)"
 cd /home/user/screens/apps/web
