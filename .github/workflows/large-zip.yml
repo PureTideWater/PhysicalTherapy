@@ -27,9 +27,9 @@ jobs:
           --health-cmd "pg_isready -h localhost -U postgres"
           --health-interval 2s --health-timeout 5s --health-retries 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       # Playwright's Chromium before any vitest run of the db project, which fails on CI without it rather than skip a
