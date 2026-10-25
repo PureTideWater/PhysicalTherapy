@@ -71,7 +71,7 @@
     "original": "'halfUp'",
     "occurrence": 1,
     "replacement": "\"\"",
-    "reason": "ENGINE_MODES[''] is undefined, and decimal.js's toDecimalPlaces given an undefined rounding mode uses its engine's own (decimal.mjs:1969); every Decimal is a value of the Exact engine, whose mode is ROUND_HALF_UP, the mode 'halfUp' names.",
+    "reason": "ENGINE_MODES[''] is undefined, and decimal.js's toDecimalPlaces given an undefined rounding mode uses its constructor's own (decimal.mjs's toDecimalPlaces: if (rm === void 0) rm = Ctor.rounding); every Decimal is a value of the Exact engine, whose mode is ROUND_HALF_UP, the mode 'halfUp' names.",
     "proposedBy": "M3",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"

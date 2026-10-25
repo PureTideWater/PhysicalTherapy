@@ -5,7 +5,7 @@
     "original": "'ENGINE_ERROR'",
     "occurrence": 1,
     "replacement": "\"\"",
-    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
+    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (price's final map gives each line to priced() or unpriced(), and each sets context.trace.outcome), and nothing reads it before then.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -16,7 +16,7 @@
     "original": "'finished'",
     "occurrence": 2,
     "replacement": "\"\"",
-    "reason": "A Finished's kind is only ever compared with 'stopped' (price, lines 179 and 180), so any other text takes the same branch.",
+    "reason": "A Finished's kind is only ever compared with 'stopped' (price's final map, item.kind === 'stopped' ? unpriced(item) : priced(item)), so any other text takes the same branch.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -27,7 +27,7 @@
     "original": "'input'",
     "occurrence": 1,
     "replacement": "\"\"",
-    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
+    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (price's final map gives each line to priced() or unpriced(), and each sets context.trace.outcome), and nothing reads it before then.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -38,7 +38,7 @@
     "original": "'resolved'",
     "occurrence": 2,
     "replacement": "\"\"",
-    "reason": "A Resolved's kind is only ever compared with 'stopped' (stepsOneToThree, line 292), so any other text takes the same branch.",
+    "reason": "A Resolved's kind is only ever compared with 'stopped' (stepsOneToThree's agreement.kind === 'stopped'), so any other text takes the same branch.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -49,7 +49,7 @@
     "original": "'unexpected'",
     "occurrence": 1,
     "replacement": "\"\"",
-    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
+    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (price's final map gives each line to priced() or unpriced(), and each sets context.trace.outcome), and nothing reads it before then.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -60,7 +60,7 @@
     "original": "'unit'",
     "occurrence": 2,
     "replacement": "\"\"",
-    "reason": "A Unit's kind is only ever compared with 'stopped' (stepsOneToThree, line 296), so any other text takes the same branch.",
+    "reason": "A Unit's kind is only ever compared with 'stopped' (stepsOneToThree's unit.kind === 'stopped'), so any other text takes the same branch.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -71,7 +71,7 @@
     "original": "'unit'",
     "occurrence": 3,
     "replacement": "\"\"",
-    "reason": "A Unit's kind is only ever compared with 'stopped' (stepsOneToThree, line 296), so any other text takes the same branch.",
+    "reason": "A Unit's kind is only ever compared with 'stopped' (stepsOneToThree's unit.kind === 'stopped'), so any other text takes the same branch.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -82,7 +82,7 @@
     "original": "'unpriced'",
     "occurrence": 1,
     "replacement": "\"\"",
-    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
+    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (price's final map gives each line to priced() or unpriced(), and each sets context.trace.outcome), and nothing reads it before then.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -115,7 +115,7 @@
     "original": "{ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'unexpected', step: 'input' }",
     "occurrence": 1,
     "replacement": "{}",
-    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
+    "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (price's final map gives each line to priced() or unpriced(), and each sets context.trace.outcome), and nothing reads it before then.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
