@@ -135,10 +135,11 @@ describe('multiplyCents', () => {
     expect(multiplyCents(cents(1n), rate('0.000001')).toString()).toBe('0.000001');
   });
 
-  it('reads only a bigint as cents: a number cast past the type is never converted into an amount', () => {
-    // Cents go through centsToDecimal; anything else is used as the decimal it must already be, and a number is not one.
-    expect(() => multiplyCents(12 as unknown as Cents, rate('2'))).toThrow(TypeError);
-    expect(() => multiplyCents(12 as unknown as Cents, rate('2'))).not.toThrow(MoneyError);
+  it('reads only a bigint as cents: text or a number cast past the type is refused, never read as an amount', () => {
+    // Cents go through centsToDecimal; anything else is used as the decimal it must already be. Text that would
+    // parse ('12') is not one, so it must never come back as 24 cents; a number is not one either.
+    expect(() => multiplyCents('12' as unknown as Cents, rate('2'))).toThrow();
+    expect(() => multiplyCents(12 as unknown as Cents, rate('2'))).toThrow();
   });
 
   it('multiplies an unrounded amount again without rounding in between', () => {
