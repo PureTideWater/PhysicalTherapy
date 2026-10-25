@@ -11,12 +11,17 @@ the pricing engine, the ledger, and the packet verifier and arithmetic. Its `mut
 - **On a pull request:** every shard of each package whose closure the change touches, and nothing else. The
   `changes` job prints which packages it chose and why (the first changed paths that reach each one) to its log and
   summary (`tools/stryker/affected.ts`). A package's closure is:
-  - its mutated files and its tests, and everything they import, upstream workspace packages included;
+  - its mutated files and its tests, and everything they import, upstream workspace packages included (every package
+    `pnpm-workspace.yaml` lists, resolved as the mutation aliases resolve them, `tools/stryker/workspace.ts`);
   - the `package.json` and `tsconfig.json` of each workspace package in that closure;
   - the data files its tests and code read (`DATA_FILES` in `affected.ts`);
-  - the third-party packages it imports and the test tooling (vitest, `@vitest/*`, `@stryker-mutator/*`,
-    fast-check), as the lockfile resolves them: a lockfile change counts only when it moves one of them, or anything
-    below them.
+  - the third-party packages it imports, what the mutation tooling itself imports (yaml) and the test tooling
+    (vitest, `@vitest/*`, `@stryker-mutator/*`, fast-check, tsx), as the lockfile resolves them: a lockfile change
+    counts only when it moves one of them, or anything below them.
+
+  Closures are taken at the head and at the merge base, and a changed path a package's mutate or test set selects
+  counts whether or not it still exists, so deleting a money test, renaming one to `*.db.test.ts`, or deleting a
+  helper, manifest or fixture only the old side held, measures its package.
 
   The mutation configuration (`stryker/**`, `tools/stryker/**`, `vitest.mutation.config.ts`), the root
   `package.json`, `pnpm-workspace.yaml`, the root tsconfigs and this workflow affect all four.
@@ -52,11 +57,23 @@ Each `FAIL` line, also an error annotation, is one of these:
 | `... records ... which no longer exists (stale)` | a recorded equivalent matches no mutant: its code changed | Remove the entry, then judge the new mutant afresh |
 | `... records ... as equivalent, but it is Killed` | a test now tells the recorded mutant apart, so it was never equivalent | Remove the entry |
 | `... is not reviewed` | an equivalent lacks its reviewer and date | The reviewer confirms it independently, then fills `reviewedBy` and `reviewedOn` |
+| `... is reviewed by its proposer` or `... after the run's date` | the entry's reviewer is the builder who proposed it, or its date is in the future | Another person reviews it, on the day they do |
+| `shard <s>'s <pkg> report has no <file>, which the shard mutates` | the shard's run left a file out (a narrowed `mutate`, a crashed run), or a file Stryker finds no mutant in is not listed | Re-run the shard; a file of imports, re-exports and types only goes in `stryker/shards.json`'s `noMutants` (a test holds it there) |
+| `shard <s> left <pkg>.json, a report of <pkg>, which the shard does not hold` or `the reports directory holds <file> at its top` | a report the gate would otherwise not judge | Read where it came from; the gate reads only `<shard>/` directories, each holding its own packages' reports |
+| `<pkg>: n recorded equivalents rest on the engine's Unicode data as Node ... has it ...` | a shard ran on a Node whose Unicode or ICU data differs from what `tools/stryker/unicode.json`'s entries were checked on | Run mutation on the pinned Node; when moving the pin, check those entries again over every code point on the new Node, then record it in `unicode.json` |
+| `shard <s>'s canary verdict names no runtime` | the canary's verdict lacks the Node, Unicode and ICU versions it ran on | Re-run the shard with this commit's `verdict.ts` |
 
 A job line, not a gate line:
-- **"The changes job ended failure":** read `changes`. A data file a closure reads that `DATA_FILES` lacks stops it,
-  naming the file and the path; add it to `DATA_FILES` (or, for a directory read file by file, to `DIRECTORY_READS`)
-  with its reason.
+- **"The changes job ended failure":** read `changes`. It stops, naming the file, on:
+  - a data path a closure names that `DATA_FILES` lacks: add it with its reason (or, for a directory read file by
+    file, to `DIRECTORY_READS`, which must list every file the reader names there);
+  - a closure file that imports `node:fs` and is no `DATA_FILES` entry's reader, no `DIRECTORY_READS` file and no
+    `UNCALLED_READS` file: name it where it belongs, with what it reads;
+  - an import of a relative path, or of a workspace package's name or scope, that resolves to no file (an unexported
+    subpath, a package without `exports`): export it, or fix the import;
+  - a third-party package a closure imports that the lockfile resolves for no importer.
+- **"The changes job gave no verdict" or "gave shards=... not JSON arrays":** its outputs are missing or garbled, so
+  nothing is known about what changed; `mutation` fails closed. Read `changes`' last step.
 - **"A shard job ended failure":** read that shard's job.
   - **The canary step.** It prints each of its five cases; a case "NOT as expected" lists the mutant and the status it
     got against the one `tools/stryker/canary/expected.json` allows. The cases:
@@ -86,8 +103,10 @@ and a test kills them:
 - a mutant told apart only by text that is not a date, where the code compares dates as text
   (`packages/packets/src/assemble.test.ts`, "assemblePacket's dates as text").
 
-An entry that rests on the engine's Unicode data (NFKC forms, grapheme clusters) says so in its reason, and the
-reviewer checks it over every code point on the Node version CI runs.
+An entry that rests on the engine's Unicode data (NFKC forms, grapheme clusters) says so in its reason, the reviewer
+checks it over every code point on the Node the workflow pins (24.22.0 in all three jobs), and
+`tools/stryker/unicode.json` lists it with that Node's Unicode and ICU versions. The gate fails a listed entry when a
+shard ran on other data, and a test fails when the pin and the listing's Node differ.
 
 Each package's builder records its own in `tools/stryker/equivalent/<package>.json`, a
 JSON array sorted by file, then original, then occurrence (strings in code-unit order, as `Array.prototype.sort`
@@ -102,7 +121,8 @@ compares them). Each entry has exactly these keys, in this order:
 - `original` is the exact source text Stryker replaced. `occurrence` is which occurrence of that text in the file
   (from 1, counting every start position), so an edit elsewhere in the file leaves the entry valid.
 - The builder leaves `reviewedBy` and `reviewedOn` empty. The reviewer fills them (a name and a `YYYY-MM-DD` date)
-  only after confirming the entry independently. The gate refuses an unreviewed entry of every package it scores.
+  only after confirming the entry independently. The gate refuses an unreviewed entry of every package it scores, one
+  whose `reviewedBy` is its `proposedBy`, and one dated after the run.
 - The file is the only form: no `// Stryker disable` comments (the engine freeze forbids them in the engine; the gate
   fails an Ignored mutant anywhere).
 - To list a report's survivors with their original text and occurrence:
@@ -110,7 +130,8 @@ compares them). Each entry has exactly these keys, in this order:
 
 ### Running it locally
 
-Run one shard at a time, never two. Each command writes `reports/mutation/<shard>/`, then the gate reads it:
+Run one shard at a time, never two, on the Node the workflow pins (24.22.0: the gate holds the Unicode-bound
+equivalents to its data). Each command writes `reports/mutation/<shard>/`, then the gate reads it:
 
 ```sh
 pnpm stryker run tools/stryker/canary/stryker.config.mjs
@@ -121,6 +142,7 @@ pnpm -s exec tsx tools/stryker/gate.ts reports/mutation
 
 The last line judges what ran: a package none of whose shards ran is "not affected". A narrow run while killing
 survivors: `pnpm stryker run stryker/<package>.config.mjs --mutate <file>[:<lines>]` (report
-`reports/mutation/<package>.json`). A package's mutation test set outside Stryker:
+`reports/mutation/<package>.json`, at the top of the directory, which the gate refuses as stray: delete it, or point
+the gate at a directory of shard reports only). A package's mutation test set outside Stryker:
 `TP_MUTATION_PACKAGE=<package> pnpm exec vitest run --config vitest.mutation.config.ts`. What a branch affects:
 `pnpm -s exec tsx tools/stryker/affected.ts --base origin/claude/build-platform`.

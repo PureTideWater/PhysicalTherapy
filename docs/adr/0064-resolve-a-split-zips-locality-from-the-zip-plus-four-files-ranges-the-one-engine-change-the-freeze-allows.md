@@ -415,7 +415,8 @@ describe for mutation testing (docs/adr/0066, Part 4, gives the decision in full
   fails an engine change that lacks the `money` label. It runs on every pull request (default types), on every push to
   `claude/build-platform`, weekly and on request. A pull request runs every shard of each money package whose closure it
   changes (`tools/stryker/affected.ts`: the package's code and tests and what they import, upstream workspace packages
-  included, its data files, and the third-party packages the lockfile resolves for it). An engine change always reaches
+  included, its data files, and the third-party packages the lockfile resolves for it), taken at the head and at the
+  merge base, so a deleted or renamed test or helper still reaches its package. An engine change always reaches
   pricing's closure, so it is always measured, and a forgotten label can no longer leave one unmeasured.
 - **Stryker 10.1.1, no patch.** `@stryker-mutator/vitest-runner` 10.1.1 names a test as Vitest 5 does, and reports a
   mutant that breaks a test file's load as a RuntimeError, not a survivor (10.0.0, patched, still counted those as

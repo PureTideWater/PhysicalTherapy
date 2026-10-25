@@ -107,7 +107,9 @@ The packets set is the verifier and what it reads (`verifier/**`, `readable.ts`,
 `assemble.ts`). 10.1.1 matched the command runner mutant for mutant on the scout's packets sample. On the widened set
 (2,365 mutants without `windows.ts`) it scored 85.40%: 2,018 detected, 345 undetected, and 2 load failures in
 `readable.ts`, which 10.0.0 counted as survivors. The `mutation` gate requires the package above 85% with every
-survivor killed by a test or recorded as equivalent.
+survivor killed by a test or recorded as equivalent. With `windows.ts` and that part's tests it scores 95.87% (2,299
+of 2,398 detected; 99 undetected, each a reviewed equivalent, counted as survivors; 2 load failures left out), from
+85.61% (2,053 of 2,398) on the runner bump alone (ADR 0066, Part 4, "Measured").
 
 ## Alternatives considered
 
