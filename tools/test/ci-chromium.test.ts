@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { chromiumInstalled } from '../../apps/worker/src/report/pdf';
 import config from '../../vitest.config';
@@ -18,7 +18,12 @@ import { CHROMIUM_INSTALL, inCi, requireChromiumOnCi } from './ci-chromium';
 
 const SETUP = pathToFileURL(path.join(import.meta.dirname, 'ci-chromium.ts')).href;
 const TSX = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
-const noBrowsers = mkdtempSync(path.join(tmpdir(), 'tp-no-browsers-'));
+/** An empty browsers directory: Playwright finds no Chromium there. */
+let noBrowsers = '';
+
+beforeAll(() => {
+  noBrowsers = mkdtempSync(path.join(tmpdir(), 'tp-no-browsers-'));
+});
 
 afterAll(() => {
   rmSync(noBrowsers, { recursive: true, force: true });

@@ -125,12 +125,11 @@ interface Opened {
   readonly database: MigratedDatabase;
   readonly owner: DatabaseClient;
   readonly admin: DatabasePool;
+  readonly outbox: string;
 }
 
 /** One test file's screening database and outbox (screeningDatabaseForThisFile() opens it before the file's tests and drops it after). */
 export class ScreeningDatabase {
-  /** Where the consumers these tests start email (localMail). */
-  readonly outbox = mkdtempSync(path.join(tmpdir(), 'screening-consumer-outbox-'));
   private state: Opened | undefined;
 
   private get opened(): Opened {
@@ -144,6 +143,11 @@ export class ScreeningDatabase {
     return this.opened.database;
   }
 
+  /** Where the consumers these tests start email (localMail): this file's own directory, removed by close(). */
+  get outbox(): string {
+    return this.opened.outbox;
+  }
+
   /** The database's owner connection, for reading what the consumer wrote. */
   get owner(): DatabaseClient {
     return this.opened.owner;
@@ -153,11 +157,13 @@ export class ScreeningDatabase {
     const database = await createMigratedDatabase(readDatabaseUrl());
     const owner = databaseClient(database.url);
     let admin: DatabasePool | undefined;
+    let outbox: string | undefined;
     try {
       await owner.connect();
       await loadRelease(owner, RELEASE_DIR, { release: 900001, allowSyntheticFixtureForTests: true });
       admin = openPool(database.url, 4);
-      this.state = { database, owner, admin };
+      outbox = mkdtempSync(path.join(tmpdir(), 'screening-consumer-outbox-'));
+      this.state = { database, owner, admin, outbox };
       const internal = await createOrganization(owner, 'internal');
       const specialist = await createUser(owner, { hardwareKeyRequired: true });
       await addMembership(owner, internal, specialist, 'contract_specialist');
@@ -169,6 +175,9 @@ export class ScreeningDatabase {
       }
       await owner.end().catch(() => undefined);
       await database.drop();
+      if (outbox !== undefined) {
+        rmSync(outbox, { recursive: true, force: true });
+      }
       throw error;
     }
   }
@@ -180,8 +189,8 @@ export class ScreeningDatabase {
       await endPool(opened.admin);
       await opened.owner.end();
       await opened.database.drop();
+      rmSync(opened.outbox, { recursive: true, force: true });
     }
-    rmSync(this.outbox, { recursive: true, force: true });
   }
 
   /** A statement as the web app's role (tp_app), with the actor set. */
@@ -259,9 +268,10 @@ export class ScreeningDatabase {
 
   /** The emails in the outbox addressed to `to`. */
   emailsTo(to: string): { to: string[]; subject: string }[] {
-    return readdirSync(this.outbox)
+    const { outbox } = this.opened;
+    return readdirSync(outbox)
       .filter((name) => name.endsWith('.json'))
-      .map((name) => JSON.parse(readFileSync(path.join(this.outbox, name), 'utf8')) as { to: string[]; subject: string })
+      .map((name) => JSON.parse(readFileSync(path.join(outbox, name), 'utf8')) as { to: string[]; subject: string })
       .filter((message) => message.to.includes(to));
   }
 

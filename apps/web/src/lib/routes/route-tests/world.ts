@@ -189,14 +189,15 @@ interface Opened {
   readonly services: Services;
   readonly tables: readonly { readonly table: string; readonly tenantColumn: string }[];
   readonly snapshotSql: string;
+  /** The sealed documents' directory, and the content root the services read: this file's own, removed by close(). */
+  readonly documentsDir: string;
+  readonly documents: DocumentStore;
+  readonly content: ReturnType<typeof scratchContentRoot>;
 }
 
 /** One test file's database, services and worlds (routeWorldsForThisFile() opens it before the file's tests and closes it after). */
 export class RouteWorlds {
   private readonly keys = LocalKeyProvider.random();
-  private readonly documentsDir = mkdtempSync(path.join(tmpdir(), 'tp-route-tests-'));
-  private readonly documents = new DocumentStore(new LocalSealedBytes(this.documentsDir));
-  private readonly content = scratchContentRoot();
   private state: Opened | undefined;
 
   private get opened(): Opened {
@@ -221,7 +222,20 @@ export class RouteWorlds {
   }
 
   async open(): Promise<void> {
-    const database = await createMigratedDatabase(readDatabaseUrl());
+    const documentsDir = mkdtempSync(path.join(tmpdir(), 'tp-route-tests-'));
+    const documents = new DocumentStore(new LocalSealedBytes(documentsDir));
+    const content = scratchContentRoot();
+    const removeDirectories = () => {
+      rmSync(documentsDir, { recursive: true, force: true });
+      content.remove();
+    };
+    let database: MigratedDatabase;
+    try {
+      database = await createMigratedDatabase(readDatabaseUrl());
+    } catch (error) {
+      removeDirectories();
+      throw error;
+    }
     const owner = databaseClient(database.url);
     const pools: DatabasePool[] = [];
     const pool = (url: string, max: number) => {
@@ -251,24 +265,25 @@ export class RouteWorlds {
         keys: this.keys,
         sealer,
         logger: createLogger({ sink: () => undefined }),
-        uploads: new LocalUploadTargets('http://localhost:3100', this.documents, sealer),
+        uploads: new LocalUploadTargets('http://localhost:3100', documents, sealer),
         queue: new MemoryQueue(),
-        documents: this.documents,
-        contentRoot: this.content.root,
+        documents,
+        contentRoot: content.root,
       });
       const tables = await tenantTables(owner);
-      this.state = { database, owner, app, billingPool, esignPool, services, tables, snapshotSql: foldedSnapshotSql(tables) };
+      this.state = { database, owner, app, billingPool, esignPool, services, tables, snapshotSql: foldedSnapshotSql(tables), documentsDir, documents, content };
       // The terms of use are in force from the start, so every generated test runs behind the terms gate; each
       // world's people accept them (docs/adr/0053).
       await publishSyntheticTerms(owner, await createUser(owner));
     } catch (error) {
-      // Nothing of a half-opened file is left behind: its pools, its connection and its database.
+      // Nothing of a half-opened file is left behind: its pools, its connection, its database and its directories.
       this.state = undefined;
       for (const opened of pools) {
         await endPool(opened);
       }
       await owner.end().catch(() => undefined);
       await database.drop();
+      removeDirectories();
       throw error;
     }
   }
@@ -282,9 +297,9 @@ export class RouteWorlds {
       await endPool(opened.esignPool);
       await opened.owner.end();
       await opened.database.drop();
+      rmSync(opened.documentsDir, { recursive: true, force: true });
+      opened.content.remove();
     }
-    rmSync(this.documentsDir, { recursive: true, force: true });
-    this.content.remove();
   }
 
   private async lockedUser(organizationId: string): Promise<string> {
@@ -362,8 +377,8 @@ export class RouteWorlds {
    * anomaly, a case and audit reports (docs/adr/0038).
    */
   async buildWorld(name: string): Promise<World> {
-    const { owner, app, billingPool, services } = this.opened;
-    const { keys, documents } = this;
+    const { owner, app, billingPool, services, documents } = this.opened;
+    const { keys } = this;
     const tenant = await createTenantWorld(owner, name);
     const actors: Actor[] = [];
     const firmId = await createOrganization(owner, 'firm', `${name} firm`);

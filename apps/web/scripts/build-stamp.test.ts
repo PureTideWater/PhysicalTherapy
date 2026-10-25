@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { BuildStampError, STAMP, checkStamp, run, writeStamp } from './build-stamp';
 
@@ -12,10 +12,15 @@ import { BuildStampError, STAMP, checkStamp, run, writeStamp } from './build-sta
  * a test that passes only on its retry fails the run.
  */
 
-const dir = mkdtempSync(path.join(tmpdir(), 'tp-build-stamp-'));
-const stamp = path.join(dir, 'BUILD_COMMIT');
 const HEAD = 'a'.repeat(40);
 const OTHER = 'b'.repeat(40);
+let dir = '';
+let stamp = '';
+
+beforeAll(() => {
+  dir = mkdtempSync(path.join(tmpdir(), 'tp-build-stamp-'));
+  stamp = path.join(dir, 'BUILD_COMMIT');
+});
 
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
