@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { MUTATE, MUTATION_PACKAGES, PACKAGE_VARIABLE, SHARD_VARIABLE, packageOptions, readShards } from '../../stryker/base.mjs';
+import { MUTATE, MUTATION_PACKAGES, PACKAGE_VARIABLE, SHARD_VARIABLE, packageOptions, readNoMutants, readShards } from '../../stryker/base.mjs';
+import { repositoryRoot } from '../content-files';
 import { selectFiles, shardsFor, trackedFiles } from './affected';
 import { packagesOf, shardNamed, shardsOf } from './shards';
 
@@ -62,5 +67,48 @@ describe('the shard partition', () => {
     expect(packagesOf(shardNamed('money-ledger'))).toEqual(['money', 'ledger']);
     expect(shardsOf('pricing').map((shard) => shard.name)).toEqual(['pricing-engine', 'pricing-recompute', 'pricing-rest']);
     expect(() => shardNamed('nowhere')).toThrow('stryker/shards.json has no shard "nowhere": money-ledger, packets-scan, packets-rest, pricing-engine, pricing-recompute, pricing-rest');
+  });
+});
+
+/**
+ * What Stryker 10.1.1 finds no mutant in, by a file's top-level statements: imports and exports that name other files'
+ * code, type declarations, `declare` statements, and constants whose value is an `as` expression (`[...] as const`),
+ * which its instrumenter reads as a type and leaves whole (syntax-helpers.js, isTypeNode: TSAsExpression, TSEnumDeclaration
+ * among the type nodes). Anything else may hold a mutant, so its file cannot be listed in noMutants.
+ */
+function statementsWithMutants(file: string, text: string = readFileSync(path.join(repositoryRoot, file), 'utf8')): string[] {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const declared = (statement: ts.Statement) => ts.canHaveModifiers(statement) && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword);
+  const typeOnly = (statement: ts.Statement) =>
+    ts.isImportDeclaration(statement) ||
+    (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined) ||
+    ts.isInterfaceDeclaration(statement) ||
+    ts.isTypeAliasDeclaration(statement) ||
+    ts.isEnumDeclaration(statement) ||
+    declared(statement) ||
+    (ts.isVariableStatement(statement) && statement.declarationList.declarations.every((declaration) => declaration.initializer !== undefined && ts.isAsExpression(declaration.initializer)));
+  // The statement's kind by name (ts.SyntaxKind's reverse mapping gives an alias, FirstStatement, for a variable statement).
+  const kind = (statement: ts.Statement) =>
+    ts.isVariableStatement(statement) ? 'VariableStatement' : ts.isExpressionStatement(statement) ? 'ExpressionStatement' : ts.isFunctionDeclaration(statement) ? 'FunctionDeclaration' : ts.isClassDeclaration(statement) ? 'ClassDeclaration' : ts.isExportDeclaration(statement) ? 'ExportDeclaration' : ts.SyntaxKind[statement.kind];
+  return source.statements.filter((statement) => !typeOnly(statement)).map((statement) => `${file}:${String(source.getLineAndCharacterOfPosition(statement.getStart()).line + 1)}: ${kind(statement)}`);
+}
+
+describe('the files a shard holds that Stryker finds no mutant in (stryker/shards.json, noMutants)', () => {
+  it('lists only files a shard holds, sorted, each nothing but imports, re-exports, types and as-const values', () => {
+    const noMutants = readNoMutants();
+    expect(noMutants).toEqual(['packages/ledger/src/index.ts', 'packages/money/src/index.ts', 'packages/pricing/src/index.ts', 'packages/pricing/src/types.ts']);
+    const held = readShards().flatMap((shard) => Object.values(shard.mutate).flatMap((files) => [...(files ?? [])]));
+    for (const file of noMutants) {
+      expect(held, file).toContain(file);
+      expect(statementsWithMutants(file), file).toEqual([]);
+    }
+  });
+
+  it('refuses a file with code in it: a function, a constant computed at run time, a statement', () => {
+    const probe = (text: string) => statementsWithMutants('probe.ts', text);
+    expect(probe("import type { A } from './a';\nexport { a } from './a';\nexport * from './b';\nexport type T = 'x' | 'y';\nexport interface I { readonly a: A }\nexport const NAMES = ['a', 'b'] as const;\n")).toEqual([]);
+    expect(probe('export const total = (a: number, b: number) => a + b;\n')).toEqual(['probe.ts:1: VariableStatement']);
+    expect(probe("export const LIMIT = 10 * 2;\nconsole.log('x');\nexport function f() {}\nconst a = 1;\nexport { a };\n")).toEqual(['probe.ts:1: VariableStatement', 'probe.ts:2: ExpressionStatement', 'probe.ts:3: FunctionDeclaration', 'probe.ts:4: VariableStatement', 'probe.ts:5: ExportDeclaration']);
+    expect(statementsWithMutants('packages/money/src/cents.ts').length).toBeGreaterThan(0);
   });
 });

@@ -4,7 +4,24 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { type GateInput, aboveThreshold, isLoadFailure, judge, parseExpectedShards, readEquivalents, readShardResults, shardView, summaryMarkdown } from './gate';
+import { repositoryRoot } from '../content-files';
+import {
+  type EquivalentEntry,
+  type GateInput,
+  aboveThreshold,
+  expectedShardsOption,
+  isLoadFailure,
+  judge,
+  parseExpectedShards,
+  readEquivalentFiles,
+  readEquivalents,
+  readReportDirectory,
+  readShardResults,
+  readUnicodeFile,
+  shardView,
+  summaryMarkdown,
+} from './gate';
+import { keyOf } from './mutants';
 import { TEST_SHARDS, canaryOf, equivalentOf, reportOf, scoredFile, shardResult } from './test-support';
 
 /**
@@ -298,5 +315,128 @@ describe('reading the shards’ results and printing them', () => {
       `money-ledger ledger ${LEDGER}: 100.00% (4/4, 0 load failures)`,
       "(money-ledger's view: the mutation job judges every package once all its shards have run)",
     ]);
+  });
+});
+
+describe('every file a shard holds, in its report', () => {
+  const INDEX = 'packages/money/src/index.ts';
+  const shards = [{ name: 'money-ledger', mutate: { money: [MONEY, INDEX], ledger: [LEDGER] } }, ...TEST_SHARDS.slice(1)];
+
+  it('fails a fully-run package whose shard’s report leaves out a file the shard holds', () => {
+    expect(judge(input(new Map([['money-ledger', moneyLedger()]]), { shards })).failures).toEqual([
+      `shard money-ledger's money report has no ${INDEX}, which the shard mutates: a shard runs all its files (stryker/shards.json's noMutants lists those Stryker finds no mutant in)`,
+    ]);
+    const pricingOne = shardResult('pricing-one', { pricing: reportOf({ [PRICING_ONE]: scoredFile(4, 4) }) });
+    const pricingTwo = shardResult('pricing-two', { pricing: reportOf({}) });
+    expect(judge(input(new Map([['pricing-one', pricingOne], ['pricing-two', pricingTwo]]))).failures).toEqual([
+      `shard pricing-two's pricing report has no ${PRICING_TWO}, which the shard mutates: a shard runs all its files (stryker/shards.json's noMutants lists those Stryker finds no mutant in)`,
+    ]);
+  });
+
+  it('passes a file stryker/shards.json lists as holding no mutant, and judges a package that did not run by nothing', () => {
+    expect(judge(input(new Map([['money-ledger', moneyLedger()]]), { shards, noMutants: [INDEX] })).failures).toEqual([]);
+    expect(judge(input(new Map(), { shards })).failures).toEqual([]);
+  });
+});
+
+describe('an equivalent’s review: independent, and not after the run', () => {
+  const report = reportOf({ [MONEY]: scoredFile(20, 19) });
+  const judgeWith = (overrides: Parameters<typeof equivalentOf>[2], today = '2026-10-25') => judge(input(new Map([['money-ledger', moneyLedger(report)]]), { equivalents: { money: [equivalentOf(MONEY, 20, overrides)] }, today })).failures;
+
+  it('refuses a review by the entry’s proposer, whatever its case or spacing', () => {
+    for (const reviewedBy of ['M3', 'm3', ' M3 ']) {
+      expect(judgeWith({ reviewedBy }), reviewedBy).toEqual([`tools/stryker/equivalent/money.json ${MONEY} StringLiteral "x" #20 -> "\\"\\"" is reviewed by its proposer, M3: only an independent reviewer signs an equivalent`]);
+    }
+  });
+
+  it('refuses a review dated after the run’s UTC date, and takes one on that date or before', () => {
+    expect(judgeWith({ reviewedOn: '2026-10-26' })).toEqual([`tools/stryker/equivalent/money.json ${MONEY} StringLiteral "x" #20 -> "\\"\\"" has reviewedOn "2026-10-26", after the run's date, 2026-10-25`]);
+    expect(judgeWith({ reviewedOn: '2099-12-31' })).toHaveLength(1);
+    expect(judgeWith({ reviewedOn: '2026-10-25' })).toEqual([]);
+    expect(judgeWith({ reviewedOn: '2026-10-24' })).toEqual([]);
+  });
+});
+
+describe('stray reports', () => {
+  it('fails a package report in a shard that does not hold that package', () => {
+    const result = shardResult('packets-all', { packets: reportOf({ 'packages/packets/src/e.ts': scoredFile(4, 4) }), money: reportOf({ [MONEY]: scoredFile(4, 4) }) });
+    expect(judge(input(new Map([['packets-all', result]]))).failures).toEqual(["shard packets-all left money.json, a report of money, which the shard does not hold"]);
+  });
+
+  it('fails a file at the top of the reports directory, which no shard writes', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-gate-'));
+    try {
+      mkdirSync(path.join(dir, 'money-ledger'));
+      writeFileSync(path.join(dir, 'money-ledger', 'canary.json'), JSON.stringify(canaryOf('money-ledger')));
+      writeFileSync(path.join(dir, 'money-ledger', 'money.json'), JSON.stringify(reportOf({ [MONEY]: scoredFile(4, 4) })));
+      writeFileSync(path.join(dir, 'money-ledger', 'ledger.json'), JSON.stringify(reportOf({ [LEDGER]: scoredFile(4, 4) })));
+      writeFileSync(path.join(dir, 'money.json'), '{}');
+      writeFileSync(path.join(dir, 'money.html'), '<html></html>');
+      const read = readReportDirectory(dir);
+      expect([...read.ran.keys()]).toEqual(['money-ledger']);
+      expect(read.stray).toEqual(['money.html', 'money.json']);
+      expect(judge(input(read.ran, { stray: read.stray })).failures).toEqual([
+        'the reports directory holds money.html at its top, where no shard writes: the gate judges only <shard>/ directories',
+        'the reports directory holds money.json at its top, where no shard writes: the gate judges only <shard>/ directories',
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the runtime the Unicode-bound equivalents rest on', () => {
+  const report = reportOf({ [MONEY]: scoredFile(20, 19) });
+  const recorded = equivalentOf(MONEY, 20);
+  const { reason: _reason, proposedBy: _proposedBy, reviewedBy: _reviewedBy, reviewedOn: _reviewedOn, ...key } = recorded;
+  const unicode = { checkedOn: { node: '24.22.0', unicode: '17.0', icu: '78.3' }, records: [key] };
+  const run = (runtime: unknown, listing: unknown = unicode) =>
+    judge(input(new Map([['money-ledger', { ...moneyLedger(report), canary: { ...canaryOf('money-ledger'), runtime } }]]), { equivalents: { money: [recorded] }, unicode: listing })).failures;
+
+  it('fails a shard whose canary verdict does not name the Node that ran it', () => {
+    expect(run(undefined)).toEqual(["shard money-ledger's canary verdict names no runtime (node, unicode and icu, from process.versions)"]);
+    expect(run({ node: 'v24.22.0', unicode: 17 })).toEqual(["shard money-ledger's canary verdict names no runtime (node, unicode and icu, from process.versions)"]);
+  });
+
+  it('passes the equivalents on the Unicode data they were checked on, and fails them, naming each, on other data', () => {
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' })).toEqual([]);
+    // Another Node with the same data is the same data.
+    expect(run({ node: 'v24.23.0', unicode: '17.0', icu: '78.3' })).toEqual([]);
+    expect(run({ node: 'v26.1.0', unicode: '18.0', icu: '79.1' })).toEqual([
+      `money: 1 recorded equivalent rests on the engine's Unicode data as Node 24.22.0 has it (Unicode 17.0, ICU 78.3), and shard money-ledger ran on Node v26.1.0 (Unicode 18.0, ICU 79.1): check it again over every code point on that Node, then record that Node in tools/stryker/unicode.json: ${MONEY} StringLiteral "x" #20 -> "\\"\\""`,
+    ]);
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.4' })).toHaveLength(1);
+  });
+
+  it('fails a listing no equivalent records, and a malformed listing', () => {
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' }, { ...unicode, records: [key, { ...key, occurrence: 19 }] })).toEqual([
+      `tools/stryker/unicode.json lists ${MONEY} StringLiteral "x" #19 -> "\\"\\"", which tools/stryker/equivalent/money.json does not record`,
+    ]);
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' }, { records: [key] })).toEqual(['tools/stryker/unicode.json: checkedOn is not { node, unicode, icu }, each a string']);
+    expect(run({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' }, { ...unicode, records: [{ ...key, extra: 1 }] })).toEqual([
+      'tools/stryker/unicode.json record 1: its keys must be exactly file, mutator, original, occurrence, replacement',
+    ]);
+  });
+
+  it('lists only equivalents the repository records (tools/test/workflows.test.ts holds its Node to mutation.yml’s pin)', () => {
+    const listing = readUnicodeFile(repositoryRoot) as { checkedOn: { node: string }; records: { file: string }[] };
+    const equivalents = readEquivalentFiles(repositoryRoot);
+    expect(listing.records.length).toBeGreaterThan(0);
+    for (const record of listing.records) {
+      const pkg = (['money', 'pricing', 'ledger', 'packets'] as const).find((name) => record.file.startsWith(`packages/${name}/`));
+      const entries = (pkg === undefined ? [] : (equivalents[pkg] as EquivalentEntry[])).map((entry) => keyOf(entry));
+      expect(entries, JSON.stringify(record)).toContain(keyOf(record as unknown as EquivalentEntry));
+    }
+  });
+});
+
+describe('the selected shards, as the workflow passes them', () => {
+  it('refuses an empty --expected, which only a changes job that wrote no output leaves', () => {
+    expect(() => expectedShardsOption('')).toThrow('--expected is empty: the changes job gave no shards, so what was selected is unknown');
+    expect(() => expectedShardsOption('  ')).toThrow('--expected is empty');
+    expect(() => expectedShardsOption('[money-ledger]')).toThrow('--expected: not a JSON array of shard names');
+    expect(expectedShardsOption(undefined)).toBeUndefined();
+    expect(expectedShardsOption('["money-ledger"]')).toEqual(['money-ledger']);
+    expect(expectedShardsOption('[]')).toEqual([]);
   });
 });

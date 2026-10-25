@@ -15,5 +15,6 @@ export interface Shard {
   readonly mutate: Partial<Record<MutationPackage, readonly string[]>>;
 }
 export declare function readShards(): readonly Shard[];
+export declare function readNoMutants(): readonly string[];
 export declare function reportFile(pkg: MutationPackage, shard: string | undefined): string;
 export declare function packageOptions(pkg: MutationPackage): PartialStrykerOptions;

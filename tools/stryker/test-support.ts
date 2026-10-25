@@ -1,5 +1,5 @@
 import type { MutationPackage, Shard } from '../../stryker/base.mjs';
-import { type CanaryVerdict, CANARY_CASES, CANARY_FORMAT } from './canary/verdict';
+import { type CanaryVerdict, CANARY_CASES, CANARY_FORMAT, type Runtime } from './canary/verdict';
 import type { EquivalentEntry, ShardResult } from './gate';
 import type { MutantStatus, MutationReport, ReportMutant } from './mutants';
 
@@ -101,6 +101,9 @@ export function equivalentOf(file: string, occurrence: number, overrides: Partia
   };
 }
 
+/** The runtime a synthetic shard ran on: the Node, Unicode and ICU tools/stryker/unicode.json's entries were checked on. */
+export const TEST_RUNTIME: Runtime = { node: 'v24.22.0', unicode: '17.0', icu: '78.3' };
+
 /** The canary verdict of a shard whose five cases were as expected, or of one whose listed cases were not. */
 export function canaryOf(shard: string, failing: readonly number[] = []): CanaryVerdict {
   const cases = Array.from({ length: CANARY_CASES }, (_, index) => ({
@@ -111,7 +114,7 @@ export function canaryOf(shard: string, failing: readonly number[] = []): Canary
     asExpected: !failing.includes(index + 1),
     problems: failing.includes(index + 1) ? ['a mutant not as expected'] : [],
   }));
-  return { format: CANARY_FORMAT, shard, total: CANARY_CASES, asExpected: cases.filter((item) => item.asExpected).length, cases, problems: [] };
+  return { format: CANARY_FORMAT, shard, runtime: TEST_RUNTIME, total: CANARY_CASES, asExpected: cases.filter((item) => item.asExpected).length, cases, problems: [] };
 }
 
 /** A shard's result: its canary verdict (as expected unless given) and its packages' reports. */

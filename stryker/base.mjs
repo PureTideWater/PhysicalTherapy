@@ -105,6 +105,15 @@ export function readShards() {
 }
 
 /**
+ * @returns {readonly string[]} the files a shard holds in which Stryker finds no mutant (stryker/shards.json's noMutants):
+ *   the only files of a shard its report may leave out, which the gate otherwise requires
+ */
+export function readNoMutants() {
+  const parsed = /** @type {{ noMutants?: readonly string[] }} */ (JSON.parse(readFileSync(new URL('./shards.json', import.meta.url), 'utf8')));
+  return parsed.noMutants ?? [];
+}
+
+/**
  * @param {MutationPackage} pkg
  * @param {string | undefined} shard
  * @returns {string} the JSON report's path, relative to the repository's root

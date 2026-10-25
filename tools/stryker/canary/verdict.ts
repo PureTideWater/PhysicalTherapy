@@ -11,9 +11,9 @@ import { type KeyedMutant, MUTANT_STATUSES, type MutantStatus, type MutationRepo
  * expected when every mutant of its file has an expectation, every expectation a mutant, and every status is allowed.
  *
  * `pnpm -s exec tsx tools/stryker/canary/verdict.ts [--shard <shard>] [--report <file>]` reads the canary's report
- * (reports/canary/report.json), prints each case's verdict and writes them for the mutation gate to
- * reports/mutation/<shard>/canary.json (reports/canary/verdict.json without a shard). It exits 1 unless all five cases
- * are as expected.
+ * (reports/canary/report.json), prints each case's verdict and writes them for the mutation gate, with the Node,
+ * Unicode and ICU versions the shard runs on, to reports/mutation/<shard>/canary.json (reports/canary/verdict.json
+ * without a shard). It exits 1 unless all five cases are as expected.
  */
 
 /** The verdict file's format, which the gate requires. */
@@ -54,9 +54,23 @@ export interface CaseVerdict {
   readonly problems: readonly string[];
 }
 
+/** The Node a shard ran on, and the Unicode and ICU data its engine holds (process.versions). */
+export interface Runtime {
+  readonly node: string;
+  readonly unicode: string;
+  readonly icu: string;
+}
+
+/** This process's runtime: the shard's, since its canary step and its Stryker run use the same Node. */
+export function currentRuntime(): Runtime {
+  return { node: process.version, unicode: process.versions.unicode ?? '', icu: process.versions.icu ?? '' };
+}
+
 export interface CanaryVerdict {
   readonly format: typeof CANARY_FORMAT;
   readonly shard: string | null;
+  /** The Node the shard ran on: the gate holds the equivalents that rest on Unicode data to it (tools/stryker/unicode.json). */
+  readonly runtime: Runtime;
   readonly total: number;
   readonly asExpected: number;
   readonly cases: readonly CaseVerdict[];
@@ -89,8 +103,8 @@ export function parseExpected(value: unknown): Expected {
   };
 }
 
-/** Judges the canary's report case by case. */
-export function judgeCanary(report: MutationReport, expected: Expected, shard: string | null = null): CanaryVerdict {
+/** Judges the canary's report case by case, on the runtime given (this process's by default). */
+export function judgeCanary(report: MutationReport, expected: Expected, shard: string | null = null, runtime: Runtime = currentRuntime()): CanaryVerdict {
   const mutants = keyedMutants(report);
   const caseFiles = new Set(expected.cases.map((item) => item.file));
   const problems = [...new Set(mutants.filter((mutant) => !caseFiles.has(mutant.file)).map((mutant) => mutant.file))].map((file) => `${file} is mutated, but no case names it`);
@@ -118,7 +132,7 @@ export function judgeCanary(report: MutationReport, expected: Expected, shard: s
     return { case: item.case, proves: item.proves, file: item.file, mutants: reported.size, asExpected: caseProblems.length === 0, problems: caseProblems };
   });
   const asExpected = problems.length === 0 ? cases.filter((item) => item.asExpected).length : 0;
-  return { format: CANARY_FORMAT, shard, total: CANARY_CASES, asExpected, cases, problems };
+  return { format: CANARY_FORMAT, shard, runtime, total: CANARY_CASES, asExpected, cases, problems };
 }
 
 /** Whether a verdict lets its shard score: all five cases as expected and nothing else wrong. */
@@ -133,6 +147,7 @@ export function verdictLines(verdict: CanaryVerdict): string[] {
     ...item.problems.map((problem) => `  ${problem}`),
   ]);
   lines.push(...verdict.problems.map((problem) => `canary: ${problem}`));
+  lines.push(`canary: on Node ${verdict.runtime.node} (Unicode ${verdict.runtime.unicode}, ICU ${verdict.runtime.icu})`);
   lines.push(`canary${verdict.shard === null ? '' : ` (${verdict.shard})`}: ${String(verdict.asExpected)} of ${String(verdict.total)} cases as expected`);
   return lines;
 }
