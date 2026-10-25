@@ -14,6 +14,8 @@ Lane A reads it to keep the build tracker current. The rules are in `../LANES.md
 3. `co-001/ci-browser` (#19's upgrade part; CI-18 to CI-20): after ci-speed and ci-deps; needs F4 and F5.
 4. `co-001/ci-mutation` (#54; CI-15 to CI-17): built beside ci-deps once ci-speed merges, merged last; F6 for two documents.
 
+**PR 15, ledger tests LED-12 and LED-13** (Lane B queue item 2), claimed 2026-10-25 01:15 UTC: branch `co-001/pr-15-ledger-tests`. **Design running: wf_3851b95a-f1c** (the second heavy slot, beside ci-speed's build; script `workflow-scripts/lane-b-pr15-design-wf_3851b95a-f1c.js`): the author probes LED-12 as written against the frozen ledger (if it fails, work stops and the owner is asked, reconciliation-001 item 15), writes `designs/lane-b-pr15-ledger-tests.md`; one adversarial reviewer (the payment-engine checklist); one revision.
+
 ## Next
 After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane B's queue in `../LANES.md`.
 
