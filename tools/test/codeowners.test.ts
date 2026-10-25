@@ -86,7 +86,8 @@ describe('.github/CODEOWNERS', () => {
   it('covers what the schema gate runs on: the migrations directory migrate.ts reads, the db test project, and the scripts that run them', () => {
     // Held by the named lines alone, so the coverage stands even without the line for every path.
     const owned = (file: string): boolean => rules().some(({ pattern }) => pattern !== EVERY_PATH && matcher(pattern).test(file));
-    // migrate.ts names the directory of migrations; the db project of vitest.config.ts runs domain-model.db.test.ts.
+    // migrate.ts names the directory of migrations; the db project of vitest.config.ts runs domain-model.db.test.ts's
+    // drift case, and ci.yml's domain model job runs the approval (--require-approval), held by the line for /.github/.
     expect(readFileSync(path.join(repositoryRoot, 'packages/db/src/migrate.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../migrations')");
     expect(readFileSync(path.join(repositoryRoot, 'vitest.config.ts'), 'utf8')).toContain("name: 'db'");
     const scripts = (file: string): Record<string, string> => (JSON.parse(readFileSync(path.join(repositoryRoot, file), 'utf8')) as { scripts: Record<string, string> }).scripts;

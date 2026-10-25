@@ -7,7 +7,7 @@
   "completesIn": 1,
   "assertedBy": [
     "packages/db/src/identity.db.test.ts",
-    "apps/web/src/lib/routes/route-tests.db.test.ts",
+    "apps/web/src/lib/routes/route-tests/define.ts",
     "apps/web/e2e/sign-in.spec.ts"
   ],
   "codeListRelease": null,

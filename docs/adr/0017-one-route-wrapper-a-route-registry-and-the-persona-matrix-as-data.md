@@ -45,11 +45,12 @@ redirects, 404s, permission states and JSON with `Cache-Control: private, no-sto
 permission, a platform permission), whether it can show PHI, its schemas, its audit event, and a sample telling the tests
 how to call it for a synthetic world. A unit test proves every `page.tsx`, `route.ts` and server action runs a registered
 route at its own path, that path parameters are opaque IDs, that every mutation names an audit event, and that practice
-routes live under `/p/[practiceId]` and platform routes under `/console`. `route-tests.db.test.ts` generates, for every
-authenticated route: no session, an idle session, a 12-hour-old session, a user without MFA, an internal role without a
-hardware key, all thirteen personas against the matrix, a replayed request key, and every persona of another practice
-aimed at this practice's records or mixing them into its own request (no record ID of this practice in the answer, and a
-digest of every row of this practice unchanged). A route added later gets all of it.
+routes live under `/p/[practiceId]` and platform routes under `/console`. `route-tests/define.ts` (run as twelve files,
+`route-tests.0.db.test.ts` to `route-tests.11.db.test.ts`, since ADR 0066) generates, for every authenticated route: no
+session, an idle session, a 12-hour-old session, a user without MFA, an internal role without a hardware key, all
+thirteen personas against the matrix, a replayed request key, and every persona of another practice aimed at this
+practice's records or mixing them into its own request (no record ID of this practice in the answer, and a digest of
+every row of this practice unchanged). A route added later gets all of it.
 
 **The internal console reads directory records only**, through SECURITY DEFINER functions that check the platform
 permission: `console_practices`, `console_grants` and `console_support_grants` (names, dates, scope, counts of reads,

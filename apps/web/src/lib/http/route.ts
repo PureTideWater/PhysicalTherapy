@@ -141,7 +141,7 @@ export interface AuditSpec {
 
 /**
  * How the generated tests call a route: its parameters and input for a synthetic world's records
- * (src/lib/routes/route-tests.db.test.ts builds the worlds).
+ * (src/lib/routes/route-tests/world.ts builds the worlds).
  */
 export interface SampleRefs {
   readonly practiceId: string;

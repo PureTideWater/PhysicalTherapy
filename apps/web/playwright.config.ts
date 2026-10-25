@@ -55,12 +55,34 @@ function devLoginUrl(login: 'tp_app_dev' | 'tp_billing_dev' | 'tp_esign_dev'): s
   return url.toString();
 }
 
+/** This repository's tsx, from apps/web, where the web server's command runs. */
+const TSX = '../../node_modules/.bin/tsx';
+
+/**
+ * The build the journeys run (docs/adr/0066). By default this run builds it. With E2E_PREBUILT=1 (CI's e2e shards,
+ * which download the one build CI's build job made) it runs the build that is there, once scripts/build-stamp.ts has
+ * proved the build's stamp (apps/web/.next/BUILD_COMMIT) names the commit under test: a build of another commit, or
+ * an unstamped one, is refused, never served (test matrix CI-06).
+ */
+function buildStep(prebuilt: string | undefined): string {
+  if (prebuilt === undefined || prebuilt === '' || prebuilt === '0') {
+    return 'pnpm run build';
+  }
+  if (prebuilt === '1') {
+    return `${TSX} scripts/build-stamp.ts --expect "$(git rev-parse HEAD)"`;
+  }
+  throw new Error('E2E_PREBUILT is 1 (run the stamped build that is there) or unset (build here)');
+}
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
+  // One retry on CI, so a test that fails and then passes is reported as flaky, with its first attempt's trace; and
+  // on CI a flaky test fails the run (test matrix CI-07), so nondeterminism is fixed, never re-run to green.
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  failOnFlakyTests: Boolean(process.env.CI),
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }], ['github']] : 'list',
   use: {
     baseURL: E2E_ORIGIN,
     trace: 'retain-on-failure',
@@ -74,7 +96,7 @@ export default defineConfig({
   // The production build, as the container runs it, against a database prepared and seeded for this
   // run (e2e/prepare.ts) and the local identity provider. Synthetic data only.
   webServer: {
-    command: `../../node_modules/.bin/tsx e2e/prepare.ts && pnpm run build && PORT=${String(E2E_PORT)} bash scripts/start-standalone.sh`,
+    command: `${TSX} e2e/prepare.ts && ${buildStep(process.env.E2E_PREBUILT)} && PORT=${String(E2E_PORT)} bash scripts/start-standalone.sh`,
     url: `http://127.0.0.1:${String(E2E_PORT)}/sign-in`,
     timeout: 300_000,
     reuseExistingServer: false,

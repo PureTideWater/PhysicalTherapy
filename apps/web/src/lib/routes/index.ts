@@ -41,7 +41,7 @@ import { WORKBENCH_ROUTES } from './workbench';
  * The route registry: every page, server action and route handler of apps/web, with its access
  * (public, self, a practice permission or a platform permission), its practice scoping and whether it
  * can show PHI. src/lib/routes/registry.test.ts proves every page.tsx, route.ts and server action is
- * registered here; route-tests.db.test.ts generates the cross-tenant, role, MFA and session tests for
+ * registered here; route-tests/define.ts generates the cross-tenant, role, MFA and session tests for
  * every entry (test matrix SEC-02, SEC-15), so a route added later gets its tests with no extra work.
  */
 

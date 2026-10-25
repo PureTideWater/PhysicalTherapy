@@ -1,8 +1,9 @@
 # 0063. Protect main and the build branch, make the founder's GitHub review the approval of record, open each approval with what changed, and switch on the edit hooks
 
 - **Status:** accepted; amended 2026-10-20 (the founder's rulings on audit item #20, in "Amendment (2026-10-20)"
-  below); amends [0059](0059-twin-the-four-vendors-exports-as-unconfirmed-registry-data-carry-the-synthetic-marker-in-an-identifier-column-and-refuse-spreadsheet-exports-at-intake.md) (the hooks are wired now, the push deny and sandbox still in the final pass)
-- **Date:** 2026-10-18; amended 2026-10-20
+  below) and 2026-10-25 by [0066](0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md), Part 1 (the required checks, the job that writes the domain model's
+  summary and the per-job timeouts, in "Amendment (2026-10-25)" below); amends [0059](0059-twin-the-four-vendors-exports-as-unconfirmed-registry-data-carry-the-synthetic-marker-in-an-identifier-column-and-refuse-spreadsheet-exports-at-intake.md) (the hooks are wired now, the push deny and sandbox still in the final pass)
+- **Date:** 2026-10-18; amended 2026-10-20 and 2026-10-25
 - **Deciders:** the founder, Tyler Williams (GitHub `PureTideWater`), who approved on 2026-10-18 audit item #12 ("Make your approval and the CI gate real") and the standing rule of the same day, and on 2026-10-20 the combined best-option audit in full, its item #20 ("Make your approval, the CI gate and the repository's settings real") among it; the build (the governance pull request)
 - **PRD sections:** 16 (Security and compliance engineering), 17 (How to work: "CLAUDE.md is context, hooks are enforcement"; "merge by hand"), 18 (Testing and release); Change Order 001, CO-02 and rule 4; reconciliation 001, D4; ADR 0059 (the hooks and the guarded approval)
 
@@ -59,9 +60,10 @@ an OAuth app rather than a GitHub App needs the founder's approval for the organ
 organization restricts OAuth apps' access (runbook 2f).
 
 Rulesets, active, that hold an administrator too (amended 2026-10-20). `claude/build-platform` has one, with no bypass
-actor: deletion restricted, force pushes blocked, a pull request required, and the status checks `check` (ci), `images
-(web)`, `images (worker)` and `licenses` (supply-chain) and `approval-of-record`, each with GitHub Actions as its
-source, with branches up to date before merging. `main` has two, so that the one bypass it will have reaches one rule:
+actor: deletion restricted, force pushes blocked, a pull request required, and the status checks (amended 2026-10-25,
+ADR 0066) <!-- required-checks -->`all green` (ci), `mutation` (mutation), `screening-capacity gate`
+(screening-capacity) and `approval-of-record`<!-- /required-checks -->, each with GitHub Actions as its source, with
+branches up to date before merging. `main` has two, so that the one bypass it will have reaches one rule:
 "Protect main history" restricts deletion and blocks force pushes with no bypass actor at all, and "Protect main"
 requires a pull request, with the content publisher (below) as its only bypass actor from runbook step 7, and no check
 until launch, since `main` holds no workflow and a required check that cannot run would block every pull request into it
@@ -85,7 +87,7 @@ before launch without the founder's ruling. Dependabot's version updates go to t
 always open against the default branch, and `main` holds no manifest, lockfile, Dockerfile or workflow until launch, so
 none opens there, and one that did would wait for the founder's ruling like any other. The build merges a pull request
 once the approval and the checks are in place. At launch, once the launch pull request is open, the founder adds the
-five checks to "Protect main" (step 8);
+same required checks to "Protect main" (step 8);
 Code Owners review, on since step 5, applies there from the launch merge. A collaborator with Write, the agent included,
 can still push another branch, run a workflow from it and publish an image to the repository's registry, so no image
 reaches production on GitHub's word alone: the deploy runbook checks that the release tag's commit is on `main`.
@@ -127,11 +129,13 @@ the preparation). The founder approves that pull request, and it merges with "Cr
 rebase, which would drop `main`'s parent; the launch pull request merges the same way. Before opening the launch pull
 request the build checks `git merge-base --is-ancestor origin/main origin/claude/build-platform`, and repeats the
 preparation if `main` has moved since; it never uses "Update branch" on the launch pull request, which would push a
-merge to `claude/build-platform`, whose ruleset refuses it. Of `main`'s 10 files, only `README.md` and
-`.github/dependabot.yml` differ from the build branch's (the other eight, the plan files, are the same), and the build's
-copies replace `main`'s; every other file of the build is new to `main`. Once the launch pull request is open, and not
+merge to `claude/build-platform`, whose ruleset refuses it. Of `main`'s 11 files (amended 2026-10-25; the first
+version counted 10, before the pull request template), the build branch has changed `README.md`,
+`.github/dependabot.yml`, `.github/pull_request_template.md`, `docs/product/PRD.md` and `docs/product/test-matrix.md`
+(the other six plan files are the same), and the build's copies replace `main`'s; every other file of the build is new
+to `main`. Once the launch pull request is open, and not
 before (until then a required check that cannot run on `main` would block every other pull request into it), "Protect
-main" gains the five checks, which run on the launch pull request because its workflows come with it, and
+main" gains the required checks, which run on the launch pull request because its workflows come with it, and
 approval-of-record judges it against the build branch's approver list. It brings the build branch's `.github/dependabot.yml`, which has no `target-branch` lines, so
 from the merge Dependabot opens its updates against `main`, and `.github/pull_request_template.md`, which GitHub then
 offers on every new pull request. `main` stays the protected default branch: every later pull request targets it, and
@@ -218,8 +222,8 @@ PHI registry, grants and roles; then tables and views, columns, constraints and 
 divergence rows; then migrations, the cross-checks and any other line. A line repeated in a summary table is folded
 into the line that holds it, and every other changed line is listed under "Other lines", so nothing that changes the
 hash goes unreported. `summary.test.ts` holds it to synthetic edits of the committed document and
-`summary.db.test.ts` to real DDL on a scratch database, regenerated. CI's `check` job writes the summary against the
-base branch into its job summary, which is the copy the founder reads (the build's copy in the description is the
+`summary.db.test.ts` to real DDL on a scratch database, regenerated. CI's `domain model` job (amended 2026-10-25, ADR
+0066; the single `check` job until then) writes the summary against the base branch into its job summary and its log, which is the copy the founder reads (the build's copy in the description is the
 build's text); the build opens the description of every pull request that regenerates the document with it
 (`.claude/skills/new-migration`). A code block is read by CommonMark's rule (it closes only at a fence as long as its
 own); the generator fences a view definition, and the cross-checks, with more backticks than any run inside them; and
@@ -324,26 +328,30 @@ the hooks as `settings.json` wires them.
   check (runbook 3g to 3j). Recheck it whenever a GitHub connection on the founder's Claude account changes.
 - Until launch a pull request into `main` merges with no required check, and only on the founder's ruling; from 3i the
   build waits for the founder's approval of it, and after step 5 GitHub requires it. The launch pull request is judged
-  by approval-of-record against the build branch's approver list, and by the five checks, which "Protect main" gains
-  once it is open, never earlier (runbook step 8).
+  by approval-of-record against the build branch's approver list, and by the required checks, which "Protect main"
+  gains once it is open, never earlier (runbook step 8).
 - CI's cost, measured on 17 and 18 October: about 35 billable minutes a push; about 1,100 minutes in 34 hours, a third
-  of it one image job that hung for GitHub's 360-minute default. `ci`'s check now stops at 60 minutes (its mutation job
-  at 120) and the supply-chain jobs at 15; Dependabot groups every action update in one pull request and both images in
-  one, with fewer open at once; the e2e artifact (up to 54 MB) is kept 7 days, against Team's 2 GB of Actions storage.
+  of it one image job that hung for GitHub's 360-minute default. Every job now stops at its own timeout (amended
+  2026-10-25, ADR 0066: ci.yml's jobs at 5 to 25 minutes, about three times each one's expected time, where ci's one job
+  stopped at 60 and the supply-chain jobs at 15), mutation's at 5, 30 and 10 (`changes`, each `stryker` shard and the
+  gate; ADR 0066, Part 4, where its one job stopped at 120); Dependabot groups every action update in one pull request
+  and both images in one, with fewer open at once; the e2e artifacts (up to 54 MB a run over every shard) are kept 7 days, against Team's
+  2 GB of Actions storage.
   Dependabot reads `.github/dependabot.yml` from `main`, so the groups and limits take effect before launch only when
   `main`'s copy changes. On 2026-10-20 the founder ruled for one pull request into `main` that changes it (the same
   groups and limits, with every `target-branch` line kept) and adds the pull request template; the build opens it after
   this pull request merges and before runbook step 5, and it merges on the founder's approval. After step 5, every
   Dependabot pull request needs the founder's approval.
   Dependabot's alerts and security updates read only `main`, which holds no manifest until launch: until then the build
-  branch's dependencies are checked by `pnpm audit --prod` in every pull request's `check` and by the weekly version
+  branch's dependencies are checked by `pnpm audit --prod` in every pull request's `static` job and by the weekly version
   updates, and from the launch merge Dependabot's alerts cover them too.
 - `publish-content.yml` pushes to `main` with the content publisher's token, the only bypass of "Protect main" and of
   creating a content release tag (the build's choice of 2026-10-20, above, confirmed by the founder the same day).
   `content/outgoing` holds no release today, and the workflow is not on `main` until launch; the app (runbook step 7)
   and the workflow's change both come before launch.
-- The approval line is still checked as before; a pull request that regenerates the document still fails `test:db`
-  until the line is signed, and now also needs the founder's review once enforced.
+- The approval line is still checked as before; a pull request that regenerates the document fails the `domain model`
+  check until the line is signed (amended 2026-10-25, ADR 0066: the approval case was in `test:db` until then, which
+  kept the whole database suite red), and now also needs the founder's review once enforced.
 - The hooks run in every Claude Code session in a checkout of this branch. A NotebookEdit cannot reach a release, a
   migration, a fixture or the approval. Every session installs the pre-push hook and the pinned gitleaks when it starts,
   and a write through the GitHub connector's file tools is refused, so every push the build makes goes through the
@@ -373,7 +381,7 @@ the hooks as `settings.json` wires them.
   an unfetched remote and a URL, merges), `tools/fixture-check/*.test.ts` (PDFs, indented and UTF-16 interchanges, a header after a line of text in any
   file, prose that names the segment),
   `tools/test/legal-surfaces.test.ts` (the production gate), and `actionlint` on the workflows where it is installed.
-- security.txt's expiry fails `pnpm test`, and with it every pull request's `check`, from 30 days before its date
+- security.txt's expiry fails `pnpm test`, and with it every pull request's `unit` job and `all green`, from 30 days before its date
   (2027-03-31 for today's 2027-04-30); the quarterly review renews it when fewer than 120 days remain, so it never
   blocks a merge.
 
@@ -455,11 +463,13 @@ founder confirms the others by doing their runbook steps, or rules otherwise.
 
 **Recorded so the documents agree.**
 
-12. **The required checks, the same in every document.** `claude/build-platform` requires five checks from step 4:
-    `check`, `images (web)`, `images (worker)`, `licenses` and `approval-of-record`, which passes and says why until
-    `APPROVAL_REVIEW_REQUIRED` is `true`. `main` requires none until launch and the same five from step 8. The first
+12. **The required checks, the same in every document.** `claude/build-platform` requires these from step 4 (amended
+    2026-10-25, ADR 0066, where the 2026-10-20 list was ci's single check, the three supply-chain checks and
+    approval-of-record): <!-- required-checks -->`all green`, `mutation`, `screening-capacity gate` and
+    `approval-of-record`<!-- /required-checks -->, the last of which passes and says why until
+    `APPROVAL_REVIEW_REQUIRED` is `true`. `main` requires none until launch and the same from step 8. The first
     version's runbook and this record already agreed on the checks; they now also agree on the approval and on when it
-    starts.
+    starts, and `tools/test/required-checks.test.ts` holds every listing to `tools/required-checks.ts`.
 13. **Dependabot's settings on `main`.** The groups and limits on this branch take effect only when `main`'s copy
     changes. On 2026-10-20 the founder ruled for one pull request into `main` that changes it and adds the pull request
     template (Consequences; the runbook's section on it).
@@ -471,10 +481,33 @@ Dates to record here: the day of runbook 3i, from which the build merges no pull
 and from which the first quarterly review samples (not yet); the day step 5 is set, from which GitHub requires it (not
 yet); the launch (not yet).
 
+## Amendment (2026-10-25): the required checks and CI's jobs after ADR 0066, Part 1
+
+ADR 0066, Part 1 (`co-001/ci-speed`, combined audit #109, adopted by the founder on 2026-10-20) replaces ci.yml's one
+serial job with parallel jobs behind one gate, folds `supply-chain.yml` into it and moves the domain model's approval
+into a job of its own. The sections above are updated to match, each change marked "amended 2026-10-25":
+
+1. **The required checks.** The ruleset of step 4A, and "Protect main" from step 8, require
+   <!-- required-checks -->`all green` (ci), `mutation` (mutation), `screening-capacity gate` (screening-capacity) and
+   `approval-of-record`<!-- /required-checks -->. `all green` needs every ci.yml job, the image and license gates among
+   them, so one ci.yml check replaces ci's and the three supply-chain checks; `mutation` and the capacity gate, the
+   founder's offer of 2026-10-22 and ruling of 2026-10-21, join the list the documents give. No ruleset existed when
+   this was written (`gh api repos/PureTideWater/PhysicalTherapy/rulesets` returned `[]`), so nothing on GitHub named
+   the old checks; the founder sets the ruleset with these names once ADR 0066's pull request has its first green push
+   run (runbook step 4A).
+2. **The domain model's summary** is written by ci.yml's `domain model` job, into its summary and its log, on every
+   pull request; that job also runs `pnpm db:domain-model --check --strict --require-approval`, so an unsigned
+   document is red there alone. The database suite keeps the drift case (`domain-model.db.test.ts`) and drops the
+   approval case; the Context above, which says the test held the line, describes the decision's day.
+3. **Timeouts.** Every ci.yml job has its own: `static` and `lint` 15 minutes, `unit` and each `db` shard 20,
+   `domain model` 10, `build` 15, each `e2e` shard 25, `images` 20 and `all green` 5 (`tools/test/workflows.test.ts`).
+4. **`main`'s files.** Eleven, not ten: the pull request template the founder's ruling of 2026-10-20 added is the
+   eleventh (`git ls-tree -r --name-only origin/main`), and five of them differ on the build branch.
+
 ## Revisit when
 
 The build agent's identity is switched and the variable set (record both dates in the amendment above); the launch
-merge brings the workflows and CODEOWNERS to `main` (the five checks join "Protect main", Code Owners review applies
+merge brings the workflows and CODEOWNERS to `main` (the required checks join "Protect main", Code Owners review applies
 there from the merge, and Dependabot's `target-branch` lines go with it; record the date); a second approver is added
 (CODEOWNERS, `approvers.json`, the rulesets and the change-management policy change together); the final pass commits
 the `git push` deny and the sandbox; `publish-content.yml` takes the content publisher's token, before launch; or

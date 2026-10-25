@@ -1,4 +1,7 @@
+import path from 'node:path';
+
 import { configDefaults, defineConfig } from 'vitest/config';
+import { BaseSequencer, type TestSpecification } from 'vitest/node';
 
 /** The docker-compose Postgres, used when DATABASE_URL is not set. Synthetic data only. */
 const LOCAL_DATABASE_URL = 'postgres://postgres:test@localhost:5432/postgres';
@@ -19,8 +22,49 @@ export const BRANCH_GATED = [
   'packages/db/src/authz/**',
 ];
 
+/**
+ * Fails a CI run that lacks Playwright's Chromium instead of skipping the tests that print (test matrix CI-05;
+ * docs/adr/0066): the unit and db projects' global setup.
+ */
+const CHROMIUM_ON_CI = ['tools/test/ci-chromium.ts'];
+
+/**
+ * Database files whose run is long and whose source is short, root-relative: the generated route tests (two lines
+ * each) and SCR-19's lease wait (about 190 s on CI). Each shard starts its slowest files first, by the durations in
+ * the results cache (node_modules/.vite/vitest, which CI restores per shard); a file with no recorded duration
+ * falls back to its size, which would start these last. So, without a recorded duration, these start first.
+ */
+export const SLOW_FIRST: readonly RegExp[] = [/^apps\/web\/src\/lib\/routes\/route-tests\/route-tests\.\d+\.db\.test\.ts$/, /^apps\/worker\/src\/screening\/consumer-lease\.db\.test\.ts$/];
+
+/**
+ * Vitest's own order (a project's files failed first, then longest first by the results cache, then largest first),
+ * with SLOW_FIRST's files that have no recorded duration moved to the front of their project. Which files a shard
+ * runs is BaseSequencer's shard(), unchanged: by the hash of each file's path (tools/test/db-shards.test.ts, CI-04).
+ */
+export class SlowFirstSequencer extends BaseSequencer {
+  override async sort(files: TestSpecification[]): Promise<TestSpecification[]> {
+    const sorted = await super.sort(files);
+    const unrecorded = (spec: TestSpecification) =>
+      this.ctx.cache.getTestSpecificationResult(spec) === undefined && SLOW_FIRST.some((pattern) => pattern.test(path.relative(this.ctx.config.root, spec.moduleId).split(path.sep).join('/')));
+    // super.sort() keeps each project's files together; each run of them is reordered on its own.
+    const runs: TestSpecification[][] = [];
+    for (const spec of sorted) {
+      const run = runs.at(-1);
+      if (run?.[0]?.project === spec.project) {
+        run.push(spec);
+      } else {
+        runs.push([spec]);
+      }
+    }
+    return runs.flatMap((run) => [...run.filter(unrecorded), ...run.filter((spec) => !unrecorded(spec))]);
+  }
+}
+
 export default defineConfig({
+  // Vite's default, named because CI caches the results cache under it (node_modules/.vite/vitest; docs/adr/0066).
+  cacheDir: 'node_modules/.vite',
   test: {
+    sequence: { sequencer: SlowFirstSequencer },
     projects: [
       {
         extends: true,
@@ -28,6 +72,7 @@ export default defineConfig({
           name: 'unit',
           include: [`${WORKSPACES}/**/*.test.{ts,tsx}`],
           exclude: [...ignored, '**/*.db.test.ts', '**/*.golden.test.ts'],
+          globalSetup: CHROMIUM_ON_CI,
         },
       },
       {
@@ -36,6 +81,7 @@ export default defineConfig({
           name: 'db',
           include: [`${WORKSPACES}/**/*.db.test.ts`],
           exclude: ignored,
+          globalSetup: CHROMIUM_ON_CI,
           env: { DATABASE_URL: process.env.DATABASE_URL ?? LOCAL_DATABASE_URL },
           testTimeout: 30_000,
           hookTimeout: 30_000,

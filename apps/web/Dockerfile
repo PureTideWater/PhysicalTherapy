@@ -21,7 +21,7 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 WORKDIR /app
 # Debian's security updates published since the base image, and no package manager left in the running
-# image: the image scan (supply-chain.yml) fails on any HIGH or CRITICAL finding that has a fix, and the
+# image: the image scan (ci.yml's images job) fails on any HIGH or CRITICAL finding that has a fix, and the
 # npm, npx and corepack the base image bundles are never run by the server.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \

@@ -90,7 +90,7 @@ Every case the suites must contain, by module, with the fixture that exercises i
 | PRC-23 | A month whose pricing location is not ready | With no ZIP, no run is created (refused in the worker and in Postgres). When a line needs a ZIP+4, or a ZIP Medicare's list does not hold, the run fails with no lines kept, and the month is not re-created daily. A fixed-fee month prices. Coverage and Pricing settings name the month as waiting on the billing ZIP, with its dollars. Saving the location prices it with no hand re-run |
 | PRC-24 | A place of service the practice has not set | Priced with the approved split's setting, read as `tp_app`. The run records the split, and the practice's own setting wins |
 
-PRC-21 and PRC-22 were added by Change Order 001 in its pull request 6b-1, under the founder's ruling of 2026-10-18 11:47 UTC (reconciliation-001 line 428, the ZIP+4 lookup the only engine change) and the founder's answers of 2026-10-21 to PR 6b's Q3 (the record type `locality_map_plus_four`) and Q4 (golden claims G196-G199 under release 900006); docs/adr/0064.
+PRC-21 and PRC-22 were added by Change Order 001 in its pull request 6b-1, under the founder's ruling of 2026-10-18 11:47 UTC (reconciliation-001's engine arithmetic check, "What must not change, as checks", the ZIP+4 lookup the only engine change) and the founder's answers of 2026-10-21 to PR 6b's Q3 (the record type `locality_map_plus_four`) and Q4 (golden claims G196-G199 under release 900006); docs/adr/0064.
 PRC-23 and PRC-24 were added in its pull request 6b-2 (audit #33 and #16's minimal record), under the founder's answers of 2026-10-21 to PR 6b's Q2 (the practice's one pricing location) and Q5 (`pricing_settings.set`); docs/adr/0064 and 0039.
 
 ## Triage, cases and packets (CAS)
@@ -204,11 +204,21 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 ## Continuous integration (CI)
 
 The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
-test infrastructure must do, each asserted by a test that reads or runs them. CI-15 to CI-17 are the mutation
-workflow's (docs/adr/0066, Part 4).
+test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-14 and CI-18 to CI-20 are
+reserved for the series' later pull requests; CI-15 to CI-17 are the mutation workflow's (docs/adr/0066, Part 4).
 
 | ID | Case | Assertion |
 | --- | --- | --- |
+| CI-01 | One gate over every CI job | `all green` needs every other ci.yml job and passes only when each succeeded; a failed, skipped or cancelled job fails it |
+| CI-02 | Every route's tests in exactly one of twelve files | Each registered route is in one file; the twelve files exist and each runs its own index |
+| CI-03 | A route snapshot in one statement | The folded snapshot equals the per-table snapshot on two worlds and after an update |
+| CI-04 | The database suite in shards | Through vitest's own sequencer, the shards' files are disjoint and together are the whole db project, for 4 and for 6 shards; each shard prints the files it ran and migrates its own database |
+| CI-05 | Chromium missing on CI | A unit or database run fails instead of skipping its printing tests |
+| CI-06 | End-to-end shards over one build | Every shard runs the build job's artifact; a build stamped with another commit is refused |
+| CI-07 | A flaky end-to-end test | Passing only on its retry fails the run and names the test |
+| CI-08 | Lint in memory-bounded groups | The groups cover every linted file exactly once; the scheduler fits 16 GiB and 8 GiB hosts and always runs at least one group; any group's warning or error fails the run |
+| CI-09 | The domain model's approval as its own check | `domain model` runs `--check --strict --require-approval`; the database suite carries no approval case |
+| CI-10 | A timeout on every job | Every job of every workflow has the timeout its table names |
 | CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score |
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
