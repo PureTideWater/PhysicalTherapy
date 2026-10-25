@@ -1,0 +1,32 @@
+export const meta = {
+  name: 'lane-b-pr15-verify',
+  description: 'Lane B PR 15 (PR #45): fresh-clone verification of the merged head, reading CI',
+  phases: [{ title: 'Verify', detail: 'fresh clone, design section 9 verifier steps, CI read from the logs, adversarial read of the fix round and the base merge' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad'
+const OUT = SP + '/pr15'
+const HEAD = args.head
+phase('Verify')
+const v = await agent(`PaidWhole, repo PureTideWater/PhysicalTherapy. CLAUDE.md is in your context. You are the fresh-clone verifier of PR #45 (co-001/pr-15-ledger-tests, head ${HEAD.slice(0, 7)}, base claude/build-platform at de8f9b5, which the head has merged with a merge commit under LANES.md rule 6): PR 15, ledger tests LED-12 and LED-13, tests and documents only, under the founder's ruling L1 (a) (2026-10-25, relayed by the co-founder; the co-founder approved LED-12's row wording as recommended under the founder's delegation of that day). Design: /home/user/ops/designs/lane-b-pr15-ledger-tests.md (section 9 lists your steps; sections 4, 5, 6, 7 and 8 are the contract; section 10 the boundary with 15b). Build summary ${OUT}/build-summary.md; reviews ${OUT}/review-payment-engine.md and ${OUT}/review-test-integrity.md (findings ${OUT}/findings.json); fix round ${OUT}/fix-round.md and ${OUT}/fix-suite.md. Assume nothing the reports say; check it.
+
+Environment: export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH in every command (the shell's default node is 22; the repository needs 24). PG18 at localhost:5433 (postgres:test). MACHINE SAFETY: run every command that starts vitest, tsc, eslint, Stryker, a build or a database suite under flock /tmp/laneb-heavy.lock, one at a time, in the foreground, never in parallel. GitHub reads: the mcp__github__* tools (ToolSearch "select:mcp__github__get_job_logs,mcp__github__actions_list,mcp__github__pull_request_read"); get_job_logs with return_content and a large tail_lines; gh api for other reads. Read-only: no commit, push or GitHub post.
+
+1. git clone -q https://github.com/PureTideWater/PhysicalTherapy ${OUT}/verify && cd ${OUT}/verify && git checkout -q ${HEAD}; pnpm install --frozen-lockfile --prefer-offline. Remove the clone at the end.
+2. Scope against de8f9b5 (the base the head merged; git diff de8f9b5 ${HEAD.slice(0, 7)}): no non-test change under packages/ledger/src, apps/worker/src/reconcile (test-support included), packages/pricing, packages/edi835/src, packages/db, content/releases or any migration; packages/ledger/src numstat shows 0 deletions; the removed lines of the two ledger db test files are only those the design's section 9 step 8 allows (every existing it and oracle case byte-identical); the file list is the design's section 4 list. Also confirm the merge commit's first parent is b7e15e8 and its second de8f9b5, and that git merge-tree of the two parents reproduces the head's tree (nothing hand-edited in the merge).
+3. pnpm synth --all writes nothing (and a second run nothing); pnpm check:fixtures; the focused db run: vitest run --project db apps/worker/src/reconcile/ledger.db.test.ts apps/worker/src/reconcile/ledger-oracle.db.test.ts with DATABASE_URL=postgres://postgres:test@localhost:5433/postgres (pnpm db:migrate first if the suite needs it; the fix suite measured 51 = base 42 + 9). pnpm exec vitest run --project unit packages/ledger packages/synth (the LED-13 property green; ledger branches 100%).
+4. The mutation gate for the ledger, which this PR's totals.test.ts change affects: the money-ledger shard (tools/stryker/canary first, 5 of 5, then pnpm -s exec tsx tools/stryker/shards.ts money-ledger with TP_MUTATION_SHARD=money-ledger), then pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --expected '["money-ledger"]': it passes, no recorded equivalent stale or now killed.
+5. CI on ${HEAD.slice(0, 7)}, from its own logs (wait for it if it is still running: poll pull_request_read get_check_runs no more often than every 3 minutes, up to 40 minutes): every check green, among them all green, mutation (with which shards the changes job chose and the money-ledger shard's canary 5 of 5), screening-capacity gate if it ran, and approval-of-record. The unit and db counts on CI against the base's push run on de8f9b5 (ci run 40223130551): unit base + the PR's new unit tests, db base + the PR's new db tests (the union of the db shards' "Files this shard ran"). The oracle job: the LED-12 835s agree with pyx12.
+6. Word for word: the LED-12 and LED-13 rows in docs/product/test-matrix.md and packages/synth/src/cases/matrix.ts against the L1 (a) text in the design and reconciliation-001 item 15; item 15 names the founder (Tyler Williams), the co-founder's relay and approval, the dates and the quoted words.
+7. An adversarial read of the fix round (git diff 0e56e01..b7e15e8): each of the ten findings' dispositions holds in the code; nothing weakened a test; then read the PR description (pull_request_read get) and list anything in it now false or stale at ${HEAD.slice(0, 7)} (for example a head SHA, a base SHA, counts, or the rule-6 section, which must now say the head merged de8f9b5 cleanly).
+8. Write the approval summary to ${OUT}/verify-summary.md in the house format of /home/user/ops/approval-summaries/lane-b-ci-mutation-verify-summary.md. Verdict pass only if every check passes and no blocking or should_fix finding stands (a stale PR description sentence is a nit unless it misstates scope, a ruling or a result). Return the verdict, every check with its result, the CI figures, and every finding with severity, evidence and fix.`, { label: 'verify', phase: 'Verify', schema: {
+  type: 'object',
+  properties: {
+    verdict: { type: 'string', enum: ['pass', 'fail'] }, head_verified: { type: 'string' },
+    checks: { type: 'array', items: { type: 'object', properties: { check: { type: 'string' }, result: { type: 'string' }, pass: { type: 'boolean' } }, required: ['check', 'result', 'pass'] } },
+    ci: { type: 'string' },
+    findings: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, severity: { type: 'string', enum: ['blocking', 'should_fix', 'nit'] }, issue: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['id', 'severity', 'issue', 'evidence', 'fix'] } },
+  },
+  required: ['verdict', 'head_verified', 'checks', 'ci', 'findings'],
+} })
+if (!v) throw new Error('The verifier returned nothing; PR #45 is not verified.')
+return v

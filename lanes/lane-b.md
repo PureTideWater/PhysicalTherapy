@@ -7,7 +7,7 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
-## Start here (Lane B): the state at 2026-10-25 ~19:55 UTC
+## Start here (Lane B): the state at 2026-10-25 ~19:30 UTC
 A new Lane B session reads this section first, after `../LANES.md`. It is complete on its own: what is merged, what
 runs next and in what order, what waits on whom, and the conventions that kept the build safe. The dated log below it
 is the record; nothing in it is needed to continue.
@@ -82,7 +82,7 @@ is the record; nothing in it is needed to continue.
 - **The founder** (owner-admin or Lane A's, so not delegated):
   - **F7, due now:** the `claude/build-platform` ruleset of governance runbook §4 (step 4A).
     - It requires `all green`, `mutation`, `screening-capacity gate` and `approval-of-record` (each from GitHub Actions), a PR, no force pushes, and up-to-date branches.
-    - ci-speed's push runs have been green since 9c57d2d. At ~19:55 UTC the rulesets API still returns `[]`.
+    - ci-speed's push runs have been green since 9c57d2d. At ~19:30 UTC the rulesets API still returns `[]`.
     - Until it is applied, a session checks every required check by hand before merging.
   - **Lane A and the UX reviewer:** whether Lane A's screen-changing PRs take the same reviewer. The co-founder recommends it and was given a line to paste in the founder's chat; Lane B does not edit LANES.md's rules.
   - **O12:** the PR capacity run's length (13:20 to 16:35 measured), after five push runs. The two options and their costs are in `designs/lane-b-ci.md` §11.
@@ -384,13 +384,13 @@ is the record; nothing in it is needed to continue.
     - V4: O7, rebalance stryker/shards.json if packets-rest nears 15 minutes.
   - **Merge:** marked ready and merged with a merge commit (base 9c57d2d, unchanged since its rule-6 merge). Unsubscribed #44; the main checkout fast-forwarded to de8f9b5; the eight ci-mutation worktrees and branches removed.
   - **PR #45 (PR 15) now merges claude/build-platform at de8f9b5 under rule 6 before its own merge:** the test matrix, the synth registry, totals.test.ts, README and reconciliation-001, keeping both.
-- **2026-10-25 ~19:55 UTC: PR #45 closing out; the handoff written.**
+- **2026-10-25 ~19:30 UTC: PR #45 closing out; the handoff written.**
   - **PR #45's fix round** (wf_bc33f972-a3a) is done: head b7e15e8, all ten nits fixed, and the full local suite passed once.
     - The fixer committed 539cd23 and 8eeef29; the suite runner's re-read added b7e15e8.
     - Unit: 4,664 and 3 skipped, ledger branches 415/415. Golden 38. Oracle 637.
     - test:db in six shards: 9,049 and 1 skipped, the two ledger files 51/51. e2e 51.
     - CI on b7e15e8 was green, with every mutation shard passing on the merge ref.
-  - **Rule 6:** merged claude/build-platform at de8f9b5 into the branch as f4d125b. The merge was clean and touched no file of the PR's. The checks on the merged head are running under the lock, on Node 24: install, fixtures, typecheck, lint, synth, unit, the ledger db files, the money-ledger canary, shard and gate. Then the push, CI, the fresh-clone verification and the merge.
+  - **Rule 6:** merged claude/build-platform at de8f9b5 into the branch as f4d125b. The merge was clean: the six files both sides changed (README, reconciliation-001, test-matrix, totals.test.ts, matrix.ts, registry.ts) merged by hunk. The checks on the merged head are running under the lock, on Node 24: install, fixtures, typecheck, lint, synth, unit, the ledger db files, the money-ledger canary, shard and gate. Then the push, CI, the fresh-clone verification and the merge.
   - **Handoff:**
     - the "Start here (Lane B)" section above replaces "In flight", "Next" and Lane A's first-session notes;
     - COFOUNDER-START.md's message points at it;
