@@ -32,16 +32,17 @@ import { type GoldenClaim, GOLDEN_CLAIMS_DIR, goldenPricingInput } from '../gold
 
 /**
  * The engine freeze's proof that nothing but PR 6b's ZIP+4 lookup changed (reconciliation-001; docs/adr/0064; PRC-22).
- * The base engine is extracted at ENGINE_FREEZE_BASE (CI sets it to the merge base) into a new temporary directory,
- * with the base's copy of every workspace package it depends on (@tp/money, @tp/rules, @tp/contracts and theirs, each
- * its src and package.json), linked to one another in node_modules as pnpm links them, so the base engine runs on its
- * own base arithmetic, rules and contracts, never the head's: a change to @tp/money's rounding shows here as a change
- * to the engine. Third-party packages (decimal.js, zod) resolve to the versions the head's lockfile installs. Every
- * test file of the extract is deleted. The extract lives outside the repository, so no repository scan running beside
- * this test (lint:logs' scan test, the copy and colour lints, the fixture guard) lists a file it then deletes. Both engines
- * then price, and every LinePricing must be deeply equal once `trace.engine` is set aside; for every line, the head's
- * recompute of the head's trace must equal the base's recompute of the base's trace, and the head's recompute must
- * read the base's stored trace alike (recompute.ts is one of the five files the exception opens):
+ * The base engine is extracted at ENGINE_FREEZE_BASE (ci.yml's unit job sets it: the merge base on a pull request, the
+ * previous head on a push) into a new temporary directory, with the base's copy of every workspace package it depends
+ * on (@tp/money, @tp/rules, @tp/contracts and theirs, each its src and package.json), linked to one another in
+ * node_modules as pnpm links them, so the base engine runs on its own base arithmetic, rules and contracts, never the
+ * head's: a change to @tp/money's rounding shows here as a change to the engine. Third-party packages (decimal.js, zod)
+ * resolve to the versions the head's lockfile installs. Every test file of the extract is deleted. The extract lives
+ * outside the repository, so no repository scan running beside this test (lint:logs' scan test, the copy and colour
+ * lints, the fixture guard) lists a file it then deletes. Both engines then price, and every LinePricing must be deeply
+ * equal once `trace.engine` is set aside; for every line, the head's recompute of the head's trace must equal the
+ * base's recompute of the base's trace, and the head's recompute must read the base's stored trace alike (recompute.ts
+ * is one of the five files the exception opens):
  *
  * 1. every golden claim the base holds, under the release it pins (150 claims and 326 lines at PR 6b-1's base);
  * 2. 20,000 generated claims under releases 900001 to 900005, with the settings' ZIP 00011 (one locality), 00012
@@ -368,7 +369,7 @@ function inputOf(claim: GeneratedClaim, release: IndexedRelease): PricingInput {
 // ---------------------------------------------------------------------------------------------
 
 describe('the engine freeze runs in CI', () => {
-  it('is never skipped there: CI sets ENGINE_FREEZE_BASE to the merge base (.github/workflows/ci.yml)', () => {
+  it('is never skipped there: CI sets ENGINE_FREEZE_BASE (the unit job of .github/workflows/ci.yml)', () => {
     if (IN_CI) {
       expect(BASE, 'ENGINE_FREEZE_BASE is not set in CI: the differential test cannot run, so it fails').not.toBe('');
     }
@@ -408,7 +409,7 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
 
   beforeAll(async () => {
     try {
-      if (BASE === '') throw new Error('ENGINE_FREEZE_BASE is not set: CI sets it to the merge base (.github/workflows/ci.yml)');
+      if (BASE === '') throw new Error('ENGINE_FREEZE_BASE is not set: CI sets it to the merge base, or on a push the previous head (the unit job of .github/workflows/ci.yml)');
       extracted = extractBase(BASE);
       base = (await import(/* @vite-ignore */ pathToFileURL(path.join(extracted, 'packages/pricing/src/index.ts')).href)) as Engine;
       baseMoney = (await import(/* @vite-ignore */ pathToFileURL(path.join(extracted, 'packages/money/src/index.ts')).href)) as typeof Money;

@@ -1,0 +1,17 @@
+{
+  "case": "CI-09",
+  "module": "CI",
+  "title": "The domain model's approval as its own check",
+  "assertion": "`domain model` runs `--check --strict --require-approval`; the database suite carries no approval case",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["tools/test/workflows.test.ts","packages/db/src/domain-model/domain-model.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The workflow and the database suite are read; the drift case migrates a scratch database; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

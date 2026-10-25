@@ -7,8 +7,8 @@ import { licenseProblems, pnpmLicensesSchema, policySchema } from './check';
 
 /**
  * `pnpm licenses:check`: fails when a production dependency carries a license outside
- * tools/check-licenses/allowlist.json without a named exception (PRD section 16). Runs in the
- * supply-chain workflow on every pull request.
+ * tools/check-licenses/allowlist.json without a named exception (PRD section 16). Runs in ci.yml's
+ * static job on every pull request and every push to the build branch.
  */
 const listed = spawnSync('pnpm', ['licenses', 'list', '--prod', '--json'], { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 if (listed.status !== 0) {

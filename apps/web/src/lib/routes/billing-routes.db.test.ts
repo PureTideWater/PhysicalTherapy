@@ -38,7 +38,7 @@ import { csrfTokenFor } from '../http/csrf';
  * Billing's routes against PostgreSQL and the local Stripe test-mode simulator (PRD 5, J18; PRD 6, Billing
  * acceptance: "A test ACH payment completes; a suspended organization can read but not run"; docs/adr/0050).
  * The simulator's events reach the webhook route the way Stripe's do, through the route handler: the body as
- * sent and its Stripe-Signature header. Who may use each route is route-tests.db.test.ts's; this is what the
+ * sent and its Stripe-Signature header. Who may use each route is route-tests/define.ts's; this is what the
  * routes do.
  */
 

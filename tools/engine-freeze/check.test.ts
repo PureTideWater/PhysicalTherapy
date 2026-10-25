@@ -721,25 +721,44 @@ describe('the repository: the diff from the merge base', () => {
 describe('the wiring', () => {
   interface Step {
     readonly name?: string;
+    readonly if?: string;
     readonly run?: string;
     readonly uses?: string;
     readonly with?: Record<string, unknown>;
     readonly env?: Record<string, string>;
   }
-  const ci = parse(readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8')) as { jobs: { check: { steps: Step[] } } };
-  const steps = ci.jobs.check.steps;
+  const ci = parse(readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8')) as { jobs: Record<string, { steps: Step[] }> };
+  const steps = (job: string): Step[] => ci.jobs[job]?.steps ?? [];
+  const checkout = (job: string) => steps(job).find((step) => step.uses?.startsWith('actions/checkout@') === true);
 
-  it('runs the check as one ci.yml step against the merge base, and hands the base to the unit tests before they run', () => {
-    const freeze = steps.findIndex((step) => step.name === 'Engine freeze');
-    const unit = steps.findIndex((step) => step.run?.startsWith('pnpm test ') === true || step.run === 'pnpm test');
+  it('runs the check as a step of ci.yml’s static job against a pull request’s merge base, with its number for the exception', () => {
+    const freeze = steps('static').findIndex((step) => step.name === 'Engine freeze');
     expect(freeze).toBeGreaterThan(0);
-    expect(unit).toBeGreaterThan(freeze);
-    const step = steps[freeze];
+    const step = steps('static')[freeze];
+    // A pull request's alone: the exception names one (check.ts reads PR_NUMBER).
+    expect(step?.if).toBe("${{ github.event_name == 'pull_request' && !cancelled() && steps.install.outcome == 'success' }}");
     expect(step?.env).toEqual({ BASE_REF: '${{ github.base_ref }}', PR_NUMBER: '${{ github.event.pull_request.number }}' });
     expect(step?.run).toContain('base="$(git merge-base "origin/$BASE_REF" HEAD)"');
-    expect(step?.run).toContain('echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"');
     expect(step?.run).toContain('pnpm -s exec tsx tools/engine-freeze/check.ts "$base"');
-    expect(step?.run?.indexOf('GITHUB_ENV')).toBeLessThan(step?.run?.indexOf('check.ts') ?? 0);
-    expect(steps.find((item) => item.uses?.startsWith('actions/checkout@') === true)?.with).toEqual({ 'fetch-depth': 0 });
+    expect(step?.run).not.toContain('${{');
+  });
+
+  it('hands the unit tests their base through GITHUB_ENV before they run: the merge base on a pull request, the previous head on a push', () => {
+    const base = steps('unit').findIndex((step) => step.name === "The engine freeze's base");
+    const unit = steps('unit').findIndex((step) => step.run?.startsWith('pnpm test ') === true || step.run === 'pnpm test');
+    expect(base).toBeGreaterThan(0);
+    expect(unit).toBeGreaterThan(base);
+    const step = steps('unit')[base];
+    expect(step?.env).toEqual({ EVENT: '${{ github.event_name }}', BASE_REF: '${{ github.base_ref }}', BEFORE: '${{ github.event.before }}' });
+    expect(step?.run).toContain('base="$(git merge-base "origin/$BASE_REF" HEAD)"');
+    expect(step?.run).toContain('base="$BEFORE"');
+    expect(step?.run).toContain('echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"');
+    expect(step?.run).not.toContain('${{');
+  });
+
+  it('checks out the whole history where the base is read: the freeze, the differential test’s git archive and the domain model’s summary', () => {
+    for (const job of ['static', 'unit', 'domain-model']) {
+      expect(checkout(job)?.with, job).toEqual({ 'fetch-depth': 0, 'persist-credentials': false });
+    }
   });
 });

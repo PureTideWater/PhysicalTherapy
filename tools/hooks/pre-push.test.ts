@@ -9,6 +9,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { render835 } from '../../packages/synth/src/cases/builder';
 import { minimalFile } from '../../packages/synth/src/cases/par';
 import { repositoryRoot } from '../content-files';
+import { inCi } from '../test/ci-chromium';
 import { GITLEAKS_INSTALL, PrePushError, advertisedObjects, atLeast, findGitleaks, parsePushUpdates, parseVersion, pinnedGitleaks, plainPatchEnvironment, prePush, revisionsToCheck, scannedCount } from '../pre-push/pre-push';
 
 /**
@@ -332,6 +333,12 @@ describe('the pre-push hook, run by git push', () => {
     },
     PUSH_TIMEOUT,
   );
+
+  it('has the real gitleaks on CI, whose unit job installs the pinned one before the unit tests, so the cases below never skip there', () => {
+    if (inCi(process.env)) {
+      expect(REAL_GITLEAKS, `no gitleaks on CI: ${GITLEAKS_INSTALL}`).not.toBeNull();
+    }
+  });
 
   it.skipIf(REAL_GITLEAKS === null)(
     `refuses a secret in a pushed commit, naming the file, the commit and the rule, never the secret${SKIP_REASON}`,
