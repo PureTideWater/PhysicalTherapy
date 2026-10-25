@@ -8,7 +8,11 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
 ## In flight
-**The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC: branch `co-001/ci`, worktree `/home/user/ci`, ADR 0066, test-matrix CI-01 to CI-20. Stage: **design running**, wf_8628914e-6b9 (started 2026-10-24 ~21:15 UTC; script `workflow-scripts/lane-b-ci-design-wf_8628914e-6b9.js`): four read-only scouts (CI structure #109, mutation #54, Playwright and runner #19, dependency policy #112), the design author writing `designs/lane-b-ci.md`, one adversarial reviewer, one revision. A workflow cannot be resumed from another session: if this session ends mid-run, the design stage starts again.
+**The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC; ADR 0066; test-matrix and synth cases CI-01 to CI-20. **Design done and reviewed** (wf_8628914e-6b9, finished 2026-10-25 ~00:40 UTC): `designs/lane-b-ci.md`, with the scout reports and the review in `designs/lane-b-ci/`. Four PRs, in merge order:
+1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **Next: its build**, after the co-founder's usage reading. No founder question blocks it.
+2. `co-001/ci-deps` (#112, #19's asserts, groups and licence fix, Dependabot #40, #38's tooling, #33; CI-11 to CI-14): after ci-speed merges; needs F1, F2 and F4.
+3. `co-001/ci-browser` (#19's upgrade part; CI-18 to CI-20): after ci-speed and ci-deps; needs F4 and F5.
+4. `co-001/ci-mutation` (#54; CI-15 to CI-17): built beside ci-deps once ci-speed merges, merged last; F6 for two documents.
 
 ## Next
 After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane B's queue in `../LANES.md`.
@@ -47,3 +51,22 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - **Network:** the co-founder asked the session to allow the package-manager hosts itself; a session cannot change its environment's network policy. The two Playwright hosts (`cdn.playwright.dev`, `playwright.download.prss.microsoft.com`) stay refused (re-checked 21:09 UTC) until the co-founder adds them under the environment's Network access. Steps given in chat.
   - Started the CI PR's design, wf_8628914e-6b9 (see In flight).
   - **Next:** the design's result: its founder questions go to the co-founder in one batch, then the builders.
+- **2026-10-25 ~00:45 UTC: the CI PR's design done (wf_8628914e-6b9: 7 agents, 2.70M subagent tokens, 3 h 29 min).**
+  - Four scouts measured the current state:
+    - CI's step timings from GitHub: 29-41 min today, route tests 865-1,336 s;
+    - mutation scores under Stryker 10.1.1's vitest runner with aliases: money 93.22%, ledger 92.19%, packets widened 85.40%, pricing with golden tests 91.70%;
+    - the Playwright and axe upgrade's failures on #38;
+    - each Dependabot version, and the 23 advisories in pnpm 10.28.0.
+  - The author wrote the contract; one adversarial reviewer found 1 blocking, 22 should_fix and 10 nits (`designs/lane-b-ci/design-review.md`); the reviser verified all 33 and fixed them, rejecting two parts with evidence (section 13 of the design). Blocking R1: release.yml restores no cache, whatever F1's answer.
+  - **No part needs a migration or regenerates the domain model.** The one non-test money change is `packages/money/src/cents.ts:85`'s unreachable `?? '0'`, outside the engine freeze (`tools/engine-freeze` covers `packages/pricing` only), reviewed under the payment-engine checklist. MinIO is removed, not replaced: its image is gone from Docker Hub and nothing connects to it; S3 is tested on AWS staging in infrastructure PR (b) or (c).
+  - **Founder questions F1 to F7 sent through the co-founder** (design section 7):
+    - F1: default branch, recommended (a) claude/build-platform until launch;
+    - F2: (a) Dependabot alerts and security updates on now, (b) a 3-day minimum release age with dated excludes;
+    - F3: require SHA-pinned actions, after ci-deps and F4;
+    - F4: a standing exception letting `publish-content.yml` change only its `uses:` refs, runner and timeout, held to a frozen copy;
+    - F5: keep the release's binding capacity chain on 24.04 in this series;
+    - F6: the 2026-10-20 adoption covers #54's 85% exit for milestone 6 and Gate 1;
+    - F7: the claude/build-platform ruleset (all green, mutation, the capacity gate, approval-of-record) once ci-speed's first push run is green.
+    - Plus fact O1: the account's plan (Free or Pro).
+  - **Machine:** `/opt/pw-browsers` now holds Playwright 1.56.1's revision 1194 laid out from Chrome for Testing 141.0.7390.37 (`storage.googleapis.com/chrome-for-testing-public`, which the proxy allows; headless-shell zip SHA-256 b294238e5ac3e04f5f7fc5e5c017692bf64635e8824c3a7a44bea6a7ef6e147d, matching the scout's; chrome zip 128b0505afabfa89660842aa0a33a1bd5949244a7027f8b44d1d2fd8f23d7669). The scout proved this build regenerates all seven committed baselines byte for byte (`designs/lane-b-ci/scout-playwright-runner.md` M7), so local e2e runs without the two blocked hosts. Playwright 1.64.1's build (CfT 156) is laid out in the scratchpad for ci-browser. A container restart had stopped both clusters: PG18 was restarted by the CI scout, PG16 by hand; `SETUP_CHECK=1` prints OK.
+  - **Next:** the co-founder's usage reading, then ci-speed's build (builders S1, S2, S3, then an integrator who opens the draft PR).

@@ -100,7 +100,7 @@ If Lane B runs dry, Lane A hands it items from this list that need no migration.
 | Item | Lane | Branch / PR | Started (UTC) | Reserved | State |
 |---|---|---|---|---|---|
 | PR 6b-4, mail streams (audit #76) | A | `co-001/pr-06b-mail-streams` / #42 | 2026-10-23 16:45 | ADR 0065; SCR-21, SCR-22, SEC-18, SEC-19, JOB-05 | Reviewed; fix round after the 2026-10-27 reset |
-| The CI PR (audit #19's upgrade part, #54, #109, #112; Dependabot #40, #38, #33 and the versions dismissed on 2026-10-18; postgres and minio coverage) | B | `co-001/ci` (a split into several PRs, if the design makes one, is recorded here) | 2026-10-24 21:00 | ADR 0066; test-matrix CI-01 to CI-20 (a new series, Lane B's); no `packages/synth` case IDs (any the design needs are added here first) | Claimed; design next, after the co-founder's usage reading |
+| The CI PR (audit #19's upgrade part, #54, #109, #112; Dependabot #40, #38, #33 and the versions dismissed on 2026-10-18; postgres and minio coverage) | B | Four PRs, in merge order (`designs/lane-b-ci.md`): `co-001/ci-speed` (#109), `co-001/ci-deps` (#112), `co-001/ci-browser` (#19), `co-001/ci-mutation` (#54) | 2026-10-24 21:00 | ADR 0066 (one ADR, a part per PR); test-matrix CI-01 to CI-20 (a new series, Lane B's: ci-speed CI-01 to CI-10, ci-deps CI-11 to CI-14, ci-mutation CI-15 to CI-17, ci-browser CI-18 to CI-20); `packages/synth` cases CI-01 to CI-20 (a new module CI, the same IDs) | Design done and reviewed 2026-10-25 (wf_8628914e-6b9). No migration. ci-speed's build next; founder questions F1 to F7 sent through the co-founder (none blocks ci-speed) |
 
 ## Handed to Lane A
 None yet.
