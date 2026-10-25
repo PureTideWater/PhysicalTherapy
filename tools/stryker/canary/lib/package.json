@@ -1,0 +1,17 @@
+{
+  "name": "@tp/stryker-canary",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The mutation canary's case 3: a workspace package a tools test imports by name (tools/stryker/canary/expected.json).",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

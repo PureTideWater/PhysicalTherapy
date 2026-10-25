@@ -3,6 +3,9 @@ packages:
   - packages/*
   - infra
   - tools
+  # The mutation canary's workspace package (its case 3, tools/stryker/canary/expected.json), which a tools test
+  # imports by name.
+  - tools/stryker/canary/lib
 
 # One version of each shared tool across the workspace; packages refer to these as "catalog:".
 catalog:

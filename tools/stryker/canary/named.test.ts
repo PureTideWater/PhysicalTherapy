@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { lineCents } from './canary';
+import { lineCents } from './named';
 
-// Nested describes on purpose: Vitest names these tests "the mutation canary > a line's cents > ...", the names the
-// runner must select each covered mutant's tests by (Vitest 5 joins them with " > ").
+// Case 1. Nested describes on purpose: Vitest names these tests "the mutation canary > a line's cents > ...", the names
+// the runner must select each covered mutant's tests by.
 describe('the mutation canary', () => {
   describe("a line's cents", () => {
     it('is the unit price for one unit', () => {

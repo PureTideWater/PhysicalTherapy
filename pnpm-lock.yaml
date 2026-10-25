@@ -815,6 +815,9 @@ importers:
         specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
+      '@tp/stryker-canary':
+        specifier: workspace:*
+        version: link:stryker/canary/lib
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -842,6 +845,15 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  tools/stryker/canary/lib:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
 
 packages:
 

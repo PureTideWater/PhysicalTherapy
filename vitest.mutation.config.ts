@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { configDefaults, defineConfig } from 'vitest/config';
+import { type ViteUserConfig, configDefaults, defineConfig } from 'vitest/config';
 
 import { MUTATION_PACKAGES, type MutationPackage, PACKAGE_VARIABLE } from './stryker/base.mjs';
 
@@ -15,7 +15,10 @@ import { MUTATION_PACKAGES, type MutationPackage, PACKAGE_VARIABLE } from './str
  * - **Every workspace package's exports aliased to the sandbox's files** (workspaceAliases). pnpm links each package
  *   into node_modules, and Stryker links node_modules into the sandbox, so without them a test that imports a package
  *   by name (`@tp/pricing`) reaches the original, unmutated files and can kill nothing there.
- * - **fast-check seeded** (tools/stryker/seed.ts), so a property's kill does not change from run to run.
+ * - **fast-check seeded** (tools/stryker/seed-setup.ts), so a property's kill does not change from run to run.
+ *
+ * The canary (tools/stryker/canary/vitest.config.ts) builds its configuration with the same function,
+ * mutationTestConfig, so its cases prove the aliases and the seed exactly as the packages' runs use them.
  *
  * `TP_MUTATION_PACKAGE=<package> pnpm exec vitest run --config vitest.mutation.config.ts` runs one package's set
  * outside Stryker, as its dry run does.
@@ -55,8 +58,8 @@ export const EXCLUDED: readonly { readonly glob: string; readonly reason: string
   },
 ];
 
-/** fast-check's seed for mutation runs. */
-export const SEED_SETUP_FILE = 'tools/stryker/seed.ts';
+/** The setup file that seeds fast-check for mutation runs (tools/stryker/seed.ts holds the seed). */
+export const SEED_SETUP_FILE = 'tools/stryker/seed-setup.ts';
 
 export interface WorkspaceAlias {
   readonly find: RegExp;
@@ -68,10 +71,12 @@ type ExportTarget = string | null | { readonly [condition: string]: ExportTarget
 /** The package directories pnpm-workspace.yaml lists, as `dir` and `dir/*` patterns. */
 export function workspaceDirectories(root: string): string[] {
   const text = readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
-  const block = /^packages:\r?\n((?:[ \t]+-[^\n]*(?:\n|$))+)/m.exec(text)?.[1];
+  // The list's items, and any comment lines among them.
+  const block = /^packages:\r?\n((?:[ \t]+[-#][^\n]*(?:\n|$))+)/m.exec(text)?.[1];
   if (block === undefined) throw new Error('pnpm-workspace.yaml lists no packages');
   const patterns = block
     .split('\n')
+    .filter((line) => /^\s*-/.test(line))
     .map((line) => line.replace(/\s#.*$/, '').replace(/^\s*-\s*/, '').trim().replace(/^(['"])(.*)\1$/, '$2'))
     .filter((pattern) => pattern !== '');
   return patterns
@@ -145,15 +150,20 @@ export function mutationPackage(value: string | undefined = process.env[PACKAGE_
   return found;
 }
 
-export default defineConfig(() => {
-  const tested = mutationPackage();
+/**
+ * A mutation run's vitest configuration for the given test files: rooted here (the sandbox, under Stryker), every
+ * workspace package aliased to this checkout's files, the exclusions, and fast-check seeded.
+ */
+export function mutationTestConfig(include: readonly string[]): ViteUserConfig {
   return {
     root: ROOT,
     resolve: { alias: workspaceAliases(ROOT) },
     test: {
-      include: [...TEST_SETS[tested]],
+      include: [...include],
       exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', ...EXCLUDED.map((excluded) => excluded.glob)],
       setupFiles: [path.join(ROOT, SEED_SETUP_FILE)],
     },
   };
-});
+}
+
+export default defineConfig(() => mutationTestConfig(TEST_SETS[mutationPackage()]));
