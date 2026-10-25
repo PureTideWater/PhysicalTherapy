@@ -190,3 +190,4 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
     - PR #44's fix round, which now merges 9c57d2d under rule 6;
     - PR 15's build (wf_c2a31a50-55d);
     - ci-deps when a slot frees.
+- **2026-10-25 ~14:35 UTC: the first push runs on 9c57d2d are green:** `ci` (run 40201435875, 14:16 to 14:23 UTC, `all green` among its jobs) and `screening-capacity` (40201435976, to 14:28). **F7 is due:** the founder applies the `claude/build-platform` ruleset by `docs/runbooks/github-governance.md` step 4A. Its four required checks, each sourced from GitHub Actions: `all green`, `mutation`, `screening-capacity gate`, `approval-of-record`. Up to date required, PRs required with 0 approvals, no bypass, deletions restricted, force pushes blocked. Steps sent to the co-founder for the founder (an owner-admin setting the founder keeps, per the delegation).
