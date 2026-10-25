@@ -129,6 +129,13 @@ The builder leaves `reviewedBy` and `reviewedOn` empty, and only an independent 
 mutant, on the gate's side. The freeze forbids `// Stryker disable` comments in the engine, and the gate refuses an
 Ignored mutant anywhere, so the file is the only form.
 
+An entry is a true equivalent only when no input tells the mutant from the original: no value of the function's
+declared parameter types, as plain data (a string is any text, an object exactly its declared fields), on any
+conforming engine. The reviewer tries to build one before signing. A mutant told apart only under a sort that calls its
+comparator in an order ECMAScript allows and V8 never uses, or only by text that is not a date where the code compares
+dates as text, is not equivalent, and a test kills it. Where an entry rests on the engine's Unicode data (NFKC forms,
+grapheme clusters), its reason says so, and the reviewer checks it over every code point.
+
 **What runs** (`.github/workflows/mutation.yml`, its own workflow and concurrency group beside ci.yml's `all green`):
 - **Every package** on a push to `claude/build-platform`, weekly and on `workflow_dispatch`.
 - **On a pull request** (default types; the `money` label and its step are gone), every shard of each package whose

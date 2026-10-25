@@ -39,7 +39,8 @@ Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It the
 ### Reading a red `mutation`
 
 The `mutation` job's log and summary give each package's score, each file's score, and every survivor, with the tests
-that cover it. Scores are truncated to two decimals, never rounded up, so one may read 0.01 below Stryker's own table. Each `FAIL` line, also an error annotation, is one of these:
+that cover it. Scores are truncated to two decimals, never rounded up, so one may read 0.01 below Stryker's own table.
+Each `FAIL` line, also an error annotation, is one of these:
 
 | Failure | What it means | What to do |
 | --- | --- | --- |
@@ -76,7 +77,19 @@ Re-run a shard job only for an infrastructure failure; its upload overwrites the
 
 Only when no input can tell the mutant from the original: for example, `a <= b ? a : b` mutated to `a < b ? a : b`,
 equal at the boundary. Not for a mutant no test happens to reach, an error text nobody asserts, or a branch "that never
-runs": kill those with a test. Each package's builder records its own in `tools/stryker/equivalent/<package>.json`, a
+runs": kill those with a test. "No input" means no value of the function's declared parameter types, as plain data (a
+string is any text, an object exactly its declared fields), on any conforming engine. So these are not equivalents,
+and a test kills them:
+- a comparator mutant that sorts right only because V8 calls the comparator as (later, earlier): run the code under an
+  insertion sort that calls it as (earlier, later) too (`packages/pricing/src/sorts.test.ts`,
+  `packages/ledger/src/allocation.test.ts`);
+- a mutant told apart only by text that is not a date, where the code compares dates as text
+  (`packages/packets/src/assemble.test.ts`, "assemblePacket's dates as text").
+
+An entry that rests on the engine's Unicode data (NFKC forms, grapheme clusters) says so in its reason, and the
+reviewer checks it over every code point on the Node version CI runs.
+
+Each package's builder records its own in `tools/stryker/equivalent/<package>.json`, a
 JSON array sorted by file, then original, then occurrence (strings in code-unit order, as `Array.prototype.sort`
 compares them). Each entry has exactly these keys, in this order:
 
