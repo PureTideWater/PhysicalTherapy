@@ -9,7 +9,7 @@ Lane A reads it to keep the build tracker current. The rules are in `../LANES.md
 
 ## In flight
 **The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC; ADR 0066; test-matrix and synth cases CI-01 to CI-20. **Design done and reviewed** (wf_8628914e-6b9, finished 2026-10-25 ~00:40 UTC): `designs/lane-b-ci.md`, with the scout reports and the review in `designs/lane-b-ci/`. Four PRs, in merge order:
-1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **Draft PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43), head 9144b56, CI all green in 7:26; reviewed (0 blocking, 4 should_fix, 11 nits); subscribed. Next: the fix round, after the co-founder's usage reading.** Built by wf_aa18ae8a-848 (started 2026-10-25 ~01:05 UTC; script `workflow-scripts/lane-b-ci-speed-build-wf_aa18ae8a-848.js`). Builders S1, S2 and S3 work in parallel in `/home/user/ci-speed-s1`, `-s2` and `-s3` (local branches, never pushed); the integrator merges them in `/home/user/ci-speed`, pushes once and opens the draft PR; then two adversarial reviews run in fresh clones (CI and test infrastructure; security and supply chain). Heavy commands share `flock /tmp/laneb-heavy.lock`. If the session ends mid-run, this stage starts again from the four worktrees.
+1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **Draft PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43), head b5ff4c7 after the fix round, CI all green in 6:17; subscribed. Verification running (wf_9d87a406-212); then merge.** Built by wf_aa18ae8a-848 (started 2026-10-25 ~01:05 UTC; script `workflow-scripts/lane-b-ci-speed-build-wf_aa18ae8a-848.js`). Builders S1, S2 and S3 work in parallel in `/home/user/ci-speed-s1`, `-s2` and `-s3` (local branches, never pushed); the integrator merges them in `/home/user/ci-speed`, pushes once and opens the draft PR; then two adversarial reviews run in fresh clones (CI and test infrastructure; security and supply chain). Heavy commands share `flock /tmp/laneb-heavy.lock`. If the session ends mid-run, this stage starts again from the four worktrees.
 2. `co-001/ci-deps` (#112, #19's asserts, groups and licence fix, Dependabot #40, #38's tooling, #33; CI-11 to CI-14): after ci-speed merges; needs F1, F2 and F4.
 3. `co-001/ci-browser` (#19's upgrade part; CI-18 to CI-20): after ci-speed and ci-deps; needs F4 and F5.
 4. `co-001/ci-mutation` (#54; CI-15 to CI-17), worktree `/home/user/ci-mutation`. **Build running: wf_62c3df65-d76** (started 2026-10-25 ~02:15 UTC, ahead of ci-speed's merge for the critical path; script `workflow-scripts/lane-b-ci-mutation-build-wf_62c3df65-d76.js`). M1 lands Stryker 10.1.1 and the per-package configs first; then M1 (canary, gate, affected, workflow, documents), M2 (pricing and the golden test), M3 (money and ledger), M4a and M4b (packets, split by file) in parallel in `/home/user/ci-mutation-{m1,m2,m3,m4a,m4b}`; the integrator confirms every equivalent, runs all six shards and the gate locally, pushes once and opens the draft PR; two adversarial reviews follow (payment-engine; CI tooling and security). Merged last, after merging claude/build-platform under rule 6. F6 ruled.
@@ -124,3 +124,21 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - **Branches:** `claude/brave-cerf-4uldp9` is local to the founder's container, an ancestor of `main` with nothing of its own. Only `claude/build-platform` and `claude/build-ops` are shared state (HANDOFF's Start here).
   - HANDOFF now records F1 to F7 and L1 (a) as the founder's rulings, and when each repository setting is due.
   - **Next, unchanged:** ci-speed's fix round, CI, verification and merge; ci-mutation's integration; PR 15's build in the next free slot; then 15b's design.
+- **2026-10-25 ~13:40 UTC: ci-speed's fix round done** (wf_074459f2-b14: 2 agents, 0.87M subagent tokens, 4 h). Reports in `approval-summaries/lane-b-ci-speed-fix-{round,suite}.md`.
+  - **All 15 findings fixed**, each behaviour fix failing first (8752ae9, 77b8080, 6540beb, 7ef0f80, 64aa841, 7897eab, cf70ea0):
+    - masking (`continue-on-error`, swallowed failures) refused in every workflow;
+    - a required check's name reported only by its own job;
+    - the required-checks sweep reads every Markdown file;
+    - the build stamp's verdict reaches the log and refuses a dirty tree;
+    - no temp directories left at collection;
+    - `definedIn` requires a call;
+    - Playwright's browsers cached;
+    - Postgres services health-checked;
+    - Trivy without a cache;
+    - the documents corrected.
+  - **The suite's adversarial re-read found and fixed two more** (b5ff4c7):
+    - trivy-action's cache directory defaulted into the workspace, so the worker image's build context carried 1.63 GB of vulnerability database (119.77 kB after, on CI);
+    - the e2e picture-step case now fails rather than skips on a runner whose base64 lacks `-w`.
+  - **Full local suite once, all pass:** typecheck; lint (1,457 files); unit 4,659; golden 38; oracle 630; licences; actionlint; synth clean; freeze clean; test:db unsharded 9,040 + 1 skipped in 974 s, equal to CI's four shards; domain model check; **e2e 51 of 51** with the brand baselines, on the Chrome for Testing 141 layout, normally and with `E2E_PREBUILT=1`.
+  - **CI on b5ff4c7** (run 40196871490): every job green, **all green in 6:17**, 37.6 runner-minutes. A1′ 16:52, set by the capacity measurement (16:35 this run against 12:49 before: host variance, issue #41).
+  - **Next:** the fresh-clone verification that reads CI (wf_9d87a406-212; usage last read 17%), then the PR description brought current, then merge (base unchanged at 49514e8), then the founder's F7 ruleset after the first green push run.
