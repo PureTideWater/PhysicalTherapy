@@ -236,3 +236,25 @@ describe('reportReconciliation: the Verified gate (docs/adr/0057)', () => {
     expect(literal).toBe(true);
   });
 });
+
+describe('reportReconciliation: lines in the total, by fixed examples', () => {
+  it('counts each case’s own entries as a line of their own', () => {
+    const second = make('posted', 250n, { line: null, caseId: 'case-2' });
+    const third = make('posted', 300n, { line: null, caseId: 'case-3' });
+    expect(reportReconciliation(input([second, third], cents(550n)))).toMatchObject({ reconciledToCash: true, reason: 'reconciled', lines: 2 });
+  });
+
+  it('leaves out a line whose posting a recoupment took back in full', () => {
+    const takenBack = make('posted', 3000n, { line: 'line-1' });
+    const recouped = make('recouped', 3000n, { line: 'line-1' });
+    const standing = make('posted', 2000n, { line: 'line-2' });
+    expect(reportReconciliation(input([takenBack, recouped, standing], cents(2000n)))).toMatchObject({ reconciledToCash: true, reason: 'reconciled', recoveredCents: 2000n, lines: 1 });
+  });
+
+  it('refuses a line whose recoupments exceed its posting, even when another line covers the total', () => {
+    const posted = make('posted', 1000n, { line: 'line-1' });
+    const recouped = make('recouped', 3000n, { line: 'line-1' });
+    const other = make('posted', 5000n, { line: 'line-2' });
+    expect(reportReconciliation(input([posted, recouped, other], cents(3000n)))).toMatchObject({ reconciledToCash: false, reason: 'line_not_proved', recoveredCents: 3000n, lines: 2 });
+  });
+});

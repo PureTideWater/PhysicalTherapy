@@ -13,6 +13,7 @@ import {
   SYNTHETIC_PM_EXPORT_V1,
   TEMPLATE_STATUSES,
   VENDOR_POSTING_TEMPLATES,
+  type EftTemplate,
   type PostingTemplate,
   exportColumns,
   procedureCodeOf,
@@ -296,5 +297,94 @@ describe('templates and dates', () => {
       'the template names the column for amount',
       'the template names its system in 1 to 100 characters',
     ]);
+  });
+});
+
+describe('templates at their limits: each bound, each anchor and each fingerprint, exactly', () => {
+  const practice = (columns: PostingTemplate['columns'], system = 'SYNTHETIC OTHER PM'): PostingTemplate => ({ id: 'practice', system, columns, dateFormat: 'YYYY-MM-DD' });
+
+  it('names the bank export’s required fields, and its built-in template by its ID', () => {
+    expect(REQUIRED_EFT_FIELDS).toEqual(['deposited_on', 'trace', 'amount']);
+    expect(SYNTHETIC_BANK_EXPORT_V1.id).toBe('synthetic_bank_export_v1');
+    const noTrace: EftTemplate = { ...SYNTHETIC_BANK_EXPORT_V1, columns: { deposited_on: 'Date', amount: 'Amount' } };
+    expect(templateProblems(noTrace, EFT_FIELDS, REQUIRED_EFT_FIELDS)).toEqual(['the template names the column for trace']);
+  });
+
+  it('takes a header and a system of exactly 100 characters, and counts a header of spaces as blank', () => {
+    expect(templateProblems(practice({ posted_on: 'p'.repeat(100), check_or_trace: 'Check', amount: 'Amount' }, 's'.repeat(100)), POSTING_FIELDS, REQUIRED_POSTING_FIELDS)).toEqual([]);
+    expect(templateProblems(practice({ posted_on: 'Date', check_or_trace: '   ', amount: 'Amount' }), POSTING_FIELDS, REQUIRED_POSTING_FIELDS)).toEqual(['the column for check_or_trace is a header of 1 to 100 characters']);
+  });
+
+  it('counts two headers as one column exactly when a file’s header row would match them as one: trimmed, in lower case', () => {
+    expect(templateProblems(practice({ posted_on: 'Date', check_or_trace: ' date ', amount: 'Amount' }), POSTING_FIELDS, REQUIRED_POSTING_FIELDS)).toEqual(['each column holds one field']);
+    // Upper case would fold "ß" into "SS"; the header row is matched in lower case, where these are two columns.
+    const twoColumns = practice({ posted_on: 'Maße', check_or_trace: 'MASSE', amount: 'Amount' });
+    expect(templateProblems(twoColumns, POSTING_FIELDS, REQUIRED_POSTING_FIELDS)).toEqual([]);
+    expect(readPostingExport('Maße,MASSE,Amount\n2026-06-11,880060040002,30.00\n', twoColumns)).toMatchObject({ kind: 'read', problems: [], rows: [{ postedOn: '2026-06-11', checkOrTrace: '880060040002' }] });
+  });
+
+  it('counts a header that is not text as a blank one, so a blank and a non-text header are one column', () => {
+    expect(templateProblems(practice({ posted_on: 'Date', check_or_trace: '', amount: 7 as unknown as string }), POSTING_FIELDS, REQUIRED_POSTING_FIELDS)).toEqual([
+      'the column for check_or_trace is a header of 1 to 100 characters',
+      'the column for amount is a header of 1 to 100 characters',
+      'each column holds one field',
+    ]);
+  });
+
+  it('reads a date only from the whole cell, in four-digit years', () => {
+    expect(readDate('x6/9/2026', 'MM/DD/YYYY')).toBeNull();
+    expect(readDate('106/9/2026', 'MM/DD/YYYY')).toBeNull();
+    expect(readDate('6/9/20261', 'MM/DD/YYYY')).toBeNull();
+    expect(readDate('6/9/2026', 'MM/DD/YYYY')).toBe('2026-06-09');
+    // A calendar date's own expanded-year form, which Date reads, is still not YYYY-MM-DD.
+    expect(new Date('+010000-01T00:00:00Z').toISOString().slice(0, 10)).toBe('+010000-01');
+    expect(readDate('+010000-01', 'YYYY-MM-DD')).toBeNull();
+  });
+
+  it('reads the template’s headers and the row’s cells trimmed, a short row’s missing cells as empty, and keeps only the mapped cells in raw', () => {
+    const template = practice({ posted_on: ' posted ', check_or_trace: 'check ', amount: ' amt', payer: 'payer' });
+    const read = readPostingExport('posted,check,amt,payer\n 2026-06-11 , 880060040002 , 30.00 \n', template);
+    expect(read).toEqual({
+      kind: 'read',
+      problems: [],
+      rows: [
+        {
+          rowNo: 1,
+          postedOn: '2026-06-11',
+          checkOrTrace: '880060040002',
+          amountCents: 3000n,
+          payerName: null,
+          claimReference: null,
+          procedureCode: null,
+          serviceDate: null,
+          batch: null,
+          raw: { posted_on: '2026-06-11', check_or_trace: '880060040002', amount: '30.00', payer: '' },
+          fingerprint: JSON.stringify([JSON.stringify(['posting', '2026-06-11', '880060040002', '3000', null, null, null, null, null]), 0]),
+        },
+      ],
+    });
+  });
+
+  it('keeps a check or trace number of up to 64 characters, in a posting export and in a bank export', () => {
+    const posting = readPostingExport(`${SYNTHETIC_HEADER}\n06/11/2026,${'9'.repeat(64)},P,,,,30.00,B\n`, SYNTHETIC_PM_EXPORT_V1);
+    expect(posting).toMatchObject({ kind: 'read', problems: [], rows: [{ checkOrTrace: '9'.repeat(64) }] });
+    const header = 'Date,Description,Trace Number,Amount,Batch Reference';
+    const bank = readEftExport(`${header}\n2026-06-09,D,${'T'.repeat(64)},30.00,\n2026-06-09,D,${'T'.repeat(65)},30.00,\n`);
+    expect(bank).toMatchObject({ kind: 'read', problems: [{ rowNo: 2, field: 'trace' }], rows: [{ rowNo: 1, trace: 'T'.repeat(64) }] });
+    expect(bank.kind === 'read' && bank.rows).toHaveLength(1);
+  });
+
+  it('fingerprints a posting row by its canonical text, the code cell as written, and its occurrence counted from zero', () => {
+    const line = '06/11/2026,880060040002,SYNTHETIC PAYER L,SYNPCN0001,97110-GP,03/09/2026,30.00,SYNBATCH-0801';
+    const read = readPostingExport(`${SYNTHETIC_HEADER}\n${line}\n${line}\n${line}\n`, SYNTHETIC_PM_EXPORT_V1);
+    const canonical = JSON.stringify(['posting', '2026-06-11', '880060040002', '3000', 'SYNTHETIC PAYER L', 'SYNPCN0001', '97110-GP', '2026-03-09', 'SYNBATCH-0801']);
+    expect(read.kind === 'read' && read.rows.map((row) => row.fingerprint)).toEqual([0, 1, 2].map((occurrence) => JSON.stringify([canonical, occurrence])));
+  });
+
+  it('fingerprints a bank row by its canonical text and its occurrence', () => {
+    const header = 'Date,Description,Trace Number,Amount,Batch Reference';
+    const read = readEftExport(`${header}\n2026-06-09,D,SYNEFT1,30.00,BATCH-1\n2026-06-09,D,SYNEFT1,30.00,BATCH-1\n`);
+    const canonical = JSON.stringify(['eft', '2026-06-09', 'SYNEFT1', '3000', 'BATCH-1']);
+    expect(read.kind === 'read' && read.rows.map((row) => row.fingerprint)).toEqual([JSON.stringify([canonical, 0]), JSON.stringify([canonical, 1])]);
   });
 });

@@ -118,6 +118,25 @@ describe('rate', () => {
   );
 });
 
+describe('each refusal is a MoneyError with its own message', () => {
+  it.each([
+    ['decimal text', () => decimal('5.'), 'decimal text must be plain digits with an optional fraction'],
+    ['a number for a decimal', () => decimal((1 / 2) as unknown as string), 'decimals are built from text, a bigint or another decimal, never a number'],
+    ['a number as an operand', () => decimal('1').times(2 as unknown as Decimal), 'decimal arithmetic takes decimals only, never a number'],
+    ['a rate', () => rate('1.1234567'), 'rate is not a numeric(14,6) decimal'],
+  ])('%s', (_name, run, message) => {
+    let thrown: unknown;
+    try {
+      run();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(MoneyError);
+    expect((thrown as MoneyError).name).toBe('MoneyError');
+    expect((thrown as MoneyError).message).toBe(message);
+  });
+});
+
 describe('centsToDecimal', () => {
   it('is the exact value of the cents', () => {
     expect(centsToDecimal(cents(-12345n)).toString()).toBe('-12345');

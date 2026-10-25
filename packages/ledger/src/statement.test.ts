@@ -140,3 +140,18 @@ describe('the statement CSV', () => {
     expect(csvField('two\nlines')).toBe('"two\nlines"');
   });
 });
+
+describe('the statement CSV beneath approved but not yet posted', () => {
+  it('lists the entries of each line still approved and not proved beneath its total', () => {
+    const approved = make('approved', 3000n);
+    const deposited = make('deposited', 1800n, { allocated: true });
+    const entries = [approved, deposited];
+    const rows = roiStatementCsv(stored(entries), entriesById(entries)).split('\r\n');
+    const at = rows.indexOf('approved_unposted,total,12.00,usd,,,,,');
+    expect(at).toBeGreaterThan(0);
+    expect(rows.slice(at + 1, at + 3)).toEqual([
+      `approved_unposted,entry,30.00,usd,${approved.id},case-1,approved,2026-06-10,false`,
+      `approved_unposted,entry,18.00,usd,${deposited.id},case-1,deposited,2026-06-10,true`,
+    ]);
+  });
+});
