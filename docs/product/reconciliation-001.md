@@ -138,6 +138,13 @@ PR 1 comes before PR 2 although CO-02 belongs to an earlier milestone (rule 6 of
    - **Acceptance (CO-04):** "an upload with a date-of-service or member-ID column is rejected with the column named; a clean upload returns a result in under 60 seconds for 50,000 rows; no screening output contains the words owed, underpaid or recovered; conversion from screening to audit is logged as an event". SEC-17 also passes.
    - **Effort:** 49 to 82 hours. **Decisions:** D11, D18 to D21.
 
+**The CI series, after PR 6 and before PR 7** (*added 2026-10-25*; the combined audit's items #19 (its upgrade part), #54, #109 and #112, each placed "CI PR before PR 7" and adopted by the founder with the audit on 2026-10-20; `docs/adr/0066`, a part for each). Four pull requests into `claude/build-platform`, none with a migration or a regenerated domain model, each passing the checks below:
+
+   1. **`co-001/ci-speed`** (#109): ci.yml's jobs in parallel behind one required gate, `all green`; the database suite in shards and the end-to-end journeys in shards over one build; the route tests made fast and split; SCR-19 in its own file; the schema approval as its own `domain model` check; the supply-chain workflow folded into ci.yml; the required checks, one list in every document. Test matrix CI-01 to CI-10. It merges first.
+   2. **`co-001/ci-deps`** (#112, with #19's assert loosening, Dependabot groups and licence fix): every action and image pinned, pnpm without its advisories, Dependabot's pull requests green unless something is really incompatible. CI-11 to CI-14.
+   3. **`co-001/ci-browser`** (#19's upgrade part): Playwright and its accessibility checker with the runners they need, the brand baselines regenerated and inspected (ADR 0058). CI-18 to CI-20. After ci-deps.
+   4. **`co-001/ci-mutation`** (#54): mutation measured per money package on every push and on every pull request that touches a money path, behind the required `mutation` gate. CI-15 to CI-17. Its build starts beside ci-deps; it merges last.
+
 7. **Milestone 6 exit: the red team, the gates and the scorecard.**
    - **Covers:** CO-07 at milestone 6, CO-10, and CO-09's scorecard; no schema change.
    - **Contents:**
@@ -448,6 +455,7 @@ Every pull request above passes these checks. A pull request that cannot pass on
 
 **Security program**
 - `pnpm test:db` (the catalog test and the cross-tenant test) passes on every pull request.
+  - *Amended 2026-10-25* (`docs/adr/0066`, Part 1): it runs as ci.yml's `db (1/4)` to `db (4/4)` (six shards on a private repository's runners), each on its own migrated database, the catalog and cross-tenant tests in whichever shard their paths fall; the required `all green` check needs every shard, so the whole suite still passes on every pull request, and each shard prints the files it ran, which together are the whole db project. The domain model's approval runs as its own `domain model` check (`--check --strict --require-approval`); the suite keeps the drift case.
 - The rules in `packages/db/src/catalog.ts` are unchanged. Only its reviewed lists grow, for new tables that meet them.
 - Every new table that can hold PHI has `practice_id NOT NULL`, a `phi_table_registry` row, FORCE RLS and the tenant policy.
 - No role gains BYPASSRLS, and the application role owns nothing.

@@ -1,8 +1,8 @@
 name: large-zip
 
 # The milestone 3 done check at full size: "a 2 GB zip queues per file" (PRD 6, Intake and documents;
-# PRD 17). ci.yml (the plan's verbatim workflow) runs the same intake test on every pull request at 256
-# MiB, what its runner's minutes allow; this runs it weekly, and on request, at 2048 MiB: a stream of
+# PRD 17). ci.yml runs the same intake test on every pull request at 256 MiB, in its database shards,
+# what its runners' minutes allow; this runs it weekly, and on request, at 2048 MiB: a stream of
 # SYNTHETIC 835 entries sealed into the local store, expanded by the intake job against PostgreSQL, one
 # source_document and one parse_835 job per entry, in bounded memory. No credentials, synthetic data only.
 on:
@@ -28,6 +28,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Playwright's Chromium before any vitest run of the db project, which fails on CI without it rather than skip a
+      # printing test (tools/test/ci-chromium.ts; docs/adr/0066, Part 1).
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
       - run: pnpm vitest run --project db apps/worker/src/intake/intake.large.db.test.ts
         env:
           DATABASE_URL: postgres://postgres:test@localhost:5432/postgres

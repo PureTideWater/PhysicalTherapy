@@ -27,8 +27,10 @@ before launch names the founder's ruling that allows it. -->
 
 ## Checks
 
-<!-- Each command run on the head commit and its result, and anything that did not pass, with why. The required
-checks (check, images (web), images (worker), licenses, approval-of-record) report on this page by themselves. -->
+<!-- Each command run on the head commit and its result, and anything that did not pass, with why. -->
+
+The required checks report on this page by themselves: <!-- required-checks -->`all green`, `mutation`,
+`screening-capacity gate` and `approval-of-record`<!-- /required-checks -->.
 
 | Command | Result |
 | --- | --- |
@@ -54,8 +56,8 @@ pipeline, the security program, or the milestones and their gates without an exc
 ## Domain model
 
 <!-- Only when a migration changes docs/product/domain-model.md: the document's SHA-256 before and after, as
-`pnpm db:domain-model --summary-since <base>` prints them, and that summary; the copy in the ci check's job summary
-is the one that counts. The build posts the approval line as a suggested change and never writes it. Otherwise:
+`pnpm db:domain-model --summary-since <base>` prints them, and that summary; the copy in the `domain model` check's job
+summary is the one that counts. The build posts the approval line as a suggested change and never writes it. Otherwise:
 "No migration; the document is unchanged." -->
 
 ## The founder's approval
