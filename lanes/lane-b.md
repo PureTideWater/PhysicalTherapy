@@ -194,9 +194,16 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - the recommendation that Lane A take the same reviewer, ~17:05 UTC, for the founder to decide;
   - **Q2 (CI series and #42's files, 2026-10-25 ~21:05 UTC):** rule 6; the PR merged second keeps both, the lockfile re-resolved and never hand-merged; axe runs over #42's pages (O6) if #42 merges first; ci-browser does not wait for #42;
   - **Q3 (scope of "every recommended option", 2026-10-25 ~21:05 UTC):** pre-approves engineering-only choices inside an already-ruled design, recorded as his rulings and reversible; batches with wording, brand, product, cost or security trade-offs still go to him;
-  - **Q4 (ux-brand-reviewer.md's `model:` key and checklist suite, 2026-10-25 ~21:05 UTC):** `model:` follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit).
+  - **Q4 (ux-brand-reviewer.md's `model:` key and checklist suite, 2026-10-25 ~21:05 UTC):** `model:` follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit);
+  - **Standing direction, "improve as you go" (2026-10-25 ~21:45 UTC):** "If you ever discover a way to improve or optimize something as you're building do it. Always do this." Applied as the convention "Improve as you go" below.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
+- **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:45 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
+  - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
+  - **As its own PR, next in Lane B's queue,** when it is larger or of another kind. Add it to LANES.md as a dated item "on the co-founder's standing direction of 2026-10-25" (one PR per change, LANES rule 5).
+  - **Handed to Lane A** when it needs a migration, or changes frozen code (the engine under `packages/pricing`, the ledger's existing behaviour, the content pipeline).
+  - **To the co-founder first** when it changes wording, the brand, what a person sees or does, cost, or a security trade-off (his Q3), with the recommended option. Founder-kept matters stay the founder's: the domain model, release tags, owner-admin settings and legal text.
+  - Never skip a pipeline stage for it, and never stop a running workflow for it. A finding inside a running workflow is applied at its next stage, or in the next workflow.
 - **Node.** The shell's default `node` is 22. Run `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` in every command or script.
   - pnpm comes from `/opt/node22/bin`, but then runs on Node 24.
   - The mutation canary and the gate record the Node they ran on, and the repository requires `>=24`.
