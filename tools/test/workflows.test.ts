@@ -832,9 +832,15 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     expect(mutation['timeout-minutes']).toBe(10);
     expect(mutation.strategy).toBeUndefined();
     const needs = mutation.steps[0];
-    expect(needs?.env).toEqual({ CHANGES: '${{ needs.changes.result }}', STRYKER: '${{ needs.stryker.result }}', ANY: '${{ needs.changes.outputs.any }}', PACKAGES: '${{ needs.changes.outputs.packages }}' });
-    for (const text of ['if [ "$CHANGES" != success ]; then', 'if [ "$ANY" != true ]; then', 'if [ "$STRYKER" != skipped ]; then', 'No money path changed: no mutation run.', 'if [ "$STRYKER" != success ]; then']) expect(needs?.run).toContain(text);
-    expect(needs?.run?.match(/exit 1/g)).toHaveLength(3);
+    expect(needs?.env).toEqual({
+      CHANGES: '${{ needs.changes.result }}',
+      STRYKER: '${{ needs.stryker.result }}',
+      ANY: '${{ needs.changes.outputs.any }}',
+      PACKAGES: '${{ needs.changes.outputs.packages }}',
+      SHARDS: '${{ needs.changes.outputs.shards }}',
+    });
+    for (const text of ['if [ "$CHANGES" != success ]; then', 'case "$ANY" in', 'if [ "$STRYKER" != skipped ]; then', 'No money path changed: no mutation run.', 'if [ "$STRYKER" != success ]; then']) expect(needs?.run).toContain(text);
+    expect(needs?.run?.match(/exit 1/g)).toHaveLength(7);
     for (const step of mutation.steps.slice(1)) expect(step.if, step.name ?? step.uses ?? step.run).toBe("steps.needs.outputs.run == 'true'");
     const download = stepIndex(mutation.steps, (step) => step.uses === PINNED.downloadArtifact);
     expect(mutation.steps[download]?.with).toEqual({ pattern: 'mutation-*', path: 'reports/mutation', 'merge-multiple': true });
@@ -842,6 +848,52 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     expect(gate).toBeGreaterThan(download);
     expect(mutation.steps[gate]?.run).toBe('pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --expected "$SHARDS" --summary "$GITHUB_STEP_SUMMARY"');
     expect(mutation.steps[gate]?.env).toEqual({ SHARDS: '${{ needs.changes.outputs.shards }}' });
+  });
+
+  // The step's own script, run with bash -e as the runner runs it, its outputs and summary in temporary files bash
+  // makes, the outputs printed after a marker.
+  const guard = (env: { CHANGES?: string; STRYKER?: string; ANY?: string; PACKAGES?: string; SHARDS?: string }) => {
+    const wrapper = 'out=$(mktemp); sum=$(mktemp); status=0; GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$sum" bash -e -c "$1" || status=$?; printf "\\n--outputs--\\n%s" "$(cat "$out")"; rm -f "$out" "$sum"; exit "$status"';
+    const ran = spawnSync('bash', ['-c', wrapper, 'guard', job('mutation').steps[0]?.run ?? ''], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } });
+    const [log = '', output = ''] = ran.stdout.split('\n--outputs--\n');
+    return { status: ran.status, output, log: log + ran.stderr };
+  };
+  const affectedRun = { CHANGES: 'success', ANY: 'true', PACKAGES: '["money","ledger"]', SHARDS: '["money-ledger"]', STRYKER: 'success' };
+  const quietRun = { CHANGES: 'success', ANY: 'false', PACKAGES: '[]', SHARDS: '[]', STRYKER: 'skipped' };
+
+  it('fails closed on any verdict of the changes job but the two it writes, and on shards that do not match it', () => {
+    expect(guard(affectedRun)).toMatchObject({ status: 0, output: 'run=true' });
+    expect(guard(quietRun)).toMatchObject({ status: 0, output: 'run=false' });
+    for (const [why, env] of [
+      ['the changes job failed', { ...affectedRun, CHANGES: 'failure' }],
+      ['the changes job was cancelled', { ...quietRun, CHANGES: 'cancelled' }],
+      ['no any output', { ...quietRun, ANY: '' }],
+      ['no outputs at all', { CHANGES: 'success', STRYKER: 'skipped' }],
+      ['a garbled any', { ...affectedRun, ANY: 'True' }],
+      ['nothing affected, yet shards', { ...quietRun, SHARDS: '["money-ledger"]' }],
+      ['nothing affected, yet a shard job ran', { ...quietRun, STRYKER: 'success' }],
+      ['affected, with no shards', { ...affectedRun, SHARDS: '[]' }],
+      ['affected, with no shards output', { ...affectedRun, SHARDS: '' }],
+      ['affected, with shards that are not a JSON array', { ...affectedRun, SHARDS: 'money-ledger' }],
+      ['affected, with no packages', { ...affectedRun, PACKAGES: '[]' }],
+      ['affected, the shard jobs skipped', { ...affectedRun, STRYKER: 'skipped' }],
+      ['affected, a shard job failed', { ...affectedRun, STRYKER: 'failure' }],
+      ['affected, a shard job cancelled', { ...affectedRun, STRYKER: 'cancelled' }],
+    ] as const) {
+      const result = guard(env);
+      expect(result.status, why).toBe(1);
+      expect(result.output, why).toBe('');
+      expect(result.log, why).toMatch(/::error::/);
+    }
+  });
+
+  it('runs every job on one exact Node, the one tools/stryker/unicode.json’s equivalents were checked on', () => {
+    const versions = Object.entries(parsed.jobs).map(([name, mutationJob]) => [name, mutationJob.steps.find((step) => step.uses === PINNED.setupNode)?.with?.['node-version']] as const);
+    expect(versions.map(([name]) => name)).toEqual(['changes', 'stryker', 'mutation']);
+    for (const [name, version] of versions) expect(version, name).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(new Set(versions.map(([, version]) => version)).size).toBe(1);
+    const unicode = JSON.parse(readFileSync(path.join(repositoryRoot, 'tools/stryker/unicode.json'), 'utf8')) as { checkedOn: { node: string } };
+    expect(versions[0]?.[1]).toBe(unicode.checkedOn.node);
   });
 
   it('pins every action to the release workflows’ SHAs and installs from the lockfile in every job that runs code', () => {

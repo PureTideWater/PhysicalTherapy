@@ -1,10 +1,10 @@
 import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { MUTATION_PACKAGES, type MutationPackage, type Shard, readShards } from '../../stryker/base.mjs';
+import { MUTATION_PACKAGES, type MutationPackage, type Shard, readNoMutants, readShards } from '../../stryker/base.mjs';
 import { repositoryRoot } from '../content-files';
-import { CANARY_CASES, CANARY_FORMAT, type CanaryVerdict, canaryPassed } from './canary/verdict';
-import { DETECTED, type KeyedMutant, type MutationReport, UNDETECTED, describeMutant, keyOf, keyedMutants } from './mutants';
+import { CANARY_CASES, CANARY_FORMAT, type CanaryVerdict, type Runtime, canaryPassed } from './canary/verdict';
+import { DETECTED, type KeyedMutant, type MutantKey, type MutationReport, UNDETECTED, describeMutant, keyOf, keyedMutants, repositoryPath } from './mutants';
 import { packagesOf, shardsOf } from './shards';
 
 /**
@@ -12,7 +12,9 @@ import { packagesOf, shardsOf } from './shards';
  * reports by package and fails when
  *
  * - a shard the changes job selected reported nothing, or a shard that ran lacks its canary verdict of 5 of 5 as
- *   expected, or one of its packages' reports;
+ *   expected (naming the Node, Unicode and ICU it ran on), or one of its packages' reports, or a file of a package it
+ *   holds that the report leaves out (stryker/shards.json's noMutants lists the files Stryker finds no mutant in);
+ * - a shard leaves a report of a package it does not hold, or the reports directory holds a file at its top;
  * - a package ran in some of its shards and not all (a package's shards run all or none);
  * - a fully-run package scores at or below 85%. The score is Stryker's, (Killed + Timeout) / (Killed + Timeout +
  *   Survived + NoCoverage), compared in integers, so 85.00% fails and 85.01% passes ("above 85%", PRD 18). RuntimeError
@@ -24,7 +26,10 @@ import { packagesOf, shardsOf } from './shards';
  * - a mutant is Ignored, CompileError or Pending: no run here ignores a mutant (the equivalents file is the only
  *   record), checks types or leaves one unrun;
  * - an equivalents file is malformed, unsorted or holds a duplicate, or, for a fully-run package, an entry lacks its
- *   reviewer and date, no longer matches a mutant (stale), or matches one a test detects or that breaks a load.
+ *   reviewer and date, is reviewed by its proposer or on a date after the run's, no longer matches a mutant (stale), or
+ *   matches one a test detects or that breaks a load;
+ * - tools/stryker/unicode.json is malformed, or, for a fully-run package, lists an entry its equivalents file does not
+ *   record, or lists entries a shard scored on other Unicode or ICU data than they were checked on.
  *
  * A package none of whose shards ran is "not affected", judged by neither score rule, and its equivalents' review and
  * staleness are not judged either. With no shard run at all the gate passes: "no money path changed".
@@ -37,8 +42,9 @@ import { packagesOf, shardsOf } from './shards';
  * (tools/stryker/mutants.ts).
  *
  * `pnpm -s exec tsx tools/stryker/gate.ts [<dir>] [--expected <shards>] [--summary <file>]` reads <dir>/<shard>/
- * (reports/mutation by default), each holding canary.json and <package>.json for the packages its shard holds;
- * --expected names the shards the changes job selected (a JSON array or a comma-separated list); --summary appends the
+ * (reports/mutation by default), each holding canary.json and <package>.json for the packages its shard holds, and
+ * nothing else at <dir>'s top; --expected names the shards the changes job selected (a JSON array or a
+ * comma-separated list; empty is refused, since only a changes job that wrote no output leaves it); --summary appends the
  * markdown summary (the workflow passes $GITHUB_STEP_SUMMARY). It prints per-package and per-file scores and every
  * survivor with its covering tests. `--shard <name>` prints one shard's view and judges nothing (the shard job's log).
  */
@@ -46,6 +52,9 @@ import { packagesOf, shardsOf } from './shards';
 /** "Above 85%": a package passes when detected / valid > THRESHOLD_PERCENT / 100. */
 export const THRESHOLD_PERCENT = 85;
 export const EQUIVALENT_DIRECTORY = 'tools/stryker/equivalent';
+/** The equivalents that rest on the engine's Unicode data, and the runtime they were checked on. */
+export const UNICODE_FILE = 'tools/stryker/unicode.json';
+const UNICODE_KEYS = ['file', 'mutator', 'original', 'occurrence', 'replacement'] as const;
 export const EQUIVALENT_KEYS = ['file', 'mutator', 'original', 'occurrence', 'replacement', 'reason', 'proposedBy', 'reviewedBy', 'reviewedOn'] as const;
 
 export interface EquivalentEntry {
@@ -76,6 +85,41 @@ export interface GateInput {
   readonly expected?: readonly string[];
   /** Each package's equivalents file as parsed; undefined when the package has none. */
   readonly equivalents: Readonly<Partial<Record<MutationPackage, unknown>>>;
+  /** The files a shard holds that Stryker finds no mutant in (stryker/shards.json's noMutants): the only ones its report may leave out. */
+  readonly noMutants?: readonly string[];
+  /** Files at the top of the reports directory, where no shard writes. */
+  readonly stray?: readonly string[];
+  /** tools/stryker/unicode.json as parsed; undefined when there is none. */
+  readonly unicode?: unknown;
+  /** The run's UTC date (YYYY-MM-DD); today's when not given. */
+  readonly today?: string;
+}
+
+/** tools/stryker/unicode.json, read: the runtime its entries were checked on, and the entries. */
+interface UnicodeListing {
+  readonly checkedOn: { readonly node: string; readonly unicode: string; readonly icu: string };
+  readonly records: readonly MutantKey[];
+}
+
+/** tools/stryker/unicode.json checked for shape; the problems name the file and the record. */
+export function readUnicodeListing(value: unknown): { listing: UnicodeListing | undefined; problems: string[] } {
+  if (value === undefined) return { listing: undefined, problems: [] };
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const checkedOn = record.checkedOn as Record<string, unknown> | undefined;
+  if (typeof checkedOn !== 'object' || checkedOn === null || !['node', 'unicode', 'icu'].every((key) => typeof checkedOn[key] === 'string' && checkedOn[key] !== '')) {
+    return { listing: undefined, problems: [`${UNICODE_FILE}: checkedOn is not { node, unicode, icu }, each a string`] };
+  }
+  if (!Array.isArray(record.records)) return { listing: undefined, problems: [`${UNICODE_FILE}: records is not a JSON array`] };
+  const problems: string[] = [];
+  (record.records as unknown[]).forEach((item, index) => {
+    const keys = typeof item === 'object' && item !== null && !Array.isArray(item) ? Object.keys(item) : [];
+    const shaped = keys.length === UNICODE_KEYS.length && UNICODE_KEYS.every((key, position) => keys[position] === key);
+    const entry = item as Record<string, unknown>;
+    const typed = shaped && ['file', 'mutator', 'original', 'replacement'].every((key) => typeof entry[key] === 'string') && Number.isInteger(entry.occurrence);
+    if (!typed) problems.push(`${UNICODE_FILE} record ${String(index + 1)}: its keys must be exactly ${UNICODE_KEYS.join(', ')}`);
+  });
+  if (problems.length > 0) return { listing: undefined, problems };
+  return { listing: { checkedOn: checkedOn as UnicodeListing['checkedOn'], records: record.records as MutantKey[] }, problems };
 }
 
 export interface FileScore {
@@ -163,13 +207,22 @@ export function readEquivalents(pkg: MutationPackage, value: unknown, files: Rea
   return { entries, problems };
 }
 
-/** Whether an entry's review is recorded: a reviewer and a real calendar date. */
-function reviewProblem(entry: EquivalentEntry): string | undefined {
+/** Whether an entry's review is recorded: an independent reviewer, and a real calendar date no later than the run's. */
+function reviewProblem(entry: EquivalentEntry, today: string): string | undefined {
   if (entry.reviewedBy.trim() === '' || entry.reviewedOn.trim() === '') return 'is not reviewed: reviewedBy and reviewedOn are empty';
   const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(entry.reviewedOn);
   const parsed = date === null ? undefined : new Date(`${entry.reviewedOn}T00:00:00Z`);
   if (parsed === undefined || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== entry.reviewedOn) return `has reviewedOn "${entry.reviewedOn}", not a YYYY-MM-DD date`;
+  if (entry.reviewedBy.trim().toLowerCase() === entry.proposedBy.trim().toLowerCase()) return `is reviewed by its proposer, ${entry.proposedBy.trim()}: only an independent reviewer signs an equivalent`;
+  if (entry.reviewedOn > today) return `has reviewedOn "${entry.reviewedOn}", after the run's date, ${today}`;
   return undefined;
+}
+
+/** A canary verdict's runtime, when it names one as process.versions gives it. */
+function runtimeOf(verdict: unknown): Runtime | undefined {
+  const runtime = (verdict as { runtime?: unknown } | undefined)?.runtime as Record<string, unknown> | undefined;
+  if (typeof runtime !== 'object' || runtime === null || !['node', 'unicode', 'icu'].every((key) => typeof runtime[key] === 'string')) return undefined;
+  return runtime as unknown as Runtime;
 }
 
 /** The canary verdict a shard left, checked: its format, its shard, and 5 of 5 cases as expected. */
@@ -179,6 +232,7 @@ function canaryProblem(name: string, value: unknown): string | undefined {
   if (verdict.format !== CANARY_FORMAT) return `shard ${name}'s canary verdict is not ${CANARY_FORMAT}`;
   if (verdict.shard !== name) return `shard ${name}'s canary verdict is shard ${String(verdict.shard)}'s`;
   if (!canaryPassed(verdict as CanaryVerdict)) return `shard ${name}'s canary is ${String(verdict.asExpected)} of ${String(CANARY_CASES)} cases as expected, not ${String(CANARY_CASES)} of ${String(CANARY_CASES)}`;
+  if (runtimeOf(verdict) === undefined) return `shard ${name}'s canary verdict names no runtime (node, unicode and icu, from process.versions)`;
   return undefined;
 }
 
@@ -189,6 +243,11 @@ const scoreOf = (detected: number, valid: number) => (valid === 0 ? null : Math.
 export function judge(input: GateInput): GateResult {
   const failures: string[] = [];
   const lines: string[] = [];
+  const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const noMutants = new Set(input.noMutants ?? []);
+  const unicode = readUnicodeListing(input.unicode);
+  failures.push(...unicode.problems);
+  for (const file of input.stray ?? []) failures.push(`the reports directory holds ${file} at its top, where no shard writes: the gate judges only <shard>/ directories`);
   const names = new Set(input.shards.map((shard) => shard.name));
   for (const name of input.ran.keys()) if (!names.has(name)) failures.push(`${name} is not a shard of stryker/shards.json`);
   if (input.expected !== undefined) {
@@ -205,6 +264,7 @@ export function judge(input: GateInput): GateResult {
     if (canary !== undefined) failures.push(canary);
     for (const pkg of packagesOf(shard)) if (!result.reports.has(pkg)) failures.push(`shard ${shard.name} ran without its ${pkg} report (${pkg}.json)`);
     for (const stray of result.stray) failures.push(`shard ${shard.name} left ${stray}, which no shard writes`);
+    for (const pkg of result.reports.keys()) if (!(packagesOf(shard) as string[]).includes(pkg)) failures.push(`shard ${shard.name} left ${pkg}.json, a report of ${pkg}, which the shard does not hold`);
   }
 
   const packages: PackageResult[] = [];
@@ -230,6 +290,13 @@ export function judge(input: GateInput): GateResult {
       const report = input.ran.get(shard.name)?.reports.get(pkg);
       if (report === undefined) continue;
       const allowed = new Set(shard.mutate[pkg] ?? []);
+      const present = new Set(Object.keys(report.files).map(repositoryPath));
+      // A report that names a file the shard does not hold is not this shard's report, which that failure says alone.
+      if ([...present].every((file) => allowed.has(file))) {
+        for (const file of allowed) {
+          if (!present.has(file) && !noMutants.has(file)) failures.push(`shard ${shard.name}'s ${pkg} report has no ${file}, which the shard mutates: a shard runs all its files (stryker/shards.json's noMutants lists those Stryker finds no mutant in)`);
+        }
+      }
       for (const mutant of keyedMutants(report)) {
         if (!allowed.has(mutant.file)) {
           failures.push(`shard ${shard.name}'s ${pkg} report mutates ${mutant.file}, which the shard does not hold`);
@@ -278,8 +345,21 @@ export function judge(input: GateInput): GateResult {
     for (const entry of equivalents.entries) {
       const key = keyOf(entry);
       if (!matched.has(key)) failures.push(`${EQUIVALENT_DIRECTORY}/${pkg}.json records ${describeMutant(entry)}, which no longer exists (stale): remove it`);
-      const review = reviewProblem(entry);
+      const review = reviewProblem(entry, today);
       if (review !== undefined) failures.push(`${EQUIVALENT_DIRECTORY}/${pkg}.json ${describeMutant(entry)} ${review}`);
+    }
+    // The entries that rest on the engine's Unicode data, held to the data each shard that scored them ran on.
+    const bound = (unicode.listing?.records ?? []).filter((record) => files.has(record.file));
+    for (const record of bound) if (!recorded.has(keyOf(record))) failures.push(`${UNICODE_FILE} lists ${describeMutant(record)}, which ${EQUIVALENT_DIRECTORY}/${pkg}.json does not record`);
+    const checkedOn = unicode.listing?.checkedOn;
+    for (const shard of ran) {
+      const runtime = runtimeOf(input.ran.get(shard.name)?.canary);
+      const held = bound.filter((record) => recorded.has(keyOf(record)) && (shard.mutate[pkg] ?? []).includes(record.file));
+      if (checkedOn === undefined || runtime === undefined || held.length === 0 || (runtime.unicode === checkedOn.unicode && runtime.icu === checkedOn.icu)) continue;
+      const [count, rest, them] = held.length === 1 ? ['1 recorded equivalent', 'rests', 'it'] : [`${String(held.length)} recorded equivalents`, 'rest', 'them'];
+      failures.push(
+        `${pkg}: ${count} ${rest} on the engine's Unicode data as Node ${checkedOn.node} has it (Unicode ${checkedOn.unicode}, ICU ${checkedOn.icu}), and shard ${shard.name} ran on Node ${runtime.node} (Unicode ${runtime.unicode}, ICU ${runtime.icu}): check ${them} again over every code point on that Node, then record that Node in ${UNICODE_FILE}: ${held.map((record) => describeMutant(record)).join('; ')}`,
+      );
     }
     const valid = detected + undetected;
     const basisPoints = scoreOf(detected, valid);
@@ -374,13 +454,17 @@ export function summaryMarkdown(result: GateResult): string {
   ].join('\n');
 }
 
-/** Reads <dir>/<shard>/ for every subdirectory of dir. */
-export function readShardResults(dir: string): Map<string, ShardResult> {
+/** Reads <dir>/<shard>/ for every subdirectory of dir, and names the files at dir's top, where no shard writes. */
+export function readReportDirectory(dir: string): { ran: Map<string, ShardResult>; stray: string[] } {
   const ran = new Map<string, ShardResult>();
-  if (!existsSync(dir)) return ran;
+  const top: string[] = [];
+  if (!existsSync(dir)) return { ran, stray: top };
   for (const name of readdirSync(dir).sort()) {
     const shardDir = path.join(dir, name);
-    if (!statSync(shardDir).isDirectory()) continue;
+    if (!statSync(shardDir).isDirectory()) {
+      top.push(name);
+      continue;
+    }
     const reports = new Map<string, MutationReport>();
     const stray: string[] = [];
     let canary: unknown;
@@ -392,7 +476,18 @@ export function readShardResults(dir: string): Map<string, ShardResult> {
     }
     ran.set(name, { canary, reports, stray });
   }
-  return ran;
+  return { ran, stray: top };
+}
+
+/** Reads <dir>/<shard>/ for every subdirectory of dir (readReportDirectory's shards). */
+export function readShardResults(dir: string): Map<string, ShardResult> {
+  return readReportDirectory(dir).ran;
+}
+
+/** tools/stryker/unicode.json, parsed, or undefined when the repository has none. */
+export function readUnicodeFile(root: string = repositoryRoot): unknown {
+  const file = path.join(root, UNICODE_FILE);
+  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : undefined;
 }
 
 /** Each package's equivalents file, parsed, from the repository's tools/stryker/equivalent. */
@@ -410,7 +505,12 @@ export function parseExpectedShards(value: string): string[] {
   const text = value.trim();
   if (text === '') return [];
   if (text.startsWith('[')) {
-    const parsed = JSON.parse(text) as unknown;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch {
+      throw new Error('--expected: not a JSON array of shard names');
+    }
     if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) throw new Error('--expected: not a JSON array of shard names');
     return parsed;
   }
@@ -418,6 +518,16 @@ export function parseExpectedShards(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item !== '');
+}
+
+/**
+ * The --expected option as the gate takes it: undefined when not given (a local run judges what ran), and refused when
+ * empty, which only a changes job that wrote no output leaves.
+ */
+export function expectedShardsOption(value: string | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim() === '') throw new Error('--expected is empty: the changes job gave no shards, so what was selected is unknown');
+  return parseExpectedShards(value);
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
@@ -434,14 +544,23 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
   const onlyShard = option('--shard');
   const dir = path.resolve(repositoryRoot, args[0] ?? 'reports/mutation');
   const shards = readShards();
-  const ran = readShardResults(dir);
+  const { ran, stray } = readReportDirectory(dir);
   if (onlyShard !== undefined) {
     const shard = shards.find((candidate) => candidate.name === onlyShard);
     const result = ran.get(onlyShard);
     if (shard === undefined || result === undefined) throw new Error(`--shard ${onlyShard}: no such shard, or no reports for it under ${dir}`);
     process.stdout.write(`${shardView(shard, result, readEquivalentFiles()).join('\n')}\n`);
   } else {
-    const result = judge({ shards, ran, expected: expected === undefined ? undefined : parseExpectedShards(expected), equivalents: readEquivalentFiles() });
+    const result = judge({
+      shards,
+      ran,
+      stray,
+      expected: expectedShardsOption(expected),
+      equivalents: readEquivalentFiles(),
+      noMutants: readNoMutants(),
+      unicode: readUnicodeFile(),
+      today: new Date().toISOString().slice(0, 10),
+    });
     process.stdout.write(`${result.lines.join('\n')}\n`);
     if (summary !== undefined && summary !== '') appendFileSync(summary, summaryMarkdown(result));
     for (const failure of result.failures) process.stdout.write(`::error::${failure.replace(/\r?\n/g, ' ')}\n`);

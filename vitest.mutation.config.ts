@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { type ViteUserConfig, configDefaults, defineConfig } from 'vitest/config';
 
 import { MUTATION_PACKAGES, type MutationPackage, PACKAGE_VARIABLE } from './stryker/base.mjs';
+import { workspacePackages } from './tools/stryker/workspace';
 
 /**
  * The tests a mutation run runs against a package's mutants (stryker/<package>.config.mjs; docs/adr/0066, Part 4).
@@ -66,79 +66,34 @@ export interface WorkspaceAlias {
   readonly replacement: string;
 }
 
-type ExportTarget = string | null | { readonly [condition: string]: ExportTarget } | readonly ExportTarget[];
-
-/** The package directories pnpm-workspace.yaml lists, as `dir` and `dir/*` patterns. */
-export function workspaceDirectories(root: string): string[] {
-  const text = readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
-  // The list's items, and any comment lines among them.
-  const block = /^packages:\r?\n((?:[ \t]+[-#][^\n]*(?:\n|$))+)/m.exec(text)?.[1];
-  if (block === undefined) throw new Error('pnpm-workspace.yaml lists no packages');
-  const patterns = block
-    .split('\n')
-    .filter((line) => /^\s*-/.test(line))
-    .map((line) => line.replace(/\s#.*$/, '').replace(/^\s*-\s*/, '').trim().replace(/^(['"])(.*)\1$/, '$2'))
-    .filter((pattern) => pattern !== '');
-  return patterns
-    .flatMap((pattern) => {
-      if (/^[^*?!{}[\]]+\/\*$/.test(pattern)) {
-        const parent = pattern.slice(0, -2);
-        return readdirSync(path.join(root, parent), { withFileTypes: true })
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => `${parent}/${entry.name}`)
-          .sort();
-      }
-      if (/[*?!{}[\]]/.test(pattern)) throw new Error(`pnpm-workspace.yaml: the mutation aliases read "dir" and "dir/*" patterns only, not "${pattern}"`);
-      return [pattern];
-    })
-    .filter((directory) => existsSync(path.join(root, directory, 'package.json')));
-}
-
-/** The file an export resolves to on import (Node's "import", "node" and "default" conditions), if any. */
-function importTarget(target: ExportTarget): string | undefined {
-  if (target === null) return undefined;
-  if (typeof target === 'string') return target;
-  if (Array.isArray(target)) return (target as readonly ExportTarget[]).map(importTarget).find((found) => found !== undefined);
-  const conditions = target as { readonly [condition: string]: ExportTarget };
-  for (const condition of ['import', 'node', 'default']) {
-    const found = condition in conditions ? importTarget(conditions[condition] ?? null) : undefined;
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
- * Every workspace package's exports, each an exact-match alias to its file under `root`: the specifier, and a subpath
- * pattern (`./assets/*`) with what its `*` stands for. Generated from each package.json, so a new package or export
- * needs no edit here.
+ * Every workspace package's exports (tools/stryker/workspace.ts: the packages pnpm-workspace.yaml lists, each export's
+ * import condition), each an exact-match alias to its file under `root`: the specifier, and a subpath pattern
+ * (`./assets/*`) with what its `*` stands for. Exact subpaths come first, then patterns by the length of their text
+ * before `*`, so the first alias that matches is the export Node would pick. Generated from each package.json, so a new
+ * package or export needs no edit here; importClosure (tools/screening-capacity/watched.ts) resolves the same way.
  */
 export function workspaceAliases(root: string = ROOT): WorkspaceAlias[] {
-  const aliases: WorkspaceAlias[] = [];
-  for (const directory of workspaceDirectories(root)) {
-    const manifest = JSON.parse(readFileSync(path.join(root, directory, 'package.json'), 'utf8')) as { name?: string; exports?: ExportTarget };
-    if (manifest.name === undefined || manifest.exports === undefined || manifest.exports === null) continue;
-    const exports: { readonly [subpath: string]: ExportTarget } =
-      typeof manifest.exports === 'string' || Array.isArray(manifest.exports) || !Object.keys(manifest.exports).every((key) => key.startsWith('.'))
-        ? { '.': manifest.exports }
-        : (manifest.exports as { readonly [subpath: string]: ExportTarget });
-    for (const [subpath, target] of Object.entries(exports)) {
-      const file = importTarget(target);
-      if (file === undefined) continue;
-      const specifier = subpath === '.' ? manifest.name : `${manifest.name}/${subpath.replace(/^\.\//, '')}`;
-      const replacement = path.join(root, directory, file);
+  const exact: WorkspaceAlias[] = [];
+  const patterns: { readonly alias: WorkspaceAlias; readonly prefix: number; readonly key: number }[] = [];
+  for (const pkg of workspacePackages(root)) {
+    for (const [subpath, file] of pkg.exports) {
+      if (file === null) continue;
+      const specifier = subpath === '.' ? pkg.name : `${pkg.name}/${subpath.replace(/^\.\//, '')}`;
+      const replacement = path.join(root, pkg.dir, file);
       if (specifier.includes('*')) {
         const [before, after] = specifier.split('*') as [string, string];
-        aliases.push({ find: new RegExp(`^${escapeRegExp(before)}(.+)${escapeRegExp(after)}$`), replacement: replacement.replace('*', '$1') });
+        patterns.push({ alias: { find: new RegExp(`^${escapeRegExp(before)}(.+)${escapeRegExp(after)}$`), replacement: replacement.replaceAll('*', '$1') }, prefix: before.length, key: specifier.length });
       } else {
-        aliases.push({ find: new RegExp(`^${escapeRegExp(specifier)}$`), replacement });
+        exact.push({ find: new RegExp(`^${escapeRegExp(specifier)}$`), replacement });
       }
     }
   }
-  return aliases;
+  return [...exact, ...patterns.sort((a, b) => b.prefix - a.prefix || b.key - a.key).map((pattern) => pattern.alias)];
 }
 
 /** The package TP_MUTATION_PACKAGE names; a run without one, or with another, stops here. */

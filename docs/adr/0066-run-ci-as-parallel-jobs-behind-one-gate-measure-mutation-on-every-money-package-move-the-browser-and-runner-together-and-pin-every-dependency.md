@@ -1,19 +1,22 @@
 # 0066. Run CI as parallel jobs behind one gate, measure mutation on every money package, move the browser and runner together, and pin every dependency
 
-- **Status:** accepted, Part 4 (`co-001/ci-mutation`, combined audit #54). Parts 1 to 3 are the series' other pull
-  requests (`co-001/ci-speed`, `co-001/ci-deps`, `co-001/ci-browser`). Part 4 amends
-  [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md)
-  (mutation by path, not by label; Stryker 10.1.1 in place of 10.0.0 and its patch) and
-  [0047](0047-read-narratives-as-they-show-refuse-the-cases-identifiers-bound-ledger-corrections-and-give-them-and-the-regulation-to-the-specialist.md)
-  (the verifier's own configuration retired).
+- **Status:** accepted, Part 4; Parts 1 to 3 are the series' other pull requests (`co-001/ci-speed`, `co-001/ci-deps`,
+  `co-001/ci-browser`).
+  - **Part 4** (`co-001/ci-mutation`, combined audit #54) amends
+    [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md)
+    (mutation by path, not by label; Stryker 10.1.1 in place of 10.0.0 and its patch) and
+    [0047](0047-read-narratives-as-they-show-refuse-the-cases-identifiers-bound-ledger-corrections-and-give-them-and-the-regulation-to-the-specialist.md)
+    (the verifier's own configuration retired).
 - **Date:** 2026-10-25
-- **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (#54
-  among it, placed "CI PR before PR 7"), under the standing rule of 2026-10-18, and who ruled on 2026-10-25 (relayed by
-  the co-founder) that the adoption covers #54's 85% exit for milestone 6 and Gate 1 (the series' question F6); the
-  build (Lane B), for the notices below, decided under that rule and each reversible by the founder
-- **PRD sections:** 17 (milestone 6's check), 18 (the mutation layer and continuous integration); reconciliation-001's
-  checks (the engine freeze, the ledger's additions-only rule, the milestones); test matrix CI-15 to CI-17; ADRs 0047
-  and 0064
+- **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20, under
+  the standing rule of 2026-10-18; the build (Lane B), for the notices below, decided under that rule and each
+  reversible by the founder
+  - **Part 4:** item #54 of that audit, placed "CI PR before PR 7"; and the founder's ruling of 2026-10-25, relayed by
+    the co-founder, that his adoption covers #54's 85% exit for milestone 6 and Gate 1 (the series' question F6).
+- **PRD sections:** by Part, below
+  - **Part 4:** 17 (milestone 6's check), 18 (the mutation layer and continuous integration); reconciliation-001's
+    checks (the engine freeze, the ledger's additions-only rule, the milestones); test matrix CI-15 to CI-17; ADRs
+    0047 and 0064.
 
 ## Part 4 (`co-001/ci-mutation`)
 
@@ -100,7 +103,12 @@ stops the shard.
 **The gate** (`tools/stryker/gate.ts`), the required `mutation` job, merges the shards' reports by package. A package
 is fully run when every shard holding it ran. The gate fails when:
 - a shard the changes job selected reported nothing;
-- a shard that ran lacks its canary verdict of 5 of 5 as expected, or one of its packages' reports;
+- a shard that ran lacks its canary verdict of 5 of 5 as expected (with the Node, Unicode and ICU versions it ran on),
+  or one of its packages' reports, or a file of its package that the report leaves out (`stryker/shards.json`'s
+  `noMutants` lists the four files Stryker finds no mutant in, which a test holds to imports, re-exports, types and
+  `as const` values);
+- a shard leaves a report of a package it does not hold, or the reports directory holds a file outside the shards'
+  directories;
 - a package ran in some of its shards and not all;
 - a fully-run package scores at or below 85%. The score is Stryker's, (Killed + Timeout) / (Killed + Timeout +
   Survived + NoCoverage), compared in integers, so 85.00% fails and 85.01% passes. RuntimeError mutants are left out
@@ -110,8 +118,11 @@ is fully run when every shard holding it ran. The gate fails when:
 - a RuntimeError's reason is not a test file's load failure;
 - a mutant is Ignored, CompileError or Pending;
 - an equivalents file is malformed, unsorted or holds a duplicate;
-- for a fully-run package, a recorded equivalent lacks its reviewer and date, no longer matches a mutant (stale), or
-  matches one a test detects or that breaks a load.
+- for a fully-run package, a recorded equivalent lacks its reviewer and date, is reviewed by its proposer or on a date
+  after the run, no longer matches a mutant (stale), or matches one a test detects or that breaks a load;
+- for a fully-run package, an equivalent that rests on the engine's Unicode data (`tools/stryker/unicode.json`) was
+  scored by a shard whose Node has other Unicode or ICU data than the entry was checked on, or the listing names an
+  entry no equivalents file records.
 
 A package none of whose shards ran is "not affected", and neither score rule judges it. The gate prints per-package
 and per-file scores, and every survivor with its covering tests, to the log and the summary.
@@ -125,8 +136,9 @@ by file, then original, then occurrence. Each entry has exactly these keys:
 - why no input can tell the two apart;
 - who proposed it, and who reviewed it and when.
 
-The builder leaves `reviewedBy` and `reviewedOn` empty, and only an independent reviewer fills them. The match is per
-mutant, on the gate's side. The freeze forbids `// Stryker disable` comments in the engine, and the gate refuses an
+The builder leaves `reviewedBy` and `reviewedOn` empty, and only an independent reviewer fills them: the gate refuses a
+`reviewedBy` equal to `proposedBy` and a `reviewedOn` after the run's UTC date. The match is per mutant, on the gate's
+side. The freeze forbids `// Stryker disable` comments in the engine, and the gate refuses an
 Ignored mutant anywhere, so the file is the only form.
 
 An entry is a true equivalent only when no input tells the mutant from the original: no value of the function's
@@ -134,7 +146,11 @@ declared parameter types, as plain data (a string is any text, an object exactly
 conforming engine. The reviewer tries to build one before signing. A mutant told apart only under a sort that calls its
 comparator in an order ECMAScript allows and V8 never uses, or only by text that is not a date where the code compares
 dates as text, is not equivalent, and a test kills it. Where an entry rests on the engine's Unicode data (NFKC forms,
-grapheme clusters), its reason says so, and the reviewer checks it over every code point.
+grapheme clusters), its reason says so, the reviewer checks it over every code point on the Node the mutation workflow
+pins, and `tools/stryker/unicode.json` lists it with that Node and its Unicode and ICU versions (today readable.ts's
+three NFKC records and mismatches.ts's sentence-end comparison, on Node 24.22.0, Unicode 17.0, ICU 78.3). Each shard's
+canary verdict names the Node it ran on, so the gate fails those entries, naming them, when a shard ran on other data,
+and a test holds the workflow's pin to the Node the listing names: moving the pin re-checks them first.
 
 **What runs** (`.github/workflows/mutation.yml`, its own workflow and concurrency group beside ci.yml's `all green`):
 - **Every package** on a push to `claude/build-platform`, weekly and on `workflow_dispatch`.
@@ -142,19 +158,31 @@ grapheme clusters), its reason says so, and the reviewer checks it over every co
   closure the change touches (`tools/stryker/affected.ts`), diffed from the merge base. A package's closure is:
   - its mutated files and tests and their import closure, tests included: `importClosure()` of
     `tools/screening-capacity/watched.ts`, with its new `includeTests` option, off by default, so the watched list is
-    unchanged;
+    unchanged. It resolves every package `pnpm-workspace.yaml` lists, through each export's import condition, arrays
+    and `*` patterns, with the module the mutation aliases are generated from (`tools/stryker/workspace.ts`), so a
+    closure holds what a mutation run loads; an import of a relative path, or of a workspace package's name or scope,
+    that resolves to no file stops the changes job;
   - the `package.json` and `tsconfig.json` of every workspace package the closure lies in;
   - the data files its tests and code read, held complete by a scan of the closure for path literals under
-    `fixtures/`, `content/` and `docs/`;
-  - the third-party packages it imports and the test tooling, resolved through the lockfile's snapshots.
+    `fixtures/`, `content/` and `docs/` (a root after an interpolation, after `./` or `../`, or in a nested
+    `join`/`resolve`/`new URL` call included), and by requiring every closure file that imports `node:fs` to be a
+    data entry's listed reader, a directory read whose every named file is listed, or a reader no mutation run calls;
+  - the third-party packages it imports and the test tooling (tsx, which runs the tooling, among it), and what the
+    mutation tooling's own files import, resolved through the lockfile's snapshots.
 
-  A lockfile change counts only when it moves one of those resolved versions. The mutation configuration and tooling,
+  The closures are taken on both sides of the change, at the head and at the merge base (its tree read from git), and
+  any changed path a package's mutate or test set selects affects it, so a pull request that deletes a money test,
+  renames one into the exclusions, or deletes a helper, manifest or data file only the old side held, is measured. A
+  lockfile change counts only when it moves one of those resolved versions. The mutation configuration and tooling,
   the root manifest, the workspace list, the root tsconfigs and the workflow affect all four.
 - **Jobs:**
   - `changes` (5 min);
   - `stryker (<shard>)` (30 min; skipped when nothing is affected; reports uploaded with `overwrite: true`);
   - `mutation` (10 min, `if: always()`). It fails on a failed or cancelled job, and on a skipped shard job when a
-    package was affected. It passes with "no money path changed" when none was.
+    package was affected. It fails closed on the changes job's outputs: an `any` other than `true` or `false`, shards
+    or packages that are not JSON arrays of names, or ones that disagree with `any`. It passes with "no money path
+    changed" when none was.
+  - All three on one exact Node, 24.22.0, the one the Unicode-bound equivalents were checked on.
 
 **Coverage.** `packages/money/src/**` joins `BRANCH_GATED`. `cents.ts:85`'s unreachable `match[2] ?? '0'` (the
 regular expression at `:73` requires the group) becomes branch-free, with behaviour unchanged. This is the series' one
@@ -228,8 +256,13 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
   13 to 17 minutes when one did, depending on the slowest affected shard.
 - A Stryker, Vitest or fast-check bump runs all four packages. If the canary fails, the bump has changed what the
   scores rest on, and the pull request says why before `expected.json` changes.
-- A new money file needs a shard in `stryker/shards.json` (the partition test fails until it has one). A new data file
-  a money test reads needs `DATA_FILES`, or the changes job stops naming it.
+- A new money file needs a shard in `stryker/shards.json` (the partition test fails until it has one), and a shard
+  report that leaves it out fails the gate unless `noMutants` lists it. A new data file a money test reads needs
+  `DATA_FILES`, and a new closure file that reads the file system needs to be named as its reader, or the changes job
+  stops naming it.
+- Moving the mutation workflow's Node (one exact version in all three jobs) means checking the Unicode-bound
+  equivalents again over every code point on the new Node and recording it in `tools/stryker/unicode.json`: a test
+  fails until the two agree, and the gate fails those entries on a shard that ran on other Unicode data.
 - Every new survivor in a money package fails its pull request until a test kills it or a reviewed equivalent records
   it. PR 6c plans its killing tests in its design.
 - What cannot be verified locally (GitHub's `needs` results, the artifacts between jobs and `overwrite` on a re-run,

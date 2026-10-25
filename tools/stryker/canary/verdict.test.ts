@@ -127,4 +127,9 @@ describe('the verdict', () => {
     expect(verdictFile('money-ledger')).toBe('reports/mutation/money-ledger/canary.json');
     expect(verdictFile(null)).toBe('reports/canary/verdict.json');
   });
+
+  it('names the runtime its shard ran on, as the gate holds the Unicode-bound equivalents to it', () => {
+    expect(judgeCanary(reportFor(committed), committed, 'money-ledger').runtime).toEqual({ node: process.version, unicode: process.versions.unicode, icu: process.versions.icu });
+    expect(judgeCanary(reportFor(committed), committed, 'money-ledger', { node: 'v24.22.0', unicode: '17.0', icu: '78.3' }).runtime).toEqual({ node: 'v24.22.0', unicode: '17.0', icu: '78.3' });
+  });
 });
