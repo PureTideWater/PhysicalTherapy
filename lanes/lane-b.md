@@ -12,7 +12,7 @@ Lane A reads it to keep the build tracker current. The rules are in `../LANES.md
 1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **Draft PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43), head b5ff4c7 after the fix round, CI all green in 6:17; subscribed. Verification running (wf_9d87a406-212); then merge.** Built by wf_aa18ae8a-848 (started 2026-10-25 ~01:05 UTC; script `workflow-scripts/lane-b-ci-speed-build-wf_aa18ae8a-848.js`). Builders S1, S2 and S3 work in parallel in `/home/user/ci-speed-s1`, `-s2` and `-s3` (local branches, never pushed); the integrator merges them in `/home/user/ci-speed`, pushes once and opens the draft PR; then two adversarial reviews run in fresh clones (CI and test infrastructure; security and supply chain). Heavy commands share `flock /tmp/laneb-heavy.lock`. If the session ends mid-run, this stage starts again from the four worktrees.
 2. `co-001/ci-deps` (#112, #19's asserts, groups and licence fix, Dependabot #40, #38's tooling, #33; CI-11 to CI-14): after ci-speed merges; needs F1, F2 and F4.
 3. `co-001/ci-browser` (#19's upgrade part; CI-18 to CI-20): after ci-speed and ci-deps; needs F4 and F5.
-4. `co-001/ci-mutation` (#54; CI-15 to CI-17), worktree `/home/user/ci-mutation`. **Build running: wf_62c3df65-d76** (started 2026-10-25 ~02:15 UTC, ahead of ci-speed's merge for the critical path; script `workflow-scripts/lane-b-ci-mutation-build-wf_62c3df65-d76.js`). M1 lands Stryker 10.1.1 and the per-package configs first; then M1 (canary, gate, affected, workflow, documents), M2 (pricing and the golden test), M3 (money and ledger), M4a and M4b (packets, split by file) in parallel in `/home/user/ci-mutation-{m1,m2,m3,m4a,m4b}`; the integrator confirms every equivalent, runs all six shards and the gate locally, pushes once and opens the draft PR; two adversarial reviews follow (payment-engine; CI tooling and security). Merged last, after merging claude/build-platform under rule 6. F6 ruled.
+4. `co-001/ci-mutation` (#54; CI-15 to CI-17), worktree `/home/user/ci-mutation`. **Draft PR [#44](https://github.com/PureTideWater/PhysicalTherapy/pull/44), head 9099fac, mutation gate green on CI; reviewed (2 blocking, 8 should_fix, 12 nits); fix round running (wf_877c195a-66e); subscribed.** Built by wf_62c3df65-d76 (started 2026-10-25 ~02:15 UTC, ahead of ci-speed's merge for the critical path; script `workflow-scripts/lane-b-ci-mutation-build-wf_62c3df65-d76.js`). M1 lands Stryker 10.1.1 and the per-package configs first; then M1 (canary, gate, affected, workflow, documents), M2 (pricing and the golden test), M3 (money and ledger), M4a and M4b (packets, split by file) in parallel in `/home/user/ci-mutation-{m1,m2,m3,m4a,m4b}`; the integrator confirms every equivalent, runs all six shards and the gate locally, pushes once and opens the draft PR; two adversarial reviews follow (payment-engine; CI tooling and security). Merged last, after merging claude/build-platform under rule 6. F6 ruled.
 
 **PR 15, ledger tests LED-12 and LED-13** (Lane B queue item 2), claimed 2026-10-25 01:15 UTC: branch `co-001/pr-15-ledger-tests`. **Stopped on the owner's question L1** (design wf_3851b95a-f1c, 2026-10-25 01:05-01:50 UTC, 0.41M subagent tokens): LED-12 as written fails against the frozen ledger, so reconciliation-001 item 15's stop applies. Design `designs/lane-b-pr15-ledger-tests.md`; the probe record and the pre-validated patch for L1 (a) in `designs/lane-b-pr15/`. The design's adversarial review (payment-engine checklist) runs after the ruling, against the answer chosen.
 
@@ -142,3 +142,26 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - **Full local suite once, all pass:** typecheck; lint (1,457 files); unit 4,659; golden 38; oracle 630; licences; actionlint; synth clean; freeze clean; test:db unsharded 9,040 + 1 skipped in 974 s, equal to CI's four shards; domain model check; **e2e 51 of 51** with the brand baselines, on the Chrome for Testing 141 layout, normally and with `E2E_PREBUILT=1`.
   - **CI on b5ff4c7** (run 40196871490): every job green, **all green in 6:17**, 37.6 runner-minutes. A1′ 16:52, set by the capacity measurement (16:35 this run against 12:49 before: host variance, issue #41).
   - **Next:** the fresh-clone verification that reads CI (wf_9d87a406-212; usage last read 17%), then the PR description brought current, then merge (base unchanged at 49514e8), then the founder's F7 ruleset after the first green push run.
+- **2026-10-25 ~13:50 UTC: ci-mutation built and reviewed; draft PR #44** (wf_62c3df65-d76 with its resume: 9 agents, 4.72M subagent tokens in all). Summary and reviews in `approval-summaries/lane-b-ci-mutation-*`.
+  - **Scores** (gate, truncated, equivalents counted as survivors):
+
+    | Package | Before | After |
+    |---|---|---|
+    | money | 93.22% | 97.00% |
+    | ledger | 91.88% | 98.13% |
+    | pricing | 91.47% | 98.57% |
+    | packets | 85.61% | 95.87% |
+
+    662 undetected mutants down to 165, each a reviewed equivalent. Of 175 proposed, the integrator signed 165 and rejected 10, which are now killed by tests.
+  - **Checks:**
+    - golden test per claim: `test:golden` 188;
+    - ledger 0 deletions; LED-01 to LED-11 and the oracle unchanged;
+    - the freeze clean;
+    - every canary 5 of 5;
+    - the gate's negative proof fails as it should.
+  - **CI run 40195705539:** all six shards green (4:06 to 6:39), the `mutation` gate green with the local numbers, the workflow 7:35.
+  - **Reviews:**
+    - **payment-engine:** B1, two pricing records that a NaN lineNo tells apart; S1, a rounding kill by an off-type input; S2, a test stating that pricing a malformed year basis is the engine's rule; 5 nits. N4 is for Lane A: the engine sorts lineNo with `a - b`.
+    - **ci-tooling-security:** B1, a PR that deletes a money test affects no package; SF1, fully-run is judged per shard, not per file; SF2, the changes guard fails open; SF3, Unicode-dependent equivalents on a floating Node; SF4, the data-file guard misses path forms; SF5, ADR 0066's Part 4 provenance lost in the rule-6 merge; SF6, importClosure misses workspace export forms; 7 nits.
+  - **Fix round running** (wf_877c195a-66e). Two fixers in parallel: money-path tests and records; tooling, workflow and documents. Then the suite runner merges both, merges claude/build-platform if #43 has merged (rule 6), runs the full local suite once with all six shards, pushes once, and updates the PR body.
+  - **For Lane A's PR 6c** (engine corrections, under the freeze): payment-engine N4 (a NaN line number leaves a claim's lines out of order) and S2 (a malformed in-type year basis is priced at the records in force rather than refused). Lane B does not change the engine; the fix round's report will give the exact cases.

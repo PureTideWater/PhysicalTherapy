@@ -1,0 +1,222 @@
+[
+ {
+  "reviewer": "payment-engine",
+  "id": "B1",
+  "severity": "blocking",
+  "file": "tools/stryker/equivalent/pricing.json",
+  "line": "93, 126 (records for packages/pricing/src/engine.ts:401)",
+  "issue": "Two pricing records are not equivalent: engine.ts:401 ArrowFunction `(a, b) => a - b` -> `() => undefined`, and MethodExpression `visit.map(...).sort((a, b) => a - b)` -> `visit.map(...)`. Their reason ('price sorts the lines at :159') misses a lineNo that is a number but NaN. lineNo is declared `number` (types.ts:40). engine.ts:159 sorts before validateFacts, and V8 leaves [3, NaN, 1] as it is. The NaN line stops, and the visit holds lines 3 and 1 in that order. The original sorts them again; both mutants do not.",
+  "evidence": "`node -e \"[3,NaN,1].sort((x,y)=>x-y)\"` gives [3,NaN,1]. Probe test (rpe-tools/zz-review-nan.test.ts: per-visit lines 3, NaN, 1; expects visit_line_nos [1,3]): passes on the original. Fails under each mutant applied by hand at engine.ts:401, stdout [[\"priced\",\"\",3,[3,1]],[\"unpriced\",\"ENGINE_ERROR\",null,null],[\"priced\",\"\",1,[3,1]]], 'expected [ [ 3, 1 ], [ 3, 1 ] ] to deeply equal [ [ 1, 3 ], [ 1, 3 ] ]'. The difference is in the stored trace (steps.per_visit.visit_line_nos), on V8 itself, for an input of the declared type: it fails the PR's own standard (ADR 0066 Part 4:132-133).",
+  "fix": "Add the probe's case as a test in packages/pricing/src/sorts.test.ts or engine.test.ts (test-only, so the freeze allows it). Delete both records: pricing goes from 28 to 26 recorded and from 1,932 to 1,934 detected. Rerun the pricing-engine shard and the gate, and correct ADR 0066 Part 4's and the runbook's 165 to 163."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "S1",
+  "severity": "should_fix",
+  "file": "packages/money/src/rounding.test.ts",
+  "line": "138-143",
+  "issue": "rounding.ts:26 `typeof amount === 'bigint'` -> `true` is equivalent for every declared input (Cents | UnroundedCents): centsToDecimal is decimal(), and decimal() returns a Decimal itself (decimal.ts:188-189). The test kills it only with `'12' as unknown as Cents` and a bare toThrow(). The original's 'refusal' is an incidental TypeError. That contradicts the PR's own declared-types standard, and a type-correct simplification (`decimal(amount).times(factor)`) would fail the test.",
+  "evidence": "tsx probe: multiplyCents('12' as never, rate('2')) and multiplyCents(12 as never, rate('2')) both throw 'TypeError base.times is not a function'. Mutant applied by hand: the named test FAILED ('expected [Function] to throw an error'), so it is killed only by the cast string.",
+  "fix": "Record the mutant in tools/stryker/equivalent/money.json with that reason, and delete the cast test. If a refusal of non-bigint text is wanted, add an explicit MoneyError guard in a later money change and assert its class and message."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "S2",
+  "severity": "should_fix",
+  "file": "packages/pricing/src/engine.test.ts",
+  "line": "1044-1054",
+  "issue": "The test states, as the engine's rule, that a malformed year basis ('LOCKED:2025X', 'LOCKED:202', 'LOCKED:20250', 'locked:2025') prices at the records in force on the service date. 'LOCKED:202' and 'LOCKED:20250' are in-type (YearBasis = 'CURRENT' | `LOCKED:${number}`, contracts/src/terms.ts:124). Pricing a term the engine cannot read is a guessed price under CLAUDE.md, and a correct engine fix (ENGINE_ERROR) would break the test.",
+  "evidence": "Test title: 'any other text reads the records in force on the service date'. It asserts expectedUnroundedCents equal to CURRENT's for each malformed basis. The build summary lists it as an open founder note only.",
+  "fix": "Keep the pin, since it kills engine.ts:99's anchor mutants. Retitle and comment it as a pin of today's frozen behaviour, a known defect that should stop the line, and name Lane A PR 6c and the founder question so the next engine change flips it knowingly. List it in the PR's founder notes as a money-path defect."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N1",
+  "severity": "nit",
+  "file": "packages/pricing/src/engine.test.ts",
+  "line": "273-279",
+  "issue": "engine.ts:599 `place === null` -> false is killed only with an object whose prototype carries a 'null' key, which is not plain data. With plain data, validSettings (engine.ts:265) refuses any own key that is not two digits, so the mutant is an equivalent under the PR's own standard. The rule is applied unevenly next to the records.",
+  "evidence": "The test builds settings with Object.create({ null: 'non_facility' }). The mutant applied by hand fails it ('expected priced to be unpriced').",
+  "fix": "Either state in ADR 0066 Part 4 and the runbook that a test may hold code to inputs beyond the standard as hardening (prototype pollution), without making the mutant non-equivalent, or record it. Then S1 and N1 get one consistent rule."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N2",
+  "severity": "nit",
+  "file": "packages/ledger/src/allocation.test.ts",
+  "line": "115, 142, 145 (and packages/pricing/src/sorts.test.ts:37)",
+  "issue": "The insertion-sort harnesses assert `sorts: 1` and throw on a sort called without a comparator. A correct refactor to toSorted() (0 sorts seen), a second sort, or a dependency's comparator-less sort while the spy is active would fail them.",
+  "evidence": "allocation.test.ts:142/145 `toEqual({ result: [...], sorts: 1 })`; allocation.test.ts:115 and sorts.test.ts:37 `throw new Error('this sort takes a comparator')`.",
+  "fix": "Assert `sorts >= 1`, the premise that the harness was reached, and fall back to the default comparison instead of throwing, or also spy on toSorted."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N3",
+  "severity": "nit",
+  "file": "tools/stryker/equivalent/pricing.json",
+  "line": "8, 19, 30 (and others)",
+  "issue": "Reasons cite source line numbers ('priced() at line 925 or unpriced() at line 952', 'lines 179 and 180', 'line 292', 'line 296', 'line 159'). The design keys records by original text and occurrence because line numbers move on unrelated edits, so a still-matching record's reason would point at the wrong lines.",
+  "evidence": "pricing.json:8 and :30 reason text; pricing.json:19 'price, lines 179 and 180'.",
+  "fix": "Cite functions and expressions instead (price's final map, priced(), unpriced())."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N4",
+  "severity": "nit",
+  "file": "packages/pricing/src/engine.ts",
+  "line": "159",
+  "issue": "Outside this PR's rules, for Lane A: the engine sorts line numbers with `a.lineNo - b.lineNo` before validateFacts. A NaN line number leaves the claim's other lines out of line order, which changes result order and anything ranked in claim order, not only the per-visit list B1 pins.",
+  "evidence": "[3,NaN,1] stays unsorted on V8. The B1 probe shows lines priced in the order 3, then 1.",
+  "fix": "In the next engine-change PR (Lane A 6c), validate line numbers or sort with a comparator that is total over every number before ranking. No change here, because of the freeze."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N5",
+  "severity": "nit",
+  "file": "tools/golden-worksheet/engine.test.ts",
+  "line": "22-25 (and engine.golden.test.ts:110-113; engine.ts:434)",
+  "issue": "The same claimRelease helper is in both golden test files, and runEngineOnGolden now has no caller.",
+  "evidence": "grep: claimRelease is defined at engine.test.ts:22 and engine.golden.test.ts:110. The build summary's open items say runEngineOnGolden has no caller.",
+  "fix": "tools/ is outside the freeze: move claimRelease into tools/golden-worksheet/engine.ts, and delete runEngineOnGolden or make it the per-claim builder."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "B1",
+  "severity": "blocking",
+  "file": "tools/stryker/affected.ts",
+  "line": "238-240, 379-388",
+  "issue": "A pull request that deletes a money test, or renames one into EXCLUDED, affects no package. The closures are built only from HEAD's tracked files, so a deleted path is in no closure. The stryker job is then skipped, and the required mutation check passes with \"No money path changed\". This makes CI-17 (\"exactly\") and ADR 0064's \"a forgotten label can no longer leave one unmeasured\" false.",
+  "evidence": "rsec-tools/affected-attacks.mts runs affected() on the repository's own closures with the deleted file left out of HEAD's file list. Each of these gives NONE: delete packages/money/src/cents.test.ts; delete packages/pricing/src/engine.test.ts; delete tools/golden-worksheet/engine.golden.test.ts; delete packages/packets/src/scan.test.ts; rename packages/ledger/src/allocation.test.ts to allocation.db.test.ts. The control, modifying engine.test.ts, gives pricing. affected.test.ts has no deletion or rename case.",
+  "fix": "In affected(), also count any changed path that matches a package's MUTATE or TEST_SETS globs, whether or not the file still exists. Build closures on the merge-base tree too (a worktree, or git show <mergeBase>:path) and take the union. Add failing-first tests: a deleted test, a test renamed to *.db.test.ts, and a deleted helper only a deleted test imported."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "SF1",
+  "severity": "should_fix",
+  "file": "tools/stryker/gate.ts",
+  "line": "227-246",
+  "issue": "\"Fully run\" is judged per shard, never per file. A shard report that leaves out files the shard holds still passes, so a partly-run package passes. ADR 0066's \"A shard runs all its files\" is enforced by no code.",
+  "evidence": "attacks.mts calls judge() on edited copies of the integrator's real final reports. These all PASS: pricing-rest without trace.ts (151 mutants; pricing 98.46%); the ledger report without pairing.ts; pricing-rest with every file but release.ts; packets-rest without dates.ts, placeholders.ts and windows.ts.",
+  "fix": "Fail when a file of shard.mutate[pkg] is absent from the shard's report, unless it is in a committed noMutants list in stryker/shards.json. Today the list is money, ledger and pricing index.ts, and pricing types.ts. Add a test that holds those files to declarations only, and a gate test for a missing file."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "SF2",
+  "severity": "should_fix",
+  "file": ".github/workflows/mutation.yml",
+  "line": "122-136",
+  "issue": "The needs guard fails open. An empty or garbled needs.changes.outputs.any counts as nothing affected: stryker is skipped and the gate passes with \"No money path changed\". affected.ts:467 writes outputs only when --github-output is non-empty.",
+  "evidence": "`if [ \"$ANY\" != true ]` then requires only STRYKER=skipped. The stryker job's `if` is `== 'true'`, so an empty any skips it. workflows.test.ts checks the guard only with toContain strings.",
+  "fix": "Use `case \"$ANY\" in true|false) ;; *) echo ::error::...; exit 1;; esac`. When ANY is true, also require SHARDS to be a non-empty JSON array. Assert both in workflows.test.ts."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "SF3",
+  "severity": "should_fix",
+  "file": "tools/stryker/equivalent/packets.json",
+  "line": "readable.ts NFKC records (3); docs/runbooks/ci.md:89-90; mutation.yml:53,84,151",
+  "issue": "Three reviewed equivalents rest on \"Node 24's Unicode 17.0 data\". CI's Node floats (node-version: 24), and nothing detects a change in Unicode data, so a record can silently stop being equivalent while the gate still matches it by key.",
+  "evidence": "CI run 40195705539, job 121175950324: setup-node \"Found in cache @ /opt/hostedtoolcache/node/24.21.0\". The integrator's code-point checks ran on 24.22.0 (local node -p process.versions.unicode gives 17.0, ICU 78.3).",
+  "fix": "Record the Unicode version on such entries, or in a gate constant. Have the gate fail when process.versions.unicode differs, naming the entries to check again. And/or pin an exact Node version in mutation.yml."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "SF4",
+  "severity": "should_fix",
+  "file": "tools/stryker/affected.ts",
+  "line": "186-197",
+  "issue": "dataLiterals, the guard that keeps DATA_FILES complete, misses common path forms. A test that reads a fixture in one of these forms passes the guard, and later changes to that fixture affect no package.",
+  "evidence": "dataLiterals returns [] for each of: `${REPO}/fixtures/synthetic/CAS-01/expected.json`; new URL('../../../fixtures', import.meta.url); path.join(repositoryRoot(), 'fixtures', 'golden'); const DIR='fixtures'; join(root, DIR). The output is in affected-attacks.mts's run. Today's readers are all caught (closure grep).",
+  "fix": "Match a data root after '/', '}' or a quote, inside template literals and new URL(), and allow nested calls in join and resolve. Backstop: any closure file that calls an fs read API must be named in DIRECTORY_READS or DATA_FILES, or the changes job fails. Add each form as a test."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "SF5",
+  "severity": "should_fix",
+  "file": "docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md",
+  "line": "3-16 (header); build-summary rule-6 recipe",
+  "issue": "The rule-6 recipe, \"drop this branch's header\", loses Part 4's provenance. That header holds the founder's F6 ruling of 2026-10-25 (Deciders), \"amends 0064 and 0047\", PRD 17 milestone 6, CI-15 to CI-17 and ADR 0047. ci-speed's header names only Part 1, 0010, 0063 and CI-01 to CI-10.",
+  "evidence": "git show origin/co-001/ci-speed:<ADR> lines 1-16 against this branch's lines 1-16. In the trial merge with the recipe applied, the code merges mechanically (722 tests pass); only the header facts are dropped.",
+  "fix": "Fold this branch's header facts into ci-speed's Status, Deciders, PRD sections, test matrix and ADR lines instead of dropping them. Update the build summary's hand-over."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "SF6",
+  "severity": "should_fix",
+  "file": "tools/screening-capacity/watched.ts",
+  "line": "94, 106-107",
+  "issue": "importClosure, which the mutation closures use, resolves only apps/* and packages/*, with simple exports: no node condition, no arrays, no ./* patterns. vitest.mutation.config.ts aliases every pnpm-workspace.yaml package (tools as @tp/tools, infra, the canary lib, @paidwhole/brand/assets/*). An import of @tp/tools/workspace from money code would be unresolved, and changes there would affect nothing.",
+  "evidence": "workspacePackages loops over ['apps','packages'] only. @tp/tools exports ./workspace -> ./release/workspace.ts. There is no instance in today's closures (closures.mts).",
+  "fix": "Resolve with the same workspaceDirectories and importTarget logic as the aliases, in a shared module, while the watched list test keeps its list unchanged. Fail the changes job on a workspace-scoped specifier in a closure that resolves to no file."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "N1",
+  "severity": "nit",
+  "file": "tools/stryker/gate.ts",
+  "line": "166-173",
+  "issue": "The gate accepts reviewedBy equal to proposedBy (a self-review) and a reviewedOn date in the future, although ADR 0066 says only an independent reviewer fills them.",
+  "evidence": "attacks.mts: \"reviewedBy equals proposedBy\" PASS; \"reviewedOn in the future 2099-12-31\" PASS.",
+  "fix": "Refuse reviewedBy === proposedBy (case-insensitive) and dates after the run's UTC date."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "N2",
+  "severity": "nit",
+  "file": "tools/stryker/affected.ts",
+  "line": "57",
+  "issue": "The ledger's DATA_FILES glob, fixtures/synthetic/**, is too broad: any synthetic fixture change runs the money-ledger shard.",
+  "evidence": "Job 121175950324: \"ledger: affected by ... fixtures/synthetic/CI-15/expected.json (data its run reads)\". templates.test.ts reads five named files (fixture('LED-04/posting-export.csv') and so on).",
+  "fix": "Name those files through DIRECTORY_READS."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "N3",
+  "severity": "nit",
+  "file": "tools/stryker/affected.ts",
+  "line": "65, 365-368",
+  "issue": "The third-party packages of the mutation tooling itself are not tracked: tsx runs gate, affected, shards and verdict, and yaml is affected.ts's lockfile parser. A bump of either runs no mutation on the pull request.",
+  "evidence": "TEST_TOOLING is vitest, @vitest/*, @stryker-mutator/* and fast-check. globalFiles returns repository files only.",
+  "fix": "Add tsx and the global entry points' bare imports to the tooling set."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "N4",
+  "severity": "nit",
+  "file": "docs/adr/0047-read-narratives-as-they-show-refuse-the-cases-identifiers-bound-ledger-corrections-and-give-them-and-the-regulation-to-the-specialist.md",
+  "line": "108",
+  "issue": "The amendment states only the pre-PR packets score (85.40%), while design \u00a73.4.2 asks for today's score.",
+  "evidence": "ADR 0066's table gives 95.87% (2,299 of 2,398); ADR 0047 shows only 85.40%.",
+  "fix": "Add the after score."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "N5",
+  "severity": "nit",
+  "file": "build-summary.md (rule-6 section); ci-speed docs/adr/0066; ci-speed docs/product/test-matrix.md",
+  "line": "build-summary 222-242; ci-speed ADR 0066:193; ci-speed test-matrix.md:207",
+  "issue": "The build summary lists the lockfile as shared with ci-speed, but ci-speed does not change it. After the merge, ci-speed's ADR Part 1 still lists \"labels\" among mutation's triggers, and its test-matrix intro still says \"CI-11 to CI-20 are reserved\".",
+  "evidence": "git diff --name-only 49514e8 origin/co-001/ci-speed has no pnpm-lock.yaml. grep finds 'labels)' at ci-speed ADR:193 and 'reserved for the' at ci-speed test-matrix:207.",
+  "fix": "Correct the shared-file list, and update both lines in the merge."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "N6",
+  "severity": "nit",
+  "file": "tools/stryker/gate.ts",
+  "line": "378-396",
+  "issue": "readShardResults silently ignores files at the top level of reports/mutation, and a package report in a shard that does not hold that package.",
+  "evidence": "attacks.mts: money.json placed in packets-scan, PASS.",
+  "fix": "Report both as stray."
+ },
+ {
+  "reviewer": "ci-tooling-security",
+  "id": "N7",
+  "severity": "nit",
+  "file": "docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md",
+  "line": "18-20",
+  "issue": "After the merge, Part 1's sections are ## headings while Part 4 nests ### under ## Part 4.",
+  "evidence": "ci-speed ADR: '## Context', '## Decision (Part 1 ...)'. This branch: '## Part 4' then '### Context'.",
+  "fix": "Use one heading level per Part when merging."
+ }
+]
