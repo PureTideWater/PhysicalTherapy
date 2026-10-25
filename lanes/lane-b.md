@@ -220,3 +220,8 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - **Output:** ranked findings and proposed PRs for Lane B's queue. Anything needing a migration goes to Lane A.
   - **Cost:** about 3 to 4% of usage. No product code.
   - **Asked and answered the same hour:** several parallel Lane B chats would not be faster. They share one weekly allowance, add merge conflicts on shared files and CI re-runs, and cannot coordinate in real time. Instead: a fresh chat per milestone (the handoff), parallel agents inside each chat, and a separate chat only for work with no file overlap (for example the infrastructure PRs after #42) when usage allows.
+- **2026-10-25 ~17:00 UTC: the co-founder's decision (delegated): the UX/UI review also runs with the build, not only once.** Added to `designs/lane-b-ux-review-brief.md`:
+  - **The checklist:** the baseline review's first deliverable is `.claude/agents/ux-brand-reviewer.md`, in its own small Lane B PR.
+  - **Every screen-changing Lane B PR:** the UX and brand review is one of its two adversarial reviews, with before and after screenshots of the changed screens at 1280 px and 390 px.
+  - **Each milestone:** a light whole-app re-tour.
+  - **Lane A:** the founder is asked whether Lane A's screen-changing PRs take the same reviewer.

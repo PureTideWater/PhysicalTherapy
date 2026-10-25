@@ -51,5 +51,26 @@ at 1280 px and at 390 px. The standing rule applies: recommend only the best opt
    proposals raise go to the co-founder in one batch, each with the recommended option first.
 
 ## Not in it
-No product code, no migration, no pull request. Taste never outranks the brand's written rules; where the rules are
-silent, the reviewer says so and recommends.
+No product code, no migration, no pull request (but for the checklist below). Taste never outranks the brand's
+written rules; where the rules are silent, the reviewer says so and recommends.
+
+## Then: a UX/UI and brand review of every screen as it is built (the co-founder, 2026-10-25 ~17:00 UTC)
+The baseline review above covers what is built today. From then on the review runs with the build, not after it:
+1. **The checklist.** The baseline review's first deliverable is `.claude/agents/ux-brand-reviewer.md`, a reviewer
+   checklist in the form of the repository's other reviewer files (`security-reviewer.md`,
+   `payment-engine-reviewer.md`), distilled from the brand's rules and the baseline's findings. It lands in its own
+   small Lane B pull request (no migration), so both lanes' sessions read the same checklist. As with the other
+   checklists, reviews run on the default workflow agent given this file (custom agent types twice stopped without a
+   result; HANDOFF.md "How this session worked").
+2. **In every pull request that changes something a person sees** (anything under `apps/web/src/app`,
+   `apps/web/src/components`, the copy in `apps/web/src/lib/copy` or `apps/worker/src/screening/wording.ts`, the
+   report, packet and payer's-copy renderers, or the email templates), one of the two adversarial reviews is the UX and
+   brand review. Its reviewer gets before and after screenshots of the changed screens at 1280 px and 390 px (light
+   and dark where offered), taken with `tools/lane-b-screen-tour` on the routes the diff touches, and reviews them
+   against the checklist and the baseline's open findings. A pull request with no visible change keeps its two
+   reviews as they are.
+3. **At each milestone** (each merge of a Lane B queue item that changed screens, and at the latest weekly), one light
+   whole-app re-tour at both widths, compared with the previous tour, to catch screens drifting apart. Its findings
+   join the queue the same way.
+4. **Lane A.** Lane B applies this to its own pull requests. Lane A's pipeline is the founder's: the handoff asks the
+   founder whether Lane A's screen-changing pull requests take the same reviewer.
