@@ -1,0 +1,102 @@
+[
+ {
+  "reviewer": "payment-engine",
+  "id": "N-1",
+  "severity": "nit",
+  "file": "apps/worker/src/reconcile/ledger.db.test.ts",
+  "line": "384",
+  "issue": "LED-12 checks only that the case is not resolved. ADR 0042 fixes the state after a line moves back from recovered at awaiting_response, and says the case is \"never open again\".",
+  "evidence": "`expect(await w.caseState(practice, caseId)).not.toBe('resolved')` passes for a regression that sends the case to `open` or `closed_written_off`. ADR 0042 (docs/adr/0042-*.md:91-93) gives the state. LED-06 pins awaiting_response only from payer approved (:257). Probe P1 replaced the check with `toBe('awaiting_response')` and passed 44 of 44 on the frozen ledger, for both FB and 72.",
+  "fix": "Change :384 to `expect(await w.caseState(practice, caseId)).toBe('awaiting_response');` (test-only)."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N-2",
+  "severity": "nit",
+  "file": "apps/worker/src/reconcile/ledger.db.test.ts",
+  "line": "456, 421",
+  "issue": "Two LED-12 tests are each the only guard against a class of ledger regression, and neither says so. A later clean-up could drop either as redundant.",
+  "evidence": "P-a (:456) is the only guard against a cash regression. R1b (the PLB offsetting a reversal counted as the line's cash on its check, postings.ts:286) wrote deposited 3000 and posted 3000. It failed only at :467: the after-proof in-check test (:441) and the oracle passed. The builder's s1 is the same. :441 and the reversal-posting test (:401) cannot fail on any share regression: the line's room (approved less proved) is already 0, and :401's row is -100.00. The adjustments-alone test (:421) is the only guard against an adjustment read as a take-back or as interest. R2a (FB parsed as `recoupment`), m1' (FB and 72 parsed as interest) and the builder's m4 each fail only there (:434 or :435). In the FB it.each, the reversal has already used up the approval, so the cap hides them.",
+  "fix": "Add a comment line to each test. P-a: \"the only LED-12 test where the line can still prove: it alone catches a share regression\". Adjustments alone: \"the approval stands here, so it alone catches an adjustment read as a take-back or as interest\". Or say the same in expected.json's `inCheck` and `alone` sentences (workflow.ts:399, 401)."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N-3",
+  "severity": "nit",
+  "file": "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
+  "line": "97",
+  "issue": "The oracle's LED-12 comment says the 30.00 is taken back \"at the reversal\", but the oracle checks only the totals at the end.",
+  "evidence": "R3 (the take-back delayed until a later remittance withholds the FB, remittances.ts:385) fails 4 tests in ledger.db.test.ts (:360, :406, :447, :463). The oracle's LED-12 case passes under R3.",
+  "fix": "Reword to \"taken back once; neither forward balance moves a figure (the timing, at once, is ledger.db.test.ts's)\". This is a comment-only change: the harness and the five cases stay byte-identical."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N-4",
+  "severity": "nit",
+  "file": "packages/ledger/src/totals.test.ts",
+  "line": "201",
+  "issue": "The LED-13 property checks a recoupment's own period only as [its date, 2026-12-31]. It never uses a period that ends on that date, although periodEntries documents \"both ends included\" (totals.ts:154).",
+  "evidence": "Mutant period-hi (`entry.effectiveOn <= to` changed to `< to` at totals.ts:156) survives all 16 totals.test.ts tests at 0e56e01. Under it, a recoupment on a period's last day falls out of that period. The lower-bound mutant is killed by the new property. Probe P2 added the line below: it passes 16 of 16 on the frozen ledger and kills period-hi (counterexample [[],1n,\"2026-01-01\",\"2026-01-02\",\"posted\"]). PR #44 (9099fac) adds a both-bounds periodEntries test at its totals.test.ts:214, so the gap closes when #44 merges.",
+  "fix": "After :201 add `expect(totalsOf(all, '2026-01-01', on).recoveredCents).toBe(totalsOf(base, '2026-01-01', on).recoveredCents - value);`. Keep #44's test too, under LANES rule 6."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N-5",
+  "severity": "nit",
+  "file": "packages/synth/src/cases/workflow.ts",
+  "line": "led12 (331-404); ledger.db.test.ts:421",
+  "issue": "At the cash stages, \"the adjustment never an entry\" is tested only where the reversal cancels the PLB inside the same check. The only LED-12 check ever deposited or posted is reversal-in-check.835. adjustments-alone.835 (BPR02 200.00, PLBs only) and forward-balance-withheld.835 are never deposited or posted.",
+  "evidence": "R1a (a PLB counted as the line's cash beside the reversal it offsets, postings.ts:286) survives 50 of 50. On every fixture the -100.00 reversal and the +100.00 PLB cancel to 0, which writes nothing. This is a coverage hole, not a live defect: today's shares read only claims matched to the line. The database also refuses a cash entry evidenced by a PLB (recovery_ledger.sql:199-201).",
+  "fix": "Optional, tests and synth only. Generate adjustments-alone-eft-export.csv (200.00, SYNEFTLED12007) and a check-level posting of it. Stage both in a P-a-like state (scenario('LED-12') before any proof, then load adjustments-alone.835), and assert that no entry is added and cash stays 0/0. Or record in item 15 that a PLB-only check's cash is outside PR 15."
+ },
+ {
+  "reviewer": "payment-engine",
+  "id": "N-6",
+  "severity": "nit",
+  "file": "docs/product/test-matrix.md",
+  "line": "138 (row at 135)",
+  "issue": "The test-matrix paragraph gives LED-12's row without its known limit. \"For what the reversed claim approved\" is tested only on lines holding one approval, and only reconciliation-001 item 15 (:244) records that.",
+  "evidence": "m7 (the reversal takes back the line's whole standing approval, remittances.ts:393) survives 50 of 50 at 0e56e01, because every LED-12 line holds one approval. m6 (taking back the 100.00 reversed) is pinned: the expected.json stages put the take-back at -3000, and `recoupedCents: negateCents(totalsBefore.approvedCents)` checks the same. Every other clause of the row is tested as written: no posted or deposited entry, the adjustment never an entry, recouped once, at once. The tests check more than the row says, for example that no match names the adjustment.",
+  "fix": "Append to the :138 paragraph: \"pinned on a line holding one approval; a line holding two is PR 15b's (reconciliation-001, item 15)\". Keep the row text: I found no better wording, so the design's text stands for the co-founder's approval."
+ },
+ {
+  "reviewer": "test-integrity",
+  "id": "N-1",
+  "severity": "nit",
+  "file": "apps/worker/src/reconcile/ledger.db.test.ts",
+  "line": "456-469",
+  "issue": "The test 'deposits and posts nothing for the case line from that check while the line can still prove, before its own payment is proved' rests on a premise it never asserts: that the line can still post and deposit its 30.00 after the take-back. Its power against mutant s1 depends on that premise. If a later change (for example 15b capping proof at the standing approval) stopped a taken-back line from proving, the test would keep passing without telling s1 apart from the correct ledger.",
+  "evidence": "A scratch probe in the fresh clone (never committed, now deleted) ran scenario('LED-12'), then reversal-in-check.835, then that check's EFT and posting exports, then the line's own posting-export.csv and eft-export.csv. Stages after the in-check exports: approved 3000, recouped -3000. Stages after the line's own exports: approved 3000, recouped -3000, posted 3000, deposited 3000. Totals: posted 3000, deposited 3000, recovered 0. So the premise holds today but is not pinned. The comment at :466 states it, and no assertion checks it.",
+  "fix": "After line 468, stage LED-12/posting-export.csv and LED-12/eft-export.csv. Then assert that cash(practice) equals { posted: 3000n, deposited: 3000n }, that w.stages is approved, recouped, posted, deposited (amounts from expected.json), and that jobTotals(practice).recoveredCents is 0n."
+ },
+ {
+  "reviewer": "test-integrity",
+  "id": "N-2",
+  "severity": "nit",
+  "file": "PR #45 body (Merging beside PR #44)",
+  "line": "n/a",
+  "issue": "The PR body's LANES rule 6 section leaves out two interactions that design section 11 and the build summary list. (1) The recorded-equivalent check: if ci-mutation merges first and the LED-13 property kills a mutant recorded in tools/stryker/equivalent/ledger.json, that record must be removed. (2) PR #42 (Lane A, co-001/pr-06b-mail-streams) also edits test-matrix.md, matrix.ts, registry.ts and reconciliation-001.md.",
+  "evidence": "At 9099fac, ledger.json holds 31 records. The ones the LED-13 property reaches are 5 in totals.ts and 2 in stages.ts: boundary-equal comparisons (< against <=, value > 0n against >= 0n), an unread latest.interest, and typeof checks on string-only lists. None can be killed by the property, and no record covers periodEntries. PR #42 at 13f59b1: git merge-tree --write-tree HEAD <PR #42> conflicts only in apps/worker/src/screening/consumer.db.test.ts, which 9c57d2d against PR #42 conflicts in too. PR #42's digest/job.ts change leaves the recoupment notification's shape alone, which LED-12 asserts. The practical risk is nil, but the body is what the second merger reads.",
+  "fix": "Add two bullets. (a) 'If ci-mutation merged first and the LED-13 property kills a mutant recorded in tools/stryker/equivalent/ledger.json, remove that record and say which test kills it. None is expected: the totals.ts and stages.ts records are boundary-equal or type-only.' (b) 'PR #42 also edits test-matrix.md, matrix.ts, registry.ts and reconciliation-001.md. It merges cleanly with this branch and does not change the recoupment notification LED-12 asserts. Keep both.'"
+ },
+ {
+  "reviewer": "test-integrity",
+  "id": "N-3",
+  "severity": "nit",
+  "file": "apps/worker/src/reconcile/ledger.db.test.ts",
+  "line": "494-508",
+  "issue": "LED-13's db check that earlier periods are not restated computes the periods with @tp/ledger's own ledgerTotals(periodEntries(...)). practiceLedgerTotals uses the same two functions, so the check is the ledger agreeing with itself on rows read back. It also hardcodes the 'deposited' proof level.",
+  "evidence": "apps/worker/src/reconcile/statements.ts:42-43: practiceLedgerTotals returns ledgerTotals(periodEntries(byCase, from, to), proofLevel, entriesById(all)). The LED-12 cash() helper and the ledger oracle deliberately use plain SQL sums that share no code with @tp/ledger. 'deposited' matches only because scenario() defaults to ledSettings().",
+  "fix": "Sum the period totals with plain SQL, as cash() does: deposited plus recouped, net of corrections, for effective_on <= lastBefore and then for effective_on >= recoupment.effective_on. Compare those sums with recoveredBefore and amount. Read the proof level from LED-06's expected.json scenario, or pass ledSettings('deposited') explicitly. Keep the totals.test.ts property as the pure @tp/ledger check."
+ },
+ {
+  "reviewer": "test-integrity",
+  "id": "N-4",
+  "severity": "nit",
+  "file": "apps/worker/src/reconcile/ledger.db.test.ts",
+  "line": "324-326",
+  "issue": "The matches() helper's comment says it reads 'every column the reconcile writes', but it selects 13 of ledger_match's 19 columns. The PR body gives this wording as the fix for the design review's N-6 ('whole rows overstated').",
+  "evidence": "packages/db/migrations/20261023120000_recovery_ledger.sql defines ledger_match. The helper leaves out practice_id, created_at, updated_at, the generated evidence_id, and reversed_by and reversal_reason. The last two only manual.ts:226 writes, and the ledger_match_reversed_together CHECK ties them to reversed_at. An UPDATE that touched only updated_at would go unseen; it has no money meaning.",
+  "fix": "Either reword the comment to 'every column of the match's meaning (the reversal's person and reason pair with reversed_at by constraint)', or add updated_at::text to the select list."
+ }
+]

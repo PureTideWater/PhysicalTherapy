@@ -226,3 +226,9 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - **Each milestone:** a light whole-app re-tour.
   - **Lane A:** the founder is asked whether Lane A's screen-changing PRs take the same reviewer.
 - **2026-10-25 ~17:05 UTC: the co-founder recommends that Lane A's screen-changing PRs take the same UX and brand reviewer.** Lane A's pipeline is the founder's (the delegation covers Lane B's work), so this goes to the founder. A ready line for the founder's chat was given to the co-founder: adopt it in LANES.md rule 1 as a rule both lanes follow, using `.claude/agents/ux-brand-reviewer.md` once Lane B's checklist PR merges. Lane B does not edit LANES.md's rules.
+- **2026-10-25 ~17:45 UTC: PR 15 built and reviewed; draft PR [#45](https://github.com/PureTideWater/PhysicalTherapy/pull/45)**, head 0e56e01 (wf_c2a31a50-55d with its resume: 4 agents, 0.87M subagent tokens). Summaries and reviews in `approval-summaries/lane-b-pr15-*`.
+  - **Design review:** 4 should_fix, 6 nits. SF-1, LED-12's cash assertion needed a posted and deposited path on the reversal's remittance: two synth posting CSVs and two new tests. SF-2, "recouped once" against a withheld forward balance. SF-3, one LED-12 text in four places. SF-4, 15b is Lane B's. All fixed in 9437754 and 0e56e01; N-5 (a line with two approvals) handed to 15b's design.
+  - **CI on 0e56e01:** every job green.
+  - **Reviews** (payment-engine; test and fixture integrity): 0 blocking, 0 should_fix, 10 nits.
+  - **Fix round running** (wf_bc33f972-a3a): the ten nits, the full local suite once with one heavy step at a time, one push, the PR body. Subscribed to #45.
+  - **The co-founder's approval** of LED-12's row wording, as recommended (his "every recommended" direction under the delegation), goes into item 15.
