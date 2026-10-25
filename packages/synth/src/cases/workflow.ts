@@ -335,9 +335,9 @@ export function led09(b: CaseBuilder): void {
  * forward balance (FB, BPR02 0.00), the provider's refund acknowledged (72, BPR02 0.00), or the forward
  * balance inside a check that pays another patient's claim (BPR02 50.00, deposited and posted). The practice
  * posts the reversal (-100.00 against the corrected claim), a later check withholds the forward balance
- * (FB 100.00), and a check carries the two adjustments alone (BPR02 200.00, deposited and posted). The ledger takes back what the reversed claim approved once, at once (PRD 13, Recoupments and
- * reversals; docs/adr/0042), writes no posted or deposited entry for any of it, and no adjustment is ever an
- * entry.
+ * (FB 100.00), and a check carries the two adjustments alone (BPR02 200.00, deposited and posted). The
+ * ledger takes back what the reversed claim approved once, at once (PRD 13, Recoupments and reversals;
+ * docs/adr/0042), writes no posted or deposited entry for any of it, and no adjustment is ever an entry.
  */
 export function led12(b: CaseBuilder): void {
   const pair = recoveryPair(b, 'ACH');
