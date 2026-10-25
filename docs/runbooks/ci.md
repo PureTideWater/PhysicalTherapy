@@ -151,8 +151,11 @@ hash, and the durations only order a shard's files, whose membership the paths a
 - One database file: `DATABASE_URL=postgres://postgres:test@localhost:5432/postgres pnpm vitest run --project db <file>`
   (each file makes and drops its own database). A shard as CI runs it: `pnpm test:db --shard=k/N`.
 - The schema approval: `pnpm db:migrate && pnpm db:domain-model --check --strict --require-approval`.
-- The journeys over a build of this commit: `pnpm build`, `git rev-parse HEAD > apps/web/.next/BUILD_COMMIT`, then
-  `E2E_PREBUILT=1 pnpm test:e2e`; without `E2E_PREBUILT` the web server builds first.
+- The journeys over a build of this commit, from a tree with no uncommitted change: `pnpm build`, then
+  `pnpm -s exec tsx apps/web/scripts/build-stamp.ts --write "$(git rev-parse HEAD)"`, then
+  `E2E_PREBUILT=1 pnpm test:e2e`. The stamp and the run both refuse a tree with uncommitted changes, which a stamp
+  that names a commit cannot vouch for; with edits in the tree, leave `E2E_PREBUILT` unset and the web server builds
+  first.
 - The workflows: `actionlint .github/workflows/*.yml`, and `pnpm exec vitest run tools/test/workflows.test.ts
   tools/test/ci-gate.test.ts tools/test/required-checks.test.ts`.
 

@@ -1100,6 +1100,10 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // E2E_PREBUILT: the stamp check in place of a second build (apps/web/scripts/build-stamp.ts refuses another commit's).
       expect(config).toContain('E2E_PREBUILT');
       expect(config).toContain('scripts/build-stamp.ts --expect');
+      // The stamp's verdict, a pass included, reaches the shard's log: the stamp prints it to stderr, which the web
+      // server keeps as [WebServer] lines (apps/web/scripts/build-stamp.test.ts runs both).
+      expect(config).toContain("stdout: 'ignore',\n    stderr: 'pipe',");
+      expect(readFileSync(path.join(repositoryRoot, 'apps/web/scripts/build-stamp.ts'), 'utf8')).not.toContain('process.stdout');
       // One retry keeps the first attempt's trace and the "flaky" label; the flake still fails the run, and the github
       // reporter names it on the pull request.
       expect(config).toContain('retries: process.env.CI ? 1 : 0');

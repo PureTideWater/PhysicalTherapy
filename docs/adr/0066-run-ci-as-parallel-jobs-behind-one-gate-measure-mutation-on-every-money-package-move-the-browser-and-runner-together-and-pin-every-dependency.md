@@ -109,8 +109,9 @@ filter, as these jobs (`docs/runbooks/ci.md` reads them):
   heap bounded by the host's memory, as many at once as memory admits, at least one always (CI-08).
 - **One build for the journeys.** The build job's production build, stamped with its commit
   (`apps/web/.next/BUILD_COMMIT`), runs in every e2e shard: with `E2E_PREBUILT=1` the web server checks the stamp
-  (`apps/web/scripts/build-stamp.ts`, which refuses another commit's build or none) in place of building again (CI-06).
-  The build runs with no e2e setting, so the journeys run the build that ships.
+  (`apps/web/scripts/build-stamp.ts`, which refuses another commit's build, an unstamped one and one beside uncommitted
+  changes, and prints its verdict, a pass included, to the stderr the web server keeps in the log) in place of building
+  again (CI-06). The build runs with no e2e setting, so the journeys run the build that ships.
 
 ### What it holds that it did not
 
