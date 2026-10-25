@@ -99,6 +99,15 @@ filters by `fullTestName` (joined by " > "), so a mutant run selected no test. `
 fixes it, a canary in `.github/workflows/mutation.yml` checks it on every run, and `stryker.config.mjs`'s vitest runner
 now scores the pricing engine, the ledger and the verifier; the verifier's own configuration keeps the command runner
 its score above was measured with.
+*Amended 2026-10-25 (`co-001/ci-mutation`; docs/adr/0066, Part 4):* `stryker.verifier.config.mjs` and
+`stryker.config.mjs` are retired, and so is the patch. Stryker 10.1.1's vitest runner scores packets per package
+(`stryker/packets.config.mjs`) in two of the mutation workflow's shards: `packets-scan` (`scan.ts`) and `packets-rest`.
+The packets set is the verifier and what it reads (`verifier/**`, `readable.ts`, `scan.ts`, `facts.ts`, `payer.ts`,
+`placeholders.ts`) and the packet's arithmetic (`interest.ts`, `calculation.ts`, `dates.ts`, `windows.ts`,
+`assemble.ts`). 10.1.1 matched the command runner mutant for mutant on the scout's packets sample. On the widened set
+(2,365 mutants without `windows.ts`) it scored 85.40%: 2,018 detected, 345 undetected, and 2 load failures in
+`readable.ts`, which 10.0.0 counted as survivors. The `mutation` gate requires the package above 85% with every
+survivor killed by a test or recorded as equivalent.
 
 ## Alternatives considered
 
@@ -123,7 +132,8 @@ approved until written again. A name equal to a common word (a patient named May
 word outside a date; the person rephrases. The 221 surviving mutants are mostly the scanner's regular expressions
 (quantifiers and lookarounds no narrative of the tests tells apart) and fact sources that repeat another source's value
 (a pattern's first service date is a line's). Whether `stryker.config.mjs`'s vitest runner scores the pricing engine and
-the ledger truly under Vitest 5 is not checked here. The time log the ROI statement's pursuit hours need is scheduled by no
+the ledger truly under Vitest 5 is not checked here (*settled 2026-10-25*, docs/adr/0066, Part 4: Stryker 10.1.1, whose
+canary proves it in every shard). The time log the ROI statement's pursuit hours need is scheduled by no
 milestone of the plan: it stays an open decision, and pursuit hours stay zero, stated on the statement. The e2e worker
 runs the monitoring chain's planning step for the recovery journey's practice too, so J10's remittances reach the ledger
 through the chain's own monitor, price, triage and reconcile in the browser journey (the spec starts the monitor job a

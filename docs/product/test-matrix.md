@@ -201,3 +201,15 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 | MOD-05 | Budget exceeded | Calls refused; alert |
 | MOD-06 | Kill switch on | Product works on hand-entered records |
 
+## Continuous integration (CI)
+
+The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
+test infrastructure must do, each asserted by a test that reads or runs them. CI-15 to CI-17 are the mutation
+workflow's (docs/adr/0066, Part 4).
+
+| ID | Case | Assertion |
+| --- | --- | --- |
+| CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score |
+| CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
+| CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
+

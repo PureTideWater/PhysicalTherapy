@@ -275,4 +275,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'MOD-04', title: 'Document with embedded instructions', assertion: 'No effect on output authority; proposal still verified' },
   { id: 'MOD-05', title: 'Budget exceeded', assertion: 'Calls refused; alert' },
   { id: 'MOD-06', title: 'Kill switch on', assertion: 'Product works on hand-entered records' },
+  { id: 'CI-15', title: 'The mutation canary', assertion: 'In every shard, each of its five cases reports its expected status before any score' },
+  { id: 'CI-16', title: 'The mutation gate', assertion: "Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure" },
+  { id: 'CI-17', title: 'Mutation where the money code changed', assertion: "A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none" },
 ];
