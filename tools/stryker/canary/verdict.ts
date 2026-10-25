@@ -79,7 +79,8 @@ export function parseExpected(value: unknown): Expected {
       if (typeof entry.proves !== 'string' || entry.proves === '' || typeof entry.file !== 'string' || entry.file === '') fail(`case ${String(index + 1)} names no file or what it proves`);
       if (!Array.isArray(entry.mutants) || entry.mutants.length === 0) fail(`case ${String(index + 1)} expects no mutant`);
       for (const mutant of entry.mutants ?? []) {
-        const known = Array.isArray(mutant.expect) && mutant.expect.length > 0 && mutant.expect.every((status) => (MUTANT_STATUSES as readonly string[]).includes(status));
+        const statuses: unknown = (mutant as { expect?: unknown }).expect;
+        const known = Array.isArray(statuses) && statuses.length > 0 && statuses.every((status: unknown) => typeof status === 'string' && (MUTANT_STATUSES as readonly string[]).includes(status));
         const shaped = typeof mutant.mutator === 'string' && typeof mutant.original === 'string' && Number.isInteger(mutant.occurrence) && mutant.occurrence >= 1 && typeof mutant.replacement === 'string';
         if (!known || !shaped) fail(`case ${String(index + 1)} has a mutant without a mutator, original, occurrence, replacement and known statuses: ${JSON.stringify(mutant)}`);
       }

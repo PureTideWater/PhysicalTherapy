@@ -173,7 +173,10 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
 - **The money shard on 10.1.1**, before any survivor-killing test:
   - money scores 93.22% (220 killed, 15 survived, 1 no coverage, 7 load failures), the scout's 243 statuses exactly;
   - the ledger, with the committed seed, scores 91.89% (1,524 killed, 5 timeouts, 135 survived);
-  - the gate passes both scores and fails on their 151 unexplained survivors, naming each with its covering tests.
+  - the shard took 3 min 7 s, its canary included;
+  - the gate passes both scores and fails on their 151 unexplained survivors (16 and 135), naming each with its
+    covering tests. It prints scores truncated to two decimals, never rounded up (the ledger's 91.88%), so no printed
+    score is above the line when the score is not.
 - **The scout's other packages** (10.1.1, aliases): pricing with its golden tests 91.70% (counting 10 clock-made
   timeouts as detected), packets 85.40%.
 

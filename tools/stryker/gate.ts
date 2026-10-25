@@ -412,7 +412,7 @@ export function parseExpectedShards(value: string): string[] {
   if (text.startsWith('[')) {
     const parsed = JSON.parse(text) as unknown;
     if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) throw new Error('--expected: not a JSON array of shard names');
-    return parsed as string[];
+    return parsed;
   }
   return text
     .split(',')

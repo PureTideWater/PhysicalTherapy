@@ -39,7 +39,7 @@ Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It the
 ### Reading a red `mutation`
 
 The `mutation` job's log and summary give each package's score, each file's score, and every survivor, with the tests
-that cover it. Each `FAIL` line, also an error annotation, is one of these:
+that cover it. Scores are truncated to two decimals, never rounded up, so one may read 0.01 below Stryker's own table. Each `FAIL` line, also an error annotation, is one of these:
 
 | Failure | What it means | What to do |
 | --- | --- | --- |

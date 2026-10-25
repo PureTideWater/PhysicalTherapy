@@ -43,7 +43,7 @@ describe('the shard partition', () => {
         for (const pkg of packagesOf(shard)) {
           const options = packageOptions(pkg);
           expect(options.mutate, `${shard.name} ${pkg}`).toEqual(shard.mutate[pkg]);
-          expect((options.jsonReporter as { fileName?: string } | undefined)?.fileName).toBe(`reports/mutation/${shard.name}/${pkg}.json`);
+          expect(options.jsonReporter?.fileName).toBe(`reports/mutation/${shard.name}/${pkg}.json`);
         }
         const outside = MUTATION_PACKAGES.find((pkg) => shard.mutate[pkg] === undefined);
         if (outside !== undefined) expect(() => packageOptions(outside)).toThrow(`${SHARD_VARIABLE}=${shard.name}: that shard mutates no file of ${outside}`);
