@@ -357,8 +357,8 @@ line's posted and deposited at or below its approved, and every correction betwe
 shows, for every role; only
 the reconcile job writes posting and EFT rows, from a stored clean export of their kind, and an export the database
 refuses a row of is unreadable without stopping the rest (ADR 0046); the dashboard's recovered this quarter and the digest's recoveries now read the
-ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-11 and
-`apps/worker/src/reconcile/ledger-oracle.db.test.ts` is the ledger oracle (PRD 18): five synthetic export scenarios
+ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-13 and
+`apps/worker/src/reconcile/ledger-oracle.db.test.ts` is the ledger oracle (PRD 18): six synthetic export scenarios
 whose known outcomes are compared with plain SQL sums.
 
 Reconciliation in the product (ADR 0043): the monitoring chain reconciles every upload batch. After a document whose

@@ -137,6 +137,8 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'LED-09', title: 'Partial posting at check level', assertion: 'Pro-rata allocation flagged' },
   { id: 'LED-10', title: 'Direct UPDATE or DELETE by the app role', assertion: 'Fails' },
   { id: 'LED-11', title: 'ROI statement recompute', assertion: 'Equals sum of entries' },
+  { id: 'LED-12', title: 'Reversal with a provider-level adjustment', assertion: 'Moves no cash: no `posted` or `deposited` entry and the adjustment never an entry; the reversal `recouped` once, at once, for what the reversed claim approved' },
+  { id: 'LED-13', title: 'Later recoupment', assertion: 'Negative event against net recovery' },
   { id: 'SEC-01', title: 'Every PHI table has a forced policy', assertion: 'Catalog test passes; new table without one fails' },
   { id: 'SEC-02', title: 'Cross-tenant read and write on every table', assertion: 'Zero rows; refused' },
   { id: 'SEC-03', title: 'Firm user after grant expiry', assertion: 'Denied on the next request' },

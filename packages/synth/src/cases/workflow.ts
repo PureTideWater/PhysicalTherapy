@@ -3,7 +3,7 @@
  * Their scenarios use fixed-schedule contracts so expected amounts, variances and ledger amounts can
  * be stated now; the milestone named in each expected.json asserts them.
  */
-import { centsToString, cents, formatCents, negateCents, subtractCents, sumCents } from '@tp/money';
+import { type Cents, centsToString, cents, formatCents, negateCents, subtractCents, sumCents } from '@tp/money';
 
 import { type CalendarDate, addDays, calendarDate } from '../core/dates';
 import { prettyJson } from '../core/json';
@@ -325,6 +325,97 @@ export function led09(b: CaseBuilder): void {
       ],
       note: 'a row with line detail posts only the line it posts; the other line waits for its own row',
     },
+  });
+}
+
+/**
+ * LED-12 (CO-09): a reversal that a provider-level adjustment offsets, so the pair moves no cash. LED-06's
+ * recovery (30.00 approved, posted and deposited, proved by deposit); then a later remittance reverses the
+ * corrected claim (CLP02 22, -100.00) and offsets the reversal with a PLB of -100.00 naming that claim: a
+ * forward balance (FB, BPR02 0.00), the provider's refund acknowledged (72, BPR02 0.00), or the forward
+ * balance inside a check that pays another patient's claim (BPR02 50.00, deposited and posted). The practice
+ * posts the reversal (-100.00 against the corrected claim), a later check withholds the forward balance
+ * (FB 100.00), and a check carries the two adjustments alone (BPR02 200.00, deposited and posted). The
+ * ledger takes back what the reversed claim approved once, at once (PRD 13, Recoupments and reversals;
+ * docs/adr/0042), writes no posted or deposited entry for any of it, and no adjustment is ever an entry.
+ */
+export function led12(b: CaseBuilder): void {
+  const pair = recoveryPair(b, 'ACH');
+  const reference = pair.corrected.payerClaimControlNumber;
+  b.add835('original.835', pair.originalFile, 'The original payment (a case line).');
+  b.add835('adjusted.835', pair.adjustedFile, 'The adjusted remittance paying the difference.');
+  b.addFile('posting-export.csv', postingExport([{ postedOn: addDays(pair.later, 2), checkOrTrace: pair.trace, payerName: pair.base.payer.name, amount: pair.check, batch: 'SYNBATCH-1201' }]), 'csv', 'The posting export for the adjusted payment.');
+  b.addFile('eft-export.csv', eftExport([{ depositedOn: addDays(pair.later, 1), description: `${pair.base.payer.name} HCCLAIMPMT`, trace: pair.trace, amount: pair.check }]), 'csv', 'The bank export for the adjusted payment.');
+  const reversedOn = calendarDate(2026, 8, 3);
+  const reversal = reversalOf(pair.corrected);
+  // A negative PLB amount adds to the payment (docs/adr/0021): the reversal's -100.00 offset exactly.
+  const offset = negateCents(pair.corrected.paid);
+  const plb = (code: 'FB' | '72', amount: Cents) => [{ providerId: pair.base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code, reference, amount }] }];
+  const forward = oneRemittance(b, { ...pair.base, paid: reversedOn }, [reversal], 3, { method: 'NON', providerAdjustments: plb('FB', offset) });
+  b.add835('reversal.835', file(b, forward, 3, reversedOn), `The corrected claim (${reference}) reversed, -100.00, and the balance carried forward by a PLB FB of -100.00 naming it: BPR02 0.00, no payment.`);
+  // The reversal as a practice-management system posts it: -100.00 against the corrected claim, under the reversal's trace.
+  b.addFile(
+    'reversal-posting-export.csv',
+    postingExport([{ postedOn: addDays(reversedOn, 2), checkOrTrace: traceNumber(b.info.id, 3, 'NON'), payerName: pair.base.payer.name, claimReference: pair.corrected.patientControlNumber, amount: reversal.paid, batch: 'SYNBATCH-1203' }]),
+    'csv',
+    'The posting export of the reversal: -100.00 posted against the corrected claim, under the trace of reversal.835.',
+  );
+  const refunded = oneRemittance(b, { ...pair.base, paid: reversedOn }, [reversal], 4, { method: 'NON', providerAdjustments: plb('72', offset) });
+  b.add835('reversal-refunded.835', file(b, refunded, 4, reversedOn), `The corrected claim (${reference}) reversed, -100.00, against the refund the provider sent (PLB 72 -100.00 naming it): BPR02 0.00, no payment.`);
+  const other = therapyClaim(b.world, { caseId: b.info.id, n: 5, plan: 'SYNPLAN-FIX-LED', lines: [allowedLine(b, calendarDate(2026, 7, 6), 1, 5000n, 'none')] });
+  const inCheck = oneRemittance(b, { ...pair.base, paid: reversedOn }, [reversal, other], 5, { method: 'ACH', providerAdjustments: plb('FB', offset) });
+  b.add835('reversal-in-check.835', file(b, inCheck, 5, reversedOn), "The same reversal and forward balance beside another patient's claim paying 50.00: BPR02 50.00, that claim's payment.");
+  b.addFile('reversal-in-check-eft-export.csv', eftExport([{ depositedOn: addDays(reversedOn, 1), description: `${pair.base.payer.name} HCCLAIMPMT`, trace: traceNumber(b.info.id, 5), amount: other.paid }]), 'csv', 'The bank export of that check: one deposit of 50.00.');
+  b.addFile(
+    'reversal-in-check-posting-export.csv',
+    postingExport([{ postedOn: addDays(reversedOn, 2), checkOrTrace: traceNumber(b.info.id, 5), payerName: pair.base.payer.name, amount: other.paid, batch: 'SYNBATCH-1202' }]),
+    'csv',
+    'The posting export of that check: one check-level row posting 50.00.',
+  );
+  const withheldOn = calendarDate(2026, 9, 7);
+  const paying = therapyClaim(b.world, { caseId: b.info.id, n: 6, plan: 'SYNPLAN-FIX-LED', lines: [allowedLine(b, calendarDate(2026, 8, 10), 3, 15000n, 'none')] });
+  const withheld = oneRemittance(b, { ...pair.base, paid: withheldOn }, [paying], 6, { method: 'ACH', providerAdjustments: plb('FB', pair.corrected.paid) });
+  b.add835('forward-balance-withheld.835', file(b, withheld, 6, withheldOn), `A later check withholding the forward balance (PLB FB 100.00 naming ${reference}) from another patient's claim paying 150.00: BPR02 50.00.`);
+  // The two adjustments alone, while the approval stands: whatever could absorb them, neither is ever an entry.
+  const alone = oneRemittance(b, { ...pair.base, paid: reversedOn }, [], 7, {
+    method: 'ACH',
+    providerAdjustments: [{ providerId: pair.base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code: 'FB', reference, amount: offset }, { code: '72', reference, amount: offset }] }],
+  });
+  b.add835('adjustments-alone.835', file(b, alone, 7, reversedOn), `The same two adjustments with no claim (PLB FB -100.00 and 72 -100.00 naming ${reference}): BPR02 200.00.`);
+  // That check's cash, the two adjustments' alone: its deposit and its check-level posting, 200.00 each.
+  const alonePaid = negateCents(sumCents([offset, offset]));
+  b.addFile('adjustments-alone-eft-export.csv', eftExport([{ depositedOn: addDays(reversedOn, 1), description: `${pair.base.payer.name} HCCLAIMPMT`, trace: traceNumber(b.info.id, 7), amount: alonePaid }]), 'csv', 'The bank export of the adjustments-alone check: one deposit of 200.00.');
+  b.addFile(
+    'adjustments-alone-posting-export.csv',
+    postingExport([{ postedOn: addDays(reversedOn, 2), checkOrTrace: traceNumber(b.info.id, 7), payerName: pair.base.payer.name, amount: alonePaid, batch: 'SYNBATCH-1204' }]),
+    'csv',
+    'The posting export of the adjustments-alone check: one check-level row posting 200.00.',
+  );
+  recoveryScenario(b);
+  b.scenario({ reversal: { reverses: 'adjusted.835 transaction 0 claim 1', offsetBy: { 'reversal.835': 'FB', 'reversal-refunded.835': '72', 'reversal-in-check.835': 'FB' } } });
+  b.outcome({
+    entries: [
+      { stage: 'approved', amountCents: centsToString(pair.difference) },
+      { stage: 'posted', amountCents: centsToString(pair.difference) },
+      { stage: 'deposited', amountCents: centsToString(pair.difference) },
+      { stage: 'recouped', amountCents: centsToString(negateCents(pair.difference)), evidence: 'reversal.835 transaction 0 claim 0' },
+    ],
+    recoveredCents: centsToString(subtractCents(pair.difference, pair.difference)),
+    cash: {
+      reversalPaidCents: centsToString(reversal.paid),
+      adjustmentCents: centsToString(offset),
+      paymentCents: centsToString(subtractCents(reversal.paid, offset)),
+      inCheckPaymentCents: centsToString(other.paid),
+      alonePaymentCents: centsToString(alonePaid),
+    },
+    adjustment: 'recorded; never an entry or a match, and no posted or deposited entry is written',
+    posted: 'reversal-posting-export.csv matches the reversal claim and writes no posted entry',
+    refunded: 'the same entries as reversal.835',
+    inCheck: 'the same entries; its 50.00 deposit and its 50.00 posting match its remittance and prove nothing for the case line, whether they arrive before the line is proved or after',
+    withheld: 'takes nothing back again',
+    alone: 'loaded while the approval stands, adjustments-alone.835 and forward-balance-withheld.835 write no entry and no match',
+    aloneCash: "adjustments-alone.835's 200.00 deposit and its 200.00 posting, loaded before the line is proved, match their remittance and prove nothing for the case line",
+    case: 'reopened with a note; the owner is notified',
   });
 }
 

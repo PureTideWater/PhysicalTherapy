@@ -15,7 +15,8 @@ import { unmatchedItems } from './unmatched';
 
 /**
  * The ledger oracle (PRD 18, "Three oracles", 3): synthetic posting and EFT exports with known
- * outcomes (a recovery, a partial, a recoupment after deposit, a reversed match, a duplicate export),
+ * outcomes (a recovery, a partial, a recoupment after deposit, a reversal a forward balance offsets, a
+ * reversed match, a duplicate export),
  * driven through the reconcile step against a scratch database, and the ledger's totals compared with
  * the known outcomes. The known totals are stated here by hand from the SYNTHETIC fixtures (a 30.00
  * difference approved on one 97110 line, the practice proving recovery by deposit, as each fixture's
@@ -83,6 +84,18 @@ const CASES: readonly OracleCase[] = [
       { kind: 'remittance', file: 'recoupment.835' },
     ],
     known: { approved: 3000n, posted: 3000n, deposited: 3000n, recouped: -1800n, interest: 0n, recovered: 1200n, postedEntries: 1, lineStage: 'actionable' },
+  },
+  {
+    name: 'a reversal a forward balance offsets, after deposit, and the forward balance withheld later',
+    fixture: 'LED-12',
+    steps: [
+      { kind: 'export', file: 'posting-export.csv', as: 'posting_export' },
+      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
+      { kind: 'remittance', file: 'reversal.835' },
+      { kind: 'remittance', file: 'forward-balance-withheld.835' },
+    ],
+    // The totals at the end: the 30.00 the corrected claim approved taken back once, and neither forward balance moving a figure (that it is taken back at once, at the reversal, is ledger.db.test.ts's).
+    known: { approved: 3000n, posted: 3000n, deposited: 3000n, recouped: -3000n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'actionable' },
   },
   {
     name: 'a reversed manual match',

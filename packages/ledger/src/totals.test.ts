@@ -187,6 +187,25 @@ describe('ledger properties (PRD 18: property tests on every pure function)', ()
     );
   });
 
+  it('a later recoupment is a negative event against net recovery: no earlier period changes, and its own period and the whole ledger fall by exactly its amount (LED-13)', () => {
+    // Calendar dates of 2026 as the ledger stores them (zero-padded, so their order is the text's).
+    const day = fc.tuple(fc.integer({ min: 1, max: 12 }), fc.integer({ min: 1, max: 28 })).map(([month, date]) => `2026-${String(month).padStart(2, '0')}-${String(date).padStart(2, '0')}`);
+    fc.assert(
+      fc.property(fc.array(fc.tuple(counted, amount, day), { maxLength: 12 }), amount, day, day, proofLevel, (items, value, a, b, level) => {
+        fc.pre(a !== b);
+        const [until, on] = a < b ? [a, b] : [b, a];
+        const base = items.map(([stage, figure, at]) => make(stage, figure, { on: at }));
+        const all = [...base, make('recouped', value, { on })];
+        const totalsOf = (entries: readonly LedgerEntry[], from: string, to: string) => ledgerTotals(periodEntries(entries, from, to), level, entriesById(entries));
+        expect(totalsOf(all, '2026-01-01', until)).toEqual(totalsOf(base, '2026-01-01', until));
+        // Its own period, one that starts on its date and one that ends on it (both ends included).
+        expect(totalsOf(all, on, '2026-12-31').recoveredCents).toBe(totalsOf(base, on, '2026-12-31').recoveredCents - value);
+        expect(totalsOf(all, '2026-01-01', on).recoveredCents).toBe(totalsOf(base, '2026-01-01', on).recoveredCents - value);
+        expect(ledgerTotals(all, level).recoveredCents).toBe(ledgerTotals(base, level).recoveredCents - value);
+      }),
+    );
+  });
+
   it('nothing is recovered without a posted or deposited entry (the flagged-as-recovered shortcut)', () => {
     fc.assert(
       fc.property(fc.array(fc.tuple(fc.constantFrom<CountedStage>('approved', 'recouped', 'interest'), amount), { maxLength: 10 }), proofLevel, (items, level) => {
