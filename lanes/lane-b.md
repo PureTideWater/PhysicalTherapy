@@ -28,6 +28,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
 - **`main` is unchanged, by rule.** It holds the plan documents until launch. No PR goes into `main` and no release tag is created before launch, unless the founder rules otherwise (CLAUDE.md "Merging", ADR 0063).
   - "Up to date" means merged into `claude/build-platform`.
   - The default branch moves to `claude/build-platform` when ci-deps merges (F1 (a)).
+- **F7 is applied** (2026-10-25: created 21:07 UTC, corrected 21:14 UTC, by the co-founder on the `PureTideWater` owner account). The ruleset "Protect the build branch" (id 25837331) is active and targets `refs/heads/claude/build-platform` alone:
+  - deletions restricted, force pushes blocked, a PR with 0 approvals, no bypass;
+  - the four checks `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`, each from GitHub Actions (app 15368), with branches up to date.
+  - Every PR into the branch, Lane A's #42 included, now merges only up to date and with all four green. Each of the four workflows runs on every pull request, with no path filter.
 - **Lane A:** [#42](https://github.com/PureTideWater/PhysicalTherapy/pull/42) (PR 6b-4, mail streams, a schema PR) is a draft at 13f59b1. Its fix round comes after the 2026-10-27 reset.
   - It changes 143 files. Take the list from `gh api 'repos/PureTideWater/PhysicalTherapy/pulls/42/files?per_page=100&page=1' --jq '.[].filename'` and `page=2`, not from LANES.md's summary list.
 - **Dependabot** (never merge one as it stands):
@@ -63,7 +67,6 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
      - **CI series and #42's files:** rule 6; the PR merged second keeps both, the lockfile re-resolved and never hand-merged; axe runs over #42's pages (O6) if #42 merges first; ci-browser does not wait for #42.
      - **Scope of "every recommended option":** pre-approves engineering-only choices inside an already-ruled design, recorded as his rulings and reversible; batches with wording, brand, product, cost or security trade-offs still go to him.
      - **ux-brand-reviewer.md's `model:` key:** follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit).
-     - **Remind him:** F7 is due (below).
 2. **The UX/UI and brand baseline review: the first task** (the co-founder's decision, 2026-10-25 ~16:50 UTC). It changes no product code.
    - **Brief:** `designs/lane-b-ux-review-brief.md`, read whole.
    - **Claim:** pull, then add a row under Claims and push it before starting:
@@ -158,11 +161,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
 
 ### Waiting on someone
 - **The founder** (owner-admin or Lane A's, so not delegated):
-  - **F7, due now:** the `claude/build-platform` ruleset of governance runbook §4, step 4A.
-    - **Required checks:** `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`, each from GitHub Actions, with branches up to date.
-    - **Also:** a PR with 0 approvals, restricted deletions, no force pushes, and an empty bypass list.
-    - **Where:** the repository is user-owned, so it starts at https://github.com/PureTideWater/PhysicalTherapy/settings/rules.
-    - **Status:** At ~20:32 UTC the rulesets API still returns `[]`. Push runs are green on 9c57d2d, de8f9b5 and 6ddd587 (the last after one re-run of a flake). Until it is applied, a session checks every required check by hand before merging.
+  - **The governance runbook's other rulesets** (step 4B, `main`'s two; step 4C, the two for the `v*` release tags):
+    - Neither exists: the rulesets API lists only "Protect the build branch" (2026-10-25 ~21:15 UTC).
+    - HANDOFF's "Repository settings, and when to click each" does not schedule them. They are owner-admin settings, so the founder's; Lane A says when.
+    - **In 4B, target `main` by pattern, not "Include default branch":** F1 moves the default branch to `claude/build-platform`, and these rulesets must never hold it.
   - **O12, the PR capacity run's length:** job time 11:59 to 18:32 so far. It is due after ci-speed's first five push runs; three have run so far (9c57d2d, de8f9b5, 6ddd587).
     - `designs/lane-b-ci.md` §11 names the two options and what each changes: S4 once on PRs instead of three times, or the scenarios split across parallel runners.
     - Their costs in minutes are still to be measured and brought with them.
@@ -564,4 +566,14 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
 - **2026-10-25 ~21:10 UTC: Lane A's screen-changing PRs take the same UX and brand reviewer (ruled).**
   - **Ruling (the co-founder, acting for the founder, 2026-10-25 ~21:10 UTC):** every pull request that changes something a person sees — in both lanes — takes the UX and brand review (`.claude/agents/ux-brand-reviewer.md`, once Lane B's checklist PR merges) as one of its two adversarial reviews, with before and after screenshots at 1280 px and 390 px.
   - Added to LANES.md "Handed to Lane A". Removed from "Waiting on someone". Lane A adds it to rule 1.
+  - **Next:** the co-founder's usage reading, then the route-map scout.
+- **2026-10-25 ~21:15 UTC: F7 applied: the ruleset "Protect the build branch" on `claude/build-platform`.**
+  - **Applied by the co-founder** on the `PureTideWater` owner account, under the founder's F7 ruling (2026-10-25 ~01:10 UTC).
+  - **The first save (21:07:53 UTC) did not match runbook step 4A.** The session read it through the rulesets API and found three problems, and a name that differed:
+    - it targeted no branch (`include: []`), so it protected nothing;
+    - `all green` was required twice, once from any source, which a plain commit status could fake;
+    - the pull-request rule had `require_extra_approval_for_unattributed_changes` on. Step 4A does not list it, and GitHub's documentation could not be found. It could have demanded an approval that the build's own account cannot give.
+    - The name was "build-platform", taken from this session's own mobile steps; the runbook's check looks for "Protect the build branch".
+  - **Corrected at 21:14:05 UTC; re-read and matching step 4A on every point.** The fields are in "The state in one screen". `rules/branches/claude/build-platform` returns its four rules. ci, mutation, screening-capacity and approval-of-record each run on every pull request, with no path filter, so no required check can leave a merge waiting forever.
+  - **Two other things are open.** Step 4B (`main`'s two rulesets) and step 4C (the release-tag rulesets) do not exist, and HANDOFF does not schedule them. They are the founder's, under "Waiting on someone".
   - **Next:** the co-founder's usage reading, then the route-map scout.
