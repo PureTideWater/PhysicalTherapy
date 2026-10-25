@@ -89,17 +89,6 @@
   },
   {
     "file": "packages/pricing/src/engine.ts",
-    "mutator": "ArrowFunction",
-    "original": "(a, b) => a - b",
-    "occurrence": 1,
-    "replacement": "() => undefined",
-    "reason": "visit holds a claim's working lines in line-number order (price sorts the lines at line 159, and a repeated number stops its lines), so lineNos is already ascending; a comparator giving undefined (NaN, never below zero) leaves it as it is.",
-    "proposedBy": "M2",
-    "reviewedBy": "integrator (Lane B, ci-mutation)",
-    "reviewedOn": "2026-10-25"
-  },
-  {
-    "file": "packages/pricing/src/engine.ts",
     "mutator": "ConditionalExpression",
     "original": "item.kind === 'working'",
     "occurrence": 3,
@@ -116,17 +105,6 @@
     "occurrence": 1,
     "replacement": "false",
     "reason": "schedule is null only for PER_VISIT terms and charge is non-null only for LESSER_OF terms, so whenever schedule is null charge is null too, and charge === null picks schedule as the original does.",
-    "proposedBy": "M2",
-    "reviewedBy": "integrator (Lane B, ci-mutation)",
-    "reviewedOn": "2026-10-25"
-  },
-  {
-    "file": "packages/pricing/src/engine.ts",
-    "mutator": "MethodExpression",
-    "original": "visit.map((work) => work.context.facts.lineNo).sort((a, b) => a - b)",
-    "occurrence": 1,
-    "replacement": "visit.map(work => work.context.facts.lineNo)",
-    "reason": "visit holds a claim's working lines in line-number order (price sorts the lines at line 159, and a repeated number stops its lines), so lineNos is already ascending and the sort changes nothing.",
     "proposedBy": "M2",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"

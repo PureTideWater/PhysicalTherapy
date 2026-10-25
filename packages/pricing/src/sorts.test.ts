@@ -21,37 +21,59 @@ type Sorting = 'native' | 'earlier first' | 'later first';
 const SORTINGS: readonly Sorting[] = ['native', 'earlier first', 'later first'];
 
 /**
- * Runs `run` with Array.prototype.sort as it is (native) or replaced by a stable insertion sort that calls the
- * comparator as (the element that stands earlier, the later one), an order ECMAScript allows and V8 never uses, or as
- * (the later one, the earlier one), V8's order. Both are conforming sorts: for a consistent comparator they give
- * exactly the native result. Every sort the engine and the release index make passes a comparator, so one without is
- * refused rather than given a default order here.
+ * The native sort, taken before any spy replaces it. A sort called without a comparator uses the language's own order
+ * (ECMAScript's SortCompare: undefined last, then by the elements' text), a consistent comparator, so every conforming
+ * sort gives exactly this result for it.
+ */
+const nativeSort: (this: unknown[], compare?: Compare) => unknown[] = Array.prototype.sort;
+
+/**
+ * Runs `run` with Array.prototype.sort and Array.prototype.toSorted as they are (native) or replaced by a stable
+ * insertion sort that calls the comparator as (the element that stands earlier, the later one), an order ECMAScript
+ * allows and V8 never uses, or as (the later one, the earlier one), V8's order. Both are conforming sorts: for a
+ * consistent comparator they give exactly the native result (none of the engine's sorts sees an undefined element), and
+ * a sort called without one is the native sort, whose order the language fixes. Under either insertion sort the case
+ * must have sorted at least once, so it was run under that order and not only the native one; how many sorts the code
+ * makes, and which of the two methods, is its own.
  */
 function sorted<T>(sorting: Sorting, run: () => T): T {
   if (sorting === 'native') {
     return run();
   }
   const earlierFirst = sorting === 'earlier first';
-  const sort = vi.spyOn(Array.prototype, 'sort').mockImplementation(function insertionSort(this: unknown[], compare?: Compare) {
+  const insertionSort = (items: unknown[], compare: Compare | undefined): unknown[] => {
     if (compare === undefined) {
-      throw new Error('this sort takes a comparator');
+      return nativeSort.call(items);
     }
-    for (let next = 1; next < this.length; next += 1) {
-      const item = this[next];
+    for (let next = 1; next < items.length; next += 1) {
+      const item = items[next];
       let at = next - 1;
-      while (at >= 0 && (earlierFirst ? compare(this[at], item) > 0 : compare(item, this[at]) < 0)) {
-        this[at + 1] = this[at];
+      while (at >= 0 && (earlierFirst ? compare(items[at], item) > 0 : compare(item, items[at]) < 0)) {
+        items[at + 1] = items[at];
         at -= 1;
       }
-      this[at + 1] = item;
+      items[at + 1] = item;
     }
-    return this;
+    return items;
+  };
+  const sort = vi.spyOn(Array.prototype, 'sort').mockImplementation(function inPlace(this: unknown[], compare?: Compare) {
+    return insertionSort(this, compare);
   });
+  const toSorted = vi.spyOn(Array.prototype, 'toSorted').mockImplementation(function copied(this: unknown[], compare?: Compare) {
+    return insertionSort([...this], compare);
+  });
+  let result: T;
+  let sorts: number;
   try {
-    return run();
+    result = run();
   } finally {
+    sorts = sort.mock.calls.length + toSorted.mock.calls.length;
     sort.mockRestore();
+    toSorted.mockRestore();
   }
+  // Asserted once both are restored, so nothing the assertion does runs under the insertion sort.
+  expect(sorts, `sorts made under the '${sorting}' insertion sort`).toBeGreaterThan(0);
+  return result;
 }
 
 function pricedLine(result: LinePricing | undefined): PricedLine {
@@ -81,6 +103,37 @@ describe('pricing under any sort the language allows', () => {
     expect(results.map((line) => [line.trace.steps.per_visit?.carrier_line_no, line.baseCents.toString()])).toEqual([
       [1, '8800'],
       [1, '0'],
+      [1, '0'],
+    ]);
+  });
+
+  it.each(SORTINGS)('lists a visit’s lines in line-number order when another line of the claim has NaN for its number (sort: %s)', (sorting) => {
+    // LineFacts.lineNo is a number, and NaN is one. price sorts the claim's lines by number before it checks them, and
+    // with NaN among them that comparator is inconsistent, so the order is the sort's own: V8 and both insertion sorts
+    // leave 3, NaN, 1 as they are. The NaN line stops at its check; the visit's own sort still lists lines 1 and 3 in
+    // order, and line 1 carries the visit.
+    // Not asserted: the order of price's results for such a claim, which follows that inconsistent sort. It is the frozen
+    // engine's current behaviour, not its rule, and is recorded for Lane A's PR 6c (engine corrections).
+    const visit = contractAgreement({ terms: perVisitTerms(8800n, { codes: ['97110', '97112', '97116'] }) });
+    const results = sorted(sorting, () =>
+      price(
+        pricingInput(release, [
+          lineFacts({ lineNo: 3, procedureCode: '97116', agreement: visit }),
+          lineFacts({ lineNo: Number.NaN, procedureCode: '97110', agreement: visit }),
+          lineFacts({ lineNo: 1, procedureCode: '97112', agreement: visit }),
+        ]),
+      ),
+    );
+    const line = (lineNo: number) => results.find((result) => Object.is(result.lineNo, lineNo));
+    const stopped = line(Number.NaN);
+    expect(stopped?.outcome === 'unpriced' ? `${stopped.reason} ${String(stopped.detail)}` : stopped?.outcome).toBe('ENGINE_ERROR invalid_line_facts');
+    const visitLines = [pricedLine(line(1)), pricedLine(line(3))];
+    expect(visitLines.map((priced) => priced.trace.steps.per_visit?.visit_line_nos)).toEqual([
+      [1, 3],
+      [1, 3],
+    ]);
+    expect(visitLines.map((priced) => [priced.trace.steps.per_visit?.carrier_line_no, priced.baseCents.toString()])).toEqual([
+      [1, '8800'],
       [1, '0'],
     ]);
   });
