@@ -4,8 +4,8 @@ import path from 'node:path';
 
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
-import { type LedgerEntry, SYNTHETIC_PM_EXPORT_V1, ledgerTotals, roiStatement } from '@tp/ledger';
-import { cents, parseCents } from '@tp/money';
+import { type LedgerEntry, SYNTHETIC_PM_EXPORT_V1, entriesById, ledgerTotals, periodEntries, roiStatement } from '@tp/ledger';
+import { cents, negateCents, parseCents } from '@tp/money';
 import { deriveCaseState } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -23,7 +23,7 @@ import { unmatchedItems } from './unmatched';
 
 /**
  * The recovery ledger against PostgreSQL, through the reconcile step's own code (PRD 13; PRD 5, J10;
- * test matrix LED-02 to LED-11). Each case is a practice of its own: its SYNTHETIC LED fixture's
+ * test matrix LED-02 to LED-13). Each case is a practice of its own: its SYNTHETIC LED fixture's
  * original payment is loaded by the parse_835 job, priced under a signed-off 50.00-per-unit 97110
  * schedule and triaged into a case; then the adjusted remittance, the posting and EFT exports and the
  * recoupment arrive as the fixture says, each followed by a reconcile in the practice's job scope.
@@ -291,6 +291,221 @@ describe('recoupments (LED-06)', () => {
     const totalsNow = await jobTotals(practice);
     expect(totalsNow).toMatchObject({ interestCents: 411n, recoveredCents: 0n, approvedCents: 3000n });
     expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
+  });
+});
+
+describe('a reversal that a provider-level adjustment offsets (LED-12)', () => {
+  /** LED-12's case line recovered: the adjusted payment approved, posted and deposited, proved by deposit. */
+  async function recovered(): Promise<{ readonly practice: Practice; readonly caseId: string; readonly serviceLineId: string }> {
+    const found = await scenario('LED-12');
+    await w.reconcile(found.practice, { documentId: await w.stageExport(found.practice, 'LED-12/posting-export.csv', 'posting_export') });
+    await w.reconcile(found.practice, { documentId: await w.stageExport(found.practice, 'LED-12/eft-export.csv', 'eft_export') });
+    expect(await w.lineStage(found.practice, found.serviceLineId)).toBe('recovered');
+    return found;
+  }
+
+  /** The cash the ledger holds, by plain SQL sums sharing no code with @tp/ledger: posted and deposited, net of their corrections. */
+  async function cash(practice: Practice): Promise<{ readonly posted: bigint; readonly deposited: bigint }> {
+    const sum = (stage: string) =>
+      w.sum(practice, 'SELECT sum(e.amount_cents)::text AS total FROM ledger_entry e LEFT JOIN ledger_entry t ON t.id = e.evidence_id AND e.evidence_kind = $2 WHERE e.stage = $1 OR t.stage = $1', [stage, 'ledger_entry']);
+    return { posted: await sum('posted'), deposited: await sum('deposited') };
+  }
+
+  /** The practice's latest remittance (the one just loaded), its payment and its provider-level adjustments. */
+  async function latest(practice: Practice) {
+    const [remittance] = await w.rows<{ id: string; bpr02_cents: string; bpr16_date: string }>(practice, 'SELECT id, bpr02_cents::text, bpr16_date::text FROM remittance ORDER BY bpr16_date DESC, created_at DESC LIMIT 1');
+    const adjustments = await w.rows<{ id: string; reason_code: string; amount_cents: string }>(practice, 'SELECT id, reason_code, amount_cents::text FROM provider_adjustment WHERE remittance_id = $1 ORDER BY position', [remittance?.id]);
+    const [reversal] = await w.rows<{ id: string; paid_cents: string }>(practice, "SELECT id, paid_cents::text FROM claim WHERE remittance_id = $1 AND claim_status_code = '22'", [remittance?.id]);
+    return { remittance, adjustments, reversal };
+  }
+
+  const cashOf = () => (outcomeOf('LED-12') as unknown as { cash: { reversalPaidCents: string; adjustmentCents: string; paymentCents: string; inCheckPaymentCents: string } }).cash;
+
+  /** The practice's matches, every column the reconcile writes. */
+  const matches = (practice: Practice) =>
+    w.rows(practice, 'SELECT id, kind, level, outcome, allocated, remittance_id, claim_id, posting_row_id, eft_row_id, provider_adjustment_id, service_line_id, matched_by, reversed_at::text FROM ledger_match ORDER BY matched_at, id');
+
+  /** The in-check check's deposit (50.00) and then its check-level posting (50.00), each loaded and matched to its remittance. */
+  async function proveInCheck(practice: Practice, remittanceId: string | undefined): Promise<void> {
+    for (const [file, kind, match] of [
+      ['reversal-in-check-eft-export.csv', 'eft_export', 'deposit'],
+      ['reversal-in-check-posting-export.csv', 'posting_export', 'posting'],
+    ] as const) {
+      const summary = await w.reconcile(practice, { documentId: await w.stageExport(practice, `LED-12/${file}`, kind) });
+      expect(summary.exports).toMatchObject([{ kind, outcome: 'loaded', stored: 1, problems: 0 }]);
+      expect(await w.rows(practice, 'SELECT remittance_id, level FROM ledger_match WHERE kind = $1 AND remittance_id = $2 AND reversed_at IS NULL', [match, remittanceId])).toEqual([{ remittance_id: remittanceId, level: 'check' }]);
+    }
+  }
+
+  it.each([
+    { offset: 'a forward balance (PLB FB)', file: 'reversal.835', code: 'FB', withheld: true },
+    { offset: 'the provider’s refund (PLB 72)', file: 'reversal-refunded.835', code: '72', withheld: false },
+  ])('moves no cash when $offset offsets the reversal, and takes back what the reversed claim approved, once, at once', async ({ file, code, withheld }) => {
+    const { practice, caseId, serviceLineId } = await recovered();
+    const before = await w.entries(practice);
+    const cashBefore = await cash(practice);
+    const totalsBefore = await jobTotals(practice);
+    await w.load(practice, `LED-12/${file}`);
+    // At its source the pair nets to no cash change: the reversal and its adjustment cancel, and the remittance pays nothing.
+    const { remittance, adjustments, reversal } = await latest(practice);
+    expect(adjustments.map((item) => ({ reason_code: item.reason_code, amount_cents: item.amount_cents }))).toEqual([{ reason_code: code, amount_cents: cashOf().adjustmentCents }]);
+    expect(reversal?.paid_cents).toBe(cashOf().reversalPaidCents);
+    expect(remittance?.bpr02_cents).toBe(cashOf().paymentCents);
+    await w.reconcile(practice);
+    // No cash entry: posted and deposited stay what the cash proved.
+    expect(await cash(practice)).toEqual(cashBefore);
+    // The earlier entries are untouched; one entry is added: the reversal's take-back of what the reversed claim approved, dated by its remittance.
+    const after = await w.entries(practice);
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after.slice(before.length)).toEqual([
+      expect.objectContaining({ stage: 'recouped', evidence_kind: 'claim', evidence_id: reversal?.id, case_id: caseId, service_line_id: serviceLineId, effective_on: remittance?.bpr16_date, created_by: null, allocated: false }),
+    ]);
+    expect(await w.stages(practice)).toEqual(expectedStages('LED-12'));
+    // The adjustment is recorded, and is never an entry's evidence or a match.
+    const adjustmentIds = adjustments.map((item) => item.id);
+    expect(await w.rows(practice, 'SELECT id FROM ledger_entry WHERE evidence_id = ANY ($1::uuid[])', [adjustmentIds])).toEqual([]);
+    expect(await w.rows(practice, 'SELECT id FROM ledger_match WHERE provider_adjustment_id = ANY ($1::uuid[])', [adjustmentIds])).toEqual([]);
+    // Recovered falls by exactly what the reversed claim approved (never the 100.00 reversed); every other stage, and payer approved, stand.
+    const totalsAfter = await jobTotals(practice);
+    expect(totalsAfter).toMatchObject({
+      approvedCents: totalsBefore.approvedCents,
+      postedCents: totalsBefore.postedCents,
+      depositedCents: totalsBefore.depositedCents,
+      interestCents: totalsBefore.interestCents,
+      payerApprovedCents: totalsBefore.payerApprovedCents,
+      recoupedCents: negateCents(totalsBefore.approvedCents),
+      recoveredCents: parseCents(outcomeOf('LED-12').recoveredCents ?? ''),
+    });
+    // PRD 13: the line goes back to actionable with the ledger's note, the case leaves resolved, and its people are told once.
+    expect(await w.lineStage(practice, serviceLineId)).toBe('actionable');
+    const [reopen] = await w.rows<{ reason: string; reopened_from: string }>(practice, 'SELECT reason, reopened_from FROM line_status WHERE service_line_id = $1 ORDER BY seq DESC LIMIT 1', [serviceLineId]);
+    expect(reopen?.reopened_from).toBe('recovered');
+    expect(practice.cipher.decrypt('line_status.reason', reopen?.reason ?? '')).toBe(REOPEN_NOTES.recoupment);
+    expect(await w.caseState(practice, caseId)).not.toBe('resolved');
+    const told = () => asOwner(w.owner, [practice.practiceId], () => w.owner.query("SELECT user_id, counts, totals_cents FROM notification WHERE practice_id = $1 AND kind = 'recoupment' ORDER BY user_id", [practice.practiceId]));
+    const recouped = (outcomeOf('LED-12').entries ?? []).find((entry) => entry.stage === 'recouped')?.amountCents;
+    expect((await told()).rows).toEqual([practice.world.adminUserId, practice.manager].sort().map((user) => ({ user_id: user, counts: { recouped_lines: 1 }, totals_cents: { recouped: recouped } })));
+    // Once: a replay takes nothing back again, nor does the forward balance withheld from a later check.
+    await w.reconcile(practice);
+    if (withheld) {
+      await w.load(practice, 'LED-12/forward-balance-withheld.835');
+      const later = await latest(practice);
+      expect(later.adjustments.map((item) => ({ reason_code: item.reason_code, amount_cents: item.amount_cents }))).toEqual([{ reason_code: 'FB', amount_cents: (-BigInt(cashOf().adjustmentCents)).toString() }]);
+      expect((await w.reconcile(practice)).remittances.recoupments).toBe(0);
+      expect(await w.rows(practice, 'SELECT id FROM ledger_entry WHERE evidence_id = ANY ($1::uuid[])', [later.adjustments.map((item) => item.id)])).toEqual([]);
+    }
+    expect(await w.entries(practice)).toEqual(after);
+    expect((await told()).rowCount).toBe(2);
+  });
+
+  it('writes no posted entry when the practice posts the reversal: its -100.00 row matches the reversal claim and proves nothing', async () => {
+    const { practice } = await recovered();
+    await w.load(practice, 'LED-12/reversal.835');
+    const { remittance, reversal } = await latest(practice);
+    await w.reconcile(practice);
+    expect(await w.stages(practice)).toEqual(expectedStages('LED-12'));
+    const before = await w.entries(practice);
+    const cashBefore = await cash(practice);
+    const totalsBefore = await jobTotals(practice);
+    const summary = await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-12/reversal-posting-export.csv', 'posting_export') });
+    expect(summary.exports).toMatchObject([{ kind: 'posting_export', outcome: 'loaded', stored: 1, problems: 0 }]);
+    // The row is the reversal as the practice posts it, and it stands matched to the reversal claim of its check.
+    expect(
+      await w.rows(practice, "SELECT p.amount_cents::text AS amount_cents, m.claim_id, m.level FROM ledger_match m JOIN posting_row p ON p.id = m.posting_row_id WHERE m.kind = 'posting' AND m.remittance_id = $1 AND m.reversed_at IS NULL", [remittance?.id]),
+    ).toEqual([{ amount_cents: cashOf().reversalPaidCents, claim_id: reversal?.id, level: 'claim' }]);
+    expect(await w.entries(practice)).toEqual(before);
+    expect(await cash(practice)).toEqual(cashBefore);
+    expect(await jobTotals(practice)).toEqual(totalsBefore);
+  });
+
+  it('never counts the adjustments themselves, even while an approval stands that could absorb them', async () => {
+    const { practice, serviceLineId } = await recovered();
+    const before = await w.entries(practice);
+    const matchesBefore = await matches(practice);
+    const totalsBefore = await jobTotals(practice);
+    await w.load(practice, 'LED-12/adjustments-alone.835');
+    const { adjustments } = await latest(practice);
+    expect(adjustments.map((item) => item.reason_code)).toEqual(['FB', '72']);
+    await w.reconcile(practice);
+    // The forward balance withheld from a later check, while the 30.00 approval still stands: never a take-back either.
+    await w.load(practice, 'LED-12/forward-balance-withheld.835');
+    const withheld = await latest(practice);
+    expect(withheld.adjustments.map((item) => ({ reason_code: item.reason_code, amount_cents: item.amount_cents }))).toEqual([{ reason_code: 'FB', amount_cents: (-BigInt(cashOf().adjustmentCents)).toString() }]);
+    expect((await w.reconcile(practice)).remittances.recoupments).toBe(0);
+    expect(await w.entries(practice)).toEqual(before);
+    expect(await matches(practice)).toEqual(matchesBefore);
+    expect(await jobTotals(practice)).toEqual(totalsBefore);
+    expect(await w.lineStage(practice, serviceLineId)).toBe('recovered');
+  });
+
+  it('deposits and posts nothing for the case line from a check that holds the reversal and its adjustment beside another payment', async () => {
+    const { practice } = await recovered();
+    await w.load(practice, 'LED-12/reversal-in-check.835');
+    const { remittance } = await latest(practice);
+    expect(remittance?.bpr02_cents).toBe(cashOf().inCheckPaymentCents);
+    await w.reconcile(practice);
+    expect(await w.stages(practice)).toEqual(expectedStages('LED-12'));
+    const before = await w.entries(practice);
+    const cashBefore = await cash(practice);
+    // The deposit and the posting match their remittance (the other claim's 50.00), and none of it is the case line's.
+    await proveInCheck(practice, remittance?.id);
+    expect(await w.entries(practice)).toEqual(before);
+    expect(await cash(practice)).toEqual(cashBefore);
+  });
+
+  it('deposits and posts nothing for the case line from that check while the line can still prove, before its own payment is proved', async () => {
+    const { practice, serviceLineId } = await scenario('LED-12');
+    expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
+    await w.load(practice, 'LED-12/reversal-in-check.835');
+    const { remittance } = await latest(practice);
+    await w.reconcile(practice);
+    // Taken back at once, though nothing was proved yet.
+    expect(await w.stages(practice)).toEqual(expectedStages('LED-12').filter((entry) => entry.stage === 'approved' || entry.stage === 'recouped'));
+    const before = await w.entries(practice);
+    // The line could still post and deposit its 30.00 approval; its share of this check is the reversal's, so nothing.
+    await proveInCheck(practice, remittance?.id);
+    expect(await w.entries(practice)).toEqual(before);
+    expect(await cash(practice)).toEqual({ posted: 0n, deposited: 0n });
+  });
+});
+
+describe('a later recoupment (LED-13)', () => {
+  it('is a negative event against net recovery: a new entry dated by its own remittance, the earlier entries and periods unchanged', async () => {
+    const { practice, serviceLineId } = await scenario('LED-06');
+    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-06/posting-export.csv', 'posting_export') });
+    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-06/eft-export.csv', 'eft_export') });
+    const before = await w.entries(practice);
+    const recoveredBefore = (await jobTotals(practice)).recoveredCents;
+    await w.load(practice, 'LED-06/recoupment.835');
+    await w.reconcile(practice);
+    const after = await w.entries(practice);
+    // A new entry, never an edit of an earlier one.
+    expect(after.slice(0, before.length)).toEqual(before);
+    const [wo] = await w.rows<{ id: string; paid_on: string }>(practice, "SELECT a.id, r.bpr16_date::text AS paid_on FROM provider_adjustment a JOIN remittance r ON r.id = a.remittance_id WHERE a.reason_code = 'WO'");
+    const [recoupment, ...rest] = after.slice(before.length);
+    expect(rest).toEqual([]);
+    expect(recoupment).toMatchObject({ stage: 'recouped', evidence_kind: 'provider_adjustment', evidence_id: wo?.id, service_line_id: serviceLineId, effective_on: wo?.paid_on, created_by: null });
+    const amount = parseCents(recoupment?.amount_cents ?? '0');
+    expect(amount).toBeLessThan(0n);
+    // Later: dated after every entry before it, the deposit it takes back from included.
+    const lastBefore = before.map((entry) => entry.effective_on).sort().at(-1) ?? '';
+    expect((recoupment?.effective_on ?? '') > lastBefore).toBe(true);
+    // Against net recovery: by exactly its amount, in its own period; the periods before it are not restated.
+    expect((await jobTotals(practice)).recoveredCents).toBe(recoveredBefore + amount);
+    const ledger: LedgerEntry[] = after.map((entry) => ({
+      id: entry.id,
+      caseId: entry.case_id,
+      serviceLineId: entry.service_line_id,
+      stage: entry.stage as LedgerEntry['stage'],
+      amountCents: parseCents(entry.amount_cents),
+      evidenceKind: entry.evidence_kind as LedgerEntry['evidenceKind'],
+      evidenceId: entry.evidence_id,
+      allocated: entry.allocated,
+      effectiveOn: entry.effective_on,
+    }));
+    const byId = entriesById(ledger);
+    expect(ledgerTotals(periodEntries(ledger, '2026-01-01', lastBefore), 'deposited', byId).recoveredCents).toBe(recoveredBefore);
+    expect(ledgerTotals(periodEntries(ledger, recoupment?.effective_on ?? '', '2026-12-31'), 'deposited', byId).recoveredCents).toBe(amount);
   });
 });
 

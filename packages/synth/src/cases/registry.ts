@@ -231,6 +231,15 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   },
   'LED-10': none(9, 'A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts']),
   'LED-11': none(9, 'Recomputes the ROI statement from the entries the LED-02 to LED-09 scenarios create; no file of its own.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/roi.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'packages/ledger/src/statement.test.ts']),
+  'LED-12': { completesIn: 9, build: workflow.led12, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts'] },
+  // CO-09's LED-13 is LED-06's recoupment after the deposit (reconciliation-001, section 18 and item 15).
+  'LED-13': none(9, 'LED-06: its recoupment after the deposit is the later recoupment; no file of its own.', [
+    'apps/worker/src/reconcile/ledger.db.test.ts',
+    'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+    'packages/ledger/src/totals.test.ts',
+    'apps/worker/src/reconcile/chain.db.test.ts',
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+  ]),
   'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
   'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts']),
   'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
