@@ -548,3 +548,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
 
     No worktree, database or server of Lane B's is left.
   - **The handoff is complete.** The next session starts at "Start here (Lane B)".
+- **2026-10-25 ~20:50 UTC: a new Lane B session; machine built; the UX review claimed.**
+  - `tools/setup-container.sh` (from claude/build-ops 3ffdc83, no branch arguments: Start here lists nothing open in Lane B) printed OK: PG18 18.4 on 5433, PG16 16.15 on 5432, Node v24.22.0, both venvs, actionlint 1.7.7, gitleaks 8.24.3, pnpm 10.28.0, Playwright 1.56.1's chromium-1194, the main checkout at 6ddd587 with the pre-push hook, `/home/user/ops` at 3ffdc83.
+  - `gh api user --jq .login` prints `PureTideWater`, as ruled.
+  - **GitHub, checked against Start here:** `claude/build-platform` at 6ddd587; its push runs green (ci 40229005858 on attempt 2, mutation 40229005837, screening-capacity 40229005836). Open PRs: #42 (draft, 13f59b1), Dependabot #40 and #33. Rulesets `[]` (F7 not yet applied); default branch `main`.
+  - Read LANES.md, Start here (Lane B), HANDOFF.md's Start here, standing rule, who decides, owner decisions and the dated rulings of 2026-10-20 to 2026-10-24, CLAUDE.md and reconciliation-001's checks at 6ddd587.
+  - **Claimed** the UX/UI and brand baseline review and its checklist PR (`co-001/ux-brand-reviewer`) in LANES.md: no ADR, no test-matrix or synth IDs. Next free ADR still 0067.
+  - **Next:** the co-founder's usage reading and the step-1 questions, then the route-map scout.
