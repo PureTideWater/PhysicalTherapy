@@ -137,7 +137,7 @@
     "original": "group.proved + group.recouped < 0n",
     "occurrence": 1,
     "replacement": "group.proved + group.recouped <= 0n",
-    "reason": "Every group in inTotal has proved + recouped other than zero (the filter at :127), so for them < 0n and <= 0n agree.",
+    "reason": "Every group in inTotal has proved + recouped other than zero (inTotal keeps only the groups whose proved + recouped !== 0n), so for them < 0n and <= 0n agree.",
     "proposedBy": "M3",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"

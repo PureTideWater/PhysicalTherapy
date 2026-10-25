@@ -1,12 +1,11 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type IndexedRelease, UNPRICED_REASONS, indexRelease, price, recompute } from '@tp/pricing';
-import { type ReleaseContents, readRelease } from '@tp/rules/content';
+import { type IndexedRelease, UNPRICED_REASONS, price, recompute } from '@tp/pricing';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
-import { type EngineDifference, type EngineRun, GOLDEN_CLAIMS_DIR, type GoldenClaim, engineDifferences, goldenPricingInput, readGoldenClaims } from './engine';
+import { type EngineDifference, type EngineRun, GOLDEN_CLAIMS_DIR, type GoldenClaim, claimRelease, claimReleaseFiles, engineDifferences, goldenPricingInput, readGoldenClaims } from './engine';
 
 /**
  * The pricing oracle against the engine (PRD section 18; milestone 5's done check: "every golden line
@@ -99,18 +98,8 @@ describe('golden lines priced by the engine', () => {
   // Read once, while the tests are collected: the golden claims and each release they name, as files. Nothing here
   // runs @tp/pricing, which each claim's test runs for that claim alone.
   const claims = readGoldenClaims();
-  const releaseFiles = new Map<string, ReleaseContents>([...new Set(claims.map(({ claim }) => claim.inputs.release.dir))].map((dir) => [dir, readRelease(path.join(repositoryRoot, dir))]));
-
-  /**
-   * The release a claim names, indexed by that claim's test. goldenPricingInput checks the release (goldenRelease: its
-   * files verify, and its number and manifest hash are the claim's), but keeps one index for every claim that names it,
-   * and indexRelease and its record references are the engine's code; the trace's release, which each test asserts,
-   * is this index's.
-   */
-  function claimRelease(claim: GoldenClaim): IndexedRelease {
-    const release = releaseFiles.get(claim.inputs.release.dir) as ReleaseContents;
-    return indexRelease({ releaseNo: release.manifest.release, manifestSha256: release.manifestSha256, records: release.records.map((located) => located.record) });
-  }
+  // Each claim's test indexes its own release from these files (claimRelease).
+  const releaseFiles = claimReleaseFiles(claims);
 
   /** With `pnpm test:golden --report`, each claim's differences, which the report gathers once every claim has run. */
   const reportDir = process.env.TP_GOLDEN_REPORT;
@@ -122,7 +111,7 @@ describe('golden lines priced by the engine', () => {
   });
 
   it.each(claims)('$claim.id: every line to the cent and field by field, recomputed from its trace, under the release the claim names, its ZIP+4 read as PRC-21 says', ({ file, claim }) => {
-    const { runs, results, recomputeDifferences } = pricedClaim(file, claim, claimRelease(claim));
+    const { runs, results, recomputeDifferences } = pricedClaim(file, claim, claimRelease(claim, releaseFiles));
 
     // Match every golden line to the cent, field by field, variance and window included, though no line is specialist-verified yet.
     const differences = engineDifferences(runs);

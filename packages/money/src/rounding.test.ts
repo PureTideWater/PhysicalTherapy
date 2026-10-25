@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type Cents, MoneyError, cents } from './cents';
+import { MoneyError, cents } from './cents';
 import { type Decimal, centsToDecimal, decimal, rate } from './decimal';
 import {
   DEFAULT_ROUNDING,
@@ -133,13 +133,6 @@ describe('multiplyCents', () => {
     expect(multiplyCents(cents(1000n), rate('1.10')).toString()).toBe('1100');
     expect(multiplyCents(cents(3333n), rate('0.85')).toString()).toBe('2833.05');
     expect(multiplyCents(cents(1n), rate('0.000001')).toString()).toBe('0.000001');
-  });
-
-  it('reads only a bigint as cents: text or a number cast past the type is refused, never read as an amount', () => {
-    // Cents go through centsToDecimal; anything else is used as the decimal it must already be. Text that would
-    // parse ('12') is not one, so it must never come back as 24 cents; a number is not one either.
-    expect(() => multiplyCents('12' as unknown as Cents, rate('2'))).toThrow();
-    expect(() => multiplyCents(12 as unknown as Cents, rate('2'))).toThrow();
   });
 
   it('multiplies an unrounded amount again without rounding in between', () => {

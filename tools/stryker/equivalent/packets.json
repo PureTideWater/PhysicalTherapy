@@ -5,7 +5,7 @@
     "original": "citation.kind !== 'contract'",
     "occurrence": 1,
     "replacement": "false",
-    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches return null either way. The only one built is MA_NONCONTRACTED_CITATION (apps/worker/src/packets/records.ts:80).",
+    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches return null either way. The only one built is MA_NONCONTRACTED_CITATION, in apps/worker/src/packets/records.ts.",
     "proposedBy": "M4b",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -16,7 +16,7 @@
     "original": "citation.kind === 'contract'",
     "occurrence": 1,
     "replacement": "true",
-    "reason": "A citation that is not a contract's is a RegulationCitation, which has no parameters (format.ts), so read() is given undefined, returns at its first check and adds no percentage or year. The only one built is MA_NONCONTRACTED_CITATION (apps/worker/src/packets/records.ts:80).",
+    "reason": "A citation that is not a contract's is a RegulationCitation, which has no parameters (format.ts), so read() is given undefined, returns at its first check and adds no percentage or year. The only one built is MA_NONCONTRACTED_CITATION, in apps/worker/src/packets/records.ts.",
     "proposedBy": "M4b",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -27,7 +27,7 @@
     "original": "{\n    return null;\n  }",
     "occurrence": 1,
     "replacement": "{}",
-    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches the final return null either way. The only one built is MA_NONCONTRACTED_CITATION (apps/worker/src/packets/records.ts:80).",
+    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches the final return null either way. The only one built is MA_NONCONTRACTED_CITATION, in apps/worker/src/packets/records.ts.",
     "proposedBy": "M4b",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
@@ -181,7 +181,7 @@
     "original": "'0'",
     "occurrence": 1,
     "replacement": "\"\"",
-    "reason": "usable is non-null only when no reason was added, so its annual_rate_percent passed the === null check above and is a string (PromptPayRecord types it string | null): the fallback after ?? is never evaluated for any PromptPayRecord. A record without the key cannot reach it either: the worker copies the release record's interest.annual_rate_percent, which the release schema requires (packages/rules/src/schema.ts:298, percent.nullable() in a strict object).",
+    "reason": "usable is non-null only when no reason was added, so its annual_rate_percent passed the === null check above and is a string (PromptPayRecord types it string | null): the fallback after ?? is never evaluated for any PromptPayRecord. A record without the key cannot reach it either: the worker copies the release record's interest.annual_rate_percent, which the release schema requires (packages/rules/src/schema.ts, state_prompt_pay's interest: annual_rate_percent is percent.nullable() in a strict object).",
     "proposedBy": "M4b",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"

@@ -13,14 +13,15 @@ import {
   parseRateTerms,
 } from '@tp/contracts';
 import { type RoundingRule, decimal, parseCents } from '@tp/money';
-import { type AgreementInput, type IndexedRelease, type LineFacts, type LinePricing, type PlaceOfServiceSetting, type PricingInput, indexRelease, price } from '@tp/pricing';
-import { readRelease } from '@tp/rules/content';
+import { type AgreementInput, type IndexedRelease, type LineFacts, type LinePricing, type PlaceOfServiceSetting, type PricingInput, indexRelease } from '@tp/pricing';
+import { type ReleaseContents, readRelease } from '@tp/rules/content';
 
 import { repositoryRoot } from '../content-files';
 
 /**
- * Runs the engine on the golden claims (fixtures/golden/README.md, "Consuming the format"). Each
- * claim's inputs become the engine's inputs the way production builds them: the release is
+ * The golden claims as the engine's inputs, for the tests that price them, and the comparison of its results
+ * (fixtures/golden/README.md, "Consuming the format"). Each claim's inputs become the engine's inputs the way
+ * production builds them: the release is
  * read from its directory and its manifest hash checked; the mappings, contract versions and rate
  * records become the records @tp/contracts loads, and its pure resolver resolves each line; the line
  * facts, claim context (its remittance date), the version windows, the triage date and practice
@@ -181,6 +182,26 @@ export function goldenRelease(reference: GoldenClaim['inputs']['release'], root 
   const indexed = indexRelease({ releaseNo: release.manifest.release, manifestSha256: release.manifestSha256, records: release.records.map((located) => located.record) });
   releases.set(cacheKey, indexed);
   return indexed;
+}
+
+/** Each release the claims name, read once as files and not indexed: what claimRelease indexes. */
+export function claimReleaseFiles(claims: readonly GoldenFile[], root = repositoryRoot): ReadonlyMap<string, ReleaseContents> {
+  return new Map([...new Set(claims.map(({ claim }) => claim.inputs.release.dir))].map((dir) => [dir, readRelease(path.join(root, dir))]));
+}
+
+/**
+ * The release a claim names, indexed anew on every call from its files (claimReleaseFiles), for a test that prices the
+ * claim. goldenRelease checks the release (its files verify, and its number and manifest hash are the claim's) but keeps
+ * one index for every claim that names it, and indexRelease and its record references are the engine's code: a test
+ * that indexes its own shares nothing the engine computes with another test (docs/adr/0066, Part 4), and the trace's
+ * release, which the test asserts, is this index's.
+ */
+export function claimRelease(claim: GoldenClaim, files: ReadonlyMap<string, ReleaseContents>): IndexedRelease {
+  const release = files.get(claim.inputs.release.dir);
+  if (release === undefined) {
+    throw new Error(`the release in ${claim.inputs.release.dir} was not read for claim ${claim.id}`);
+  }
+  return indexRelease({ releaseNo: release.manifest.release, manifestSha256: release.manifestSha256, records: release.records.map((located) => located.record) });
 }
 
 /** An inclusive end date as the half-open end the contract records use. */
@@ -428,11 +449,6 @@ export interface EngineRun {
   readonly file: string;
   readonly claim: GoldenClaim;
   readonly results: readonly LinePricing[];
-}
-
-/** Prices every golden claim with the engine. */
-export function runEngineOnGolden(root = repositoryRoot): EngineRun[] {
-  return readGoldenClaims(root).map(({ file, claim }) => ({ file, claim, results: price(goldenPricingInput(claim, root)) }));
 }
 
 /** Every difference between the engine and the golden expected results. */
