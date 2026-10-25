@@ -270,8 +270,12 @@ describe('step 2, the base amount by method', () => {
     expect(gpci.record_type).toBe('pfs_gpci');
   });
 
-  it('reads no setting for a line with no place of service, whatever the settings object inherits', () => {
-    // Settings read from JSON have no inherited keys; an object that inherits one named "null" still gives none.
+  it('reads no setting for a line with no place of service, even from a settings object that inherits a key named "null"', () => {
+    // Hardening beyond the declared input: settings read from JSON have no inherited keys, and validSettings refuses an
+    // own key that is not two digits, so only an object that inherits "null" tells the engine's own branch for a null
+    // place of service (no setting, then ENGINE_ERROR place_of_service_unmapped) from a lookup of settings['null'].
+    // That is all this holds: for a line's two-digit place of service the frozen engine does read an inherited key
+    // (recorded for Lane A's PR 6c, engine corrections: read own keys only).
     const inherits = Object.assign(Object.create({ null: 'non_facility' }) as Record<string, 'facility' | 'non_facility'>, { '11': 'non_facility' as const });
     const result = unpricedLine(priceOne({ placeOfService: null }, { settings: practiceSettings({ placeOfServiceSettings: inherits }) }));
     expect(reasonOf(result)).toBe('ENGINE_ERROR place_of_service_unmapped');
@@ -900,7 +904,9 @@ describe('step 6, one rounding', () => {
   });
 
   it('stops a line at the rounding step for a rule it does not know, never a guessed rounding', () => {
-    // @tp/contracts gives HALF_UP_CENT, HALF_EVEN_CENT, TRUNCATE or null; anything else is not rounded.
+    // @tp/contracts gives HALF_UP_CENT, HALF_EVEN_CENT, TRUNCATE or null; anything else is not rounded. The detail,
+    // 'unexpected', is the frozen engine's current one, not its rule: roundToCents' MoneyError reaches attempt's
+    // catch-all. A detail of its own is an engine change, recorded for Lane A's PR 6c (engine corrections).
     const unknown = contractAgreement({ terms: percentTerms({ rounding: 'NEAREST' as never }) });
     const result = unpricedLine(priceOne({ agreement: unknown }));
     expect(result.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'unexpected', step: 'rounding' });
@@ -1040,17 +1046,27 @@ describe('inputs the engine refuses, read as whole text', () => {
       expect(reasonOf(priceOne({ units, agreement: contractAgreement() })), units).toBe('ENGINE_ERROR units_not_whole');
     }
   });
+});
 
-  it('locks the basis year only for LOCKED and four digits, the whole text; any other text reads the records in force on the service date', () => {
-    // @tp/contracts gives CURRENT or LOCKED:<year> only (terms.ts); the engine reads nothing else as a lock.
-    const priced = (yearBasis: string) => pricedLine(priceOne({ agreement: contractAgreement({ terms: percentTerms({ yearBasis: yearBasis as never }) }) }, {}, syntheticRelease(900002)));
+describe('a year basis, read as whole text', () => {
+  const priced = (yearBasis: string) => pricedLine(priceOne({ agreement: contractAgreement({ terms: percentTerms({ yearBasis: yearBasis as never }) }) }, {}, syntheticRelease(900002)));
+
+  it('locks the basis year for LOCKED and four digits: LOCKED:2025 reads the latest records in force during 2025', () => {
+    expect(priced('LOCKED:2025').trace.steps.fee_schedule).toMatchObject({ basis_year: 2025, lookup: 'latest_in_basis_year' });
+  });
+
+  it('frozen engine, current behaviour, a known defect (Lane A PR 6c): a year basis it cannot read as LOCKED and four digits, the whole text, prices at the records in force on the service date, as CURRENT does', () => {
+    // A pin of what the frozen engine does today, not its rule. A term the engine cannot read should stop the line
+    // ("never a guessed price"), which is an engine change: it is open for the founder and Lane A's PR 6c (engine
+    // corrections), and that change flips this test knowingly. 'LOCKED:202' and 'LOCKED:20250' are values of the
+    // engine's declared YearBasis (`LOCKED:${number}`, @tp/contracts terms.ts); the contracts schema admits only
+    // CURRENT and LOCKED with a year of 19xx or 20xx, so no record read through it reaches this fallback today.
     const current = priced('CURRENT');
     for (const yearBasis of ['LOCKED:2025X', 'XLOCKED:2025', 'LOCKED:202', 'LOCKED:20250', 'locked:2025']) {
       const line = priced(yearBasis);
       expect(line.trace.steps.fee_schedule, yearBasis).toMatchObject({ basis_year: 2026, lookup: 'in_force_on_service_date' });
       expect(line.expectedUnroundedCents.toString(), yearBasis).toBe(current.expectedUnroundedCents.toString());
     }
-    expect(priced('LOCKED:2025').trace.steps.fee_schedule).toMatchObject({ basis_year: 2025, lookup: 'latest_in_basis_year' });
   });
 });
 
