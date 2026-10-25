@@ -380,20 +380,21 @@ line number), is not equivalent, and a test kills it. A test may also hold the c
 types, as hardening, when it asserts the code's own outcome for that input (its own check's error class and message,
 or its reason): such a kill stands and the mutant is not recorded, but it is no evidence against an entry. A kill
 that rests only on an incidental failure (a TypeError from a method the value lacks, asserted by a bare `toThrow`) is
-not one: the mutant is recorded and the test dropped (`packages/money/src/rounding.ts`'s bigint check). Where an entry rests on the engine's Unicode data (NFKC forms,
-grapheme clusters), its reason says so, the reviewer checks it over every code point on the Node the mutation workflow
-pins, and `tools/stryker/unicode.json` lists it with that Node and its Unicode and ICU versions (today readable.ts's
-three NFKC records and mismatches.ts's sentence-end comparison, on Node 24.22.0, Unicode 17.0, ICU 78.3). Each shard's
-canary verdict names the Node it ran on, so the gate fails those entries, naming them, when a shard ran on other data,
-and a test holds the workflow's pin to the Node the listing names: moving the pin re-checks them first.
+not one: the mutant is recorded and the test dropped (`packages/money/src/rounding.ts`'s bigint check). Where an
+entry rests on the engine's Unicode data (NFKC forms, grapheme clusters), its reason says so, the reviewer checks it
+over every code point on the Node the mutation workflow pins, and `tools/stryker/unicode.json` lists it with that Node
+and its Unicode and ICU versions (today readable.ts's three NFKC records and mismatches.ts's sentence-end comparison,
+on Node 24.22.0, Unicode 17.0, ICU 78.3); a test fails while an equivalent whose reason names Unicode is not listed.
+Each shard's canary verdict names the Node it ran on, so the gate fails those entries, naming them, when a shard ran
+on other data, and a test holds the workflow's pin to the Node the listing names: moving the pin re-checks them first.
 
 **What runs** (`.github/workflows/mutation.yml`, its own workflow and concurrency group beside ci.yml's `all green`):
 - **Every package** on a push to `claude/build-platform`, weekly and on `workflow_dispatch`.
 - **On a pull request** (default types; the `money` label and its step are gone), every shard of each package whose
   closure the change touches (`tools/stryker/affected.ts`), diffed from the merge base. A package's closure is:
-  - its mutated files and tests and their import closure, tests included: `importClosure()` of
-    `tools/screening-capacity/watched.ts`, with its new `includeTests` option, off by default, so the watched list is
-    unchanged. It resolves every package `pnpm-workspace.yaml` lists, through each export's import condition, arrays
+  - its mutated files and tests and their import closure, tests included: `importGraph()` of
+    `tools/screening-capacity/watched.ts` (the graph `importClosure()` returns the files of), with its new
+    `includeTests` option, off by default, so the watched list is unchanged. It resolves every package `pnpm-workspace.yaml` lists, through each export's import condition, arrays
     and `*` patterns, with the module the mutation aliases are generated from (`tools/stryker/workspace.ts`), so a
     closure holds what a mutation run loads; an import of a relative path, or of a workspace package's name or scope,
     that resolves to no file stops the changes job;
@@ -458,9 +459,10 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
   visit sort, told apart when a NaN line number leaves `price`'s own sort of the lines to the implementation) and
   found one that a test told apart only with text cast past its type, through an incidental TypeError, now recorded
   (`rounding.ts`'s `typeof amount === 'bigint'`). The scores and Stryker's times above are the fix round's run, on
-  the payment-engine fixes' head; the merged head and the pull request's own CI run measure the same scores. Deleting one killing assertion (the row that holds
-  `formatUnroundedUsd`'s refusal to its message) fails the gate, naming `packages/money/src/cents.ts:83` and its
-  covering test. Before the survivor-killing tests, the money shard alone failed the gate on 151 unexplained survivors
+  the payment-engine fixes' head; all six shards run again on the head merged with Part 1 measure the same scores,
+  mutant for mutant, and the pull request's own CI run measures them once more. Deleting one killing assertion (the
+  row that holds `formatUnroundedUsd`'s refusal to its message) fails the gate, naming
+  `packages/money/src/cents.ts:83` and its covering test. Before the survivor-killing tests, the money shard alone failed the gate on 151 unexplained survivors
   (16 money, 135 ledger). The scout's measurement had packets at 85.40% without `windows.ts` (35 mutants, all killed).
 - **The golden comparison's tests** (`tools/golden-worksheet/engine.test.ts`) price each claim inside the test that
   reads it, so 45 of engine.ts's 855 mutants are static where 799 were. Every mutant's status is the same either way
@@ -491,8 +493,9 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
 
 ### Consequences
 
-- `mutation` is a required check on every pull request. It takes about a minute when no money path changed, and about
-  13 to 17 minutes when one did, depending on the slowest affected shard.
+- `mutation` runs on every pull request, and is one of the required checks once the founder applies the ruleset
+  (Part 1, "The required checks"). It takes about a minute when no money path changed, and about 13 to 17 minutes when
+  one did, depending on the slowest affected shard.
 - A Stryker, Vitest or fast-check bump runs all four packages. If the canary fails, the bump has changed what the
   scores rest on, and the pull request says why before `expected.json` changes.
 - A new money file needs a shard in `stryker/shards.json` (the partition test fails until it has one), and a shard

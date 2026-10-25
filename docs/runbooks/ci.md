@@ -181,7 +181,8 @@ image is then built from. To clear one:
 ## Mutation testing
 
 `.github/workflows/mutation.yml` scores the money paths by mutation (PRD 18; docs/adr/0066, Part 4): the money package,
-the pricing engine, the ledger, and the packet verifier and arithmetic. Its `mutation` job is a required check.
+the pricing engine, the ledger, and the packet verifier and arithmetic. Its `mutation` job is one of the required
+checks above.
 
 ### What runs
 
@@ -291,8 +292,9 @@ a method the value lacks, asserted by a bare `toThrow`) is not one: the mutant i
 
 An entry that rests on the engine's Unicode data (NFKC forms, grapheme clusters) says so in its reason, the reviewer
 checks it over every code point on the Node the workflow pins (24.22.0 in all three jobs), and
-`tools/stryker/unicode.json` lists it with that Node's Unicode and ICU versions. The gate fails a listed entry when a
-shard ran on other data, and a test fails when the pin and the listing's Node differ.
+`tools/stryker/unicode.json` lists it with that Node's Unicode and ICU versions (`tools/stryker/gate.test.ts` fails
+while an equivalent whose reason names Unicode is not listed). The gate fails a listed entry when a shard ran on other
+data, and a test fails when the pin and the listing's Node differ.
 
 Each package's builder records its own in `tools/stryker/equivalent/<package>.json`, a
 JSON array sorted by file, then original, then occurrence (strings in code-unit order, as `Array.prototype.sort`

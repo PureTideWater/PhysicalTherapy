@@ -1423,6 +1423,8 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
       ['no outputs at all', { CHANGES: 'success', STRYKER: 'skipped' }],
       ['a garbled any', { ...affectedRun, ANY: 'True' }],
       ['nothing affected, yet shards', { ...quietRun, SHARDS: '["money-ledger"]' }],
+      ['nothing affected, yet packages', { ...quietRun, PACKAGES: '["money"]' }],
+      ['affected, with packages that are not a JSON array', { ...affectedRun, PACKAGES: 'money' }],
       ['nothing affected, yet a shard job ran', { ...quietRun, STRYKER: 'success' }],
       ['affected, with no shards', { ...affectedRun, SHARDS: '[]' }],
       ['affected, with no shards output', { ...affectedRun, SHARDS: '' }],

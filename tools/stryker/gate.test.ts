@@ -428,6 +428,17 @@ describe('the runtime the Unicode-bound equivalents rest on', () => {
       expect(entries, JSON.stringify(record)).toContain(keyOf(record as unknown as EquivalentEntry));
     }
   });
+
+  it('lists every recorded equivalent whose reason says it rests on Unicode data, so the gate holds each to that data', () => {
+    // docs/adr/0066, Part 4: such an entry's reason says so, and tools/stryker/unicode.json lists it. A reason that
+    // names Unicode and is not listed would be scored on any Node's data without the gate noticing.
+    const listing = readUnicodeFile(repositoryRoot) as { records: EquivalentEntry[] };
+    const listed = new Set(listing.records.map((record) => keyOf(record)));
+    const equivalents = readEquivalentFiles(repositoryRoot);
+    const naming = (['money', 'pricing', 'ledger', 'packets'] as const).flatMap((pkg) => ((equivalents[pkg] ?? []) as EquivalentEntry[]).filter((entry) => /\bUnicode\b/.test(entry.reason)));
+    expect(naming.length).toBeGreaterThan(0);
+    expect(naming.filter((entry) => !listed.has(keyOf(entry))).map((entry) => `${entry.file}: ${entry.original} -> ${entry.replacement}`)).toEqual([]);
+  });
 });
 
 describe('the selected shards, as the workflow passes them', () => {

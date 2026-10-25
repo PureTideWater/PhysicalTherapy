@@ -21,17 +21,15 @@ import { repositoryRoot } from '../content-files';
 /**
  * The golden claims as the engine's inputs, for the tests that price them, and the comparison of its results
  * (fixtures/golden/README.md, "Consuming the format"). Each claim's inputs become the engine's inputs the way
- * production builds them: the release is
- * read from its directory and its manifest hash checked; the mappings, contract versions and rate
- * records become the records @tp/contracts loads, and its pure resolver resolves each line; the line
- * facts, claim context (its remittance date), the version windows, the triage date and practice
- * settings (with the ZIP+4 when the claim gives one) are copied across. The golden format writes windows inclusively and a rate record's codes as
- * null for any code; the contract records are half-open and leave codes out for any code, so an
- * inclusive end becomes the next day's exclusive end and a null code list is left out (the general
- * term the product stores, ADR 0033); a rate record's `contract_adjustment` of null is left out (a
- * record without one, as the product stores it). Nothing here computes an amount; the comparison is
- * field by field against the golden expected results, the review flags, the variance and the dispute
- * window included.
+ * production builds them: the release is read from its directory and its manifest hash checked; the mappings,
+ * contract versions and rate records become the records @tp/contracts loads, and its pure resolver resolves each
+ * line; the line facts, claim context (its remittance date), the version windows, the triage date and practice
+ * settings (with the ZIP+4 when the claim gives one) are copied across. The golden format writes windows inclusively
+ * and a rate record's codes as null for any code; the contract records are half-open and leave codes out for any
+ * code, so an inclusive end becomes the next day's exclusive end and a null code list is left out (the general term
+ * the product stores, ADR 0033); a rate record's `contract_adjustment` of null is left out (a record without one, as
+ * the product stores it). Nothing here computes an amount; the comparison is field by field against the golden
+ * expected results, the review flags, the variance and the dispute window included.
  */
 
 export const GOLDEN_CLAIMS_DIR = 'fixtures/golden/claims';
