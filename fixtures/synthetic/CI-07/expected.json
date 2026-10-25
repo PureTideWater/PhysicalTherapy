@@ -1,0 +1,17 @@
+{
+  "case": "CI-07",
+  "module": "CI",
+  "title": "A flaky end-to-end test",
+  "assertion": "Passing only on its retry fails the run and names the test",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["tools/test/workflows.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The Playwright configuration is read; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

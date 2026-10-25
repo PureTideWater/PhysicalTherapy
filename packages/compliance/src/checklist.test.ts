@@ -82,7 +82,7 @@ describe('evaluateChecklist', () => {
     // An access review is not a change review.
     expect(review([record('access_review', 'quarterly-access-review', '2026-10-16')])?.status).toBe('missing');
     const kinds = change([])?.evidence.map((item) => item.source.kind);
-    expect(kinds).toEqual(['external', 'ci_job', 'unit_test', 'unit_test', 'ci_job', 'database_test', 'record', 'runbook', 'runbook', 'policy']);
+    expect(kinds).toEqual(['external', 'ci_job', 'unit_test', 'unit_test', 'ci_job', 'ci_job', 'database_test', 'record', 'runbook', 'runbook', 'policy']);
     expect(change([])?.status).toBe('action_needed');
     const approved = [record('policy_approval', policyApprovalSubject(policyById('change-management')), '2026-10-16'), record('change_review', 'merged-pull-requests', '2026-10-01')];
     expect(change(approved)?.status).toBe('ready');

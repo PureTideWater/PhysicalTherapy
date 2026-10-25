@@ -232,7 +232,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'LED-10': none(9, 'A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts']),
   'LED-11': none(9, 'Recomputes the ROI statement from the entries the LED-02 to LED-09 scenarios create; no file of its own.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/roi.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'packages/ledger/src/statement.test.ts']),
   'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
-  'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests.db.test.ts']),
+  'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts']),
   'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
   'SEC-04': none(1, 'Grant revocation is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
   'SEC-05': none(1, 'Support grants expire in the database; the notice is a worker job.', ['packages/db/src/access.db.test.ts', 'apps/worker/src/platform/support-notices.db.test.ts', 'apps/web/e2e/hardware-key.spec.ts']),
@@ -245,7 +245,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'SEC-12': none(12, 'A legal hold is a lifecycle record; no file.'),
   'SEC-13': none(1, 'The restore drill restores a database and counts its rows.', ['apps/worker/src/platform/restore-drill.db.test.ts']),
   'SEC-14': none(2, 'The test builds a non-synthetic interchange in memory and hands it to the hook; it is never written as a file.', ['packages/synth/src/fixture-guard.test.ts']),
-  'SEC-15': none(1, 'Session expiry is a session and route property.', ['packages/db/src/identity.db.test.ts', 'apps/web/src/lib/routes/route-tests.db.test.ts', 'apps/web/e2e/sign-in.spec.ts']),
+  'SEC-15': none(1, 'Session expiry is a session and route property.', ['packages/db/src/identity.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts', 'apps/web/e2e/sign-in.spec.ts']),
   'SEC-17': none(6, 'The screening tables are read from the migrated catalog; no file.', ['packages/db/src/screening.db.test.ts']),
   'SCR-01': none(6, 'A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.', [
     'apps/worker/src/screening/format.test.ts',
@@ -379,6 +379,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/screening.spec.ts',
   ]),
   'SCR-19': none(6, 'A consumer is killed mid-run over a screening the tests submit in memory; no file.', [
+    'apps/worker/src/screening/consumer-lease.db.test.ts',
     'apps/worker/src/screening/consumer.db.test.ts',
     'apps/worker/src/screening/threads.test.ts',
     'apps/worker/src/jobs/enqueue.test.ts',
@@ -438,6 +439,17 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/models.spec.ts',
   ]),
+  // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
+  'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-02': none(0, 'The partition reads the route registry; no file.', ['apps/web/src/lib/routes/route-tests/partition.test.ts']),
+  'CI-03': none(0, 'Both snapshots read two synthetic worlds the test builds on a scratch database; no file.', ['apps/web/src/lib/routes/route-tests/snapshot.db.test.ts']),
+  'CI-04': none(0, 'The split is computed by vitest over the repository’s own db files, and the shard list from results built in memory; no file.', ['tools/test/db-shards.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-05': none(0, 'The guard is run with and without a browser in place; no file.', ['tools/test/ci-chromium.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-06': none(0, 'The stamp is written and read in a temporary directory; no file.', ['apps/web/scripts/build-stamp.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-07': none(0, 'The Playwright configuration is read; no file.', ['tools/test/workflows.test.ts']),
+  'CI-08': none(0, 'The groups and the scheduler are planned for hosts the test describes; no file.', ['tools/lint/groups.test.ts']),
+  'CI-09': none(0, 'The workflow and the database suite are read; the drift case migrates a scratch database; no file.', ['tools/test/workflows.test.ts', 'packages/db/src/domain-model/domain-model.db.test.ts']),
+  'CI-10': none(0, 'Every workflow file is read; no file.', ['tools/test/workflows.test.ts']),
 };
 
 export interface CaseDefinition {
@@ -456,7 +468,7 @@ export interface CaseDefinition {
 }
 
 function definition(id: string, title: string, assertion: string, entry: Entry, dir: string, variant: boolean, build: Build | undefined): CaseDefinition {
-  const module = (variant ? 'PAR' : id.slice(0, 3)) as CaseModule;
+  const module = (variant ? 'PAR' : id.slice(0, id.indexOf('-'))) as CaseModule;
   return {
     id,
     module,

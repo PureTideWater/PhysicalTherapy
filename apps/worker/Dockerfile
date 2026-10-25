@@ -16,7 +16,7 @@ WORKDIR /app
 # The audit report's PDF is printed with Chromium (docs/adr/0037): playwright-core at the version the
 # lockfile pins, beside the bundle, and its headless Chromium with the system libraries it needs.
 # Debian's security updates published since the base image come first, and npm, npx and corepack are
-# removed once Chromium is in: the image scan (supply-chain.yml) fails on any HIGH or CRITICAL finding
+# removed once Chromium is in: the image scan (ci.yml's images job) fails on any HIGH or CRITICAL finding
 # that has a fix, and the worker never runs a package manager.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \

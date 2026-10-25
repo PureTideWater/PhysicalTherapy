@@ -1,103 +1,408 @@
 name: ci
-on: [pull_request]
+
+# Every gate of PRD 18 on every pull request and on every push to the build branch, as parallel jobs behind one gate,
+# `all green`, which needs them all and is the one check of this workflow the ruleset requires (docs/adr/0066, Part 1;
+# docs/runbooks/ci.md). A push run re-verifies each merge on its merged tree and seeds the caches the pull requests
+# restore, since a pull request may restore its base branch's caches but never writes them. No path filter: every job
+# runs on every event, so the gate always reports.
+on:
+  pull_request:
+  push:
+    branches: [claude/build-platform]
 
 # The jobs read the repository and nothing else: no step calls the GitHub API (docs/adr/0063).
 permissions:
   contents: read
 
-# A newer push to the same pull request cancels the older run, so superseded runs spend no minutes.
+# A newer push to a pull request cancels its older run; a push run is never cancelled. The group starts with the
+# workflow's own name, because groups are shared across the repository's workflows.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# GitHub's bash with pipefail (bash --noprofile --norc -eo pipefail), so a failing command inside a pipe fails its step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  check:
+  # The fast checks, each run whatever the one before it did once the install succeeded, so one red step shows every
+  # other verdict too.
+  static:
     # Pinned, as every job is, because ubuntu-latest moves to Ubuntu 26.04 from 2026-10-19 and Playwright 1.56.1
     # predates it (audit item #19). The move to 26.04 comes with the Playwright upgrade, in its own pull request.
     runs-on: ubuntu-24.04
-    # A run takes 25 to 35 minutes; a hung step stops at 60 instead of GitHub's 360 (docs/adr/0063).
-    timeout-minutes: 60
+    # About 3 minutes; a hung step stops at 15 instead of GitHub's 360 (docs/adr/0063).
+    timeout-minutes: 15
+    steps:
+      # The whole history: the secret scan, the release check and the engine freeze read the base.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      # pyx12, the 835 oracle test:oracle compares the parser with.
+      - run: pip install pyx12
+      - id: install
+        run: pnpm install --frozen-lockfile
+      # What this run checks: a pull request's commits beyond its base branch, or a push's commits beyond the branch's
+      # previous head (github.event.before, which for a merge commit is its first parent), or the commit alone when the
+      # branch is new. A previous head the checkout does not hold (a force push, which the ruleset blocks) fails here
+      # rather than check fewer commits.
+      - name: The commits this run checks
+        id: range
+        if: ${{ !cancelled() }}
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            base="origin/$BASE_REF"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            base="$BEFORE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          if ! git rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
+            echo "::error title=The commits this run checks::$base is not a commit in this checkout, so the range $base..HEAD cannot be checked."
+            exit 1
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "This run checks the commits $base..HEAD." | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: pnpm audit --prod
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      # The secret scan (docs/adr/0063): the pinned gitleaks the pre-push hook runs, its release archive checked against
+      # the SHA-256 in tools/gitleaks/release.txt, over the commits above (each merge by what it adds beyond its
+      # parents), with the repository's configuration. It needs no licence and calls no API, so it runs the same in an
+      # organization's private repository.
+      - name: Secret scan of the pull request's commits
+        if: ${{ !cancelled() && steps.range.outcome == 'success' }}
+        env: { BASE: "${{ steps.range.outputs.base }}" }
+        run: |
+          gitleaks="$(tools/gitleaks/install.sh)"
+          "$gitleaks" git --no-banner --redact --log-level info --config .gitleaks.toml --gitleaks-ignore-path .gitleaksignore \
+            --log-opts "--no-color --no-ext-diff --no-textconv --diff-merges=remerge $BASE..HEAD" .
+      # Every table, interchange and workbook in the commit, read before anything regenerates the tree, through the
+      # writer's own fixture guard: SYNTHSENDER in an identifier column, or a pinned table (CO-03, docs/adr/0059).
+      - run: pnpm check:fixtures
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: pnpm verify-content
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - name: Published releases and prompt versions unchanged
+        if: ${{ !cancelled() && steps.range.outcome == 'success' }}
+        env: { BASE: "${{ steps.range.outputs.base }}" }
+        run: tools/check-releases-immutable.sh "$BASE"
+      # The engine freeze (reconciliation-001's change order; docs/adr/0064): against the merge base, no non-test engine
+      # file, file of the engine's package, existing golden file, synthetic release a golden claim pins or rule table
+      # changes, but what tools/engine-freeze/exception.json lets through in the pull request it names (PR_NUMBER) and
+      # that adds or edits it; the engine's diff stat goes to the job summary. A pull request's alone: the exception
+      # names one, and a push re-verifies what its pull request already passed. The unit job's differential test
+      # prices the engines of the same base and this commit on every event.
+      - name: Engine freeze
+        if: ${{ github.event_name == 'pull_request' && !cancelled() && steps.install.outcome == 'success' }}
+        env: { BASE_REF: "${{ github.base_ref }}", PR_NUMBER: "${{ github.event.pull_request.number }}" }
+        run: |
+          base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          pnpm -s exec tsx tools/engine-freeze/check.ts "$base"
+      - id: synth
+        run: pnpm synth --all
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      # The generation is deterministic, so a committed fixture it rewrites, or a file it removes from a case or EMR
+      # directory, is a fixture the commit holds that packages/synth did not write: the run fails on it.
+      - run: git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"
+        if: ${{ !cancelled() && steps.synth.outcome == 'success' }}
+      # Every workspace's TypeScript (tools/typecheck/run.ts), incremental over the build information the last run on
+      # this branch or its base left: tsc compares every input's hash, so a cache can only save time.
+      - name: Restore the typecheck cache
+        id: tsc-cache
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules/.cache/tsc
+          key: tsc-v1-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            tsc-v1-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            tsc-v1-${{ runner.os }}-
+      - id: typecheck
+        run: pnpm typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - name: Save the typecheck cache
+        if: ${{ !cancelled() && steps.typecheck.outcome != 'skipped' && steps.tsc-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules/.cache/tsc
+          key: ${{ steps.tsc-cache.outputs.cache-primary-key }}
+      - run: pnpm lint:logs
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: pnpm test:golden
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      - run: pnpm test:oracle
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      # Every production dependency's licence against tools/check-licenses/allowlist.json (PRD 16; docs/adr/0010).
+      - run: pnpm licenses:check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+
+  # ESLint over every file in memory-bounded groups (tools/lint/run.ts): no warning passes.
+  lint:
+    runs-on: ubuntu-24.04
+    # About 2 minutes.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  unit:
+    runs-on: ubuntu-24.04
+    # About 4 minutes.
+    timeout-minutes: 20
+    steps:
+      # The whole history: the engine freeze's differential test extracts the base commit's engine with git archive.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # Playwright's own Chromium, the build the brand journey's pixel baselines were made with, and the one the
+      # worker's tests print reports with: installed before any vitest run, which fails on CI without it rather than
+      # skip a printing test (tools/test/ci-chromium.ts; docs/adr/0058).
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      # The base the differential test prices the golden claims and 20,000 generated claims against, with the base
+      # engine and this one (tools/engine-freeze/differential.test.ts, which fails in CI without it): a pull request's
+      # merge base, or a push's previous head (its first parent when the branch is new).
+      - name: The engine freeze's base
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            base="$BEFORE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          if ! git rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
+            echo "::error title=The engine freeze's base::$base is not a commit in this checkout, so the differential test has no base engine."
+            exit 1
+          fi
+          echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"
+          echo "The differential test compares this commit's engine with $base's."
+      - run: pnpm test
+
+  # The database suite in shards (vitest's --shard, by the SHA-1 of each file's path): every shard on its own Postgres,
+  # migrated by itself, with Chromium; together they run every db file once, which each shard's list proves (CI-04).
+  # Six shards on a private repository's 2-CPU runners, four on the public 4-CPU ones.
+  db:
+    name: db (${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-24.04
+    # About 5 minutes each.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(github.event.repository.private && '[1,2,3,4,5,6]' || '[1,2,3,4]') }}
     services:
       postgres:
         image: postgres:18
         env: { POSTGRES_PASSWORD: test }
         ports: ["5432:5432"]
+    env:
+      DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: 24, cache: pnpm }
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      # The database logs every deliberate refusal the tests provoke; its log is printed after the job and,
-      # unquieted, buries the failing test's own output. Only the database's log level changes.
-      - run: psql postgres://postgres:test@localhost:5432/postgres -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
+      - run: pnpm install --frozen-lockfile
+      # The database logs every deliberate refusal the tests provoke; its log is printed after the job and, unquieted,
+      # buries the failing test's own output. Only the database's log level changes.
+      - name: Quiet the database's log
+        run: |
+          for _ in $(seq 1 30); do pg_isready -q -h localhost -p 5432 && break; sleep 1; done
+          psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      # Each shard's own durations from its last run, so its slowest files start first; without them vitest orders
+      # by file size. Shard membership is fixed by the paths alone, so this only orders.
+      - name: Restore this shard's test durations
+        id: vitest-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules/.vite/vitest
+          key: vitest-db-v1-${{ runner.os }}-${{ strategy.job-total }}-${{ matrix.shard }}-${{ github.sha }}
+          restore-keys: vitest-db-v1-${{ runner.os }}-${{ strategy.job-total }}-${{ matrix.shard }}-
+      - name: The database suite, this shard's files
+        env: { SHARD: "${{ matrix.shard }}/${{ strategy.job-total }}" }
+        run: pnpm db:migrate && pnpm test:db --shard="$SHARD" --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/db-results.json"
+      # The files this shard ran, sorted, with their count and the list's SHA-256, in the log and the summary: the
+      # union of every shard's list is the whole db project, each file once (docs/runbooks/ci.md, "Reading a red gate").
+      - name: Files this shard ran
+        if: ${{ !cancelled() }}
+        env: { SHARD: "${{ matrix.shard }}/${{ strategy.job-total }}" }
+        run: |
+          results="$RUNNER_TEMP/db-results.json"
+          if [ ! -s "$results" ]; then
+            echo "::error title=Files this shard ran::vitest wrote no results, so db ($SHARD) cannot show which files it ran."
+            exit 1
+          fi
+          jq -r '.testResults[].name' "$results" | sed "s|^$GITHUB_WORKSPACE/||" | LC_ALL=C sort > "$RUNNER_TEMP/db-files.txt"
+          count="$(wc -l < "$RUNNER_TEMP/db-files.txt" | tr -d ' ')"
+          sha="$(sha256sum "$RUNNER_TEMP/db-files.txt" | cut -d ' ' -f 1)"
+          {
+            echo "### Files db ($SHARD) ran: $count, list SHA-256 $sha"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/db-files.txt"
+            echo '```'
+            echo
+            echo "The ten slowest, in seconds:"
+            echo
+            echo '```'
+            jq -r '.testResults[] | [((.endTime - .startTime) / 1000 | floor), .name] | @tsv' "$results" | sed "s|$GITHUB_WORKSPACE/||" | LC_ALL=C sort -rn | sed -n '1,10p'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Save this shard's test durations
+        if: ${{ !cancelled() && steps.vitest-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules/.vite/vitest
+          key: ${{ steps.vitest-cache.outputs.cache-primary-key }}
+
+  # The schema approval as its own check (CO-02, CLAUDE.md's command): the document regenerated from a freshly migrated
+  # database must match docs/product/domain-model.md, every divergence explained, and carry the founder's approval of
+  # exactly that text. A schema pull request awaiting the signature is red here alone.
+  domain-model:
+    name: domain model
+    runs-on: ubuntu-24.04
+    # About a minute.
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: test }
+        ports: ["5432:5432"]
+    env:
+      DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
+    steps:
+      # The whole history: the summary reads the base branch's document.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       # Each approval of the domain model opens with what changed since the last approved one (docs/adr/0063): the
-      # summary against the base branch, whose document is approved, in this job's summary. It reads no database.
+      # summary against the base branch, whose document is approved, in this job's summary and its log, written before
+      # the check can fail. It reads no database.
       - name: Changes since the last approved domain model
+        if: ${{ github.event_name == 'pull_request' }}
         env: { BASE_REF: "${{ github.base_ref }}" }
         run: |
           if git cat-file -e "origin/$BASE_REF:docs/product/domain-model.md" 2>/dev/null; then
-            pnpm -s db:domain-model --summary-since "origin/$BASE_REF" >> "$GITHUB_STEP_SUMMARY"
+            pnpm -s db:domain-model --summary-since "origin/$BASE_REF" | tee -a "$GITHUB_STEP_SUMMARY"
           else
-            echo "The base branch $BASE_REF holds no docs/product/domain-model.md; there is no approved document to compare with." >> "$GITHUB_STEP_SUMMARY"
+            echo "The base branch $BASE_REF holds no docs/product/domain-model.md; there is no approved document to compare with." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-      - run: pip install pyx12
-      - run: pnpm audit --prod
-      # The secret scan (docs/adr/0063): the pinned gitleaks the pre-push hook runs, its release archive checked against
-      # the SHA-256 in tools/gitleaks/release.txt, over this pull request's commits (each merge by what it adds beyond
-      # its parents), with the repository's configuration. It needs no licence and calls no API, so it runs the same in
-      # an organization's private repository.
-      - name: Secret scan of the pull request's commits
-        env: { BASE_REF: "${{ github.base_ref }}" }
+      - run: pnpm db:migrate
+      - run: pnpm db:domain-model --check --strict --require-approval
+
+  # The production build of the web app and the worker, kept for the e2e shards (the web standalone tree, stamped with
+  # this commit, which a shard refuses for any other), and the stacks' diff.
+  build:
+    runs-on: ubuntu-24.04
+    # About 2.5 minutes.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - id: install
+        run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # What scripts/start-standalone.sh serves (the standalone server with its symlinks, which tar keeps, and the
+      # static assets; public/ comes with each shard's checkout of the same commit) and the commit it was built from.
+      - name: Keep the web build for the e2e shards
         run: |
-          gitleaks="$(tools/gitleaks/install.sh)"
-          "$gitleaks" git --no-banner --redact --log-level info --config .gitleaks.toml --gitleaks-ignore-path .gitleaksignore \
-            --log-opts "--no-color --no-ext-diff --no-textconv --diff-merges=remerge origin/$BASE_REF..HEAD" .
-      # Every table, interchange and workbook in the commit, read before anything regenerates the tree, through the
-      # writer's own fixture guard: SYNTHSENDER in an identifier column, or a pinned table (CO-03, docs/adr/0059).
-      - run: pnpm check:fixtures
-      - run: pnpm typecheck && pnpm lint && pnpm lint:logs
-      - run: pnpm verify-content
-      - run: tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"
-      # The engine freeze (reconciliation-001's change order; docs/adr/0064): against the merge base, no non-test engine
-      # file, file of the engine's package, existing golden file, synthetic release a golden claim pins or rule table
-      # changes, but what tools/engine-freeze/exception.json lets through in the pull request it names (PR_NUMBER) and
-      # that adds or edits it; the engine's diff stat goes to the job summary. The merge base is kept for the unit tests, whose differential test prices the golden
-      # claims and 20,000 generated claims with the base engine and this one, and fails without it.
-      - name: Engine freeze
-        env: { BASE_REF: "${{ github.base_ref }}", PR_NUMBER: "${{ github.event.pull_request.number }}" }
+          git rev-parse HEAD > apps/web/.next/BUILD_COMMIT
+          tar -C apps/web -cf - .next/standalone .next/static .next/BUILD_COMMIT | gzip -1 > "$RUNNER_TEMP/web-build.tar.gz"
+      # Named per run, so a re-run of failed jobs replaces it rather than failing on the name the first attempt left.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: web-build
+          path: ${{ runner.temp }}/web-build.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+      - run: pnpm cdk:diff
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+
+  # The end-to-end journeys in shards over the build job's production build, each shard on its own Postgres, prepared
+  # and seeded for it (apps/web/e2e/prepare.ts). Three shards on a private repository's 2-CPU runners, two otherwise.
+  e2e:
+    name: e2e (${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: build
+    runs-on: ubuntu-24.04
+    # About 5 minutes each.
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(github.event.repository.private && '[1,2,3]' || '[1,2]') }}
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: test }
+        ports: ["5432:5432"]
+    env:
+      DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Quiet the database's log
         run: |
-          base="$(git merge-base "origin/$BASE_REF" HEAD)"
-          echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"
-          pnpm -s exec tsx tools/engine-freeze/check.ts "$base"
-      - run: pnpm synth --all
-      # The generation is deterministic, so a committed fixture it rewrites, or a file it removes from a case or EMR
-      # directory, is a fixture the commit holds that packages/synth did not write: the run fails on it.
-      - run: git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"
-      # Playwright's own Chromium, the build the brand journey's pixel baselines were made with, and the one the
-      # worker's tests print reports with: installed before the unit tests, so none of them skips (docs/adr/0058).
+          for _ in $(seq 1 30); do pg_isready -q -h localhost -p 5432 && break; sleep 1; done
+          psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
-      - run: pnpm test && pnpm test:golden && pnpm test:oracle
-      - run: pnpm db:migrate && pnpm test:db
-        env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
-      # The domain model's approval case (CO-02) fails in test:db until the founder signs the document;
-      # the steps below still run and report, so the run shows every other check's result.
-      - run: pnpm test:e2e
-        if: ${{ !cancelled() }}
-        env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-build
+          path: ${{ runner.temp }}/web-build
+      - run: tar -C apps/web -xzf "$RUNNER_TEMP/web-build/web-build.tar.gz"
+      # E2E_PREBUILT: the web server starts the downloaded build, after scripts/build-stamp.ts refuses one stamped with
+      # any other commit, in place of building it again (apps/web/playwright.config.ts). A test that passes only on its
+      # retry fails the run and is named (failOnFlakyTests).
+      - name: The end-to-end journeys, this shard's
+        env: { E2E_PREBUILT: "1", SHARD: "${{ matrix.shard }}/${{ strategy.job-total }}" }
+        run: pnpm test:e2e --shard="$SHARD"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: playwright
+          name: playwright-${{ matrix.shard }}
           path: |
             apps/web/playwright-report/
             apps/web/test-results/
             brand-screenshots/
           if-no-files-found: ignore
-          # Up to 54 MB a run, against GitHub Team's 2 GB of Actions storage (docs/adr/0063).
+          # Up to about 54 MB a run over every shard, against GitHub Team's 2 GB of Actions storage (docs/adr/0063).
           retention-days: 7
+          overwrite: true
       # A failed run's screenshot comparisons, readable from the job's log alone: each diff and actual picture under
       # apps/web/test-results smaller than 300 KB, as its path and its base64 on one line (docs/adr/0058).
       - if: failure()
@@ -106,7 +411,77 @@ jobs:
           find apps/web/test-results -type f \( -name '*-diff.png' -o -name '*-actual.png' \) -size -300k | sort | while IFS= read -r file; do
             echo "$file $(base64 -w 0 "$file")"
           done
-      - run: pnpm build
+
+  # Both production images, built from their Dockerfiles and scanned with Trivy, failing on any HIGH or CRITICAL
+  # finding that has a fix (PRD 16 and 18; docs/adr/0010). One job for both, to spare a concurrency slot: the worker is
+  # built and scanned whatever the web image's result.
+  images:
+    runs-on: ubuntu-24.04
+    # About 4 minutes.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build the web image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          load: true
+          push: false
+          tags: tp-web:scan
+      - name: Scan the web image (fails on HIGH or CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: tp-web:scan
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Build the worker image
+        id: worker
         if: ${{ !cancelled() }}
-      - run: pnpm cdk:diff
-        if: ${{ !cancelled() }}
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          load: true
+          push: false
+          tags: tp-worker:scan
+      - name: Scan the worker image (fails on HIGH or CRITICAL)
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: tp-worker:scan
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # The required check (docs/runbooks/github-governance.md, step 4A): every job above, each of whose results it prints
+  # to its log and its summary, and it passes only when every one succeeded. It runs whatever they did, a cancelled run
+  # included: GitHub counts a job its own condition skipped as passing a required check, so a gate skipped on a cancel
+  # would pass. It checks nothing out (tools/test/ci-gate.test.ts runs this script on every kind of result).
+  all-green:
+    name: all green
+    if: ${{ always() }}
+    needs: [static, lint, unit, db, domain-model, build, e2e, images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job's result
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          {
+            echo "| Job | Result |"
+            echo "| --- | --- |"
+            echo "$NEEDS" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if echo "$NEEDS" | jq -e 'length > 0 and all(.[]; .result == "success")' > /dev/null; then
+            echo "all green: every job it needs succeeded ($(echo "$NEEDS" | jq 'length') jobs)."
+          else
+            echo "::error title=all green::$(echo "$NEEDS" | jq -r 'if length == 0 then "no job reported a result" else "not every job succeeded: " + ([to_entries[] | select(.value.result != "success") | "\(.key) \(.value.result)"] | join(", ")) end')"
+            exit 1
+          fi
