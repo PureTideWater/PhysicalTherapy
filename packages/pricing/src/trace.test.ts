@@ -1,10 +1,11 @@
+import { parseRateTerms } from '@tp/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { price } from './engine';
 import { recompute } from './recompute';
 import { indexRelease } from './release';
 import { contractAgreement, lineFacts, percentTerms, practiceSettings, pricingInput, readRuleRelease, syntheticRelease } from './testing';
-import { ENGINE_VERSION, type PricingTrace, parseTrace } from './trace';
+import { ENGINE_VERSION, type PricingTrace, parseTrace, pricingTraceSchema } from './trace';
 
 /**
  * The trace schema across the engine versions (docs/adr/0064): a trace stored by phase-two/1 still parses, and so does
@@ -203,5 +204,59 @@ describe('the trace across engine versions', () => {
     const given = copy(STORED_PHASE_TWO_1);
     (given.settings as Record<string, unknown>).zip_plus_four = '50000';
     expect(parseTrace(given).settings.zip_plus_four).toBe('50000');
+  });
+});
+
+/** A stored trace with one value replaced, at a path of keys. */
+function withValue(path: readonly string[], value: unknown): Record<string, unknown> {
+  const changed = copy(STORED_PHASE_TWO_1);
+  let at: Record<string, unknown> = changed;
+  for (const key of path.slice(0, -1)) {
+    at = at[key] as Record<string, unknown>;
+  }
+  at[path.at(-1) as string] = value;
+  return changed;
+}
+
+describe('the trace schema’s text forms', () => {
+  it.each<[string, readonly string[], readonly string[], readonly string[], RegExp]>([
+    ['decimal text', ['steps', 'units', 'unit_cents'], ['2112', '0', '-1.5', '0.25', '1234567.890123'], ['x2112', '2112x', '-x1', '1.', '.5', '1.5.5', '+1', ''], /must be decimal text/],
+    ['whole cents', ['outcome', 'expected_allowed_cents'], ['2112', '0', '-5', '10'], ['x2112', '2112x', '02112', '-0', '00', '1.0', '-x1', ''], /must be whole cents as integer text/],
+    ['a date', ['steps', 'window', 'as_of'], ['2026-10-15', '0099-01-01'], ['x2026-10-15', '2026-10-15x', '12026-10-15', '2026-10-150', '2026-1-15', ''], /must be a date written YYYY-MM-DD/],
+    ['a SHA-256', ['steps', 'fee_schedule', 'rvu', 'record', 'sha256'], ['7cb409e0c31c832b5558f2407c62f4a09182a622a23018bb000bbe3f62795cae', '0'.repeat(64)], [`x${'0'.repeat(64)}`, `${'0'.repeat(64)}x`, `${'0'.repeat(64)}0`, 'A'.repeat(64), '0'.repeat(63)], /must be a SHA-256 in hex/],
+  ])('holds %s to its whole form, and names the form it refuses', (_label, path, accepted, refused, message) => {
+    for (const value of accepted) {
+      expect(parseTrace(withValue(path, value)), value).toMatchObject({});
+    }
+    for (const value of refused) {
+      expect(() => parseTrace(withValue(path, value)), value).toThrow(message);
+    }
+  });
+
+  it('accepts every step a stop can name, and no other', () => {
+    const steps = ['input', 'agreement', 'method', 'fee_schedule', 'units', 'mppr', 'assistant_reduction', 'sequestration', 'claim', 'rounding', 'window'];
+    for (const step of steps) {
+      const stopped = withValue(['outcome'], { result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'unexpected', step });
+      expect(pricingTraceSchema.safeParse(stopped).success, step).toBe(true);
+    }
+    for (const step of ['', 'variance', 'Rounding']) {
+      expect(pricingTraceSchema.safeParse(withValue(['outcome'], { result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'unexpected', step })).success, step).toBe(false);
+    }
+  });
+
+  it('parses the terms of a contract-named locality, which the engine refuses to price but records', () => {
+    const locality = { kind: 'NAMED', carrier: '99999', locality: '01' };
+    const named = parseRateTerms({ scope: { codes: ['97110'] }, method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '100', year_basis: 'CURRENT', locality_basis: locality, conversion_factor: 'non_qualifying_apm' } }, true);
+    const [line] = price(pricingInput(syntheticRelease(900001), [lineFacts({ agreement: contractAgreement({ terms: named }) })]));
+    const trace = JSON.parse(JSON.stringify(line?.trace)) as PricingTrace;
+    expect(trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'locality_basis_not_in_phase_one', step: 'method' });
+    expect(parseTrace(trace).terms?.percent_of_medicare?.locality_basis).toEqual(locality);
+    expect(recompute(trace)).toEqual({ outcome: 'unpriced', reason: 'ENGINE_ERROR', differences: [] });
+    // A named locality says which: without its carrier or locality, or with a kind of neither form, it is not a trace.
+    for (const basis of [{ kind: 'NAMED', carrier: '99999' }, { kind: 'NAMED', locality: '01' }, { kind: '', carrier: '99999', locality: '01' }, { kind: 'PRACTICE', carrier: '99999', locality: '01' }]) {
+      const changed = copy(trace);
+      ((changed.terms as Record<string, unknown>).percent_of_medicare as Record<string, unknown>).locality_basis = basis;
+      expect(pricingTraceSchema.safeParse(changed).success, JSON.stringify(basis)).toBe(false);
+    }
   });
 });
