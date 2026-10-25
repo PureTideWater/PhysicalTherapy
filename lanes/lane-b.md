@@ -232,3 +232,21 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - **Reviews** (payment-engine; test and fixture integrity): 0 blocking, 0 should_fix, 10 nits.
   - **Fix round running** (wf_bc33f972-a3a): the ten nits, the full local suite once with one heavy step at a time, one push, the PR body. Subscribed to #45.
   - **The co-founder's approval** of LED-12's row wording, as recommended (his "every recommended" direction under the delegation), goes into item 15.
+- **2026-10-25 ~18:30 UTC: ci-mutation's fix round done; PR #44 head 7542aae, CI all green** (wf_877c195a-66e with its resume: 3 agents, 0.40M on the resume). Reports in `approval-summaries/lane-b-ci-mutation-fix-{fa,fb,suite}.md`.
+  - **All 22 findings fixed.** Both blocking ones:
+    - the two pricing records a NaN line tells apart are deleted, and a test kills both mutants;
+    - a deleted or renamed money test or data file now affects its package.
+  - **The suite's re-read** fixed 5 more.
+  - **Full local suite once, all pass:**
+    - unit 4,986 + 3 skipped, branches 100% (money 56/56, pricing 594/594, ledger 415/415, edi835 714/714);
+    - golden 188; oracle 630;
+    - test:db in six sequential shards, 9,040 + 1 = every db file once;
+    - e2e 51 with `E2E_PREBUILT=1` on the stamped build;
+    - canary 5 of 5 in every shard.
+  - **The gate passes, the same locally and on CI:** money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%. That leaves 164 undetected mutants, each a reviewed equivalent.
+  - **CI run 40219164530:** every job green, the six stryker jobs 4:05 to 10:06. `all green` took 16:01 because e2e (2/2) took 14:36 (the verifier says whose).
+  - **Handed to Lane A** (LANES.md): four frozen-engine defects for PR 6c.
+  - **Open:**
+    - payment-engine/S1, whether text cast past `Cents` should be refused by an explicit MoneyError guard in `multiplyCents` (a later money change; the co-founder decides under the delegation);
+    - O7, rebalance `stryker/shards.json` if packets-rest nears 15 minutes.
+  - **Running:** the fresh-clone verification (wf_13f42dd4-505).

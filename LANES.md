@@ -165,7 +165,12 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
 | PR 15, ledger tests LED-12 and LED-13 (reconciliation-001 item 15; CO-09; tests only) | B | `co-001/pr-15-ledger-tests` | 2026-10-25 01:15 | No ADR expected (one is reserved here first if the design needs it); test-matrix LED-12 and LED-13 (named by CO-09); `packages/synth` cases LED-12 (its new fixture) and LED-13 (a no-file registry entry) | L1 ruled (a) by the founder, relayed by the co-founder, 2026-10-25 ~02:05 UTC: the ledger as frozen, LED-12 restated (`designs/lane-b-pr15-ledger-tests.md`). Tests only, no migration, no ADR. Build next, in the next free heavy slot |
 
 ## Handed to Lane A
-None yet.
+- **2026-10-25, from Lane B's ci-mutation (PR #44) review: four defects of the frozen pricing engine, for PR 6c** (engine corrections under one freeze exception). Lane B changes no engine code; the tests pin today's behaviour, named as current behaviour and a known defect, so 6c flips them. Detail in `approval-summaries/lane-b-ci-mutation-fix-fa.md` and `lane-b-ci-mutation-fix-suite.md`:
+  1. `price` sorts a claim's lines by `a.lineNo - b.lineNo` before `validateFacts`, so a NaN line number leaves the order to the sort (V8 keeps [3, NaN, 1]). Validate line numbers first, or use a total comparator.
+  2. A year basis the engine cannot read as `LOCKED:<four digits>` prices at the records in force, as CURRENT does. This is a money-path defect and a founder question: it should stop the line. Also, `YearBasis`'s `` `LOCKED:${number}` `` is wider than the contracts schema.
+  3. A two-digit place of service reads an inherited `placeOfServiceSettings` key: `validSettings` checks own keys, but the lookup reads through the prototype.
+  4. An unknown rounding rule stops with ENGINE_ERROR detail 'unexpected', where it should have a detail of its own.
+  - **Also for 6c:** a new pricing source file needs its shard in `stryker/shards.json`; the mutation gate fails a shard report that leaves a held file out.
 
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
