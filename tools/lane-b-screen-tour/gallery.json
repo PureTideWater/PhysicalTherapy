@@ -1,0 +1,302 @@
+[
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/01-sign-in.png",
+  "title": "Sign in",
+  "area": "Getting started",
+  "role": "public",
+  "width": 1280,
+  "caption": "The front door: practice staff sign in with email, password and a six-digit code from a phone app, while PaidWhole's own staff must use a physical security key. Strong sign-in matters because every account can reach patient payment records.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/02-practice-home.png",
+  "title": "Practice home",
+  "area": "Getting started",
+  "role": "billing manager (ledger-manager)",
+  "width": 1280,
+  "caption": "A practice's home page keeps three numbers apart: $0.00 still being pursued, $30.00 the insurer agreed to pay, and $12.00 actually recovered as cash in the bank. Below them are how fresh the data is, what is waiting for someone, and news such as an insurer taking back $18.00.",
+  "ok": true,
+  "problem": "Minor: a notification reads 'on 1 lines'. Actionable shows $0.00 here while the ROI statement (19) lists $30.00 actionable in open cases for the same practice; worth a word if the co-founder compares the two."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/03-uploads.png",
+  "title": "Uploading a remittance",
+  "area": "Payments in",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "This is where a practice drops the payment files its insurers send, one at a time, in a batch or as a zip, and each file is checked for viruses before anything opens it. The receipts confirm two payment files loaded (32 claims and 3 claims) and one contract stored.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/04-remittances.png",
+  "title": "Remittances",
+  "area": "Payments in",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "Every insurer payment loaded so far: two test insurers with their payment dates, reference numbers and amounts ($2,240.00 and $168.00). Each is marked balanced, meaning its lines add up exactly to the money paid.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/05-remittance.png",
+  "title": "One remittance and its claims",
+  "area": "Payments in",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "One $168.00 payment from test insurer Q, broken into its three claims for made-up patients: $150.00 billed, $56.00 paid and $14.00 owed by the patient on each. This is the raw material the product checks against the contract.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/06-contracts.png",
+  "title": "Contracts",
+  "area": "Contracts and pricing",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "The practice's insurer contracts: one signed-off fixed-fee agreement that prices every line of its plan. The page also shows upcoming contract dates and where to upload new contracts and insurer letters.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/07-contract-version.png",
+  "title": "A contract version, its rates and their citations",
+  "area": "Contracts and pricing",
+  "role": "billing manager (era-manager)",
+  "width": 1280,
+  "caption": "A contract turned into exact rates by hand: the contract page is shown with its clause (“110% of the Medicare Physician Fee Schedule”) highlighted, and each rate detail carries the contract specialist's approval. A red note warns that this contract counts its dispute deadline in a way the product cannot check yet, so it will not state a deadline it cannot back up.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/08-mapping.png",
+  "title": "Payer and plan mapping",
+  "area": "Contracts and pricing",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "Which agreement each insurer plan is paid under: insurer Q's plan is tied to its signed contract and insurer N's is out of network. The box at the top confirms no dollars are stuck waiting on this setup.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/09-pricing-runs.png",
+  "title": "Pricing runs",
+  "area": "Contracts and pricing",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "Each pricing run checks a month of payments against the contract and is locked to one numbered set of pricing rules. March priced all 3 lines and found $90.00 underpaid; April's 32 out-of-network lines have no contract to price them.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/10-pricing-run.png",
+  "title": "One pricing run",
+  "area": "Contracts and pricing",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "The March run in detail: every line priced under the signed contract, each expected at $100.00 but allowed at only $70.00 by the insurer, a $90.00 shortfall in all. This is where an underpayment is first proven.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/11-line-trace.png",
+  "title": "A priced line’s explanation (its trace)",
+  "area": "Contracts and pricing",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "The full explanation behind one line's expected $100.00: every step of the calculation, the contract and rules it used, how it rounded and the deadline to dispute, followed by what the insurer actually paid. Anyone can re-check the math, which is what makes a dispute hold up.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/12-anomalies.png",
+  "title": "Anomalies by payer pattern",
+  "area": "Disputes",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "Where no contract applies, the product compares similar payments: 4 of insurer N's 32 lines were paid $60 to $80 when $90.00 is usual. They are flagged for a person to look at, never counted as money owed.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/13-cases.png",
+  "title": "Cases",
+  "area": "Disputes",
+  "role": "billing manager (pricing-manager)",
+  "width": 1280,
+  "caption": "The list of disputes being worked: one open case against insurer Q for paying below the contract rate, 3 lines and $90.00 at stake, with its deadline. It also holds the dollar thresholds that decide when a shortfall is worth opening a case.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/14-case.png",
+  "title": "One case",
+  "area": "Disputes",
+  "role": "billing manager (packet-approver)",
+  "width": 1280,
+  "caption": "A dispute followed from start to finish: the letter approved by a second person and exported, sent to the insurer, and the insurer partly agreeing with $60.00 approved. The timeline records every step and who took it.",
+  "ok": true,
+  "problem": "Minor: the deadline reads 2036-04-05 because the synthetic contract gives a 3,650-day (ten-year) dispute window; one timeline entry reads 'reopened from Actionable to Actionable', which looks odd."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/15-packet-approve.png",
+  "title": "A dispute packet at the approve step",
+  "area": "Disputes",
+  "role": "second billing manager (packet-approver)",
+  "width": 1280,
+  "caption": "A dispute letter waiting for a second person's approval: it quotes the contract clause, lists the three lines with patient details held back as placeholders, shows each deadline and the math, and ends with the Approve button. The person who wrote a letter can never approve it.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/16-payer-copy.png",
+  "title": "The payer’s copy",
+  "area": "Disputes",
+  "role": "billing manager (packet-approver)",
+  "width": 1275,
+  "caption": "The letter the insurer actually receives: it quotes the contract, states the $90.00 underpayment, fills in the made-up claim, patient and member details for the three lines, and gives the dispute deadline. This is what the practice sends to get paid.",
+  "ok": true,
+  "problem": "Minor: the bottom of this PDF page shows the header of a per-line table whose rows start on the next page, so it looks empty here; the ten-year (3,650-day) window is a synthetic contract term."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/17-reconciliation.png",
+  "title": "Reconciliation and the ledger",
+  "area": "Recovery and reports",
+  "role": "billing manager (ledger-manager)",
+  "width": 1280,
+  "caption": "The recovery record: $30.00 approved and deposited, then $18.00 taken back by the insurer, so $12.00 counts as recovered. Each step is matched from the insurer's payment to the practice's books to the bank deposit, with one booking reversed and its reason kept.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/18-monitoring-digest.png",
+  "title": "Monthly monitoring digest",
+  "area": "Recovery and reports",
+  "role": "billing manager (monitoring-manager)",
+  "width": 1280,
+  "caption": "The monthly summary for September 2026, in counts and dollar totals only: $90.00 of new underpayment from insurer Q, one case nearing its deadline, and every line priced. It keeps the practice informed without showing any patient details.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/19-roi-statement.png",
+  "title": "ROI statement with the Verified seal",
+  "area": "Recovery and reports",
+  "role": "billing manager (ledger-manager)",
+  "width": 1280,
+  "caption": "The return-on-investment statement for April to September 2026 carries the Verified seal because its $12.00 recovered ties to cash actually deposited. Every figure is recalculated from the recorded entries, so the practice can trust the number.",
+  "ok": true,
+  "problem": "Minor: the share-link box shows a localhost address from the test server."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/20-screening.png",
+  "title": "Free screening",
+  "area": "Free screening",
+  "role": "public",
+  "width": 1280,
+  "caption": "The public free-screening page asks for a practice's details and a file of payment totals with no patient information, and explains how each kind of insurance is checked. It is the easy first step for a prospect to see whether money is being left behind.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/21-screening-form.png",
+  "title": "Free screening, file chosen",
+  "area": "Free screening",
+  "role": "public",
+  "width": 1280,
+  "caption": "The form filled in for a test clinic: the browser has read the file and will send 8 rows, having already left out 2 rows too small to send safely and 1 row from a period not yet covered. Privacy is protected before anything leaves the practice's computer.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/22-screening-result.png",
+  "title": "Free screening result",
+  "area": "Free screening",
+  "role": "public (the emailed link)",
+  "width": 1280,
+  "caption": "The result the practice opens from its email link: its allowed amounts set against Medicare figures by insurance type, the share that needs a contract to price, the codes paid well below Medicare, and an offer to request a full audit. This turns a free check into a sales conversation.",
+  "ok": true,
+  "problem": "Minor: two wide tables are cut off at the right edge in this capture (the anomaly status label and the difference columns of 'Rows with the largest differences'); one row shows the raw label ENGINE_ERROR on this public page."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/23-console-home.png",
+  "title": "Operator console home",
+  "area": "Operator console",
+  "role": "platform administrator (hardware key)",
+  "width": 1280,
+  "caption": "The internal console where PaidWhole staff start: the organizations on the platform (two test practice groups, a billing firm and the company itself) and a form to add a new one.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/24-console-rule-releases.png",
+  "title": "Rule releases",
+  "area": "Operator console",
+  "role": "platform administrator (hardware key)",
+  "width": 1280,
+  "caption": "The pricing rules in force (release 900001, with its 65 records by type) and how many pricing runs at each practice rely on them. Rules are numbered and locked so any past result can be explained exactly as it was computed.",
+  "ok": true,
+  "problem": "Minor: the last box shows a developer message about the test server's content setup."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/25-billing.png",
+  "title": "Billing",
+  "area": "Account",
+  "role": "organization administrator (practice-admin)",
+  "width": 1280,
+  "caption": "Billing for a practice group in test mode: the monthly monitoring plan is active, a test bank account is on file, and the first $500.00 invoice is paid. The plan prices are marked as placeholders until PaidWhole sets them.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/26-access-log.png",
+  "title": "Access log",
+  "area": "Account",
+  "role": "practice administrator (other-admin)",
+  "width": 1280,
+  "caption": "Every time anyone viewed or changed this practice's records, newest first, with who did it, how they had access and which record. Practices need this trail to meet health-privacy rules.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/27-phone-practice-home.png",
+  "title": "Practice home on a phone",
+  "area": "Getting started",
+  "role": "billing manager (ledger-manager)",
+  "width": 390,
+  "caption": "The same practice home on a phone, its three headline numbers stacked one above another so they stay easy to read.",
+  "ok": true,
+  "problem": "Minor: the agreements table at the bottom cuts off its last column at phone width."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/28-phone-case.png",
+  "title": "A case on a phone",
+  "area": "Disputes",
+  "role": "billing manager (packet-approver)",
+  "width": 390,
+  "caption": "The same dispute case on a phone: its amounts, letter status, three lines and timeline in a single column.",
+  "ok": true,
+  "problem": ""
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/29-phone-screening.png",
+  "title": "Free screening on a phone",
+  "area": "Free screening",
+  "role": "public",
+  "width": 390,
+  "caption": "The free-screening page on a phone, with the form and file instructions in one column so a prospect can start from anywhere.",
+  "ok": true,
+  "problem": "Minor: the file-template table cuts off its Example column at phone width."
+ },
+ {
+  "file": "/tmp/claude-0/-home-user-PhysicalTherapy/187d32c5-f7cc-5438-90dc-a8051538d984/scratchpad/screens/png/30-phone-roi-statement.png",
+  "title": "ROI statement on a phone",
+  "area": "Recovery and reports",
+  "role": "billing manager (ledger-manager)",
+  "width": 489,
+  "caption": "The ROI statement on a phone with its Verified seal. One long file-fingerprint line does not wrap, so the page currently scrolls sideways on a phone, a layout fix still to make.",
+  "ok": true,
+  "problem": "Shows a real layout defect (as the capture list says): the fingerprint line overflows its card and widens the page to 489 px against a 390 px phone; the capture itself is correct."
+ }
+]

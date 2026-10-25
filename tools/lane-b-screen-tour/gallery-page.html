@@ -1,0 +1,182 @@
+<title>PaidWhole Screen Tour</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@600;700&display=swap">
+<style>
+/* Layout: a tour in story order; each area a band of framed screens, two across on a desk, one on a phone; a viewer for full length. */
+:root {
+  --paper: #F6F4EE; --surface: #FFFFFF; --ink: #0D1E3A; --slate: #526070; --line: #DAD7CF; --brass: #C99A3B;
+  --link: #1F4E9A; --focus: #2F5DA8; --shade: rgba(13, 30, 58, 0.08); --veil: rgba(13, 30, 58, 0.72); --fade: rgba(255, 255, 255, 0);
+  --display: 'Schibsted Grotesk', 'IBM Plex Sans', system-ui, sans-serif;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #0A1424; --surface: #111E33; --ink: #E7EBF2; --slate: #9BA8BA; --line: #22324D; --brass: #C99A3B;
+  --link: #8DB2F0; --focus: #8DB2F0; --shade: rgba(0, 0, 0, 0.35); --veil: rgba(3, 8, 16, 0.86); --fade: rgba(17, 30, 51, 0); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #0A1424; --surface: #111E33; --ink: #E7EBF2; --slate: #9BA8BA; --line: #22324D; --brass: #C99A3B;
+  --link: #8DB2F0; --focus: #8DB2F0; --shade: rgba(0, 0, 0, 0.35); --veil: rgba(3, 8, 16, 0.86); --fade: rgba(17, 30, 51, 0); color-scheme: dark }
+
+*, *::before, *::after { box-sizing: border-box }
+body { background: var(--paper); color: var(--ink); font: 400 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased }
+a { color: var(--link) }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface) }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line) }
+.bar .wrap { display: flex; align-items: center; gap: 20px; padding-block: 10px }
+.brand { display: flex; align-items: center; gap: 8px; font: 700 18px/1 var(--display); letter-spacing: -0.03em; color: var(--ink); text-decoration: none; flex: none }
+.brand svg { width: 22px; height: 22px }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; min-width: 0; padding-block: 2px }
+.chips::-webkit-scrollbar { display: none }
+.chips a { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); text-decoration: none; font: 500 13px/1.2 var(--sans); white-space: nowrap }
+.chips a span { font: 500 11px/1 var(--mono); color: var(--slate) }
+.chips a:hover { border-color: var(--slate) }
+
+.intro { padding-block: 48px 28px }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--slate); margin: 0 0 14px }
+h1 { font: 700 clamp(34px, 6vw, 56px)/1.04 var(--display); letter-spacing: -0.02em; margin: 0 0 16px; text-wrap: balance }
+.lede { max-width: 62ch; color: var(--slate); font-size: 18px; margin: 0 0 24px }
+.facts { display: flex; flex-wrap: wrap; gap: 0; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line) }
+.facts li { padding: 12px 24px 12px 0; margin-right: 24px; display: grid; gap: 2px }
+.facts li + li { border-left: 1px solid var(--line); padding-left: 24px; margin-left: -24px }
+.facts dt, .facts .k { font: 500 11px/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--slate) }
+.facts .v { font: 500 15px/1.3 var(--mono); font-variant-numeric: tabular-nums }
+
+.area { padding-block: 36px 8px; scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 64px) }
+.area-head { display: grid; gap: 4px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid var(--ink) }
+.area-head h2 { font: 700 26px/1.15 var(--display); letter-spacing: -0.015em; margin: 0 }
+.area-head p { margin: 0; color: var(--slate); max-width: 70ch }
+
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 28px }
+.grid.phones { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+.shot { margin: 0; min-width: 0; scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 64px) }
+.frame { all: unset; box-sizing: border-box; display: block; position: relative; width: 100%; cursor: zoom-in; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px var(--shade), 0 8px 24px var(--shade) }
+.frame:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px }
+.frame img { display: block; width: 100%; height: auto; max-height: 460px; object-fit: cover; object-position: top; background: #FFFFFF }
+.phones .frame img { max-height: 540px }
+.frame::after { content: ""; position: absolute; inset: auto 0 0; height: 72px; background: linear-gradient(var(--fade), var(--surface)); pointer-events: none }
+.more { position: absolute; z-index: 1; right: 10px; bottom: 10px; padding: 5px 9px; border-radius: 4px; background: var(--ink); color: var(--paper); font: 500 12px/1 var(--mono) }
+.frame:hover .more { background: var(--link); color: #FFFFFF }
+figcaption { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; margin-top: 14px }
+.num { font: 500 13px/1 var(--mono); padding-top: 5px; color: var(--slate); border-top: 3px solid var(--brass); height: max-content; padding-inline: 0; min-width: 24px }
+figcaption h3 { font: 600 18px/1.25 var(--display); letter-spacing: -0.01em; margin: 0 0 2px }
+figcaption p { margin: 0; max-width: 62ch }
+figcaption .who { font: 500 12px/1.4 var(--mono); color: var(--slate); margin-bottom: 6px }
+.phones figcaption h3 { font-size: 16px }
+.phones figcaption p:not(.who) { font-size: 14px }
+
+.found { margin-block: 48px 72px; padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px }
+.found h2 { font: 700 22px/1.2 var(--display); margin: 0 0 4px }
+.found > p { margin: 0 0 16px; color: var(--slate); max-width: 70ch }
+.found ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px }
+.found li { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 12px; align-items: baseline; padding-top: 10px; border-top: 1px solid var(--line) }
+.tag { font: 500 12px/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--slate) }
+footer { padding-block: 0 48px; color: var(--slate); font-size: 14px }
+
+dialog { width: min(1320px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh; margin: 0 auto; padding: 0; border: 0; background: transparent; color: var(--ink) }
+dialog::backdrop { background: var(--veil) }
+.viewer { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); padding-top: env(safe-area-inset-top, 0px) }
+.vbar { display: flex; align-items: center; gap: 10px; padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); background: var(--surface); border-bottom: 1px solid var(--line) }
+.vbar h2 { font: 600 16px/1.3 var(--display); margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.vbar .count { font: 500 12px/1 var(--mono); color: var(--slate); font-variant-numeric: tabular-nums }
+.vbar button { font: 500 14px/1 var(--sans); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; cursor: pointer }
+.vbar button:hover { border-color: var(--slate) }
+.vscroll { overflow: auto; padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); overscroll-behavior: contain }
+.vscroll img { display: block; margin: 0 auto; max-width: 100%; height: auto; background: #FFFFFF; border-radius: 4px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35) }
+
+@media (max-width: 860px) {
+  .grid { grid-template-columns: minmax(0, 1fr) }
+  .grid.phones { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  .found li { grid-template-columns: minmax(0, 1fr); gap: 2px }
+}
+@media (max-width: 520px) {
+  .bar .brand span { display: none }
+  .intro { padding-block: 32px 20px }
+  .facts li, .facts li + li { border-left: 0; margin: 0; padding: 10px 20px 10px 0 }
+  .vbar .prev, .vbar .next { padding-inline: 10px }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth } }
+</style>
+
+<div class="bar"><div class="wrap">
+  <a class="brand" href="#top" aria-label="PaidWhole screen tour, top">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="3.6"/><rect x="10.2" y="1.6" width="3.6" height="4.2" rx="0.6" fill="var(--brass)"/></svg>
+    <span>PaidWhole</span>
+  </a>
+  <nav class="chips" aria-label="Areas of the app">{{NAV}}</nav>
+</div></div>
+
+<main class="wrap" id="top">
+  <section class="intro">
+    <p class="eyebrow">Screen tour &middot; the app as built</p>
+    <h1>PaidWhole, screen by screen</h1>
+    <p class="lede">The working app as it stands today, in the order a practice meets it: insurer payments in, contracts and pricing, disputes, proof of recovery, the free screening, and PaidWhole's own console. Every name, figure and record here is synthetic test data. Select any screen to see it at full length.</p>
+    <ul class="facts">
+      <li><span class="k">Built from</span><span class="v">claude/build-platform &middot; 9c57d2d</span></li>
+      <li><span class="k">Captured</span><span class="v">2026-10-25</span></li>
+      <li><span class="k">Screens</span><span class="v">{{COUNT}} &middot; 26 desk, 4 phone</span></li>
+      <li><span class="k">Data</span><span class="v">synthetic only</span></li>
+    </ul>
+  </section>
+
+  {{SECTIONS}}
+
+  <section class="found" aria-labelledby="found-h">
+    <h2 id="found-h">What the tour turned up</h2>
+    <p>Small issues seen while capturing these screens. None blocks the build; each is logged for a fix.</p>
+    <ul>{{ISSUES}}</ul>
+  </section>
+  <footer>Captured from the production build with the repository's own test setup, signed in through the real sign-in flow as each role. A few details come from the test environment rather than the product: a share link that points at the local test server, a ten-year dispute window set by the synthetic contract, and a developer note on the console's rule releases page.</footer>
+</main>
+
+<dialog id="viewer" aria-labelledby="v-title">
+  <div class="viewer">
+    <div class="vbar">
+      <h2 id="v-title">Screen</h2>
+      <span class="count" id="v-count"></span>
+      <button type="button" class="prev" id="v-prev" aria-label="Previous screen">&larr;</button>
+      <button type="button" class="next" id="v-next" aria-label="Next screen">&rarr;</button>
+      <button type="button" id="v-close">Close</button>
+    </div>
+    <div class="vscroll" id="v-scroll"><img id="v-img" alt=""></div>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  var frames = Array.prototype.slice.call(document.querySelectorAll('.frame'));
+  var dlg = document.getElementById('viewer'), img = document.getElementById('v-img');
+  var title = document.getElementById('v-title'), count = document.getElementById('v-count'), scroller = document.getElementById('v-scroll');
+  var at = 0, opener = null;
+  function show(i) {
+    at = (i + frames.length) % frames.length;
+    var f = frames[at];
+    img.src = f.getAttribute('data-src');
+    img.alt = f.querySelector('img').alt;
+    title.textContent = f.getAttribute('data-n').padStart(2, '0') + '  ' + f.getAttribute('data-title');
+    count.textContent = (at + 1) + ' / ' + frames.length;
+    scroller.scrollTop = 0;
+  }
+  frames.forEach(function (f, i) {
+    f.addEventListener('click', function () {
+      opener = f; show(i);
+      if (typeof dlg.showModal === 'function') { dlg.showModal(); } else { window.location.hash = f.parentNode.id; }
+    });
+  });
+  document.getElementById('v-prev').addEventListener('click', function () { show(at - 1); });
+  document.getElementById('v-next').addEventListener('click', function () { show(at + 1); });
+  document.getElementById('v-close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('close', function () { if (opener) { opener.focus(); } });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) { dlg.close(); } });
+  dlg.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); show(at + 1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); show(at - 1); }
+  });
+  var h = window.location.hash.replace('#', '');
+  if (/^s\d{2}$/.test(h)) { var el = document.getElementById(h); if (el) { el.scrollIntoView(); } }
+})();
+</script>
