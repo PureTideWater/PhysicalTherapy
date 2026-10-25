@@ -30,12 +30,12 @@ the pricing engine, the ledger, and the packet verifier and arithmetic. Its `mut
 
 | Shard | Mutates | Time (Stryker's, 4 CPUs shared with other work, 2026-10-25) |
 | --- | --- | --- |
-| `money-ledger` | money, then the ledger | 3 min 34 s (money 31 s, the ledger 3 min 3 s) |
-| `packets-scan` | packets' `scan.ts` | 5 min 31 s |
-| `packets-rest` | the rest of packets' set | 8 min 17 s |
-| `pricing-engine` | pricing's `engine.ts` | 9 min 21 s |
-| `pricing-recompute` | pricing's `recompute.ts` | 3 min 54 s |
-| `pricing-rest` | the rest of pricing | 5 min 49 s |
+| `money-ledger` | money, then the ledger | 3 min 37 s (money 32 s, the ledger 3 min 5 s) |
+| `packets-scan` | packets' `scan.ts` | 6 min 13 s |
+| `packets-rest` | the rest of packets' set | 5 min 43 s |
+| `pricing-engine` | pricing's `engine.ts` | 8 min 25 s |
+| `pricing-recompute` | pricing's `recompute.ts` | 3 min 47 s |
+| `pricing-rest` | the rest of pricing | 5 min 24 s |
 
 Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It then runs its packages
 (`pnpm -s exec tsx tools/stryker/shards.ts <shard>`), prints its files' scores and survivors, and uploads
@@ -101,7 +101,15 @@ and a test kills them:
   insertion sort that calls it as (earlier, later) too (`packages/pricing/src/sorts.test.ts`,
   `packages/ledger/src/allocation.test.ts`);
 - a mutant told apart only by text that is not a date, where the code compares dates as text
-  (`packages/packets/src/assemble.test.ts`, "assemblePacket's dates as text").
+  (`packages/packets/src/assemble.test.ts`, "assemblePacket's dates as text");
+- a sort of a list already in order, when an earlier sort's comparator is inconsistent for a value of the declared
+  type (`packages/pricing/src/sorts.test.ts`, the NaN line number case).
+
+A test may also hold the code to an input beyond its declared types, as hardening, when it asserts the code's own
+outcome for that input (its own check's error class and message, or its reason): such a kill stands and the mutant is
+not recorded, but it is no evidence against an entry. A kill that rests only on an incidental failure (a TypeError from
+a method the value lacks, asserted by a bare `toThrow`) is not one: the mutant is recorded and the test dropped
+(`packages/money/src/rounding.ts`'s bigint check).
 
 An entry that rests on the engine's Unicode data (NFKC forms, grapheme clusters) says so in its reason, the reviewer
 checks it over every code point on the Node the workflow pins (24.22.0 in all three jobs), and

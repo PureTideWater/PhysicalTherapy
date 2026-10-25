@@ -145,7 +145,12 @@ An entry is a true equivalent only when no input tells the mutant from the origi
 declared parameter types, as plain data (a string is any text, an object exactly its declared fields), on any
 conforming engine. The reviewer tries to build one before signing. A mutant told apart only under a sort that calls its
 comparator in an order ECMAScript allows and V8 never uses, or only by text that is not a date where the code compares
-dates as text, is not equivalent, and a test kills it. Where an entry rests on the engine's Unicode data (NFKC forms,
+dates as text, or only once an earlier sort's comparator is inconsistent for a value of the declared type (a NaN
+line number), is not equivalent, and a test kills it. A test may also hold the code to an input beyond its declared
+types, as hardening, when it asserts the code's own outcome for that input (its own check's error class and message,
+or its reason): such a kill stands and the mutant is not recorded, but it is no evidence against an entry. A kill
+that rests only on an incidental failure (a TypeError from a method the value lacks, asserted by a bare `toThrow`) is
+not one: the mutant is recorded and the test dropped (`packages/money/src/rounding.ts`'s bigint check). Where an entry rests on the engine's Unicode data (NFKC forms,
 grapheme clusters), its reason says so, the reviewer checks it over every code point on the Node the mutation workflow
 pins, and `tools/stryker/unicode.json` lists it with that Node and its Unicode and ICU versions (today readable.ts's
 three NFKC records and mismatches.ts's sentence-end comparison, on Node 24.22.0, Unicode 17.0, ICU 78.3). Each shard's
@@ -211,15 +216,19 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
 
   | Package | Before (the runner bump alone) | After | Undetected, all recorded | Shard time |
   | --- | --- | --- | --- | --- |
-  | money | 93.22% (220 of 236; 16 undetected) | 97.00% (227 of 234) | 7 | money-ledger 3 min 34 s (money 31 s) |
+  | money | 93.22% (220 of 236; 16 undetected) | 96.58% (226 of 234) | 8 | money-ledger 3 min 37 s (money 32 s) |
   | ledger | 91.88% (1,529 of 1,664; 135) | 98.13% (1,633 of 1,664) | 31 | (with money) |
-  | pricing | 91.47% (1,782 of 1,948; 166) | 98.57% (1,932 of 1,960) | 28 | engine 9 min 21 s, recompute 3 min 54 s, rest 5 min 49 s |
-  | packets | 85.61% (2,053 of 2,398; 345) | 95.87% (2,299 of 2,398) | 99 | scan 5 min 31 s, rest 8 min 17 s |
+  | pricing | 91.47% (1,782 of 1,948; 166) | 98.67% (1,934 of 1,960) | 26 | engine 8 min 25 s, recompute 3 min 47 s, rest 5 min 24 s |
+  | packets | 85.61% (2,053 of 2,398; 345) | 95.87% (2,299 of 2,398) | 99 | scan 6 min 13 s, rest 5 min 43 s |
 
   The gate passes: every package above 85%, no unexplained survivor, every shard's canary 5 of 5. Undetected mutants
-  went from 662 to 165, each a reviewed equivalent; the builders proposed 175, and the integrator, trying to build an
+  went from 662 to 164, each a reviewed equivalent; the builders proposed 175, and the integrator, trying to build an
   input that told each apart, killed ten by tests (seven comparators right only in the order V8 calls them, three
-  told apart only by text that is not a date). Deleting one killing assertion (the row that holds
+  told apart only by text that is not a date). The payment-engine review killed two more by a test (engine.ts's
+  visit sort, told apart when a NaN line number leaves `price`'s own sort of the lines to the implementation) and
+  found one that a test told apart only with text cast past its type, through an incidental TypeError, now recorded
+  (`rounding.ts`'s `typeof amount === 'bigint'`). The scores and Stryker's times above are the fix round's run, on
+  the payment-engine fixes' head; the merged head and the pull request's own CI run measure the same scores. Deleting one killing assertion (the row that holds
   `formatUnroundedUsd`'s refusal to its message) fails the gate, naming `packages/money/src/cents.ts:83` and its
   covering test. Before the survivor-killing tests, the money shard alone failed the gate on 151 unexplained survivors
   (16 money, 135 ledger). The scout's measurement had packets at 85.40% without `windows.ts` (35 mutants, all killed).
