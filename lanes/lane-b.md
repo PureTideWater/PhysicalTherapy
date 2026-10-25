@@ -7,7 +7,7 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
-## Start here (Lane B): the state at 2026-10-25 ~19:30 UTC
+## Start here (Lane B): the state at 2026-10-25 ~20:10 UTC
 A new Lane B session reads this section first, after `../LANES.md`. It is complete on its own: what is merged, what
 runs next and in what order, what waits on whom, and the conventions that kept the build safe. The dated log below it
 is the record; nothing in it is needed to continue.
@@ -16,21 +16,31 @@ is the record; nothing in it is needed to continue.
 - **Merged by Lane B into `claude/build-platform`** (each a merge commit, after a fresh-clone verification that read CI):
   - [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43) ci-speed (CI 1 of 4), as 9c57d2d. CI went from 29-41 minutes to about 6-8. Parallel jobs behind one `all green` gate, db in 4 shards, e2e in 2 shards over one stamped build.
   - [#44](https://github.com/PureTideWater/PhysicalTherapy/pull/44) ci-mutation (CI 4 of 4), as de8f9b5. Mutation testing of every money package, gated above 85% with no unexplained survivor. Scores: money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%; 164 reviewed equivalents.
-  - [#45](https://github.com/PureTideWater/PhysicalTherapy/pull/45) PR 15 (ledger tests LED-12 and LED-13) is closing out: its head merged de8f9b5 cleanly (f4d125b); the checks, CI, the fresh-clone verification and the merge follow (the log's last entry says where it stands). Tests only, under the founder's ruling L1 (a).
-- **Open in Lane B:** only #45 until it merges (worktree `/home/user/pr15`). If this session ended before the merge, the next one continues it: setup argument `co-001/pr-15-ledger-tests:/home/user/pr15`, then the merge procedure below from the step the log names.
+  - [#45](https://github.com/PureTideWater/PhysicalTherapy/pull/45) PR 15 (ledger tests LED-12 and LED-13), as 6ddd587. Tests only, under the founder's ruling L1 (a).
+- **Open in Lane B: nothing.** No PR, no workflow, no worktree, no claim in progress.
+  - The main checkout `/home/user/PhysicalTherapy` is at 6ddd587, the same as origin, with its packages installed.
+  - `SETUP_CHECK=1` printed OK at 20:05 UTC.
 - **`main` is unchanged, by rule.** It holds the plan documents until launch. No PR goes into `main` and no release tag
   is created before launch unless the founder rules otherwise (CLAUDE.md "Merging", ADR 0063). "Up to date" means
   merged into `claude/build-platform`. The default branch moves to `claude/build-platform` when ci-deps merges (F1 (a)).
 - **Lane A:** [#42](https://github.com/PureTideWater/PhysicalTherapy/pull/42) (PR 6b-4, mail streams, a schema PR) is a draft at 13f59b1. Its fix round comes after the 2026-10-27 reset. Lane B leaves #42's files alone (LANES.md, "Not while #42 is open").
 - **Dependabot:** #40 (actions) and #33 (base images) are open. Never merge one as it stands; ci-deps takes their
   versions in.
-- **CI on `claude/build-platform` de8f9b5:** the push runs are green (ci 40223130551, mutation 40223130477, screening-capacity 40223130509).
-- **Test counts at de8f9b5 (#44's suite):** unit 4,986 and 3 skipped; golden 188; db 9,040 and 1 skipped; e2e 51; the pyx12 oracle on every synthetic 835.
+- **CI on `claude/build-platform`:**
+  - The push runs on de8f9b5 are green (ci 40223130551, mutation 40223130477, screening-capacity 40223130509).
+  - The push runs on 6ddd587 (ci 40229005858, mutation 40229005837 with every package, screening-capacity 40229005836) were still running at 20:05 UTC; step 1 below confirms them.
+- **Test counts at 6ddd587** (CI on #45's head f4d125b, the same tree):
+  - unit 4,996 and 1 skipped (locally 4,994 and 3);
+  - db 9,049 and 1 skipped, over 118 files in 4 shards;
+  - e2e 51; golden 188;
+  - pyx12 agrees on all 637 synthetic 835s;
+  - mutation: money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%.
 - **Usage:** last read 17% (2026-10-25, the co-founder). The weekly reset is Friday 2026-10-30; its time of day is not yet recorded, so ask for it at the first reading.
 
 ### Next actions, in order
 1. **Machine and reading.** Follow COFOUNDER-START.md's message.
    - The setup script needs no branch arguments: no Lane B branch is open.
+   - Confirm 6ddd587's push runs (above) finished green. A red one is the first job.
    - Then ask the co-founder for the usage % and the reset time (rule 9).
 2. **The UX/UI and brand baseline review: the first task** (the co-founder's decision, 2026-10-25 ~16:50 UTC).
    - **Brief:** `designs/lane-b-ux-review-brief.md`. Read it whole. It is a review, not a PR, and changes no product code.
@@ -65,7 +75,9 @@ is the record; nothing in it is needed to continue.
 4. **ci-browser (CI 3 of 4; audit #19's upgrade part).** After ci-deps.
    - **Design:** §3.3. Rulings: F4 yes; F5, the capacity chain stays on ubuntu-24.04.
    - **Carry in:**
-     - V3: cache the e2e jobs' system packages (`playwright install --with-deps`), so a slow apt mirror cannot push CI past its target (#44's verification);
+     - V3: cache the system packages the browser jobs install (`playwright install --with-deps`) in e2e and in the db shards, so a slow apt mirror cannot push CI past its target.
+       - #44's verification found it in e2e.
+       - On #45's head, db (4/4) spent 10 of its 13 minutes on that install, with 2 minutes of tests. It alone held `all green` to 13:10, against about 6 to 8 minutes otherwise.
      - O6: the axe sweep over #42's journeys, if #42 merged first;
      - O7: rebalance `stryker/shards.json` if packets-rest nears 15 minutes (5:50 to 10:06 measured).
    - **Browsers:** the setup script lays out chromium-1248 (CfT 156.0.8078.4) as well as 1194, so the upgrade needs no manual browser work.
@@ -118,6 +130,7 @@ is the record; nothing in it is needed to continue.
   - Resume each workflow with `resumeFromRunId` (same session only), after editing the script with a RESUMED note and the lock rule.
   - From a new session, a cut-off stage starts again from its worktree.
 - **If auto mode becomes unavailable,** workflow agents stop mid-run. Wait for the person, then resume the same way.
+- **Counting tests:** take a PR's count changes from CI's run totals (or a full local run), never from `vitest list`. That lists a parametric test once: PR 15 added 7 per-835 parse cases that `vitest list` missed, and its description had to be corrected before the verification passed.
 - **Waiting:** the Bash tool blocks a foreground `sleep`. Run long commands with `run_in_background` and wait for their notification, or use Monitor with an until-loop. A PR's events arrive by `subscribe_pr_activity`.
 - **PR descriptions:** write them only with the MCP `update_pull_request` tool, then read them back. A `gh api` PATCH rewrote #43's footer. Follow `.github/pull_request_template.md`; end with the attribution lines.
 - **CI logs:** use `get_job_logs` (`return_content`, a large `tail_lines`). The proxy refuses artifact downloads, so read Stryker's results from the job logs.
@@ -390,10 +403,35 @@ is the record; nothing in it is needed to continue.
     - Unit: 4,664 and 3 skipped, ledger branches 415/415. Golden 38. Oracle 637.
     - test:db in six shards: 9,049 and 1 skipped, the two ledger files 51/51. e2e 51.
     - CI on b7e15e8 was green, with every mutation shard passing on the merge ref.
-  - **Rule 6:** merged claude/build-platform at de8f9b5 into the branch as f4d125b. The merge was clean: the six files both sides changed (README, reconciliation-001, test-matrix, totals.test.ts, matrix.ts, registry.ts) merged by hunk. The checks on the merged head are running under the lock, on Node 24: install, fixtures, typecheck, lint, synth, unit, the ledger db files, the money-ledger canary, shard and gate. Then the push, CI, the fresh-clone verification and the merge.
+  - **Rule 6:** merged claude/build-platform at de8f9b5 into the branch as f4d125b. The merge was clean: the six files both sides changed (README, reconciliation-001, test-matrix, totals.test.ts, matrix.ts, registry.ts) merged by hunk. The checks on the merged head followed (next entry).
   - **Handoff:**
     - the "Start here (Lane B)" section above replaces "In flight", "Next" and Lane A's first-session notes;
     - COFOUNDER-START.md's message points at it;
     - LANES.md's CI series row and queue item 1 now record the two merges.
   - **The screen tour no longer names this session's scratchpad.** Every script and spec reads `TOUR_DIR`, and a new `setup.sh` builds the worktree and the working directory (its README, Set-up). Shell and Python syntax checked.
   - **Pitfall found:** the shell's default `node` is 22. A check script started without the PATH line ran on it, and was stopped and re-run on Node 24 (now in Start here).
+- **2026-10-25 ~20:05 UTC: PR #45 (PR 15, ledger tests LED-12 and LED-13) MERGED as 6ddd587.** Reconciliation-001 item 15 is done.
+  - **Checks on the merged head f4d125b:** each one under the lock, on Node v24.22.0. All passed:
+    - install, fixtures (248 read, 2,809 searched), typecheck, lint (1,487 files), synth (clean);
+    - unit: 4,994 and 3 skipped;
+    - the ledger db files: 51/51;
+    - the money-ledger canary: 5/5;
+    - the shard (2:56) and the gate: money 96.58%, ledger 98.13%, `ledger.json`'s 31 records unchanged, none stale or killed.
+  - **Pushed** b7e15e8..f4d125b through the hook.
+  - **CI on f4d125b:** all 22 runs green (`notify` skipped by design).
+    - `all green` at 13:10; db (4/4) spent 10 minutes installing the browser's system packages (V3, now in ci-browser's carry-ins).
+    - Mutation chose money-ledger only.
+    - screening-capacity measured, because synth's case files are watched. It passed with the advisory S4 time (53.1 to 53.8 s), the same as the base's push run.
+  - **Verification** (wf_d8645c76-19d, 0.48M tokens; `approval-summaries/lane-b-pr15-verify-summary.md`): every code, CI and scope check passed.
+    - The merge tree reproduces exactly. The scope is tests and documents.
+    - db +9 on CI over identical shard file lists.
+    - The rows match word for word in seven places. Item 15 names the founder, the relay and the co-founder's approval.
+    - The fix round's dispositions hold, with four mutants re-run.
+  - **Its one should_fix was in the description:** it said 1 more unit test, but CI runs 8 more (the LED-13 property plus 7 parse cases for LED-12's 835s), because the base count had been taken from `vitest list`. Three nits were also fixed: stale section references, CI on the head, and the capacity note. The description was corrected by `update_pull_request` and read back byte for byte through `gh api`. Nothing needed a re-run (#43's precedent).
+  - **Merge:** marked ready, then merged with a merge commit at the expected head f4d125b (base de8f9b5 unchanged).
+  - **Clean-up:**
+    - unsubscribed #45; the main checkout fast-forwarded and its packages installed;
+    - `/home/user/pr15` and the local branch removed (the remote branch stays, as for every merged PR);
+    - the fix-round, fix-suite and verification summaries and the verify script archived;
+    - `SETUP_CHECK=1` printed OK.
+  - **Lane B now has nothing open.** The next session starts at "Start here (Lane B)": the UX/UI baseline review, then ci-deps, ci-browser and 15b.
