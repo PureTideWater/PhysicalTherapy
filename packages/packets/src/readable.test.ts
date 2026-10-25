@@ -73,3 +73,10 @@ describe('readableText', () => {
     expect(fraction.original(1, 3)).toEqual({ start: 1, end: 2 });
   });
 });
+
+describe('readableText: the inputs each rule separates', () => {
+  it('treats a mark as part of a letter only when the cluster starts with the letter', () => {
+    // A parenthesized letter is a parenthesis, a letter and a parenthesis in NFKC: its mark is on the parenthesis.
+    expect(readableText(`${cp(0x249c, 0x301)} claims`)).toMatchObject({ text: '(a) claims', hidden: [{ start: 0, end: 2 }] });
+  });
+});
