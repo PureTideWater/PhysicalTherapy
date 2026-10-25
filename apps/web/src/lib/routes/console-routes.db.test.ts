@@ -39,7 +39,7 @@ import { csrfTokenFor } from '../http/csrf';
 
 /**
  * What the internal console and the practice workspace do, beyond who may use them (which
- * route-tests.db.test.ts covers for every route): a practice gets its own data key, an invitation
+ * route-tests/define.ts covers for every route): a practice gets its own data key, an invitation
  * creates the provider's account and an invited user, a membership's end revokes the user's
  * sessions, the last administrator cannot leave, a support grant lasts four hours and its reads reach
  * the practice's administrators, and the database's refusals come back as outcomes. A practice is created with its

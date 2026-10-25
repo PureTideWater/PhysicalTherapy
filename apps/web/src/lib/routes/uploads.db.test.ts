@@ -27,7 +27,7 @@ import { csrfTokenFor } from '../http/csrf';
 /**
  * The Uploads API end to end against PostgreSQL, with the worker's intake job behind it (PRD 5, J1 and
  * J4; PRD 6, Intake and documents; PRD 7, Uploads; PRD 10, Pipeline steps 1 and 2; test matrix PAR-06,
- * PAR-27, SEC-08). route-tests.db.test.ts covers who may call each route; this covers what they do.
+ * PAR-27, SEC-08). route-tests/define.ts covers who may call each route; this covers what they do.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../../../fixtures/synthetic');
