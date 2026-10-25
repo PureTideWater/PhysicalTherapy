@@ -1,0 +1,152 @@
+[
+ {
+  "reviewer": "ci-infra",
+  "id": "SF-1",
+  "severity": "should_fix",
+  "file": ".github/workflows/ci.yml; tools/test/workflows.test.ts",
+  "line": "workflows.test.ts:712-740 (no continue-on-error rule anywhere)",
+  "issue": "A job-level or step-level continue-on-error (or similar masking) can turn a failing check green under all green. No test refuses it, so 'a job added later cannot escape the gate' holds only for needs.",
+  "evidence": "escape-probe.sh tried two edits, one at a time. Edit 1: `continue-on-error: true` on the lint job. Edit 2: the same on static's `pnpm test:oracle` step. With each edit, `vitest run --project unit tools/test/workflows.test.ts tools/test/ci-gate.test.ts tools/test/required-checks.test.ts tools/engine-freeze/check.test.ts` gave 117 passed (117) and actionlint was clean. Both edits were reverted and git status was clean.",
+  "fix": "Add a workflows.test.ts rule: no continue-on-error key on any job or step of ci.yml (and of every workflow behind a required check), and no `|| true`, `|| :` or `set +e` in gate steps. Make it fail first on the two probe edits."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "SF-2",
+  "severity": "should_fix",
+  "file": "tools/test/required-checks.test.ts",
+  "line": "35-45 (files list at :39); tools/required-checks.ts:100-105",
+  "issue": "The 'listed nowhere else' sweep reads a hard-coded 8-file list, though its comment says every Markdown file. unmarkedListings detects only paragraphs naming 3+ of the new names. A listing in any other document, and any listing of the old checks, escapes the test.",
+  "evidence": "Two paragraphs were appended to tracked docs/runbooks/deploy-and-rollback.md: one listing all four new checks, one listing `check`, `images (web)`, `images (worker)`, `licenses`. required-checks.test.ts still gave 13 passed (13). The edit was reverted.",
+  "fix": "Enumerate `git ls-files '*.md'` (fixtures and node_modules excluded). Add an old-name detector (2+ of `check`, `images (web)`, `images (worker)`, `licenses` outside dated history), or make the section 3.1.6 stale-name grep the test, with the 8 history lines allowlisted. Fail first on the probe paragraphs."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "SF-3",
+  "severity": "should_fix",
+  "file": "apps/web/scripts/build-stamp.ts; apps/web/playwright.config.ts",
+  "line": "build-stamp.ts:68; playwright.config.ts:103",
+  "issue": "The passing build-stamp verdict (CI-06) goes to stdout, which the webServer drops (`stdout: 'ignore'`). The log never shows that the e2e shard ran the stamped prebuilt build. This breaks design 3.1.1's 'every verdict a gate prints goes to the log'.",
+  "evidence": "Job 121087708776 (e2e 1/2, run 40166129200) holds no build-stamp line. Only timing shows no rebuild: Playwright started at 05:38:38 and 'Running 26 tests' came at 05:39:05. Refusals do appear: the local probe through the real config printed `[WebServer] build-stamp: no build stamp at \u2026` and `\u2026 was made from 49514e8\u2026, not 9144b56\u2026`.",
+  "fix": "Write the pass line to stderr in build-stamp.ts's CLI branch, which Playwright shows as [WebServer]. Or add an e2e step echoing BUILD_COMMIT and `git rev-parse HEAD` before the journeys. Hold it in workflows.test.ts."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "N-1",
+  "severity": "nit",
+  "file": ".github/workflows/ci.yml",
+  "line": "362-372 (e2e matrix)",
+  "issue": "Count-based Playwright sharding puts the 3.0-min monitoring journey and the 50-s packets journey in shard 1. Shard 1 runs 4.8 min against shard 2's 3.3 min and sets the critical path. Seven jobs each spend 18-29 s installing Chromium, 24 s of it on the critical path.",
+  "evidence": "Run 40166129200: e2e (1/2) 05:37:46-05:43:34, 26 passed (4.8m), monitoring.spec.ts:54 started 20th. e2e (2/2) 25 passed (3.3m). The gate ended at 05:43:38. `playwright test --list --shard=1/2` at the head puts monitoring.spec.ts in shard 1.",
+  "fix": "Optional, since A1 is met. Use 3 e2e shards on public runners (about 1 min off the wall for about 1.5 runner-minutes), or split monitoring.spec.ts. Cache the Playwright browser by version."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "N-2",
+  "severity": "nit",
+  "file": ".github/workflows/ci.yml",
+  "line": "297-325 (domain-model services/steps); 222-226, 373-376",
+  "issue": "The domain model job uses Postgres (pnpm db:migrate) with no pg_isready wait. None of the three postgres services has a health check, so GitHub does not wait for readiness. Today's setup time hides the race.",
+  "evidence": "Job 121087436598: container ready 05:36:23, migrate 05:36:35. The db and e2e jobs loop on pg_isready (ci.yml:240, :388); domain model does not.",
+  "fix": "Add `options: --health-cmd \"pg_isready -U postgres\" --health-interval 2s --health-timeout 5s --health-retries 30` to every postgres service, then drop the loops."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "N-3",
+  "severity": "nit",
+  "file": ".github/workflows/ci.yml",
+  "line": "5-6",
+  "issue": "The header comment says a pull request 'never writes' caches. PR runs do save caches, in their own scope.",
+  "evidence": "Run 40166129200 logged 'Cache saved with key: tsc-v1-Linux-8ab1\u2026-a43b3635\u2026' (the PR merge commit) and vitest-db-v1-Linux-4-k-a43b\u2026 for each shard. Its restore hit the first run's PR-scoped key \u2026-60e6c36\u2026. docs/runbooks/ci.md:143-144 states this correctly.",
+  "fix": "Reword: a pull request writes only its own scope's caches; push runs seed the base branch's, which every PR can restore."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "N-4",
+  "severity": "nit",
+  "file": "docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md",
+  "line": "161-163",
+  "issue": "The ADR says the unit count equals 49514e8's. The head runs 120 more, which design A2 expects (base plus the new tests).",
+  "evidence": "CI unit job 121087436812: 4,644 passed + 1 skipped, against the base's 4,524 + 1. By full name, 132 tests are new and 12 renamed (net +120).",
+  "fix": "State: unit = 49514e8's 4,524 + 1 skipped plus this PR's 132 new less 12 renamed (net +120); golden 38 and e2e 51 equal."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "N-5",
+  "severity": "nit",
+  "file": "apps/web/scripts/build-stamp.ts; docs/runbooks/ci.md",
+  "line": "build-stamp.ts:38-51; ci.md:154-155",
+  "issue": "The stamp proves the commit, not the tree. The runbook's local E2E_PREBUILT flow therefore accepts a build that predates uncommitted edits. CI is unaffected, because its checkout is clean.",
+  "evidence": "checkStamp compares only the stamped commit with the expected one; nothing reads git status.",
+  "fix": "Record and compare a hash of `git status --porcelain`/`git diff HEAD` with --write/--expect, or refuse a dirty tree off CI."
+ },
+ {
+  "reviewer": "ci-infra",
+  "id": "N-6",
+  "severity": "nit",
+  "file": "tools/test/ci-gate.test.ts; tools/test/workflows.test.ts",
+  "line": "ci-gate.test.ts:36; workflows.test.ts:186",
+  "issue": "Two of this PR's new or rewritten tests call mkdtempSync at module load and clean up only in afterAll, so every `vitest list` leaks a temp directory. Commit 741d744 claims the new tests leave nothing behind on collection.",
+  "evidence": "The head's `vitest list --no-staticParse --project unit` left /tmp/tp-ci-gate-NVVOoh and /tmp/tp-workflows-e7GWqn; the base's left neither. S2's harnesses are fixed: the base's db list leaked tp-route-tests-*, the head's does not.",
+  "fix": "Create the scratch directories in beforeAll, as world.ts and test-support/consumer.ts do."
+ },
+ {
+  "reviewer": "security-supply",
+  "id": "S1",
+  "severity": "should_fix",
+  "file": "tools/test/workflows.test.ts",
+  "line": "1316-1332 (and tools/required-checks.ts:24-33)",
+  "issue": "The new required-checks test holds each required check to a job of its own workflow, but not that no other job in any workflow reports the same name. A ruleset matches a required status check by name and source app (GitHub Actions), not by workflow, and this PR makes `all green` the single check that stands for every CI gate.",
+  "evidence": "The test reads only parsed.jobs[check.job] and checks its name, triggers, if and matrix. No assertion iterates the other workflows' job.name ?? id. Later CI PRs add workflows (release-dry-run.yml) and gate jobs (mutation's gate), and before runbook step 3i the build merges on green checks alone.",
+  "fix": "Add a case: across workflowFiles(), collect every job's reported name (job.name ?? id, matrix templates kept) and require each REQUIRED_CHECK_NAMES entry to occur exactly once, in its named workflow and job. Add one sentence to governance step 4A: a required check is matched by name, so no other workflow may give a job one of these names."
+ },
+ {
+  "reviewer": "security-supply",
+  "id": "S2",
+  "severity": "nit",
+  "file": ".github/workflows/ci.yml",
+  "line": "442-449, 460-468 (docs/adr/0066:208-210; docs/runbooks/ci.md:137-141)",
+  "issue": "Both Trivy scans use trivy-action's default cache, so push runs of `images` now write a Trivy vulnerability-DB cache to claude/build-platform's scope, which every PR restores. ADR 0066's cache consequences and ci.md's cache table omit it and say a cache only saves time. Under F1 (a), before ci-deps, release.yml's scan (same action, default cache) would restore it.",
+  "evidence": "trivy-action@ed142fd action.yaml:102-105 (`cache` default 'true'), :144-146 (key cache-trivy-<date>, restore-keys cache-trivy-). release.yml:76-82 uses the same action with no cache input. The default branch is main today (gh api .default_branch), so the risk is latent.",
+  "fix": "Set `cache: false` on ci.yml's two scan steps, or list the Trivy DB cache in ci.md's table and ADR 0066's Consequences and cover it in ci-deps' R1 cache test."
+ },
+ {
+  "reviewer": "security-supply",
+  "id": "S3",
+  "severity": "nit",
+  "file": "docs/adr/0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md",
+  "line": "136 (and docs/runbooks/ci.md:51-52)",
+  "issue": "The ADR says 'From this pull request, claude/build-platform's ruleset requires' the four checks, and ci.md says 'the ruleset blocks those' force pushes. No ruleset exists, so nothing enforces either until the founder applies step 4A after the first green push run.",
+  "evidence": "ADR 0066:35 and the ADR 0063 amendment (item 1) say rulesets returns []; ADR 0066:198-200 and governance 4A defer the ruleset to after the first green push run.",
+  "fix": "Reword: 'Once the founder applies the ruleset (governance step 4A, after this PR's first green push run), it requires:' and 'once step 4A's ruleset exists, it blocks those'."
+ },
+ {
+  "reviewer": "security-supply",
+  "id": "S4",
+  "severity": "nit",
+  "file": "packages/compliance/src/controls.test.ts",
+  "line": "83-86 (controls.ts:88-91)",
+  "issue": "The definedIn rule requires `file` to import definedIn, not to call it. Each route-test evidence entry names route-tests.0 for titles that exist only for some route kinds, without proving file 0's slice holds such a route. The twelve files together hold them, and partition.test.ts holds each file's defineRouteTests(<k>) call.",
+  "evidence": "evidenceProblems checks relativeImports(...).includes(source.definedIn) and hasTestTitled(definedIn). A file importing './define' that never calls defineRouteTests would pass.",
+  "fix": "Also require `file` to call a function definedIn exports (for example match `\\bdefineRouteTests\\(\\d+\\)`), or document in controls.ts that partition.test.ts carries the call and the coverage across the twelve files."
+ },
+ {
+  "reviewer": "security-supply",
+  "id": "S5",
+  "severity": "nit",
+  "file": ".github/workflows/ci.yml",
+  "line": "104-109 (ADR 0066:78-79)",
+  "issue": "The engine freeze's check.ts runs on pull requests only. A direct push to claude/build-platform, possible until the ruleset exists, gets only the differential test, which passes a non-test engine-file change that leaves pricing the same. This is by design and no regression, since 49514e8's ci.yml had no push trigger.",
+  "evidence": "The step's if requires github.event_name == 'pull_request'. check.ts:879-883 refuses a missing PR_NUMBER on CI.",
+  "fix": "On push, take PR_NUMBER from HEAD's subject when it is this repository's merge form ('Merge pull request #<n>: \u2026'), otherwise run check.ts with no exception. Or state in ci.md that direct pushes are freeze-checked only once 4A blocks them."
+ },
+ {
+  "reviewer": "security-supply",
+  "id": "S6",
+  "severity": "nit",
+  "file": "README.md",
+  "line": "125",
+  "issue": "'Milestone 1 does not start until the founder approves the document; until then that case fails' still refers to the approval case, which is no longer in test:db.",
+  "evidence": "README.md:107-111 already says the approval is CI's `domain model` check, and domain-model.db.test.ts no longer has the approval case.",
+  "fix": "Write 'until then the `domain model` check fails'."
+ }
+]
