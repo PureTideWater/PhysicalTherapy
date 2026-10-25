@@ -639,3 +639,19 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - Each merges its own PR when green and verified, as "Merging" says. If the base moves first, it merges the base again (rule 6) and waits for CI on the new head.
     - Cost and security questions come to this session, which takes them to the co-founder.
   - **ci-deps** moves to its own session once its design re-read finishes, so this machine stays with the capture and the review.
+- **2026-10-25 ~23:49 UTC: four parallel Lane B sessions started** (create_session, the same environment and model, auto mode). Each runs the full pipeline for one item and keeps `approval-summaries/lane-b-<name>-status.md` current:
+
+  | Item | Session | Branch | Status file |
+  |---|---|---|---|
+  | PR 15b (#12) | session_01Rv82bANhoRiK91FKEN7Pff | `co-001/pr-15b-ledger-payment-terms` | `lane-b-pr15b-status.md` |
+  | #111 | session_01BcoCApZmuH8eWJEys32HQK | `co-001/db-function-diffs` | `lane-b-db-function-diffs-status.md` |
+  | #10 | session_01CwzySVsjqgoXijLDMKj7VG | `co-001/superseded-rerun` | `lane-b-superseded-rerun-status.md` |
+  | #84 and #120 | session_01FmreSD8rXTREwwBkY2B4wh | `co-001/model-eval-gate` (and `co-001/contract-phi-check` if split) | `lane-b-model-eval-gate-status.md` |
+
+  - PR 15b's session was started first and checked: it took the brief and began the setup. Then the other three were started.
+  - Each brief holds:
+    - the item and its rulings, and the reserved numbers;
+    - the bootstrap command, and what to read;
+    - the pipeline, the merge procedure under the ruleset, and the decision rules (Q3, the visible-change ruling, cost and security to the co-founder through this session);
+    - the records rules, the SAVE rule for workflow agents, the Tuesday 12:00 UTC deadline, and the never-list.
+  - This session watches their status files, takes their questions to the co-founder, and logs their merges here.
