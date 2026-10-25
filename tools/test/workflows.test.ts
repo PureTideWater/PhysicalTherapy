@@ -221,6 +221,9 @@ function concurrencyProblems(file: string, parsed: Workflow): string[] {
   });
 }
 
+/** playwright-core's list of the browser builds its version pins, under pnpm's store: the browsers' cache key. */
+const BROWSERS_JSON = 'node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json';
+
 /** Playwright's Chromium with its system libraries, which the printing tests need (docs/adr/0058). */
 const CHROMIUM_INSTALL = /\bplaywright install --with-deps chromium\b/;
 
@@ -984,7 +987,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     });
 
     it('orders each shard’s files by that shard’s own last durations, restored and saved under its width and number', () => {
-      const restore = steps()[stepIndex(steps(), (step) => usesAction(step, 'actions/cache/restore'))];
+      // The durations' own cache step, by its id (the browsers' cache comes before it).
+      const restore = steps()[stepIndex(steps(), (step) => usesAction(step, 'actions/cache/restore') && step.id === 'vitest-cache')];
       expect(restore?.with).toEqual({
         path: 'node_modules/.vite/vitest',
         key: 'vitest-db-v1-${{ runner.os }}-${{ strategy.job-total }}-${{ matrix.shard }}-${{ github.sha }}',
@@ -1180,6 +1184,9 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     expect(builds[1]?.if).toBe('${{ !cancelled() }}');
     expect(builds[1]?.id).toBe('worker');
     expect(scans[1]?.if).toBe("${{ !cancelled() && steps.worker.outcome == 'success' }}");
+    // Each verdict is made from the vulnerability database this run downloads, never one another run cached (the
+    // action caches it by default, and a push run's copy would be every pull request's).
+    expect(scans.map((step) => step.with?.cache)).toEqual([false, false]);
     expect(existsSync(path.join(WORKFLOWS, 'supply-chain.yml'))).toBe(false);
   });
 
@@ -1192,7 +1199,20 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       const steps = ciJob(id).steps;
       const install = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
       expect(install, id).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
+      // The browsers from the cache, keyed by the builds this Playwright pins, so the install fetches only the system
+      // libraries on a hit, and installs the pinned builds on a miss or a stale entry.
+      expect(steps[install - 1], id).toEqual({ name: "Restore Playwright's browsers", id: 'browsers', uses: PINNED.cacheRestore, with: { path: '~/.cache/ms-playwright', key: `playwright-v1-\${{ runner.os }}-\${{ hashFiles('${BROWSERS_JSON}') }}` } });
     }
+    // Saved once a run, by the unit job, on a miss: a hit is never saved again, and no other job writes the key.
+    const unit = ciJob('unit').steps;
+    const save = unit.findIndex((step) => usesAction(step, 'actions/cache/save'));
+    expect(unit[save - 1]?.run).toBe('pnpm --filter @tp/web exec playwright install --with-deps chromium');
+    expect(unit[save]).toEqual({ name: "Save Playwright's browsers", if: "${{ steps.browsers.outputs.cache-hit != 'true' }}", uses: PINNED.cacheSave, with: { path: '~/.cache/ms-playwright', key: '${{ steps.browsers.outputs.cache-primary-key }}' } });
+    expect(['db', 'e2e'].flatMap((id) => ciJob(id).steps.filter((step) => step.with?.path === '~/.cache/ms-playwright' && !usesAction(step, 'actions/cache/restore')))).toEqual([]);
+    // The key's file is the one playwright-core this lockfile installs: it names the browser builds the install fetches.
+    const store = path.join(repositoryRoot, 'node_modules/.pnpm');
+    const cores = readdirSync(store).filter((name) => name.startsWith('playwright-core@') && existsSync(path.join(store, name, 'node_modules/playwright-core/browsers.json')));
+    expect(cores).toEqual([`playwright-core@${(JSON.parse(readFileSync(path.join(repositoryRoot, 'apps/web/node_modules/@playwright/test/package.json'), 'utf8')) as { version: string }).version}`]);
     // The config takes that Chromium wherever it is installed, and Google Chrome only where it is not (docs/adr/0058).
     const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
     expect(config).toContain('const bundledChromium = existsSync(chromium.executablePath());');
@@ -1405,6 +1425,22 @@ describe('the required checks (docs/adr/0066; tools/required-checks.ts)', () => 
     // Never skipped by its own condition, which GitHub would count as passing.
     expect([undefined, '${{ always() }}']).toContain(job?.if);
     expect(job?.strategy?.matrix, 'a matrix job reports one check per value, never the name the ruleset requires').toBeUndefined();
+  });
+});
+
+describe('the Postgres services', () => {
+  it('start every job’s steps only once the server answers on TCP, in every workflow, so no step waits on its own', () => {
+    const services = workflowFiles().flatMap((file) =>
+      Object.entries(workflow(file).jobs).flatMap(([id, job]) => Object.entries(job.services ?? {}).map(([name, service]) => ({ where: `${file} ${id} ${name}`, service: service as { image?: string; options?: string } }))),
+    );
+    const postgres = services.filter(({ service }) => service.image?.startsWith('postgres:') === true);
+    expect(postgres.map(({ where }) => where)).toEqual(['ci.yml db postgres', 'ci.yml domain-model postgres', 'ci.yml e2e postgres', 'large-zip.yml large-zip postgres']);
+    // On TCP: the image's first-run setup serves only its Unix socket, where pg_isready would answer early.
+    for (const { where, service } of postgres) {
+      expect(service.options, where).toBe('--health-cmd "pg_isready -h localhost -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30');
+    }
+    const loops = workflowFiles().flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => (job.steps ?? []).filter((step) => step.run?.includes('pg_isready') === true)));
+    expect(loops).toEqual([]);
   });
 });
 

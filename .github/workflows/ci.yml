@@ -2,9 +2,9 @@ name: ci
 
 # Every gate of PRD 18 on every pull request and on every push to the build branch, as parallel jobs behind one gate,
 # `all green`, which needs them all and is the one check of this workflow the ruleset requires (docs/adr/0066, Part 1;
-# docs/runbooks/ci.md). A push run re-verifies each merge on its merged tree and seeds the caches the pull requests
-# restore, since a pull request may restore its base branch's caches but never writes them. No path filter: every job
-# runs on every event, so the gate always reports.
+# docs/runbooks/ci.md). A push run re-verifies each merge on its merged tree and seeds the build branch's caches, which
+# every pull request into it can restore; a pull request's own run writes caches only to its own scope, which no other
+# branch reads. No path filter: every job runs on every event, so the gate always reports.
 on:
   pull_request:
   push:
@@ -49,8 +49,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       # What this run checks: a pull request's commits beyond its base branch, or a push's commits beyond the branch's
       # previous head (github.event.before, which for a merge commit is its first parent), or the commit alone when the
-      # branch is new. A previous head the checkout does not hold (a force push, which the ruleset blocks) fails here
-      # rather than check fewer commits.
+      # branch is new. A previous head the checkout does not hold (a force push, which the ruleset of the governance
+      # runbook's step 4A blocks once the founder applies it) fails here rather than check fewer commits.
       - name: The commits this run checks
         id: range
         if: ${{ !cancelled() }}
@@ -99,8 +99,10 @@ jobs:
       # file, file of the engine's package, existing golden file, synthetic release a golden claim pins or rule table
       # changes, but what tools/engine-freeze/exception.json lets through in the pull request it names (PR_NUMBER) and
       # that adds or edits it; the engine's diff stat goes to the job summary. A pull request's alone: the exception
-      # names one, and a push re-verifies what its pull request already passed. The unit job's differential test
-      # prices the engines of the same base and this commit on every event.
+      # names one, which a push does not carry. A merge's push follows its pull request's run, which this step gated;
+      # a direct push is blocked once the founder applies the ruleset (governance runbook, step 4A), and until then is
+      # checked by the unit job's differential test alone, which prices the engines of the base and this commit on
+      # every event (docs/runbooks/ci.md, "What a run checks").
       - name: Engine freeze
         if: ${{ github.event_name == 'pull_request' && !cancelled() && steps.install.outcome == 'success' }}
         env: { BASE_REF: "${{ github.base_ref }}", PR_NUMBER: "${{ github.event.pull_request.number }}" }
@@ -177,8 +179,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Playwright's own Chromium, the build the brand journey's pixel baselines were made with, and the one the
       # worker's tests print reports with: installed before any vitest run, which fails on CI without it rather than
-      # skip a printing test (tools/test/ci-chromium.ts; docs/adr/0058).
+      # skip a printing test (tools/test/ci-chromium.ts; docs/adr/0058). The browsers come from the cache when this
+      # Playwright's builds of them (playwright-core's browsers.json) are there, so the install then fetches only the
+      # system libraries; this job saves them on a miss, and the db and e2e jobs restore them.
+      - name: Restore Playwright's browsers
+        id: browsers
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-v1-${{ runner.os }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json') }}
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      - name: Save Playwright's browsers
+        if: ${{ steps.browsers.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.browsers.outputs.cache-primary-key }}
       # The pinned gitleaks, its release archive checked against tools/gitleaks/release.txt, which the pre-push hook's
       # tests run for real (tools/hooks/pre-push.test.ts, which fails on CI without it rather than skip those cases).
       - name: The pinned gitleaks for the pre-push hook's tests
@@ -224,6 +240,11 @@ jobs:
         image: postgres:18
         env: { POSTGRES_PASSWORD: test }
         ports: ["5432:5432"]
+        # The steps start once the server answers on TCP: the image's first-run setup serves only its Unix socket, so
+        # a check on the socket would pass before the server that the steps reach is up.
+        options: >-
+          --health-cmd "pg_isready -h localhost -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
     steps:
@@ -236,9 +257,13 @@ jobs:
       # The database logs every deliberate refusal the tests provoke; its log is printed after the job and, unquieted,
       # buries the failing test's own output. Only the database's log level changes.
       - name: Quiet the database's log
-        run: |
-          for _ in $(seq 1 30); do pg_isready -q -h localhost -p 5432 && break; sleep 1; done
-          psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
+        run: psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
+      - name: Restore Playwright's browsers
+        id: browsers
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-v1-${{ runner.os }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json') }}
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
       # Each shard's own durations from its last run, so its slowest files start first; without them vitest orders
       # by file size. Shard membership is fixed by the paths alone, so this only orders.
@@ -299,6 +324,11 @@ jobs:
         image: postgres:18
         env: { POSTGRES_PASSWORD: test }
         ports: ["5432:5432"]
+        # The steps start once the server answers on TCP: the image's first-run setup serves only its Unix socket, so
+        # a check on the socket would pass before the server that the steps reach is up.
+        options: >-
+          --health-cmd "pg_isready -h localhost -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
     steps:
@@ -374,6 +404,11 @@ jobs:
         image: postgres:18
         env: { POSTGRES_PASSWORD: test }
         ports: ["5432:5432"]
+        # The steps start once the server answers on TCP: the image's first-run setup serves only its Unix socket, so
+        # a check on the socket would pass before the server that the steps reach is up.
+        options: >-
+          --health-cmd "pg_isready -h localhost -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
     steps:
@@ -384,9 +419,13 @@ jobs:
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Quiet the database's log
-        run: |
-          for _ in $(seq 1 30); do pg_isready -q -h localhost -p 5432 && break; sleep 1; done
-          psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
+        run: psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
+      - name: Restore Playwright's browsers
+        id: browsers
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-v1-${{ runner.os }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json') }}
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -449,6 +488,8 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          # The vulnerability database the verdict is made from, downloaded by this run, never one another run cached.
+          cache: false
       - name: Build the worker image
         id: worker
         if: ${{ !cancelled() }}
@@ -468,6 +509,8 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          # The vulnerability database the verdict is made from, downloaded by this run, never one another run cached.
+          cache: false
 
   # The required check (docs/runbooks/github-governance.md, step 4A): every job above, each of whose results it prints
   # to its log and its summary, and it passes only when every one succeeded. It runs whatever they did, a cancelled run
