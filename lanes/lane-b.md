@@ -163,11 +163,6 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - **Also:** a PR with 0 approvals, restricted deletions, no force pushes, and an empty bypass list.
     - **Where:** the repository is user-owned, so it starts at https://github.com/PureTideWater/PhysicalTherapy/settings/rules.
     - **Status:** At ~20:32 UTC the rulesets API still returns `[]`. Push runs are green on 9c57d2d, de8f9b5 and 6ddd587 (the last after one re-run of a flake). Until it is applied, a session checks every required check by hand before merging.
-  - **Lane A and the UX reviewer.** The co-founder recommends that Lane A's screen-changing PRs take the same reviewer. The line he was given for the founder's chat (~17:05 UTC):
-
-    > Add to LANES.md rule 1, for both lanes: every pull request that changes something a person sees takes the UX and brand review (`.claude/agents/ux-brand-reviewer.md`, once Lane B's checklist PR merges) as one of its two adversarial reviews, with before and after screenshots at 1280 px and 390 px.
-
-    Lane B does not edit LANES.md's rules.
   - **O12, the PR capacity run's length:** job time 11:59 to 18:32 so far. It is due after ci-speed's first five push runs; three have run so far (9c57d2d, de8f9b5, 6ddd587).
     - `designs/lane-b-ci.md` §11 names the two options and what each changes: S4 once on PRs instead of three times, or the scenarios split across parallel runners.
     - Their costs in minutes are still to be measured and brought with them.
@@ -186,7 +181,8 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - F1 to F7 as recommended, relayed by the co-founder, 2026-10-25 ~01:10 UTC;
   - L1 (a), relayed by the co-founder, ~02:05 UTC;
   - the delegation to the co-founder, recorded by Lane A in LANES.md (1f35d71, 2026-10-25 ~10:05 UTC);
-  - the combined audit adopted whole, its 19 freeze exceptions granted and its ruling changes accepted, 2026-10-20 ~15:10 UTC (HANDOFF.md).
+  - the combined audit adopted whole, its 19 freeze exceptions granted and its ruling changes accepted, 2026-10-20 ~15:10 UTC (HANDOFF.md);
+  - Lane A's screen-changing PRs take the same UX and brand reviewer (`.claude/agents/ux-brand-reviewer.md`, once Lane B's checklist PR merges), with before and after screenshots at 1280 px and 390 px; handed to Lane A (LANES.md) to add to rule 1 (the co-founder, acting for the founder, 2026-10-25 ~21:10 UTC).
 - **The co-founder:**
   - Lane B uses the `PureTideWater` GitHub account, 2026-10-24 ~21:10 UTC;
   - his directions "all recommended actions" (~01:00 UTC) and "keep going; do the recommended suggestions to optimize" (~07:45 UTC), applied as his rulings under the delegation;
@@ -564,4 +560,8 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - **Q4 (`ux-brand-reviewer.md`'s `model:` key and checklist suite):** `model:` follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit).
   - **Still open:** Q1, the usage reading: the current % and the reset time's time of day (rule 9).
   - **Mobile GitHub steps for F7** given in chat (mobile browser → desktop site, https://github.com/PureTideWater/PhysicalTherapy/settings/rules, as the account owner).
+  - **Next:** the co-founder's usage reading, then the route-map scout.
+- **2026-10-25 ~21:10 UTC: Lane A's screen-changing PRs take the same UX and brand reviewer (ruled).**
+  - **Ruling (the co-founder, acting for the founder, 2026-10-25 ~21:10 UTC):** every pull request that changes something a person sees — in both lanes — takes the UX and brand review (`.claude/agents/ux-brand-reviewer.md`, once Lane B's checklist PR merges) as one of its two adversarial reviews, with before and after screenshots at 1280 px and 390 px.
+  - Added to LANES.md "Handed to Lane A". Removed from "Waiting on someone". Lane A adds it to rule 1.
   - **Next:** the co-founder's usage reading, then the route-map scout.
