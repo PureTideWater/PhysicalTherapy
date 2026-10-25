@@ -35,6 +35,10 @@
 #     also linked at /tmp/claude-0/gitleaks/gitleaks, the path older briefs use, when /tmp/claude-0 exists.
 #   - pnpm is the base image's (10.28.0 in /opt/node-tools). Only when no pnpm is on PATH: pnpm@10.28.0 from the npm
 #     registry in /opt/pnpm-10.28.0, linked at /usr/local/bin/pnpm.
+#   - Playwright's Chromium for the version the repository pins (apps/web/package.json): the base image's builds in
+#     PLAYWRIGHT_BROWSERS_PATH when present, else laid out from Google's Chrome for Testing bucket, each zip checked
+#     against a pinned SHA-256 (CFT_BUILDS below: revision 1194 for Playwright 1.56.1, 1248 for 1.64.1), because the
+#     cloud proxy refuses Playwright's own download hosts.
 #   - Starts both servers with HANDOFF's commands and waits until each answers a query.
 #   - Clones the repository to /home/user/PhysicalTherapy if absent, checks out claude/build-platform (fast-forwarding
 #     it when behind), installs the pre-push hook, runs pnpm install --frozen-lockfile with Node 24 first on PATH, adds
@@ -943,8 +947,57 @@ step_pnpm() {
   OK_MODULES=1
 }
 
-step_playwright() { # the browsers the repository's Playwright needs, from the base image (not downloaded here)
-  local pw browsers revs dir missing="" r
+# Playwright's Chromium builds by revision, laid out from Google's Chrome for Testing bucket (storage.googleapis.com,
+# which the cloud proxy allows) when the base image lacks them: Playwright's own hosts (cdn.playwright.dev,
+# playwright.download.prss.microsoft.com) are refused there. A CfT build of a version renders exactly as Playwright's
+# own build of it (the CI series' scout, designs/lane-b-ci/scout-playwright-runner.md M7: all seven brand baselines
+# byte for byte under 1.56.1). Fields: revision directory | CfT version | zip | the zip's SHA-256 | the directory the
+# zip's top folder becomes | a link name=target inside it ('' for none). 1194 is Playwright 1.56.1's (its registry
+# reads chrome-linux/chrome and chrome-linux/headless_shell); 1248 is 1.64.1's (CfT's own layout).
+CFT_BUILDS='chromium-1194|141.0.7390.37|chrome-linux64.zip|128b0505afabfa89660842aa0a33a1bd5949244a7027f8b44d1d2fd8f23d7669|chrome-linux|
+chromium_headless_shell-1194|141.0.7390.37|chrome-headless-shell-linux64.zip|b294238e5ac3e04f5f7fc5e5c017692bf64635e8824c3a7a44bea6a7ef6e147d|chrome-linux|headless_shell=chrome-headless-shell
+chromium-1248|156.0.8078.4|chrome-linux64.zip|43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79|chrome-linux64|
+chromium_headless_shell-1248|156.0.8078.4|chrome-headless-shell-linux64.zip|c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20|chrome-headless-shell-linux64|'
+CFT_BASE=https://storage.googleapis.com/chrome-for-testing-public
+
+# cft_layout REVDIR BROWSERS_DIR: lays out one revision from Chrome for Testing, its zip checked against the pin and
+# kept in $CACHE_HOME/paidwhole/cft; the tree is built beside its final path and moved into place only when whole.
+cft_layout() {
+  local rev="$1" dir="$2" row ver zip sum inner link cache tmp top
+  row="$(printf '%s\n' "$CFT_BUILDS" | awk -F'|' -v r="$rev" '$1 == r')"
+  [ -n "$row" ] || { ERR="no pinned Chrome for Testing build for $rev"; return 1; }
+  IFS='|' read -r _ ver zip sum inner link <<<"$row"
+  cache="$CACHE_HOME/paidwhole/cft/$ver"
+  mkdir -p "$cache"
+  if [ ! -f "$cache/$zip" ] || [ "$(sha256 "$cache/$zip")" != "$sum" ]; then
+    fetch "$CFT_BASE/$ver/linux64/$zip" "$cache/$zip" || return 1
+  fi
+  [ "$(sha256 "$cache/$zip")" = "$sum" ] || { ERR="$zip for $ver does not match its pinned SHA-256"; rm -f "$cache/$zip"; return 1; }
+  sweep "$dir/$rev"
+  tmp="$dir/$rev.tmp.$$"
+  TMPS+=("$tmp")
+  mkdir -p "$tmp/unzip"
+  if command -v unzip >/dev/null; then
+    unzip -q "$cache/$zip" -d "$tmp/unzip" || { ERR="could not unzip $zip"; return 1; }
+  else
+    python3 -I -c 'import os, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+for i in z.infolist():
+    path = z.extract(i, sys.argv[2])
+    mode = (i.external_attr >> 16) & 0o777
+    if mode:
+        os.chmod(path, mode)' "$cache/$zip" "$tmp/unzip" || { ERR="could not unpack $zip"; return 1; }
+  fi
+  top="$(ls "$tmp/unzip")"
+  [ "$(printf '%s\n' "$top" | wc -l)" = 1 ] && [ -d "$tmp/unzip/$top" ] || { ERR="$zip holds more than one top folder"; return 1; }
+  mv "$tmp/unzip/$top" "$tmp/$inner" && rmdir "$tmp/unzip"
+  if [ -n "$link" ]; then ln -s "${link#*=}" "$tmp/$inner/${link%%=*}"; fi
+  touch "$tmp/INSTALLATION_COMPLETE" "$tmp/DEPENDENCIES_VALIDATED"
+  mv "$tmp" "$dir/$rev"
+}
+
+step_playwright() { # the browsers the repository's Playwright needs: the base image's, else laid out from Chrome for Testing
+  local pw browsers revs dir missing="" laid="" r ver
   if [ "$OK_MODULES" != 1 ]; then line FAIL playwright - "skipped: needs the clone's node_modules"; return 1; fi
   pw="$(python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
 print({**d.get("dependencies", {}), **d.get("devDependencies", {})}["@playwright/test"])' "$CLONE_DIR/apps/web/package.json" 2>/dev/null)"
@@ -955,12 +1008,24 @@ for b in json.load(open(sys.argv[1]))["browsers"]:
         print(b["name"].replace("-", "_") + "-" + b["revision"])' "$browsers" 2>/dev/null)"
   [ -n "$revs" ] || { line FAIL playwright "$pw" "cannot read $browsers"; return 1; }
   dir="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
-  for r in $revs; do [ -d "$dir/$r" ] || missing="$missing $r"; done
-  if [ -n "$missing" ]; then
-    line FAIL playwright "$pw" "missing in $dir:$missing (pnpm --filter @tp/web exec playwright install chromium)"
+  for r in $revs; do [ -f "$dir/$r/INSTALLATION_COMPLETE" ] || missing="$missing $r"; done
+  if [ -n "$missing" ] && checking; then
+    line FAIL playwright "$pw" "missing in $dir:$missing (run this script without SETUP_CHECK: it lays them out from Chrome for Testing)"
     return 1
   fi
-  line ok playwright "$pw" "$(printf '%s' "$revs" | tr '\n' ' ' | sed 's/ $//') in $dir (from the base image)"
+  for r in $missing; do
+    if ! cft_layout "$r" "$dir"; then
+      line FAIL playwright "$pw" "$r: $ERR"
+      return 1
+    fi
+    ver="$(printf '%s\n' "$CFT_BUILDS" | awk -F'|' -v r="$r" '$1 == r { print $2 }')"
+    laid="$laid $r"
+  done
+  if [ -n "$laid" ]; then
+    line ok playwright "$pw" "$(printf '%s' "$revs" | tr '\n' ' ' | sed 's/ $//') in $dir (laid out from Chrome for Testing $ver, pinned SHA-256:$laid)"
+  else
+    line ok playwright "$pw" "$(printf '%s' "$revs" | tr '\n' ' ' | sed 's/ $//') in $dir (present)"
+  fi
 }
 
 # worktree BRANCH DIR PART INSTALL: a worktree of the clone at DIR on BRANCH, current with origin; INSTALL=1 also

@@ -204,3 +204,14 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
     3. At 1280 px, two wide tables on the screening result run past the right edge.
     4. To check: the practice home shows Actionable $0.00 while the ROI statement lists "Actionable in open cases: $30.00" for the same practice. The two count different things; the wording should say so.
     5. A notification reads "on 1 lines".
+- **2026-10-25 ~15:55 UTC: container restart.** It stopped PostgreSQL, ci-mutation's fix round (wf_877c195a-66e) and PR 15's build (wf_c2a31a50-55d). Disk, worktrees, commits and the scratchpad survived; no scratch database was left.
+  - **What had finished:** the ci-mutation fixers FA and FB had committed; the suite runner had merged them and claude/build-platform 9c57d2d (da4d7e9) and was in its full suite. PR 15's design review had run; its builder had pushed 0e56e01; no PR was open yet.
+  - **Recovery (~16:10 UTC):** both clusters restarted by hand. Both runs resumed with resumeFromRunId: the cached agents replayed; the stopped agent was told to continue from its worktree, with every heavy command under the lock, one at a time. Scripts re-archived.
+- **2026-10-25 ~16:40 UTC: `tools/setup-container.sh` lays out Playwright's Chromium from Chrome for Testing when the base image lacks it.** The base image of 2026-10-22 carries only 1.63's chromium-1243, and the proxy refuses Playwright's own hosts, so the step printed FAIL in every new container.
+  - **What changed:** `step_playwright` now lays out the pinned revision from `storage.googleapis.com/chrome-for-testing-public`. Each zip's SHA-256 is pinned in CFT_BUILDS (1194 for Playwright 1.56.1, CfT 141.0.7390.37; 1248 for 1.64.1, CfT 156.0.8078.4, ready for ci-browser). The tree is built beside its final path and moved into place whole; check mode reports what is missing.
+  - **Tested:**
+    - both revisions laid out into a scratch directory by the script's own functions, the 1194 trees identical to the hand layout in /opt/pw-browsers (file lists, the headless binary byte for byte);
+    - the 1248 trees identical to the scout's, the headless binary's SHA-256 the recorded 4fa61f0b…;
+    - Playwright 1.56.1 launches from the laid-out tree;
+    - `SETUP_CHECK=1` prints OK.
+  - For Lane A too: its next container gets OK without the manual layout.
