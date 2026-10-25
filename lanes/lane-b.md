@@ -191,3 +191,16 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
     - PR 15's build (wf_c2a31a50-55d);
     - ci-deps when a slot frees.
 - **2026-10-25 ~14:35 UTC: the first push runs on 9c57d2d are green:** `ci` (run 40201435875, 14:16 to 14:23 UTC, `all green` among its jobs) and `screening-capacity` (40201435976, to 14:28). **F7 is due:** the founder applies the `claude/build-platform` ruleset by `docs/runbooks/github-governance.md` step 4A. Its four required checks, each sourced from GitHub Actions: `all green`, `mutation`, `screening-capacity gate`, `approval-of-record`. Up to date required, PRs required with 0 approvals, no bypass, deletions restricted, force pushes blocked. Steps sent to the co-founder for the founder (an owner-admin setting the founder keeps, per the delegation).
+- **2026-10-25 ~15:40 UTC: screen tour for the co-founder** (wf_8f5524d1-dad, 2 agents, 0.60M tokens; asked for, about 1% of usage). 30 screens (26 at 1280 px, 4 at 390 px), captured from the production build of 9c57d2d.
+  - **How:**
+    - the repository's own e2e setup, synthetic data only;
+    - five unchanged e2e journeys filled the screens (layout-1280, packets, reconciliation, monitoring, billing);
+    - the real sign-in flow as each role;
+    - every image checked by a second agent.
+  - Published as a private gallery: https://claude.ai/artifact/3WudgKdMPDcRik4Z5bxU3c (the co-founder shares it from its Share menu).
+  - **Defects the tour found** (none blocks; candidates for a small Lane B fix PR or the final pass's 390 px work):
+    1. At 390 px the ROI statement's PDF SHA-256 does not wrap, so the page renders 489 px wide.
+    2. At 390 px the practice home's agreements table and the free screening's file-template table cut off their last column.
+    3. At 1280 px, two wide tables on the screening result run past the right edge.
+    4. To check: the practice home shows Actionable $0.00 while the ROI statement lists "Actionable in open cases: $30.00" for the same practice. The two count different things; the wording should say so.
+    5. A notification reads "on 1 lines".
