@@ -7,10 +7,12 @@ const WORKSPACES = '{apps,packages,infra,tools}';
 const ignored = [...configDefaults.exclude, '**/.next/**', '**/cdk.out/**', '**/.stryker-tmp/**', 'apps/web/e2e/**'];
 
 /**
- * 100% branch coverage on the pricing engine, the ledger, the parser and the authorization helpers
- * (PRD section 18), each measured on its own. Authorization helpers live in packages/db/src/authz.
+ * 100% branch coverage on the money helpers, the pricing engine, the ledger, the parser and the authorization helpers
+ * (PRD section 18; the money helpers since docs/adr/0066, Part 4), each measured on its own. Authorization helpers live
+ * in packages/db/src/authz.
  */
 export const BRANCH_GATED = [
+  'packages/money/src/**',
   'packages/pricing/src/**',
   'packages/ledger/src/**',
   'packages/edi835/src/**',

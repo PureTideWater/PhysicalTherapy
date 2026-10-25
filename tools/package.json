@@ -28,6 +28,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@tp/stryker-canary": "workspace:*",
     "fast-check": "catalog:",
     "playwright-core": "1.56.1",
     "@types/node": "catalog:",

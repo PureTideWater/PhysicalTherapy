@@ -741,24 +741,138 @@ describe('approval-of-record (docs/adr/0063)', () => {
   });
 });
 
-describe('mutation testing', () => {
-  it('runs on a label as well as a push, fails an engine change without the money label, and runs the canary first (docs/adr/0064)', () => {
-    const mutation = workflow('mutation.yml');
-    expect(mutation.on).toEqual({ pull_request: { types: ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'] }, schedule: [{ cron: expect.any(String) as unknown }] });
-    // ci.yml runs on pull_request's default types, which carry no label event, so it holds no mutation job.
-    expect(Object.keys(workflow('ci.yml').jobs)).toEqual(['check']);
-    const steps = mutation.jobs.mutation?.steps ?? [];
-    const gate = stepIndex(steps, (step) => step.name === 'The money label on an engine change');
-    const gateStep = steps[gate] as Step & { env?: Record<string, string> };
-    expect(gateStep.env?.MONEY).toBe("${{ contains(github.event.pull_request.labels.*.name, 'money') }}");
-    expect(gateStep.run).toContain("git diff --name-only \"$base\" HEAD -- packages/pricing/src ':!**/*.test.ts'");
-    expect(gateStep.run).toContain('exit 1');
-    const canary = stepIndex(steps, (step) => step.run === 'pnpm stryker run tools/stryker/canary/stryker.config.mjs');
-    const money = stepIndex(steps, (step) => step.run === 'pnpm stryker run');
-    expect(gate).toBeLessThan(canary);
-    expect(canary).toBeLessThan(money);
-    for (const step of steps.slice(gate + 1) as (Step & { if?: string })[]) {
-      expect(step.if, step.name ?? step.uses ?? step.run).toBe("steps.label.outputs.run == 'true'");
+describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
+  type MutationStep = Step & { readonly id?: string; readonly if?: string; readonly env?: Record<string, string> };
+  interface MutationJob {
+    readonly name?: string;
+    readonly needs?: string | readonly string[];
+    readonly if?: string;
+    readonly 'timeout-minutes'?: number;
+    readonly outputs?: Record<string, string>;
+    readonly env?: Record<string, string>;
+    readonly strategy?: { readonly 'fail-fast'?: boolean; readonly matrix?: Record<string, unknown> };
+    readonly steps: readonly MutationStep[];
+  }
+  const parsed = parse(readFileSync(path.join(repositoryRoot, '.github/workflows/mutation.yml'), 'utf8')) as {
+    on: unknown;
+    permissions?: unknown;
+    concurrency?: { group?: string; 'cancel-in-progress'?: unknown };
+    jobs: Record<string, MutationJob>;
+  };
+  const job = (name: string): MutationJob => {
+    const found = parsed.jobs[name];
+    if (found === undefined) throw new Error(`mutation.yml has no ${name} job`);
+    return found;
+  };
+  const runs = (steps: readonly MutationStep[]) => steps.map((step) => step.run ?? step.uses ?? '');
+
+  it('runs on every push to the build branch, every pull request on its default types, weekly and on request, with a read-only token', () => {
+    expect(parsed.on).toEqual({ push: { branches: ['claude/build-platform'] }, pull_request: null, schedule: [{ cron: '23 5 * * 1' }], workflow_dispatch: null });
+    expect(parsed.permissions).toEqual({ contents: 'read' });
+    // No label decides any more: path-affected runs replace the money label.
+    expect(readFileSync(path.join(repositoryRoot, '.github/workflows/mutation.yml'), 'utf8')).not.toMatch(/labels|labeled/);
+    expect(Object.keys(parsed.jobs)).toEqual(['changes', 'stryker', 'mutation']);
+    // ci.yml holds no Stryker run: mutation keeps its own required gate.
+    const ci = workflow('ci.yml');
+    expect(Object.values(ci.jobs).flatMap((ciJob) => ciJob.steps).filter((step) => step.run?.includes('stryker') === true)).toEqual([]);
+  });
+
+  it('groups its runs under its own name, cancelling only a pull request’s older run', () => {
+    expect(parsed.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}",
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+    });
+    expect(parsed.concurrency?.group?.startsWith('${{ github.workflow }}-')).toBe(true);
+  });
+
+  it('decides what to measure in its changes job, from the merge base on a pull request, and outputs the shard matrix', () => {
+    const changes = job('changes');
+    expect(changes['timeout-minutes']).toBe(5);
+    expect(changes.outputs).toEqual({ any: '${{ steps.affected.outputs.any }}', packages: '${{ steps.affected.outputs.packages }}', shards: '${{ steps.affected.outputs.shards }}' });
+    expect(changes.steps[0]?.with).toEqual({ 'persist-credentials': false, 'fetch-depth': 0 });
+    const affected = changes.steps.find((step) => step.id === 'affected');
+    expect(affected?.run).toBe('pnpm -s exec tsx tools/stryker/affected.ts --event "$EVENT" --base "$BASE" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"');
+    expect(affected?.env).toEqual({ EVENT: '${{ github.event_name }}', BASE: '${{ github.event.pull_request.base.sha }}' });
+    expect(existsSync(path.join(repositoryRoot, 'tools/stryker/affected.ts'))).toBe(true);
+  });
+
+  it('runs every selected shard, the canary first, then the shard in full, and uploads its reports overwriting a re-run’s', () => {
+    const stryker = job('stryker');
+    expect(stryker.name).toBe('stryker (${{ matrix.shard }})');
+    expect(stryker.needs).toBe('changes');
+    // An empty matrix is an error, so the job is skipped instead when nothing is affected.
+    expect(stryker.if).toBe("needs.changes.outputs.any == 'true'");
+    expect(stryker['timeout-minutes']).toBe(30);
+    expect(stryker.strategy).toEqual({ 'fail-fast': false, matrix: { shard: '${{ fromJSON(needs.changes.outputs.shards) }}' } });
+    expect(stryker.env).toEqual({ TP_MUTATION_SHARD: '${{ matrix.shard }}' });
+    const steps = stryker.steps;
+    const install = stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile');
+    const canary = stepIndex(steps, (step) => step.name === 'The canary');
+    const shard = stepIndex(steps, (step) => step.name === 'The shard');
+    expect(steps[canary]?.run).toBe('pnpm stryker run tools/stryker/canary/stryker.config.mjs\npnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"\n');
+    expect(steps[shard]?.run).toBe('pnpm -s exec tsx tools/stryker/shards.ts "$TP_MUTATION_SHARD"');
+    // The canary is the first step after the install, and no Stryker run comes before it.
+    expect(canary).toBe(install + 1);
+    expect(runs(steps.slice(0, canary)).filter((run) => run.includes('stryker'))).toEqual([]);
+    expect(canary).toBeLessThan(shard);
+    // Its verdicts, the shard's scores and survivors, go to the log whatever the shard did, as long as it was not cancelled.
+    const view = stepIndex(steps, (step) => step.run === 'pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --shard "$TP_MUTATION_SHARD"');
+    expect(steps[view]?.if).toBe('${{ !cancelled() }}');
+    const upload = stepIndex(steps, (step) => step.uses === PINNED.uploadArtifact);
+    expect(upload).toBeGreaterThan(shard);
+    expect(steps[upload]?.if).toBe('${{ !cancelled() }}');
+    expect(steps[upload]?.with).toEqual({ name: 'mutation-${{ matrix.shard }}', path: 'reports/mutation/', 'if-no-files-found': 'error', overwrite: true, 'retention-days': 14 });
+  });
+
+  it('gates every run in its mutation job: always run, failing on a failed, cancelled or skipped need, then on the gate’s rules', () => {
+    const mutation = job('mutation');
+    expect(mutation.name).toBe('mutation');
+    expect(mutation.needs).toEqual(['changes', 'stryker']);
+    expect(mutation.if).toBe('${{ always() }}');
+    expect(mutation['timeout-minutes']).toBe(10);
+    expect(mutation.strategy).toBeUndefined();
+    const needs = mutation.steps[0];
+    expect(needs?.env).toEqual({ CHANGES: '${{ needs.changes.result }}', STRYKER: '${{ needs.stryker.result }}', ANY: '${{ needs.changes.outputs.any }}', PACKAGES: '${{ needs.changes.outputs.packages }}' });
+    for (const text of ['if [ "$CHANGES" != success ]; then', 'if [ "$ANY" != true ]; then', 'if [ "$STRYKER" != skipped ]; then', 'No money path changed: no mutation run.', 'if [ "$STRYKER" != success ]; then']) expect(needs?.run).toContain(text);
+    expect(needs?.run?.match(/exit 1/g)).toHaveLength(3);
+    for (const step of mutation.steps.slice(1)) expect(step.if, step.name ?? step.uses ?? step.run).toBe("steps.needs.outputs.run == 'true'");
+    const download = stepIndex(mutation.steps, (step) => step.uses === PINNED.downloadArtifact);
+    expect(mutation.steps[download]?.with).toEqual({ pattern: 'mutation-*', path: 'reports/mutation', 'merge-multiple': true });
+    const gate = stepIndex(mutation.steps, (step) => step.name === 'The gate');
+    expect(gate).toBeGreaterThan(download);
+    expect(mutation.steps[gate]?.run).toBe('pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --expected "$SHARDS" --summary "$GITHUB_STEP_SUMMARY"');
+    expect(mutation.steps[gate]?.env).toEqual({ SHARDS: '${{ needs.changes.outputs.shards }}' });
+  });
+
+  it('pins every action to the release workflows’ SHAs and installs from the lockfile in every job that runs code', () => {
+    const pinned = new Set<string>(Object.values(PINNED));
+    for (const [name, mutationJob] of Object.entries(parsed.jobs)) {
+      for (const step of mutationJob.steps) if (step.uses !== undefined) expect(pinned.has(step.uses), `${name}: ${step.uses}`).toBe(true);
+      expect(mutationJob.steps.some((step) => step.uses === PINNED.checkout && step.with?.['persist-credentials'] === false), name).toBe(true);
+      expect(runs(mutationJob.steps).filter((run) => run.startsWith('pnpm install')), name).toEqual(['pnpm install --frozen-lockfile']);
+    }
+  });
+
+  it('scores each package with the mutate and test sets its configuration names', async () => {
+    const { MUTATE, MUTATION_PACKAGES, PACKAGE_VARIABLE, SHARD_VARIABLE } = await import('../../stryker/base.mjs');
+    const { TEST_SETS, default: mutationConfig } = await import('../../vitest.mutation.config');
+    const saved = [process.env[PACKAGE_VARIABLE], process.env[SHARD_VARIABLE]] as const;
+    delete process.env[SHARD_VARIABLE];
+    try {
+      for (const pkg of MUTATION_PACKAGES) {
+        const config = ((await import(`../../stryker/${pkg}.config.mjs`)) as { default: { mutate?: string[]; vitest?: { configFile?: string }; testRunner?: string; coverageAnalysis?: string } }).default;
+        expect(config.mutate, pkg).toEqual(MUTATE[pkg]);
+        expect(config.vitest?.configFile, pkg).toBe('vitest.mutation.config.ts');
+        expect([config.testRunner, config.coverageAnalysis], pkg).toEqual(['vitest', 'perTest']);
+        process.env[PACKAGE_VARIABLE] = pkg;
+        const resolved = (mutationConfig as unknown as (env: object) => { test: { include: string[] } })({});
+        expect(resolved.test.include, pkg).toEqual(TEST_SETS[pkg]);
+      }
+    } finally {
+      for (const [name, value] of [[PACKAGE_VARIABLE, saved[0]], [SHARD_VARIABLE, saved[1]]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 });
@@ -798,7 +912,7 @@ describe('job timeouts', () => {
     }
     expect(limits).toEqual({
       'ci.yml': { check: 60 },
-      'mutation.yml': { mutation: 120 },
+      'mutation.yml': { changes: 5, stryker: 30, mutation: 10 },
       'supply-chain.yml': { licenses: 15, images: 15 },
       'approval-of-record.yml': { 'approval-of-record': 5 },
       // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8), S4 three

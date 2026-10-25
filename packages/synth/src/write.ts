@@ -368,7 +368,7 @@ export function assertSyntheticFixture(bytes: Uint8Array, label: string): void {
 
 /** Directories under fixtures/synthetic that packages/synth never writes or removes. */
 const FOREIGN = new Set(['cms', 'rules', 'variants']);
-const CASE_DIR = /^[A-Z]{3}-\d{2}$/;
+const CASE_DIR = /^[A-Z]{2,3}-\d{2}$/;
 /** Generated output inside a case directory, ignored by git (PAR-29/generated). */
 const IGNORED = 'generated';
 

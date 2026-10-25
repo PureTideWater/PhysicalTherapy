@@ -438,6 +438,10 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/models.spec.ts',
   ]),
+  // Milestone 0's "CI with every gate from section 18" (PRD 17): the mutation workflow (docs/adr/0066, Part 4).
+  'CI-15': none(0, "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.", ['tools/stryker/canary/verdict.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-16': none(0, "The gate judges shards' reports and equivalents the test builds in memory; no file.", ['tools/stryker/gate.test.ts', 'tools/stryker/mutants.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-17': none(0, 'The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.', ['tools/stryker/affected.test.ts', 'tools/stryker/shards.test.ts', 'tools/screening-capacity/watched.test.ts', 'tools/test/workflows.test.ts']),
 };
 
 export interface CaseDefinition {
@@ -456,7 +460,7 @@ export interface CaseDefinition {
 }
 
 function definition(id: string, title: string, assertion: string, entry: Entry, dir: string, variant: boolean, build: Build | undefined): CaseDefinition {
-  const module = (variant ? 'PAR' : id.slice(0, 3)) as CaseModule;
+  const module = (variant ? 'PAR' : id.slice(0, id.indexOf('-'))) as CaseModule;
   return {
     id,
     module,

@@ -142,13 +142,17 @@ function isFile(file: string): boolean {
   }
 }
 
-/** Every repository source file the entry points reach through their imports, tests left out, sorted. */
-export function importClosure(entries: readonly string[], root: string = repositoryRoot): string[] {
+/**
+ * Every repository source file the entry points reach through their imports, sorted. Tests are left out unless
+ * `includeTests` is set (the mutation workflow's closures, tools/stryker/affected.ts, which follow a package's tests and
+ * what they import); the watched list leaves it off.
+ */
+export function importClosure(entries: readonly string[], root: string = repositoryRoot, options: { readonly includeTests?: boolean } = {}): string[] {
   const packages = workspacePackages(root);
   const seen = new Set<string>();
   const stack = [...entries];
   for (let file = stack.pop(); file !== undefined; file = stack.pop()) {
-    if (seen.has(file) || /\.test\.tsx?$/.test(file)) {
+    if (seen.has(file) || (options.includeTests !== true && /\.test\.tsx?$/.test(file))) {
       continue;
     }
     seen.add(file);
