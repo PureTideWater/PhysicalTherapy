@@ -5,7 +5,7 @@
     "original": "citation.kind !== 'contract'",
     "occurrence": 1,
     "replacement": "false",
-    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches return null either way.",
+    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches return null either way. The only one built is MA_NONCONTRACTED_CITATION (apps/worker/src/packets/records.ts:80).",
     "proposedBy": "M4b",
     "reviewedBy": "",
     "reviewedOn": ""
@@ -16,7 +16,7 @@
     "original": "citation.kind === 'contract'",
     "occurrence": 1,
     "replacement": "true",
-    "reason": "A citation that is not a contract's is a RegulationCitation, which has no parameters (format.ts), so read() is given undefined, returns at its first check and adds no percentage or year.",
+    "reason": "A citation that is not a contract's is a RegulationCitation, which has no parameters (format.ts), so read() is given undefined, returns at its first check and adds no percentage or year. The only one built is MA_NONCONTRACTED_CITATION (apps/worker/src/packets/records.ts:80).",
     "proposedBy": "M4b",
     "reviewedBy": "",
     "reviewedOn": ""
@@ -27,7 +27,7 @@
     "original": "date !== null",
     "occurrence": 1,
     "replacement": "true",
-    "reason": "sort() compares null as the text 'null', which sorts after every calendar date (each starts with a digit), so ends[0] is still the earliest date when any line has one, and null when none does, as ?? null gives.",
+    "reason": "sort() compares null as the text 'null', which sorts after every calendar date (each starts with a digit), so ends[0] is still the earliest date when any line has one, and null when none does, as ?? null gives. A line's ends_on is YYYY-MM-DD or null: @tp/triage passes on the window's end as the pricing trace or the database (date::text) states it.",
     "proposedBy": "M4b",
     "reviewedBy": "",
     "reviewedOn": ""
@@ -38,7 +38,7 @@
     "original": "lines.map((line) => line.deadline.ends_on).filter((date): date is string => date !== null)",
     "occurrence": 1,
     "replacement": "lines.map(line => line.deadline.ends_on)",
-    "reason": "sort() compares null as the text 'null', which sorts after every calendar date (each starts with a digit), so ends[0] is still the earliest date when any line has one, and null when none does, as ?? null gives.",
+    "reason": "sort() compares null as the text 'null', which sorts after every calendar date (each starts with a digit), so ends[0] is still the earliest date when any line has one, and null when none does, as ?? null gives. A line's ends_on is YYYY-MM-DD or null: @tp/triage passes on the window's end as the pricing trace or the database (date::text) states it.",
     "proposedBy": "M4b",
     "reviewedBy": "",
     "reviewedOn": ""
@@ -49,7 +49,7 @@
     "original": "lines.map((line) => line.serviceDate).sort()",
     "occurrence": 1,
     "replacement": "lines.map(line => line.serviceDate)",
-    "reason": "patternFacts is only given the lines already sorted by byLine, service date first with localeCompare, which orders calendar dates (YYYY-MM-DD, fixed-width digits and hyphens) as sort() does, so the dates are already in order.",
+    "reason": "patternFacts is only given the lines already sorted by byLine, service date first with localeCompare, which orders calendar dates (YYYY-MM-DD, fixed-width digits and hyphens, as the worker reads them with date::text, apps/worker/src/packets/records.ts:205) as sort() does, so the dates are already in order.",
     "proposedBy": "M4b",
     "reviewedBy": "",
     "reviewedOn": ""
@@ -60,7 +60,7 @@
     "original": "{\n    return null;\n  }",
     "occurrence": 1,
     "replacement": "{}",
-    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches the final return null either way.",
+    "reason": "A citation that is not a contract's is a RegulationCitation, whose method is the literal 'MA_NONCONTRACTED' (format.ts), which neither later branch accepts, so it reaches the final return null either way. The only one built is MA_NONCONTRACTED_CITATION (apps/worker/src/packets/records.ts:80).",
     "proposedBy": "M4b",
     "reviewedBy": "",
     "reviewedOn": ""
@@ -214,7 +214,7 @@
     "original": "'0'",
     "occurrence": 1,
     "replacement": "\"\"",
-    "reason": "usable is non-null only when no reason was added, so its annual_rate_percent passed the === null check above and is a string (PromptPayRecord types it string | null): the fallback after ?? is never evaluated for any PromptPayRecord. Only a record without the key at all, which no release record is, would reach it.",
+    "reason": "usable is non-null only when no reason was added, so its annual_rate_percent passed the === null check above and is a string (PromptPayRecord types it string | null): the fallback after ?? is never evaluated for any PromptPayRecord. A record without the key cannot reach it either: the worker copies the release record's interest.annual_rate_percent, which the release schema requires (packages/rules/src/schema.ts:298, percent.nullable() in a strict object).",
     "proposedBy": "M4b",
     "reviewedBy": "",
     "reviewedOn": ""
