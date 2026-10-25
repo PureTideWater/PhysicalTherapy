@@ -9,12 +9,12 @@ Lane A reads it to keep the build tracker current. The rules are in `../LANES.md
 
 ## In flight
 **The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC; ADR 0066; test-matrix and synth cases CI-01 to CI-20. **Design done and reviewed** (wf_8628914e-6b9, finished 2026-10-25 ~00:40 UTC): `designs/lane-b-ci.md`, with the scout reports and the review in `designs/lane-b-ci/`. Four PRs, in merge order:
-1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **Draft PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43), head b5ff4c7 after the fix round, CI all green in 6:17; subscribed. Verification running (wf_9d87a406-212); then merge.** Built by wf_aa18ae8a-848 (started 2026-10-25 ~01:05 UTC; script `workflow-scripts/lane-b-ci-speed-build-wf_aa18ae8a-848.js`). Builders S1, S2 and S3 work in parallel in `/home/user/ci-speed-s1`, `-s2` and `-s3` (local branches, never pushed); the integrator merges them in `/home/user/ci-speed`, pushes once and opens the draft PR; then two adversarial reviews run in fresh clones (CI and test infrastructure; security and supply chain). Heavy commands share `flock /tmp/laneb-heavy.lock`. If the session ends mid-run, this stage starts again from the four worktrees.
+1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **MERGED: PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43) as 9c57d2d (2026-10-25 ~14:00 UTC, merge commit), head b5ff4c7, CI all green in 6:17, fresh-clone verification passed. Next: the first push run on 9c57d2d, then the founder's F7 ruleset.** Built by wf_aa18ae8a-848 (started 2026-10-25 ~01:05 UTC; script `workflow-scripts/lane-b-ci-speed-build-wf_aa18ae8a-848.js`). Builders S1, S2 and S3 work in parallel in `/home/user/ci-speed-s1`, `-s2` and `-s3` (local branches, never pushed); the integrator merges them in `/home/user/ci-speed`, pushes once and opens the draft PR; then two adversarial reviews run in fresh clones (CI and test infrastructure; security and supply chain). Heavy commands share `flock /tmp/laneb-heavy.lock`. If the session ends mid-run, this stage starts again from the four worktrees.
 2. `co-001/ci-deps` (#112, #19's asserts, groups and licence fix, Dependabot #40, #38's tooling, #33; CI-11 to CI-14): after ci-speed merges; needs F1, F2 and F4.
 3. `co-001/ci-browser` (#19's upgrade part; CI-18 to CI-20): after ci-speed and ci-deps; needs F4 and F5.
 4. `co-001/ci-mutation` (#54; CI-15 to CI-17), worktree `/home/user/ci-mutation`. **Draft PR [#44](https://github.com/PureTideWater/PhysicalTherapy/pull/44), head 9099fac, mutation gate green on CI; reviewed (2 blocking, 8 should_fix, 12 nits); fix round running (wf_877c195a-66e); subscribed.** Built by wf_62c3df65-d76 (started 2026-10-25 ~02:15 UTC, ahead of ci-speed's merge for the critical path; script `workflow-scripts/lane-b-ci-mutation-build-wf_62c3df65-d76.js`). M1 lands Stryker 10.1.1 and the per-package configs first; then M1 (canary, gate, affected, workflow, documents), M2 (pricing and the golden test), M3 (money and ledger), M4a and M4b (packets, split by file) in parallel in `/home/user/ci-mutation-{m1,m2,m3,m4a,m4b}`; the integrator confirms every equivalent, runs all six shards and the gate locally, pushes once and opens the draft PR; two adversarial reviews follow (payment-engine; CI tooling and security). Merged last, after merging claude/build-platform under rule 6. F6 ruled.
 
-**PR 15, ledger tests LED-12 and LED-13** (Lane B queue item 2), claimed 2026-10-25 01:15 UTC: branch `co-001/pr-15-ledger-tests`. **Stopped on the owner's question L1** (design wf_3851b95a-f1c, 2026-10-25 01:05-01:50 UTC, 0.41M subagent tokens): LED-12 as written fails against the frozen ledger, so reconciliation-001 item 15's stop applies. Design `designs/lane-b-pr15-ledger-tests.md`; the probe record and the pre-validated patch for L1 (a) in `designs/lane-b-pr15/`. The design's adversarial review (payment-engine checklist) runs after the ruling, against the answer chosen.
+**PR 15, ledger tests LED-12 and LED-13** (Lane B queue item 2), claimed 2026-10-25 01:15 UTC: branch `co-001/pr-15-ledger-tests`. **Building: wf_c2a31a50-55d** (started 2026-10-25 ~14:05 UTC; worktree `/home/user/pr15` from 9c57d2d): the design's one adversarial review (payment-engine), then one builder applies the pre-validated patch (clean on 9c57d2d), records L1 (a) and opens the draft PR, then two reviews (payment-engine; test integrity). Earlier: stopped on the owner's question L1 (design wf_3851b95a-f1c, 2026-10-25 01:05-01:50 UTC, 0.41M subagent tokens): LED-12 as written failed against the frozen ledger, so reconciliation-001 item 15's stop applied; L1 (a) ruled. Design `designs/lane-b-pr15-ledger-tests.md`; the probe record and the pre-validated patch for L1 (a) in `designs/lane-b-pr15/`. The design's adversarial review (payment-engine checklist) runs after the ruling, against the answer chosen.
 
 ## Next
 After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane B's queue in `../LANES.md`.
@@ -165,3 +165,28 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
     - **ci-tooling-security:** B1, a PR that deletes a money test affects no package; SF1, fully-run is judged per shard, not per file; SF2, the changes guard fails open; SF3, Unicode-dependent equivalents on a floating Node; SF4, the data-file guard misses path forms; SF5, ADR 0066's Part 4 provenance lost in the rule-6 merge; SF6, importClosure misses workspace export forms; 7 nits.
   - **Fix round running** (wf_877c195a-66e). Two fixers in parallel: money-path tests and records; tooling, workflow and documents. Then the suite runner merges both, merges claude/build-platform if #43 has merged (rule 6), runs the full local suite once with all six shards, pushes once, and updates the PR body.
   - **For Lane A's PR 6c** (engine corrections, under the freeze): payment-engine N4 (a NaN line number leaves a claim's lines out of order) and S2 (a malformed in-type year basis is priced at the records in force rather than refused). Lane B does not change the engine; the fix round's report will give the exact cases.
+- **2026-10-25 ~14:00 UTC: PR #43 (ci-speed, CI 1 of 4) MERGED as 9c57d2d**, Lane B's first merge.
+  - **Verification** (wf_9d87a406-212, 0.60M tokens; `approval-summaries/lane-b-ci-speed-verify-summary.md`), fresh clone at b5ff4c7, every check of design 3.1.7 passed:
+    - scope, 99 files, each named or recorded; the forbidden paths empty;
+    - the freeze;
+    - typecheck cold 67 s, warm 24 s;
+    - lint, 1,457 files;
+    - actionlint and the tools tests (470);
+    - synth clean;
+    - the stale-name grep, history only;
+    - bounded db proofs, 576.
+  - **CI figures:**
+    - A1: median 7:26, worst 7:43, latest 6:17 (target 10:00 / 12:00); 37.6 runner-minutes;
+    - A1′ 16:52, set by the capacity gate;
+    - A2, no test lost: unit 4,658 + 1; db 9,040 + 1 = base − 2 moved + 1 new; golden 38; e2e 51;
+    - the shard union, each shard's printed SHA-256 re-hashed, equals the unsharded list of 118 files;
+    - A3: slowest db file 145 s; route files 45 to 57 s;
+    - the differential test ran.
+  - **Finding F1** (should_fix) was the PR description's text only: three statements stale after the fix round. It was corrected in the description; the verifier: "once the description is corrected the verdict is pass, with nothing to re-run". N1, three figures from an earlier head in ADR 0066, dependabot.yml and ci.md, rides ci-deps.
+  - Marked ready, merged with a merge commit (base unchanged at 49514e8). Unsubscribed #43; main checkout fast-forwarded to 9c57d2d; the four ci-speed worktrees removed.
+  - **For Lane A:** CI is now parallel jobs behind `all green` (about 6-8 min). A schema PR's missing approval line shows as the `domain model` check, no longer inside test:db. #42 picks this up when it merges `claude/build-platform`.
+  - **Next:**
+    - the first push run on 9c57d2d; when green, the founder's F7 ruleset (steps to the co-founder);
+    - PR #44's fix round, which now merges 9c57d2d under rule 6;
+    - PR 15's build (wf_c2a31a50-55d);
+    - ci-deps when a slot frees.
