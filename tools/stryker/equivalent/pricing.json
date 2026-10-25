@@ -7,8 +7,8 @@
     "replacement": "\"\"",
     "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -18,8 +18,8 @@
     "replacement": "\"\"",
     "reason": "A Finished's kind is only ever compared with 'stopped' (price, lines 179 and 180), so any other text takes the same branch.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -29,8 +29,8 @@
     "replacement": "\"\"",
     "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -40,8 +40,8 @@
     "replacement": "\"\"",
     "reason": "A Resolved's kind is only ever compared with 'stopped' (stepsOneToThree, line 292), so any other text takes the same branch.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -51,8 +51,8 @@
     "replacement": "\"\"",
     "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -62,8 +62,8 @@
     "replacement": "\"\"",
     "reason": "A Unit's kind is only ever compared with 'stopped' (stepsOneToThree, line 296), so any other text takes the same branch.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -73,8 +73,8 @@
     "replacement": "\"\"",
     "reason": "A Unit's kind is only ever compared with 'stopped' (stepsOneToThree, line 296), so any other text takes the same branch.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -84,8 +84,8 @@
     "replacement": "\"\"",
     "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -95,41 +95,8 @@
     "replacement": "() => undefined",
     "reason": "visit holds a claim's working lines in line-number order (price sorts the lines at line 159, and a repeated number stops its lines), so lineNos is already ascending; a comparator giving undefined (NaN, never below zero) leaves it as it is.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/pricing/src/engine.ts",
-    "mutator": "ArithmeticOperator",
-    "original": "a - b",
-    "occurrence": 1,
-    "replacement": "a + b",
-    "reason": "visit holds a claim's working lines in line-number order (price sorts the lines at line 159, and a repeated number stops its lines), so lineNos is already ascending; line numbers are at least 1, so a + b is never below zero, and V8's Array.prototype.sort (Node's engine) reads a comparator's result only as below zero or not, so the list stays as it is.",
-    "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/pricing/src/engine.ts",
-    "mutator": "ArithmeticOperator",
-    "original": "a.unit - b.unit",
-    "occurrence": 1,
-    "replacement": "a.unit + b.unit",
-    "reason": "units is built in line order, then unit order, so the units of one line already stand in unit order; unit numbers are at least 1, so the mutant's sum is never below zero, and V8's Array.prototype.sort (Node's engine) reads a comparator's result only as below zero or not, so they keep that order (30,000 random days ranked identically).",
-    "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/pricing/src/engine.ts",
-    "mutator": "ArithmeticOperator",
-    "original": "a.work.context.facts.lineNo - b.work.context.facts.lineNo",
-    "occurrence": 1,
-    "replacement": "a.work.context.facts.lineNo + b.work.context.facts.lineNo",
-    "reason": "units is built in line order, then unit order (the day's lines come in line-number order), so units that tie on practice expense already stand in line order; line numbers are at least 1, so the mutant's sum is never below zero, and V8's Array.prototype.sort (Node's engine) reads a comparator's result only as below zero or not, so the ties keep that order (30,000 random days ranked identically).",
-    "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -139,8 +106,8 @@
     "replacement": "true",
     "reason": "stopped is keyed by Working lines only, so for a Stopped item stopped.get(item) is undefined and ?? item returns the item, as the other branch does.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -150,8 +117,8 @@
     "replacement": "false",
     "reason": "schedule is null only for PER_VISIT terms and charge is non-null only for LESSER_OF terms, so whenever schedule is null charge is null too, and charge === null picks schedule as the original does.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -161,8 +128,8 @@
     "replacement": "visit.map(work => work.context.facts.lineNo)",
     "reason": "visit holds a claim's working lines in line-number order (price sorts the lines at line 159, and a repeated number stops its lines), so lineNos is already ascending and the sort changes nothing.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/engine.ts",
@@ -172,8 +139,8 @@
     "replacement": "{}",
     "reason": "The trace's first outcome is a placeholder that every line replaces before price returns (priced() at line 925 or unpriced() at line 952), and nothing reads it before then.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -183,8 +150,8 @@
     "replacement": "false",
     "reason": "perUnit has already thrown for a fee-schedule step whose conversion factor is null, so this test is false whenever checkFeeSchedule runs.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -194,8 +161,8 @@
     "replacement": "false",
     "reason": "perUnit has already thrown for a fee-schedule step whose GPCI is null, so this test is false whenever checkFeeSchedule runs.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -205,8 +172,8 @@
     "replacement": "number <= lowest",
     "reason": "When number equals lowest both branches return the same number, so the visit's lowest line number is the same.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -216,8 +183,8 @@
     "replacement": "true",
     "reason": "rvu is undefined only when the trace records no fee-schedule step, and then setting is null too (trace.steps.fee_schedule?.setting ?? null), so the next conjunct, setting !== null, makes the whole test false either way.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -227,8 +194,8 @@
     "replacement": "false",
     "reason": "rvu is null here only when schedule is null, which the test before it already catches: derivedStop has returned NO_PFS_VALUE for a recorded null relative value before perUnit runs.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -238,8 +205,8 @@
     "replacement": "false",
     "reason": "perUnit has already thrown for a fee-schedule step whose relative value is null, so this test is false whenever checkFeeSchedule runs.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -249,8 +216,8 @@
     "replacement": "false",
     "reason": "perUnit has already thrown for a fee-schedule step whose relative value or GPCI is null, so both tests are false whenever checkFeeSchedule runs; only the locality's can be true.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -260,8 +227,8 @@
     "replacement": "rvu === null && gpci === null",
     "reason": "perUnit has already thrown for a fee-schedule step whose relative value or GPCI is null, so both tests are false whenever checkFeeSchedule runs and && gives what || gives.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -271,8 +238,8 @@
     "replacement": "false",
     "reason": "With schedule null, rvu is null too (schedule?.rvu ?? null), so rvu === null throws the same error at once.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -282,8 +249,8 @@
     "replacement": "false",
     "reason": "checkFeeSchedule runs only after perUnit has thrown for a null fee-schedule step, so schedule is never null here.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -293,8 +260,8 @@
     "replacement": "false",
     "reason": "With schedule === null || rvu === null gone, a null fee-schedule step still throws the same error at gpci === null, since gpci is then null too (schedule?.gpci ?? null); with a step recorded, rvu is not null, because derivedStop has already returned NO_PFS_VALUE for a recorded null relative value.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -304,8 +271,8 @@
     "replacement": "schedule === null && rvu === null",
     "reason": "derivedStop has already returned NO_PFS_VALUE for a recorded null relative value, so here rvu is null exactly when schedule is null (schedule?.rvu ?? null), and && of two equal tests gives what || gives.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/recompute.ts",
@@ -315,8 +282,8 @@
     "replacement": "trace.terms.percent_of_medicare",
     "reason": "checkFeeSchedule runs only from perUnit, which recompute calls after it has returned for a trace whose terms are null, so trace.terms is never null here and ?. never short-circuits.",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/release.ts",
@@ -326,8 +293,8 @@
     "replacement": "[\"Stryker was here\"]",
     "reason": "For a key with no records inForce filters the mutant's one string, whose effective_from is undefined, and inclusiveCovers(undefined, undefined, date) is false for every date (undefined <= date is false), so the list is empty and the result null, as with [].",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/pricing/src/release.ts",
@@ -337,51 +304,7 @@
     "replacement": "[\"Stryker was here\"]",
     "reason": "For a key with no records latestInYear filters the mutant's one string, whose effective_from is undefined, and undefined <= last is false for every year, so the list is empty and the result null, as with [].",
     "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/pricing/src/release.ts",
-    "mutator": "ConditionalExpression",
-    "original": "a.effective_from > b.effective_from",
-    "occurrence": 1,
-    "replacement": "false",
-    "reason": "This test runs only once a.effective_from < b.effective_from is false, so the mutant returns 0 where the original returns 1 for a later start. V8's Array.prototype.sort (Node's engine) reads a comparator's result only as below zero or not, so 0 and 1 order every list alike (40,000 random lists with ties sorted identically).",
-    "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/pricing/src/release.ts",
-    "mutator": "ConditionalExpression",
-    "original": "a.effective_from > b.effective_from",
-    "occurrence": 1,
-    "replacement": "true",
-    "reason": "This test runs only once a.effective_from < b.effective_from is false, so the mutant returns 1 where the original returns 0 for two equal starts. V8's Array.prototype.sort (Node's engine) reads a comparator's result only as below zero or not, so 1 and 0 order every list alike (40,000 random lists with ties sorted identically).",
-    "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/pricing/src/release.ts",
-    "mutator": "EqualityOperator",
-    "original": "a.effective_from > b.effective_from",
-    "occurrence": 1,
-    "replacement": "a.effective_from <= b.effective_from",
-    "reason": "This test runs only once a.effective_from < b.effective_from is false, so the mutant returns 1 for two equal starts and 0 for a later one, never below zero. V8's Array.prototype.sort (Node's engine) reads a comparator's result only as below zero or not, so it orders every list as the original does (40,000 random lists with ties sorted identically).",
-    "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
-  },
-  {
-    "file": "packages/pricing/src/release.ts",
-    "mutator": "EqualityOperator",
-    "original": "a.effective_from > b.effective_from",
-    "occurrence": 1,
-    "replacement": "a.effective_from >= b.effective_from",
-    "reason": "This test runs only once a.effective_from < b.effective_from is false, so >= is always true and the mutant returns 1 where the original returns 0 for two equal starts. V8's Array.prototype.sort (Node's engine) reads a comparator's result only as below zero or not, so 1 and 0 order every list alike (40,000 random lists with ties sorted identically).",
-    "proposedBy": "M2",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   }
 ]

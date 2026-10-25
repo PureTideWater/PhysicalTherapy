@@ -7,8 +7,8 @@
     "replacement": "a.remainder >= b.remainder",
     "reason": "This branch runs only when the two remainders differ, and there >= and > agree.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/allocation.ts",
@@ -18,8 +18,8 @@
     "replacement": "left <= capacity",
     "reason": "The two differ only when left equals capacity, and then the part taken is the same amount either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -29,8 +29,8 @@
     "replacement": "\"\"",
     "reason": "source[index + 1] is never the empty string, so the skip never happens, and the \\n of a CRLF then ends an empty row; endRow drops a row that is one empty field (blank lines are skipped), so the rows read are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -40,8 +40,8 @@
     "replacement": "\"\"",
     "reason": "char is never the empty string, so the skip never happens, and the \\n of a CRLF then ends an empty row; endRow drops a row that is one empty field (blank lines are skipped), so the rows read are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -51,8 +51,8 @@
     "replacement": "true",
     "reason": "The skip then also takes the second \\n of \"\\n\\n\", which would only have ended an empty row, and endRow drops a row that is one empty field (blank lines are skipped), so the rows read are the same; a CRLF is skipped as before.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -62,8 +62,8 @@
     "replacement": "char !== '\\r'",
     "reason": "The skip then takes the second \\n of \"\\n\\n\" instead of the \\n of a CRLF; either character would only end an empty row, and endRow drops a row that is one empty field (blank lines are skipped), so the rows read are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -73,8 +73,8 @@
     "replacement": "false",
     "reason": "Without the skip, the \\n of a CRLF ends a second, empty row, and endRow drops a row that is one empty field (blank lines are skipped), so the rows read are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -84,8 +84,8 @@
     "replacement": "true",
     "reason": "With nothing pending, endRow pushes a row of one empty field, which it then drops, so calling it anyway reads the same rows.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -95,8 +95,8 @@
     "replacement": "row.length >= 0",
     "reason": "That makes the condition always true, and with nothing pending endRow drops the row of one empty field it would push, so the rows read are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/csv.ts",
@@ -106,8 +106,8 @@
     "replacement": "{}",
     "reason": "Not skipping the \\n of a CRLF makes it end an empty row, and endRow drops a row that is one empty field (blank lines are skipped), so the rows read are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/matching.ts",
@@ -117,8 +117,8 @@
     "replacement": "decrease <= remaining",
     "reason": "The two differ only when decrease equals remaining, and then the amount taken back is the same either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/matching.ts",
@@ -128,8 +128,8 @@
     "replacement": "false",
     "reason": "null <= 0n is true in JavaScript (null compares as 0), so a payment of null still fails the batch through payment <= ZERO_CENTS.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/reconciliation.ts",
@@ -139,8 +139,8 @@
     "replacement": "group.proved + group.recouped <= 0n",
     "reason": "Every group in inTotal has proved + recouped other than zero (the filter at :127), so for them < 0n and <= 0n agree.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/reconciliation.ts",
@@ -150,8 +150,8 @@
     "replacement": "false",
     "reason": "null <= 0n is true in JavaScript (null compares as 0), so a report that states no total is still refused as no_recovered_total through stated <= ZERO_CENTS.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/roi.ts",
@@ -161,8 +161,8 @@
     "replacement": "recovered <= ZERO_CENTS",
     "reason": "The two differ only when recovered is zero, and negating zero cents and zero hundredths gives 0n again (a bigint has no negative zero), so the ratio is \"0.00\" either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/settings.ts",
@@ -172,8 +172,8 @@
     "replacement": "true",
     "reason": "A one-key object whose template is not a string then finds no built-in template (every ID is a string) and throws LedgerSettingsError(posting_export_template), the error the original throws when its one key cannot be system, columns and date_format.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/stages.ts",
@@ -183,8 +183,8 @@
     "replacement": "true",
     "reason": "LEDGER_STAGES holds strings only and includes compares by SameValueZero, so a value that is not a string is never one of them either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/stages.ts",
@@ -194,8 +194,8 @@
     "replacement": "true",
     "reason": "PROOF_LEVELS holds strings only and includes compares by SameValueZero, so a value that is not a string is never one of them either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -205,8 +205,8 @@
     "replacement": "\"Stryker was here!\"",
     "reason": "readDate(\"Stryker was here!\") is null under either format, so a cell holding that text is refused as a service date whether the ternary or readDate gives the null, and an empty cell still reaches readDate, which gives null.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -216,8 +216,8 @@
     "replacement": "\"Stryker was here!\"",
     "reason": "procedureCodeOf(\"Stryker was here!\") is null (it is neither a code nor a code with two-character modifiers), so a cell holding that text is refused either way, and an empty cell still reads as no code.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -227,8 +227,8 @@
     "replacement": "\"\"",
     "reason": "readCells’ result never leaves the module, and its two callers only compare its kind with \"refused\", so the other kind’s name is never read.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -238,8 +238,8 @@
     "replacement": "/^\\d{4}-\\d{2}-\\d{2}/",
     "reason": "readDate returns the text only when it equals the first ten characters of its own date’s ISO form, so a date it returns is ten characters long, and ten characters that begin with the pattern match it whole: dropping the $ changes no result.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -249,8 +249,8 @@
     "replacement": "/\\d{4}-\\d{2}-\\d{2}$/",
     "reason": "readDate returns the text only when it equals the first ten characters of its own date’s ISO form, so a date it returns is ten characters long, and ten characters that end in the pattern match it whole: dropping the ^ changes no result.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -260,8 +260,8 @@
     "replacement": "false",
     "reason": "procedureCodeOf of the empty string is null (both of its patterns need a character), so an empty code cell reads as no code either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -271,8 +271,8 @@
     "replacement": "false",
     "reason": "An unmapped field has no position, and cells[undefined] reads the property \"undefined\" of a row parseCsv built, a plain array of strings that never has one, so the ?? '' gives the empty string, as the guard does.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/templates.ts",
@@ -282,8 +282,8 @@
     "replacement": "false",
     "reason": "readDate of the empty string is null under either format (both patterns need digits), so an empty service date reads as null either way, and the check after it, guarded by serviceText !== '', adds no problem.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/totals.ts",
@@ -293,8 +293,8 @@
     "replacement": "+1",
     "reason": "latest.interest is set but never read: lineLedgerStage compares only the latest approved, recouped and proof-level (posted or deposited) entries.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/totals.ts",
@@ -304,8 +304,8 @@
     "replacement": "line.approvedCents <= kept",
     "reason": "The two differ only when approvedCents equals kept, and then the value is the same amount either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/totals.ts",
@@ -315,8 +315,8 @@
     "replacement": "line.provedCents >= standing",
     "reason": "The two differ only when provedCents equals standing, and then kept is the same amount either way.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/totals.ts",
@@ -326,8 +326,8 @@
     "replacement": "value >= 0n",
     "reason": "The two differ only when value is 0n, and then cents(value) and cents(0n) are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   },
   {
     "file": "packages/ledger/src/totals.ts",
@@ -337,7 +337,7 @@
     "replacement": "value >= 0n",
     "reason": "The two differ only when value is 0n, and then cents(value) and cents(0n) are the same.",
     "proposedBy": "M3",
-    "reviewedBy": "",
-    "reviewedOn": ""
+    "reviewedBy": "integrator (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   }
 ]

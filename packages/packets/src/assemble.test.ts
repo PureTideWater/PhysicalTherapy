@@ -413,3 +413,24 @@ describe('versionSha256', () => {
     expect(() => canonicalJson({ amount: 1n })).toThrow(TypeError);
   });
 });
+
+describe('assemblePacket’s dates as text, whatever text they hold', () => {
+  // The deadline's end and the pattern's first and last service dates are compared as text, in code-unit order, which
+  // orders every YYYY-MM-DD date by the calendar. These cases hold what the comparison rests on with text that is not a
+  // date, where a coincidence of order that calendar dates share would otherwise hide the difference.
+  const uncited = (endsOn: string | null) => ({ status: 'unverified', source: endsOn === null ? null : 'contract', endsOn, cause: 'CONTRACT_WINDOW_UNCITED' }) as const;
+
+  it('takes the deadline from the lines that state an end, leaving out a line without one rather than sorting it last', () => {
+    // Compared as text, a missing end would read "null", which sorts after every date but before "pending".
+    const packet = assemblePacket(assemblyInput({ lines: [line(1, { windowEndsOn: null, deadline: uncited(null) }), line(2, { windowEndsOn: 'pending', deadline: uncited('pending') })] }));
+    expect(packet.deadline).toMatchObject({ basis: 'line_windows', ends_on: 'pending', status: 'unverified', lines_verified: 0, lines: 2 });
+  });
+
+  it('states the pattern’s first and last service dates in code-unit order, not in the schedule’s collation order', () => {
+    // The schedule lists its lines by localeCompare, which puts "a" before "B"; code-unit order puts "B" first.
+    expect('a'.localeCompare('B')).toBeLessThan(0);
+    const packet = assemblePacket(assemblyInput({ lines: [line(1, { serviceDate: 'B' }), line(2, { serviceDate: 'a' })] }));
+    expect(packet.lines.map((item) => item.service_date)).toStrictEqual(['a', 'B']);
+    expect(packet.pattern).toMatchObject({ first_service_date: 'B', last_service_date: 'a' });
+  });
+});
