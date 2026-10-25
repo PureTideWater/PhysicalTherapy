@@ -23,7 +23,11 @@ Rules for you:
 - Heavy commands (pnpm install, build, typecheck, tests, Playwright runs, the tour's build and server) run only under the shared lock: flock /tmp/laneb-heavy.lock <command>, one at a time. Another workflow shares this 4-CPU machine.
 - Change no tracked file in /home/user/PhysicalTherapy or in the tour worktree /home/user/screens. In /home/user/ops, change only the files your task names. Never run git add, commit, push, checkout, reset or stash anywhere: the orchestrator commits.
 - No model name or identifier in any file you write. Never write the development master key to a file (the tour's env.sh derives it at run time).
+- Improve as you go (the co-founder's standing direction, 2026-10-25): if you find a way to improve or optimize something inside your task, do it and say so in your result; if it is outside your task, list it in your result's notes as a proposed improvement.
 - Long commands: run them with run_in_background and wait for the notification (or a Monitor until-loop); the Bash tool refuses a long foreground sleep.`
+// RESUMED 2026-10-25 ~22:45 UTC: the first run's four agents were all cut off at 21:27:28 by an interrupt of the main
+// session, before any returned. Every agent now saves its progress to a file and continues from it if it exists.
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
 
 const ROUTE = {
   type: 'object',
@@ -59,7 +63,8 @@ const AREAS = [
 phase('Map')
 const scouted = await parallel(AREAS.map(a => () => agent(`${RULES}
 
-Task: map every page route in ${a.title}, at /home/user/PhysicalTherapy (claude/build-platform 6ddd587). Read-only.
+Task: map every page route in ${a.title}, at /home/user/PhysicalTherapy (claude/build-platform 6ddd587). Read-only, except your progress file.
+${SAVE('map-' + a.key + '.jsonl', 'one JSON line per route, in the schema of your result, appended as you finish each route')}
 Your files, exactly these ${args[a.key].length}:
 ${args[a.key].join('\n')}
 
@@ -78,6 +83,7 @@ phase('Critic')
 const critic = await agent(`${RULES}
 
 Task: check a route map of the PaidWhole web app for completeness and accuracy, correct it, and write it out.
+${SAVE('critic.md', 'the entries checked and each correction, as you make it')}
 The four scouts' area notes:
 ${scouted.filter(Boolean).map((s, i) => `- ${AREAS[i] ? AREAS[i].key : i}: ${s.areaNotes}`).join('\n')}
 The merged map (${merged.length} entries):
@@ -121,6 +127,7 @@ phase('Capture')
 const cap = await agent(`${RULES}
 
 Task: extend the Lane B screen tour so it captures every reachable page of the PaidWhole web app, then run it and leave the machine clean.
+${SAVE('capture.md', 'each change made to the tour, each run started and ended with its counts, the lock, port and database state')}
 
 Read first: ${TOOL}/README.md and every script and spec beside it; the route map ${UXD}/route-map.json (${routes.length} routes; the populate specs it names: ${JSON.stringify(critic.populateSpecs)}); apps/web/e2e/helpers.ts, journeys.ts, prepare.ts and brand.spec.ts:400-420 (how dark is set) in /home/user/PhysicalTherapy.
 
@@ -157,7 +164,8 @@ const CHECK_SCHEMA = {
 }
 const checkPrompt = (batch, routeMap) => `${RULES}
 
-Task: check every screenshot in one batch of the PaidWhole screen tour before reviewers use them. Read-only, except your one output file.
+Task: check every screenshot in one batch of the PaidWhole screen tour before reviewers use them. Read-only, except your output file and your progress file.
+${SAVE('check-' + batch.split('/').pop() + 'l', 'one JSON line per image verdict, appended as you judge it')}
 Batch file: ${batch} (a JSON array of shots: file, id, path, routePattern, role, width, theme, state, note).
 The route map is ${routeMap} (what each route should show and who uses it).
 Open every PNG with the Read tool and look at it. For each shot decide:
@@ -182,7 +190,7 @@ if (fixable.length > 0) {
   phase('Retake')
   retake = await agent(`${RULES}
 
-Task: retake the screen tour's flagged shots. The tour and its tooling: ${TOOL} (README); the working directory TOUR_DIR=${TOUR}, already set up and built; the route map ${UXD}/route-map.json.
+Task: retake the screen tour's flagged shots. ${SAVE('retake.md', 'each fix, the run, the lock, port and database state')} The tour and its tooling: ${TOOL} (README); the working directory TOUR_DIR=${TOUR}, already set up and built; the route map ${UXD}/route-map.json.
 The checkers flagged these as fixable capture faults:
 ${JSON.stringify(fixable, null, 1)}
 1. Fix their capture steps in ${TOOL}/capture/tour.spec.ts (the orchestrator commits it), then bash ${TOOL}/setup.sh again with TOUR_DIR=${TOUR} to copy it.
@@ -201,7 +209,7 @@ ${JSON.stringify(fixable, null, 1)}
 phase('Manifest')
 const manifest = await agent(`${RULES}
 
-Task: write the screen tour's manifest, its coverage matrix, and the image sets each reviewer will get.
+Task: write the screen tour's manifest, its coverage matrix, and the image sets each reviewer will get. ${SAVE('manifest.md', 'each file written')}
 Inputs: ${TOUR}/shots.json (the tour's skipped list beside it), the checkers' verdicts in ${TOUR}/verify/*.json (retake.json's verdicts replace the earlier ones for the retaken ids), the route map ${UXD}/route-map.json.
 Write:
 1. ${UXD}/manifest.json: one entry per shot { id, file (basename only), routePattern, path, role, width, theme, state, verdict ("ok" or the flag), note }. No absolute scratchpad paths; the PNGs stay in ${TOUR}/png and go to a private gallery, never the repository.

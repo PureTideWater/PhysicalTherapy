@@ -14,7 +14,12 @@ const DD = '/home/user/ops/designs/lane-b-ci'
 const RULES = `Context: Lane B of the PaidWhole build (CLAUDE.md is in your context; lane rules /home/user/ops/LANES.md; Lane B's state /home/user/ops/lanes/lane-b.md "Start here (Lane B)", step 3). The design is ${D}; its section 3.2 (from "### 3.2" to "### 3.3") is the contract for ci-deps, the second of four CI pull requests (audit #112; #19's assert loosening, Dependabot groups and licence fix; Dependabot #40, #38's tooling and #33). Section 3.2 was written and reviewed on 2026-10-24 at claude/build-platform 49514e8. Since then ci-speed (#43, 9c57d2d) and ci-mutation (#44, de8f9b5) and PR 15 (#45) merged; the head is 6ddd587. The main checkout /home/user/PhysicalTherapy is at 6ddd587 (git history has 49514e8).
 Rulings that bind it (lanes/lane-b.md and HANDOFF.md record each): the founder's F1 (a) default branch becomes claude/build-platform when ci-deps merges; F2 (a) Dependabot alerts and security updates with F1; F2 (b) pnpm minimumReleaseAge 4320 with dated exact-version excludes of at most 7 days, enforced by check-toolchain (test its exclude path; Stryker 10.1.1 was held by it); F3 SHA pinning after ci-deps; F4 publish-content.yml may change only its uses: refs and version comments, and once its runs-on and a timeout-minutes, held to a frozen copy; F5 the release's capacity chain stays on ubuntu-24.04. The co-founder's Q2 (2026-10-25): the files ci-deps shares with Lane A's open #42 (the lockfile, manifests, tools/screening-capacity/watched-paths.txt, ADR 0062) go under LANES rule 6, the PR merged second keeps both, the lockfile re-resolved and never hand-merged. The co-founder's Q3: engineering-only choices inside this already-ruled design are pre-approved (record each as such); a choice with a cost, security, product or wording trade-off goes to him, recommended option first.
 New fact: the F7 ruleset is applied (2026-10-25 21:14 UTC): "Protect the build branch" on claude/build-platform requires all green, mutation, screening-capacity gate and approval-of-record from GitHub Actions, branches up to date, a PR with 0 approvals, no force push or deletion, no bypass. Documents that still say the ruleset is not yet applied, or call a check required only by ADR 0063, are now stale.
-Rules for you: read-only on /home/user/PhysicalTherapy and on GitHub (gh api GET only; never comment, review or change anything there). Write only the files your task names, under ${DD}/ or ${D}. Never run git add, commit, push, checkout, reset or stash: the orchestrator commits. No heavy command (no install, build or test runs). Network reads (git ls-remote, gh api, the npm registry through pnpm view, raw.githubusercontent.com) are fine. Every shell command starts with export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH. No model name in any file. Keep the design's plain style: short sentences, file:line evidence, lines near 120 characters.`
+Rules for you: read-only on /home/user/PhysicalTherapy and on GitHub (gh api GET only; never comment, review or change anything there). Write only the files your task names, under ${DD}/ or ${D}. Never run git add, commit, push, checkout, reset or stash: the orchestrator commits. No heavy command (no install, build or test runs). Network reads (git ls-remote, gh api, the npm registry through pnpm view, raw.githubusercontent.com) are fine. Every shell command starts with export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH. No model name in any file. Keep the design's plain style: short sentences, file:line evidence, lines near 120 characters.
+Improve as you go (the co-founder's standing direction, 2026-10-25): if you find a way to improve or optimize something inside ci-deps' scope, put it in the design and say so; if it is outside, list it in your result as a proposed improvement.`
+// RESUMED 2026-10-25 ~22:45 UTC: the first run's two scouts were cut off at 21:27 by an interrupt of the main session,
+// before either returned. Every agent now saves its progress to a file and continues from it if it exists.
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/2c852daf-87b1-515e-ade9-06adce7d5ec8/scratchpad'
+const SAVE = (file, what) => `Save as you go: keep ${SP}/ci-deps-progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code or the network says otherwise, and continue from where it stopped.`
 
 const SCOUT = { type: 'object', properties: { report: { type: 'string', description: 'path of the report written' }, changesNeeded: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } } }, required: ['report', 'changesNeeded', 'questions'] }
 
@@ -22,7 +27,7 @@ phase('Scout')
 const [files, versions] = await parallel([
   () => agent(`${RULES}
 
-Task: scout the files. Write ${DD}/scout-ci-deps-reread-files.md.
+Task: scout the files. Write ${DD}/scout-ci-deps-reread-files.md. ${SAVE('scout-files.md', 'each file or question as you finish it, with its evidence')}
 For every file section 3.2.2 lists and every place 3.2.1 changes:
 - git -C /home/user/PhysicalTherapy diff 49514e8 6ddd587 -- <file>: what ci-speed, ci-mutation and PR 15 changed there; every file:line that 3.2 cites, as it reads now (for example workflows.test.ts's PINNED, cited at :46-58, is near :77 now);
 - what is already done, what moved, and new places the change must now reach: mutation.yml's jobs (pins, timeout-minutes, the release-age rules, Stryker 10.1.1), ci.yml's new parallel jobs and the all-green gate, the e2e and db shards, any new workflow or tools file since 49514e8 (git diff --stat 49514e8 6ddd587 -- .github tools package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc docker-compose.yml '*Dockerfile*');
@@ -33,7 +38,7 @@ For every file section 3.2.2 lists and every place 3.2.1 changes:
 Return the changes the design needs and any question that is not engineering-only.`, { label: 'scout:files', phase: 'Scout', schema: SCOUT }),
   () => agent(`${RULES}
 
-Task: scout the versions, pins and policies. Write ${DD}/scout-ci-deps-reread-versions.md.
+Task: scout the versions, pins and policies. Write ${DD}/scout-ci-deps-reread-versions.md. ${SAVE('scout-versions.md', 'each action, image, package or policy as you finish it, with its evidence')}
 - Each action in 3.2.1's table: the latest release tag today (git ls-remote --tags https://github.com/<owner>/<repo>), its peeled SHA (refs/tags/vX.Y.Z^{}), its release date (gh api repos/<owner>/<repo>/releases/tags/<tag>), and any action ci-speed or ci-mutation added since (actions/cache, etc.). Say where the table is stale and whether any newer major has breaking changes for our usage (read its release notes and action.yml inputs at the SHA).
 - Dependabot #40 (gh api repos/PureTideWater/PhysicalTherapy/pulls/40 and its files): its updates now; how ci-deps' own pins supersede each. #33: what it proposes now (node:26-slim, head bc82651) and the plan (an ignore rule; both images to Debian trixie digests on Node 24; Node 26 in its own PR, N8). Find the current digests the builder will pin (node 24 trixie-slim, the postgres image, any other image in docker-compose.yml, Dockerfiles and workflows), or the exact way to read them through this proxy if the registry refuses.
 - #38's versions (closed by Dependabot on 2026-10-25 because Stryker 10.1.1 was under three days old): every direct dependency that is behind at 6ddd587 (vitest and @vitest/coverage, eslint, postcss, next, typescript and the rest of the manifests), with the latest version and its publish time (pnpm view <pkg> time --json); which are older than three days on 2026-10-26 and 2026-10-27, and which would need a dated exclude under F2 (b). Leave Playwright and axe to ci-browser.
@@ -46,6 +51,7 @@ if (!files || !versions) throw new Error('A scout returned nothing.')
 phase('Revise')
 const revise = await agent(`${RULES}
 
+${SAVE('revise.md', 'each subsection revised and what changed in it')}
 Task: bring section 3.2 of ${D} current at 6ddd587, from the two scout reports ${files.report} and ${versions.report} (read both whole) and the code itself.
 Their summaries: files ${JSON.stringify(files.changesNeeded)}; versions ${JSON.stringify(versions.changesNeeded)}.
 Revise 3.2.1 to 3.2.5 in place so they are the contract a builder follows today: every file:line current, every version current and old enough for F2 (b) on the day the builder pins it (or a dated exclude), the places ci-speed and ci-mutation added, what they already did removed, the carry-in nits, the stale ruleset wording now that F7 is applied, the #42 overlap under Q2, and the services-versus-compose decision made on evidence. Keep the CI-11 to CI-14 test-matrix rows and ADR 0066 Part 2 (no new ADR number). Change other sections only where a cross-reference must follow (section 0's ci-deps line, section 5, section 11, and line 662's stale "Node 25" for #33).
@@ -56,6 +62,7 @@ if (!revise) throw new Error('The author returned nothing.')
 phase('Review')
 const review = await agent(`${RULES}
 
+${SAVE('review.jsonl', 'one JSON line per finding as you confirm it')}
 Task: adversarially review the revised section 3.2 of ${D} (from "### 3.2" to "### 3.3", including the new 3.2.6). Assume it is wrong until the code and the network prove it right.
 Check: every file:line against /home/user/PhysicalTherapy at 6ddd587; every version, tag, SHA and date against the network; that each ruling above is honoured exactly (F1 to F5, Q2, Q3); that nothing ci-speed or ci-mutation built is undone or missed (mutation.yml, the gate, the shards); that every test is specified failing-first where it fixes a behaviour and the acceptance is measurable by a fresh-clone verifier; that the scouts' facts (${files.report}, ${versions.report}) were carried in correctly; that no migration, no engine, ledger or content-pipeline change beyond F4 slips in; that the #42 overlap is resolved under rule 6; that audit #112 is still delivered whole (read its item in /home/user/ops/audits/combined/combined-report.md); and that every "pre-approved" choice really is engineering-only.
 Write ${DD}/ci-deps-reread-review.md: findings ranked blocking, should_fix, nit, each with evidence and the fix. Return them.`, { label: 'review', phase: 'Review', schema: {
@@ -68,6 +75,7 @@ if (!review) throw new Error('The reviewer returned nothing.')
 phase('Fix')
 const fix = await agent(`${RULES}
 
+${SAVE('fix.md', 'each finding with its disposition, as you make it')}
 Task: resolve every finding of the review of section 3.2 of ${D}. The review: ${DD}/ci-deps-reread-review.md. Findings:
 ${JSON.stringify(review.findings, null, 1)}
 For each: verify it against the code and the network yourself. If it is right, fix the design; if it is wrong, reject it with the evidence. Nits included. Record every disposition in a new "#### 3.2.7 Review of the re-read (2026-10-25)" at the end of 3.2 (finding, verdict, what changed or why not). Update 3.2.6's open questions if a fix adds or settles one.
