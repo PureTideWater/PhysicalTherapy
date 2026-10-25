@@ -19,5 +19,5 @@ for n in $(fuser 3297/tcp 2>/dev/null); do kill $n; done
 for i in $(seq 1 15); do fuser 3297/tcp >/dev/null 2>&1 || break; sleep 1; done
 fuser 3297/tcp >/dev/null 2>&1 && echo "server still up" || echo "server stopped at $(date -u +%T)"
 PGPASSWORD=test psql -h localhost -p 5433 -U postgres -d postgres -c "DROP DATABASE IF EXISTS tp_e2e_screens WITH (FORCE)"
-rm -rf /tmp/tp-e2e-tp_e2e_screens-billing /tmp/tp-e2e-tp_e2e_screens-dev-auth /tmp/tp-e2e-tp_e2e_screens-documents /tmp/tp-e2e-tp_e2e_screens-mail /tmp/tp-e2e-tp_e2e_screens-model-outputs
+rm -rf /tmp/tp-e2e-tp_e2e_screens-*
 echo "released at $(date -u +%T)"

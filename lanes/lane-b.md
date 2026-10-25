@@ -7,144 +7,226 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
-## Start here (Lane B): the state at 2026-10-25 ~20:10 UTC
-A new Lane B session reads this section first, after `../LANES.md`. It is complete on its own: what is merged, what
-runs next and in what order, what waits on whom, and the conventions that kept the build safe. The dated log below it
-is the record; nothing in it is needed to continue.
+## Start here (Lane B): the state at 2026-10-25 ~20:35 UTC
+A new Lane B session reads this section first, after `../LANES.md`. It says:
+- what is merged, and what runs next in what order;
+- what waits on whom, and the rulings already made;
+- the conventions and pitfalls that kept the build safe.
+
+Two independent reviewers checked it against git, GitHub and the files before handing off: a cold-start critic and a fact-checker (wf_22368784-06b, 2026-10-25 ~20:10 UTC). Their 51 findings are applied. The dated log below is the record; nothing in it is needed to continue.
+
+Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and GitHub are current. HANDOFF's is Lane A's state at 2026-10-25 10:00 UTC (1f35d71). It still shows `claude/build-platform` at 49514e8, #43 in its fix round and three open Dependabot PRs. Lane B does not edit HANDOFF.md (LANES.md rule 10); Lane A folds this section in.
 
 ### The state in one screen
-- **Merged by Lane B into `claude/build-platform`** (each a merge commit, after a fresh-clone verification that read CI):
-  - [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43) ci-speed (CI 1 of 4), as 9c57d2d. CI went from 29-41 minutes to about 6-8. Parallel jobs behind one `all green` gate, db in 4 shards, e2e in 2 shards over one stamped build.
-  - [#44](https://github.com/PureTideWater/PhysicalTherapy/pull/44) ci-mutation (CI 4 of 4), as de8f9b5. Mutation testing of every money package, gated above 85% with no unexplained survivor. Scores: money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%; 164 reviewed equivalents.
-  - [#45](https://github.com/PureTideWater/PhysicalTherapy/pull/45) PR 15 (ledger tests LED-12 and LED-13), as 6ddd587. Tests only, under the founder's ruling L1 (a).
-- **Open in Lane B: nothing.** No PR, no workflow, no worktree, no claim in progress.
+- **Merged by Lane B into `claude/build-platform`**, each as a merge commit after a fresh-clone verification that read CI:
+  - [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43) ci-speed (CI 1 of 4), as 9c57d2d (2026-10-25 14:16 UTC). CI went from 29-41 minutes to about 6-8: parallel jobs behind one `all green` gate, db in 4 shards, and e2e in 2 shards over one stamped build.
+  - [#44](https://github.com/PureTideWater/PhysicalTherapy/pull/44) ci-mutation (CI 4 of 4), as de8f9b5 (~18:50 UTC). Every money package is mutation-tested, gated above 85% with no unexplained survivor. Scores: money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%, with 164 reviewed equivalents.
+  - [#45](https://github.com/PureTideWater/PhysicalTherapy/pull/45) PR 15 (ledger tests LED-12 and LED-13), as 6ddd587 (20:04 UTC). Tests only, under the founder's ruling L1 (a). Reconciliation-001 item 15 is done.
+- **Open in Lane B: nothing.** No PR, no workflow, no worktree, and no claim in progress.
   - The main checkout `/home/user/PhysicalTherapy` is at 6ddd587, the same as origin, with its packages installed.
   - `SETUP_CHECK=1` printed OK at 20:05 UTC.
-- **`main` is unchanged, by rule.** It holds the plan documents until launch. No PR goes into `main` and no release tag
-  is created before launch unless the founder rules otherwise (CLAUDE.md "Merging", ADR 0063). "Up to date" means
-  merged into `claude/build-platform`. The default branch moves to `claude/build-platform` when ci-deps merges (F1 (a)).
-- **Lane A:** [#42](https://github.com/PureTideWater/PhysicalTherapy/pull/42) (PR 6b-4, mail streams, a schema PR) is a draft at 13f59b1. Its fix round comes after the 2026-10-27 reset. Lane B leaves #42's files alone (LANES.md, "Not while #42 is open").
-- **Dependabot:** #40 (actions) and #33 (base images) are open. Never merge one as it stands; ci-deps takes their
-  versions in.
+- **`main` is unchanged, by rule.** It holds the plan documents until launch. No PR goes into `main` and no release tag is created before launch, unless the founder rules otherwise (CLAUDE.md "Merging", ADR 0063).
+  - "Up to date" means merged into `claude/build-platform`.
+  - The default branch moves to `claude/build-platform` when ci-deps merges (F1 (a)).
+- **Lane A:** [#42](https://github.com/PureTideWater/PhysicalTherapy/pull/42) (PR 6b-4, mail streams, a schema PR) is a draft at 13f59b1. Its fix round comes after the 2026-10-27 reset.
+  - It changes 143 files. Take the list from `gh api 'repos/PureTideWater/PhysicalTherapy/pulls/42/files?per_page=100&page=1' --jq '.[].filename'` and `page=2`, not from LANES.md's summary list.
+- **Dependabot** (never merge one as it stands):
+  - #40, the actions group, is now 11 updates. ci-deps supersedes it with its own pins: each action at its latest release, SHA-pinned.
+  - #33, the base images, now proposes `node:26-slim` (rebased 2026-10-25 14:18 UTC, head bc82651). ci-deps declines it with an ignore rule and moves both images to Debian trixie digests on Node 24; Node 26 gets a PR of its own (N8; LTS from 2026-10-28). `designs/lane-b-ci.md:662` still calls #33 "Node 25", which is stale.
+  - #38 (npm minor and patch) was closed by Dependabot at 18:57 UTC: "no longer updatable".
+    - Its npm update on de8f9b5 (run 40223237798) failed for every dependency. Dependabot ran pnpm with `--config.minimum-release-age=4320`, and ci-mutation's Stryker 10.1.1 was under three days old.
+    - Its versions are still behind at 6ddd587 (vitest and coverage 5.0.4, eslint 10.12.0, postcss 8.5.30, next 16.4.1), so ci-deps takes §3.2's versions.
+    - Dependabot's npm updates resume once Stryker 10.1.1 is three days old, from about 2026-10-26 19:50 UTC.
 - **CI on `claude/build-platform`:**
   - The push runs on de8f9b5 are green (ci 40223130551, mutation 40223130477, screening-capacity 40223130509).
-  - The push runs on 6ddd587 (ci 40229005858, mutation 40229005837 with every package, screening-capacity 40229005836) were still running at 20:05 UTC; step 1 below confirms them.
+  - On 6ddd587, mutation 40229005837 (every package) and screening-capacity 40229005836 are green.
+  - ci 40229005858 failed on its first attempt (20:04 to 20:11 UTC), in e2e (2/2) alone. `apps/web/e2e/screening.spec.ts:135` (SCR-01 to SCR-07, SCR-18) failed at `:339`: the outcome's stage read `priced` where the test expects `accepted`, because the consumer priced the upload between the test's two reads. Playwright's retry then failed at `e2e/helpers.ts:87`, because the first attempt had already registered the platform administrator's hardware key. The same tree passed on f4d125b (ci 40226881568).
+  - **The one re-run passed:** e2e (2/2) attempt 2 (job 121281840873, 20:26 to 20:30 UTC), and `all green` with it, so ci 40229005858 is green on attempt 2. A timing flake in the screening journey, handed to Lane A (LANES.md "Handed to Lane A", for #42's fix round).
 - **Test counts at 6ddd587** (CI on #45's head f4d125b, the same tree):
   - unit 4,996 and 1 skipped (locally 4,994 and 3);
   - db 9,049 and 1 skipped, over 118 files in 4 shards;
   - e2e 51; golden 188;
-  - pyx12 agrees on all 637 synthetic 835s;
-  - mutation: money 96.58%, ledger 98.13%, pricing 98.67%, packets 95.87%.
-- **Usage:** last read 17% (2026-10-25, the co-founder). The weekly reset is Friday 2026-10-30; its time of day is not yet recorded, so ask for it at the first reading.
+  - pyx12 agrees on all 637 synthetic 835s.
+- **Usage:** last read 17%, at or before ~13:40 UTC on 2026-10-25 (the co-founder). Several heavy runs followed, so expect noticeably more.
+  - This log's readings put it at about 0.7M subagent tokens per 1% of the weekly allowance.
+  - The weekly reset is Friday 2026-10-30. Its time of day is not yet recorded, so ask for it at the first reading.
 
 ### Next actions, in order
 1. **Machine and reading.** Follow COFOUNDER-START.md's message.
    - The setup script needs no branch arguments: no Lane B branch is open.
-   - Confirm 6ddd587's push runs (above) finished green. A red one is the first job.
-   - Then ask the co-founder for the usage % and the reset time (rule 9).
-2. **The UX/UI and brand baseline review: the first task** (the co-founder's decision, 2026-10-25 ~16:50 UTC).
-   - **Brief:** `designs/lane-b-ux-review-brief.md`. Read it whole. It is a review, not a PR, and changes no product code.
-   - **Claim:** pull, then add a row under Claims and push it before starting. Suggested row:
+   - `gh api user --jq .login` must print `PureTideWater` (the co-founder's ruling, 2026-10-24 ~21:10 UTC). If it prints another login, stop and ask the co-founder before any push or merge: CLAUDE.md's merge rule changes for a build that works as its own account (runbook 3i).
+   - Read CI on the head of `claude/build-platform` (above). A red run there comes before any new work:
+     - re-run a failed job once, and only to tell a flake from a regression;
+     - if it is a flake in a file #42 changes, hand it to Lane A (as below), and do not edit the file;
+     - if it fails again, tell the co-founder before any heavy run.
+   - **At the first reading, ask the co-founder, recommended option first:**
+     - the usage % and the reset time (rule 9);
+     - **the CI series and #42's files.** ci-deps and ci-browser share files with #42: the lockfile, the manifests, `tools/screening-capacity/watched-paths.txt`, ADR 0062 and, in ci-browser, `apps/web/src/components/shell.tsx` (`:56`, `:84`). LANES.md's "Not while #42 is open" names shell.tsx, but queue item 1 carries no such clause, and `designs/lane-b-ci.md` §5 resolves the overlap by rule 6. Recommended: the PR merged second keeps both, the lockfile is re-resolved and never hand-merged, and axe runs over #42's pages (O6). The other answer: ci-browser waits for #42 to merge.
+     - **the scope of "every recommended option"** (his direction of 2026-10-25, used for LED-12's row wording). Does it pre-approve the new batches below, or does each go to him? Until he answers, each new decision goes to him.
+     - and remind him that F7 is due (below).
+2. **The UX/UI and brand baseline review: the first task** (the co-founder's decision, 2026-10-25 ~16:50 UTC). It changes no product code.
+   - **Brief:** `designs/lane-b-ux-review-brief.md`, read whole.
+   - **Claim:** pull, then add a row under Claims and push it before starting:
      - item: "UX/UI and brand baseline review, then the reviewer checklist (the co-founder, 2026-10-25)";
      - lane: B;
-     - branch: none for the review, `co-001/ux-brand-reviewer` for the checklist PR;
-     - reserved: no ADR expected (reserve one first if the design needs it); no test-matrix or synth IDs.
-   - **Capture:** `tools/lane-b-screen-tour`.
-     - Its README's Set-up runs in any session: `TOUR_DIR` in the new scratchpad, then `setup.sh`.
-     - Extend `capture/tour.spec.ts` from today's 30 screens to all 83 `page.tsx` routes, at 1280 px and 390 px, in light and dark where the app offers it, with the empty, loading and error states the journeys reach.
-     - Synthetic data only. One heavy command at a time under the lock.
+     - branch: none for the review; `co-001/ux-brand-reviewer` for the checklist PR;
+     - reserved: no ADR expected (reserve one first if the design needs it), and no test-matrix or synth IDs.
+   - **Capture with `tools/lane-b-screen-tour`** (its README).
+     - Set `TOUR_DIR` in the new scratchpad, then run `setup.sh`. `serve.sh` prepares the database, and `env.sh` derives the development key itself.
+     - Give a whole-app capture `TOUR_MINUTES=90`.
+     - After every run, check that `fuser 3297/tcp` prints nothing.
+     - The tool was run end to end at 6ddd587 before the handoff: setup, prepare, build and server start passed, then the populate journeys; the capture's result is in the log's last entry.
+   - **Before capturing, a scout writes the route map.** For each of the 83 `page.tsx` routes (`find apps/web/src/app -name page.tsx`; 84 once #42 merges), it records:
+     - the persona that may open it (`apps/web/scripts/synthetic-personas.ts`, and the route's permission in `apps/web/src/lib/routes/*.ts`);
+     - the record its dynamic segments need;
+     - which `apps/web/e2e/*.spec.ts` creates that record.
+
+     Populate with the specs the map names. A route no spec reaches is recorded as "not reachable on synthetic data", never faked. Each capture starts from a fresh prepare.
+   - **Grow the spec on `claude/build-ops`.** Extend `tools/lane-b-screen-tour/capture/tour.spec.ts`, not the copy in `$TOUR_DIR`, and push it with the review, so later PRs' before-and-after tours reuse it (`TOUR_REF` gives a PR's base, then its head).
+     - **Today's coverage:** 30 screenshots, 26 at 1280 px and 4 at 390 px.
+     - **The target:** every route at 1280 px and 390 px, the dark tokens, and the empty, loading and error states the journeys reach.
+   - **Dark:** the app has dark tokens but no switch and no `prefers-color-scheme` rule, so no user reaches dark today.
+     - Capture it by setting `data-theme="dark"` after each load, as `apps/web/e2e/brand.spec.ts:407` does.
+     - Label those shots "dark (tokens only)" and judge their contrast as advisory.
+     - Put the choice (follow the device's setting, offer a switch, or stay light-only) in the co-founder's batch.
+   - **Where the pictures go:** a private artifact gallery, as on 2026-10-25. The repository is public, so `claude/build-ops` gets only `designs/lane-b-ux-review.md`, the manifest and any small crop a finding needs. Record the gallery's URL here.
+   - **Cost:** estimate it once the capture is done, from the image count, and tell the co-founder before the reviewers start. Give each lens only its images: the 390 px reviewer the 390 px and state shots; the brand reviewer one shot per layout and the dark set; the flows reviewer each role's path. Give every reviewer the manifest and exact file sections, never whole large documents.
    - **Output:**
-     - `designs/lane-b-ux-review.md`: the findings, ranked and grouped into proposed PRs;
-     - the PRs added to Lane B's queue, and anything needing a migration under "Handed to Lane A";
-     - one batch of wording and brand choices for the co-founder, recommended option first.
-     - The screen tour's five defects (log, 2026-10-25 ~15:40 UTC) and the combined audit's UX items are inputs.
-   - **Then the checklist PR:** `.claude/agents/ux-brand-reviewer.md`, in the form of `security-reviewer.md`, in its own small PR (brief, "Then", item 1). From then on, every Lane B PR that changes a screen has the UX and brand review as one of its two adversarial reviews, with before and after screenshots.
-   - **Cost:** about 3-4% of the weekly allowance.
-3. **ci-deps (CI 2 of 4; audit #112; claimed in the CI series' row).** It may run beside step 2 as the second heavy workflow, if usage allows (at most two at once).
-   - **Design:** `designs/lane-b-ci.md` §3.2, already reviewed. Rulings: F1 (a), F2 (a) and (b), F4 yes, all as recommended (founder, relayed 2026-10-25 ~01:10 UTC).
-   - **Carry in (verifier nits, fixed in the next commit that touches each file):**
-     - ADR 0066:333 still says a red mutation result "blocks the merge". Until F7 it is ADR 0063's merge rule, not GitHub, that blocks it.
-     - ADR 0066's "Measured" figure should be 146 new tests less 12 renamed (4,658 and 1 skipped on CI), not 132 less 12.
-     - `.github/dependabot.yml` says "about 45 runner minutes". Measured, it is 36-38 (43-44 billed).
-     - The CI runbook (`ci.md:97`) and `github-governance.md:66` give the capacity gate as "13 to 16 minutes". Up to 16:35 has been measured.
-   - **Dependabot:** #40's and #33's versions come in here (#38 is no longer open).
+     - `designs/lane-b-ux-review.md`: the findings ranked and grouped into proposed PRs in landing order;
+     - one batch of wording and brand choices for the co-founder, recommended option first. A choice that changes legal text (the terms, the cookie notice, the screening terms, the AMA notice, or anything on HANDOFF.md's counsel list), or that reverses a recorded founder ruling, goes to the founder through the co-founder;
+     - the co-founder rules which proposed PRs Lane B takes, and where they sit (delegated: "which no-migration items Lane B takes"). Record the ruling, then add them to Lane B's queue in LANES.md as one dated block, "Added from the UX baseline review (the co-founder, <date>)". If he reads LANES.md's line 7 as forbidding queue additions, ask the founder, through him, to allow "queue items on a recorded ruling" there first;
+     - a proposal that needs a migration goes under "Handed to Lane A". A no-migration proposal touching a file #42 changes stays in Lane B's queue, marked "after #42 merges", as items 8 and 15 to 17 are.
+   - **Inputs besides the brief's:**
+     - the screen tour's five defects (log, 2026-10-25 ~15:40 UTC);
+     - the founder's own screenshot tour of 2026-10-17 and its fixes (`workflow-scripts/co-001-fix-screen-tour-wf_0291578a-a18.js`, merged from `co-001/fix-screen-tour`), so findings already fixed are not raised again;
+     - the combined audit's experience items #48, #89, #90, #103 (every route's accessibility, with WCAG 2.2's rules; it lands in Lane A's PR 7), #107 and #125;
+     - #102, the Approve button, which already landed in PR 5;
+     - Lane B's visible-screen items #38, #46, #49, #52 and #135.
+   - **Then the checklist PR**, `co-001/ux-brand-reviewer`, under the review's claim.
+     - **Design:** the review's findings plus a one-page outline of the checklist's sections, with one reviewer.
+     - **Build:** one builder writes `.claude/agents/ux-brand-reviewer.md` with `security-reviewer.md`'s frontmatter keys. The four existing reviewer files carry a `model:` key: ask the co-founder once whether it counts under LANES rule 12, recommending that it follow them.
+     - **Draft PR**, from `.github/pull_request_template.md`.
+     - **Two adversarial reviews:** brand and copy, against `.claude/rules/brand.md` and CO-11; and consistency with the other reviewer files and the brief's "Then".
+     - **Fix round:** the full local suite once, unless the co-founder rules a documentation-only suite (typecheck, lint, lint:copy, unit), which he may (delegated).
+     - **Then** the fresh-clone verification that reads CI.
+     - **Order:** it merges before the review rounds of ci-browser and 15b, which both change screens and take the UX review as one of their two.
+3. **ci-deps (CI 2 of 4; audit #112; claimed in the CI series' row).** It may run beside step 2 as the second heavy workflow if usage allows; at most two at once.
+   - **Design:** `designs/lane-b-ci.md` §3.2. It was reviewed on 2026-10-24 at 49514e8, before ci-speed and ci-mutation merged, so its file and line references and version notes predate both. For example, `workflows.test.ts`'s PINNED is cited at `:46-58` and sits at `:77` at 6ddd587.
+   - **Before the builders, one scout re-reads §3.2 against the current head:**
+     - what ci-speed and ci-mutation changed in each file §3.2.2 lists, mutation.yml's three jobs included (§3.2's pins, timeouts and release-age rules must cover them, and Stryker 10.1.1);
+     - the plan to drop the Postgres `services:` for compose, now that ci-speed gave those services health checks;
+     - #40's 11 updates, #33's version, and which of #38's versions are behind;
+     - O3, pnpm 10.34.8's release age on frozen installs and under Dependabot.
+
+     Changes to the design go to its one reviewer. Builders start after that.
+   - **Rulings:** F1 (a), F2 (a) and (b), and F4 yes, all as recommended (the founder, relayed 2026-10-25 ~01:10 UTC). F2 (b)'s `minimumReleaseAge: 4320` holds every new direct dependency as it held Stryker, so test its exclude path.
+   - **Carry in** (verifier nits, fixed in the commit that next touches each file):
+     - ADR 0066:333 calls the gate "the required `mutation` job". Until the F7 ruleset, only ADR 0063's merge rule requires it, so write "the `mutation` job (required once the F7 ruleset is applied)".
+     - ADR 0066:179 (Part 1's "Measured") gives 132 new tests less 12 renamed (4,644 and 1 skipped on 9144b56). It should give 146 less 12 (4,658 and 1 skipped on CI, b5ff4c7).
+     - `.github/dependabot.yml:4` says "about 45 runner minutes". Measured, it is 36-38 (43-44 billed).
+     - `docs/runbooks/ci.md:97`, `docs/runbooks/github-governance.md:66` and ADR 0066:175 give the capacity gate as "13 to 16 minutes". Measured since: 11:59 (9c57d2d push), 15:52 (7542aae PR), 18:28 (de8f9b5 push), 18:32 (f4d125b PR; the gate at 18:52 from the run's start) and 17:30 (6ddd587 push).
    - **When it merges, the founder** (owner-admin settings, not delegated):
      - makes `claude/build-platform` the default branch (F1 (a));
      - turns on Dependabot alerts and security updates (F2 (a));
      - then, with F4's pins in, requires actions pinned to a full SHA (F3).
-4. **ci-browser (CI 3 of 4; audit #19's upgrade part).** After ci-deps.
-   - **Design:** §3.3. Rulings: F4 yes; F5, the capacity chain stays on ubuntu-24.04.
+4. **ci-browser (CI 3 of 4; audit #19's upgrade part).** After ci-deps, and after the checklist PR.
+   - **Design:** §3.3. Rulings: F4 yes; F5, the capacity chain stays on ubuntu-24.04. Re-read it against the head as for ci-deps.
    - **Carry in:**
-     - V3: cache the system packages the browser jobs install (`playwright install --with-deps`) in e2e and in the db shards, so a slow apt mirror cannot push CI past its target.
-       - #44's verification found it in e2e.
-       - On #45's head, db (4/4) spent 10 of its 13 minutes on that install, with 2 minutes of tests. It alone held `all green` to 13:10, against about 6 to 8 minutes otherwise.
-     - O6: the axe sweep over #42's journeys, if #42 merged first;
-     - O7: rebalance `stryker/shards.json` if packets-rest nears 15 minutes (5:50 to 10:06 measured).
-   - **Browsers:** the setup script lays out chromium-1248 (CfT 156.0.8078.4) as well as 1194, so the upgrade needs no manual browser work.
+     - **V3:** cache the system packages the browser jobs install (`playwright install --with-deps`), in e2e and in the db shards. #44's verification found the slowdown in e2e. On #45's head, db (4/4) spent 10 of its 13 minutes on that install, with 2 minutes of tests, and alone held `all green` to 13:10.
+     - **O6:** the axe sweep over #42's journeys, if #42 merged first.
+     - **O7:** rebalance `stryker/shards.json` if packets-rest nears 15 minutes (5:50 to 10:06 measured).
+     - **#42's shell.tsx:** as the co-founder rules at step 1.
+     - **A9's inspection of the seven regenerated baselines is the co-founder's** (delegated). Give him the PR's image-diff link, the pixel counts and the crop, and record his answer with the date.
+     - **The UX review** is one of its two adversarial reviews (it changes shell.tsx and the brand baselines).
+   - **Browsers:** `tools/setup-container.sh` pins chromium-1248 and its headless shell (CfT 156.0.8078.4) in CFT_BUILDS (`:957-960`). But `step_playwright` lays out only the revisions the main checkout's Playwright names, so `/opt/pw-browsers` has 1194 (and the image's 1243), not 1248. The design's CfT 156 layout was in the old session's scratchpad, and is gone.
+     - Before ci-browser's local e2e and its baseline regeneration, lay 1248 out from the pinned zips.
+     - Best: a small claude/build-ops change, letting `step_playwright` also lay out what each argument worktree's `apps/web/package.json` names.
+     - Or by hand, as `cft_layout` does: into `/opt/pw-browsers/chromium-1248/chrome-linux64` and `/opt/pw-browsers/chromium_headless_shell-1248/chrome-headless-shell-linux64`, each with INSTALLATION_COMPLETE and DEPENDENCIES_VALIDATED.
 5. **PR 15b: ledger amounts in payment terms** (queue item 3; audit #12). It lands before any ROI statement reaches a customer.
-   - **Two rulings first, both the co-founder's** (delegated): the ledger freeze exception, and what "approved" means in PRD 13.
-   - **From PR 15's review:** N-5, a line with two approvals; LED-12's last clause is pinned only on lines with one approval.
-   - **Unchanged by rule:** LED-06's "not resolved" check (`ledger.db.test.ts:221`) stays as it is, because LED-01 to LED-11 must not change.
-   - Payment-engine review.
-6. **Then Lane B's queue in LANES.md from item 4**, in order.
-   - Items 15 to 17 and every "Not while #42 is open" part wait for #42 to merge.
+   - **The rulings are already made.** On 2026-10-20 ~15:10 UTC the founder adopted the combined audit whole (HANDOFF.md, "Founder rulings of 2026-10-20 ~15:10 UTC (combined audit)"):
+     - "the 19 freeze exceptions are granted", #12's ledger exception among them;
+     - "the ruling changes the report lists are accepted as it recommends", PRD 13's two definitions of "approved" among them.
+
+     #12's best option keeps deciding the outcome on the allowed amount, and measures every ledger amount in what the payer actually pays. 15b's design records the ruling in its ADR and in reconciliation-001. Only a departure from #12's best option goes to the co-founder (delegated).
+     - LANES.md's items 3, 10 and 14 still say "Needs" these exceptions. #32's milestone 3 exception and #30's content-pipeline exception were granted the same day, so they too are already ruled. Ask the founder's lane to amend those lines; Lane B does not edit LANES.md's text.
+   - **From PR 15's review:** N-5, a line with two approvals. LED-12's last clause is pinned only on lines with one approval.
+   - **Unchanged by rule:** LED-06's "not resolved" check (`apps/worker/src/reconcile/ledger.db.test.ts:221`) stays, because LED-01 to LED-11 must not change.
+   - **Reviews:** payment-engine, and the UX review (its figures show on screens).
+6. **Then Lane B's queue in LANES.md, from item 4, in order.**
+   - Items 15 to 17, and every "Not while #42 is open" part, wait for #42 to merge.
    - Item 18, the formatter, needs both lanes idle.
 
 ### Waiting on someone
 - **The founder** (owner-admin or Lane A's, so not delegated):
-  - **F7, due now:** the `claude/build-platform` ruleset of governance runbook §4 (step 4A).
-    - It requires `all green`, `mutation`, `screening-capacity gate` and `approval-of-record` (each from GitHub Actions), a PR, no force pushes, and up-to-date branches.
-    - ci-speed's push runs have been green since 9c57d2d. At ~19:30 UTC the rulesets API still returns `[]`.
-    - Until it is applied, a session checks every required check by hand before merging.
-  - **Lane A and the UX reviewer:** whether Lane A's screen-changing PRs take the same reviewer. The co-founder recommends it and was given a line to paste in the founder's chat; Lane B does not edit LANES.md's rules.
-  - **O12:** the PR capacity run's length (13:20 to 16:35 measured), after five push runs. The two options and their costs are in `designs/lane-b-ci.md` §11.
+  - **F7, due now:** the `claude/build-platform` ruleset of governance runbook §4, step 4A.
+    - **Required checks:** `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`, each from GitHub Actions, with branches up to date.
+    - **Also:** a PR with 0 approvals, restricted deletions, no force pushes, and an empty bypass list.
+    - **Where:** the repository is user-owned, so it starts at https://github.com/PureTideWater/PhysicalTherapy/settings/rules.
+    - **Status:** At ~20:32 UTC the rulesets API still returns `[]`. Push runs are green on 9c57d2d, de8f9b5 and 6ddd587 (the last after one re-run of a flake). Until it is applied, a session checks every required check by hand before merging.
+  - **Lane A and the UX reviewer.** The co-founder recommends that Lane A's screen-changing PRs take the same reviewer. The line he was given for the founder's chat (~17:05 UTC):
+
+    > Add to LANES.md rule 1, for both lanes: every pull request that changes something a person sees takes the UX and brand review (`.claude/agents/ux-brand-reviewer.md`, once Lane B's checklist PR merges) as one of its two adversarial reviews, with before and after screenshots at 1280 px and 390 px.
+
+    Lane B does not edit LANES.md's rules.
+  - **O12, the PR capacity run's length:** job time 11:59 to 18:32 so far. It is due after ci-speed's first five push runs; three have run so far (9c57d2d, de8f9b5, 6ddd587).
+    - `designs/lane-b-ci.md` §11 names the two options and what each changes: S4 once on PRs instead of three times, or the scenarios split across parallel runners.
+    - Their costs in minutes are still to be measured and brought with them.
   - **O1:** the account's plan (Free or Pro), a fact that sets the concurrent-job limit.
   - **Lane A's PR 6c:** four frozen-engine defects found by #44's review (LANES.md, "Handed to Lane A").
+  - **Lane A's screening journey:** the e2e timing failure above. Handed to Lane A in LANES.md, for #42's fix round: read the outcome only after the consumer has finished, or assert either stage, and make the key registration safe to retry.
+  - **The amendments to LANES.md's items 3, 10 and 14** (step 5).
 - **The co-founder** (delegated, LANES.md 2026-10-25):
-  - payment-engine/S1, from #44: an explicit MoneyError guard in `multiplyCents` for text cast past `Cents`. It would be a later money change, in its own PR, with payment-engine review.
-  - 15b's two rulings (step 5).
-  - The UX review's batch of wording and brand choices, when it comes.
+  - the three questions at step 1;
+  - payment-engine/S1, from #44: an explicit MoneyError guard in `multiplyCents` for text cast past `Cents`. It would be a later money change, in its own PR, with payment-engine review;
+  - the UX review's batch and its queue ruling, when they come;
+  - ci-browser's A9 inspection;
+  - the checklist PR's two questions.
 
-### Rulings and decisions of record (all in the log below, with who and when)
-- **The founder (Tyler Williams), relayed by the co-founder:**
-  - F1 to F7 as recommended, 2026-10-25 ~01:10 UTC;
-  - L1 (a), ~02:05 UTC;
-  - the delegation in LANES.md, 2026-10-25.
+### Rulings and decisions of record (each in the log below, with who and when)
+- **The founder (Tyler Williams):**
+  - F1 to F7 as recommended, relayed by the co-founder, 2026-10-25 ~01:10 UTC;
+  - L1 (a), relayed by the co-founder, ~02:05 UTC;
+  - the delegation to the co-founder, recorded by Lane A in LANES.md (1f35d71, 2026-10-25 ~10:05 UTC);
+  - the combined audit adopted whole, its 19 freeze exceptions granted and its ruling changes accepted, 2026-10-20 ~15:10 UTC (HANDOFF.md).
 - **The co-founder:**
   - Lane B uses the `PureTideWater` GitHub account, 2026-10-24 ~21:10 UTC;
-  - "every recommended option", 2026-10-25;
-  - LED-12's row wording approved as recommended, in reconciliation-001 item 15;
+  - his directions "all recommended actions" (~01:00 UTC) and "keep going; do the recommended suggestions to optimize" (~07:45 UTC), applied as his rulings under the delegation. Their scope for new batches is a step 1 question;
+  - LED-12's row wording approved as recommended, under that direction with no separate message (~17:45 UTC; reconciliation-001 item 15);
   - the UX/UI baseline review is the next session's first task, ~16:50 UTC;
   - the review also runs with the build, ~17:00 UTC;
   - the recommendation that Lane A take the same reviewer, ~17:05 UTC, for the founder to decide.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
 - **Node.** The shell's default `node` is 22. Run `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` in every command or script.
-  - pnpm comes from `/opt/node22/bin` but then runs on Node 24.
+  - pnpm comes from `/opt/node22/bin`, but then runs on Node 24.
   - The mutation canary and the gate record the Node they ran on, and the repository requires `>=24`.
-- **One heavy command at a time:** `flock /tmp/laneb-heavy.lock <command>`, for install, build, typecheck, lint, test, test:db, e2e with `--workers=2`, and Stryker.
+- **One heavy command at a time:** `flock /tmp/laneb-heavy.lock <command>`. Heavy means install, build, typecheck, lint, test, test:db, e2e with `--workers=2`, Stryker, and the screen tour's build and server.
   - Keep at most two heavy workflows at once, and tell every workflow agent the same.
   - The full local suite runs once, in the fix round: unit; golden; oracle; test:db in shards one after another; build, stamp, then e2e with `E2E_PREBUILT=1`; the mutation shards a change affects, then the gate.
-- **A container restart** stops PostgreSQL and every running workflow. Disk, worktrees and the scratchpad survive.
-  - Run `bash tools/setup-container.sh` again: it restarts both clusters.
-  - Resume each workflow with `resumeFromRunId` (same session only), after editing the script with a RESUMED note and the lock rule.
-  - From a new session, a cut-off stage starts again from its worktree.
+- **The machine restarted but the session is still open** (PostgreSQL down, or a run reports it was stopped). Disk, worktrees and the scratchpad survive.
+  - Run `bash /home/user/ops/tools/setup-container.sh` again, with the open branches: it restarts both clusters.
+  - Resume each stopped workflow with `resumeFromRunId`, after editing its script with a RESUMED note and the lock rule. Only the same session can resume them.
+  - **If the session itself ended,** a new session starts again from this section, and a stage cut off mid-run starts again from its worktree.
 - **If auto mode becomes unavailable,** workflow agents stop mid-run. Wait for the person, then resume the same way.
-- **Counting tests:** take a PR's count changes from CI's run totals (or a full local run), never from `vitest list`. That lists a parametric test once: PR 15 added 7 per-835 parse cases that `vitest list` missed, and its description had to be corrected before the verification passed.
-- **Waiting:** the Bash tool blocks a foreground `sleep`. Run long commands with `run_in_background` and wait for their notification, or use Monitor with an until-loop. A PR's events arrive by `subscribe_pr_activity`.
-- **PR descriptions:** write them only with the MCP `update_pull_request` tool, then read them back. A `gh api` PATCH rewrote #43's footer. Follow `.github/pull_request_template.md`; end with the attribution lines.
-- **CI logs:** use `get_job_logs` (`return_content`, a large `tail_lines`). The proxy refuses artifact downloads, so read Stryker's results from the job logs.
+- **Counting tests:** take a PR's count changes from CI's run totals or a full local run, never from `vitest list`. That lists a parametric test once: PR 15 added seven per-835 parse cases that `vitest list` missed, and its description had to be corrected before the verification passed.
+- **Waiting:** the Bash tool blocks a foreground `sleep`. Run long commands with `run_in_background` and wait for their notification, or use Monitor with an until-loop. A PR's events arrive through `subscribe_pr_activity`.
+- **PR descriptions:**
+  - Write them only with the MCP `update_pull_request` tool, then read them back. A `gh api` PATCH rewrote #43's footer.
+  - For a long body, a helper agent writes it from a file and proves it byte for byte against `gh api …/pulls/<n> --jq .body`.
+  - Follow `.github/pull_request_template.md`, and end with the attribution lines.
+- **CI logs:** use `get_job_logs` (`return_content`, a large `tail_lines`). The proxy refuses artifact downloads, so read Stryker's results from the job logs. PR CI cancels a run in progress on each new push, so push once per round.
 - **Merging:**
-  1. Merge the latest `claude/build-platform` into the PR branch with a merge commit (rule 6, keeping both lanes' changes).
+  1. Merge the latest `claude/build-platform` into the PR branch with a merge commit (rule 6, keeping both lanes' changes). Re-resolve the lockfile with `pnpm install`; never hand-merge it.
   2. Re-check what the merge touched, the affected mutation shard included, and push.
-  3. Wait for CI green on that head, every check including `mutation` and `screening-capacity gate`.
-  4. Run the fresh-clone verification (one agent in a fresh clone, reading CI).
-  5. Mark the PR ready (`update_pull_request` draft false), then `merge_pull_request` with method `merge` and `expectedHeadSha`.
-  6. Unsubscribe from the PR, fast-forward the main checkout, remove the worktrees and branches, archive the summaries, and log.
+  3. Wait for CI green on that head: every check, `mutation` and `screening-capacity gate` included.
+  4. Run the fresh-clone verification: one agent in a fresh clone, reading CI.
+  5. Mark the PR ready (`update_pull_request`, draft false), then `merge_pull_request` with method `merge` and `expectedHeadSha`.
+  6. Unsubscribe from the PR. Fast-forward the main checkout and run `pnpm install` there under the lock. Remove the worktrees and local branches (remote branches stay). Archive the summaries, then log.
+  7. Read the push runs the merge starts.
 - **Pushing:**
-  - Every push goes through the pre-push hook (the fixture check and gitleaks). Never `--no-verify` or force.
-  - Gitleaks refused the development master key once (keep keys in the environment, as `tools/lane-b-screen-tour/env.sh` does), and once read a document hash in an archived script as a key.
-  - A refused push is fixed by rewriting only commits not yet pushed.
+  - Every push goes through the pre-push hook (the fixture check and gitleaks). Never use `--no-verify`, never force, and never add a `.gitleaksignore` entry.
+  - **A refused push of unpushed commits:** `git reset --soft origin/<branch>`, remove the flagged text, then commit and push again.
+  - **What gitleaks flagged before:** the development master key, once. Keep keys out of files; the tour's `env.sh` derives the key at run time. Also, once, a document hash in an archived script; shorten such a hash to 8 hex digits and an ellipsis, as HANDOFF does.
 - **Money code:**
   - The engine freeze: no non-test change under `packages/pricing`. Lane B pins defects with tests and hands them to Lane A's 6c.
   - The ledger: additions only.
@@ -152,15 +234,16 @@ is the record; nothing in it is needed to continue.
   - A survivor is killed with a test, or recorded as equivalent only when no input can tell it apart, with a reviewer who is not its proposer.
 - **Records:**
   - workflow scripts go in `workflow-scripts/lane-b-*.js`, summaries in `approval-summaries/lane-b-*`, designs in `designs/lane-b-*`;
-  - this log after each step;
-  - LANES.md's claim rows when a state changes.
+  - this log, after each step;
+  - LANES.md's claim rows, when a state changes;
+  - before reusing an archived script, rewrite its scratchpad constant (`SP`) to this session's scratchpad (HANDOFF.md, "Paths that moved").
   - Push `claude/build-ops` with rule 10's command.
 
 ### Where things are
 - **Branches and checkouts:**
   - `/home/user/ops`: this branch, `claude/build-ops`;
   - `/home/user/PhysicalTherapy`: the main checkout of `claude/build-platform`, with the pre-push hook;
-  - worktrees: `/home/user/<name>`, one per PR.
+  - worktrees: `/home/user/<name>`, one per PR; the screen tour's is `/home/user/screens`.
 - **Designs:**
   - the CI series: `designs/lane-b-ci.md`, with its scouts and review in `designs/lane-b-ci/`;
   - PR 15: `designs/lane-b-pr15-ledger-tests.md` and `designs/lane-b-pr15/`;
@@ -435,3 +518,19 @@ is the record; nothing in it is needed to continue.
     - the fix-round, fix-suite and verification summaries and the verify script archived;
     - `SETUP_CHECK=1` printed OK.
   - **Lane B now has nothing open.** The next session starts at "Start here (Lane B)": the UX/UI baseline review, then ci-deps, ci-browser and 15b.
+- **2026-10-25 ~20:35 UTC: the handoff reviewed and corrected; 6ddd587's red push run triaged.**
+  - **The review** (wf_22368784-06b, 0.67M tokens; script archived) ran two read-only agents: a cold-start critic walking COFOUNDER-START's message, and a fact-checker against git, GitHub and the files. They returned 51 findings, 6 of them blocking, all applied:
+    - **ci 40229005858 on 6ddd587 had failed** in e2e (2/2) after Start here was written: a screening-journey timing flake. One re-run of the failed job passed (attempt 2), and the flake went to Lane A under "Handed to Lane A".
+    - **The screen tour never prepared its database.** serve.sh now runs `e2e/prepare.ts` first.
+    - **COFOUNDER-START's step 1** would have passed unstarted branches named in the claims. It now passes only the branches Start here lists as open.
+    - **#33 is now node:26-slim,** which ci-deps declines. #38 was closed by Dependabot because Stryker 10.1.1 was under three days old under `minimum-release-age`.
+  - **The should_fix and nit findings, each applied:**
+    - **Already ruled:** the founder's 2026-10-20 adoption of the combined audit already rules 15b's #12, #32 and #30. LANES.md items 3, 10 and 14 are for Lane A to amend.
+    - **Not yet in place:** chromium-1248 is pinned but not laid out.
+    - **Stale or wrong:** ci-deps' design predates ci-speed and ci-mutation (a scout re-reads it first); the misquoted ADR 0066:333 nit; the capacity times (now up to 18:32); #43's merge time (14:16 UTC).
+    - **Contradictions:** the CI series against #42's files (a step-1 question to the co-founder); restart handling, now the same in COFOUNDER-START and here; HANDOFF's older Start here, which this section now outranks.
+    - **The UX brief:** the route map, dark tokens only, a private gallery for the screenshots, the cost estimate method, the right audit numbers, legal text staying the founder's, and the queue ruling.
+    - **The checklist PR:** its pipeline.
+    - **The tour:** the master key derived at run time, `TOUR_MINUTES`, `TOUR_REF`, a reliable stop, the gallery template path and the README's accuracy.
+    - **Records:** the line for the founder's chat, recorded verbatim; the rulings' sources and times.
+  - **The tour run end to end at 6ddd587** with the fixes (`TOUR_DIR` in this scratchpad). The first run caught one more defect: run.sh found the server by matching its path in the process list, and failed when build.sh was started by a relative path. A pid file fixes it, and a stop touched during the build now holds. The second run's setup, prepare, build and server start passed, then the populate journeys; the capture's result follows.

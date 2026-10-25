@@ -4,7 +4,11 @@ set -uo pipefail
 S="${TOUR_DIR:?set TOUR_DIR to the tour's working directory, a folder in this session's scratchpad (README, Set-up)}"
 source $S/env.sh
 until [ -f $S/ready ]; do
-  if ! pgrep -f "$S/(build|serve).sh" >/dev/null && [ ! -f $S/ready ]; then echo "SERVER NOT READY"; tail -20 $S/build.log; exit 1; fi
+  # build.sh writes its pid and execs serve.sh, so one pid covers the build and the server.
+  if { [ ! -f $S/server.pid ] || ! kill -0 "$(cat $S/server.pid)" 2>/dev/null; } && [ ! -f $S/ready ]; then
+    sleep 5  # build.sh may not have written its pid yet
+    if { [ ! -f $S/server.pid ] || ! kill -0 "$(cat $S/server.pid)" 2>/dev/null; } && [ ! -f $S/ready ]; then echo "SERVER NOT READY"; tail -20 $S/build.log; exit 1; fi
+  fi
   sleep 2
 done
 cd $S

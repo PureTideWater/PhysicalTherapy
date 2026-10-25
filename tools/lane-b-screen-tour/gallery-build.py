@@ -51,7 +51,7 @@ issues = [
  ("Wording", "A notification reads “on 1 lines”."),
 ]
 iss = ''.join(f'<li><span class="tag">{esc(k)}</span>{esc(v)}</li>' for k, v in issues)
-PAGE = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'page.html')).read()
+PAGE = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gallery-page.html')).read()
 out = PAGE.replace('{{NAV}}', nav).replace('{{SECTIONS}}', '\n'.join(sections)).replace('{{ISSUES}}', iss).replace('{{COUNT}}', str(len(items)))
 open(os.path.join(SD, 'paidwhole-screen-tour.html'), 'w').write(out)
 print('written', len(out), 'bytes,', len(items), 'screens')

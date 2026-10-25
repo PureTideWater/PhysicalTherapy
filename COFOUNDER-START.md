@@ -7,11 +7,13 @@ You run the build from your own Claude Max 20x account, beside the founder's ses
 2. **GitHub.**
    - The founder adds your GitHub account as a collaborator with write access on `PureTideWater/PhysicalTherapy` (the repository's Settings, then Collaborators). Accept the email invitation.
    - In claude.ai, connect your GitHub account at https://claude.ai/connect-github. The Claude GitHub App is already installed on the repository.
+   - Until runbook 3i gives the build its own GitHub identity, Lane B's sessions act as `PureTideWater` (your ruling of 2026-10-24 ~21:10 UTC, in `lanes/lane-b.md`). Each session checks this first.
 3. **A cloud environment.** In Claude Code on the web, create an environment for this repository. Give it network access wide enough for the setup script, which downloads from:
    - github.com and GitHub's release downloads;
    - registry.npmjs.org;
    - pypi.org and files.pythonhosted.org;
-   - the Ubuntu package archive.
+   - the Ubuntu package archive;
+   - storage.googleapis.com (Google's Chrome for Testing). The setup script lays Playwright's browser out from there, because the proxy refuses Playwright's own download hosts.
 
    The founder's environment uses full network access. With limited access, allow those hosts and leave "Allow package managers" ticked (https://code.claude.com/docs/en/cloud-environments#network-access).
 4. **Usage.** Your account has its own weekly allowance. Your session asks you for your usage % and the reset time before each heavy run, and stops starting heavy runs past about 80%. Extra usage (usage credits) is optional and your choice.
@@ -35,9 +37,9 @@ ultracode. Join the PaidWhole build as Lane B, from the handoff, with no gaps.
 
 1. Run, in the background, until it prints OK (it takes several minutes):
    git -C /home/user/PhysicalTherapy fetch -q origin claude/build-ops && git -C /home/user/PhysicalTherapy show FETCH_HEAD:tools/setup-container.sh > /tmp/setup-container.sh && bash /tmp/setup-container.sh
-   Pass each open Lane B branch named in the claims of LANES.md as an argument, written branch:/home/user/<worktree>, if there are any.
+   Pass as arguments only the branches that lanes/lane-b.md's "Start here (Lane B)" lists as open in Lane B, each written branch or branch:/home/user/<worktree>. Read that list first: git -C /home/user/PhysicalTherapy show FETCH_HEAD:lanes/lane-b.md | sed -n '/^## Start here/,/^### Next actions/p'. Never pass a branch that is merged or not yet started, even if a claim names it.
    If /home/user/PhysicalTherapy does not exist, clone the ops branch instead (git clone -q --depth 1 -b claude/build-ops https://github.com/PureTideWater/PhysicalTherapy /tmp/ops-boot) and run bash /tmp/ops-boot/tools/setup-container.sh the same way.
-2. Read, in order: /home/user/ops/LANES.md (the two-lane rules, the queues and the claims); /home/user/ops/lanes/lane-b.md (Lane B's log: its "Start here (Lane B)" section first, which gives the state, the next actions in order, what waits on whom, and the pitfalls); /home/user/ops/HANDOFF.md from "Start here" up to "Owner decisions and rulings" (Lane A's state, how the build is run, the founder's standing rules), and "Owner decisions and rulings" itself; then CLAUDE.md and docs/product/reconciliation-001.md on claude/build-platform.
+2. Read, in order: /home/user/ops/LANES.md (the two-lane rules, the queues and the claims); /home/user/ops/lanes/lane-b.md (Lane B's log: its "Start here (Lane B)" section first, which gives the state, the next actions in order, what waits on whom, and the pitfalls); /home/user/ops/HANDOFF.md's "Start here" (Lane A's state at its own timestamp: where it describes Lane B's work, lane-b.md is newer and wins), "Standing rule from the founder", "Who decides", "Owner decisions and rulings" and the dated founder rulings after it, from 2026-10-20 to 2026-10-24. Skip HANDOFF's "How to resume" and "Fresh session" steps: they are Lane A's, and Lane B never updates the tracker. Then CLAUDE.md, and on claude/build-platform reconciliation-001's "What must not change, as checks" and whichever of its items the next PR names.
 3. Before any heavy run, ask me for my weekly usage % and the reset time. Pace to about 11% a day, start no new heavy run past about 80%, and never cut a run off mid-way.
 4. Continue Lane B's in-flight item, or take the next action, from lanes/lane-b.md's "Start here (Lane B)". If it names none, claim the first unclaimed item of Lane B's queue in LANES.md (pull, add the claim with its reserved ADR and test-matrix numbers, push) and start it, with the same pipeline as Lane A:
    - design first, with one reviewer;
@@ -53,10 +55,12 @@ Standing rule: recommend and build only the best option, never weighted by build
 ```
 
 ## What your session does
-- Rebuilds its machine with the setup script: the repository, PostgreSQL 18 and 16, Node 24, the Python venvs, gitleaks, actionlint and the pre-push hook.
+- Rebuilds its machine with the setup script: the repository, PostgreSQL 18 and 16, Node 24, the Python venvs, gitleaks, actionlint, Playwright's Chromium (laid out from Chrome for Testing) and the pre-push hook.
 - Reads the rules and both lanes' state, then asks you for your usage.
 - Builds Lane B's next pull request through every quality stage, merging on green CI once the PR is verified.
 - Logs each step in `lanes/lane-b.md` on the `claude/build-ops` branch, so the next session, or the founder's, picks up exactly there.
 
-## If a session ends or the machine restarts
-Start a new session with the same message. It resumes from `lanes/lane-b.md` and the claims in `LANES.md`. A workflow cannot be resumed from another session, so a stage cut off mid-run starts again; the log says which stage.
+## If the machine restarts or a session ends
+- **The machine restarted but the session is still open** (PostgreSQL is down, or a run reports it was stopped): tell that same session "the container restarted; recover as lanes/lane-b.md says". It reruns the setup script, which restarts both databases, and resumes its stopped runs. Only the same session can resume them.
+- **Auto mode stopped a run:** wait a few minutes, then tell the same session to resume.
+- **The session itself ended:** start a new one with the same message. It resumes from `lanes/lane-b.md` and the claims in `LANES.md`. A workflow cannot be resumed from another session, so a stage cut off mid-run starts again; the log says which stage.
