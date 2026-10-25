@@ -361,3 +361,153 @@ describe('helpers', () => {
     expect(['', 'IIII', 'IC', 'VX', 'ILL', 'MMMM'].map(romanValue)).toEqual([null, null, null, null, null, null]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------
+// The inputs each rule of the scanner separates (PRD 18, mutation testing; ADR 0047): every case below is
+// one that a looser pattern, quantifier or anchor, or a grammar rule left out, would read differently.
+// ---------------------------------------------------------------------------------------------------
+
+describe('numbersInWords: where each rule of the grammar joins and where it splits', () => {
+  it('joins across "and" only after hundred, thousand or million', () => {
+    expect(words('twenty and one')).toEqual([20, 1]);
+    expect(words('two thousand and five')).toEqual([2005]);
+    expect(words('a hundred and twenty')).toEqual([120]);
+  });
+
+  it('ends a number at a word that is no number word', () => {
+    expect(words('twenty claims one')).toEqual([20, 1]);
+  });
+
+  it('joins a teen or a tens word only after hundred, dozen, score or a scale', () => {
+    expect(words('two hundred twelve')).toEqual([212]);
+    expect(words('two hundred twenty')).toEqual([220]);
+    expect(words('three thousand twelve')).toEqual([3012]);
+    expect(words('three thousand forty')).toEqual([3040]);
+  });
+
+  it('multiplies by hundred, dozen or score a count from one to ninety-nine only', () => {
+    expect(words('twelve hundred')).toEqual([1200]);
+    expect(words('forty dozen')).toEqual([480]);
+    expect(words('zero hundred')).toEqual([0, 100]);
+    expect(words('one hundred one hundred')).toEqual([101, 100]);
+    expect(words('one hundred zero hundred')).toEqual([100, 100]);
+  });
+
+  it('joins a scale only to a count before it, and after a scale only a smaller one', () => {
+    expect(words('million thousand')).toEqual([1_000_000, 1000]);
+    expect(words('zero thousand')).toEqual([0, 1000]);
+    expect(words('two thousand three million')).toEqual([2003, 1_000_000]);
+    expect(words('two thousand three thousand')).toEqual([2003, 1000]);
+  });
+
+  it('ends a number at its ordinal word, even before a word that would join', () => {
+    expect(words('twentieth one')).toEqual([20, 1]);
+    expect(words('hundredth five')).toEqual([100, 5]);
+  });
+});
+
+describe('scanText: the inputs each pattern separates', () => {
+  it('reads a figure written right after a placeholder or a citation marker', () => {
+    expect(figures('Claim {{member_id:1}}7 units and [1]2 lines.')).toEqual([
+      ['number', '7', '7'],
+      ['number', '2', '2'],
+    ]);
+  });
+
+  it('trims only the opening punctuation before an identifier, however much of it there is', () => {
+    expect(figures('See A1(B and (("Q9")) here.')).toEqual([
+      ['identifier', 'A1(B', 'A1(B'],
+      ['identifier', 'Q9', 'Q9'],
+    ]);
+  });
+
+  it('reads an ordinal day with a month only when the month’s name is capitalized, on either side', () => {
+    expect(figures('Paid jUNE fifth.')).toEqual([['number', '5', 'fifth']]);
+    expect(figures('The fifth of may.')).toEqual([['number', '5', 'fifth']]);
+    expect(figures('The fifth of mAY.')).toEqual([['number', '5', 'fifth']]);
+  });
+
+  it('reads a day no month has, written without its year, and a date in digits no calendar has, as identifiers', () => {
+    expect(figures('Billed February 30 and April 31st; on 2/30/2026 and 13/1/2026.')).toEqual([
+      ['identifier', 'February 30', 'February 30'],
+      ['identifier', 'April 31st', 'April 31st'],
+      ['identifier', '2/30/2026', '2/30/2026'],
+      ['identifier', '13/1/2026', '13/1/2026'],
+    ]);
+  });
+
+  it('reads a list of modifiers with any run of spaces around its commas and its words', () => {
+    for (const list of ['modifiers GP , and KX', 'modifiers GP,  and KX', 'modifiers GP, and  KX', 'modifiers GP,KX', 'modifiers GP  and KX', 'modifiers GP and  KX', 'modifiers GP  or KX', 'modifiers GP or  KX']) {
+      expect(figures(`${list}.`), list).toEqual([
+        ['modifier', 'GP', 'GP'],
+        ['modifier', 'KX', 'KX'],
+      ]);
+    }
+  });
+
+  it('reads x and digits followed by a decimal as an identifier, not units', () => {
+    expect(figures('Billed x2.5 units.')).toEqual([['identifier', 'x2.5', 'x2.5']]);
+  });
+
+  it('leaves "one" alone only as a word of its own, never as the start of a longer number', () => {
+    expect(figures('One hundred claims, one hundred and one units.')).toEqual([
+      ['number', '100', 'One hundred'],
+      ['number', '101', 'one hundred and one'],
+    ]);
+  });
+
+  it('makes only the last number before "percent" a percentage, and ends each other number at its own last word', () => {
+    expect(figures('It pays between ten and twenty percent.')).toEqual([
+      ['number', '10', 'ten'],
+      ['percent', '20', 'twenty percent'],
+    ]);
+  });
+});
+
+describe('sentenceSpans: the inputs each rule separates', () => {
+  it('reads a run of marks after an abbreviation from its first mark', () => {
+    expect(sentences('It pays etc... and more [1].')).toEqual(['It pays etc... and more [1].']);
+  });
+
+  it('takes into a sentence the markers after its mark, however they are spaced, numbered and listed', () => {
+    for (const marker of ['[12]', '[1, 23]', '[1,2]', '[1 ,2]', '[1, 2]']) {
+      expect(sentences(`Paid short. ${marker} Next [1].`), marker).toEqual([`Paid short. ${marker}`, 'Next [1].']);
+    }
+  });
+
+  it('drops a last piece of marks and markers that holds no word, giving none of its markers to the sentence before', () => {
+    expect(sentences('Paid short [1]. ... [2]')).toEqual(['Paid short [1].']);
+  });
+
+  it('keeps a sentence going after an abbreviation’s period only, before any spaces and a lowercase word or a digit', () => {
+    expect(sentences('It pays etc! and more [1].')).toEqual(['It pays etc!', 'and more [1].']);
+    expect(sentences('Under etc.  4 it pays [1].')).toEqual(['Under etc.  4 it pays [1].']);
+  });
+
+  it('reads as an abbreviation only single letters, each but the last followed by its period', () => {
+    expect(sentences('Under U.S.C. 1983 it pays [1].')).toEqual(['Under U.S.C. 1983 it pays [1].']);
+    expect(sentences('Under NC.G.S. 58 it pays [1].')).toEqual(['Under NC.G.S.', '58 it pays [1].']);
+    expect(sentences('Under A.Bc. 4 it pays [1].')).toEqual(['Under A.Bc.', '4 it pays [1].']);
+  });
+
+  it('ends a paragraph at a blank line holding spaces or tabs, and nowhere else', () => {
+    expect(sentences('A heading\n \nThe text [1].')).toEqual(['A heading', 'The text [1].']);
+    expect(sentences('A heading\nmore\nThe text [1].')).toEqual(['A heading\nmore\nThe text [1].']);
+  });
+
+  it('cuts at each paragraph between one sentence’s end and the next, never at one before or after', () => {
+    expect(sentences('First [1]. Second\n\nThird [2].')).toEqual(['First [1].', 'Second', 'Third [2].']);
+    expect(sentences('First\n\nSecond [1]. Third [2].')).toEqual(['First', 'Second [1].', 'Third [2].']);
+  });
+
+  it('ends a sentence before the spaces that end its paragraph', () => {
+    expect(sentences('Paid short [1]  \n\nNext [2]')).toEqual(['Paid short [1]', 'Next [2]']);
+  });
+
+  it('gives a paragraph of markers alone to the sentence before it, and drops one with no sentence before it', () => {
+    expect(sentences('One [2]\n\n[3]')).toEqual(['One [2]\n\n[3]']);
+    expect(sentences('Lead [1]. One [2]\n\n[3] [4]')).toEqual(['Lead [1].', 'One [2]\n\n[3] [4]']);
+    expect(sentences('Lead [1]. Two [1]. One [2]\n\n[3]')).toEqual(['Lead [1].', 'Two [1].', 'One [2]\n\n[3]']);
+    expect(sentences('[1] [2]')).toEqual([]);
+  });
+});

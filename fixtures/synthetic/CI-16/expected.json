@@ -1,0 +1,17 @@
+{
+  "case": "CI-16",
+  "module": "CI",
+  "title": "The mutation gate",
+  "assertion": "Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["tools/stryker/gate.test.ts","tools/stryker/mutants.test.ts","tools/test/workflows.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The gate judges shards' reports and equivalents the test builds in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

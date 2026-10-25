@@ -1,16 +1,29 @@
+import { price } from '@tp/pricing';
 import { describe, expect, it } from 'vitest';
 
-import { type GoldenExpectedLine, agreementRecords, compareLine, engineDifferences, goldenPricingInput, goldenRelease, readGoldenClaims, runEngineOnGolden } from './engine';
+import { type EngineRun, type GoldenExpectedLine, agreementRecords, claimRelease, claimReleaseFiles, compareLine, engineDifferences, goldenPricingInput, goldenRelease, readGoldenClaims } from './engine';
 
 /**
  * The golden comparison itself must catch a changed cent: these tests change golden expected results
  * in memory (never on disk) and check that each change is reported, field by field.
+ *
+ * Each test prices the claims it reads, under a release index of its own, and nothing the engine computes is shared
+ * between tests (docs/adr/0066, Part 4): priced once when the file loads, every engine mutant would be static to
+ * Stryker, which then runs the whole of pricing's tests for it instead of the tests that reach it.
  */
-const runs = runEngineOnGolden();
+const claims = readGoldenClaims();
+// Read once, while the tests are collected: each release the claims name, as files. Indexing it is the engine's code.
+const releaseFiles = claimReleaseFiles(claims);
+
+/** A golden claim priced by the test that asks, under its release as that test indexes it. */
+function priced({ file, claim }: (typeof claims)[number]): EngineRun {
+  return { file, claim, results: price({ ...goldenPricingInput(claim), release: claimRelease(claim, releaseFiles) }) };
+}
+
 const run = (id: string) => {
-  const found = runs.find((item) => item.claim.id === id);
+  const found = claims.find((item) => item.claim.id === id);
   expect(found, id).toBeDefined();
-  return found as (typeof runs)[number];
+  return priced(found as (typeof claims)[number]);
 };
 
 function differencesFor(id: string, lineNo: number, change: (line: GoldenExpectedLine) => GoldenExpectedLine): string[] {
@@ -21,7 +34,7 @@ function differencesFor(id: string, lineNo: number, change: (line: GoldenExpecte
 
 describe('the engine’s golden comparison', () => {
   it('finds no difference on the committed lines', () => {
-    expect(engineDifferences(runs)).toEqual([]);
+    expect(engineDifferences(claims.map(priced))).toEqual([]);
   });
 
   it('reports a changed cent, unrounded value, rounding, patient share, method, terms, base, adjustment, variance or window', () => {

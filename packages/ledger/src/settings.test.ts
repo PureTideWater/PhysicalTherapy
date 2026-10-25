@@ -53,3 +53,16 @@ describe('the ledger’s practice settings (Data dictionary, practice.settings: 
     expect(postingTemplateOf(postingTemplateSetting(own))).toEqual(own);
   });
 });
+
+describe('the ledger settings document, held to its form', () => {
+  it('reads only a plain object as a settings document or a stored template: a function carrying the keys is neither', () => {
+    expect(ledgerSettings(Object.assign(() => undefined, { proof_level: 'deposited' }))).toEqual({ proofLevel: 'posted', postingTemplate: null });
+    expect(() => postingTemplateOf(Object.assign(() => undefined, { template: 'synthetic_pm_export_v1' }))).toThrow(LedgerSettingsError);
+  });
+
+  it('refuses a practice’s own template that carries a key besides its system, columns and date format', () => {
+    const own = { system: 'S', columns: { posted_on: 'P', check_or_trace: 'C', amount: 'A' }, date_format: 'YYYY-MM-DD' };
+    expect(postingTemplateOf(own)).toMatchObject({ id: 'practice', system: 'S' });
+    expect(() => postingTemplateOf({ ...own, status: 'confirmed' })).toThrow(LedgerSettingsError);
+  });
+});

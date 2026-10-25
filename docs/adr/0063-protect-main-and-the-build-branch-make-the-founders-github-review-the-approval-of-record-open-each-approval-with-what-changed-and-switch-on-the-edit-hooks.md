@@ -333,8 +333,9 @@ the hooks as `settings.json` wires them.
 - CI's cost, measured on 17 and 18 October: about 35 billable minutes a push; about 1,100 minutes in 34 hours, a third
   of it one image job that hung for GitHub's 360-minute default. Every job now stops at its own timeout (amended
   2026-10-25, ADR 0066: ci.yml's jobs at 5 to 25 minutes, about three times each one's expected time, where ci's one job
-  stopped at 60 and the supply-chain jobs at 15), mutation's at 120; Dependabot groups every action update in one pull request and both images in
-  one, with fewer open at once; the e2e artifacts (up to 54 MB a run over every shard) are kept 7 days, against Team's
+  stopped at 60 and the supply-chain jobs at 15), mutation's at 5, 30 and 10 (`changes`, each `stryker` shard and the
+  gate; ADR 0066, Part 4, where its one job stopped at 120); Dependabot groups every action update in one pull request
+  and both images in one, with fewer open at once; the e2e artifacts (up to 54 MB a run over every shard) are kept 7 days, against Team's
   2 GB of Actions storage.
   Dependabot reads `.github/dependabot.yml` from `main`, so the groups and limits take effect before launch only when
   `main`'s copy changes. On 2026-10-20 the founder ruled for one pull request into `main` that changes it (the same

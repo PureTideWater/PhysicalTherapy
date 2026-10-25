@@ -133,3 +133,45 @@ describe('quarters', () => {
     expect(() => quarterOf('16 October 2026')).toThrow(LedgerError);
   });
 });
+
+describe('the ROI statement’s inputs and quarters, each held whole', () => {
+  const input = { periodFrom: '2026-04-01', periodTo: '2026-06-30', proofLevel: 'posted' as const, entries: [], feesCents: cents(0n), pursuitHours: '0.00', openCases: [] };
+
+  it('reads a period’s dates only as whole calendar dates', () => {
+    expect(() => roiStatement({ ...input, periodTo: 'x2026-06-30' })).toThrow(LedgerError);
+    expect(() => roiStatement({ ...input, periodFrom: '2026-04-01T00:00' })).toThrow(LedgerError);
+  });
+
+  it('covers a period of one day', () => {
+    const posted = make('posted', 3000n, { on: '2026-06-30' });
+    expect(roiStatement({ ...input, periodFrom: '2026-06-30', entries: [posted] })).toMatchObject({ periodFrom: '2026-06-30', periodTo: '2026-06-30', recoveredCents: 3000n });
+  });
+
+  it('takes pursuit hours of one to seven whole digits and two places, and nothing else', () => {
+    for (const hours of ['12.50', '1234567.00', '0.25']) {
+      expect(roiStatement({ ...input, pursuitHours: hours }).pursuitHours).toBe(hours);
+    }
+    for (const hours of ['x3.50', '3.505', '12345678.00', '01.50', '1x.50', '.50']) {
+      expect(() => roiStatement({ ...input, pursuitHours: hours }), hours).toThrow(LedgerError);
+    }
+  });
+
+  it('counts an approval made on the period’s last day as approved but not yet posted', () => {
+    const approved = make('approved', 3000n, { on: '2026-06-30' });
+    expect(roiStatement({ ...input, entries: [approved] })).toMatchObject({ approvedUnpostedCents: 3000n, links: { approvedUnposted: [approved.id] } });
+  });
+
+  it('writes nothing recovered as a ratio of zero', () => {
+    expect(ratioText(cents(0n), cents(1500n))).toBe('0.00');
+  });
+
+  it('reads a quarter and a day only as the whole text', () => {
+    for (const quarter of ['x2026-Q2', '2026-Q23']) {
+      expect(() => quarterPeriod(quarter), quarter).toThrow(LedgerError);
+    }
+    for (const day of ['x2026-07-01', '2026-07-011']) {
+      expect(() => quarterOf(day), day).toThrow(LedgerError);
+      expect(() => previousQuarter(day), day).toThrow(LedgerError);
+    }
+  });
+});

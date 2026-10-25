@@ -1,0 +1,64 @@
+{
+  "$comment": "The mutation canary's expected statuses (tools/stryker/canary/stryker.config.mjs, verdict.ts; docs/adr/0066, Part 4): every mutant Stryker makes of each case's file, keyed as the equivalents are (mutator, the original source text, its occurrence from 1 counting every start position, the replacement), with the statuses it may have. A Stryker or fast-check release that makes other mutants changes this file in its own pull request, read case by case.",
+  "cases": [
+    {
+      "case": 1,
+      "proves": "a runtime mutant is run by the tests that cover it, selected by name",
+      "file": "tools/stryker/canary/named.ts",
+      "mutants": [
+        {"mutator": "StringLiteral", "original": "'a line has at least one unit'", "occurrence": 1, "replacement": "\"\"", "expect": ["Killed"]},
+        {"mutator": "ArithmeticOperator", "original": "unitCents * BigInt(units)", "occurrence": 1, "replacement": "unitCents / BigInt(units)", "expect": ["Killed"]},
+        {"mutator": "ConditionalExpression", "original": "units < 1", "occurrence": 1, "replacement": "false", "expect": ["Killed"]},
+        {"mutator": "ConditionalExpression", "original": "units < 1", "occurrence": 1, "replacement": "true", "expect": ["Killed"]},
+        {"mutator": "EqualityOperator", "original": "units < 1", "occurrence": 1, "replacement": "units <= 1", "expect": ["Killed"]},
+        {"mutator": "EqualityOperator", "original": "units < 1", "occurrence": 1, "replacement": "units >= 1", "expect": ["Killed"]},
+        {"mutator": "BlockStatement", "original": "{\n    throw new RangeError('a line has at least one unit');\n  }", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]},
+        {"mutator": "BlockStatement", "original": "{\n  if (units < 1) {\n    throw new RangeError('a line has at least one unit');\n  }\n  return unitCents * BigInt(units);\n}", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]}
+      ]
+    },
+    {
+      "case": 2,
+      "proves": "a mutant that breaks a test file's load is an error or a kill, never a survivor",
+      "file": "tools/stryker/canary/load.ts",
+      "mutants": [
+        {"mutator": "StringLiteral", "original": "'a line has at least one unit'", "occurrence": 1, "replacement": "\"\"", "expect": ["Killed"]},
+        {"mutator": "ConditionalExpression", "original": "count < 1", "occurrence": 1, "replacement": "false", "expect": ["Killed"]},
+        {"mutator": "ConditionalExpression", "original": "count < 1", "occurrence": 1, "replacement": "true", "expect": ["RuntimeError", "Killed"]},
+        {"mutator": "EqualityOperator", "original": "count < 1", "occurrence": 1, "replacement": "count <= 1", "expect": ["RuntimeError", "Killed"]},
+        {"mutator": "EqualityOperator", "original": "count < 1", "occurrence": 1, "replacement": "count >= 1", "expect": ["RuntimeError", "Killed"]},
+        {"mutator": "BlockStatement", "original": "{\n    throw new RangeError('a line has at least one unit');\n  }", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]},
+        {"mutator": "BlockStatement", "original": "{\n  if (count < 1) {\n    throw new RangeError('a line has at least one unit');\n  }\n  return count;\n}", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]}
+      ]
+    },
+    {
+      "case": 3,
+      "proves": "a workspace package a test imports by name is the mutated copy (the aliases)",
+      "file": "tools/stryker/canary/lib/index.ts",
+      "mutants": [
+        {"mutator": "ArithmeticOperator", "original": "dollars * 100n", "occurrence": 1, "replacement": "dollars / 100n", "expect": ["Killed"]},
+        {"mutator": "BlockStatement", "original": "{\n  return dollars * 100n;\n}", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]}
+      ]
+    },
+    {
+      "case": 4,
+      "proves": "a mutant only a seeded fast-check property kills is killed (the seed)",
+      "file": "tools/stryker/canary/seeded.ts",
+      "mutants": [
+        {"mutator": "ConditionalExpression", "original": "value === SEEDED_INPUT", "occurrence": 1, "replacement": "false", "expect": ["Killed"]},
+        {"mutator": "ConditionalExpression", "original": "value === SEEDED_INPUT", "occurrence": 1, "replacement": "true", "expect": ["Killed"]},
+        {"mutator": "EqualityOperator", "original": "value === SEEDED_INPUT", "occurrence": 1, "replacement": "value !== SEEDED_INPUT", "expect": ["Killed"]},
+        {"mutator": "BlockStatement", "original": "{\n  return value === SEEDED_INPUT;\n}", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]}
+      ]
+    },
+    {
+      "case": 5,
+      "proves": "a test whose name starts with the covering test's is not run with it (stryker-js #6246)",
+      "file": "tools/stryker/canary/prefix.ts",
+      "mutants": [
+        {"mutator": "AssignmentOperator", "original": "total += cents", "occurrence": 1, "replacement": "total -= cents", "expect": ["Survived"]},
+        {"mutator": "BlockStatement", "original": "{\n  return total;\n}", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]},
+        {"mutator": "BlockStatement", "original": "{\n  total += cents;\n  return cents;\n}", "occurrence": 1, "replacement": "{}", "expect": ["Killed"]}
+      ]
+    }
+  ]
+}

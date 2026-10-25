@@ -216,3 +216,45 @@ describe('ledger properties (PRD 18: property tests on every pure function)', ()
     );
   });
 });
+
+describe('totals and a line’s stage at their edges', () => {
+  const figures = (approved: bigint, proved: bigint, recouped: bigint) => ({ approvedCents: cents(approved), provedCents: cents(proved), recoupedCents: cents(-recouped), entryIds: [] });
+  const adjust = (target: LedgerEntry, amount: bigint): LedgerEntry => ({ ...target, id: id('adjusted'), stage: 'adjusted', evidenceKind: 'ledger_entry', evidenceId: target.id, amountCents: cents(amount) });
+
+  it('keeps payer approved at the approval when more was proved, and leaves nothing waiting to be proved', () => {
+    expect(payerApproved(figures(3000n, 5000n, 0n))).toBe(3000n);
+    expect(approvedNotProved(figures(3000n, 5000n, 0n))).toBe(0n);
+  });
+
+  it('takes a period’s entries on its first and last days', () => {
+    const first = make('posted', 100n, { on: '2026-04-01' });
+    const last = make('posted', 200n, { on: '2026-06-30' });
+    const entries = [make('posted', 1n, { on: '2026-03-31' }), first, last, make('posted', 2n, { on: '2026-07-01' })];
+    expect(periodEntries(entries, '2026-04-01', '2026-06-30')).toEqual([first, last]);
+  });
+
+  it('lets an adjusted proof stand: only a reversal undoes the entry it names', () => {
+    const posted = make('posted', 3100n);
+    expect(lineLedgerStage([make('approved', 3000n), posted, adjust(posted, -100n)], 'posted')).toBe('recovered');
+  });
+
+  it('is recovered only by a proof entry that stands, however the proof level’s amounts net', () => {
+    // The posting was reversed and the reversed posting then adjusted back up: the posted total covers the approval, but no posting stands.
+    const posted = make('posted', 3000n);
+    expect(lineLedgerStage([make('approved', 3000n), posted, reverse(posted), adjust(posted, 3000n)], 'posted')).toBe('payer_approved');
+    const deposited = make('deposited', 3000n);
+    expect(lineLedgerStage([make('approved', 3000n), deposited, reverse(deposited), adjust(deposited, 3000n)], 'deposited')).toBe('payer_approved');
+  });
+
+  it('stays payer approved on an approval that only an adjustment keeps above zero, and reopens when a recoupment stands before it', () => {
+    const approved = make('approved', 3000n);
+    const kept = [approved, reverse(approved), adjust(approved, 500n)];
+    expect(lineLedgerStage(kept, 'posted')).toBe('payer_approved');
+    const approvedAgain = make('approved', 3000n);
+    expect(lineLedgerStage([make('recouped', 100n), approvedAgain, reverse(approvedAgain), adjust(approvedAgain, 500n)], 'posted')).toBeNull();
+  });
+
+  it('is not recovered by a proof that came before a recoupment, even when an approval came after both', () => {
+    expect(lineLedgerStage([make('posted', 3000n), make('recouped', 1000n), make('approved', 3000n)], 'posted')).toBe('payer_approved');
+  });
+});

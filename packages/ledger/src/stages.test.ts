@@ -101,3 +101,22 @@ describe('entry rules (PRD 13, Entries)', () => {
     expect(isCorrecting('posted')).toBe(false);
   });
 });
+
+describe('entry rules, stage by stage (PRD 13, Entries)', () => {
+  it('takes a claim as an interest entry’s evidence, and allocates deposits and interest', () => {
+    expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'claim', amountCents: cents(411n) }))).toEqual([]);
+    expect(entryProblems(entry({ stage: 'deposited', evidenceKind: 'eft_row', allocated: true }))).toEqual([]);
+    expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'provider_adjustment', amountCents: cents(411n), allocated: true }))).toEqual([]);
+  });
+
+  it('holds posted and interest entries above zero, and a recouped entry below it', () => {
+    expect(entryProblems(entry({ stage: 'posted', evidenceKind: 'posting_row', amountCents: cents(0n) }))).toEqual(['a posted entry is positive']);
+    expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'provider_adjustment', amountCents: cents(0n) }))).toEqual(['a interest entry is positive']);
+    expect(entryProblems(entry({ stage: 'recouped', evidenceKind: 'claim', amountCents: cents(0n) }))).toEqual(['a recouped entry is negative']);
+  });
+
+  it('names every evidence a stage takes when an entry carries another', () => {
+    expect(entryProblems(entry({ stage: 'approved', evidenceKind: 'posting_row' }))).toEqual(["a approved entry's evidence is a claim or payer_response"]);
+    expect(entryProblems(entry({ stage: 'recouped', evidenceKind: 'eft_row', amountCents: cents(-1n) }))).toEqual(["a recouped entry's evidence is a provider_adjustment or claim"]);
+  });
+});

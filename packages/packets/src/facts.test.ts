@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
 import { type NarrativeFacts, narrativeFacts } from './facts';
-import type { PacketContentV1, RegulationCitation } from './format';
+import type { PacketContentV1, PacketContentV2, RegulationCitation } from './format';
 import { verifyNarrative } from './verifier';
-import { IDS, SHA, assemblyInput, contractCitation, line, promptPayRecord } from './test-support';
+import { IDS, SHA, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord } from './test-support';
 
 /**
  * The inputs a narrative may state (./facts.ts): exactly the figures the version's own content holds,
@@ -291,6 +291,117 @@ describe('narrativeFacts', () => {
       rows: 3,
       markers: [1, 2, 3, 4, 5, 6],
     });
+  });
+
+  it('takes each figure from the part of the version that holds it, even where no other part repeats it', () => {
+    const received = { receivedOn: '2026-03-02', paidOn: '2026-05-01' };
+    const content = assemblePacket(
+      assemblyInput({ asOf: '2026-05-01', lines: [line(1, received), line(2, received), line(3, received)], interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } }),
+    );
+    const facts = narrativeFacts(content);
+    const [first, ...rest] = content.lines;
+    const interest = content.interest;
+    if (first === undefined || interest === null) {
+      throw new Error('three lines with interest');
+    }
+    const [interestFirst, ...interestRest] = interest.lines;
+    if (interestFirst === undefined) {
+      throw new Error('interest lines');
+    }
+    // Each value below is held by the one part named and by no other part of the version.
+    const holds = (changed: PacketContentV2) => narrativeFacts(changed);
+    // The schedule's count of lines, when the pattern counts otherwise.
+    expect(facts.numbers.has('41')).toBe(false);
+    const recounted = holds({ ...content, pattern: { ...content.pattern, lines: 41, claims: 41, patients: 41, codes: content.pattern.codes.map((code) => ({ ...code, lines: 41 })) } });
+    expect(recounted.numbers.has('3')).toBe(true);
+    expect(recounted.numbers.has('41')).toBe(true);
+    // The pattern's first and last service dates, its percentages (as plain decimals) and each code it summarizes.
+    const pattern = holds({ ...content, pattern: { ...content.pattern, first_service_date: '2019-01-02', last_service_date: '2019-01-03', contract_percentages: ['61.50'], codes: content.pattern.codes.map((code) => ({ ...code, procedure_code: '97999' })) } });
+    expect(['2019-01-02', '2019-01-03'].map((date) => [facts.dates.has(date), pattern.dates.has(date)])).toEqual([
+      [false, true],
+      [false, true],
+    ]);
+    expect([facts.percents.has('61.5'), pattern.percents.has('61.5'), pattern.percents.has('61.50')]).toEqual([false, true, false]);
+    expect([facts.codes.has('97999'), pattern.codes.has('97999'), pattern.codes.has('97110')]).toEqual([false, true, true]);
+    // A line's own code, the last day of its deadline at the first level and each step of its calculation.
+    const lineParts = holds({
+      ...content,
+      lines: [{ ...first, procedure_code: '97998', deadline: { ...first.deadline, ends_on: '2036-09-09' }, calculation: { ...first.calculation, steps: [{ step: 'unit', amount_cents: '5101' }, ...first.calculation.steps] } }, ...rest],
+    });
+    expect([facts.codes.has('97998'), lineParts.codes.has('97998')]).toEqual([false, true]);
+    expect([facts.dates.has('2036-09-09'), lineParts.dates.has('2036-09-09')]).toEqual([false, true]);
+    expect([facts.amounts.has('5101'), lineParts.amounts.has('5101')]).toEqual([false, true]);
+    // The dates an interest line states: when the payer received the claim and when it paid.
+    const interestDates = holds({ ...content, interest: { ...interest, lines: [{ ...interestFirst, received_on: '2025-11-11', paid_on: '2025-11-12' }, ...interestRest] } });
+    expect(['2025-11-11', '2025-11-12'].map((date) => [facts.dates.has(date), interestDates.dates.has(date)])).toEqual([
+      [false, true],
+      [false, true],
+    ]);
+  });
+
+  it('holds a contract window’s days as days whether or not its clause repeats them, and no days the window does not state', () => {
+    const quiet = 'Disputes are raised within the contract window.';
+    const days = narrativeFacts(assemblePacket(assemblyInput({ deadlineSources: [contractWindowSource({ days: 45, page: 7, quote: quiet })] })));
+    expect([...days.dayCounts]).toStrictEqual(['45']);
+    expect([...days.pages]).toStrictEqual(['7']);
+    expect(days.numbers.has('45')).toBe(false);
+    // A window with no day count states none, and its clause holds none either.
+    const none = narrativeFacts(assemblePacket(assemblyInput({ deadlineSources: [contractWindowSource({ days: null, quote: quiet })] })));
+    expect([...none.dayCounts]).toStrictEqual([]);
+    expect([...none.pages]).toStrictEqual(['1']);
+    // A release record is no contract window: no days and no page of its own.
+    const release = narrativeFacts(assemblePacket(assemblyInput({ deadlineSources: [{ kind: 'release_record', release_no: 900001, sha256: SHA, program: 'medicare', level: 'L2' }] })));
+    expect(release.dayCounts.size + release.pages.size).toBe(0);
+  });
+
+  it('holds only whole cents of a calculation, and nothing for a rounding, a patient share or a rule the version does not state', () => {
+    const content = assemblePacket(assemblyInput({ interest: { state: 'QQ', releaseNo: 900001, record: null } }));
+    const [first, ...rest] = content.lines;
+    if (first === undefined) {
+      throw new Error('three lines');
+    }
+    const amounts = (changed: PacketContentV2) => [...narrativeFacts(changed).amounts].sort();
+    const before = amounts(content);
+    // A rounded amount is a figure; its unrounded amount with a fraction of a cent is not, nor is any part of it.
+    const fraction = amounts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '12345.6789', rounded_cents: '12346' } } }, ...rest] });
+    expect(fraction).toStrictEqual([...before, '12346'].sort());
+    // A whole unrounded amount, a negative one included, is a figure.
+    const whole = amounts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '-250', rounded_cents: '-250' } } }, ...rest] });
+    expect(whole).toStrictEqual([...before, '-250'].sort());
+    // No rounding and no patient share: no figure for either, and nothing else changes.
+    const without = narrativeFacts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: null, patient_share_cents: null } }, ...rest] });
+    expect([...without.amounts].sort()).toStrictEqual(before);
+    // The release has no prompt-pay record for the state: the section states no rule's days, rate or statute.
+    expect(content.interest).toMatchObject({ days_to_pay: null, annual_rate_percent: null, statute: null, total_cents: null });
+    const facts = narrativeFacts(content);
+    expect([...facts.numbers].every((value) => /^\d+(\.\d+)?$/.test(value))).toBe(true);
+    expect([...facts.percents]).toStrictEqual([]);
+  });
+
+  it('reads a key a stored version leaves out as the null it stands for', () => {
+    const content = assemblePacket(
+      assemblyInput({ asOf: '2026-05-01', lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' })], interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } }),
+    );
+    const stored = JSON.parse(JSON.stringify(content)) as PacketContentV2;
+    const nulled = JSON.parse(JSON.stringify(content)) as { pattern: { codes: Record<string, unknown>[] }; lines: Record<string, unknown>[]; interest: Record<string, unknown> };
+    const absent = JSON.parse(JSON.stringify(content)) as typeof nulled;
+    for (const [target, key] of [
+      [(value: typeof nulled) => value.pattern.codes[0], 'contract_amount_cents'],
+      [(value: typeof nulled) => value.lines[0], 'received_on'],
+      [(value: typeof nulled) => value.interest, 'days_to_pay'],
+    ] as const) {
+      const inNulled = target(nulled);
+      const inAbsent = target(absent);
+      if (inNulled === undefined || inAbsent === undefined) {
+        throw new Error('the stored version holds the part');
+      }
+      inNulled[key] = null;
+      delete inAbsent[key];
+    }
+    const read = (value: unknown) => sorted(narrativeFacts(value as PacketContentV2));
+    expect(read(absent)).toStrictEqual(read(nulled));
+    expect(read(nulled)).not.toStrictEqual(read(stored));
+    expect(read(absent).amounts.every((value) => typeof value === 'string')).toBe(true);
   });
 
   it('holds none of the deadline and calculation figures for a tp-packet/1 version, which states none', () => {

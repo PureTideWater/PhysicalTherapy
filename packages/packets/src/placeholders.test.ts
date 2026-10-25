@@ -58,4 +58,31 @@ describe('insertIdentifiers', () => {
       }),
     );
   });
+
+  it('fills every identifier of every row, the patient control number included, and says what is missing in the export’s words', () => {
+    expect(NOT_ON_RECORD).toBe('not on the remittance');
+    const partial = new Map<number, RowIdentifiers>([...identifiers].map(([row, found]) => [row, row === 2 ? { ...found, patient_control_number: null } : found]));
+    expect(insertIdentifiers(content, 'A [3].', partial).lines.map((line) => [line.claim_control_number, line.patient_control_number, line.patient_name, line.member_id])).toEqual([
+      ['SYNCCN1', 'SYNPCN1', 'SYNTHETIC PATIENT 1', 'not on the remittance'],
+      ['SYNCCN2', 'not on the remittance', 'SYNTHETIC PATIENT 2', 'not on the remittance'],
+      ['SYNCCN3', 'SYNPCN3', 'SYNTHETIC PATIENT 3', 'not on the remittance'],
+    ]);
+  });
+
+  it('refuses with an IdentifierInsertionError that says which rule the export broke, never which identifier', () => {
+    const thrown = (insert: () => unknown) => {
+      try {
+        insert();
+      } catch (error) {
+        return error;
+      }
+      throw new Error('expected the insertion to be refused');
+    };
+    const unknown = thrown(() => fillPlaceholders('{{patient_name:9}}', identifiers));
+    expect(unknown).toBeInstanceOf(IdentifierInsertionError);
+    expect(unknown).toMatchObject({ name: 'IdentifierInsertionError', message: 'a placeholder names no identifier of the schedule' });
+    const missing = thrown(() => insertIdentifiers(content, 'A [3].', new Map([...identifiers].slice(0, 2))));
+    expect(missing).toBeInstanceOf(IdentifierInsertionError);
+    expect(missing).toMatchObject({ name: 'IdentifierInsertionError', message: 'every schedule row is inserted from its own canonical record' });
+  });
 });

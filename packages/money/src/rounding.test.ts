@@ -1,11 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { cents } from './cents';
+import { MoneyError, cents } from './cents';
 import { type Decimal, centsToDecimal, decimal, rate } from './decimal';
 import {
   DEFAULT_ROUNDING,
   ROUNDING_RULES,
+  type RoundingRule,
   addUnrounded,
   multiplyCents,
   roundOnce,
@@ -102,6 +103,19 @@ describe('roundToCents', () => {
         expect(roundToCents(unroundedCents(value.negated()), rule)).toBe(0n - roundToCents(value, rule));
       }),
     );
+  });
+});
+
+describe('roundToCents refuses an unknown rule', () => {
+  it('with a MoneyError naming the three rules', () => {
+    let thrown: unknown;
+    try {
+      roundToCents(unroundedCents(decimal('2.5')), 'ROUND_UP' as RoundingRule);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(MoneyError);
+    expect((thrown as MoneyError).message).toBe('rounding rule is not one of HALF_UP_CENT, HALF_EVEN_CENT or TRUNCATE');
   });
 });
 

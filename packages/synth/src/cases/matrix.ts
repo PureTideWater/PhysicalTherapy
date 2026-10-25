@@ -287,4 +287,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'CI-08', title: 'Lint in memory-bounded groups', assertion: "The groups cover every linted file exactly once; the scheduler fits 16 GiB and 8 GiB hosts and always runs at least one group; any group's warning or error fails the run" },
   { id: 'CI-09', title: "The domain model's approval as its own check", assertion: '`domain model` runs `--check --strict --require-approval`; the database suite carries no approval case' },
   { id: 'CI-10', title: 'A timeout on every job', assertion: 'Every job of every workflow has the timeout its table names' },
+  { id: 'CI-15', title: 'The mutation canary', assertion: 'In every shard, each of its five cases reports its expected status before any score' },
+  { id: 'CI-16', title: 'The mutation gate', assertion: "Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure" },
+  { id: 'CI-17', title: 'Mutation where the money code changed', assertion: "A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none" },
 ];
