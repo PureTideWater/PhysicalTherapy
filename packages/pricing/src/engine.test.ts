@@ -140,6 +140,20 @@ describe('step 1, the agreement', () => {
     expect(result.trace.agreement?.matching_rate_record_ids).toEqual(['rr-a', 'rr-b']);
   });
 
+  it('records the matching rate records of an ambiguous rate only, none for a code with no rate', () => {
+    const result = priceOne({ agreement: { outcome: 'NO_RATE_FOR_CODE', mapping, version } });
+    expect(result.trace.agreement).toEqual({
+      outcome: 'NO_RATE_FOR_CODE',
+      mapping_id: 'map-synth-1',
+      mapping_kind: 'contract',
+      contract_version_id: 'cv-synth-1',
+      contract_version_status: 'signed_off',
+      rate_record_id: null,
+      matching_rate_record_ids: [],
+      windows: null,
+    });
+  });
+
   it('is ENGINE_ERROR when the resolver failed, or when a version that is not signed off reaches it (CON-07)', () => {
     expect(reasonOf(priceOne({ agreement: { outcome: 'RESOLUTION_FAILED' } }))).toBe('ENGINE_ERROR agreement_unresolved');
     for (const status of ['draft', 'proposed', 'approved', 'superseded'] as const) {
@@ -254,6 +268,14 @@ describe('step 2, the base amount by method', () => {
     const noFactor = releaseVariant(base, (records) => records.filter((record) => record.record_type !== 'conversion_factor'));
     expect(reasonOf(priceOne({}, {}, noFactor))).toBe('ENGINE_ERROR no_conversion_factor');
     expect(gpci.record_type).toBe('pfs_gpci');
+  });
+
+  it('reads no setting for a line with no place of service, whatever the settings object inherits', () => {
+    // Settings read from JSON have no inherited keys; an object that inherits one named "null" still gives none.
+    const inherits = Object.assign(Object.create({ null: 'non_facility' }) as Record<string, 'facility' | 'non_facility'>, { '11': 'non_facility' as const });
+    const result = unpricedLine(priceOne({ placeOfService: null }, { settings: practiceSettings({ placeOfServiceSettings: inherits }) }));
+    expect(reasonOf(result)).toBe('ENGINE_ERROR place_of_service_unmapped');
+    expect(result.trace.steps.fee_schedule?.setting).toBeNull();
   });
 
   it('is ENGINE_ERROR when the practice ZIP needs its ZIP+4 to name a locality, and records the flag either way', () => {
@@ -559,6 +581,33 @@ describe('step 3, the NCCI edits', () => {
     expect(flags([{ procedureCode: '97035' }, { procedureCode: '97026', modifiers: ['GP', 'XU'] }], ncci(['97035', '97026']))).toEqual([[], [1]]);
   });
 
+  it('lists a line’s edits, and its review flags, in line order whatever order the lines arrive in', () => {
+    const agreement = ncci(['97140', '97530']);
+    const results = price(
+      pricingInput(release, [
+        lineFacts({ lineNo: 3, procedureCode: '97140', agreement }),
+        lineFacts({ lineNo: 1, procedureCode: '97530', agreement }),
+        lineFacts({ lineNo: 2, procedureCode: '97140', agreement }),
+      ]),
+    );
+    const flagged = pricedLine(results[0]);
+    expect(flagged.lineNo).toBe(1);
+    expect(flagged.reviewFlags.map((flag) => flag.column1LineNo)).toEqual([2, 3]);
+    expect(flagged.trace.steps.ncci_ptp?.edits.map((edit) => edit.column1_line_no)).toEqual([2, 3]);
+    expect(flagged.trace.outcome).toMatchObject({ review_flags: [{ flag: 'NCCI_PTP', column1_line_no: 2 }, { flag: 'NCCI_PTP', column1_line_no: 3 }] });
+  });
+
+  it('never pairs a line with itself, even under an edit of its code with itself', () => {
+    const edit = base.records.find((record) => record.record_type === 'ncci_ptp' && keyOf(record).column1 === '97140') as RuleRecord;
+    const selfPair = releaseVariant(base, (records) => [...records, ruleRecordLike(edit, { key: { column1: '97530', column2: '97530' } })]);
+    const alone = pricedLine(priceOne({ procedureCode: '97530', agreement: ncci(['97530']) }, {}, selfPair));
+    expect(alone.reviewFlags).toEqual([]);
+    expect(alone.trace.steps.ncci_ptp).toEqual({ edits: [] });
+    // Another line of the code is paired.
+    const two = price(pricingInput(selfPair, [lineFacts({ procedureCode: '97530', agreement: ncci(['97530']) }), lineFacts({ lineNo: 2, procedureCode: '97530', agreement: ncci(['97530']) })]));
+    expect(two.map((result) => pricedLine(result).reviewFlags.map((flag) => flag.column1LineNo))).toEqual([[2], [1]]);
+  });
+
   it('counts a billed column-1 line whatever its outcome, checks only lines whose own terms have NCCI on, and lists the edits in line order', () => {
     const stopped = price(
       pricingInput(release, [
@@ -671,6 +720,22 @@ describe('step 4a, the multiple procedure reduction', () => {
     ]);
   });
 
+  it('prices a day whose lines with the flag on have no always-therapy code, ranking nothing', () => {
+    const lines = price(pricingInput(release, [lineFacts({ procedureCode: '97161', agreement: mppr }), lineFacts({ lineNo: 2, procedureCode: '97161', agreement: mppr })])).map(pricedLine);
+    for (const line of lines) {
+      expect(line.trace.steps.adjustments).toEqual([
+        expect.objectContaining({ name: 'mppr', in_pool: false, code_record: null, ranking: [], reductions: [], before_cents: line.baseCents.toString(), after_cents: line.baseCents.toString() }),
+      ]);
+    }
+  });
+
+  it('names the code’s mppr_rate record in each line’s trace, and none for a code without one', () => {
+    const [ranked, unranked] = price(pricingInput(release, [lineFacts({ procedureCode: '97110', agreement: mppr }), lineFacts({ lineNo: 2, procedureCode: '97161', agreement: mppr })])).map(pricedLine);
+    const codeRecord = base.records.find((record) => record.record_type === 'mppr_rate' && keyOf(record).hcpcs === '97110') as RuleRecord;
+    expect(ranked?.trace.steps.adjustments[0]).toMatchObject({ name: 'mppr', in_pool: true, code_record: release.ref(codeRecord), general_record: null, reduction_percent: '40' });
+    expect(unranked?.trace.steps.adjustments[0]).toMatchObject({ name: 'mppr', in_pool: false, code_record: null, general_record: null, reduction_percent: null, ranking: [] });
+  });
+
   it('stops every line of the day with ENGINE_ERROR when the pool cannot be known', () => {
     const rate = base.records.find((record) => record.record_type === 'mppr_rate' && keyOf(record).hcpcs === '97140') as RuleRecord;
     const twice = releaseVariant(base, (records) => [...records, ruleRecordLike(rate, { effective_from: '2026-02-01' })]);
@@ -688,6 +753,16 @@ describe('step 4b, the assistant reduction', () => {
     }
     const plain = pricedLine(priceOne({ agreement: assistant }));
     expect(amounts(plain)).toEqual([['assistant_reduction', '2112', '2112']]);
+  });
+
+  it('records the assistant modifiers on the line, and none on a line without them', () => {
+    const assisted = contractAgreement({ terms: percentTerms({ flags: { apply_assistant_reduction: true } }) });
+    const both = pricedLine(priceOne({ modifiers: ['GP', 'CO', 'CQ'], agreement: assisted }));
+    expect(both.trace.steps.adjustments[0]).toMatchObject({ name: 'assistant_reduction', modifiers_present: ['CQ', 'CO'] });
+    const one = pricedLine(priceOne({ modifiers: ['CQ'], agreement: assisted }));
+    expect(one.trace.steps.adjustments[0]).toMatchObject({ name: 'assistant_reduction', modifiers_present: ['CQ'], records: [expect.objectContaining({ modifier: 'CQ', payment_percent: '77' })] });
+    const neither = pricedLine(priceOne({ agreement: assisted }));
+    expect(neither.trace.steps.adjustments[0]).toEqual({ name: 'assistant_reduction', before_cents: '2112', after_cents: '2112', modifiers_present: [], records: [] });
   });
 
   it('is not applied with the flag off', () => {
@@ -726,6 +801,12 @@ describe('step 4c, sequestration', () => {
     expect(pricedLine(priceOne({ agreement: sequestered }, {}, suspended)).expectedUnroundedCents.toString()).toBe('2112');
     const none = releaseVariant(base, (records) => records.filter((record) => record.record_type !== 'sequestration'));
     expect(reasonOf(priceOne({ agreement: sequestered }, {}, none))).toBe('ENGINE_ERROR no_sequestration_record');
+  });
+
+  it('names the sequestration step when its record is missing', () => {
+    const none = releaseVariant(base, (records) => records.filter((record) => record.record_type !== 'sequestration'));
+    const result = unpricedLine(priceOne({ agreement: sequestered }, {}, none));
+    expect(result.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'no_sequestration_record', step: 'sequestration' });
   });
 });
 
@@ -818,6 +899,14 @@ describe('step 6, one rounding', () => {
     expect(results[0]?.trace.steps.rounding?.origin).toBe('rate_record');
   });
 
+  it('stops a line at the rounding step for a rule it does not know, never a guessed rounding', () => {
+    // @tp/contracts gives HALF_UP_CENT, HALF_EVEN_CENT, TRUNCATE or null; anything else is not rounded.
+    const unknown = contractAgreement({ terms: percentTerms({ rounding: 'NEAREST' as never }) });
+    const result = unpricedLine(priceOne({ agreement: unknown }));
+    expect(result.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'unexpected', step: 'rounding' });
+    expect(result.trace.steps.rounding).toBeNull();
+  });
+
   it('takes the practice default when the record is silent, and HALF_UP_CENT when that is unset', () => {
     const practice = pricedLine(priceOne({ procedureCode: '97140', agreement: half(null) }, { settings: practiceSettings({ defaultRounding: 'HALF_EVEN_CENT' }) }));
     expect([practice.rounding, practice.expectedAllowedCents, practice.trace.steps.rounding?.origin]).toEqual(['HALF_EVEN_CENT', 3072n, 'practice_default']);
@@ -848,6 +937,16 @@ describe('step 8, the dispute window', () => {
   it('has no window without a remittance date, or for a silent contract with no commercial default in the release', () => {
     expect(pricedLine(priceOne({}, { claim: { remittanceDate: null } })).window).toEqual({ endsOn: null, status: 'NO_WINDOW' });
     expect(pricedLine(priceOne({ agreement: contractAgreement() })).window).toEqual({ endsOn: null, status: 'NO_WINDOW' });
+  });
+
+  it('has no window without a remittance date even when the contract names its window, and records a contract’s window in full', () => {
+    const agreement = contractAgreement({ windows: { timely_filing_days: 180, dispute_window_days: 90, appeal_levels: [] } });
+    const none = pricedLine(priceOne({ agreement }, { claim: { remittanceDate: null } }));
+    expect(none.window).toEqual({ endsOn: null, status: 'NO_WINDOW' });
+    expect(none.trace.steps.window).toEqual({ source: null, record: null, length: null, unit: null, measured_from: null, from_date: null, ends_on: null, as_of: '2026-10-15', status: 'NO_WINDOW' });
+    const open = pricedLine(priceOne({ agreement }, { asOf: '2026-06-30' }));
+    expect(open.trace.steps.window).toEqual({ source: 'contract', record: null, length: 90, unit: 'days', measured_from: 'remittance_date', from_date: '2026-04-01', ends_on: '2026-06-30', as_of: '2026-06-30', status: 'OPEN' });
+    expect(parseTrace(JSON.parse(JSON.stringify(open.trace))).steps.window).toEqual(open.trace.steps.window);
   });
 
   it('takes the release’s commercial default for a silent contract, measured as the record says', () => {
@@ -906,6 +1005,52 @@ describe('inputs the engine refuses', () => {
     const result = unpricedLine(priceOne(facts));
     expect(reasonOf(result)).toBe('ENGINE_ERROR invalid_line_facts');
     expect(result.trace.agreement).toBeNull();
+  });
+});
+
+describe('inputs the engine refuses, read as whole text', () => {
+  it.each<[string, Partial<LineFacts>]>([
+    ['a procedure code with a character before it', { procedureCode: 'x97110' }],
+    ['a procedure code six characters long', { procedureCode: '971100' }],
+    ['a procedure code with a character after it', { procedureCode: '97110X' }],
+    ['a modifier with a character before it', { modifiers: ['XGP'] }],
+    ['a modifier with a character after it', { modifiers: ['GPX'] }],
+    ['a malformed modifier beside a good one', { modifiers: ['GP', 'G'] }],
+    ['a place of service with a character before it', { placeOfService: 'x11' }],
+    ['a place of service with a character after it', { placeOfService: '11x' }],
+  ])('is ENGINE_ERROR invalid_line_facts for %s', (_label, facts) => {
+    const result = unpricedLine(priceOne(facts));
+    expect(reasonOf(result)).toBe('ENGINE_ERROR invalid_line_facts');
+    expect(result.trace.outcome).toEqual({ result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'invalid_line_facts', step: 'input' });
+  });
+
+  it('prices a line with four modifiers, the most a line carries', () => {
+    expect(reasonOf(priceOne({ modifiers: ['GP', '59', 'KX', 'XU'], agreement: contractAgreement() }))).toBe('priced');
+    expect(reasonOf(priceOne({ modifiers: ['GP', '59', 'KX', 'XU', 'XS'], agreement: contractAgreement() }))).toBe('ENGINE_ERROR invalid_line_facts');
+  });
+
+  it('is ENGINE_ERROR invalid_settings for a ZIP with anything before or after its five digits', () => {
+    for (const zip of ['x00011', '100011', '00011x', '000110']) {
+      expect(reasonOf(priceOne({}, { settings: practiceSettings({ zip }) })), zip).toBe('ENGINE_ERROR invalid_settings');
+    }
+  });
+
+  it('is ENGINE_ERROR units_not_whole for units with anything before or after the number', () => {
+    for (const units of ['x1', '-1', '1x', '1.5x', '1.0.0', ' 1', '1 ']) {
+      expect(reasonOf(priceOne({ units, agreement: contractAgreement() })), units).toBe('ENGINE_ERROR units_not_whole');
+    }
+  });
+
+  it('locks the basis year only for LOCKED and four digits, the whole text; any other text reads the records in force on the service date', () => {
+    // @tp/contracts gives CURRENT or LOCKED:<year> only (terms.ts); the engine reads nothing else as a lock.
+    const priced = (yearBasis: string) => pricedLine(priceOne({ agreement: contractAgreement({ terms: percentTerms({ yearBasis: yearBasis as never }) }) }, {}, syntheticRelease(900002)));
+    const current = priced('CURRENT');
+    for (const yearBasis of ['LOCKED:2025X', 'XLOCKED:2025', 'LOCKED:202', 'LOCKED:20250', 'locked:2025']) {
+      const line = priced(yearBasis);
+      expect(line.trace.steps.fee_schedule, yearBasis).toMatchObject({ basis_year: 2026, lookup: 'in_force_on_service_date' });
+      expect(line.expectedUnroundedCents.toString(), yearBasis).toBe(current.expectedUnroundedCents.toString());
+    }
+    expect(priced('LOCKED:2025').trace.steps.fee_schedule).toMatchObject({ basis_year: 2025, lookup: 'latest_in_basis_year' });
   });
 });
 

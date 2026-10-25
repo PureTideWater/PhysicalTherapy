@@ -1,10 +1,12 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { UNPRICED_REASONS, recompute } from '@tp/pricing';
-import { describe, expect, it } from 'vitest';
+import { type IndexedRelease, UNPRICED_REASONS, indexRelease, price, recompute } from '@tp/pricing';
+import { type ReleaseContents, readRelease } from '@tp/rules/content';
+import { afterAll, describe, expect, it } from 'vitest';
 
-import { type EngineDifference, engineDifferences, runEngineOnGolden } from './engine';
+import { repositoryRoot } from '../content-files';
+import { type EngineDifference, type EngineRun, GOLDEN_CLAIMS_DIR, type GoldenClaim, engineDifferences, goldenPricingInput, readGoldenClaims } from './engine';
 
 /**
  * The pricing oracle against the engine (PRD section 18; milestone 5's done check: "every golden line
@@ -15,6 +17,12 @@ import { type EngineDifference, engineDifferences, runEngineOnGolden } from './e
  * a difference fails, and is explained with the golden-diff skill, never by editing a golden file.
  * Every line's trace must recompute (PRC-16). With `pnpm test:golden --report` (TP_GOLDEN_REPORT) the
  * differences are written to fixtures/golden/.report/engine.{json,md} beside the worksheet's.
+ *
+ * Each claim is priced in a test of its own, and nothing the engine computes for one claim is reused by another's
+ * test (docs/adr/0066, Part 4): mutation testing credits each mutant to the tests that ran its code (Stryker's perTest
+ * coverage) and reruns only those, so a claim priced once for the whole file, or a release index shared between
+ * claims, would leave every other claim's assertions out of that mutant's run. The last test holds the file to the
+ * claims under fixtures/golden, each priced in exactly one test, and to the breadth of lines those tests check.
  */
 
 interface RecomputeDifference {
@@ -51,8 +59,12 @@ function writeReport(directory: string, report: { files: number; cases: number; 
   writeFileSync(path.join(directory, 'engine.md'), body.join('\n'));
 }
 
-describe('golden lines priced by the engine', () => {
-  const runs = runEngineOnGolden();
+/**
+ * One golden claim priced, in the test that checks it: its run, its lines, and every way its stored traces fail to
+ * recompute. `release` is the release the claim names, indexed for this claim alone.
+ */
+function pricedClaim(file: string, claim: GoldenClaim, release: IndexedRelease) {
+  const runs: EngineRun[] = [{ file, claim, results: price({ ...goldenPricingInput(claim), release }) }];
   const results = runs.flatMap((run) => run.results.map((result) => ({ run, result })));
 
   /** PRC-16: each line's stored trace, read back as JSON, recomputes to the stored result. */
@@ -80,52 +92,61 @@ describe('golden lines priced by the engine', () => {
     }
     return found;
   });
+  return { runs, results, recomputeDifferences };
+}
 
-  it('match every golden line to the cent, field by field, variance and window included, though no line is specialist-verified yet', () => {
-    const differences = engineDifferences(runs);
-    const reportDir = process.env.TP_GOLDEN_REPORT;
-    if (reportDir !== undefined && reportDir !== '') {
-      writeReport(reportDir, {
-        files: runs.length,
-        cases: runs.length,
-        lines: results.length,
-        unverified: runs.filter((run) => !run.claim.provenance.specialist_verified).length,
-        differences,
-        recompute: recomputeDifferences,
-      });
+describe('golden lines priced by the engine', () => {
+  // Read once, while the tests are collected: the golden claims and each release they name, as files. Nothing here
+  // runs @tp/pricing, which each claim's test runs for that claim alone.
+  const claims = readGoldenClaims();
+  const releaseFiles = new Map<string, ReleaseContents>([...new Set(claims.map(({ claim }) => claim.inputs.release.dir))].map((dir) => [dir, readRelease(path.join(repositoryRoot, dir))]));
+
+  /**
+   * The release a claim names, indexed by that claim's test. goldenPricingInput checks the release (goldenRelease: its
+   * files verify, and its number and manifest hash are the claim's), but keeps one index for every claim that names it,
+   * and indexRelease and its record references are the engine's code; the trace's release, which each test asserts,
+   * is this index's.
+   */
+  function claimRelease(claim: GoldenClaim): IndexedRelease {
+    const release = releaseFiles.get(claim.inputs.release.dir) as ReleaseContents;
+    return indexRelease({ releaseNo: release.manifest.release, manifestSha256: release.manifestSha256, records: release.records.map((located) => located.record) });
+  }
+
+  /** With `pnpm test:golden --report`, each claim's differences, which the report gathers once every claim has run. */
+  const reportDir = process.env.TP_GOLDEN_REPORT;
+  const report = reportDir !== undefined && reportDir !== '' ? { files: 0, cases: 0, lines: 0, unverified: 0, differences: [] as EngineDifference[], recompute: [] as RecomputeDifference[] } : null;
+  afterAll(() => {
+    if (reportDir !== undefined && report !== null) {
+      writeReport(reportDir, report);
     }
-    // The hundred lines of milestone 5, the lines added for its later branches, and milestone 7's two hundred across five fixture payers.
-    expect(results.length).toBeGreaterThanOrEqual(200);
+  });
+
+  it.each(claims)('$claim.id: every line to the cent and field by field, recomputed from its trace, under the release the claim names, its ZIP+4 read as PRC-21 says', ({ file, claim }) => {
+    const { runs, results, recomputeDifferences } = pricedClaim(file, claim, claimRelease(claim));
+
+    // Match every golden line to the cent, field by field, variance and window included, though no line is specialist-verified yet.
+    const differences = engineDifferences(runs);
+    if (report !== null) {
+      report.files += runs.length;
+      report.cases += runs.length;
+      report.lines += results.length;
+      report.unverified += runs.filter((run) => !run.claim.provenance.specialist_verified).length;
+      report.differences.push(...differences);
+      report.recompute.push(...recomputeDifferences);
+    }
     expect(results.length).toBe(runs.reduce((count, run) => count + run.claim.expected.lines.length, 0));
     expect(differences).toEqual([]);
-  });
 
-  it('recompute from their traces alone to the stored amount, every line (PRC-16)', () => {
+    // Recompute from their traces alone to the stored amount, every line (PRC-16).
     expect(recomputeDifferences).toEqual([]);
-    expect(results.filter(({ result }) => result.outcome === 'priced').length).toBeGreaterThan(200);
-    // Every method that prices, and the per-visit zero lines and review flags, recompute from their traces.
-    const priced = results.flatMap(({ result }) => (result.outcome === 'priced' ? [result] : []));
-    expect(new Set(priced.map((result) => result.method))).toEqual(new Set(['FIXED_SCHEDULE', 'PERCENT_OF_MEDICARE', 'LESSER_OF', 'PER_VISIT']));
-    expect(priced.some((result) => result.reviewFlags.length > 0)).toBe(true);
-    expect(priced.some((result) => result.adjustments.some((item) => item.name === 'contract_adjustment'))).toBe(true);
-  });
 
-  it('produce every reason a golden line can hold', () => {
-    const reasons = new Set(results.flatMap(({ result }) => (result.outcome === 'unpriced' ? [result.reason] : [])));
-    // A golden line is never an engine error; the unit tests produce ENGINE_ERROR.
-    expect([...reasons].sort()).toEqual(UNPRICED_REASONS.filter((reason) => reason !== 'ENGINE_ERROR').sort());
-  });
-
-  it('price under the release each claim names, recorded in every trace', () => {
+    // Price under the release each claim names, recorded in every trace.
     for (const { run, result } of results) {
       expect(result.trace.release, run.claim.id).toEqual({ number: run.claim.inputs.release.number, manifest_sha256: run.claim.inputs.release.manifest_sha256 });
     }
-  });
 
-  it('price a ZIP that spans localities at the range holding its ZIP+4, and read no ZIP+4 of a ZIP with one locality (PRC-21; docs/adr/0064)', () => {
+    // Price a ZIP that spans localities at the range holding its ZIP+4, and read no ZIP+4 of a ZIP with one locality (PRC-21; docs/adr/0064).
     const given = results.filter(({ run }) => run.claim.inputs.practice_settings.zip_plus_four !== undefined);
-    // G196-G199: 0001 and 5000 open a range, 8999 closes one, and 1234 is on a ZIP the ZIP5 record does not flag.
-    expect(new Set(given.map(({ run }) => run.claim.id))).toEqual(new Set(['G196', 'G197', 'G198', 'G199']));
     const read: string[] = [];
     for (const { run, result } of given) {
       const zipPlusFour = run.claim.inputs.practice_settings.zip_plus_four;
@@ -143,11 +164,43 @@ describe('golden lines priced by the engine', () => {
         expect(locality?.plus_four, run.claim.id).toBeUndefined();
       }
     }
-    expect(read.sort()).toEqual(['G196 01', 'G197 02', 'G199 02']);
+    // G196, G197 and G199 read the range holding their ZIP+4; G198's ZIP has one locality.
+    expect(read.sort()).toEqual(['G196 01', 'G197 02', 'G199 02'].filter((entry) => entry.startsWith(`${claim.id} `)));
     // Every other golden line's trace is as the engine wrote it before the ZIP+4: no ZIP+4 in the settings, no range.
     for (const { run, result } of results.filter(({ run }) => run.claim.inputs.practice_settings.zip_plus_four === undefined)) {
       expect(result.trace.settings, run.claim.id).not.toHaveProperty('zip_plus_four');
       expect(result.trace.steps.fee_schedule?.locality?.plus_four, run.claim.id).toBeUndefined();
     }
+  });
+
+  it('prices every golden claim in exactly one test, and the claims hold every line, method, reason and ZIP+4 their tests check', ({ task }) => {
+    // The claim ids under fixtures/golden, read here apart from readGoldenClaims, against the tests this file registered:
+    // one test per claim, named by its id.
+    const directory = path.join(repositoryRoot, GOLDEN_CLAIMS_DIR);
+    const onDisk = readdirSync(directory)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => (JSON.parse(readFileSync(path.join(directory, name), 'utf8')) as { id: string }).id);
+    const tested = (task.suite?.tasks ?? []).filter((item) => item.type === 'test' && item.id !== task.id).map((item) => item.name.slice(0, item.name.indexOf(':')));
+    expect(onDisk.length).toBe(claims.length);
+    expect(new Set(onDisk).size).toBe(onDisk.length);
+    expect(tested.sort()).toEqual(onDisk.sort());
+
+    // Each claim's test holds the engine to these lines field by field (outcome, reason, method, review flags and
+    // adjustments, in the result and its trace), so what the lines hold the engine produced.
+    const lines = claims.flatMap(({ claim }) => claim.expected.lines);
+    // The hundred lines of milestone 5, the lines added for its later branches, and milestone 7's two hundred across five fixture payers.
+    expect(lines.length).toBeGreaterThanOrEqual(200);
+    expect(lines.filter((line) => line.outcome === 'priced').length).toBeGreaterThan(200);
+    // Every method that prices, and the per-visit zero lines and review flags, recompute from their traces.
+    const priced = lines.filter((line) => line.outcome === 'priced');
+    expect(new Set(priced.map((line) => line.method))).toEqual(new Set(['FIXED_SCHEDULE', 'PERCENT_OF_MEDICARE', 'LESSER_OF', 'PER_VISIT']));
+    expect(priced.some((line) => (line.review_flags ?? []).length > 0)).toBe(true);
+    expect(priced.some((line) => (line.adjustments ?? []).some((item) => item.name === 'contract_adjustment'))).toBe(true);
+    // Produce every reason a golden line can hold.
+    const reasons = new Set(lines.flatMap((line) => (line.outcome === 'unpriced' ? [line.unpriced_reason] : [])));
+    // A golden line is never an engine error; the unit tests produce ENGINE_ERROR.
+    expect([...reasons].sort()).toEqual(UNPRICED_REASONS.filter((reason) => reason !== 'ENGINE_ERROR').sort());
+    // G196-G199: 0001 and 5000 open a range, 8999 closes one, and 1234 is on a ZIP the ZIP5 record does not flag.
+    expect(new Set(claims.filter(({ claim }) => claim.inputs.practice_settings.zip_plus_four !== undefined).map(({ claim }) => claim.id))).toEqual(new Set(['G196', 'G197', 'G198', 'G199']));
   });
 });
