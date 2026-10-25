@@ -85,7 +85,9 @@ const CI = '.github/workflows/ci.yml';
 const RELEASE = '.github/workflows/release.yml';
 /**
  * The route tests run from one shared module in twelve files, each a slice of the route registry (docs/adr/0066, Part 1):
- * the first file stands for them, and the title is held in the module it imports.
+ * the first file stands for them. It calls the module that holds the titles (controls.test.ts holds every definedIn
+ * file to that), and its slice holds a route of each kind the named titles are generated for, an authenticated mutation
+ * and a practice route among them (route-tests/partition.test.ts); the twelve together hold every route.
  */
 const ROUTE_TESTS = 'apps/web/src/lib/routes/route-tests/route-tests.0.db.test.ts';
 const ROUTE_TESTS_DEFINED_IN = 'apps/web/src/lib/routes/route-tests/define.ts';

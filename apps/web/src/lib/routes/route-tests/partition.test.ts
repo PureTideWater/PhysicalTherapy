@@ -68,6 +68,17 @@ describe('the twelve route-test files', () => {
     }
   });
 
+  it('give route-tests.0.db.test.ts, which the compliance evidence names for the generated cases, a route of each kind they are generated for', () => {
+    // packages/compliance/src/controls.ts names this file for the MFA, idle-session, persona and cross-tenant cases (every
+    // authenticated route), the CSRF case (every authenticated mutation) and the internal-role case (every practice route).
+    const first = routesOf(0);
+    expect([
+      first.some((route) => route.access.kind !== 'public'),
+      first.some((route) => route.access.kind !== 'public' && route.mutation),
+      first.some((route) => route.access.kind === 'practice'),
+    ]).toEqual([true, true, true]);
+  });
+
   it('refuses a file outside 0 to 11', () => {
     for (const file of [-1, ROUTE_TEST_FILES, 1.5, Number.NaN]) {
       expect(() => routesOf(file)).toThrow(/no route-test file/);

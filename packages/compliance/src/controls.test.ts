@@ -63,10 +63,44 @@ function relativeImports(file: string, content: string, files: Files): string[] 
   });
 }
 
+/** The function names a module exports: `export function name` and `export const name =`. */
+function exportedFunctions(content: string): Set<string> {
+  return new Set([...content.matchAll(/^\s*export\s+(?:async\s+)?(?:function\s*\*?\s*(\w+)|const\s+(\w+)\s*=)/gm)].map((match) => match[1] ?? match[2] ?? ''));
+}
+
+/**
+ * Whether a file calls a function `module` exports, through a value import from it: a named import, by its local name
+ * (`defineRouteTests(0)`, or `define(0)` for `{ defineRouteTests as define }`), or a namespace import
+ * (`routes.defineRouteTests(0)`). Importing the module alone, or calling a same-named function from elsewhere, is not.
+ */
+function callsExportOf(file: string, content: string, files: Files, module: string): boolean {
+  const exported = exportedFunctions(files.read(module));
+  const statement = /^\s*import\s+(?!type\b)([^'";]*?)\s*\bfrom\s+['"](\.{1,2}\/[^'"]+)['"];?/gm;
+  const locals = [...content.matchAll(statement)].flatMap((match) => {
+    const target = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[2] ?? ''));
+    if (![target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`].includes(module)) return [];
+    const clause = match[1] ?? '';
+    const named = (/\{([^}]*)\}/.exec(clause)?.[1] ?? '')
+      .split(',')
+      .map((part) => part.trim())
+      .flatMap((part) => {
+        // An inline type import binds no value to call.
+        if (/^type\s/.test(part)) return [];
+        const [imported = '', local = imported] = part.split(/\s+as\s+/);
+        return exported.has(imported) ? [`\\b${local}`] : [];
+      });
+    const namespace = /\*\s+as\s+(\w+)/.exec(clause)?.[1];
+    return [...named, ...(namespace === undefined ? [] : [...exported].map((name) => `\\b${namespace}\\.${name}`))];
+  });
+  const body = content.replace(statement, '');
+  return locals.some((callee) => new RegExp(`${callee}\\s*\\(`).test(body));
+}
+
 /**
  * Why a test source is not evidence: its file is missing, is not of its kind's file type or lacks the test's title.
  * A test defined in a shared module (definedIn, the route tests' define.ts) keeps every rule on its file, which must
- * also import that module, and the title must be in the module; without definedIn the title must be in the file.
+ * also import that module and call a function it exports (so the file runs the module's tests, not only loads it),
+ * and the title must be in the module; without definedIn the title must be in the file.
  */
 function evidenceProblems(source: EvidenceSource, files: Files): string[] {
   if (source.kind !== 'database_test' && source.kind !== 'unit_test' && source.kind !== 'e2e_test' && source.kind !== 'cdk_assertion') return [];
@@ -81,6 +115,7 @@ function evidenceProblems(source: EvidenceSource, files: Files): string[] {
   }
   if (!files.exists(source.definedIn)) return [...problems, source.definedIn];
   if (!relativeImports(source.file, files.read(source.file), files).includes(source.definedIn)) problems.push(`${source.file} does not import ${source.definedIn}`);
+  else if (!callsExportOf(source.file, files.read(source.file), files, source.definedIn)) problems.push(`${source.file} calls no function ${source.definedIn} exports`);
   if (!hasTestTitled(files.read(source.definedIn), source.test)) problems.push(`${source.definedIn} :: ${source.test}`);
   return problems;
 }
@@ -131,6 +166,15 @@ describe('the SOC 2 Type I evidence checklist', () => {
       'apps/web/src/lib/routes/route-tests/define.ts': "export function defineRouteTests(file: number) {\n  describe('a route', () => {\n    it('refuses a user without MFA', () => {});\n  });\n}\n",
       'apps/web/src/lib/routes/route-tests/other.ts': 'export function defineRouteTests(file: number) {}\n',
       'apps/web/src/lib/routes/route-tests/define-elsewhere.ts': "export function defineRouteTests(file: number) {\n  it('refuses a user without MFA', () => {});\n}\n",
+      // Imports the module and never calls it: the file runs none of its tests.
+      'apps/web/src/lib/routes/route-tests/route-tests.3.db.test.ts': "import { defineRouteTests } from './define';\n",
+      // Calls it under another local name, or through a namespace: both run its tests.
+      'apps/web/src/lib/routes/route-tests/route-tests.4.db.test.ts': "import { defineRouteTests as define } from './define';\n\ndefine(4);\n",
+      'apps/web/src/lib/routes/route-tests/route-tests.5.db.test.ts': "import * as routes from './define';\n\nroutes.defineRouteTests(5);\n",
+      // Loads the module for its effects and calls a same-named function from elsewhere, or imports only a type.
+      'apps/web/src/lib/routes/route-tests/route-tests.6.db.test.ts': "import './define';\nimport { defineRouteTests } from './other';\n\ndefineRouteTests(6);\n",
+      'apps/web/src/lib/routes/route-tests/route-tests.7.db.test.ts': "import type { defineRouteTests } from './define';\nimport { describe } from 'vitest';\n\ndescribe('defineRouteTests(7)', () => {});\n",
+      'apps/web/src/lib/routes/route-tests/route-tests.8.db.test.ts': "import { type defineRouteTests } from './define';\n\ndefineRouteTests(8);\n",
     };
     const memory = { exists: (file: string) => file in files, read: (file: string) => files[file] ?? '' };
     const source = (file: string, definedIn: string | undefined, test = 'refuses a user without MFA'): EvidenceSource =>
@@ -157,6 +201,13 @@ describe('the SOC 2 Type I evidence checklist', () => {
       'apps/web/src/lib/routes/route-tests/define.ts does not import apps/web/src/lib/routes/route-tests/define.ts',
     ]);
     expect(evidenceProblems(source('apps/web/src/lib/routes/route-tests/route-tests.2.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts'), memory)).toEqual(['apps/web/src/lib/routes/route-tests/route-tests.2.db.test.ts']);
+    // The file must call what the module exports, not only import it.
+    for (const file of [3, 6, 7, 8].map((index) => `apps/web/src/lib/routes/route-tests/route-tests.${String(index)}.db.test.ts`)) {
+      expect(evidenceProblems(source(file, 'apps/web/src/lib/routes/route-tests/define.ts'), memory), file).toEqual([`${file} calls no function apps/web/src/lib/routes/route-tests/define.ts exports`]);
+    }
+    for (const file of [4, 5].map((index) => `apps/web/src/lib/routes/route-tests/route-tests.${String(index)}.db.test.ts`)) {
+      expect(evidenceProblems(source(file, 'apps/web/src/lib/routes/route-tests/define.ts'), memory), file).toEqual([]);
+    }
   });
 
   it('finds a CI step only as a whole command, so a shorter command inside a longer one is not evidence', () => {
