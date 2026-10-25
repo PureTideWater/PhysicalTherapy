@@ -1,7 +1,7 @@
 name: mutation
 
-# Mutation testing on the money paths (stryker.config.mjs; PRD section 18): the pricing engine, the ledger and the
-# packet verifier, on every pull request labelled "money" and weekly. A workflow of its own because ci.yml runs on a
+# Mutation testing on the money paths (stryker/; PRD section 18): the money package, the pricing engine, the ledger and
+# the packet verifier and arithmetic, on every pull request labelled "money" and weekly. A workflow of its own because ci.yml runs on a
 # push and never on a label: here adding or removing a label starts a run, so a pull request labelled after its last
 # push is measured without another push. A pull request that changes the engine (a non-test file under
 # packages/pricing/src, which the engine freeze opens only by the founder's exception; docs/adr/0064) and lacks the label
@@ -62,4 +62,7 @@ jobs:
         run: pnpm stryker run tools/stryker/canary/stryker.config.mjs
       - name: The money paths
         if: steps.label.outputs.run == 'true'
-        run: pnpm stryker run
+        run: |
+          for config in stryker/money.config.mjs stryker/pricing.config.mjs stryker/ledger.config.mjs stryker/packets.config.mjs; do
+            pnpm stryker run "$config"
+          done

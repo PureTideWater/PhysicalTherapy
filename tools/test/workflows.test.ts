@@ -754,7 +754,8 @@ describe('mutation testing', () => {
     expect(gateStep.run).toContain("git diff --name-only \"$base\" HEAD -- packages/pricing/src ':!**/*.test.ts'");
     expect(gateStep.run).toContain('exit 1');
     const canary = stepIndex(steps, (step) => step.run === 'pnpm stryker run tools/stryker/canary/stryker.config.mjs');
-    const money = stepIndex(steps, (step) => step.run === 'pnpm stryker run');
+    const money = stepIndex(steps, (step) => step.name === 'The money paths');
+    for (const config of ['money', 'pricing', 'ledger', 'packets']) expect(steps[money]?.run).toContain(`stryker/${config}.config.mjs`);
     expect(gate).toBeLessThan(canary);
     expect(canary).toBeLessThan(money);
     for (const step of steps.slice(gate + 1) as (Step & { if?: string })[]) {
