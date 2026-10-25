@@ -103,45 +103,68 @@ describe('allocation at its edges, by fixed examples (each kill independent of a
   });
 });
 
+type Compare = (a: unknown, b: unknown) => number;
+
 /**
- * Runs `run` with Array.prototype.sort replaced by a stable insertion sort that calls the comparator in one
- * fixed argument order: with `earlierFirst`, as (the element that stands earlier, the later one), an order
- * ECMAScript allows and V8 never uses; without it, as (the later one, the earlier one), V8's only order.
- * Returns what `run` returned and how many sorts it made.
+ * The native sort, taken before any spy replaces it. A sort called without a comparator uses the language's own order
+ * (ECMAScript's SortCompare: undefined last, then by the elements' text), a consistent comparator, so every conforming
+ * sort gives exactly this result for it.
  */
-function underInsertionSort<T>(earlierFirst: boolean, run: () => T): { readonly result: T; readonly sorts: number } {
-  const sort = vi.spyOn(Array.prototype, 'sort').mockImplementation(function insertionSort(this: unknown[], compare?: (a: unknown, b: unknown) => number) {
+const nativeSort: (this: unknown[], compare?: Compare) => unknown[] = Array.prototype.sort;
+
+/**
+ * Runs `run` with Array.prototype.sort and Array.prototype.toSorted replaced by a stable insertion sort that calls the
+ * comparator in one fixed argument order: with `earlierFirst`, as (the element that stands earlier, the later one), an
+ * order ECMAScript allows and V8 never uses; without it, as (the later one, the earlier one), V8's only order. Both are
+ * conforming sorts: for a consistent comparator they give exactly the native result, and a sort called without one is
+ * the native sort, whose order the language fixes. The case must have sorted at least once, so it ran under that order;
+ * how many sorts the code makes, and by which of the two methods, is its own. Returns what `run` returned.
+ */
+function underInsertionSort<T>(earlierFirst: boolean, run: () => T): T {
+  const insertionSort = (items: unknown[], compare: Compare | undefined): unknown[] => {
     if (compare === undefined) {
-      throw new Error('this sort takes a comparator');
+      return nativeSort.call(items);
     }
-    for (let next = 1; next < this.length; next += 1) {
-      const item = this[next];
+    for (let next = 1; next < items.length; next += 1) {
+      const item = items[next];
       let at = next - 1;
-      while (at >= 0 && (earlierFirst ? compare(this[at], item) > 0 : compare(item, this[at]) < 0)) {
-        this[at + 1] = this[at];
+      while (at >= 0 && (earlierFirst ? compare(items[at], item) > 0 : compare(item, items[at]) < 0)) {
+        items[at + 1] = items[at];
         at -= 1;
       }
-      this[at + 1] = item;
+      items[at + 1] = item;
     }
-    return this;
+    return items;
+  };
+  const sort = vi.spyOn(Array.prototype, 'sort').mockImplementation(function inPlace(this: unknown[], compare?: Compare) {
+    return insertionSort(this, compare);
   });
+  const toSorted = vi.spyOn(Array.prototype, 'toSorted').mockImplementation(function copied(this: unknown[], compare?: Compare) {
+    return insertionSort([...this], compare);
+  });
+  let result: T;
+  let sorts: number;
   try {
-    const result = run();
-    return { result, sorts: sort.mock.calls.length };
+    result = run();
   } finally {
+    sorts = sort.mock.calls.length + toSorted.mock.calls.length;
     sort.mockRestore();
+    toSorted.mockRestore();
   }
+  // Asserted once both are restored, so nothing the assertion does runs under the insertion sort.
+  expect(sorts, `sorts made with the earlier element first: ${String(earlierFirst)}`).toBeGreaterThan(0);
+  return result;
 }
 
 describe('allocation by weight under any sort the language allows', () => {
   // ECMAScript fixes a sort's result only for a consistent comparator; V8 calls one only as (later, earlier). A
   // comparator that ordered ties right only in V8's argument order would pass on V8 alone and give a tied cent to
-  // the later weight under another conforming sort. `sorts: 1` holds the premise: the allocation sorts once.
+  // the later weight under another conforming sort. At least one sort holds the premise: the case ran under the order.
   it.each([true, false])('gives tied remainders to the earlier weight whichever way the sort calls the comparator (earlier element first: %s)', (earlierFirst) => {
     // 2 over 1:1:1: every remainder is 2/3, and the two cents go to the first two weights.
-    expect(underInsertionSort(earlierFirst, () => allocateByWeight(cents(2n), [cents(1n), cents(1n), cents(1n)]))).toEqual({ result: [1n, 1n, 0n], sorts: 1 });
+    expect(underInsertionSort(earlierFirst, () => allocateByWeight(cents(2n), [cents(1n), cents(1n), cents(1n)]))).toEqual([1n, 1n, 0n]);
     // 4 over 1:2:1:2:1 floors to [0, 1, 0, 1, 0]; the two cents left go to the first two of the three weights of 1,
     // whose remainders (4/7) tie above the others' (1/7).
-    expect(underInsertionSort(earlierFirst, () => allocateByWeight(cents(4n), [cents(1n), cents(2n), cents(1n), cents(2n), cents(1n)]))).toEqual({ result: [1n, 1n, 1n, 1n, 0n], sorts: 1 });
+    expect(underInsertionSort(earlierFirst, () => allocateByWeight(cents(4n), [cents(1n), cents(2n), cents(1n), cents(2n), cents(1n)]))).toEqual([1n, 1n, 1n, 1n, 0n]);
   });
 });
