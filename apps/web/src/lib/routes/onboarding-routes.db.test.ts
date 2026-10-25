@@ -34,7 +34,7 @@ import { consoleStatusPage, createTicket, maintenancePage, openIncident, setMain
 /**
  * Customer onboarding, Settings, support, the status page and the evidence checklist against PostgreSQL (PRD 5, J1
  * and J2; PRD 7, Settings; PRD 16; PRD 19, Support; milestone 11; docs/adr/0053). Who may use each route is
- * route-tests.db.test.ts's; this is what the routes do. Synthetic data only.
+ * route-tests/define.ts's; this is what the routes do. Synthetic data only.
  */
 
 let database: MigratedDatabase;

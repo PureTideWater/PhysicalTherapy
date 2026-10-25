@@ -15,7 +15,7 @@ import {
   signOffVersion,
   verifyDisputeWindow,
 } from '@tp/contracts';
-import { documentPages, readDocumentPages } from '@tp/contracts/pages';
+import { readDocumentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { type DatabaseClient, type DatabasePool, type PracticeCipher, documentObjectKey, documentPagesKey, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
@@ -28,6 +28,28 @@ import type { DocumentStore } from '@tp/worker/documents';
  * through packages/contracts' own services, over SYNTHETIC documents sealed with the practice's key in
  * the document store the web app reads. Used by the route tests; synthetic data only.
  */
+
+type PageRead = Awaited<ReturnType<typeof readDocumentPages>>;
+
+/** Each distinct document's page read, by the SHA-256 of its bytes and its type: this module's one per test file. */
+const pageReads = new Map<string, Promise<PageRead>>();
+
+/**
+ * A synthetic document's pages, read by the bounded reader the first time its bytes are seen in this test file and
+ * remembered after (frozen, so no caller can change what the next one gets). syntheticPdf() is deterministic, so every
+ * world's agreement and exhibit are the same bytes, and the reader's worker thread, which was most of a world's time,
+ * starts once per distinct document per file instead of three times per world (audit #109; docs/adr/0066). The first
+ * world of each file still reads for real; the bounded reader itself is evidence.test.ts's and contracts.db.test.ts's.
+ */
+function readPagesOnce(bytes: Uint8Array, contentType = 'application/pdf'): Promise<PageRead> {
+  const key = `${contentType} ${createHash('sha256').update(bytes).digest('hex')}`;
+  let read = pageReads.get(key);
+  if (read === undefined) {
+    read = readDocumentPages({ bytes, contentType }).then((pages) => Object.freeze(pages.ok ? { ...pages, pages: Object.freeze([...pages.pages]) } : pages));
+    pageReads.set(key, read);
+  }
+  return read;
+}
 
 /** Where the synthetic agreement states its dispute window (page 1), which the specialist cites and verifies (D17 a). */
 export const WINDOW_QUOTE = 'Disputes are raised within 3650 days of the payment date.';
@@ -80,7 +102,7 @@ export async function storeContractDocument(options: ContractWorldOptions, pages
   const id = randomUUID();
   const bytes = syntheticPdf(pages);
   await options.documents.write(options.cipher, documentObjectKey(options.practiceId, id), Readable.from([bytes]));
-  const read = await readDocumentPages({ bytes, contentType: 'application/pdf' });
+  const read = await readPagesOnce(bytes);
   if (!read.ok) {
     throw new Error(`the synthetic contract does not read: ${read.problem}`);
   }
@@ -101,7 +123,8 @@ export async function seedContractWorld(options: ContractWorldOptions): Promise<
   const contractDocumentId = await storeContractDocument(options);
   const untaggedDocumentId = await storeContractDocument(options, [['SYNTHETIC EXHIBIT B - INVENTED TERMS', '97112 Neuromuscular reeducation $33.00 per unit']]);
   const bytes = syntheticPdf(CONTRACT_PAGES);
-  const evidence = new EvidenceResolver({ pages: documentPages({ read: () => Promise.resolve({ bytes, contentType: 'application/pdf' }) }) });
+  // Every citation of the world's agreement resolves against CONTRACT_PAGES, read once per test file.
+  const evidence = new EvidenceResolver({ pages: { pages: () => readPagesOnce(bytes) } });
   const as = <T>(actorId: string, run: (context: WorkflowContext) => Promise<T>) =>
     withPracticeScope(app, { actorId, practiceIds: [practiceId] }, (scope) => run({ scope, requestId: `seed-${randomUUID()}`, evidence }));
   const specialist = <T>(run: (context: WorkflowContext) => Promise<T>) => as(options.specialistId, run);
