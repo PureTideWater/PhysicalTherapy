@@ -96,8 +96,8 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
    - **Cost:** estimate it once the capture is done, from the image count, and tell the co-founder before the reviewers start. Give each lens only its images: the 390 px reviewer the 390 px and state shots; the brand reviewer one shot per layout and the dark set; the flows reviewer each role's path. Give every reviewer the manifest and exact file sections, never whole large documents.
    - **Output:**
      - `designs/lane-b-ux-review.md`: the findings ranked and grouped into proposed PRs in landing order;
-     - the wording and brand choices the proposals raise: each takes its recommended option without asking, and all are listed for the co-founder in one report afterwards (his ruling of 2026-10-25 ~21:50 UTC). A choice that changes legal text (the terms, the cookie notice, the screening terms, the AMA notice, or anything on HANDOFF.md's counsel list), or that reverses a recorded founder ruling, still goes to the founder through the co-founder;
-     - the proposed PRs join Lane B's work in landing order under his standing direction "improve as you go" (2026-10-25 ~21:45 UTC), reported to him; he may reorder or drop any. Each is claimed in LANES.md's Claims table as "queued (UX baseline review)", which LANES.md line 7 allows, so no queue text is edited;
+     - the wording and brand choices the proposals raise: each takes its recommended option without asking, and all are listed for the co-founder in one report afterwards (his ruling of 2026-10-25 ~21:34 UTC). A choice that changes legal text (the terms, the cookie notice, the screening terms, the AMA notice, or anything on HANDOFF.md's counsel list), or that reverses a recorded founder ruling, still goes to the founder through the co-founder;
+     - the proposed PRs join Lane B's work in landing order under his standing direction "improve as you go" (2026-10-25 ~21:27 UTC), reported to him; he may reorder or drop any. Each is claimed in LANES.md's Claims table as "queued (UX baseline review)", which LANES.md line 7 allows, so no queue text is edited;
      - a proposal that needs a migration goes under "Handed to Lane A". A no-migration proposal touching a file #42 changes stays in Lane B's queue, marked "after #42 merges", as items 8 and 15 to 17 are.
    - **Inputs besides the brief's:**
      - the screen tour's five defects (log, 2026-10-25 ~15:40 UTC);
@@ -194,15 +194,15 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Q2 (CI series and #42's files, 2026-10-25 ~21:05 UTC):** rule 6; the PR merged second keeps both, the lockfile re-resolved and never hand-merged; axe runs over #42's pages (O6) if #42 merges first; ci-browser does not wait for #42;
   - **Q3 (scope of "every recommended option", 2026-10-25 ~21:05 UTC):** pre-approves engineering-only choices inside an already-ruled design, recorded as his rulings and reversible; batches with wording, brand, product, cost or security trade-offs still go to him;
   - **Q4 (ux-brand-reviewer.md's `model:` key and checklist suite, 2026-10-25 ~21:05 UTC):** `model:` follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit);
-  - **Standing direction, "improve as you go" (2026-10-25 ~21:45 UTC):** "If you ever discover a way to improve or optimize something as you're building do it. Always do this." Applied as the convention "Improve as you go" below;
-  - **Wording and visible changes without asking (2026-10-25 ~21:50 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
+  - **Standing direction, "improve as you go" (2026-10-25 ~21:27 UTC):** "If you ever discover a way to improve or optimize something as you're building do it. Always do this." Applied as the convention "Improve as you go" below;
+  - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
-- **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:45 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
+- **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
   - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
   - **As its own PR, next in Lane B's queue,** when it is larger or of another kind. Add it to LANES.md as a dated item "on the co-founder's standing direction of 2026-10-25" (one PR per change, LANES rule 5).
   - **Handed to Lane A** when it needs a migration, or changes frozen code (the engine under `packages/pricing`, the ledger's existing behaviour, the content pipeline).
-  - **Wording, brand and what a person sees: done without asking** (the co-founder, 2026-10-25 ~21:50 UTC). Each takes the recommended option at once, within `.claude/rules/brand.md`, CO-11 and the PRD. The PR description and this log report it to him afterwards, and he may reverse any.
+  - **Wording, brand and what a person sees: done without asking** (the co-founder, 2026-10-25 ~21:34 UTC). Each takes the recommended option at once, within `.claude/rules/brand.md`, CO-11 and the PRD. The PR description and this log report it to him afterwards, and he may reverse any.
   - **To the co-founder first** when it changes cost or makes a security trade-off (his Q3), with the recommended option.
   - **The founder's, through the co-founder:** the domain model, release tags, owner-admin settings, legal text (the terms, the cookie notice, the screening terms, the AMA notice, HANDOFF's counsel list), and any reversal of a recorded founder ruling.
   - Never skip a pipeline stage for it, and never stop a running workflow for it. A finding inside a running workflow is applied at its next stage, or in the next workflow.
@@ -590,7 +590,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - Reset Friday 2026-10-30, time of day not given. 52 points to the ~80% line over about 4.5 days, about 11.5% a day.
   - **Applied as:** two heavy workflows at once, back to back, with no new heavy run past ~80%, none cut off mid-way, and a reading asked at each checkpoint. The UX review is the first; ci-deps' scout and design review run beside it.
   - **The UX review's cost estimate:** given to the co-founder when capture is done, as the brief says. Under "go as far as we can", the reviewers start straight after, unless the estimate is more than twice the brief's 3 to 4%.
-- **2026-10-25 ~21:40 UTC: the container had restarted; machine rebuilt; two workflows started.**
+- **2026-10-25 ~21:22 UTC: the container had restarted; machine rebuilt; two workflows started.**
   - PostgreSQL was down after a container restart (the session stayed open). `tools/setup-container.sh` was re-run with no branch arguments, and printed OK, both clusters started.
   - **The UX baseline, part 1** (wf_b56fe7b4-652; script archived). Steps:
     - four scouts map the 83 routes (persona, records, the spec that creates them, states), and a critic checks the map for completeness and writes `designs/lane-b-ux-review/route-map.{json,md}`;
@@ -599,10 +599,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **ci-deps' design re-read** (wf_c51b25c9-e94; script archived). Two scouts check the files and the versions against 6ddd587. An author brings §3.2 current, adding §3.2.6. One adversarial reviewer follows, then every finding is resolved in §3.2.7. No heavy command runs in it.
   - Neither workflow commits; the session reviews their files and commits them.
   - **Next:** the capture's result → the cost estimate to the co-founder → the five reviewers. ci-deps' re-read → its builders.
-- **2026-10-25 ~21:45 UTC: the co-founder's standing direction: "If you ever discover a way to improve or optimize something as you're building do it. Always do this."**
+- **2026-10-25 ~21:27 UTC: the co-founder's standing direction: "If you ever discover a way to improve or optimize something as you're building do it. Always do this."**
   - Recorded under "Rulings and decisions of record", and as the convention "Improve as you go": inside the current PR when it fits, its own next PR otherwise, Lane A's when it needs a migration or frozen code, and the co-founder first when it touches wording, brand, what a person sees, cost or security.
   - The two running workflows are not stopped: their prompts already let the capture agent improve the tour tool and the ci-deps author make the best engineering choice. Every later workflow prompt carries the direction.
-- **2026-10-25 ~21:50 UTC: the co-founder's ruling: "Apply wording and visible changes without asking me first."**
+- **2026-10-25 ~21:34 UTC: the co-founder's ruling: "Apply wording and visible changes without asking me first."**
   - Wording, brand and anything a person sees now take the recommended option at once, within the brand rules, CO-11 and the PRD. Each is reported to him afterwards, in the PR description and this log, and he may reverse any.
   - **Still to him first:** cost and security trade-offs. **Still the founder's, through him:** the domain model, release tags, owner-admin settings, legal text and any reversal of a founder ruling.
   - **The UX review follows it.** Its wording, brand and dark-mode choices take their recommended options and are reported. Its proposed PRs are claimed as queued in LANES.md's Claims table, under "improve as you go", and reported; he may reorder or drop any. The brief and Start here say so.

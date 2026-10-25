@@ -48,7 +48,7 @@ weekly allowance (lanes/lane-b.md's readings), and tell the co-founder before th
    - **Dark:** the app has dark tokens (`packages/brand/src/tokens.css:73`) but no theme switch and no `prefers-color-scheme` rule, so no user reaches dark today.
      - Capture dark by setting `data-theme="dark"` on `document.documentElement` after each load, as `apps/web/e2e/brand.spec.ts:407` does.
      - Label those shots "dark (tokens only)" and judge their contrast as advisory.
-     - Make the choice (follow the device's setting, offer a switch, or stay light-only) on the evidence, take the recommended option, and report it (the co-founder's ruling of 2026-10-25 ~21:50 UTC: wording and visible changes without asking).
+     - Make the choice (follow the device's setting, offer a switch, or stay light-only) on the evidence, take the recommended option, and report it (the co-founder's ruling of 2026-10-25 ~21:34 UTC: wording and visible changes without asking).
    - **The tool:** `tools/lane-b-screen-tour`, following its README's Set-up (`TOUR_DIR` in the new session's scratchpad; `TOUR_MINUTES=90`).
      - Populate with the specs the map names. Each capture starts from a fresh prepare, because the platform administrator's key registers once per database.
      - Synthetic data only, and one heavy command at a time under the lock.
@@ -78,8 +78,8 @@ weekly allowance (lanes/lane-b.md's readings), and tell the co-founder before th
 5. **Output:**
    - **The findings:** `designs/lane-b-ux-review.md`, with the findings, their evidence and the proposed PRs in landing order.
    - **The screenshots:** the repository is public, so they never go on a branch whole. Publish the PNGs, their manifest and a findings page as a private artifact gallery, as on 2026-10-25. Commit only the manifest and any small crop a finding needs. Record the gallery's URL in lanes/lane-b.md; the next re-tour reads its files to compare.
-   - **The queue:** the proposed PRs join Lane B's work in landing order under the co-founder's standing direction "improve as you go" (2026-10-25 ~21:45 UTC). Each is claimed in LANES.md's Claims table as "queued (UX baseline review)" and reported to him; he may reorder or drop any. Anything needing a migration goes under "Handed to Lane A".
-   - **Wording and brand choices:** each takes its recommended option without asking. All are listed for the co-founder in one report afterwards (his ruling of 2026-10-25 ~21:50 UTC).
+   - **The queue:** the proposed PRs join Lane B's work in landing order under the co-founder's standing direction "improve as you go" (2026-10-25 ~21:27 UTC). Each is claimed in LANES.md's Claims table as "queued (UX baseline review)" and reported to him; he may reorder or drop any. Anything needing a migration goes under "Handed to Lane A".
+   - **Wording and brand choices:** each takes its recommended option without asking. All are listed for the co-founder in one report afterwards (his ruling of 2026-10-25 ~21:34 UTC).
    - **The founder's, through the co-founder:** a choice that changes legal text (the terms, the cookie notice, the screening terms, the AMA notice, or anything on HANDOFF.md's counsel list), or that reverses a recorded founder ruling.
 
 ## Not in it
