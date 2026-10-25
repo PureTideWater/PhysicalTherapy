@@ -2,8 +2,35 @@
 
 This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-22 16:40 UTC. Start with "Start here" below; the dated sections after it are the full record.
 
-## Start here: state at 2026-10-24 09:30 UTC (PR 6b-4 reviewed; two lanes)
+## Start here: state at 2026-10-25 10:00 UTC (both lanes folded in; PR 6b-4 reviewed)
 **Two lanes from 2026-10-24.** The founder's sessions are Lane A, and this file is Lane A's log. The co-founder's sessions, on his own Max 20x account, are Lane B. A person starting Lane B reads `COFOUNDER-START.md`; Lane B logs in `lanes/lane-b.md`. **`LANES.md` holds the rules both lanes follow, and every session reads it before starting a PR:** one schema PR at a time, in Lane A; claims; reserved ADR and test-matrix numbers; merging; who decides; per-account usage pacing. It also holds both queues and the claims. Lane A folds Lane B's log into the tracker.
+
+**Shared branches.** Only two branches are shared state:
+- `claude/build-platform` is the product;
+- `claude/build-ops` is the handoff: this file, LANES.md, `lanes/`, designs, summaries, scripts and the tracker's source.
+
+A session branch, such as `claude/brave-cerf-4uldp9`, or a session's scratchpad, is never the handoff. Anything shared is pushed here, and anything product-side to its `co-001/*` branch, before a session ends.
+
+Check of 2026-10-25 ~10:00 UTC:
+- Every local branch of this container matches its remote.
+- `claude/brave-cerf-4uldp9` exists only locally in the PhysicalTherapy clone, and is an ancestor of `main` with nothing of its own.
+- `/home/user/PTApplication` (another repository) is clean, with nothing unpushed.
+- 6b-4's build result and local smoke report were only in the scratchpad; they are now in `approval-summaries/pr6b4-build-result.json` and `approval-summaries/pr6b4-smoke1/`.
+
+**Lane B, folded in 2026-10-25 ~10:00 UTC** (from `lanes/lane-b.md`; Lane B's own log has the detail):
+- **The CI series is four PRs** (`designs/lane-b-ci.md`; ADR 0066; CI-01 to CI-20; no migration):
+  - ci-speed (#109) is **draft PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43)**: green, CI in 7:26 (29 to 41 min before), reviewed (0 blocking, 4 should_fix, 11 nits), and in its fix round (wf_074459f2-b14).
+  - ci-mutation (#54) is being built (wf_62c3df65-d76, resumed after an auto-mode interruption).
+  - ci-deps (#112, #19's asserts, Dependabot #40, #38 and #33) and ci-browser (#19's upgrade) come next.
+- **PR 15** (LED-12 and LED-13) is designed, with its tests written and pre-validated for L1 (a). Its build takes Lane B's next free heavy slot.
+- **The required checks after ci-speed** are `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`. The ruleset (F7) uses these names.
+- **Lane B's queue** now also holds the no-migration items moved from Lane A's (LANES.md, items 3 to 19).
+- **The co-founder's usage:** 14% at 2026-10-25 ~07:45 UTC; his reset is Friday 2026-10-30.
+
+**Repository settings, and when to click each** (the owner-admin settings stay yours; Lane B gives the exact steps at each moment):
+- **F7, the `claude/build-platform` ruleset:** requires `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`; requires a PR, no force push, up to date. Apply it **after ci-speed's (#43) first green push run on `claude/build-platform`**, that is, once #43 has merged and the run on the merge commit is green.
+- **F1, the default branch becomes `claude/build-platform`** (back to `main` at the launch merge), **together with F2 (a), Dependabot alerts and security updates. Apply both when ci-deps merges**, not earlier: switching earlier starts today's weekly `mutation.yml` and `large-zip.yml` schedules before ci-speed and ci-mutation fix them.
+- **F3, require actions pinned to a full-length commit SHA** (Settings, then Actions): **after ci-deps merges** (F4 holds).
 
 **Merged into `claude/build-platform`, all on green CI:**
 - #24: CI pinned to ubuntu-24.04.
@@ -51,7 +78,11 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 - **How the screening's 60-second promise is measured** (6b-3; GitHub issue https://github.com/PureTideWater/PhysicalTherapy/issues/41, label "revisit"): the capacity test runs on GitHub's free 4-CPU runner, the PR time is only a warning, and a release's time is binding behind an attested report. The free runner's times follow the host (38 to 57 s on the same code), so production stays closed until a faithful measurement exists. Revisit before the screening opens and again once production has traffic: staging on AWS (recommended), or an organization on GitHub Team with the 8-core runner; then settle the sizing question (O9).
 
 **Open for the founder (none blocks PR 6b-4):**
-- Whether to apply a ruleset on `claude/build-platform` requiring the CI checks (check, mutation, capacity, approval-of-record), free on this public repository; offered 2026-10-22 ~06:50 UTC, not yet answered. Today nothing enforces CODEOWNERS on `tools/engine-freeze/exception.json` or on `packages/synth/src/guard/pinned-tables.json` (6b-1 pinned GPCI_SYNTHETIC_900006.csv there).
+- **The `claude/build-platform` ruleset (F7, ruled 2026-10-25, applied by you):**
+  - It requires the four checks as ci-speed (#43) names them: `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`, each from GitHub Actions. It also requires a PR, blocks force pushes, and requires branches to be up to date.
+  - It is free on this public repository. It was first offered on 2026-10-22 ~06:50 UTC with the older names (check, mutation, capacity, approval-of-record), which ci-speed replaces.
+  - **When to apply it:** see "Repository settings, and when to click each" below.
+  - Today nothing enforces CODEOWNERS on `tools/engine-freeze/exception.json` or on `packages/synth/src/guard/pinned-tables.json` (6b-1 pinned GPCI_SYNTHETIC_900006.csv there).
 - O1: the ZIP9 file's layout is unconfirmed (cms.gov unreachable through the proxy; ADR 0064 says so). Confirm against the real CMS file before release 1 loads it. O12: re-read the AWS prices on AWS's own pages before the first deploy.
 - Whether the narrative verifier should also catch a letter claim-filing-indicator code (for example "plan identifier MC"). Today only digit codes fail as figures, and the approving person is the check (ADR 0061).
 - The CLP06 words: 7 of the 19 were matched against public sources. The X12 TR3 code list is the check of record before the first real packet.
@@ -205,6 +236,28 @@ When asking the founder a question, recommend the best option first. Never let t
     - an `approval-of-record` CI job that requires the founder's GitHub review once the build agent has its own identity (repository variable `APPROVAL_REVIEW_REQUIRED`);
     - the founder's guide in `docs/runbooks/github-governance.md`.
     Approval of record becomes the founder's GitHub "Approve" review, which can be done from the phone. The founder then does: GitHub Pro, private, the bot account, rulesets.
+
+- **2026-10-25, the founder, relayed to Lane B by the co-founder (Lane B's log, ~01:10 and ~02:05 UTC):**
+  - **The CI series' F1 to F7, each as recommended** (`designs/lane-b-ci.md` section 7):
+    - **F1 (a):** `claude/build-platform` is the default branch until launch, then `main` again at the launch merge.
+    - **F2 (a):** Dependabot alerts and security updates on, applied with F1.
+    - **F2 (b):** a 3-day minimum release age (pnpm `minimumReleaseAge: 4320`), with dated, exact-version excludes of at most 7 days, enforced by `check-toolchain`.
+    - **F3:** require SHA-pinned actions, after ci-deps merges.
+    - **F4:** a standing exception to reconciliation-001's content-pipeline check (`:444`). `publish-content.yml` may change only its `uses:` refs and version comments (Dependabot's later pin bumps included), and once its `runs-on` and a `timeout-minutes`; every other line is held to a frozen copy by test.
+    - **F5:** the release's binding capacity chain and the PR capacity job stay on ubuntu-24.04 in this series. The image binding becomes store-independent, and one advisory 26.04 measurement decides the move later (issue #41).
+    - **F6:** the 2026-10-20 adoption covers #54's 85% exit for milestone 6 and Gate 1. ci-mutation amends PRD 17 and reconciliation-001's check exceptions; Lane A's PR 7 writes Gate 1's line.
+    - **F7:** the `claude/build-platform` ruleset (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`; PRs required; no force push; up to date), once ci-speed's first push run is green.
+    - The notices N1 to N11 were decided under the standing rule, and each is reversible.
+    - Each PR records its ruling in ADR 0066 and reconciliation-001. The settings' timing is under "Repository settings, and when to click each" in Start here.
+  - **PR 15's L1 (a)** (`designs/lane-b-pr15-ledger-tests.md` section 3): the ledger stays as frozen (PRD 13, ADR 0042), and LED-12 is restated as "moves no cash: no posted or deposited entry, the adjustment never an entry; the reversal recouped once, at once, for what the reversed claim approved". PR 15 is tests only, with no ADR. The ruling goes into reconciliation-001 item 15 and test-matrix's LED-12 row in that PR.
+- **2026-10-25, the founder: a standing delegation to the co-founder,** recorded in LANES.md "Delegations from the founder to the co-founder":
+  - **Delegated:** the co-founder may answer every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes.
+  - **Kept by the founder:**
+    - approving `docs/product/domain-model.md`;
+    - release tags;
+    - the owner-admin repository settings (applied by the founder, or by the co-founder once given admin);
+    - sign-off of legal text before it goes to counsel.
+- **2026-10-25, the founder: shared state.** `claude/build-platform` (product) and `claude/build-ops` (handoff) are the only shared branches; session branches are not the handoff. The founder also directed that Lane B gets every Lane A item that needs no migration, does not regenerate the domain model and is outside the serial schema chain (LANES.md, Lane B items 3 to 19), with the one-schema-PR rule unchanged.
 
 ## Where things stand (2026-10-18 13:45 UTC)
 - **Merged into `claude/build-platform`:** #1 (Step 0), #2 (PR 1 brand and copy), #3 (PR 2 domain model), #4 (PR 3 EMR fixtures), #5 (screen-tour fixes), #6 (PR 4 ERA intake). Head: `fe470c1`.

@@ -60,41 +60,102 @@ Items follow reconciliation-001's "Proposed pull requests, in order" and the com
 
 **Lane A (schema PRs, and the serial chain they sit in):**
 - PR 6b-4 (#42; its fix round comes next);
-- 6c, 6d and 6e;
-- 4b;
-- first-finding, release-operations and contract-integrity;
-- alerts;
-- PR 7 and 7b;
-- PR 8 to 14, then 15b, 16 and 17;
-- billing 2;
+- 6c, the engine corrections under one freeze exception: #2's window step, #3, #4 (two priced-line columns, so a migration), #5, #28, #105 and #110's calendar package. #110 moves the engine's own date code, so the engine freeze reads it as an engine change; it stays with 6c's single engine version bump.
+- 6d: #1 (a remark-code table), with #23 and #14's interest basis, which change the same triage and must use 6c's sequestration basis;
+- 6e;
+- 4b: #13, #25, #26, #42, #43 and #104;
+- first-finding: #34 and #35. #32 moved to Lane B.
+- release-operations' load path: #8, with its impact-count table. #7, #30, #31 and #59 moved to Lane B.
+- contract-integrity: #15, #21 and #80;
+- alerts: #39 and #47;
+- legal surfaces' tables: #51, with its legal-text table and version columns. Lane B keeps #52.
+- PR 7 (its read functions make it a schema PR) and 7b (#41);
+- PR 8 to 14 and PR 16;
+- PR 17;
+- billing 2: #58, #77, #78 and #79;
+- the audit's other schema PRs: parse operations (#44), agreements (#50), the fee-schedule importer (#36), the reviewer queue (#40), Original Medicare pricing (#29), and #17's recovery-key column;
 - milestone 12, milestone 13 and the final pass.
 
-If Lane B runs dry, Lane A hands it items from this list that need no migration.
+**Lane B (no migration), in the order they should land.** "Why no migration" quotes the item's "What it changes" line in `audits/combined/combined-report.md`.
 
-**Lane B (no migration), in order:**
-1. **The CI PR** (before PR 7). It covers four combined-audit items:
-   - #19's runner upgrade part;
-   - #54, mutation testing that really runs on the money code;
-   - #109, CI in about 10 minutes instead of 35;
-   - #112, a dependency-update policy that yields green PRs.
+"Not while #42 is open" means: leave alone every file PR 6b-4 changes, until it merges:
+- the migrations, and `packages/db/src/{schema/*,row-factory.ts}`;
+- `packages/observability/src/fields.ts`;
+- in the worker: `apps/worker/src/{mail,platform/{mail-events,support-notices,wiring},billing/dunning,digest/job,screening/{job,thread,threads,message},jobs/platform,config,runtime,web-entries.test}.ts`;
+- in the web: `apps/web/src/lib/{routes/{console,console-mail,index,practice,settings,registry.test},screening/*,http/rate-limit,monitoring/queries,legal-surfaces,server/{config,services}}.ts`, `apps/web/src/components/{help,shell,monitoring/display,screening/upload-form}.tsx`, and the screening, console mail, console support, support-access and users pages;
+- in the infrastructure: `infra/lib/{mail,deploy-parameters,platform-stack}.ts` and `infra/lib/constructs/{application-role,compute,database,identity,mail-streams,monitoring,network,operator-role,screening-role}.ts`;
+- `tools/screening-capacity/{run,report}.ts`;
+- the runbooks `deploy-and-rollback.md` and `deliverability.md`, `docs/product/legal-surfaces.md`, and `docs/policies/data-retention.md`.
 
-   It also takes the Dependabot versions dismissed on 2026-10-18, and checks the open Dependabot PRs #40 (GitHub Actions; it replaced #37), #38 (npm minor and patch) and #33 (Docker base images) like any change. It adds Dependabot coverage for the postgres and minio images.
+The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry) follow rule 6. Every item is confirmed migration-free again at its design; a part that turns out to need a migration goes to Lane A under "Handed to Lane A".
 
-   Runners stay free GitHub-hosted (founder, 2026-10-23: a personal account cannot have larger runners; issue #41).
+1. **The CI series** (in flight; `designs/lane-b-ci.md`): ci-speed (#43, in its fix round), ci-mutation (building), then ci-deps and ci-browser. Before PR 7.
+2. **PR 15: ledger tests LED-12 and LED-13** (designed, tests written; L1 (a)). Tests only.
+3. **PR 15b: ledger amounts in payment terms (#12).** It lands beside PR 15, and before any ROI statement reaches a customer.
+   - **Why no migration:** "Database: no new columns; the figures come from stored line data."
+   - **Needs:** the ledger freeze exception, and the PRD 13 ruling on what "approved" means. Both are decisions the co-founder may answer (delegation of 2026-10-25). Payment-engine review.
+   - **Not while #42 is open:** nothing of #42's. `packages/ledger` and `apps/worker/src/reconcile` are outside it.
+4. **Readable database-function diffs (#111).** It lands before PR 8's migrations, and helps every Lane A schema review.
+   - **Why no migration:** "Database: no schema change." It is tooling over the migrations; it never edits one.
+   - **Not while #42 is open:** none of #42's migration or domain-model files. Run it on #42's migration only as a read-only check.
+5. **A superseded re-run cannot be accepted (#10).** It lands before PR 8.
+   - **Why no migration:** "Database: no." The check lives in the service. The optional mirror in the pricing-run trigger would be a migration, and it is not taken here; Lane A gets it if wanted.
+   - **Not while #42 is open:** if the acceptance route sits in `apps/web/src/lib/routes/practice.ts`, change it only after #42 merges. The service code is free.
+6. **The Verified seal claims only what it proves (#46).** It lands before PR 7's red team and before any ROI statement reaches a customer.
+   - **Why no migration:** "Ledger: an added refusal reason on the report … Database: no."
+   - **Wording:** the CO-11 and BRAND.md words are the co-founder's to approve (delegated).
+   - **Not while #42 is open:** nothing of #42's. Its files are `components/brand/Verified.tsx`, the ROI pages and `apps/worker/src/report`.
+7. **Every figure explained in words (#38).** It lands before the first audit packet is submitted.
+   - **Why no migration:** "Database: no." It is a code-only renderer from the stored trace.
+   - **Not while #42 is open:** nothing of #42's. It touches the packets, the packet review and the line-trace pages.
+8. **The access log pages past the first (#49).**
+   - **Why no migration:** "Database: no."
+   - **Not while #42 is open:** its route is in `apps/web/src/lib/routes/settings.ts`, which #42 changes, so build it after #42 merges, or keep the change in the access-log page and its query.
+9. **A narrative survives sign-out (#48).**
+   - **Why no migration:** "Database: no." The draft is kept client-side and restored.
+   - **Not while #42 is open:** nothing of #42's. It touches the packet pages and actions.
+10. **One unmapped plan no longer freezes a whole month (#32)**, first-finding's no-migration part. It lands before PR 7, so its red team attacks it.
+    - **Why no migration:** "Database: no."
+    - **Needs:** the milestone 3 check's exception ("an unmapped plan blocks pricing"). The co-founder may rule it.
+    - **Not while #42 is open:** nothing of #42's. It touches pricing-run planning and the mapping and coverage pages.
+11. **Agent instructions any tool can read, and a ten-minute setup (#113).**
+    - **Why no migration:** "Database: no." Docs and the setup path.
+    - **Not while #42 is open:** nothing of #42's. Coordinate `CLAUDE.md` with ci-deps' template line.
+12. **The model evaluation gate (#84) and the contract PHI check before the model (#120).** One PR or two, before PR 16 and before the first real-model baseline run.
+    - **Why no migration:** both "Database: no."
+    - **Not while #42 is open:** nothing of #42's. Both live in `packages/model-gateway` and the contract proposal path.
+13. **The bank account shown first (#135).**
+    - **Why no migration:** "Database: no."
+    - **Not while #42 is open:** nothing of #42's. It touches `apps/web/src/lib/routes/billing.ts`, the billing pages and `components/billing`.
+14. **Release content checks (#7, #30, #31, #59)**, release-operations' no-migration part. It lands before PR 7 (#7) and before release 1 is loaded. #8, the load path and its table, stays in Lane A.
+    - **Why no migration:** #7, #30 and #59 say "Database: no", and #31 says "no DDL on rule tables".
+    - **Needs:** #30 touches the frozen content pipeline, so it needs that check's exception (the co-founder may rule it).
+    - **Not while #42 is open:** #59's alarms go in `infra/lib/constructs/monitoring.ts`, and its job's log fields in `fields.ts`. Land those after #42 merges, or split them out.
+15. **The infrastructure PRs, after #42 merges**, one PR each:
+    - (a) database login rotation and connection resilience (#72 and #116, "Database: no schema change"), before the first staging deploy;
+    - (b) backups and recovery (#17's infrastructure, the multi-region key, drill v2 of #70). #17's recovery-key column is a migration, so it is Lane A's;
+    - (c) least privilege and egress, with the staging endpoints in one zone and ARM tasks (#136, "Database: no");
+    - (d) deploy safety, with the release hardening of #67 ("Database: no"; after the CI series, which also changes the Dockerfiles);
+    - (e) the job platform (#73, "Database: no");
+    - (f) observability (#75, "Database: no");
+    - (g) the status page;
+    - (h) the write-once packets bucket (#45, "Database: no"), before PR 8 and PR 12.
 
-   It goes first because faster CI speeds both lanes.
-2. **PR 15: ledger tests LED-12 and LED-13** (reconciliation-001 item 15; tests only). If 15b (combined audit #12) needs a migration, it is Lane A's.
-3. **The infrastructure PRs, once PR 6b-4 (#42) has merged.** 6b-4 rewrites `infra/lib/constructs/{network,monitoring,compute,identity,operator-role,application-role,screening-role}.ts`. One PR each, in this order:
-   - (a) database login rotation and connection resilience (#72, before the first staging deploy);
-   - (b) backups and recovery (#17, the multi-region key, and drill v2 of #70);
-   - (c) least privilege and egress;
-   - (d) deploy safety;
-   - (e) the job platform;
-   - (f) observability;
-   - (g) the status page.
-
-   Read the combined audit's entry for each. Role or login DDL is a migration, so any part that needs one goes to Lane A.
-4. **The legal-surfaces PR** (#51 and #52): the terms text, the privacy notice, the screening terms and the AMA notice. Its text goes to the founder and then to counsel (O4).
+    Each changes the constructs #42 rewrites, so none starts before it merges.
+16. **After #42 merges, small PRs**, each touching #42's files:
+    - raw error messages kept out of the job queue table and the web logs (#115, "Database: no"; it overlaps #42's review nit on `digest/job.ts` and `worker.ts`);
+    - missed days in the write-once audit copy (#117, "Database: no"; its job is wired in `platform/wiring.ts`);
+    - the guard on the web-worker boundary (#137, "Database: no"; it extends #42's `web-entries.test.ts`);
+    - the claims and lines page (#107, "Database: none unless the volume test needs a column", and then that column is Lane A's).
+17. **The AMA notice and the CPT records (#52)**, legal surfaces' no-migration part, before the screening opens publicly.
+    - **Why no migration:** "Database: no."
+    - **Not while #42 is open:** it changes `apps/web/src/lib/legal-surfaces.ts` and `docs/product/legal-surfaces.md`, which #42 changes, so it lands after #42 merges. The legal text's sign-off before counsel stays the founder's.
+18. **A code formatter (#138)**, "after PR 6b, before PR 7 branches".
+    - **Why no migration:** "Database: no."
+    - **When:** it reformats every file, so it lands only while no PR is open in either lane, by agreement between the lanes.
+19. **The AI statement, code-checked (#122)**, after PR 16 (or in the final pass).
+    - **Why no migration:** "Database: no."
+    - **Needs:** PRD 16's table gains a row, which the co-founder may approve.
 
 ## Claims
 | Item | Lane | Branch / PR | Started (UTC) | Reserved | State |
@@ -107,4 +168,4 @@ If Lane B runs dry, Lane A hands it items from this list that need no migration.
 None yet.
 
 ## Delegations from the founder to the co-founder
-None yet. The founder adds each delegation here, dated. Until then, Lane B takes every founder decision to the founder.
+- **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.

@@ -1,0 +1,1410 @@
+{
+  "format": "tp-screening-capacity/8",
+  "timeMode": "advisory",
+  "commit": "unknown",
+  "workflow": {
+    "ref": null,
+    "runId": null,
+    "runAttempt": null
+  },
+  "runtime": "process",
+  "images": {
+    "web": null,
+    "worker": null
+  },
+  "consumer": {
+    "tasks": 1,
+    "cpus": 2,
+    "memoryMiB": 4096,
+    "concurrency": 3
+  },
+  "staticAssetOrigin": null,
+  "runner": {
+    "cpus": 4,
+    "memoryMiB": 16091,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "kernel": "6.18.44-fc-v153",
+    "loadAverage": [
+      2.95,
+      2.68,
+      2.14
+    ]
+  },
+  "harnessAffinity": "0-1",
+  "expected": {
+    "web": {
+      "cpus": 0.5,
+      "memoryMiB": 1024
+    },
+    "platform": {
+      "cpus": 0.25,
+      "memoryMiB": 512
+    },
+    "screening": {
+      "cpus": 2,
+      "memoryMiB": 4096
+    },
+    "screeningTasks": 1,
+    "postgres": {
+      "cpus": 2,
+      "memoryMiB": 4096,
+      "cpuset": "0-1"
+    },
+    "storage": {
+      "iops": 3000,
+      "bytesPerSecond": 131072000
+    },
+    "layout": {
+      "kind": "shared",
+      "postgres": "0-1",
+      "consumer": "2-3",
+      "web": "3",
+      "platform": "3",
+      "harness": "0-1"
+    }
+  },
+  "applied": {
+    "containers": [
+      {
+        "name": "web",
+        "nanoCpus": 500000000,
+        "memoryBytes": 1073741824,
+        "memorySwapBytes": 1073741824,
+        "cpuset": "3",
+        "affinity": "3"
+      },
+      {
+        "name": "platform",
+        "nanoCpus": 250000000,
+        "memoryBytes": 536870912,
+        "memorySwapBytes": 536870912,
+        "cpuset": "3",
+        "affinity": "3"
+      },
+      {
+        "name": "screening-1",
+        "nanoCpus": 2000000000,
+        "memoryBytes": 4294967296,
+        "memorySwapBytes": 4294967296,
+        "cpuset": "2-3",
+        "affinity": "2-3"
+      },
+      {
+        "name": "postgres",
+        "nanoCpus": null,
+        "memoryBytes": null,
+        "memorySwapBytes": null,
+        "cpuset": null
+      }
+    ],
+    "ioMax": null,
+    "roundTripMedianMs": 0.1486704999988433
+  },
+  "runnerProblems": [],
+  "departures": [
+    {
+      "what": "Postgres gets db.t4g.medium’s 2 vCPU and 4 GiB on the runner’s first two CPUs, which the harness and Chromium share",
+      "direction": "harsher"
+    },
+    {
+      "what": "web and platform share the screening consumer’s last CPU (their fractional-vCPU quotas inside it)",
+      "direction": "harsher"
+    },
+    {
+      "what": "one web container takes every upload where production runs two web tasks",
+      "direction": "harsher"
+    },
+    {
+      "what": "a 2 ms round trip to Postgres, more than an in-VPC trip plus Multi-AZ’s synchronous commit",
+      "direction": "harsher"
+    },
+    {
+      "what": "gp3’s I/O baseline without its burst",
+      "direction": "equal or harsher"
+    },
+    {
+      "what": "Postgres runs on two full CPUs; db.t4g.medium earns 24 CPU credits an hour (a 20% baseline per vCPU) and bursts on its balance, and RDS runs T4g in Unlimited mode, so a drained balance is billed rather than throttled (AWS’s documentation; not verified by the harness)",
+      "direction": "gentler"
+    },
+    {
+      "what": "mail is a file in an outbox instead of an SES call of about 0.1 s",
+      "direction": "gentler"
+    },
+    {
+      "what": "the platform and screening workers run NODE_ENV=test with MAIL_OUTBOX_DIR (NODE_ENV_READS: providers and required settings only)",
+      "direction": "none"
+    },
+    {
+      "what": "the web runs NODE_ENV=production with TP_ALLOW_LOCAL_PROVIDERS=e2e (local identity, keys, billing and model providers)",
+      "direction": "none"
+    },
+    {
+      "what": "process runtime: the build outputs as processes in cgroups, against an unlimited shared Postgres with a warm cache and no network delay",
+      "direction": "gentler"
+    }
+  ],
+  "release": {
+    "releaseNo": 900100,
+    "manifestSha256": "711d4efa5326b7ce0b76d841525292f540b2cf7ba8011586338425a0fd4ac214",
+    "records": 2247791,
+    "zip9": {
+      "records": 2546,
+      "rangesPerRecord": 40,
+      "linesPerYear": 101840,
+      "bytesPerYear": 8249040
+    }
+  },
+  "shapes": {
+    "practice": {
+      "rows": 50000,
+      "distinctPricedLines": 9216,
+      "distinctCodes": 12,
+      "pricedRows": 18432,
+      "pooledRows": 12288,
+      "changeRows": 0,
+      "minClaims": 11,
+      "maxClaims": 50,
+      "maxLineAllowedCents": "8265",
+      "sha256": "1fe8421551a777dc8797e9150361bbc5baf673b131b66c1aaf6210a67e060c42"
+    },
+    "worst": {
+      "rows": 50000,
+      "distinctPricedLines": 50000,
+      "distinctCodes": 15000,
+      "pricedRows": 50000,
+      "pooledRows": 25034,
+      "changeRows": 5526,
+      "minClaims": 11,
+      "maxClaims": 60,
+      "maxLineAllowedCents": "24999",
+      "sha256": "d7e7e5063bf73554f370cd08c45a02886fb0cf7a49f00ebce866d49dde001cd1"
+    },
+    "worst_variant_1": {
+      "rows": 50000,
+      "distinctPricedLines": 50000,
+      "distinctCodes": 15000,
+      "pricedRows": 50000,
+      "pooledRows": 25034,
+      "changeRows": 5526,
+      "minClaims": 11,
+      "maxClaims": 60,
+      "maxLineAllowedCents": "24999",
+      "sha256": "788c8ac9e4f6704a81a505830a02462a06d04b5c77e4c9fbf1f08274ccee608d"
+    },
+    "worst_variant_2": {
+      "rows": 50000,
+      "distinctPricedLines": 50000,
+      "distinctCodes": 15000,
+      "pricedRows": 50000,
+      "pooledRows": 25034,
+      "changeRows": 5526,
+      "minClaims": 11,
+      "maxClaims": 60,
+      "maxLineAllowedCents": "24999",
+      "sha256": "9a938b1c93abb2a60ef3c9ce4e7a2f51d98632b3b9c2994cefcad711d7a23f0f"
+    },
+    "worst_variant_3": {
+      "rows": 50000,
+      "distinctPricedLines": 50000,
+      "distinctCodes": 15000,
+      "pricedRows": 50000,
+      "pooledRows": 25034,
+      "changeRows": 5526,
+      "minClaims": 11,
+      "maxClaims": 60,
+      "maxLineAllowedCents": "24999",
+      "sha256": "ab1d3377e2933f3533696fe865eb0399d3add3ae68a29495ab1cbc6bc11a6a26"
+    },
+    "small": {
+      "rows": 25,
+      "distinctPricedLines": 9,
+      "distinctCodes": 12,
+      "pricedRows": 9,
+      "pooledRows": 5,
+      "changeRows": 0,
+      "minClaims": 11,
+      "maxClaims": 35,
+      "maxLineAllowedCents": "1500",
+      "sha256": "14d32a67aae20ce770cc97ecff6a28043b6ae04b6d21be707dd85abd17c9bdca"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "S1",
+      "scenario": "S1",
+      "repetition": null,
+      "what": "worst shape, one upload alone, then a small one behind it from a ZIP split across localities with its ZIP+4: fresh Postgres, fresh consumer",
+      "coldStart": {
+        "restarted": false,
+        "cacheDropped": false
+      },
+      "uploads": [
+        {
+          "id": "S1-1",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 8863,
+          "jobStartedMs": 8868,
+          "submittedMs": 3219,
+          "emailedMs": 30671,
+          "queueWaitMs": 5731,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 39,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2347,
+              "recordCount": 150423
+            },
+            "pricing": {
+              "elapsedMs": 14878,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 3842,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 27363,
+            "atMs": 30674,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S1-2",
+          "shape": "small",
+          "rows": 25,
+          "behind": true,
+          "jobCreatedMs": 11339,
+          "jobStartedMs": 11343,
+          "submittedMs": 8969,
+          "emailedMs": 11524,
+          "queueWaitMs": 2492,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 42,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 7,
+              "recordCount": 49
+            },
+            "pricing": {
+              "elapsedMs": 19,
+              "recordCount": 9
+            },
+            "recording": {
+              "elapsedMs": 21,
+              "recordCount": 9
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 25,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 2480,
+            "atMs": 11526,
+            "tier": "normal"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "web",
+          "limitBytes": 1073741824,
+          "anonPeakBytes": 258162688,
+          "anonSamples": 59,
+          "memoryPeakBytes": 273784832,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 202,
+            "throttledPeriods": 78,
+            "throttledUs": 3609825
+          }
+        },
+        {
+          "name": "platform",
+          "limitBytes": 536870912,
+          "anonPeakBytes": 95744000,
+          "anonSamples": 59,
+          "memoryPeakBytes": 98643968,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 214,
+            "throttledPeriods": 43,
+            "throttledUs": 3168299
+          }
+        },
+        {
+          "name": "screening-1",
+          "limitBytes": 4294967296,
+          "anonPeakBytes": 746528768,
+          "anonSamples": 59,
+          "memoryPeakBytes": 768794624,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 272,
+            "throttledPeriods": 0,
+            "throttledUs": 0
+          }
+        }
+      ],
+      "postgres": {
+        "oomKills": null,
+        "restarts": null,
+        "running": null
+      },
+      "jobs": [
+        {
+          "name": "dunning_notices",
+          "count": 1,
+          "seconds": 0.011572
+        },
+        {
+          "name": "mail_events",
+          "count": 1,
+          "seconds": 0.027444
+        },
+        {
+          "name": "__pgboss__send-it",
+          "count": 4,
+          "seconds": 0.09406
+        },
+        {
+          "name": "screening_price",
+          "count": 2,
+          "seconds": 22.002142
+        },
+        {
+          "name": "screening_sweep",
+          "count": 1,
+          "seconds": 0.08044
+        },
+        {
+          "name": "support_grant_notices",
+          "count": 1,
+          "seconds": 0.024432
+        }
+      ],
+      "platformPricedRuns": 0,
+      "staticOrigin": null
+    },
+    {
+      "id": "S4#1",
+      "scenario": "S4",
+      "repetition": 1,
+      "what": "worst shape, three at once (variants 1 to 3, three prospects), a small one behind them: fresh Postgres, fresh consumer (run 1 of 3)",
+      "coldStart": {
+        "restarted": false,
+        "cacheDropped": false
+      },
+      "uploads": [
+        {
+          "id": "S4-1",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 12354,
+          "jobStartedMs": 12357,
+          "submittedMs": 5099,
+          "emailedMs": 39165,
+          "queueWaitMs": 7343,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 47,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2586,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 18514,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4237,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 33761,
+            "atMs": 39167,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-2",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 12467,
+          "jobStartedMs": 12469,
+          "submittedMs": 5099,
+          "emailedMs": 37913,
+          "queueWaitMs": 7465,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 55,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2624,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 17504,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4002,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 32505,
+            "atMs": 37916,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-3",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 10849,
+          "jobStartedMs": 10855,
+          "submittedMs": 5099,
+          "emailedMs": 36540,
+          "queueWaitMs": 5850,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 31,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2096,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 18691,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4164,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 31140,
+            "atMs": 36544,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-4",
+          "shape": "small",
+          "rows": 25,
+          "behind": true,
+          "jobCreatedMs": 15501,
+          "jobStartedMs": 36576,
+          "submittedMs": 13130,
+          "emailedMs": 36622,
+          "queueWaitMs": 23452,
+          "phases": {
+            "shared_held": {
+              "elapsedMs": 0,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 9,
+              "recordCount": 47
+            },
+            "pricing": {
+              "elapsedMs": 12,
+              "recordCount": 9
+            },
+            "recording": {
+              "elapsedMs": 13,
+              "recordCount": 9
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 25,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 23446,
+            "atMs": 36624,
+            "tier": "normal"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "web",
+          "limitBytes": 1073741824,
+          "anonPeakBytes": 341987328,
+          "anonSamples": 77,
+          "memoryPeakBytes": 359469056,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 279,
+            "throttledPeriods": 98,
+            "throttledUs": 4355730
+          }
+        },
+        {
+          "name": "platform",
+          "limitBytes": 536870912,
+          "anonPeakBytes": 95789056,
+          "anonSamples": 77,
+          "memoryPeakBytes": 98627584,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 256,
+            "throttledPeriods": 41,
+            "throttledUs": 2964836
+          }
+        },
+        {
+          "name": "screening-1",
+          "limitBytes": 4294967296,
+          "anonPeakBytes": 1048694784,
+          "anonSamples": 77,
+          "memoryPeakBytes": 1082359808,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 365,
+            "throttledPeriods": 3,
+            "throttledUs": 548
+          }
+        }
+      ],
+      "postgres": {
+        "oomKills": null,
+        "restarts": null,
+        "running": null
+      },
+      "jobs": [
+        {
+          "name": "dunning_notices",
+          "count": 1,
+          "seconds": 0.033021
+        },
+        {
+          "name": "mail_events",
+          "count": 1,
+          "seconds": 0.034531
+        },
+        {
+          "name": "__pgboss__send-it",
+          "count": 4,
+          "seconds": 0.10568
+        },
+        {
+          "name": "screening_price",
+          "count": 4,
+          "seconds": 78.0411
+        },
+        {
+          "name": "screening_sweep",
+          "count": 1,
+          "seconds": 0.070836
+        },
+        {
+          "name": "support_grant_notices",
+          "count": 1,
+          "seconds": 0.038796
+        }
+      ],
+      "platformPricedRuns": 0,
+      "staticOrigin": null
+    },
+    {
+      "id": "S4#2",
+      "scenario": "S4",
+      "repetition": 2,
+      "what": "worst shape, three at once (variants 1 to 3, three prospects), a small one behind them: fresh Postgres, fresh consumer (run 2 of 3)",
+      "coldStart": {
+        "restarted": false,
+        "cacheDropped": false
+      },
+      "uploads": [
+        {
+          "id": "S4-1",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 12951,
+          "jobStartedMs": 12960,
+          "submittedMs": 5402,
+          "emailedMs": 38736,
+          "queueWaitMs": 7702,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 42,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2382,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 18190,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4055,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 32594,
+            "atMs": 38741,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-2",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 11064,
+          "jobStartedMs": 11073,
+          "submittedMs": 5403,
+          "emailedMs": 34781,
+          "queueWaitMs": 5786,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 57,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2249,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 16403,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4282,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 29301,
+            "atMs": 34787,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-3",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 12058,
+          "jobStartedMs": 12062,
+          "submittedMs": 5403,
+          "emailedMs": 38023,
+          "queueWaitMs": 6767,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 36,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2201,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 18468,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4144,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 31883,
+            "atMs": 38028,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-4",
+          "shape": "small",
+          "rows": 25,
+          "behind": true,
+          "jobCreatedMs": 16118,
+          "jobStartedMs": 34802,
+          "submittedMs": 13752,
+          "emailedMs": 34840,
+          "queueWaitMs": 21058,
+          "phases": {
+            "shared_held": {
+              "elapsedMs": 0,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 5,
+              "recordCount": 47
+            },
+            "pricing": {
+              "elapsedMs": 10,
+              "recordCount": 9
+            },
+            "recording": {
+              "elapsedMs": 10,
+              "recordCount": 9
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 25,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 21053,
+            "atMs": 34842,
+            "tier": "normal"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "web",
+          "limitBytes": 1073741824,
+          "anonPeakBytes": 326578176,
+          "anonSamples": 76,
+          "memoryPeakBytes": 343416832,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 286,
+            "throttledPeriods": 103,
+            "throttledUs": 4715838
+          }
+        },
+        {
+          "name": "platform",
+          "limitBytes": 536870912,
+          "anonPeakBytes": 96124928,
+          "anonSamples": 76,
+          "memoryPeakBytes": 98983936,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 268,
+            "throttledPeriods": 42,
+            "throttledUs": 3062249
+          }
+        },
+        {
+          "name": "screening-1",
+          "limitBytes": 4294967296,
+          "anonPeakBytes": 1026428928,
+          "anonSamples": 76,
+          "memoryPeakBytes": 1056436224,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 360,
+            "throttledPeriods": 5,
+            "throttledUs": 3131
+          }
+        }
+      ],
+      "postgres": {
+        "oomKills": null,
+        "restarts": null,
+        "running": null
+      },
+      "jobs": [
+        {
+          "name": "dunning_notices",
+          "count": 1,
+          "seconds": 0.02404
+        },
+        {
+          "name": "mail_events",
+          "count": 1,
+          "seconds": 0.022127
+        },
+        {
+          "name": "__pgboss__send-it",
+          "count": 5,
+          "seconds": 0.425405
+        },
+        {
+          "name": "screening_price",
+          "count": 4,
+          "seconds": 75.531068
+        },
+        {
+          "name": "screening_sweep",
+          "count": 1,
+          "seconds": 0.036553
+        },
+        {
+          "name": "support_grant_notices",
+          "count": 1,
+          "seconds": 0.02263
+        },
+        {
+          "name": "support_mail",
+          "count": 1,
+          "seconds": 0.010542
+        }
+      ],
+      "platformPricedRuns": 0,
+      "staticOrigin": null
+    },
+    {
+      "id": "S4#3",
+      "scenario": "S4",
+      "repetition": 3,
+      "what": "worst shape, three at once (variants 1 to 3, three prospects), a small one behind them: fresh Postgres, fresh consumer (run 3 of 3)",
+      "coldStart": {
+        "restarted": false,
+        "cacheDropped": false
+      },
+      "uploads": [
+        {
+          "id": "S4-1",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 13052,
+          "jobStartedMs": 13061,
+          "submittedMs": 5356,
+          "emailedMs": 42186,
+          "queueWaitMs": 7832,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 60,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2363,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 21303,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4336,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 36117,
+            "atMs": 42189,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-2",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 11313,
+          "jobStartedMs": 11324,
+          "submittedMs": 5357,
+          "emailedMs": 38914,
+          "queueWaitMs": 6052,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 39,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2151,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 19883,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4489,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 33461,
+            "atMs": 38917,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-3",
+          "shape": "worst",
+          "rows": 50000,
+          "behind": false,
+          "jobCreatedMs": 12243,
+          "jobStartedMs": 12248,
+          "submittedMs": 5357,
+          "emailedMs": 39410,
+          "queueWaitMs": 7041,
+          "phases": {
+            "shared_load": {
+              "elapsedMs": 46,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 2443,
+              "recordCount": 119063
+            },
+            "pricing": {
+              "elapsedMs": 19296,
+              "recordCount": 50000
+            },
+            "recording": {
+              "elapsedMs": 4248,
+              "recordCount": 50000
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 50000,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 33482,
+            "atMs": 39471,
+            "tier": "normal"
+          }
+        },
+        {
+          "id": "S4-4",
+          "shape": "small",
+          "rows": 25,
+          "behind": true,
+          "jobCreatedMs": 16077,
+          "jobStartedMs": 38944,
+          "submittedMs": 13656,
+          "emailedMs": 38978,
+          "queueWaitMs": 25294,
+          "phases": {
+            "shared_held": {
+              "elapsedMs": 0,
+              "recordCount": 2184
+            },
+            "keyed_read": {
+              "elapsedMs": 4,
+              "recordCount": 47
+            },
+            "pricing": {
+              "elapsedMs": 5,
+              "recordCount": 9
+            },
+            "recording": {
+              "elapsedMs": 12,
+              "recordCount": 9
+            }
+          },
+          "resultStatus": 200,
+          "lastPageStatus": 200,
+          "storedRows": 25,
+          "pendingRows": 0,
+          "engineErrorRows": 0,
+          "stalled": false,
+          "runStatus": "complete",
+          "waitReason": null,
+          "queuePriority": 0,
+          "logged": {
+            "elapsedMs": 25265,
+            "atMs": 38979,
+            "tier": "normal"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "web",
+          "limitBytes": 1073741824,
+          "anonPeakBytes": 328413184,
+          "anonSamples": 84,
+          "memoryPeakBytes": 345149440,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 301,
+            "throttledPeriods": 107,
+            "throttledUs": 4717719
+          }
+        },
+        {
+          "name": "platform",
+          "limitBytes": 536870912,
+          "anonPeakBytes": 95932416,
+          "anonSamples": 84,
+          "memoryPeakBytes": 98631680,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 284,
+            "throttledPeriods": 43,
+            "throttledUs": 3114587
+          }
+        },
+        {
+          "name": "screening-1",
+          "limitBytes": 4294967296,
+          "anonPeakBytes": 1206124544,
+          "anonSamples": 84,
+          "memoryPeakBytes": 1242255360,
+          "events": {
+            "max": 0,
+            "oomKill": 0
+          },
+          "oomKilled": false,
+          "restarts": 0,
+          "exitedUnexpectedly": false,
+          "throttling": {
+            "periods": 411,
+            "throttledPeriods": 9,
+            "throttledUs": 18884
+          }
+        }
+      ],
+      "postgres": {
+        "oomKills": null,
+        "restarts": null,
+        "running": null
+      },
+      "jobs": [
+        {
+          "name": "dunning_notices",
+          "count": 1,
+          "seconds": 0.047832
+        },
+        {
+          "name": "mail_events",
+          "count": 1,
+          "seconds": 0.059477
+        },
+        {
+          "name": "__pgboss__send-it",
+          "count": 4,
+          "seconds": 0.109616
+        },
+        {
+          "name": "screening_price",
+          "count": 4,
+          "seconds": 84.022767
+        },
+        {
+          "name": "screening_sweep",
+          "count": 1,
+          "seconds": 0.038161
+        },
+        {
+          "name": "support_grant_notices",
+          "count": 1,
+          "seconds": 0.054486
+        }
+      ],
+      "platformPricedRuns": 0,
+      "staticOrigin": null
+    }
+  ],
+  "oracle": [
+    {
+      "scenario": "S1",
+      "upload": "S1-1",
+      "oracle": "frozen_3c1b289",
+      "rows": 50000,
+      "expectedRows": 50000,
+      "storedSha256": "5e0e0f9c9579b2ce3e43c2388815707012760b829094065446f3a8480d268989",
+      "oracleSha256": "5e0e0f9c9579b2ce3e43c2388815707012760b829094065446f3a8480d268989"
+    },
+    {
+      "scenario": "S1",
+      "upload": "S1-2",
+      "oracle": "whole_release",
+      "rows": 9,
+      "expectedRows": 9,
+      "storedSha256": "5e62078b75bf03f947e3b25fc3d78380392088b0aacb266d9b61e2a53fc4f97b",
+      "oracleSha256": "5e62078b75bf03f947e3b25fc3d78380392088b0aacb266d9b61e2a53fc4f97b"
+    }
+  ],
+  "only": [
+    "S1",
+    "S4"
+  ],
+  "notStarted": [],
+  "aborted": null,
+  "mail": {
+    "addressCheckMs": 2000,
+    "screeningReady": true,
+    "heldLines": 0
+  },
+  "verdict": {
+    "pass": false,
+    "time": "advisory",
+    "reasons": [
+      "partial run: measured S1, S4#1, S4#2, S4#3; a verdict needs S1, S2, S3, S4#1, S4#2, S4#3, S5 (asked for S1, S4)",
+      "limit not applied: postgres: CPU quota none, not 2000000000",
+      "limit not applied: postgres: memory null and memory with swap null, not both 4294967296",
+      "limit not applied: postgres: cpuset null, not 0-1",
+      "limit not applied: postgres: io.max not set, not 3000 IOPS and 131072000 bytes a second each way",
+      "limit not applied: postgres: median round trip 0.15 ms, under 2 ms",
+      "cold start not applied: S1 (Postgres restarted: no, page cache dropped: no)",
+      "cold start not applied: S4#1 (Postgres restarted: no, page cache dropped: no)",
+      "cold start not applied: S4#2 (Postgres restarted: no, page cache dropped: no)",
+      "cold start not applied: S4#3 (Postgres restarted: no, page cache dropped: no)",
+      "oracle not compared: S2-1",
+      "oracle not compared: S3-1"
+    ],
+    "timeWarnings": []
+  },
+  "repeated": {
+    "scenario": "S4",
+    "middle": "S4#1",
+    "runs": [
+      {
+        "id": "S4#1",
+        "worstUpload": "S4-1",
+        "worstMs": 34066,
+        "uploads": [
+          {
+            "id": "S4-1",
+            "ms": 34066
+          },
+          {
+            "id": "S4-2",
+            "ms": 32814
+          },
+          {
+            "id": "S4-3",
+            "ms": 31441
+          },
+          {
+            "id": "S4-4",
+            "ms": 23492
+          }
+        ]
+      },
+      {
+        "id": "S4#2",
+        "worstUpload": "S4-1",
+        "worstMs": 33334,
+        "uploads": [
+          {
+            "id": "S4-1",
+            "ms": 33334
+          },
+          {
+            "id": "S4-2",
+            "ms": 29378
+          },
+          {
+            "id": "S4-3",
+            "ms": 32620
+          },
+          {
+            "id": "S4-4",
+            "ms": 21088
+          }
+        ]
+      },
+      {
+        "id": "S4#3",
+        "worstUpload": "S4-1",
+        "worstMs": 36830,
+        "uploads": [
+          {
+            "id": "S4-1",
+            "ms": 36830
+          },
+          {
+            "id": "S4-2",
+            "ms": 33557
+          },
+          {
+            "id": "S4-3",
+            "ms": 34053
+          },
+          {
+            "id": "S4-4",
+            "ms": 25322
+          }
+        ]
+      }
+    ]
+  },
+  "sizing": {
+    "worstUpload": "S4#1 S4-1",
+    "worstMs": 34066,
+    "question": false
+  }
+}

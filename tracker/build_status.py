@@ -33,7 +33,7 @@ MILESTONES = [
   ("M9", "Recovery ledger and reconciliation", "Monitoring v1", 60, 90, "Built", "Met", ""),
   ("M10", "Model gateway", "Monitoring v1", 50, 70, "Built", "Needs a person", "Evaluation gates need model access"),
   ("M11", "Sign-in, billing, production readiness", "Monitoring v1", 60, 90, "Built", "Needs a person", "Real Stripe test ACH; AWS deploy"),
-  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, 5b, 6b-1, 6b-2 and 6b-3, governance and the screen fixes merged; PR 6b-4 built (draft #42), reviews next"),
+  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, 5b, 6b-1, 6b-2 and 6b-3, governance and the screen fixes merged. Lane A: PR 6b-4 (#42) reviewed, fix round next. Lane B: CI series (ci-speed #43 in its fix round, ci-mutation building) and PR 15 designed"),
   ("M11b", "Firm grants and minimal portfolio (change order PR 17)", "Change order 001", 34, 60, "Queued", "Not yet", "Inserted by the change order before milestone 12"),
   ("M12", "Firm organizations and portfolio", "Firm v1.5", 60, 90, "Queued", "Not yet", "Starts after the change order's 17 pull requests"),
   ("M13", "Intelligence and hardening", "Intelligence v2", 70, 100, "Queued", "Not yet", "Pen test and SOC 2 Type II are outside work"),
@@ -222,6 +222,17 @@ MANUAL = {
   "PR 6b-2, pricing location and onboarding: build, reviews, fix, verify, your approval, merge": ("Done", "2026-10-21T23:55:00Z", "2026-10-22T16:31:00Z"),
   "PR 6b-3, the screening's own consumer and the time check: build, reviews, fix, verify, your approval, merge": ("Done", "2026-10-22T16:51:00Z", "2026-10-23T15:21:00Z"),
   "PR 6b-4, mail streams: build, reviews, fix, verify, your approval, merge": ("Running", "2026-10-23T16:45:00Z", None),
+  # Lane B (the co-founder's sessions; lanes/lane-b.md), folded in by Lane A.
+  "Lane B: CI series design (four PRs, designs/lane-b-ci.md) and review": ("Done", "2026-10-24T21:10:00Z", "2026-10-25T00:45:00Z"),
+  "You ruled F1 to F7 as recommended (relayed by the co-founder)": ("Done", "2026-10-25T00:45:00Z", "2026-10-25T01:10:00Z"),
+  "ci-speed (#109): build, draft PR #43 (CI 7:26), two reviews": ("Done", "2026-10-25T01:05:00Z", "2026-10-25T06:20:00Z"),
+  "ci-speed: fix round, CI, fresh-clone verification, merge": ("Running", "2026-10-25T07:45:00Z", None),
+  "ci-mutation (#54): build, draft PR, two reviews": ("Running", "2026-10-25T02:15:00Z", None),
+  "ci-mutation: fix round, verification, merge": ("Queued", None, None),
+  "ci-deps (#112, #19's asserts, Dependabot #40, #38, #33): build to merge": ("Queued", None, None),
+  "ci-browser (#19's upgrade): build to merge": ("Queued", None, None),
+  "PR 15: design, probe and your ruling L1 (a)": ("Done", "2026-10-25T01:15:00Z", "2026-10-25T02:05:00Z"),
+  "PR 15: build (tests written), reviews, fix, verify, merge": ("Queued", None, None),
 }
 # Steps whose label repeats across batches ("fix review findings"), kept by hand: (batch, label) -> (status, started, finished).
 BATCH_MANUAL = {
@@ -256,6 +267,8 @@ BATCHES = [
   ("PR 5: packet deadline verification", "wf_ba5a5838-67c", ["set up the worktree and the contract", "deadline rule, window evidence, release 900005, AUDIT-01", "tp-packet/2, verifier at export, attestation, e2e", "review: engine, deadline rule and AUDIT-01", "review: attack the verifier and the hash", "review: security, attestation and tenancy", "review: guardrails and the domain model", "fix review findings", "fresh-clone verification and approval summary", "You approve the domain model (PR 5)", "PR 5 on GitHub: CI green, then merge"]),
   ("PR 4: EMR exports as intake", "wf_4afdb8f3-dff", ["set up the worktree and the contract", "schema, normalizer, loading, duplicate rule", "Coverage flag, upload and receipts, e2e", "review: loader correctness", "review: duplicates and idempotency", "review: security and tenancy", "review: guardrails and the domain model", "fix review findings", "fresh-clone verification and approval summary", "You approve the domain model (PR 4)", "PR 4 on GitHub: CI green, then merge"]),
   ("Screen-tour fixes", "wf_0291578a-a18", ["set up the worktree and split the work", "privacy: the viewer sees no service date", "numbers: coverage share, dashboard coverage, audit report", "layout and copy", "review: privacy and security", "review: correctness and UI", "fix review findings", "fresh-clone verification and re-shot tour", "Fixes on GitHub: CI green, then merge"]),
+  ("Lane B (co-founder): the CI series and PR 15", None, ["Lane B: CI series design (four PRs, designs/lane-b-ci.md) and review", "You ruled F1 to F7 as recommended (relayed by the co-founder)", "ci-speed (#109): build, draft PR #43 (CI 7:26), two reviews", "ci-speed: fix round, CI, fresh-clone verification, merge", "ci-mutation (#54): build, draft PR, two reviews", "ci-mutation: fix round, verification, merge", "ci-deps (#112, #19's asserts, Dependabot #40, #38, #33): build to merge", "ci-browser (#19's upgrade): build to merge", "PR 15: design, probe and your ruling L1 (a)", "PR 15: build (tests written), reviews, fix, verify, merge"]),
+  ("Lane B queue after the CI series and PR 15 (no migration; LANES.md)", None, ["PR 15b: ledger amounts in payment terms (#12)", "Readable database-function diffs (#111)", "A superseded re-run cannot be accepted (#10)", "The Verified seal claims only what it proves (#46)", "Every figure explained in words (#38)", "Access log pages past the first (#49)", "A narrative survives sign-out (#48)", "One unmapped plan no longer freezes a month (#32)", "Agent instructions and a ten-minute setup (#113)", "Model evaluation gate (#84) and the contract PHI check (#120)", "Bank account shown first (#135)", "Release content checks (#7, #30, #31, #59)", "Infrastructure PRs after #42 (#72/#116, #17's infrastructure, least privilege, deploy safety with #67, job platform #73, observability #75, status page, packets bucket #45, staging zones #136)", "Raw errors kept out of the queue and logs (#115), audit copy days (#117), web and worker boundary (#137), claims page (#107)", "The AMA notice and CPT records (#52)", "A code formatter (#138), when no PR is open", "The AI statement, code-checked (#122), after PR 16"]),
   ("Change order 001 pull requests", None, CO_STEPS),
   ("Milestones 12-13", None, ["Firm organizations, grants, invitations", "Export, deletion, legal holds", "Portfolio, per-practice billing, verified-by mark", "Calendar alerts and negotiation workspace", "Payer scorecards, OT and SLP codes, SOC 2 Type II checklist", "Reviews (security, plan, correctness)", "Fixes and full test run"]),
   ("Final pass", None, ["Runbooks", "Phone-width screens and mono figures", "Whole-plan audit", "Final fixes", "Claude Code settings file, final verification, report"]),
@@ -296,6 +309,10 @@ BLOCKERS = [
   ("A GitHub identity for the build (runbook 3i), then APPROVAL_REVIEW_REQUIRED", "CO1", "You", "docs/runbooks/github-governance.md, step 3i; until then the build merges on green CI (D4 a)"),
   ("Counsel: decisions 3, 4, 7 and 17, the cookie notice, the 11-line floor, the screening terms, the campaign-code wording", "CO1", "Counsel", "Before the first real packet and before the screening opens"),
   ("Specialist: Q21 on sequestration", "M5, CO1", "Specialist", "fixtures/golden/QUESTIONS.md"),
+  ("Repository setting F7: the claude/build-platform ruleset (all green, mutation, screening-capacity gate, approval-of-record; PRs required; no force push; up to date)", "CO1", "You", "After ci-speed's (#43) first green push run on claude/build-platform; Lane B gives the exact steps"),
+  ("Repository settings F1 and F2 (a): default branch claude/build-platform, with Dependabot alerts and security updates", "CO1", "You", "When ci-deps merges, together"),
+  ("Repository setting F3: require actions pinned to a full-length commit SHA", "CO1", "You", "After ci-deps merges"),
+  ("Decide S3 on PR 6b-4: CloudTrail likely keeps every address SES validates", "CO1", "You", "Recommended: a dedicated validation account whose trail records writes only, verified on staging; approval-summaries/pr6b4-review-findings.md"),
   ("Revisit: how the screening's 60-second promise is measured (free runner, time advisory on PRs; issue #41)", "CO1, launch", "You", "Before the screening opens: measure on AWS staging (recommended) or an organization on GitHub Team with the 8-core runner; then the sizing question O9"),
 ]
 

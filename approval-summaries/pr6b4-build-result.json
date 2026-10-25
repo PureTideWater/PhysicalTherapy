@@ -1,0 +1,541 @@
+{
+ "m1": {
+  "summary": "M1 (database) for PR 6b-4 is built and pushed to co-001/pr-06b-mail-streams at head 356af63, in three commits: c203d7b, 7100d39 and 356af63.\n\nWhat was built:\n- **Migration** packages/db/migrations/20261107090000_mail_streams.sql. It was written through the new-migration marker route under the founder's standing permission. Each write or edit set the marker with a shell touch and removed it right after. No permission check refused it. The marker was never committed and no other migration was touched.\n- **Tables:**\n  - mail_recipient_key: one hex pepper, fixed.\n  - mail_stream: three seeded rows, all sending and confirmed.\n  - mail_send: one row per SES message ID. It holds no address and no hash of one. Kept 30 days on the screening stream and 90 days on the others.\n  - screening_mail_refusal: the keyed hash of a refused address, kept 365 days (Q11 (b)).\n  - screening_bounce_mark: 7-day marks (Q10 (a)).\n  - support_grant_notice and support_grant_notice_recipient: registered tenant tables with forced RLS, a tenant policy, an owner policy, a restrictive read policy that mirrors support_grant's, and SELECT for tp_app.\n  - dunning_notice_recipient: billing's, owner-only.\n  - Changed tables: screening_run.client_subject, invitation.undelivered_at and undelivered_reason, the notification kind support_notice_undelivered, and an audit_event_record policy that reserves notice_undelivered, mail_stream_paused and mail_stream_resumed.\n- **Triggers:** the screening refusals and the run's mail gate, in the order D2 pins.\n- **Functions:** the design's section 3 functions, plus screening_mail_gate() for tp_screening only.\n- **submit_screening():** recreated on 6b-3's body with client_subject added. A db test diffs the two bodies.\n- **Dropped:** the three functions the outboxes replace.\n- **Header:** says the migration is safe with the previous image running and lists five deploy-window effects.\n\npackages/db changes:\n- Drizzle schema in operations, tenancy, billing, onboarding, screening and index, with the closed-list constants.\n- domain-model/areas.json places the new tables.\n- New mail.db.test.ts (24 tests).\n- screening.db.test.ts gains 8 tests: D7's body diff, D2's refusal order, the refusal list end to end, prospect links, the bounce budget, the spread pause and the run gate. It also tests closed-first in its setup.\n- hardening.db.test.ts covers the reserved actions.\n- Pinned lists updated in catalog.db.test.ts, location.db.test.ts, migrate.db.test.ts and screening-queue.db.test.ts.\n- row-factory.ts now handles a foreign key paired with practice_id. It is not in my file list, but nobody else owns it, and the cross-tenant test needed it.\n\nDocs:\n- ADR 0065 is new. It records the founder's Q1, Q9, Q10 (a), Q11 (b) and Q12 rulings of 2026-10-21. Its \"Revisit when\" also records the capacity decision you asked to keep in view: the free runner with advisory time on pull requests was chosen to save cost, to be revisited before the screening opens and once production has traffic (GitHub issue #41, ADR 0062).\n- data-retention.md gains every value the mail path keeps.\n- domain-model.md is regenerated on a fresh PostgreSQL 18 database. Its SHA-256 is 07c4a8eeca46ef5f2fdbc0974f23c4bf0ebb257f79fd7cc2b7bef8a1735d5b31 and the approval line is line 7327, left blank.\n- The Cross-checks block shows 97 Drizzle tables and 97 migrated tables, nothing missing on either side, 0 column differences and 0 catalog problems. No false difference.\n- data-dictionary.md is unchanged: it stays a verbatim import (reconciliation-001 D2 (a)), and the domain model records the new tables.\n\nThe ADR 0062 \"Revisit when\" entry itself was not written. ADR 0062 is M3's file under the plan's ownership, so the capacity note lives in ADR 0065 for now (see open items).",
+  "head": "356af63",
+  "files": [
+   "/home/user/pr6b4/packages/db/migrations/20261107090000_mail_streams.sql",
+   "/home/user/pr6b4/packages/db/src/mail.db.test.ts",
+   "/home/user/pr6b4/packages/db/src/screening.db.test.ts",
+   "/home/user/pr6b4/packages/db/src/hardening.db.test.ts",
+   "/home/user/pr6b4/packages/db/src/catalog.db.test.ts",
+   "/home/user/pr6b4/packages/db/src/location.db.test.ts",
+   "/home/user/pr6b4/packages/db/src/migrate.db.test.ts",
+   "/home/user/pr6b4/packages/db/src/screening-queue.db.test.ts",
+   "/home/user/pr6b4/packages/db/src/row-factory.ts",
+   "/home/user/pr6b4/packages/db/src/schema/operations.ts",
+   "/home/user/pr6b4/packages/db/src/schema/tenancy.ts",
+   "/home/user/pr6b4/packages/db/src/schema/billing.ts",
+   "/home/user/pr6b4/packages/db/src/schema/onboarding.ts",
+   "/home/user/pr6b4/packages/db/src/schema/screening.ts",
+   "/home/user/pr6b4/packages/db/src/schema/index.ts",
+   "/home/user/pr6b4/packages/db/domain-model/areas.json",
+   "/home/user/pr6b4/docs/product/domain-model.md",
+   "/home/user/pr6b4/docs/policies/data-retention.md",
+   "/home/user/pr6b4/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md"
+  ],
+  "checks": [
+   {
+    "command": "pnpm typecheck",
+    "passed": true,
+    "note": "Whole repository, exit 0."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js . --max-warnings=0 (pnpm lint)",
+    "passed": true,
+    "note": "Exit 0 after typing three query results in mail.db.test.ts."
+   },
+   {
+    "command": "npx vitest run --project unit packages/db",
+    "passed": true,
+    "note": "15 files, 215 tests passed."
+   },
+   {
+    "command": "DATABASE_URL=postgres://postgres:test@localhost:5433/postgres npx vitest run --project db packages/db/src",
+    "passed": false,
+    "note": "20 files, 1474 tests passed and 1 failed. The failure is the expected approval case in domain-model.db.test.ts (no founder approval yet). mail.db.test.ts 24/24, screening.db.test.ts 68/68, the catalog test, the cross-tenant test (1174, covering both notice tables), hardening, location, migrate and screening-queue all pass."
+   },
+   {
+    "command": "DATABASE_URL=<fresh PG18 db> pnpm -s db:domain-model --out --strict; then --check on a second fresh database",
+    "passed": true,
+    "note": "Matches the schema at 20261107090000_mail_streams.sql: 98 tables, 0 explanation problems, 0 cross-check differences."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check --require-approval",
+    "passed": false,
+    "note": "Expected until the founder signs: the approval line names no person and no date. The hash to sign is 07c4a8eeca46ef5f2fdbc0974f23c4bf0ebb257f79fd7cc2b7bef8a1735d5b31."
+   },
+   {
+    "command": "git push -u origin co-001/pr-06b-mail-streams (pre-push hook: fixture guard and gitleaks)",
+    "passed": true,
+    "note": "Two pushes, the first creating the branch, the second c203d7b..356af63. Gitleaks found nothing."
+   }
+  ],
+  "differences_from_design": [
+   "The refusal gate is a trigger on screening_upload (screening_upload_mail_gate, BEFORE INSERT WHEN status = 'accepted'), not screening_prospect_mail_gate on screening_prospect. reject_screening_upload() also inserts a prospect, and a refused upload is never emailed; D9 says no address check runs for an upload that fails the row checks. The D2 order still holds because the upload is inserted before the run inside submit_screening().",
+   "screening_prospect_mail_forget is not created, although the plan and task list it. Design D13 creates it only under Q11's alternative, and the founder chose 12 months, so the trigger would do nothing.",
+   "client_subject is the last parameter, after request, with DEFAULT NULL, so the previous web's 30-argument call still works in the deploy window. It is nullable because the web has no client address without a trusted proxy; a run without one is held to its account's budget alone.",
+   "The bounce budget refuses at 3 live marks on either the account subject (screening_run.rate_subject from 6b-3) or the client subject. There is no prospect column (section 5, D6).",
+   "support_grant_notice_recipient has an id uuid primary key and UNIQUE (notice_id, user_id) (support_grant_notice_recipient_once), because the generated cross-tenant tests need a single-column key. The composite foreign key (notice_id, practice_id) to support_grant_notice is kept, and the row factory was extended for it.",
+   "The pepper is stored as 64 hex characters (text) and decoded in mail_recipient_sha256(). Drizzle and the domain model's cross-check have no bytea type.",
+   "Both notice tables also have a restrictive tp_app SELECT policy that mirrors support_grant's: the practice's owning group, or a platform administrator.",
+   "All three mail_stream rows are seeded with ses_enabled_confirmed_at = now(): no stream has been paused yet. The reconcile clears it if SES reads the set disabled. In production and staging the screening still opens only once the probes have returned.",
+   "Readiness needs the delivered and bounced probes within 48 hours and since the last resume. The design said only within 48 hours; its e2e journey expects probes after a resume.",
+   "probe_due and probe_missed track an outstanding probe. A probe is due daily once the last one came back, at once after a resume, and again when one has been unanswered for 26 hours, which also sets probe_missed.",
+   "The invitation flag is set only by kind cognito on the transactional stream. The design said any transactional message; only Cognito's message is an invitation.",
+   "Parameter names differ where the design's clash: operator_open_support_notice(target, ...), because grant is a reserved word, and the billing functions use (target_invoice, notice_stage, ...). operator_record_mail_event's notice_undelivered returns the support grant's ID, which is what NOTICE_UNDELIVERED logs.",
+   "console_pause_mail_stream accepts only stream 'screening' and reason 'operator'. console_resume_mail_stream accepts cause_fixed or false_alarm.",
+   "The CHECK on mail_send is named mail_send_expiry_window; the trigger keeps the name mail_send_expiry.",
+   "Added guards: mail_recipient_key_fixed and mail_recipient_key_no_truncate (the pepper never changes), screening_run_client_subject_fixed, and updated_at triggers on the new tables.",
+   "screening_mail_sending(), mail_recipient_sha256() and every helper or trigger function are SECURITY INVOKER with no grant. 6b-3's screening test requires that every function a role may call runs as the owner and no other does.",
+   "An undelivered complaint is not counted as undelivered for the outboxes: a complaint means the message arrived. Undelivered is bounced, suppressed, rejected or failed.",
+   "failure_code keeps the SES error name when it matches ^[A-Za-z]{1,64}$ and stores 'Unrecognized' otherwise.",
+   "NOTIFICATION_KINDS gains follow_up and support_notice_undelivered. The other catalog.ts lists are unchanged; only the test lists grew.",
+   "screening-queue.db.test.ts (6b-3's D7 test) now compares the live body with client_subject stripped. The full diff against 20261106090000 is in screening.db.test.ts.",
+   "data-dictionary.md is unchanged: it stays a verbatim import (reconciliation-001 D2 (a))."
+  ],
+  "interfaces": "FUNCTIONS (all SET search_path = pg_catalog, public, pg_temp; REVOKE ALL FROM PUBLIC). Errors are SQLSTATE 23514 with the constraint name shown unless stated.\n\ntp_screening (the consumer):\n- screening_mail_gate() RETURNS TABLE(sending boolean, resumed_at timestamptz). Read it before claiming. If sending is false, finish without claiming. Log \"emailed after waiting\" for a run whose received_at is before resumed_at.\n\ntp_app (the web):\n- screening_mail_status() RETURNS TABLE(paused boolean, ready boolean). paused means screeningOpen() returns {open:false, reason:'mail_paused'}. ready is false in production or staging means not_ready; dev ignores ready. ready needs sending plus a delivered and a bounced probe within 48 hours and since resumed_at. A missing row reads paused and not ready.\n- submit_screening(practice text, state_code text, zip5 text, plus_four text, email text, codes text[], modifier_sets text[], unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[], rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, rows_outside_content integer, claim_lines_outside_content bigint, allowed_cents_outside_content bigint, heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text, consent_sha256 text, terms_sha256 text, received timestamptz, rate_account_subject text, request text, client_subject text DEFAULT NULL) RETURNS uuid.\n  - The web passes $31 = rateSubjectHash(sealer, 'screening', 'address', clientAddress) as 64 lowercase hex, or null when there is no client address.\n  - Refusals, in order: screening_closed; screening_zip_unknown, screening_zip_plus_four, screening_zip_plus_four_unknown, screening_locality_not_loaded; screening_rows; screening_band_outside_content; screening_paused; screening_contact_undeliverable; screening_bounce_budget. A malformed subject raises screening_run_client_subject.\n- console_mail_streams() RETURNS TABLE(stream, paused_at, paused_reason, paused_by, pause_sends, pause_bounces, pause_complaints, window_starts_at, window_sends, window_bounces, window_complaints, resumed_at, confirmed_at, sending boolean, ready boolean, probe_sent_at, probe_delivered_at, probe_bounced_at, client_marks int, account_marks int).\n- console_pause_mail_stream(stream text, reason text) RETURNS boolean. stream must be 'screening' (else mail_stream_only_screening_pauses); reason must be 'operator' (else mail_stream_paused_reason).\n- console_resume_mail_stream(stream text, reason text) RETURNS boolean. reason is cause_fixed or false_alarm (else mail_stream_resume_reason). Returns false when the stream is not paused.\n- console_mail_undelivered(since timestamptz) RETURNS TABLE(stream, kind, state, recipient_user_id, practice_id, subject_id, undelivered_at, messages int). Null since means 7 days. At most 500 customer rows. Screening rows are counted by kind and state, never listed.\n- The four console functions need a person with feature_flag.manage; otherwise 42501.\n- console_support_grants(): its first 9 columns are unchanged. It adds opened_recipients, opened_delivered, opened_undelivered, opened_pending (integer) and opened_sent_at (timestamptz), and the same five closed_* columns. Recipients is null when the notice has not been opened, and 0 means the practice had no administrator.\n\nTables tp_app reads directly, under app.practice_ids, as the owning group or a platform administrator:\n- support_grant_notice(id, support_grant_id, practice_id, notice, recipients, created_at, undelivered_reported_at, updated_at).\n- support_grant_notice_recipient(id, notice_id, practice_id, user_id, ses_message_id, state [pending|sent|delayed|delivered|complained|bounced|suppressed|rejected|failed], attempts, next_attempt_at, failure_code, sent_at, updated_at).\n- invitation.undelivered_at and invitation.undelivered_reason [bounced|suppressed|rejected|complained]. Show the flag while undelivered_at >= sent_at - 5 s.\n- Notification kind support_notice_undelivered: subject_id is the support_grant_notice id; counts and totals_cents are {}.\n\ntp_operator (the platform's mail_events and mail_expiry jobs):\n- operator_record_mail_event(message_id text, stream text, event text, mail_at timestamptz, event_at timestamptz, recipient text, kind text, subject uuid, recipient_user uuid, practice uuid, bounce_kind text, bounce_subtype text, complaint_type text, request text) RETURNS TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text).\n  - notice_undelivered is a support_grant id.\n  - Run it in a transaction with app.practice_ids = '{tp_practice}' when the tag is present (required for kinds support_grant_opened and support_grant_closed; otherwise 42501), else '{}'.\n  - event: send, delivery_delay, delivery, bounce, complaint, reject, rendering_failure.\n  - bounce_kind: permanent, transient, undetermined; unknown becomes undetermined.\n  - bounce_subtype is SES's subtype snake-cased: general, no_email, suppressed, on_account_suppression_list, on_configuration_set_suppression_list, mailbox_full, message_too_large, content_rejected, attachment_rejected; anything else is other.\n  - complaint_type: abuse, auth_failure, fraud, not_spam, virus, other, unspecified; null becomes unspecified, unknown becomes other.\n  - kind is the tp_kind tag. Cognito's untagged mail on the transactional set is kind 'cognito' with subject null; probes are kind 'probe' with subject null.\n  - subject is the tp_subject tag: the notice row id, invoice id, digest id, or screening run id. recipient_user is tp_recipient.\n  - recipient is the destination address. It is used only to resolve a Cognito user and to hash a refused screening address.\n  - Errors: mail_event_type and mail_event_sent_at; mail_send CHECK names such as mail_send_stream_kind, mail_send_subject and mail_send_message_id (^[A-Za-z0-9-]{20,100}$); 23503 for an unknown stream.\n  - A repeated or lower-ranked event returns recorded=false.\n- operator_mail_account_signal(signal text, request text) RETURNS boolean. signal: bounce_rate_alarm or complaint_rate_alarm (pauses for account_rate), enforcement_not_healthy (account_review). Anything else raises mail_account_signal. True when this call paused the stream.\n- operator_mail_streams() RETURNS TABLE(stream, paused, confirmed, probe_due, probe_missed).\n- operator_mail_stream_confirmed(stream text, enabled boolean) RETURNS boolean (confirmed after the call). It never confirms while paused.\n- operator_mail_probe_sent(stream text) RETURNS void.\n- operator_mail_expire(at_most integer) RETURNS integer. at_most must be at least 1.\n- operator_open_support_notice(target uuid, notice text, request text) RETURNS TABLE(notice_id uuid, recipients integer, opened boolean). Needs the notice's practice scope. recipients=0 with opened=true means log NOTICE_UNDELIVERABLE.\n- operator_support_notices_pending(at_most integer) RETURNS TABLE(notice_id, practice_id, user_id, support_grant_id, notice). No scope needed. Openings come first.\n- operator_support_notice_claim(notice uuid, recipient uuid) RETURNS TABLE(email text, reads bigint). Needs scope. Zero rows means skip. Locks the recipient row FOR UPDATE SKIP LOCKED.\n- operator_support_notice_sent(notice uuid, recipient uuid, message_id text, request text) RETURNS boolean. Call it in the claim's transaction after SES accepts. Raises support_grant_notice_recipient_sent if the row is not pending. True means log NOTICE_UNDELIVERED.\n- operator_support_notice_failed(notice uuid, recipient uuid, error_name text, permanent boolean, request text) RETURNS boolean. Call it in a new transaction. Retries come after 1, 5, 15 and 60 minutes; the fifth attempt, or a permanent error, fails it. True means log NOTICE_UNDELIVERED.\n- operator_due_support_notices(integer) keeps its signature.\n- Dropped: operator_record_support_notice(uuid,text,text), operator_practice_administrator_emails(uuid), billing_owner_emails(uuid).\n\ntp_billing:\n- billing_open_dunning_notice(target_invoice uuid, notice_stage text, request text) RETURNS TABLE(recipients integer, opened boolean). Stages: payment_failed, second_notice, third_notice, final_notice, suspended, reinstated (never resolved). Call it in the stage transaction. recipients=0 means NOTICE_UNDELIVERABLE.\n- billing_dunning_notices_pending(at_most integer) RETURNS TABLE(invoice_id, stage, organization_id, user_id).\n- billing_dunning_notice_claim(target_invoice uuid, notice_stage text, recipient uuid) RETURNS TABLE(email text).\n- billing_dunning_notice_sent(target_invoice, notice_stage, recipient, message_id text, request text) RETURNS boolean. Raises dunning_notice_recipient_sent if not pending.\n- billing_dunning_notice_failed(target_invoice, notice_stage, recipient, error_name text, permanent boolean, request text) RETURNS boolean.\n- In both, true means log NOTICE_UNDELIVERED with invoice_id.\n\nGranted to no role:\n- mail_recipient_sha256(text): the keyed hash, sha256(decode(pepper,'hex') || lower(btrim(address))) as hex.\n- screening_mail_sending(), mail_state_rank(text), mail_window_counts(text), mail_stream_pause(text,uuid,text), support_notice_administrators(uuid), support_notice_report_undelivered(uuid,text), support_notice_counts(uuid,text), dunning_notice_report_undelivered(uuid,text,text).\n\nTRIGGERS:\n- screening_upload_mail_gate: BEFORE INSERT ON screening_upload WHEN status = 'accepted'. Raises screening_paused, then screening_contact_undeliverable.\n- screening_run_bounce_budget: BEFORE INSERT ON screening_run. Raises screening_bounce_budget at 3 live marks on rate_subject or client_subject.\n- screening_run_mail_gate: BEFORE UPDATE OF status ON screening_run. Raises screening_mail_paused on a claim, completion or failure while not sending, so operator_screening_claim, _complete and _fail raise it. A recorded batch is allowed.\n- mail_send_expiry: sets expires_at to sent_at + 30 days on the screening stream, + 90 days on the others.\n- screening_run_client_subject_fixed, mail_recipient_key_fixed, mail_recipient_key_no_truncate.\n\nSTREAMS AND STATE:\n- Streams: transactional, notices, screening; only screening pauses.\n- Pause reasons: bounce_rate, complaint_rate, account_rate, account_review, operator.\n- Cut-off (MAIL_CUTOFF): bounces*10000 > 300*max(sends,200), or complaints*100000 > 80*max(sends,2500), over the window from the later of now() - 7 days and window_starts_at.\n- Seeds: all three streams unpaused and confirmed, so tests and the capacity harness run sending. A ready screening for production or staging needs the owner to set probe_delivered_at and probe_bounced_at to now(), or to record two probe events.\n\nAUDIT:\n- notice_undelivered: system, object support_grant with purpose = notice, or object invoice with purpose = stage.\n- mail_stream_paused: object mail_stream, purpose = reason; system for the cut-off, user for the console.\n- mail_stream_resumed: user, purpose cause_fixed or false_alarm.\n- notice_sent: written at the first accepted send.\n- All three new actions are refused to tp_app (42501).\n\nTypeScript constants from @tp/db schema: MAIL_STREAMS, MAIL_KINDS, MAIL_STREAM_KINDS, MAIL_STATES, MAIL_EVENTS, MAIL_BOUNCE_KINDS, MAIL_BOUNCE_SUBTYPES, MAIL_SUPPRESSION_SUBTYPES, MAIL_COMPLAINT_TYPES, MAIL_PAUSE_REASONS, MAIL_RESUME_REASONS, MAIL_ACCOUNT_SIGNALS, MAIL_CUTOFF, MAIL_SEND_DAYS, MAIL_REFUSAL_DAYS (365), SCREENING_BOUNCE_BUDGET {marks:3, days:7}, MAIL_PROBE_READY_HOURS (48), MAIL_PROBE_MISSED_HOURS (26), NOTICE_RECIPIENT_STATES, NOTICE_UNDELIVERED_STATES, NOTICE_RETRY_MINUTES, NOTICE_ATTEMPTS, SUPPORT_GRANT_NOTICES, DUNNING_NOTICE_STAGES, INVITATION_UNDELIVERED_REASONS, NOTIFICATION_KINDS. Tables: mailStream, mailSend, mailRecipientKey, screeningMailRefusal, screeningBounceMark, supportGrantNotice, supportGrantNoticeRecipient, dunningNoticeRecipient.",
+  "open_items": [
+   "The capacity revisit you asked to keep in view is recorded in ADR 0065's \"Revisit when\" (issue #41). ADR 0062's own \"Revisit when\" entry, which the task asks for, belongs to M3, who amends ADR 0062 under the plan's ownership, so M1 did not edit it. M3 or the integrator should add it.",
+   "reconciliation-001's PR 6b-4 entry (the 2026-10-21 rulings) is not in M1's files. M2, M3 or the integrator should add it.",
+   "The founder's approval: domain-model.md SHA-256 is 07c4a8eeca46ef5f2fdbc0974f23c4bf0ebb257f79fd7cc2b7bef8a1735d5b31 and the approval line is line 7327. Do not post it yet: the review round may change the migration, which changes the hash.",
+   "M2 must move apps/worker off the dropped functions. support-notices.ts and dunning.ts still call them. billing.db.test.ts pins billing_owner_emails and support-notices.db.test.ts calls operator_record_support_notice, so those worker db tests fail until M2 updates them.",
+   "M3: the screening route should pass client_subject ($31) and map screening_paused, screening_contact_undeliverable and screening_bounce_budget to sentences. console.ts reads console_support_grants() with SELECT *, which now returns the new columns.",
+   "Rollback: rolling back to the previous tag leaves support-access and dunning notices failing until the new image returns, because their functions are dropped. Nothing is sent twice or lost. Pre-launch only.",
+   "A bounce that arrives after its run was replaced or expired leaves no bounce marks: the run's subjects are gone. The address still goes on the refusal list.",
+   "No apps, e2e or full test:db run was done by M1, as the task directs; CI on the draft PR runs them.",
+   "Still open from the plan: O4 (counsel on the refusal-hash, bounce-budget and paused wording), O11 (staging checks after phase 2), O13 (PR 6e reminders must read the mail gate and the refusal list), O12 (re-read the AWS prices on AWS's own pages)."
+  ],
+  "wording": [
+   "M1 adds no prospect- or customer-facing sentence. The RAISE messages in the migration are never shown to a person: the web maps each refusal by its constraint name. The paused-page wording and the one refused-address sentence (Q12) are M3's to show word for word in the PR body."
+  ]
+ },
+ "m2": {
+  "summary": "M2 (worker) for PR 6b-4 is built, committed and pushed. Your capacity request is covered: ADR 0062's \"Revisit when\" now records the decision (free runner, time advisory, chosen to save cost). It points to GitHub issue #41 to revisit before the screening opens and once production has traffic, by measuring on AWS staging or an organization's 8-core runner, then the sizing question O9. M3 added it in 6851bde; M2 did not edit ADR 0062.\n\nWhat M2 built:\n- Every email now has exactly one recipient. It goes through its stream's SES configuration set (`<MAIL_STREAM_PREFIX>-<stream>`) and carries its identity as SES tags (tp_kind, tp_subject, tp_practice, tp_recipient), never an address. A tag value failing ^[A-Za-z0-9_-]{1,64}$ is refused before anything is sent. Senders return SES's message ID.\n- The screening's email comes from its own sender (SCREENING_MAIL_FROM, shown as \"PaidWhole\"), with Reply-To set to SCREENING_REPLY_TO.\n- The local sender still writes `to` as a one-element array, so existing outbox readers keep exact matching. When MAIL_EVENTS_DIR is set, it also writes the events SES's simulator would send.\n- A new events parser reads SES events and the two account alarms. It never reads a bounce's diagnosticCode, and snake-cases bounce subtypes and complaint types.\n- New platform job mail_events, every minute:\n  - keeps the screening's SES set matching the database (disabled while paused, re-disabled if something re-enables it, enabled then confirmed after a resume; the other two sets are never touched);\n  - sends daily probes only to SES's simulator, only after the identities are verified;\n  - drains the SQS queue (at most 1,000 messages or 50 s), recording each event once per message, in any order, and deleting it from the queue only after the record commits;\n  - pauses the screening stream on an account alarm or unhealthy SES enforcement, and logs IDs and codes only.\n- New nightly mail_expiry job (03:50 UTC) deletes expired mail records.\n- Support-access notices and dunning notices now go from recorded outboxes: one message per recipient, each in its own transaction. A failed send is recorded in a new transaction and retried after 1, 5, 15 and 60 minutes; retries reach only recipients still pending, and a permanent SES refusal fails at once. A notice with no administrator records notice_undelivered and never notice_sent.\n- New dunning_notices job every minute sends the dunning retries; the daily billing_dunning job opens each stage's outbox and sends at once.\n- The monthly digest is tagged and goes on the transactional stream.\n- Screening consumer:\n  - It reads screening_mail_gate() inside the claim's transaction. A run found not sending is not claimed and spends no attempt; the job ends 'mail_paused' with \"screening run waits: email paused\" (SCREENING_MAIL_PAUSED).\n  - Neither sweep sends or fails anything while the stream is not sending.\n  - If the database refuses (screening_mail_paused) or SES refuses (SendingPausedException), the step rolls back and the run is left as it was; the stale rule picks it up after the resume.\n  - A run received before the stream's last resume is logged \"screening result emailed after waiting\", which keeps it out of the 60-second metric.\n- Capacity harness:\n  - It seeds the screening stream sending and ready, and gives the web MAIL_CHECK_DELAY_MS=2000, so every upload's time to email includes the address checks' worst case (G1).\n  - The report gains `mail` {addressCheckMs, screeningReady, heldLines}. The verdict fails a run whose checks weren't charged, whose stream wasn't ready, or whose consumer logged a run held by the mail gate.\n- ADRs 0014, 0019 and 0050 are amended and ADR 0039 has a note.",
+  "head": "b7c705a",
+  "files": [
+   "/home/user/pr6b4/apps/worker/package.json",
+   "/home/user/pr6b4/pnpm-lock.yaml",
+   "/home/user/pr6b4/apps/worker/src/mail/streams.ts",
+   "/home/user/pr6b4/apps/worker/src/mail/streams.test.ts",
+   "/home/user/pr6b4/apps/worker/src/mail/events.ts",
+   "/home/user/pr6b4/apps/worker/src/mail/events.test.ts",
+   "/home/user/pr6b4/apps/worker/src/mail/mail.ts",
+   "/home/user/pr6b4/apps/worker/src/mail/mail.test.ts",
+   "/home/user/pr6b4/apps/worker/src/platform/mail-events.ts",
+   "/home/user/pr6b4/apps/worker/src/platform/mail-events.db.test.ts",
+   "/home/user/pr6b4/apps/worker/src/platform/support-notices.ts",
+   "/home/user/pr6b4/apps/worker/src/platform/support-notices.db.test.ts",
+   "/home/user/pr6b4/apps/worker/src/platform/wiring.ts",
+   "/home/user/pr6b4/apps/worker/src/platform/wiring.test.ts",
+   "/home/user/pr6b4/apps/worker/src/billing/dunning.ts",
+   "/home/user/pr6b4/apps/worker/src/billing/billing.db.test.ts",
+   "/home/user/pr6b4/apps/worker/src/digest/job.ts",
+   "/home/user/pr6b4/apps/worker/src/digest/job.test.ts",
+   "/home/user/pr6b4/apps/worker/src/screening/job.ts",
+   "/home/user/pr6b4/apps/worker/src/screening/thread.ts",
+   "/home/user/pr6b4/apps/worker/src/screening/threads.ts",
+   "/home/user/pr6b4/apps/worker/src/screening/message.ts",
+   "/home/user/pr6b4/apps/worker/src/screening/message.test.ts",
+   "/home/user/pr6b4/apps/worker/src/screening/screening.db.test.ts",
+   "/home/user/pr6b4/apps/worker/src/screening/consumer.db.test.ts",
+   "/home/user/pr6b4/apps/worker/src/jobs/platform.ts",
+   "/home/user/pr6b4/apps/worker/src/jobs/platform.test.ts",
+   "/home/user/pr6b4/apps/worker/src/worker.test.ts",
+   "/home/user/pr6b4/apps/worker/src/config.ts",
+   "/home/user/pr6b4/apps/worker/src/config.test.ts",
+   "/home/user/pr6b4/apps/worker/src/runtime.ts",
+   "/home/user/pr6b4/packages/observability/src/fields.ts",
+   "/home/user/pr6b4/tools/screening-capacity/run.ts",
+   "/home/user/pr6b4/tools/screening-capacity/report.ts",
+   "/home/user/pr6b4/tools/screening-capacity/report.test.ts",
+   "/home/user/pr6b4/tools/screening-capacity/test-support/measurements.ts",
+   "/home/user/pr6b4/tools/screening-capacity/watched-paths.txt",
+   "/home/user/pr6b4/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md",
+   "/home/user/pr6b4/docs/adr/0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md",
+   "/home/user/pr6b4/docs/adr/0050-bill-organizations-through-stripe-as-a-role-that-reads-no-phi-suspend-new-runs-thirty-days-after-a-failed-payment-and-simulate-test-mode-locally.md",
+   "/home/user/pr6b4/docs/adr/0039-monitor-each-upload-batch-through-a-keyed-job-chain-and-digest-each-month-in-counts-and-totals.md"
+  ],
+  "checks": [
+   {
+    "command": "pnpm typecheck",
+    "passed": true,
+    "note": "Exit 0 on the shared tree, including M3's uncommitted web work. Log: /tmp/claude-0/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/scratchpad/pr6b4/m2-typecheck.log"
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 node node_modules/eslint/bin/eslint.js . --max-warnings=0",
+    "passed": false,
+    "note": "1 error, auto-fixable, in M3's uncommitted apps/web/src/lib/screening/validation.ts. All M2 files are lint-clean (also linted separately). Log: /tmp/claude-0/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/scratchpad/pr6b4/m2-lint.log"
+   },
+   {
+    "command": "pnpm lint:logs",
+    "passed": true,
+    "note": "982 files; every log call uses allowlisted fields."
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true
+   },
+   {
+    "command": "pnpm licenses:check",
+    "passed": true,
+    "note": "191 production dependencies, all allowed licenses."
+   },
+   {
+    "command": "npx vitest run --project unit apps/worker tools/screening-capacity packages/observability tools/lint-logs",
+    "passed": false,
+    "note": "961 passed, 1 failed. The failure is watched.test.ts, and only because M3's uncommitted web code now imports apps/web/src/lib/screening/{address,tlds,validation}.ts. At M2's commit 78adfbe the committed watched-paths.txt matches the committed imports. Log: /tmp/claude-0/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/scratchpad/pr6b4/m2-unit.log"
+   },
+   {
+    "command": "DATABASE_URL=postgres://postgres:test@localhost:5433/postgres npx vitest run --project db apps/worker/src/platform apps/worker/src/billing apps/worker/src/screening apps/worker/src/monitor/monitor.db.test.ts apps/worker/src/support apps/worker/src/reconcile/chain.db.test.ts tools/screening-capacity/oracle.db.test.ts",
+    "passed": true,
+    "note": "13 files, 114 passed, 1 skipped. Includes the new mail-events.db.test.ts (10 tests) and the new mail-gate tests in screening.db.test.ts. Log: /tmp/claude-0/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/scratchpad/pr6b4/m2-db.log"
+   },
+   {
+    "command": "npx vitest run --project unit infra/test/deploy-parameters.test.ts",
+    "passed": true,
+    "note": "44 passed. Run because it builds reports from the shared measurements fixture M2 changed."
+   },
+   {
+    "command": "pnpm screening:capacity",
+    "passed": false,
+    "note": "Not run: there is no Docker daemon here and the process runtime needs built images. CI's capacity run will be the first measurement with the 2,000-ms charge."
+   }
+  ],
+  "open_items": [
+   "The user's capacity note: ADR 0062's 'Revisit when' entry (issue #41) was committed by M3 in 6851bde. M2 did not edit ADR 0062.",
+   "M3 or the integrator: regenerate tools/screening-capacity/watched-paths.txt (pnpm exec tsx tools/screening-capacity/watched.ts --write) in the commit that adds the web's address.ts, tlds.ts and validation.ts imports. watched.test.ts fails in the shared tree until then.",
+   "M3: fix the one lint error in the uncommitted apps/web/src/lib/screening/validation.ts (auto-fixable).",
+   "M3, e2e journeys: @tp/worker/runtime now exports createPlatformHandlers, runMailEvents, LocalMailEventSource, MemoryMailControl, sendSupportGrantNotices, expireMail, parseMailQueueMessage, simulatorOutcome and MAIL_PROBE_RECIPIENTS. LocalMailSender takes a third argument {eventsDir, streamPrefix}. e2e/worker.ts still builds it without an events directory.",
+   "M3, infra: the platform alarm codes in the worker's MAIL_LOG_CODES equal infra's MAIL_PLATFORM_ALARM_CODES and MAIL_WARNING_CODES today, but no test holds them equal yet. The task environment variables in 4e4a90f match what the worker requires.",
+   "Several files outside M2's listed paths were touched because the change needs them:\n- packages/observability/src/fields.ts (three log fields);\n- apps/worker/src/screening/message.ts and threads.ts (one type each);\n- worker.test.ts, consumer.db.test.ts and message.test.ts;\n- tools/screening-capacity/test-support/measurements.ts and watched-paths.txt;\n- pnpm-lock.yaml (committed early in f5acf30, before M3's web changes). M3's web lockfile changes remain uncommitted.\nThe integrator should confirm each.",
+   "One test database, tp_test_ba19459e43e0467e9c5fc2b3e42d15f5, was still open with 4 connections at the end. It is in use by another builder's run, so M2 left it.",
+   "Not M2's, still open: reconciliation-001's PR 6b-4 entry; the founder's domain-model approval (do not post until the review round is done); O4 counsel wording; O11 staging checks; O12 re-reading AWS prices; O13 PR 6e reminders reading the mail gate and refusal list.",
+   "Residual case, as the design states: if SES accepts a notice and its record's commit then fails, that one recipient gets one extra copy on the retry.",
+   "Rollback (M1's note still applies): the previous image's support and dunning jobs fail at the dropped functions until the new image is back."
+  ],
+  "differences_from_design": [
+   "MailMessage.to stays a readonly string[]; exactly one recipient is enforced at run time by every sender (MailAddressError) rather than by `to: string`. Builders return MailContent, and the identity travels beside it as `identity` {stream, kind, subjectId?, practiceId?, recipientUserId?}. This keeps every existing outbox reader and test unchanged.",
+   "A third new platform job, dunning_notices (every minute), sends the dunning retries. Without it the migration's 1/5/15/60-minute retries would wait for the daily billing_dunning job. The daily job still opens the stage's outbox and sends at once.",
+   "Three log fields were added to the allowlist: invoice_id, invitation_id and queue_message_id. This is needed to log NOTICE_UNDELIVERED with the invoice, INVITATION_UNDELIVERED with the invitation, and MAIL_EVENT_UNREADABLE with the SQS message ID. Pause reasons and probe streams are logged as fixed messages, one per reason or stream, because lint:logs only accepts fixed text.",
+   "The consumer reads the gate in the claim's own transaction, not a separate one. The run's resumed_at is read again inside the completion transaction. The design's `held_by_mail_pause: true` field is replaced by the existing 'screening result emailed after waiting' message with error_code SCREENING_MAIL_PAUSED, which the TimeToEmailMs metric filter already excludes. SCREENING_WAIT_CODES is unchanged because the web's test pins it.",
+   "Account alarms are recognized by the metric in the CloudWatch event (Reputation.BounceRate or Reputation.ComplaintRate), not by alarm name or ARN.",
+   "The local events directory is written and read only when MAIL_EVENTS_DIR is set; there is no default. The simulator mapping applies only to addresses at simulator.amazonses.com; any other address gets Send and Delivery.",
+   "Configuration:\n- MAIL_EVENTS_QUEUE_URL is required wherever MAIL_FROM is set, not only in production.\n- A platform worker using SES must have SCREENING_MAIL_FROM and SCREENING_REPLY_TO, because it probes the screening stream.\n- MAIL_IDENTITIES_VERIFIED is required in production and defaults to true in development.",
+   "The reconcile re-reads the screening set right after enabling it and confirms on that read in the same run, rather than waiting for the next run.",
+   "SES Open, Click and Subscription events, and alarm state changes other than ALARM, are deleted as ignored rather than left for the dead-letter queue. A malformed message is left for the DLQ. An event the database refuses is logged MAIL_EVENT_NOT_RECORDED_<SQLSTATE> and left to be received again.",
+   "Capacity harness:\n- 'A paused stream claims nothing' is proven by the worker db tests (screening.db.test.ts), not by a harness run.\n- The harness instead fails a run whose consumer logged a held run, whose stream was not seeded ready, or whose checks were not charged.\n- The report gains an optional `mail` field without a format bump (still tp-screening-capacity/8, so the launch check and infra tests are unchanged); the verdict fails a report that lacks it.\n- The seed also sets probe_sent_at, so the platform does not send probes during the measurement.",
+   "NOTICE_UNDELIVERABLE is now logged once per notice, with its grant's or invoice's ID, instead of once per run without an ID."
+  ],
+  "interfaces": "Worker environment variables:\n- MAIL_STREAM_PREFIX (^tp-[a-z0-9]+(-[a-z0-9]+)*$): required in production; tp-dev otherwise.\n- MAIL_FROM: transactional and notices streams.\n- SCREENING_MAIL_FROM and SCREENING_REPLY_TO: set together. Required by the screening consumer when it sends through SES, and by a platform worker using SES (for its probes).\n- MAIL_EVENTS_QUEUE_URL (https://sqs.<region>.amazonaws.com/<12-digit account>/<name>): required in production and wherever MAIL_FROM is set.\n- MAIL_IDENTITIES_VERIFIED (true|false): required in production; true in development.\n- MAIL_EVENTS_DIR: local only; refused in production and with MAIL_FROM.\n\nConfiguration sets: `${MAIL_STREAM_PREFIX}-{transactional,notices,screening}`.\n\nSES message tags: tp_kind, tp_subject, tp_practice (support notices only), tp_recipient (customer streams only); value ^[A-Za-z0-9_-]{1,64}$. Cognito's untagged mail on the transactional set is read as kind cognito.\n\nProbe recipients: success@simulator.amazonses.com and bounce@simulator.amazonses.com.\n\nPlatform jobs, all with payload {}:\n- mail_events: '* * * * *'\n- mail_expiry: '50 3 * * *'\n- dunning_notices: '* * * * *'\n\nLog codes:\n- Platform alarms: MAIL_STREAM_PAUSED, NOTICE_UNDELIVERED (support_grant_id or invoice_id), NOTICE_UNDELIVERABLE (support_grant_id or invoice_id), INVITATION_UNDELIVERED (invitation_id), MAIL_PROBE_MISSED.\n- Warnings: MAIL_EVENT_UNREADABLE (queue_message_id), MAIL_STREAM_DRIFT, MAIL_PROBE_UNSENT.\n- Errors: MAIL_EVENT_NOT_RECORDED_<SQLSTATE>.\n- Consumer: SCREENING_MAIL_PAUSED on 'screening run waits: email paused', 'screening runs wait: email paused', and on 'screening result emailed after waiting' for a run the pause held.\n\nNew log fields (packages/observability): invoice_id, invitation_id, queue_message_id.\n\nScreeningPriceOutcome gains 'mail_paused'; the threads reply union matches.\n\nWorker database calls:\n- screening_mail_gate(), as tp_screening, in the claim's, the completion's and the sweeps' transactions.\n- operator_record_mail_event(14 args): transaction scoped to tp_practice when present, else '{}'.\n- operator_mail_account_signal, operator_mail_streams, operator_mail_stream_confirmed('screening', enabled), operator_mail_probe_sent, operator_mail_expire(1000).\n- operator_open_support_notice, operator_support_notices_pending(100), operator_support_notice_claim, operator_support_notice_sent, operator_support_notice_failed.\n- billing_open_dunning_notice, billing_dunning_notices_pending(500), billing_dunning_notice_claim, billing_dunning_notice_sent, billing_dunning_notice_failed.\n\nPermanent SES errors (fail at once): MessageRejected, AccountSuspendedException, MailFromDomainNotVerifiedException.\n\nCapacity report: Measurements.mail? {addressCheckMs, screeningReady, heldLines}; ADDRESS_CHECK_CHARGE_MS = 2000; SCREENING_MAIL_HELD_CODE = 'SCREENING_MAIL_PAUSED'. The web's harness environment gets MAIL_CHECK_DELAY_MS=2000.\n\nNew dependency: @aws-sdk/client-sqs ^3.1152.0, locked at 3.1152.0 with middleware-sdk-sqs 3.972.44.",
+  "wording": [
+   "No new customer-facing or prospect-facing sentence: the support-access, dunning, digest and screening emails keep their existing subjects and bodies word for word.",
+   "Changed sender (Q12): the screening result and failure emails now come from \"PaidWhole <results@screening.<domain>>\" (SCREENING_MAIL_FROM), with Reply-To set to the support address (SCREENING_REPLY_TO). Before, they came from MAIL_FROM.",
+   "Probe email, sent only to SES's simulator (success@ and bounce@simulator.amazonses.com), never to a person: subject \"Mail probe | PaidWhole\"; body \"This message goes only to the mail service\u2019s simulator, to prove that its delivery events are recorded.\""
+  ]
+ },
+ "m3": {
+  "summary": "I finished M3 of PR 6b-4 and pushed it to co-001/pr-06b-mail-streams (head 89998f4). One blocker remains, in M2's code: the web production build fails. `apps/worker/src/mail/streams.ts` imports the full `@tp/db` entry, and `apps/worker/src/billing/dunning.ts` now pulls it into the web bundle. Changing that import to `@tp/db/runtime` fixes it. With that edit applied locally, both new e2e journeys passed on port 4951. I did not commit the edit, because apps/worker is M2's.\n\n**Infra (4e4a90f, b7df9e2)**\n- The stack now owns three SES configuration sets: transactional, notices and screening.\n- It owns two identities, MailFromAddress's domain and `screening.<domain>`, verified in two phases behind `MailIdentitiesVerified`.\n- Mail events reach an encrypted queue with a dead-letter queue. Only the two rules can write to them.\n- An SQS endpoint is added, limited to this account's queues.\n- 15 alarms are wired, the SES grants are narrowed per set, and the screening role can use only its own identity and set.\n- New since the summary: the database parameter group sets `log_parameter_max_length` and `log_parameter_max_length_on_error` to 0, so no bind value reaches the database log. This holds open item O11 in the template instead of a hand check.\n\n**Web (89998f4)**\n- Address checks in order: a typo hint and an unknown-ending warning in the browser, then the upload's own checks and the rate limit, then the same hints on the server, then DNS and SES validation together. SES validation is capped at 1,000 a day in production and 50 in staging.\n- Every refused address gets one sentence.\n- The screening closes while its mail stream is paused (everywhere) or not proven ready (staging and production).\n- The web passes the client's keyed subject to `submit_screening` for the bounce budget.\n- The kept refused-address sentence is added to four places: the upload form's hint, the \"sent\" alert, the closed-link page and the result page with no request.\n- A new `/console/mail` page lets a platform administrator pause and resume the screening stream with a reason.\n- Support-access notice delivery shows on the grant page and the console's support list; a notification links to the grant.\n- The users page flags an undelivered invitation.\n- The paused wording and the address wording are now two legal surfaces (`screening-mail-paused`, `screening-mail-address`), so production's screening stays closed until counsel's review is recorded.\n- Two e2e journeys: the cut-off (SCR-21) and an undelivered notice (SEC-19).\n- A new `mail-routes.db.test.ts` covers the console routes, notice states, notifications and invitations.\n- The typo hints now name only the provider domain or the endings, so no form issue or error carries an address.\n\n**Docs (b6d1c9c, 6851bde)**\n- New `docs/runbooks/deliverability.md`.\n- `docs/runbooks/deploy-and-rollback.md` gains the two mail phases, a launch checklist (O5, O11, O14) and rollback across PR 6b-4.\n- Amendments to ADRs 0049, 0055 and 0062. ADR 0062 also records the capacity decision under \"Revisit when\", pointing to issue #41.\n- Test matrix rows SCR-21, SCR-22, SEC-18, SEC-19 and JOB-05, with the synth matrix, registry and generated expected files kept in step.",
+  "head": "89998f4",
+  "files": [
+   "/home/user/pr6b4/infra/lib/mail.ts",
+   "/home/user/pr6b4/infra/lib/constructs/mail-streams.ts",
+   "/home/user/pr6b4/infra/lib/constructs/identity.ts",
+   "/home/user/pr6b4/infra/lib/constructs/operator-role.ts",
+   "/home/user/pr6b4/infra/lib/constructs/application-role.ts",
+   "/home/user/pr6b4/infra/lib/constructs/screening-role.ts",
+   "/home/user/pr6b4/infra/lib/constructs/network.ts",
+   "/home/user/pr6b4/infra/lib/constructs/monitoring.ts",
+   "/home/user/pr6b4/infra/lib/constructs/compute.ts",
+   "/home/user/pr6b4/infra/lib/constructs/database.ts",
+   "/home/user/pr6b4/infra/lib/deploy-parameters.ts",
+   "/home/user/pr6b4/infra/lib/platform-stack.ts",
+   "/home/user/pr6b4/infra/test/mail-streams.test.ts",
+   "/home/user/pr6b4/infra/test/database.test.ts",
+   "/home/user/pr6b4/infra/test/account-security.test.ts",
+   "/home/user/pr6b4/infra/test/application-role.test.ts",
+   "/home/user/pr6b4/infra/test/compute.test.ts",
+   "/home/user/pr6b4/infra/test/deploy-parameters.test.ts",
+   "/home/user/pr6b4/infra/test/encryption.test.ts",
+   "/home/user/pr6b4/infra/test/identity.test.ts",
+   "/home/user/pr6b4/infra/test/monitoring.test.ts",
+   "/home/user/pr6b4/infra/test/network.test.ts",
+   "/home/user/pr6b4/infra/test/operator-role.test.ts",
+   "/home/user/pr6b4/infra/test/platform-stack.test.ts",
+   "/home/user/pr6b4/infra/test/screening-role.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/address.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/address.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/tlds.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/validation.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/validation.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/routes.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/routes.db.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/messages.ts",
+   "/home/user/pr6b4/apps/web/src/lib/screening/retention.ts",
+   "/home/user/pr6b4/apps/web/src/lib/legal-surfaces.ts",
+   "/home/user/pr6b4/apps/web/src/lib/http/rate-limit.ts",
+   "/home/user/pr6b4/apps/web/src/lib/http/http.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/server/config.ts",
+   "/home/user/pr6b4/apps/web/src/lib/server/services.ts",
+   "/home/user/pr6b4/apps/web/src/lib/releases/releases.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/routes/console-mail.ts",
+   "/home/user/pr6b4/apps/web/src/lib/routes/mail-routes.db.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/routes/console.ts",
+   "/home/user/pr6b4/apps/web/src/lib/routes/practice.ts",
+   "/home/user/pr6b4/apps/web/src/lib/routes/settings.ts",
+   "/home/user/pr6b4/apps/web/src/lib/routes/index.ts",
+   "/home/user/pr6b4/apps/web/src/lib/routes/registry.test.ts",
+   "/home/user/pr6b4/apps/web/src/lib/monitoring/queries.ts",
+   "/home/user/pr6b4/apps/web/src/components/monitoring/display.tsx",
+   "/home/user/pr6b4/apps/web/src/components/monitoring/display.test.tsx",
+   "/home/user/pr6b4/apps/web/src/components/screening/upload-form.tsx",
+   "/home/user/pr6b4/apps/web/src/components/shell.tsx",
+   "/home/user/pr6b4/apps/web/src/components/help.ts",
+   "/home/user/pr6b4/apps/web/src/app/console/mail/page.tsx",
+   "/home/user/pr6b4/apps/web/src/app/console/mail/actions.ts",
+   "/home/user/pr6b4/apps/web/src/app/console/support/page.tsx",
+   "/home/user/pr6b4/apps/web/src/app/p/[practiceId]/support-access/[supportGrantId]/page.tsx",
+   "/home/user/pr6b4/apps/web/src/app/screening/page.tsx",
+   "/home/user/pr6b4/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx",
+   "/home/user/pr6b4/apps/web/e2e/mail.ts",
+   "/home/user/pr6b4/apps/web/e2e/mail-cutoff.spec.ts",
+   "/home/user/pr6b4/apps/web/e2e/mail-notices.spec.ts",
+   "/home/user/pr6b4/apps/web/e2e/env.ts",
+   "/home/user/pr6b4/apps/web/e2e/prepare.ts",
+   "/home/user/pr6b4/apps/web/e2e/screening.ts",
+   "/home/user/pr6b4/apps/web/e2e/screening.spec.ts",
+   "/home/user/pr6b4/apps/web/package.json",
+   "/home/user/pr6b4/pnpm-lock.yaml",
+   "/home/user/pr6b4/docs/runbooks/deliverability.md",
+   "/home/user/pr6b4/docs/runbooks/deploy-and-rollback.md",
+   "/home/user/pr6b4/docs/adr/0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md",
+   "/home/user/pr6b4/docs/adr/0055-keep-model-calls-off-the-requests-connection-give-billing-and-e-signature-their-own-logins-bound-bodies-open-tickets-from-mail-and-keep-cognito.md",
+   "/home/user/pr6b4/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md",
+   "/home/user/pr6b4/docs/product/legal-surfaces.md",
+   "/home/user/pr6b4/docs/product/test-matrix.md",
+   "/home/user/pr6b4/packages/synth/src/cases/matrix.ts",
+   "/home/user/pr6b4/packages/synth/src/cases/registry.ts",
+   "/home/user/pr6b4/fixtures/synthetic/SEC-18/expected.json",
+   "/home/user/pr6b4/fixtures/synthetic/SEC-19/expected.json",
+   "/home/user/pr6b4/fixtures/synthetic/SCR-21/expected.json",
+   "/home/user/pr6b4/fixtures/synthetic/SCR-22/expected.json",
+   "/home/user/pr6b4/fixtures/synthetic/JOB-05/expected.json"
+  ],
+  "checks": [
+   {
+    "command": "pnpm typecheck",
+    "passed": true,
+    "note": "Whole repo, exit 0. After the last small web edits, apps/web `tsc --noEmit -p .` also passed; that project includes e2e/, so screening.spec.ts compiles."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 pnpm lint",
+    "passed": true,
+    "note": "Exit 0 after fixing two unnecessary type assertions in validation.ts and mail-routes.db.test.ts. Every file edited afterwards was linted again with --max-warnings=0."
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true,
+    "note": "496 files; run again on the final tree."
+   },
+   {
+    "command": "pnpm lint:logs",
+    "passed": true,
+    "note": "982 files; every log call uses allowlisted fields."
+   },
+   {
+    "command": "pnpm check:fixtures",
+    "passed": true
+   },
+   {
+    "command": "npx vitest run --project unit infra/",
+    "passed": true,
+    "note": "23 files, 653 tests, including the new database parameter assertion."
+   },
+   {
+    "command": "cd infra && pnpm synth (cdk synth --quiet)",
+    "passed": true
+   },
+   {
+    "command": "npx vitest run --project unit tools/test",
+    "passed": true,
+    "note": "12 files, 130 tests, including legal-surfaces.test.ts with the two new surfaces."
+   },
+   {
+    "command": "npx vitest run --project unit apps/web packages/synth",
+    "passed": true,
+    "note": "First run: 1 failure in releases.test.ts, whose production config fixture lacked the newly required MAIL_VALIDATION settings. I added them; it passes, and the screening and form unit tests (108) pass after the hint-wording change."
+   },
+   {
+    "command": "npx vitest run --project unit (whole repo)",
+    "passed": false,
+    "note": "4644 passed and 1 failed: tools/screening-capacity/watched.test.ts. The committed watched list lacks the three new web screening modules. That directory is M2's, so I did not regenerate it (see open items)."
+   },
+   {
+    "command": "DATABASE_URL=postgres://postgres:test@localhost:5433/postgres npx vitest run --project db console-routes, settings-routes, monitoring-routes and route-tests .db.test.ts",
+    "passed": true,
+    "note": "4 files, 7006 tests."
+   },
+   {
+    "command": "DATABASE_URL=\u2026 npx vitest run --project db apps/web/src/lib/screening/routes.db.test.ts apps/web/src/lib/routes/mail-routes.db.test.ts",
+    "passed": true,
+    "note": "55 tests: routes.db 43 existing plus 6 new; mail-routes.db 6 new."
+   },
+   {
+    "command": "npx vitest run packages/synth/src/fixtures.test.ts (after pnpm synth --all)",
+    "passed": true,
+    "note": "23 tests; the matrix doc, matrix.ts and the registry agree, and every cited test file exists."
+   },
+   {
+    "command": "E2E_PORT=4951 E2E_DATABASE=tp_pr6b4_e2e_1 E2E_ADMIN_URL=postgres://postgres:test@localhost:5433/postgres npx playwright test e2e/mail-notices.spec.ts e2e/mail-cutoff.spec.ts",
+    "passed": true,
+    "note": "2 passed in 1.5 min, but only with the one-line @tp/db/runtime import edit to M2's streams.ts applied locally and then reverted. Without it, `next build` fails. The first run also exposed my prepare order (practice before its group's administrator), fixed in e2e/mail.ts. Database tp_pr6b4_e2e_1 and its /tmp directories were dropped."
+   },
+   {
+    "command": "git push -u origin co-001/pr-06b-mail-streams",
+    "passed": true,
+    "note": "Went through the pre-push hook (fixture guard and gitleaks found nothing): b7c705a..89998f4."
+   }
+  ],
+  "open_items": [
+   "BLOCKING, M2's file: the web production build fails (`next build`: \"Failed to collect page data for /api/billing/[organizationId]/setup-intent\"; import.meta.dirname is undefined in packages/db/src/migrate.ts). Cause: apps/worker/src/mail/streams.ts (commit 8a21e93) imports `MAIL_STREAM_KINDS, MailKind, MailStream` from '@tp/db', and the web reaches it through apps/worker/src/billing/public.ts, then dunning.ts, then mail/streams.ts. Fix: change that import to '@tp/db/runtime'. With it, both e2e specs pass locally. Until then, CI's `pnpm build` and every e2e job fail.",
+   "M2's directory: tools/screening-capacity/watched-paths.txt is stale, so watched.test.ts fails. Run `pnpm exec tsx tools/screening-capacity/watched.ts --write`; it adds apps/web/src/lib/screening/address.ts, tlds.ts and validation.ts. Without it the capacity gate does not watch the address checks.",
+   "M2's file: the result email's kept wording (apps/worker/src/screening/wording.ts, emailKept, the 'none' case; legal surface screening-kept-email) still says the details given are deleted, with no sentence about the 12-month coded form of a bounced or reported address. Q11 (b) says no page may call it deleted. The four web surfaces now say it (REFUSED_ADDRESS_KEPT).",
+   "O4: counsel reviews the new wording before the screening opens. Production stays closed meanwhile because `screening-mail-paused` and `screening-mail-address` are now in SCREENING_LEGAL_SURFACES; the refusal-hash sentence is also in the existing screening-kept-* rows.",
+   "O5: the launch checklist is in docs/runbooks/deploy-and-rollback.md under \"Before the screening opens in production\".",
+   "O11, staging after phase 2 (docs/runbooks/deliverability.md, section 2.4): whether Cognito needs a sending-authorization policy on the stack's identity; that the screening set's empty SuppressedReasons neither checks against nor adds to the account's list; whether account reputation metrics publish at launch volume. The RDS bind-value logging is now set in the template; whether RDS accepts log_parameter_max_length and log_parameter_max_length_on_error for the PG18 parameter family is proven only by cdk synth, so the first deploy confirms it.",
+   "O12: re-read the SES, SQS endpoint, CloudWatch and validation prices on AWS's own pages before the first deploy.",
+   "O13 (PR 6e): reminders and withdrawal confirmations go on the screening stream, read the mail gate and the refusal list, and carry List-Unsubscribe.",
+   "O14, the founder's actions: set the DNS records from the stack's outputs; add a DMARC reports mailbox (rua) on the parent domain (the outputs carry no rua); register both domains with Google Postmaster Tools and Microsoft SNDS; set the required-check ruleset.",
+   "O15: refresh tlds.ts from IANA every quarter. The first snapshot came from the public suffix list's ICANN section in aws-cdk-lib 2.273.0, because IANA's list was unreachable through the proxy (403).",
+   "SES email feedback forwarding is left at the identity default (on). Account-level VDM engagement metrics being off is a runbook rule, not enforced by the stack.",
+   "The full e2e suite was not run; only the two new specs. The shared and exclusive advisory-lock fixture in screening.spec.ts typechecks but has not run in a full parallel suite.",
+   "The reconciliation-001 entry for PR 6b-4 is not M3's."
+  ],
+  "differences_from_design": [
+   "If SES already holds a hand-verified identity for either domain, the deploy runbook says to delete it before the first deploy instead of `cdk import`. An import cannot name the configuration set that the same deploy creates. No environment sends mail before its first release, so nothing is lost.",
+   "The typo hint names only the provider domain (\"Did you mean @gmail.com? \u2026\"), not the whole address, so no form issue or InputError message carries an address. The browser's \"Use \u2026\" button still offers the whole suggested address.",
+   "A near-miss ending (for example .cmo) gets its own sentence naming only the two endings.",
+   "Added two legal surfaces, screening-mail-paused and screening-mail-address, to SCREENING_LEGAL_SURFACES. Counsel's confirmation of the Q12 wording is now enforced in production rather than a promise.",
+   "The RDS bind-value logging that design open item 5 and O11 said to verify by hand is now set in the parameter group, with an infra test.",
+   "The staging suppression-list check in the runbook uses a synthetic mailbox put on the account's list (checks) and a hard bounce to a nonexistent mailbox on a domain you control (additions), instead of a simulator complaint, whose absence from the list would prove nothing. Hand-sent check messages are tagged tp_kind=probe so the platform can read them and counts them toward nothing.",
+   "The console's undelivered list names a customer's user by the sign-in email the console's other screens show. It never shows a screening address or SES's own recipient record.",
+   "screeningOpen returns `reason` as optional, so tools/test/legal-surfaces.test.ts's pinned `return { open: false, releaseNo: null };` lines still hold.",
+   "Added apps/web/src/lib/routes/mail-routes.db.test.ts, not in the design's file list, for the console mail routes, notice delivery, the notification and invitations.",
+   "The TLD snapshot comes from the public suffix list's ICANN section, not IANA (unreachable)."
+  ],
+  "interfaces": "Web env: MAIL_VALIDATION (ses or local; required, and only 'ses', on a deployed server); MAIL_VALIDATION_DAILY_CAP (required when deployed; default 50 elsewhere); MAIL_CHECK_DELAY_MS (at most 5000; refused on a deployed server; the capacity harness sets 2000). Infra sets MAIL_VALIDATION=ses and MAIL_VALIDATION_DAILY_CAP=1000 in production, 50 in dev and staging. Web log error codes: MAIL_DOMAIN_CHECK_UNAVAILABLE, MAIL_VALIDATION_UNAVAILABLE, MAIL_VALIDATION_CAP_REACHED. Rate limiter: bucket 'screening_validation', subject kind 'global' (RATE_LIMITS.screening_validation = 1000 per 86400 s), called through rate_limit_take(bucket, rateSubjectHash(sealer, 'screening_validation', 'global', 'day'), dailyCap, 86400). submit_screening: last parameter $31 client_subject = rateSubjectHash(sealer, 'screening', 'address', clientAddress), or NULL when no trusted proxy names one. The web maps refusals screening_paused, screening_contact_undeliverable and screening_bounce_budget. screeningOpen reads `SELECT paused, ready FROM screening_mail_status()`; ScreeningPageData.closedReason is 'mail_paused', 'not_ready' or null; development ignores ready. Routes (all permission feature_flag.manage): console.mail (GET /console/mail; reads console_mail_streams(), console_mail_undelivered(NULL) and console_practices(NULL)); console.mail.pause (input {stream:'screening'}; calls console_pause_mail_stream($1,'operator'); audit mail_stream_pause_requested on object type mail_stream); console.mail.resume (input {stream:'screening', reason: 'cause_fixed' or 'false_alarm'}; calls console_resume_mail_stream($1,$2); audit mail_stream_resume_requested). console.support reads the opened_* and closed_* columns of console_support_grants(). practice.ts exports NoticeDelivery and noticeStatus(notice, 'opening' or 'closing', grantOpen, time) and counts states via NOTICE_UNDELIVERED_STATES. NotificationView gains supportGrantId and notice for kind support_notice_undelivered (join support_grant_notice on subject_id). InvitationView gains undeliveredAt (set when accepted_at IS NULL AND undelivered_at >= sent_at - 5 seconds). Legal surface ids: screening-mail-paused (apps/web/src/app/screening/page.tsx) and screening-mail-address (apps/web/src/lib/screening/address.ts). Infra: parameter MailIdentitiesVerified ('false' or 'true') with condition MailIdentitiesReady; configuration sets tp-<env>-transactional, tp-<env>-notices and tp-<env>-screening; queues tp-<env>-mail-events and tp-<env>-mail-events-dlq; rules tp-<env>-mail-events and tp-<env>-mail-account-alarms; screening sender results@screening.<domain>, display name PaidWhole, Reply-To SupportEmail; namespace TherapyPlatform/Mail; outputs MailIdentityDomain, ScreeningMailIdentityDomain, ScreeningMailFromAddress, MailEventsQueueUrl, MailEventsDeadLetterQueueUrl, MailConfigurationSet{Transactional,Notices,Screening}, and {Mail,ScreeningMail}{DkimRecord1-3,MailFromMxRecord,MailFromSpfRecord,DmarcRecord}; database parameters log_parameter_max_length and log_parameter_max_length_on_error both '0'. Platform task env (from infra): MAIL_STREAM_PREFIX, SCREENING_MAIL_FROM, SCREENING_REPLY_TO, MAIL_EVENTS_QUEUE_URL, MAIL_IDENTITIES_VERIFIED. E2E: ports 4951 to 4959; E2E_MAIL_EVENTS_DIR; E2E_MAIL_STREAM_PREFIX 'tp-dev'; advisory lock 760065 (holdScreeningStream: shared for screening tests, exclusive for the cut-off); accounts mail-notice-admin (suppressionlist+e2e-notice@simulator.amazonses.com) and mail-console-admin. Test matrix IDs: SCR-21, SCR-22, SEC-18, SEC-19, JOB-05.",
+  "wording": [
+   "Screening page, alert title while the stream is paused: \"New screenings are paused\"",
+   "Screening page, alert body while paused: \"Too many of our recent result emails could not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.\" followed by \"Meanwhile, you can request an audit.\" (\"request an audit\" links to /request-audit)",
+   "Upload refusal when a submission races the pause: \"New screenings are paused while we fix our result emails. Try again later.\"",
+   "Work email field, every refused address (DNS, SES validation or the refusal list): \"We cannot send email to this address. Check it, or use another address.\"",
+   "Work email field, mailbox SES could not confirm: \"We could not confirm this mailbox exists. Check the address, or keep it as typed.\"",
+   "Under the Work email field (browser hint) and as the server's field issue, likely typo of a large provider: \"Did you mean @<provider domain>? Check the address, or keep it as typed.\" (for example \"Did you mean @gmail.com? Check the address, or keep it as typed.\")",
+   "Under the Work email field, ending one edit from a common one: \"This address ends in \u201c.<ending>\u201d. Did you mean \u201c.<common ending>\u201d? Check it, or keep it as typed.\"",
+   "Under the Work email field, any other ending not in use: \"This address ends in \u201c.<ending>\u201d, which is not a domain ending in use. Check it, or keep it as typed.\"",
+   "Button under the Work email field: \"Use <suggested address>\"",
+   "Checkbox under the Work email field, shown when the address was questioned: \"Keep this address as typed\"",
+   "Upload refusal, bounce budget: \"Several recent screening results sent from this connection, or to this email account, could not be delivered, so we cannot take another screening from it for up to 7 days. Check the email address, or request an audit instead.\"",
+   "Added to the upload form's email hint, the \"sent\" alert, the closed link's page and the result page's kept notice when no request is kept: \"If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it that cannot be read back as the address, for 12 months, only so that we never send to it again.\"",
+   "Practice support-access grant page, list labelled \"Notices to the practice's administrators\", rows \"Opening notice\" and \"Closing notice\", each one of: \"Sending\" / \"Sent when access ends\" / \"Not sent: the practice had no administrator\" / \"Not delivered to <n> of <m> administrator[s]. PaidWhole has been told.\" / \"Delivered to <m> of <m> administrator[s]\" / \"Sent <UTC time>; delivery not yet confirmed\"",
+   "Practice notifications: link \"A support-access opening notice did not reach every administrator\" (or \"\u2026 closing notice \u2026\") to the grant, followed by \". Check your administrators' email addresses.\"",
+   "Organization users page, invitation status: \"Not delivered <date>: check the address, then invite again\"",
+   "Platform console (internal), support list: new column \"Notices\" with \"Opening: <status>\" and \"Closing: <status>\" using the statuses above",
+   "Platform console (internal), /console/mail: heading \"Mail streams\"; rail link \"Mail streams\"; stream names \"Transactional (invitations, codes, digests)\", \"Notices (support access, dunning)\", \"Screening (results, failure notices)\"; badges \"Paused\", \"Sending\", \"Waiting for SES to confirm\"; \"It pauses by itself past the cut-off (3% bounces over at least 200 sends, 0.08% complaints over at least 2,500, in 7 days), on the account\u2019s warnings, or under an SES review.\"; \"It never pauses: it alarms instead.\"; \"Paused <time>: <reason>.\" with reasons \"Its bounce rate passed the cut-off\", \"Its complaint rate passed the cut-off\", \"The SES account\u2019s bounce or complaint rate reached its warning\", \"SES put the account under review\", \"Paused by a platform administrator\"; \"Ready to open\": \"Yes: sending, confirmed, and both probes back within 48 hours\" or \"No: staging and production keep the screening closed\"; select \"Why it can resume\" with \"The cause is fixed\" and \"It was a false alarm\"; buttons \"Pause the screening stream\" and \"Resume the screening stream\"; notices \"The screening stream is paused\" with \"New screenings are refused, and the platform disables its SES configuration set within a minute.\", \"The screening stream is resumed\" with \"It sends again once the platform reads SES sending; the probes go at once, and the screening opens when they come back.\", and \"Nothing changed\" with \"The stream was already in that state.\"; card \"Undelivered in the last 7 days\", empty state \"Nothing undelivered.\"; forbidden next step \"The mail streams are paused and resumed by platform administrators.\"; help text \"The mail streams: whether each is sending, the counts behind the screening\u2019s cut-off, the daily probes, and the last week\u2019s undelivered messages. Only the screening stream pauses, and it is resumed here with a reason.\""
+  ]
+ },
+ "pr": {
+  "pr_number": 42,
+  "head": "65791691e47952047d4bb71deb2b4c24c6cb0203",
+  "base": "claude/build-platform",
+  "url": "https://github.com/PureTideWater/PhysicalTherapy/pull/42",
+  "domain_model_sha256": "07c4a8eeca46ef5f2fdbc0974f23c4bf0ebb257f79fd7cc2b7bef8a1735d5b31",
+  "approval_line_number": 7327,
+  "scope_ok": true,
+  "smoke": "Indicative only. This was a local process-runtime run on a 4-CPU container: advisory mode, S1 and S4, with the address checks charged at 2,000 ms on every upload (G1). Seconds to email:\n- S1-1: 27.5. S1-2: 2.6.\n- S4#1: 34.1, 32.8, 31.4 and 23.5 (small).\n- S4#2: 33.3, 29.4, 32.6 and 21.1.\n- S4#3: 36.8, 33.6, 34.1 and 25.3.\n\nThe middle run is S4#1, whose worst upload took 34.1 s. There were no time warnings: every upload stayed under the 48-s line and the 44-s question. The release took 301.8 s to load.\n\nEvery correctness check held:\n- Every upload was emailed in the normal tier.\n- S1-1 matches the frozen oracle and S1-2 matches the whole-release oracle.\n- The large uploads were queued after 5.6 to 8.1 s, with the small one behind them.\n- No OOM kill and no limit reached. The consumer peaked at 1,150 of 4,096 MiB and the web at 326 of 1,024 MiB.\n- Mail: addressCheckMs 2000, screeningReady true, heldLines 0.\n\nThe verdict says 'fail (time advisory)'. Every reason is something this kind of run cannot meet, not a bug: it ran only two scenarios, the process runtime's Postgres has no limits applied and no cold start, and the S2-1 and S3-1 oracles were not run. The report is /tmp/claude-0/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/scratchpad/pr6b4/smoke1/summary.md.",
+  "checks": [
+   {
+    "command": "git pull --no-rebase origin co-001/pr-06b-mail-streams; git status",
+    "passed": true,
+    "note": "Already up to date at 89998f4, clean tree."
+   },
+   {
+    "command": "pnpm typecheck",
+    "passed": true,
+    "note": "Whole repository, exit 0."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 pnpm lint",
+    "passed": true,
+    "note": "Exit 0."
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true,
+    "note": "496 files read."
+   },
+   {
+    "command": "pnpm lint:logs",
+    "passed": true,
+    "note": "982 files scanned, every log call uses allowlisted fields."
+   },
+   {
+    "command": "npx vitest run --project unit apps/worker apps/web infra tools/screening-capacity tools/test packages/synth",
+    "passed": true,
+    "note": "First run on 89998f4: 1 failure, in tools/screening-capacity/watched.test.ts. The watched list was missing M3's address.ts, tlds.ts and validation.ts, a seam between builders. Fixed in bcec96f by regenerating it with watched.ts --write. Final tree: 165 files, 2,426 tests passed."
+   },
+   {
+    "command": "pnpm build (web and worker)",
+    "passed": true,
+    "note": "Failed on 89998f4: Next's build traced packages/db/src/migrate.ts through apps/worker/src/mail/streams.ts (M2), which billing/dunning.ts brings into the web through @tp/worker/billing. Fixed in 92656c8 by importing @tp/db/runtime instead. Build passes after the fix."
+   },
+   {
+    "command": "npx vitest run --project unit apps/worker/src/web-entries.test.ts",
+    "passed": true,
+    "note": "New guard test. It failed with the old import, naming streams.ts as imported by billing/dunning.ts, and passes after 92656c8."
+   },
+   {
+    "command": "PR_NUMBER=42 pnpm -s exec tsx tools/engine-freeze/check.ts 49514e8",
+    "passed": true,
+    "note": "Run as ci.yml runs it. No non-test file under packages/pricing/src changed, nothing let through, no problems."
+   },
+   {
+    "command": "git diff --name-only $(git merge-base origin/claude/build-platform HEAD)",
+    "passed": true,
+    "note": "143 files, every one owned by a builder or the integrator. Exactly one migration added (20261107090000). Nothing under packages/pricing/src, fixtures/golden, content/releases or tools/engine-freeze/exception.json. No applied migration edited, no marker. pnpm-lock.yaml is M3's file but M2 also changed it, for client-sqs."
+   },
+   {
+    "command": "pnpm install --frozen-lockfile --offline",
+    "passed": true,
+    "note": "Lockfile up to date."
+   },
+   {
+    "command": "DATABASE_URL=<fresh PG18 tp_pr6b4_integrator_1> pnpm db:migrate && pnpm -s db:domain-model --check",
+    "passed": true,
+    "note": "Matches the committed text exactly. 98 tables, 47 registered, 0 explanation problems. Approval line 7327 is blank."
+   },
+   {
+    "command": "psql: pg_proc, pg_class, pg_policy and phi_table_registry on the migrated database",
+    "passed": true,
+    "note": "Every new SECURITY DEFINER function sets search_path, gives no EXECUTE to PUBLIC and has exactly its grant. All 8 new tables have RLS enabled and forced and are owned by tp_owner. Only the 2 registered notice tables grant SELECT to tp_app."
+   },
+   {
+    "command": "pnpm synth --all; git diff --exit-code -- fixtures/synthetic",
+    "passed": true,
+    "note": "451 case files and 16 EMR files unchanged."
+   },
+   {
+    "command": "taskset -c 0-1 pnpm screening:capacity --runtime process --images <layout> --admin-url ...:5433 --database tp_pr6b4_smoke_1 --time-mode advisory --scenarios S1,S4",
+    "passed": true,
+    "note": "Every correctness check held. The verdict fails only on items a two-scenario process run cannot meet (see smoke). The harness dropped the database."
+   },
+   {
+    "command": "pnpm -s db:domain-model --summary-since origin/claude/build-platform",
+    "passed": true,
+    "note": "Opens the PR body. The body was written through the MCP tool and matches the local file byte for byte. The gh path had stripped the attribution line."
+   }
+  ],
+  "open_items": [
+   "Your capacity note is recorded. ADR 0062's \"Revisit when\" (M3, 6851bde) and ADR 0065 point to GitHub issue #41. The free runner with time advisory on PRs was chosen to save cost. Revisit before the screening opens and once production has traffic, by measuring on AWS staging or an 8-core runner, then settle sizing question O9. I added the same note, with the 2026-10-21 rulings, to reconciliation-001 (6579169). No builder had written it there, though the computed task required it.",
+   "The founder approves the domain model's SHA-256 only after the review round. Until then CI fails the approval case of domain-model.db.test.ts, as expected.",
+   "The review round has not run yet. It is two adversarial reviews, one using the security-reviewer checklist (G5: IAM, addresses, reserved audit actions).",
+   "Residuals for the reviewers, all from my read of the diffs: (a) a run completion that commits just before a concurrent pause still sends, until the platform disables the SES set within a minute. (b) Someone who types a mailbox they know is valid and gets refused can infer that it bounced or was reported as spam on the screening stream in the last 12 months. This needs counsel, with O4. (c) A failure notice sent after the failure commits can be lost to a pause that lands in between. (d) The harness's addressCheckMs is the configured delay, not a measured one, and the charge is skipped past the stand-in's daily cap of 50. This holds today at about 20 uploads per database.",
+   "Founder actions: phase 1 deploy, then DNS records from the stack's outputs (DKIM, MAIL FROM MX and SPF, DMARC). Phase 2 with MailIdentitiesVerified=true. SES production access. Postmaster Tools and SNDS (O5, O14). Staging checks after phase 2 (O11). Re-read the AWS prices (O12).",
+   "Counsel (O4): the paused page, the refused-address sentences, the bounce-budget refusal and the refusal-hash sentence, before the screening opens.",
+   "PR 6e (O13): reminders on the screening stream must read the mail gate and the refusal list. Also List-Unsubscribe headers, and whether reminders stay on tp_operator.",
+   "Plan O15: refresh the TLD snapshot and the typo list every quarter. Q13 belongs to the billing PR.",
+   "Doc nit in M3's file, reported and not fixed: docs/runbooks/deliverability.md section 2 step 5 says \"Q1 (b)\" for the SES plan; it should say Q1 (f).",
+   "Differences from the design, listed in the PR body: the refusal gate sits on accepted screening_upload rows, not on screening_prospect. screening_prospect_mail_forget is not created (the founder chose Q11 (b)). Only screening_run.client_subject was added, as the last parameter with default null. screening_mail_gate is granted to tp_screening only and screening_mail_sending to no role. The helper functions are invoker functions, not definers. data-dictionary.md is unchanged. The pepper comes from gen_random_uuid. RDS log_parameter_max_length is set to 0. The builders' reports arrived truncated, so any further departures are in ADR 0065's Alternatives table.",
+   "CI on draft PR 42 runs what was not run locally: the full test:db, e2e, golden and the advisory capacity workflow."
+  ]
+ }
+}
