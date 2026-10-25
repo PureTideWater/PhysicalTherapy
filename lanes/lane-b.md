@@ -590,3 +590,6 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **ci-deps' design re-read** (wf_c51b25c9-e94; script archived). Two scouts check the files and the versions against 6ddd587. An author brings §3.2 current, adding §3.2.6. One adversarial reviewer follows, then every finding is resolved in §3.2.7. No heavy command runs in it.
   - Neither workflow commits; the session reviews their files and commits them.
   - **Next:** the capture's result → the cost estimate to the co-founder → the five reviewers. ci-deps' re-read → its builders.
+- **2026-10-25 ~21:45 UTC: the co-founder's standing direction: "If you ever discover a way to improve or optimize something as you're building do it. Always do this."**
+  - Recorded under "Rulings and decisions of record", and as the convention "Improve as you go": inside the current PR when it fits, its own next PR otherwise, Lane A's when it needs a migration or frozen code, and the co-founder first when it touches wording, brand, what a person sees, cost or security.
+  - The two running workflows are not stopped: their prompts already let the capture agent improve the tour tool and the ci-deps author make the best engineering choice. Every later workflow prompt carries the direction.
