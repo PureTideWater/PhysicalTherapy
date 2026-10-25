@@ -9,7 +9,7 @@ Lane A reads it to keep the build tracker current. The rules are in `../LANES.md
 
 ## In flight
 **The CI PR** (Lane B queue item 1), claimed 2026-10-24 21:00 UTC; ADR 0066; test-matrix and synth cases CI-01 to CI-20. **Design done and reviewed** (wf_8628914e-6b9, finished 2026-10-25 ~00:40 UTC): `designs/lane-b-ci.md`, with the scout reports and the review in `designs/lane-b-ci/`. Four PRs, in merge order:
-1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **Next: its build**, after the co-founder's usage reading. No founder question blocks it.
+1. `co-001/ci-speed` (#109; CI-01 to CI-10), worktree `/home/user/ci-speed`. **Build running: wf_aa18ae8a-848** (started 2026-10-25 ~01:05 UTC; script `workflow-scripts/lane-b-ci-speed-build-wf_aa18ae8a-848.js`). Builders S1, S2 and S3 work in parallel in `/home/user/ci-speed-s1`, `-s2` and `-s3` (local branches, never pushed); the integrator merges them in `/home/user/ci-speed`, pushes once and opens the draft PR; then two adversarial reviews run in fresh clones (CI and test infrastructure; security and supply chain). Heavy commands share `flock /tmp/laneb-heavy.lock`. If the session ends mid-run, this stage starts again from the four worktrees.
 2. `co-001/ci-deps` (#112, #19's asserts, groups and licence fix, Dependabot #40, #38's tooling, #33; CI-11 to CI-14): after ci-speed merges; needs F1, F2 and F4.
 3. `co-001/ci-browser` (#19's upgrade part; CI-18 to CI-20): after ci-speed and ci-deps; needs F4 and F5.
 4. `co-001/ci-mutation` (#54; CI-15 to CI-17): built beside ci-deps once ci-speed merges, merged last; F6 for two documents.
@@ -70,3 +70,7 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
     - Plus fact O1: the account's plan (Free or Pro).
   - **Machine:** `/opt/pw-browsers` now holds Playwright 1.56.1's revision 1194 laid out from Chrome for Testing 141.0.7390.37 (`storage.googleapis.com/chrome-for-testing-public`, which the proxy allows; headless-shell zip SHA-256 b294238e5ac3e04f5f7fc5e5c017692bf64635e8824c3a7a44bea6a7ef6e147d, matching the scout's; chrome zip 128b0505afabfa89660842aa0a33a1bd5949244a7027f8b44d1d2fd8f23d7669). The scout proved this build regenerates all seven committed baselines byte for byte (`designs/lane-b-ci/scout-playwright-runner.md` M7), so local e2e runs without the two blocked hosts. Playwright 1.64.1's build (CfT 156) is laid out in the scratchpad for ci-browser. A container restart had stopped both clusters: PG18 was restarted by the CI scout, PG16 by hand; `SETUP_CHECK=1` prints OK.
   - **Next:** the co-founder's usage reading, then ci-speed's build (builders S1, S2, S3, then an integrator who opens the draft PR).
+- **2026-10-25 ~01:00 UTC: the co-founder's reading and direction.**
+  - **Usage 4%** (Sunday ~01:00 UTC); reset Friday 2026-10-30.
+  - **Direction (co-founder):** "all recommended actions", "use my tokens, just get this built", fully optimized and production-ready. Recorded as the co-founder's preference on F1 to F7. LANES.md holds no delegation, so F1 to F7 are not yet rulings: each waits for the founder (or a dated delegation in LANES.md). None blocks ci-speed; F1, F2 and F4 block ci-deps; F4 and F5 block ci-browser; F6 two documents of ci-mutation; F3 and F7 are settings applied after merges.
+  - ci-speed's build started (wf_aa18ae8a-848; see In flight).
