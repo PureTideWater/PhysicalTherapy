@@ -23,14 +23,14 @@ the pricing engine, the ledger, and the packet verifier and arithmetic. Its `mut
 - **A pull request that touches no money path** runs only `changes` and `mutation`, which passes with "No money path
   changed".
 
-| Shard | Mutates | Time (4 shared CPUs, measured) |
+| Shard | Mutates | Time (Stryker's, 4 CPUs shared with other work, 2026-10-25) |
 | --- | --- | --- |
-| `money-ledger` | money, then the ledger | about 3 min |
-| `packets-scan` | packets' `scan.ts` | about 7 min |
-| `packets-rest` | the rest of packets' set | about 7 min |
-| `pricing-engine` | pricing's `engine.ts` | about 7 to 11 min |
-| `pricing-recompute` | pricing's `recompute.ts` | about 7 to 11 min |
-| `pricing-rest` | the rest of pricing | about 7 to 11 min |
+| `money-ledger` | money, then the ledger | 3 min 34 s (money 31 s, the ledger 3 min 3 s) |
+| `packets-scan` | packets' `scan.ts` | 5 min 31 s |
+| `packets-rest` | the rest of packets' set | 8 min 17 s |
+| `pricing-engine` | pricing's `engine.ts` | 9 min 21 s |
+| `pricing-recompute` | pricing's `recompute.ts` | 3 min 54 s |
+| `pricing-rest` | the rest of pricing | 5 min 49 s |
 
 Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It then runs its packages
 (`pnpm -s exec tsx tools/stryker/shards.ts <shard>`), prints its files' scores and survivors, and uploads

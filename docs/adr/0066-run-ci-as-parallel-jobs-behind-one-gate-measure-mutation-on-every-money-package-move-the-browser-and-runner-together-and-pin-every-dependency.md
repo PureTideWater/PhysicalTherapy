@@ -177,15 +177,28 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
   three load-breaking mutants Survived) and so does case 5 (the prefix mutant Killed by the longer-named test): 3 of 5.
   On 10.0.0 without the patch: 0 of 5. On 10.1.1 without the aliases, case 3 fails (its two mutants NoCoverage); on
   10.1.1 without the seed, case 4 fails (the seeded mutant Survived): 4 of 5 each.
-- **The money shard on 10.1.1**, before any survivor-killing test:
-  - money scores 93.22% (220 killed, 15 survived, 1 no coverage, 7 load failures), the scout's 243 statuses exactly;
-  - the ledger, with the committed seed, scores 91.89% (1,524 killed, 5 timeouts, 135 survived);
-  - the shard took 3 min 7 s, its canary included;
-  - the gate passes both scores and fails on their 151 unexplained survivors (16 and 135), naming each with its
-    covering tests. It prints scores truncated to two decimals, never rounded up (the ledger's 91.88%), so no printed
-    score is above the line when the score is not.
-- **The scout's other packages** (10.1.1, aliases): pricing with its golden tests 91.70% (counting 10 clock-made
-  timeouts as detected), packets 85.40%.
+- **Every package, before and after this part** (10.1.1; all six shards run in full, one after another, then the
+  gate over their reports as the `mutation` job reads them; scores as the gate computes them, truncated to two
+  decimals, never rounded up, recorded equivalents counted as survivors and load failures left out):
+
+  | Package | Before (the runner bump alone) | After | Undetected, all recorded | Shard time |
+  | --- | --- | --- | --- | --- |
+  | money | 93.22% (220 of 236; 16 undetected) | 97.00% (227 of 234) | 7 | money-ledger 3 min 34 s (money 31 s) |
+  | ledger | 91.88% (1,529 of 1,664; 135) | 98.13% (1,633 of 1,664) | 31 | (with money) |
+  | pricing | 91.47% (1,782 of 1,948; 166) | 98.57% (1,932 of 1,960) | 28 | engine 9 min 21 s, recompute 3 min 54 s, rest 5 min 49 s |
+  | packets | 85.61% (2,053 of 2,398; 345) | 95.87% (2,299 of 2,398) | 99 | scan 5 min 31 s, rest 8 min 17 s |
+
+  The gate passes: every package above 85%, no unexplained survivor, every shard's canary 5 of 5. Undetected mutants
+  went from 662 to 165, each a reviewed equivalent; the builders proposed 175, and the integrator, trying to build an
+  input that told each apart, killed ten by tests (seven comparators right only in the order V8 calls them, three
+  told apart only by text that is not a date). Deleting one killing assertion (the row that holds
+  `formatUnroundedUsd`'s refusal to its message) fails the gate, naming `packages/money/src/cents.ts:83` and its
+  covering test. Before the survivor-killing tests, the money shard alone failed the gate on 151 unexplained survivors
+  (16 money, 135 ledger). The scout's measurement had packets at 85.40% without `windows.ts` (35 mutants, all killed).
+- **The golden comparison's tests** (`tools/golden-worksheet/engine.test.ts`) price each claim inside the test that
+  reads it, so 45 of engine.ts's 855 mutants are static where 799 were. Every mutant's status is the same either way
+  and the engine shard's time barely moves (9 min 21 s against 9 min 27 s): the tests that price every claim still
+  cover nearly every engine mutant.
 
 ### Alternatives considered
 
