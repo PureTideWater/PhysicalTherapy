@@ -581,3 +581,12 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - Reset Friday 2026-10-30, time of day not given. 52 points to the ~80% line over about 4.5 days, about 11.5% a day.
   - **Applied as:** two heavy workflows at once, back to back, with no new heavy run past ~80%, none cut off mid-way, and a reading asked at each checkpoint. The UX review is the first; ci-deps' scout and design review run beside it.
   - **The UX review's cost estimate:** given to the co-founder when capture is done, as the brief says. Under "go as far as we can", the reviewers start straight after, unless the estimate is more than twice the brief's 3 to 4%.
+- **2026-10-25 ~21:40 UTC: the container had restarted; machine rebuilt; two workflows started.**
+  - PostgreSQL was down after a container restart (the session stayed open). `tools/setup-container.sh` was re-run with no branch arguments, and printed OK, both clusters started.
+  - **The UX baseline, part 1** (wf_b56fe7b4-652; script archived). Steps:
+    - four scouts map the 83 routes (persona, records, the spec that creates them, states), and a critic checks the map for completeness and writes `designs/lane-b-ux-review/route-map.{json,md}`;
+    - one agent extends `tools/lane-b-screen-tour` on this branch, so every reachable route is shot at 1280 px light, 1280 px dark (tokens only) and 390 px light, plus the states the map names (states at 1280 and 390, light). The tour gets a `TOUR_ONLY` filter for retakes. The agent runs the tour under the lock (`TOUR_MINUTES=90`, a bound of about 150 minutes held) and leaves the port and the database clean;
+    - checkers look at every image; one retake round follows, then the manifest, `coverage.md` and the five reviewer image sets.
+  - **ci-deps' design re-read** (wf_c51b25c9-e94; script archived). Two scouts check the files and the versions against 6ddd587. An author brings §3.2 current, adding §3.2.6. One adversarial reviewer follows, then every finding is resolved in §3.2.7. No heavy command runs in it.
+  - Neither workflow commits; the session reviews their files and commits them.
+  - **Next:** the capture's result → the cost estimate to the co-founder → the five reviewers. ci-deps' re-read → its builders.
