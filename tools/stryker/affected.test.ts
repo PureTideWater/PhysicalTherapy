@@ -287,9 +287,9 @@ describe('on this repository', () => {
   const global = globalFiles(repositoryRoot, files);
   const lock = readFileSync(path.join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8');
   const affects = (changed: string[], after?: string) => affected({ files: changed, lockfile: after === undefined ? undefined : { before: lock, after } }, closures, global).packages;
+  const importers = (parse(lock) as { importers: Record<string, Record<string, Record<string, { version: string }> | undefined>> }).importers;
   const version = (name: string) => {
-    const importer = (parse(lock) as { importers: Record<string, Record<string, Record<string, { version: string }> | undefined>> }).importers;
-    for (const fields of Object.values(importer)) for (const field of Object.values(fields)) if (field?.[name] !== undefined) return field[name].version.replace(/\(.*$/, '');
+    for (const fields of Object.values(importers)) for (const field of Object.values(fields)) if (field?.[name] !== undefined) return field[name].version.replace(/\(.*$/, '');
     throw new Error(`no ${name} in the lockfile`);
   };
 
@@ -330,6 +330,8 @@ describe('on this repository', () => {
     }
   });
 
+  // Each case rewrites and reads the repository's whole lockfile twice (about 3.5 s in all on an idle machine), so the
+  // test is given the time a loaded CI runner or a shared machine needs, beyond Vitest's 5-second default.
   it('gives none for a next lockfile bump, pricing and packets for an @aws-sdk/* group bump, and all four for a vitest bump', () => {
     expect(affects(['pnpm-lock.yaml'], bump(lock, 'next', version('next'), '99.0.0'))).toEqual([]);
     const aws = ['@aws-sdk/client-kms', '@aws-sdk/client-textract'].reduce((text, name) => bump(text, name, version(name), '9.9.9'), lock);
@@ -337,7 +339,7 @@ describe('on this repository', () => {
     expect(affects(['pnpm-lock.yaml'], bump(lock, 'vitest', version('vitest'), '99.0.0'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
     expect(affects(['pnpm-lock.yaml'], bump(lock, 'fast-check', version('fast-check'), '99.0.0'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
     expect(affects(['pnpm-lock.yaml'], bump(lock, 'decimal.js', version('decimal.js'), '99.0.0'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
-  });
+  }, 60_000);
 
   it('selects every shard of each affected package', () => {
     expect(shardsFor(['money'])).toEqual(['money-ledger']);

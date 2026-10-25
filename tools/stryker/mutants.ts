@@ -87,20 +87,57 @@ export function repositoryPath(file: string): string {
   return file.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
+/**
+ * A source read once for all its mutants: offsetOf's and occurrenceAt's answers, from the line starts and each
+ * original's start positions, each found on first use. A report is then read in time linear in its source and mutants,
+ * not in their product, which a scan of the whole source per mutant would take.
+ */
+export function sourceIndex(source: string): { offset(position: Position): number; occurrence(original: string, start: number): number } {
+  const lineStarts = [0];
+  for (let at = source.indexOf('\n'); at !== -1; at = source.indexOf('\n', at + 1)) lineStarts.push(at + 1);
+  const startsOf = new Map<string, number[]>();
+  return {
+    offset(position) {
+      const lineStart = lineStarts[position.line - 1];
+      if (lineStart === undefined) throw new Error(`line ${String(position.line)} is past the end of the source`);
+      return lineStart + position.column - 1;
+    },
+    occurrence(original, start) {
+      let starts = startsOf.get(original);
+      if (starts === undefined) {
+        starts = [];
+        for (let at = source.indexOf(original); at !== -1; at = source.indexOf(original, at + 1)) starts.push(at);
+        startsOf.set(original, starts);
+      }
+      // How many start at or before `start`: the first position after it, by binary search.
+      let low = 0;
+      let high = starts.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if ((starts[middle] ?? Number.POSITIVE_INFINITY) <= start) low = middle + 1;
+        else high = middle;
+      }
+      if (starts[low - 1] !== start) throw new Error('the original text is not at its start');
+      return low;
+    },
+  };
+}
+
 /** Every mutant of a report, keyed, in the report's file order and each file's mutant order. */
 export function keyedMutants(report: MutationReport): KeyedMutant[] {
   const names = new Map<string, string>();
   for (const testFile of Object.values(report.testFiles ?? {})) for (const test of testFile.tests) names.set(test.id, test.name);
   const keyed: KeyedMutant[] = [];
   for (const [name, file] of Object.entries(report.files)) {
+    const index = sourceIndex(file.source);
     for (const mutant of file.mutants) {
-      const start = offsetOf(file.source, mutant.location.start);
-      const original = file.source.slice(start, offsetOf(file.source, mutant.location.end));
+      const start = index.offset(mutant.location.start);
+      const original = file.source.slice(start, index.offset(mutant.location.end));
       keyed.push({
         file: repositoryPath(name),
         mutator: mutant.mutatorName,
         original,
-        occurrence: occurrenceAt(file.source, original, start),
+        occurrence: index.occurrence(original, start),
         replacement: mutant.replacement ?? '',
         status: mutant.status,
         statusReason: mutant.statusReason,

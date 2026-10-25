@@ -12,7 +12,7 @@ import { BASE_OPTIONS } from '../../../stryker/base.mjs';
  * 3. lib/index.ts (`@tp/stryker-canary`): mutants only a `tools` test that imports the package by name kills (the
  *    workspace aliases);
  * 4. seeded.ts: a mutant only a seeded fast-check property kills (the seed);
- * 5. prefix.ts: a mutant covered by one of two tests whose names share a prefix, which must survive (stryker-js #6246).
+ * 5. prefix.ts: a mutant covered by one of two tests whose names share a prefix, which must survive (stryker-js issue 6246).
  *
  * `pnpm stryker run tools/stryker/canary/stryker.config.mjs` writes reports/canary/report.json, which
  * `pnpm -s exec tsx tools/stryker/canary/verdict.ts` judges case by case (the shard's step runs both; any case not as

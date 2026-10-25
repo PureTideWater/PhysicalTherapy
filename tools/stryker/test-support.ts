@@ -19,10 +19,21 @@ export interface MutantSpec {
   readonly coveredBy?: readonly string[];
 }
 
-function positionAt(source: string, offset: number) {
-  const before = source.slice(0, offset);
-  const line = before.split('\n').length;
-  return { line, column: offset - before.lastIndexOf('\n') };
+/** The report position (line and column from 1) of each offset, from the source's line starts, found once. */
+function positions(source: string): (offset: number) => { line: number; column: number } {
+  const lineStarts = [0];
+  for (let at = source.indexOf('\n'); at !== -1; at = source.indexOf('\n', at + 1)) lineStarts.push(at + 1);
+  return (offset) => {
+    // The line is how many lines start at or before the offset: the first start after it, by binary search.
+    let low = 0;
+    let high = lineStarts.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if ((lineStarts[middle] ?? Number.POSITIVE_INFINITY) <= offset) low = middle + 1;
+      else high = middle;
+    }
+    return { line: low, column: offset - (lineStarts[low - 1] ?? 0) + 1 };
+  };
 }
 
 /** A report of the given files, each mutant placed at its original text's occurrence in the file's source. */
@@ -31,14 +42,24 @@ export function reportOf(files: Readonly<Record<string, { readonly source: strin
   const tests = new Set<string>();
   const built: Record<string, { source: string; mutants: ReportMutant[] }> = {};
   for (const [file, { source, mutants }] of Object.entries(files)) {
+    const positionAt = positions(source);
+    // Each original's start positions, found once for every mutant of it.
+    const startsOf = new Map<string, number[]>();
+    const startOf = (original: string, occurrence: number): number => {
+      let starts = startsOf.get(original);
+      if (starts === undefined) {
+        starts = [];
+        for (let at = source.indexOf(original); at !== -1; at = source.indexOf(original, at + 1)) starts.push(at);
+        startsOf.set(original, starts);
+      }
+      const start = starts[occurrence - 1];
+      if (start === undefined) throw new Error(`${file}: no occurrence ${String(occurrence)} of ${original}`);
+      return start;
+    };
     built[file] = {
       source,
       mutants: mutants.map((spec) => {
-        let start = -1;
-        for (let seen = 0; seen < (spec.occurrence ?? 1); seen += 1) {
-          start = source.indexOf(spec.original, start + 1);
-          if (start === -1) throw new Error(`${file}: no occurrence ${String(spec.occurrence ?? 1)} of ${spec.original}`);
-        }
+        const start = startOf(spec.original, spec.occurrence ?? 1);
         for (const test of spec.coveredBy ?? []) tests.add(test);
         id += 1;
         return {
@@ -48,7 +69,7 @@ export function reportOf(files: Readonly<Record<string, { readonly source: strin
           status: spec.status,
           ...(spec.statusReason === undefined ? {} : { statusReason: spec.statusReason }),
           coveredBy: [...(spec.coveredBy ?? [])],
-          location: { start: positionAt(source, start), end: positionAt(source, start + spec.original.length) },
+          location: { start: positionAt(start), end: positionAt(start + spec.original.length) },
         };
       }),
     };
