@@ -225,3 +225,4 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
   - **Every screen-changing Lane B PR:** the UX and brand review is one of its two adversarial reviews, with before and after screenshots of the changed screens at 1280 px and 390 px.
   - **Each milestone:** a light whole-app re-tour.
   - **Lane A:** the founder is asked whether Lane A's screen-changing PRs take the same reviewer.
+- **2026-10-25 ~17:05 UTC: the co-founder recommends that Lane A's screen-changing PRs take the same UX and brand reviewer.** Lane A's pipeline is the founder's (the delegation covers Lane B's work), so this goes to the founder. A ready line for the founder's chat was given to the co-founder: adopt it in LANES.md rule 1 as a rule both lanes follow, using `.claude/agents/ux-brand-reviewer.md` once Lane B's checklist PR merges. Lane B does not edit LANES.md's rules.
