@@ -51,9 +51,9 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - db 9,049 and 1 skipped, over 118 files in 4 shards;
   - e2e 51; golden 188;
   - pyx12 agrees on all 637 synthetic 835s.
-- **Usage:** last read 17%, at or before ~13:40 UTC on 2026-10-25 (the co-founder). Several heavy runs followed, so expect noticeably more.
-  - This log's readings put it at about 0.7M subagent tokens per 1% of the weekly allowance.
-  - The weekly reset is Friday 2026-10-30. Its time of day is not yet recorded, so ask for it at the first reading.
+- **Usage:** last read **28% at ~21:20 UTC on 2026-10-25** (the co-founder: "Go as far as we can"). That leaves 52 points to the ~80% line over about 4.5 days to the reset, about 11.5% a day.
+  - This log's earlier readings put it at about 0.7M subagent tokens per 1% of the weekly allowance. From ~21:10 UTC the session and its agents run on a larger model with ultracode on, so re-measure at the next reading.
+  - The weekly reset is Friday 2026-10-30. Its time of day is still not given.
 
 ### Next actions, in order
 1. **Machine and reading.** Follow COFOUNDER-START.md's message.
@@ -577,3 +577,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Corrected at 21:14:05 UTC; re-read and matching step 4A on every point.** The fields are in "The state in one screen". `rules/branches/claude/build-platform` returns its four rules. ci, mutation, screening-capacity and approval-of-record each run on every pull request, with no path filter, so no required check can leave a merge waiting forever.
   - **Two other things are open.** Step 4B (`main`'s two rulesets) and step 4C (the release-tag rulesets) do not exist, and HANDOFF does not schedule them. They are the founder's, under "Waiting on someone".
   - **Next:** the co-founder's usage reading, then the route-map scout.
+- **2026-10-25 ~21:20 UTC: usage 28%; the co-founder: "Go as far as we can."**
+  - Reset Friday 2026-10-30, time of day not given. 52 points to the ~80% line over about 4.5 days, about 11.5% a day.
+  - **Applied as:** two heavy workflows at once, back to back, with no new heavy run past ~80%, none cut off mid-way, and a reading asked at each checkpoint. The UX review is the first; ci-deps' scout and design review run beside it.
+  - **The UX review's cost estimate:** given to the co-founder when capture is done, as the brief says. Under "go as far as we can", the reviewers start straight after, unless the estimate is more than twice the brief's 3 to 4%.
