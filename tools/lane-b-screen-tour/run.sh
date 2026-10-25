@@ -17,6 +17,6 @@ echo "populate start $(date -u +%T)"
 echo "populate exit $? at $(date -u +%T)"
 grep -E "passed|failed|flaky|skipped|✘" $S/populate.log | tail -12
 echo "capture start $(date -u +%T)"
-./node_modules/.bin/playwright test --config $S/screens.config.ts --project capture --workers 1 > $S/capture.log 2>&1
+./node_modules/.bin/playwright test --config $S/screens.config.ts --project capture --workers 1 tour.spec.ts > $S/capture.log 2>&1  # the retake specs (contract, mapping) need a tour's ids.json and a fresh database: redo.sh
 echo "capture exit $? at $(date -u +%T)"
 tail -5 $S/capture.log

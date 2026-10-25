@@ -18,8 +18,8 @@ heavy lock. Its brief is `workflow-scripts/lane-b-screen-tour-wf_8f5524d1-dad.js
   - It stops the server at the first of three things: `touch $TOUR_DIR/stop`, `TOUR_MINUTES` (default 22), or three missed answers in a row. It stops it with `fuser -k 3297/tcp`.
 - **`run.sh`** waits for `ready`, then runs two Playwright projects:
   - `populate`: the repository's own e2e files, unchanged and whole (layout-1280, packets, reconciliation, monitoring, billing and contracts), except the tests its `--grep-invert` names. They fill the screens through the real worker jobs.
-  - `capture`: `capture/tour.spec.ts` signs in as each role with the e2e helpers and saves full-page PNGs to `$TOUR_DIR/png`, recording each in `shots.json` (file, route, role and width).
-- **`redo.sh`** retakes one screen on a fresh database: prepare, serve, the contracts journey, then `capture/contract.spec.ts`. Then it stops the server, drops the database and removes the temporary directories. `capture/mapping.spec.ts` is kept for the mapping screen; point redo.sh at it to use it.
+  - `capture`: `capture/tour.spec.ts` alone signs in as each role with the e2e helpers and saves full-page PNGs to `$TOUR_DIR/png`, recording each in `shots.json` (file, route, role and width).
+- **`redo.sh`** retakes one screen on a fresh database: prepare, serve, the contracts journey, then `capture/contract.spec.ts`. Then it stops the server, drops the database and removes the temporary directories. `capture/mapping.spec.ts` is kept for the mapping screen; point redo.sh at it to use it. Both retake specs read the `ids.json` a tour writes, so they run only after one.
 - **`manifest.py`, `gallery.json`, `gallery-build.py` and `gallery-page.html`** belong to the 2026-10-25 tour.
   - `manifest.py` is hard-wired to its 30 screens and their hand curation: 02 from `probe/home-ledger.png`, 24 from the console's release probe, 27 from `probe/phone-home-ledger.png`, and 16 from page 2 of the PDF.
   - `gallery.json` holds that tour's captions; its `file` paths name that session's scratchpad.

@@ -75,7 +75,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
      - Set `TOUR_DIR` in the new scratchpad, then run `setup.sh`. `serve.sh` prepares the database, and `env.sh` derives the development key itself.
      - Give a whole-app capture `TOUR_MINUTES=90`.
      - After every run, check that `fuser 3297/tcp` prints nothing.
-     - The tool was run end to end at 6ddd587 before the handoff: setup, prepare, build and server start passed, then the populate journeys; the capture's result is in the log's last entry.
+     - The tool was run end to end at 6ddd587 before the handoff (20:28 to 20:36 UTC). Setup, prepare, build and server start passed; the 6 populate journeys passed; `tour.spec.ts` captured 27 PNGs with `shots.json` and `ids.json`; and the server and lock ended together, leaving the port free. run.sh now captures `tour.spec.ts` alone (the retake specs need a tour's `ids.json`, so they run through redo.sh).
    - **Before capturing, a scout writes the route map.** For each of the 83 `page.tsx` routes (`find apps/web/src/app -name page.tsx`; 84 once #42 merges), it records:
      - the persona that may open it (`apps/web/scripts/synthetic-personas.ts`, and the route's permission in `apps/web/src/lib/routes/*.ts`);
      - the record its dynamic segments need;
@@ -534,3 +534,17 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - **The tour:** the master key derived at run time, `TOUR_MINUTES`, `TOUR_REF`, a reliable stop, the gallery template path and the README's accuracy.
     - **Records:** the line for the founder's chat, recorded verbatim; the rulings' sources and times.
   - **The tour run end to end at 6ddd587** with the fixes (`TOUR_DIR` in this scratchpad). The first run caught one more defect: run.sh found the server by matching its path in the process list, and failed when build.sh was started by a relative path. A pid file fixes it, and a stop touched during the build now holds. The second run's setup, prepare, build and server start passed, then the populate journeys; the capture's result follows.
+- **2026-10-25 ~20:40 UTC: the screen tour's end-to-end run finished; the machine left clean.**
+  - **The run, at 6ddd587** (20:28 to 20:36 UTC):
+    - setup, prepare ("migrated and seeded"), build and the server passed;
+    - the 6 populate journeys passed;
+    - `tour.spec.ts` captured 27 PNGs, writing `shots.json` and `ids.json`;
+    - the server and the lock stopped together, leaving port 3297 free.
+  - **One more defect, fixed:** run.sh's capture also ran the two retake specs. With one worker they run in file order, so `mapping.spec.ts` ran before the tour had written `ids.json`, and failed. run.sh now captures `tour.spec.ts` alone; the retakes stay redo.sh's.
+  - **Cleaned up:**
+    - the smoke worktree `/home/user/screens`;
+    - the leftover synthetic databases (`tp_e2e_cimut`, and `tp_e2e_screens` after the run);
+    - every stale `/tmp/tp-e2e-*` directory.
+
+    No worktree, database or server of Lane B's is left.
+  - **The handoff is complete.** The next session starts at "Start here (Lane B)".
