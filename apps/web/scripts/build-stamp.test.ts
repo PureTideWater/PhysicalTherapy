@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -118,4 +120,44 @@ describe('playwright.config.ts', () => {
     expect(local.failOnFlakyTests).toBe(false);
     expect(local.reporter).toBe('list');
   });
+
+  /**
+   * The settings' effect, on this Playwright (CI-07): a probe that fails its first attempt and passes its retry, run
+   * by Playwright's own CLI under CI's retries, failOnFlakyTests and reporters, fails the run and names the test in the
+   * log and in a pull-request annotation; the same probe with failOnFlakyTests off passes as "1 flaky", so the setting,
+   * not the probe, is what fails it. The probe needs no browser.
+   */
+  it("on CI, a test that passes only on its retry fails Playwright's run and is named, by the run itself", async () => {
+    const ci = await configWith({ CI: 'true' });
+    const playwright = path.dirname(createRequire(import.meta.url).resolve('@playwright/test/package.json'));
+    const probe = mkdtempSync(path.join(tmpdir(), 'tp-flaky-probe-'));
+    const title = 'a probe that fails on its first attempt and passes on its retry';
+    try {
+      writeFileSync(
+        path.join(probe, 'probe.spec.mjs'),
+        `import { expect, test } from ${JSON.stringify(path.join(playwright, 'index.mjs'))};\n` +
+          `test(${JSON.stringify(title)}, ({}, testInfo) => {\n  expect(testInfo.retry).toBeGreaterThan(0);\n});\n`,
+      );
+      const runProbe = (failOnFlakyTests: boolean | undefined) => {
+        const settings = { testDir: '.', outputDir: 'test-results', workers: 1, retries: ci.retries, failOnFlakyTests, reporter: ci.reporter };
+        writeFileSync(path.join(probe, 'playwright.config.mjs'), `export default ${JSON.stringify(settings)};\n`);
+        const env: NodeJS.ProcessEnv = { ...process.env, FORCE_COLOR: '0' };
+        delete env.CI;
+        delete env.GITHUB_ACTIONS;
+        return spawnSync(process.execPath, [path.join(playwright, 'cli.js'), 'test', '-c', 'playwright.config.mjs'], { cwd: probe, env, encoding: 'utf8', timeout: 50_000 });
+      };
+
+      const failed = runProbe(ci.failOnFlakyTests);
+      const log = `${failed.stdout}${failed.stderr}`;
+      expect(failed.status, log).toBe(1);
+      expect(log).toContain(`1 flaky\n    probe.spec.mjs:2:1 › ${title}`);
+      expect(log).toContain(`::error file=probe.spec.mjs,title=probe.spec.mjs:2:1 › ${title},line=3`);
+
+      const passed = runProbe(false);
+      expect(passed.status, `${passed.stdout}${passed.stderr}`).toBe(0);
+      expect(passed.stdout).toContain('1 flaky');
+    } finally {
+      rmSync(probe, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

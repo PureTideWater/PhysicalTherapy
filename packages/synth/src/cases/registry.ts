@@ -446,7 +446,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-04': none(0, 'The split is computed by vitest over the repository’s own db files, and the shard list from results built in memory; no file.', ['tools/test/db-shards.test.ts', 'tools/test/workflows.test.ts']),
   'CI-05': none(0, 'The guard is run with and without a browser in place; no file.', ['tools/test/ci-chromium.test.ts', 'tools/test/workflows.test.ts']),
   'CI-06': none(0, 'The stamp is written and read in a temporary directory; no file.', ['apps/web/scripts/build-stamp.test.ts', 'tools/test/workflows.test.ts']),
-  'CI-07': none(0, 'The Playwright configuration is read; no file.', ['tools/test/workflows.test.ts']),
+  'CI-07': none(0, 'The Playwright configuration is read, and a probe that passes only on its retry is written to a temporary directory and run there; no file.', ['apps/web/scripts/build-stamp.test.ts', 'tools/test/workflows.test.ts']),
   'CI-08': none(0, 'The groups and the scheduler are planned for hosts the test describes; no file.', ['tools/lint/groups.test.ts']),
   'CI-09': none(0, 'The workflow and the database suite are read; the drift case migrates a scratch database; no file.', ['tools/test/workflows.test.ts', 'packages/db/src/domain-model/domain-model.db.test.ts']),
   'CI-10': none(0, 'Every workflow file is read; no file.', ['tools/test/workflows.test.ts']),
