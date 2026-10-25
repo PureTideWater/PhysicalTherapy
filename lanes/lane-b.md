@@ -215,3 +215,8 @@ After the CI PR: PR 15 (ledger tests LED-12 and LED-13), the second item of Lane
     - Playwright 1.56.1 launches from the laid-out tree;
     - `SETUP_CHECK=1` prints OK.
   - For Lane A too: its next container gets OK without the manual layout.
+- **2026-10-25 ~16:50 UTC: the co-founder's decision (delegated): a UX/UI and brand review is the next Lane B session's first task.** The brief is `designs/lane-b-ux-review-brief.md`.
+  - **What it does:** captures every page at 1280 px and 390 px. Five expert lenses review it: brand and visual design, flows per role, words, accessibility, 390 px and states. A synthesizer and one adversarial reviewer follow.
+  - **Output:** ranked findings and proposed PRs for Lane B's queue. Anything needing a migration goes to Lane A.
+  - **Cost:** about 3 to 4% of usage. No product code.
+  - **Asked and answered the same hour:** several parallel Lane B chats would not be faster. They share one weekly allowance, add merge conflicts on shared files and CI re-runs, and cannot coordinate in real time. Instead: a fresh chat per milestone (the handoff), parallel agents inside each chat, and a separate chat only for work with no file overlap (for example the infrastructure PRs after #42) when usage allows.
