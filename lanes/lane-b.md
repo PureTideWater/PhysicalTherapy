@@ -617,3 +617,25 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Resumed** with resumeFromRunId at ~22:45 UTC; nothing was cached, so both start again from their first agents.
   - **Watchdog:** a monitor reports each agent's finish, and any 10 minutes in which no agent writes, so a silent stall is seen within minutes.
   - **Pitfall, for Start here:** an interrupt of the main session (the stop button, or sending while a reply is running) also stops background workflow agents. A plain new message sent after a reply has ended does not.
+- **2026-10-25 ~23:40 UTC: usage 32%. The co-founder lifts the pacing; Lane B runs in parallel sessions until Tuesday.**
+  - **His words:** "Just use whatever tokens you need we have plenty what can you do to speed this build up? Use whatever you need we are at 32% and I am switching to lane A on Tuesday. So use whatever you need by Tuesday. Just to get this sped up but don't sacrifice any quality, needs to be optimized in every angle."
+  - **Ruling (the co-founder, 2026-10-25 ~23:40 UTC):**
+    - rule 9's pacing of about 11% a day is lifted until Tuesday 2026-10-27;
+    - no usage reading is needed before a heavy run;
+    - never cut a run off mid-way. The session keeps a margin, so no run starts that the allowance could not finish.
+    - **By Tuesday:** every Lane B item is merged, or at a clean, recorded stopping point in Start here, because the co-founder then switches to Lane A.
+  - **Calibration:** 28% → 32% from 21:17 to ~23:40, over about 4.5M agent tokens (input, output and cache writes) plus the session's own, about 1.1M per 1%.
+  - **The speed-up: parallel Lane B sessions, each in its own container.** This container's 4 CPUs and its one heavy lock queue every item behind the screen capture. The 2026-10-25 ~16:50 answer ("parallel chats would not be faster") rested on a shared allowance, merge conflicts and no coordination. The allowance no longer binds. The items taken share no files with each other or with #42. This session coordinates them through the session tools and their status files.
+    - The founder's "at most two heavy workflows at once" is a limit per 4-CPU machine, so each container keeps it.
+    - Every stage of the pipeline stays in every session.
+  - **Claimed centrally** (LANES.md Claims, with their numbers), each for its own session:
+    - PR 15b (ADR 0067, LED-14 to LED-18);
+    - #111 (ADR 0068 if needed, DBF-01 to DBF-05);
+    - #10 (ADR 0069 if needed, PRC-25 to PRC-28);
+    - #84 and #120 (ADR 0070, MOD-7 to MOD-12).
+    - **Why these:** they are queue items 3, 4, 5 and 12, the next ones free of shared files. Items 6 to 10 change screens and wait for the UX baseline's findings, so they take them in. #49 waits for #42. #113 follows ci-deps' CLAUDE.md line.
+  - **Rules the parallel sessions keep:**
+    - Only this session edits LANES.md and lanes/lane-b.md. The others write only their own designs, summaries, scripts and a `approval-summaries/lane-b-<item>-status.md`, pulling before each push.
+    - Each merges its own PR when green and verified, as "Merging" says. If the base moves first, it merges the base again (rule 6) and waits for CI on the new head.
+    - Cost and security questions come to this session, which takes them to the co-founder.
+  - **ci-deps** moves to its own session once its design re-read finishes, so this machine stays with the capture and the review.
