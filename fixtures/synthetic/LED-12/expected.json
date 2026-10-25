@@ -1844,6 +1844,20 @@
           }
         }
       }
+    },
+    {
+      "path": "adjustments-alone-eft-export.csv",
+      "sha256": "def980c9b181bac944004f2f7ede9e8a4365def2536b5091a057259cfe0a563a",
+      "bytes": 144,
+      "kind": "csv",
+      "description": "The bank export of the adjustments-alone check: one deposit of 200.00."
+    },
+    {
+      "path": "adjustments-alone-posting-export.csv",
+      "sha256": "e3879f5b1d1f5b8d35bbea07d013680c5eec56c5b9b3726c3521c2c773dcf776",
+      "bytes": 155,
+      "kind": "csv",
+      "description": "The posting export of the adjustments-alone check: one check-level row posting 200.00."
     }
   ],
   "generated": [],
@@ -1874,7 +1888,8 @@
       "reversalPaidCents": "-10000",
       "adjustmentCents": "-10000",
       "paymentCents": "0",
-      "inCheckPaymentCents": "5000"
+      "inCheckPaymentCents": "5000",
+      "alonePaymentCents": "20000"
     },
     "adjustment": "recorded; never an entry or a match, and no posted or deposited entry is written",
     "posted": "reversal-posting-export.csv matches the reversal claim and writes no posted entry",
@@ -1882,6 +1897,7 @@
     "inCheck": "the same entries; its 50.00 deposit and its 50.00 posting match its remittance and prove nothing for the case line, whether they arrive before the line is proved or after",
     "withheld": "takes nothing back again",
     "alone": "loaded while the approval stands, adjustments-alone.835 and forward-balance-withheld.835 write no entry and no match",
+    "aloneCash": "adjustments-alone.835's 200.00 deposit and its 200.00 posting, loaded before the line is proved, match their remittance and prove nothing for the case line",
     "case": "reopened with a note; the owner is notified"
   },
   "notes": []

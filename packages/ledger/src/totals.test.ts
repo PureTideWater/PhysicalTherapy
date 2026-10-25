@@ -198,7 +198,9 @@ describe('ledger properties (PRD 18: property tests on every pure function)', ()
         const all = [...base, make('recouped', value, { on })];
         const totalsOf = (entries: readonly LedgerEntry[], from: string, to: string) => ledgerTotals(periodEntries(entries, from, to), level, entriesById(entries));
         expect(totalsOf(all, '2026-01-01', until)).toEqual(totalsOf(base, '2026-01-01', until));
+        // Its own period, one that starts on its date and one that ends on it (both ends included).
         expect(totalsOf(all, on, '2026-12-31').recoveredCents).toBe(totalsOf(base, on, '2026-12-31').recoveredCents - value);
+        expect(totalsOf(all, '2026-01-01', on).recoveredCents).toBe(totalsOf(base, '2026-01-01', on).recoveredCents - value);
         expect(ledgerTotals(all, level).recoveredCents).toBe(ledgerTotals(base, level).recoveredCents - value);
       }),
     );

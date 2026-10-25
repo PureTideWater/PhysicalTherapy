@@ -334,8 +334,8 @@ export function led09(b: CaseBuilder): void {
  * corrected claim (CLP02 22, -100.00) and offsets the reversal with a PLB of -100.00 naming that claim: a
  * forward balance (FB, BPR02 0.00), the provider's refund acknowledged (72, BPR02 0.00), or the forward
  * balance inside a check that pays another patient's claim (BPR02 50.00, deposited and posted). The practice
- * posts the reversal (-100.00 against the corrected claim), and a later check withholds the forward balance
- * (FB 100.00). The ledger takes back what the reversed claim approved once, at once (PRD 13, Recoupments and
+ * posts the reversal (-100.00 against the corrected claim), a later check withholds the forward balance
+ * (FB 100.00), and a check carries the two adjustments alone (BPR02 200.00, deposited and posted). The ledger takes back what the reversed claim approved once, at once (PRD 13, Recoupments and
  * reversals; docs/adr/0042), writes no posted or deposited entry for any of it, and no adjustment is ever an
  * entry.
  */
@@ -382,6 +382,15 @@ export function led12(b: CaseBuilder): void {
     providerAdjustments: [{ providerId: pair.base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code: 'FB', reference, amount: offset }, { code: '72', reference, amount: offset }] }],
   });
   b.add835('adjustments-alone.835', file(b, alone, 7, reversedOn), `The same two adjustments with no claim (PLB FB -100.00 and 72 -100.00 naming ${reference}): BPR02 200.00.`);
+  // That check's cash, the two adjustments' alone: its deposit and its check-level posting, 200.00 each.
+  const alonePaid = negateCents(sumCents([offset, offset]));
+  b.addFile('adjustments-alone-eft-export.csv', eftExport([{ depositedOn: addDays(reversedOn, 1), description: `${pair.base.payer.name} HCCLAIMPMT`, trace: traceNumber(b.info.id, 7), amount: alonePaid }]), 'csv', 'The bank export of the adjustments-alone check: one deposit of 200.00.');
+  b.addFile(
+    'adjustments-alone-posting-export.csv',
+    postingExport([{ postedOn: addDays(reversedOn, 2), checkOrTrace: traceNumber(b.info.id, 7), payerName: pair.base.payer.name, amount: alonePaid, batch: 'SYNBATCH-1204' }]),
+    'csv',
+    'The posting export of the adjustments-alone check: one check-level row posting 200.00.',
+  );
   recoveryScenario(b);
   b.scenario({ reversal: { reverses: 'adjusted.835 transaction 0 claim 1', offsetBy: { 'reversal.835': 'FB', 'reversal-refunded.835': '72', 'reversal-in-check.835': 'FB' } } });
   b.outcome({
@@ -392,13 +401,20 @@ export function led12(b: CaseBuilder): void {
       { stage: 'recouped', amountCents: centsToString(negateCents(pair.difference)), evidence: 'reversal.835 transaction 0 claim 0' },
     ],
     recoveredCents: centsToString(subtractCents(pair.difference, pair.difference)),
-    cash: { reversalPaidCents: centsToString(reversal.paid), adjustmentCents: centsToString(offset), paymentCents: centsToString(subtractCents(reversal.paid, offset)), inCheckPaymentCents: centsToString(other.paid) },
+    cash: {
+      reversalPaidCents: centsToString(reversal.paid),
+      adjustmentCents: centsToString(offset),
+      paymentCents: centsToString(subtractCents(reversal.paid, offset)),
+      inCheckPaymentCents: centsToString(other.paid),
+      alonePaymentCents: centsToString(alonePaid),
+    },
     adjustment: 'recorded; never an entry or a match, and no posted or deposited entry is written',
     posted: 'reversal-posting-export.csv matches the reversal claim and writes no posted entry',
     refunded: 'the same entries as reversal.835',
     inCheck: 'the same entries; its 50.00 deposit and its 50.00 posting match its remittance and prove nothing for the case line, whether they arrive before the line is proved or after',
     withheld: 'takes nothing back again',
     alone: 'loaded while the approval stands, adjustments-alone.835 and forward-balance-withheld.835 write no entry and no match',
+    aloneCash: "adjustments-alone.835's 200.00 deposit and its 200.00 posting, loaded before the line is proved, match their remittance and prove nothing for the case line",
     case: 'reopened with a note; the owner is notified',
   });
 }

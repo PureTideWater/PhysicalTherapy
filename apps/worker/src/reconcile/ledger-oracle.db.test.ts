@@ -94,7 +94,7 @@ const CASES: readonly OracleCase[] = [
       { kind: 'remittance', file: 'reversal.835' },
       { kind: 'remittance', file: 'forward-balance-withheld.835' },
     ],
-    // The 30.00 the corrected claim approved is taken back once, at the reversal; neither forward balance moves a figure.
+    // The totals at the end: the 30.00 the corrected claim approved taken back once, and neither forward balance moving a figure (that it is taken back at once, at the reversal, is ledger.db.test.ts's).
     known: { approved: 3000n, posted: 3000n, deposited: 3000n, recouped: -3000n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'actionable' },
   },
   {
