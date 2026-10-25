@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import { repositoryRoot } from '../content-files';
@@ -187,7 +187,11 @@ function ciJob(id: string): Job {
   return job as Job;
 }
 
-const scratch = mkdtempSync(path.join(os.tmpdir(), 'tp-workflows-'));
+// Made before the tests run, not when the file is collected, which runs no hook to remove it (tools/test/collection.test.ts).
+let scratch = '';
+beforeAll(() => {
+  scratch = mkdtempSync(path.join(os.tmpdir(), 'tp-workflows-'));
+});
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });

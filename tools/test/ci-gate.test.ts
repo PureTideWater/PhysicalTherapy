@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import { repositoryRoot } from '../content-files';
@@ -33,7 +33,11 @@ const gate = ci.jobs['all-green'];
 const steps = gate?.steps ?? [];
 const decision = steps.find((step) => step.run !== undefined);
 
-const scratch = mkdtempSync(path.join(os.tmpdir(), 'tp-ci-gate-'));
+// Made before the tests run, not when the file is collected, which runs no hook to remove it (tools/test/collection.test.ts).
+let scratch = '';
+beforeAll(() => {
+  scratch = mkdtempSync(path.join(os.tmpdir(), 'tp-ci-gate-'));
+});
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
