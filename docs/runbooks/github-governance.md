@@ -306,9 +306,11 @@ approve them. From 3i the build waits for your approval anyway, and step 5 makes
      <!-- /required-checks -->
 
      On a pull request's checks list they appear as "ci / all green (pull_request)", "mutation / mutation
-     (pull_request)" and so on; in the ruleset they are the names above. Add them once the build tells you the pull
-     request that made `all green` (docs/adr/0066) has passed its first run on `claude/build-platform`: added before
-     that, the ruleset would wait for a check no workflow reports yet. The other jobs (`static`, `db (1/4)` and the
+     (pull_request)" and so on; in the ruleset they are the names above. A required check is matched by its name and
+     its source alone, never by the workflow that reports it, so no other job of any workflow may carry one of these
+     names (`tools/test/workflows.test.ts` refuses one). Add them once the build tells you the pull request that made
+     `all green` (docs/adr/0066) has passed its first run on `claude/build-platform`: added before that, the ruleset
+     would wait for a check no workflow reports yet. The other jobs (`static`, `db (1/4)` and the
      rest) are not added: `all green` holds them all, so adding a shard by name would block every pull request the day
      the number of shards changes.
    - **Block force pushes**.

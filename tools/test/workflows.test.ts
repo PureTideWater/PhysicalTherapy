@@ -28,6 +28,8 @@ interface Step {
   readonly run?: string;
   readonly with?: Record<string, unknown>;
   readonly env?: Record<string, string>;
+  readonly shell?: string;
+  readonly 'continue-on-error'?: unknown;
 }
 
 interface Job {
@@ -42,6 +44,8 @@ interface Job {
   readonly env?: Record<string, string>;
   readonly concurrency?: unknown;
   readonly 'timeout-minutes'?: number;
+  readonly defaults?: { readonly run?: { readonly shell?: string } };
+  readonly 'continue-on-error'?: unknown;
 }
 
 interface Workflow {
@@ -236,6 +240,61 @@ function chromiumProblems(file: string, parsed: Workflow): string[] {
     return steps.flatMap((step, index) =>
       step.run !== undefined && runsVitestUnitOrDb(step.run) && (install === -1 || install > index) ? [`${file} ${id}: "${step.run.split('\n')[0] ?? ''}" runs vitest's unit or db project with no Chromium installed before it`] : [],
     );
+  });
+}
+
+/** Script idioms that swallow a failing command: `|| true`, `|| :`, `|| exit 0`, and errexit or pipefail turned off. */
+const SWALLOWS = [/\|\|\s*(?:true\b|:(?=\s|;|\)|$)|exit\s+0\b)/m, /\bset\s+\+[a-z]*e/, /\bset\s+\+o\s+(?:errexit|pipefail)\b/];
+
+/**
+ * Why a workflow's jobs could pass a failure. In every job: `continue-on-error`, on the job or a step, under any value
+ * (a failed step then leaves its job's conclusion success, so `needs.<job>.result` reads success and a gate passes it;
+ * on a job it keeps a failed job from failing its run). In the jobs `scripts` names: a step or job shell other than the
+ * workflow's bash, which runs with -e and pipefail, and a script that swallows a failing command.
+ */
+function maskingProblems(file: string, parsed: Workflow, scripts: (id: string) => boolean): string[] {
+  return Object.entries(parsed.jobs).flatMap(([id, job]) => {
+    const steps = job.steps ?? [];
+    const where = (step: Step, index: number) => `${file} ${id} step ${String(index + 1)} (${step.name ?? step.run?.split('\n')[0] ?? step.uses ?? ''})`;
+    const problems = [
+      ...('continue-on-error' in job ? [`${file} ${id}: continue-on-error on the job`] : []),
+      ...steps.flatMap((step, index) => ('continue-on-error' in step ? [`${where(step, index)}: continue-on-error`] : [])),
+    ];
+    if (!scripts(id)) return problems;
+    return [
+      ...problems,
+      ...(job.defaults?.run?.shell === undefined ? [] : [`${file} ${id}: the job's shell is ${job.defaults.run.shell}, not the workflow's bash`]),
+      ...steps.flatMap((step, index) => [
+        ...(step.shell === undefined ? [] : [`${where(step, index)}: runs under ${step.shell}, not the workflow's bash`]),
+        ...(step.run !== undefined && SWALLOWS.some((idiom) => idiom.test(step.run ?? '')) ? [`${where(step, index)}: swallows a failing command`] : []),
+      ]),
+    ];
+  });
+}
+
+/** A job's reported name as a pattern: its name, or its id, with each expression in it standing for any text. */
+function reportedName(id: string, job: Job): RegExp {
+  const parts = (job.name ?? id).split(/\$\{\{.*?\}\}/s);
+  return new RegExp(`^${parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`, 's');
+}
+
+/**
+ * Why a required check could be reported by a job other than its own: a ruleset matches a required check by its name
+ * and the app that reports it (GitHub Actions), never by workflow, so a second job of any workflow that is named, or
+ * whose name's expressions could make it named, as one of the checks would stand for it.
+ */
+function requiredNameProblems(workflows: Readonly<Record<string, Workflow>>, checks: typeof REQUIRED_CHECKS = REQUIRED_CHECKS): string[] {
+  return checks.flatMap((check) => {
+    const reporters = Object.entries(workflows).flatMap(([file, parsed]) =>
+      Object.entries(parsed.jobs)
+        .filter(([id, job]) => reportedName(id, job).test(check.name))
+        .map(([id]) => `${file} ${id}`),
+    );
+    const own = `${check.workflow} ${check.job}`;
+    return [
+      ...(reporters.includes(own) ? [] : [`${check.name}: ${own} does not report it`]),
+      ...reporters.filter((reporter) => reporter !== own).map((reporter) => `${check.name}: ${reporter} could report it too`),
+    ];
   });
 }
 
@@ -1074,6 +1133,15 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       expect(step.if).toBe('failure()');
       expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k");
       expect(step.run).toContain('echo "$file $(base64 -w 0 "$file")"');
+      // Run as GitHub runs it: a shard that left no results prints nothing and passes; one that did prints each picture.
+      const dir = mkdtempSync(path.join(scratch, 'pictures-'));
+      expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: '' });
+      if (spawnSync('base64', ['-w', '0'], { input: '' }).status === 0) {
+        mkdirSync(path.join(dir, 'apps/web/test-results/brand'), { recursive: true });
+        writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-diff.png'), 'png');
+        writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-expected.png'), 'png');
+        expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: `apps/web/test-results/brand/header-diff.png ${Buffer.from('png').toString('base64')}\n` });
+      }
     });
   });
 
@@ -1329,5 +1397,67 @@ describe('the required checks (docs/adr/0066; tools/required-checks.ts)', () => 
     // Never skipped by its own condition, which GitHub would count as passing.
     expect([undefined, '${{ always() }}']).toContain(job?.if);
     expect(job?.strategy?.matrix, 'a matrix job reports one check per value, never the name the ruleset requires').toBeUndefined();
+  });
+});
+
+describe('no job hides a failure from a required check (CI-01)', () => {
+  const ownJob = new Map(REQUIRED_CHECKS.map((check) => [check.workflow, check.job]));
+  /** Every job of ci.yml, whose gate needs them all, and each required check's own job elsewhere. */
+  const scriptsHeld = (file: string) => (id: string) => file === 'ci.yml' || ownJob.get(file) === id;
+  const fixture = (jobs: Record<string, unknown>): Workflow => ({ name: 'fixture', on: 'push', jobs }) as unknown as Workflow;
+  const job = (fields: Record<string, unknown>) => ({ 'runs-on': 'ubuntu-24.04', steps: [{ run: 'pnpm test' }], ...fields });
+
+  it('sets continue-on-error on no job or step of any workflow, and runs every script of ci.yml and of each required check’s job under bash with -e and pipefail, swallowing no failing command', () => {
+    expect(workflowFiles().flatMap((file) => maskingProblems(file, workflow(file), scriptsHeld(file)))).toEqual([]);
+  });
+
+  it('refuses continue-on-error on a job or on a step, whatever its value, as the review’s two edits of ci.yml show', () => {
+    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
+    const lint = text.replace('  lint:\n    runs-on: ubuntu-24.04\n', '  lint:\n    runs-on: ubuntu-24.04\n    continue-on-error: true\n');
+    const oracle = text.replace('      - run: pnpm test:oracle\n', '      - run: pnpm test:oracle\n        continue-on-error: true\n');
+    expect([lint, oracle].map((edited) => edited === text)).toEqual([false, false]);
+    expect(maskingProblems('ci.yml', parse(lint) as Workflow, scriptsHeld('ci.yml'))).toEqual(['ci.yml lint: continue-on-error on the job']);
+    expect(maskingProblems('ci.yml', parse(oracle) as Workflow, scriptsHeld('ci.yml'))).toEqual([expect.stringMatching(/^ci\.yml static step \d+ \(pnpm test:oracle\): continue-on-error$/)]);
+    for (const value of [true, false, '${{ matrix.experimental }}']) {
+      expect(maskingProblems('fixture.yml', fixture({ a: job({ 'continue-on-error': value }) }), () => false), String(value)).toEqual(['fixture.yml a: continue-on-error on the job']);
+      expect(maskingProblems('fixture.yml', fixture({ a: job({ steps: [{ run: 'pnpm test', 'continue-on-error': value }] }) }), () => false), String(value)).toEqual(['fixture.yml a step 1 (pnpm test): continue-on-error']);
+    }
+  });
+
+  it('refuses, where it holds the scripts, a shell other than the workflow’s bash and a script that swallows a failing command', () => {
+    const problems = (fields: Record<string, unknown>, held = true) => maskingProblems('fixture.yml', fixture({ a: job(fields) }), () => held);
+    expect(problems({ steps: [{ run: 'pnpm test', shell: 'bash {0}' }] })).toEqual(['fixture.yml a step 1 (pnpm test): runs under bash {0}, not the workflow\'s bash']);
+    expect(problems({ defaults: { run: { shell: 'sh' } } })).toEqual(['fixture.yml a: the job\'s shell is sh, not the workflow\'s bash']);
+    for (const run of ['pnpm test || true', 'pnpm test ||true', 'pnpm test || :', '{ pnpm test || :; }', 'pnpm test || exit 0', 'set +e\npnpm test', 'set +eu\npnpm test', 'set +o errexit\npnpm test', 'set +o pipefail\npnpm test | tee log']) {
+      expect(problems({ steps: [{ run }] }), run).toEqual([`fixture.yml a step 1 (${run.split('\n')[0] ?? ''}): swallows a failing command`]);
+      // A job whose scripts no required check stands on keeps its own idioms (the capacity workflow's notify job).
+      expect(problems({ steps: [{ run }] }, false), run).toEqual([]);
+    }
+    for (const run of ['pnpm test', 'pnpm test || exit 1', 'set -euo pipefail\npnpm test', 'if [ -d apps/web/test-results ]; then\n  find apps/web/test-results -type f\nfi', 'test -z "$(git status --porcelain)"', 'echo "a: b"']) {
+      expect(problems({ steps: [{ run }] }), run).toEqual([]);
+    }
+  });
+});
+
+describe('the required checks’ names (docs/adr/0066; docs/runbooks/github-governance.md, step 4A)', () => {
+  const all = () => Object.fromEntries(workflowFiles().map((file) => [file, workflow(file)]));
+  const rogue = (jobs: Record<string, unknown>) => ({ ...all(), 'rogue.yml': { name: 'rogue', on: { pull_request: null }, jobs } as unknown as Workflow });
+
+  it('are each reported by their own job alone, in every workflow: a ruleset matches a required check by name and source, never by workflow', () => {
+    expect(requiredNameProblems(all())).toEqual([]);
+  });
+
+  it('refuse a second job named as a required check, by its name, by its id, or by a name its expressions could make one', () => {
+    expect(requiredNameProblems(rogue({ x: { name: 'all green', steps: [] } }))).toEqual(['all green: rogue.yml x could report it too']);
+    expect(requiredNameProblems(rogue({ mutation: { steps: [] } }))).toEqual(['mutation: rogue.yml mutation could report it too']);
+    expect(requiredNameProblems(rogue({ x: { name: '${{ matrix.check }}', steps: [] } }))).toEqual(REQUIRED_CHECKS.map((check) => `${check.name}: rogue.yml x could report it too`));
+    expect(requiredNameProblems(rogue({ x: { name: 'approval-of-${{ matrix.what }}', steps: [] } }))).toEqual(['approval-of-record: rogue.yml x could report it too']);
+    // A name its expressions cannot make a required one, as ci.yml's shards are named.
+    expect(requiredNameProblems(rogue({ x: { name: 'db (${{ matrix.shard }}/${{ strategy.job-total }})', steps: [] }, green: { steps: [] } }))).toEqual([]);
+    // The check's own job renamed: no job reports it.
+    const renamed = all();
+    const ci = renamed['ci.yml'] as Workflow;
+    renamed['ci.yml'] = { ...ci, jobs: { ...ci.jobs, 'all-green': { ...(ci.jobs['all-green'] as Job), name: 'all-green' } } };
+    expect(requiredNameProblems(renamed)).toEqual(['all green: ci.yml all-green does not report it']);
   });
 });

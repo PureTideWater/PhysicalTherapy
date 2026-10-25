@@ -413,12 +413,14 @@ jobs:
           overwrite: true
       # A failed run's screenshot comparisons, readable from the job's log alone: each diff and actual picture under
       # apps/web/test-results smaller than 300 KB, as its path and its base64 on one line (docs/adr/0058).
-      - if: failure()
+      - name: The failed comparisons' pictures
+        if: failure()
         run: |
-          [ -d apps/web/test-results ] || exit 0
-          find apps/web/test-results -type f \( -name '*-diff.png' -o -name '*-actual.png' \) -size -300k | sort | while IFS= read -r file; do
-            echo "$file $(base64 -w 0 "$file")"
-          done
+          if [ -d apps/web/test-results ]; then
+            find apps/web/test-results -type f \( -name '*-diff.png' -o -name '*-actual.png' \) -size -300k | sort | while IFS= read -r file; do
+              echo "$file $(base64 -w 0 "$file")"
+            done
+          fi
 
   # Both production images, built from their Dockerfiles and scanned with Trivy, failing on any HIGH or CRITICAL
   # finding that has a fix (PRD 16 and 18; docs/adr/0010). One job for both, to spare a concurrency slot: the worker is
