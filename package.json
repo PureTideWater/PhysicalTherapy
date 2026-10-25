@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx tools/dev.ts",
     "build": "pnpm -r --filter @tp/web --filter @tp/worker build",
-    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --workspace-concurrency=4 typecheck",
+    "typecheck": "tsx tools/typecheck/run.ts",
     "lint": "tsx tools/lint/run.ts",
     "lint:logs": "tsx tools/lint-logs/index.ts",
     "lint:copy": "tsx tools/brand-copy/index.ts",
