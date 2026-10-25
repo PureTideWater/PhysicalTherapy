@@ -59,11 +59,11 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
      - re-run a failed job once, and only to tell a flake from a regression;
      - if it is a flake in a file #42 changes, hand it to Lane A (as below), and do not edit the file;
      - if it fails again, tell the co-founder before any heavy run.
-   - **At the first reading, ask the co-founder, recommended option first:**
-     - the usage % and the reset time (rule 9);
-     - **the CI series and #42's files.** ci-deps and ci-browser share files with #42: the lockfile, the manifests, `tools/screening-capacity/watched-paths.txt`, ADR 0062 and, in ci-browser, `apps/web/src/components/shell.tsx` (`:56`, `:84`). LANES.md's "Not while #42 is open" names shell.tsx, but queue item 1 carries no such clause, and `designs/lane-b-ci.md` §5 resolves the overlap by rule 6. Recommended: the PR merged second keeps both, the lockfile is re-resolved and never hand-merged, and axe runs over #42's pages (O6). The other answer: ci-browser waits for #42 to merge.
-     - **the scope of "every recommended option"** (his direction of 2026-10-25, used for LED-12's row wording). Does it pre-approve the new batches below, or does each go to him? Until he answers, each new decision goes to him.
-     - and remind him that F7 is due (below).
+   - **At the first reading, ask the co-founder for the usage % and the reset time (rule 9).** Three other questions are already ruled (co-founder, 2026-10-25 ~21:05 UTC):
+     - **CI series and #42's files:** rule 6; the PR merged second keeps both, the lockfile re-resolved and never hand-merged; axe runs over #42's pages (O6) if #42 merges first; ci-browser does not wait for #42.
+     - **Scope of "every recommended option":** pre-approves engineering-only choices inside an already-ruled design, recorded as his rulings and reversible; batches with wording, brand, product, cost or security trade-offs still go to him.
+     - **ux-brand-reviewer.md's `model:` key:** follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit).
+     - **Remind him:** F7 is due (below).
 2. **The UX/UI and brand baseline review: the first task** (the co-founder's decision, 2026-10-25 ~16:50 UTC). It changes no product code.
    - **Brief:** `designs/lane-b-ux-review-brief.md`, read whole.
    - **Claim:** pull, then add a row under Claims and push it before starting:
@@ -104,7 +104,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
      - Lane B's visible-screen items #38, #46, #49, #52 and #135.
    - **Then the checklist PR**, `co-001/ux-brand-reviewer`, under the review's claim.
      - **Design:** the review's findings plus a one-page outline of the checklist's sections, with one reviewer.
-     - **Build:** one builder writes `.claude/agents/ux-brand-reviewer.md` with `security-reviewer.md`'s frontmatter keys. The four existing reviewer files carry a `model:` key: ask the co-founder once whether it counts under LANES rule 12, recommending that it follow them.
+     - **Build:** one builder writes `.claude/agents/ux-brand-reviewer.md` with `security-reviewer.md`'s frontmatter keys. The four existing reviewer files carry a `model:` key; rule 12 applies: follow them (ruled, co-founder, 2026-10-25 ~21:05 UTC).
      - **Draft PR**, from `.github/pull_request_template.md`.
      - **Two adversarial reviews:** brand and copy, against `.claude/rules/brand.md` and CO-11; and consistency with the other reviewer files and the brief's "Then".
      - **Fix round:** the full local suite once, unless the co-founder rules a documentation-only suite (typecheck, lint, lint:copy, unit), which he may (delegated).
@@ -176,11 +176,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Lane A's screening journey:** the e2e timing failure above. Handed to Lane A in LANES.md, for #42's fix round: read the outcome only after the consumer has finished, or assert either stage, and make the key registration safe to retry.
   - **The amendments to LANES.md's items 3, 10 and 14** (step 5).
 - **The co-founder** (delegated, LANES.md 2026-10-25):
-  - the three questions at step 1;
+  - the usage reading: the current % and the reset time's time of day (rule 9);
   - payment-engine/S1, from #44: an explicit MoneyError guard in `multiplyCents` for text cast past `Cents`. It would be a later money change, in its own PR, with payment-engine review;
   - the UX review's batch and its queue ruling, when they come;
-  - ci-browser's A9 inspection;
-  - the checklist PR's two questions.
+  - ci-browser's A9 inspection.
 
 ### Rulings and decisions of record (each in the log below, with who and when)
 - **The founder (Tyler Williams):**
@@ -190,11 +189,14 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - the combined audit adopted whole, its 19 freeze exceptions granted and its ruling changes accepted, 2026-10-20 ~15:10 UTC (HANDOFF.md).
 - **The co-founder:**
   - Lane B uses the `PureTideWater` GitHub account, 2026-10-24 ~21:10 UTC;
-  - his directions "all recommended actions" (~01:00 UTC) and "keep going; do the recommended suggestions to optimize" (~07:45 UTC), applied as his rulings under the delegation. Their scope for new batches is a step 1 question;
+  - his directions "all recommended actions" (~01:00 UTC) and "keep going; do the recommended suggestions to optimize" (~07:45 UTC), applied as his rulings under the delegation;
   - LED-12's row wording approved as recommended, under that direction with no separate message (~17:45 UTC; reconciliation-001 item 15);
   - the UX/UI baseline review is the next session's first task, ~16:50 UTC;
   - the review also runs with the build, ~17:00 UTC;
-  - the recommendation that Lane A take the same reviewer, ~17:05 UTC, for the founder to decide.
+  - the recommendation that Lane A take the same reviewer, ~17:05 UTC, for the founder to decide;
+  - **Q2 (CI series and #42's files, 2026-10-25 ~21:05 UTC):** rule 6; the PR merged second keeps both, the lockfile re-resolved and never hand-merged; axe runs over #42's pages (O6) if #42 merges first; ci-browser does not wait for #42;
+  - **Q3 (scope of "every recommended option", 2026-10-25 ~21:05 UTC):** pre-approves engineering-only choices inside an already-ruled design, recorded as his rulings and reversible; batches with wording, brand, product, cost or security trade-offs still go to him;
+  - **Q4 (ux-brand-reviewer.md's `model:` key and checklist suite, 2026-10-25 ~21:05 UTC):** `model:` follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit).
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
 - **Node.** The shell's default `node` is 22. Run `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` in every command or script.
@@ -555,3 +557,11 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - Read LANES.md, Start here (Lane B), HANDOFF.md's Start here, standing rule, who decides, owner decisions and the dated rulings of 2026-10-20 to 2026-10-24, CLAUDE.md and reconciliation-001's checks at 6ddd587.
   - **Claimed** the UX/UI and brand baseline review and its checklist PR (`co-001/ux-brand-reviewer`) in LANES.md: no ADR, no test-matrix or synth IDs. Next free ADR still 0067.
   - **Next:** the co-founder's usage reading and the step-1 questions, then the route-map scout.
+- **2026-10-25 ~21:05 UTC: the co-founder's rulings on Q2, Q3 and Q4 recorded; mobile GitHub steps given.**
+  - **Direction (co-founder, 2026-10-25 ~21:05 UTC):** "All recommended options as long as it's the best option." Applied as rulings on the three open step-1 design questions:
+    - **Q2 (CI series and #42's files):** rule 6; the PR merged second keeps both, the lockfile re-resolved and never hand-merged; axe runs over #42's pages (O6) if #42 merges first; ci-browser does not wait for #42 to merge.
+    - **Q3 (scope of "every recommended option"):** pre-approves engineering-only choices inside an already-ruled design, recorded as his rulings and reversible; batches with wording, brand, product, cost or security trade-offs still go to him.
+    - **Q4 (`ux-brand-reviewer.md`'s `model:` key and checklist suite):** `model:` follows the other reviewer files (rule 12); the checklist PR takes a documentation-only suite (typecheck, lint, lint:copy, unit).
+  - **Still open:** Q1, the usage reading: the current % and the reset time's time of day (rule 9).
+  - **Mobile GitHub steps for F7** given in chat (mobile browser → desktop site, https://github.com/PureTideWater/PhysicalTherapy/settings/rules, as the account owner).
+  - **Next:** the co-founder's usage reading, then the route-map scout.
