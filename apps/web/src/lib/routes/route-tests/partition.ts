@@ -3,8 +3,8 @@ import { ROUTES } from '../index';
 
 /**
  * How the tests generated from the route registry (define.ts) are split into files, so CI's database shards run them
- * side by side instead of as one file of about twenty minutes (audit #109; docs/adr/0066). Each route is in exactly one
- * file (partition.test.ts proves it), and a route added to the registry joins a file by itself.
+ * side by side instead of as one file of about twenty minutes (audit item 109; docs/adr/0066). Each route is in exactly
+ * one file (partition.test.ts proves it), and a route added to the registry joins a file by itself.
  */
 
 /** The number of generated route-test files: route-tests.0.db.test.ts to route-tests.11.db.test.ts. */

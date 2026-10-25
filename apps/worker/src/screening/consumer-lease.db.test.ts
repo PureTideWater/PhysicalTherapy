@@ -15,7 +15,7 @@ import { ORIGIN, manyRows, until, screeningDatabaseForThisFile } from './test-su
  * again at attempt 2 and emails it within 4 minutes of the kill, the batches recorded before the kill kept.
  *
  * Its own file, beside consumer.db.test.ts, because most of its time is the killed consumer's lease running out: in a
- * file of its own that wait runs beside the other database files in CI's shards instead of after them (audit #109;
+ * file of its own that wait runs beside the other database files in CI's shards instead of after them (audit item 109;
  * docs/adr/0066).
  */
 
