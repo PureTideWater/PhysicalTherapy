@@ -75,5 +75,16 @@
     "proposedBy": "M3",
     "reviewedBy": "integrator (Lane B, ci-mutation)",
     "reviewedOn": "2026-10-25"
+  },
+  {
+    "file": "packages/money/src/rounding.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof amount === 'bigint'",
+    "occurrence": 1,
+    "replacement": "true",
+    "reason": "multiplyCents takes Cents | UnroundedCents. A Cents is a bigint, which both send to centsToDecimal. An UnroundedCents is a Decimal, which only @tp/money builds (its brand key is a declared, unexported unique symbol, so no other code writes one without a cast): an ExactDecimal, for which centsToDecimal(amount), that is decimal(amount), returns amount itself. So base is amount either way. Only a value cast past the type tells the two apart (text such as '12', 24 cents under the mutant), and the original's failure on it is an incidental TypeError (base.times is not a function), not a refusal the code makes.",
+    "proposedBy": "payment-engine reviewer (Lane B, ci-mutation)",
+    "reviewedBy": "fixer FA (Lane B, ci-mutation)",
+    "reviewedOn": "2026-10-25"
   }
 ]
