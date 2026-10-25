@@ -1,0 +1,79 @@
+[
+  {
+    "file": "packages/money/src/cents.ts",
+    "mutator": "StringLiteral",
+    "original": "''",
+    "occurrence": 1,
+    "replacement": "\"Stryker was here!\"",
+    "reason": "The fallback is read only when the pattern does not match, and parseAmount then refuses whatever whole holds; when it matches, group 2, (\\d*), always takes part, so the ?? never applies.",
+    "proposedBy": "M3",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/money/src/cents.ts",
+    "mutator": "StringLiteral",
+    "original": "''",
+    "occurrence": 5,
+    "replacement": "\"Stryker was here!\"",
+    "reason": "whole holds digits only, so it never equals the replacement and BigInt(whole) reads every whole part; for an empty one BigInt('') is 0n, as BigInt('0') is.",
+    "proposedBy": "M3",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/money/src/cents.ts",
+    "mutator": "StringLiteral",
+    "original": "'0'",
+    "occurrence": 1,
+    "replacement": "\"\"",
+    "reason": "BigInt('') is 0n, as BigInt('0') is, so an empty whole part gives the same magnitude.",
+    "proposedBy": "M3",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/money/src/cents.ts",
+    "mutator": "EqualityOperator",
+    "original": "a <= b",
+    "occurrence": 1,
+    "replacement": "a < b",
+    "reason": "The two differ only when a equals b, and then a and b are the same bigint value, so the minimum returned is the same.",
+    "proposedBy": "M3",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/money/src/cents.ts",
+    "mutator": "EqualityOperator",
+    "original": "a >= b",
+    "occurrence": 1,
+    "replacement": "a > b",
+    "reason": "The two differ only when a equals b, and then a and b are the same bigint value, so the maximum returned is the same.",
+    "proposedBy": "M3",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/money/src/cents.ts",
+    "mutator": "ConditionalExpression",
+    "original": "whole === ''",
+    "occurrence": 2,
+    "replacement": "false",
+    "reason": "BigInt('') is 0n, as BigInt('0') is, so reading an empty whole part directly gives the same magnitude (\".5\" is 50 cents either way).",
+    "proposedBy": "M3",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  },
+  {
+    "file": "packages/money/src/rounding.ts",
+    "mutator": "StringLiteral",
+    "original": "'halfUp'",
+    "occurrence": 1,
+    "replacement": "\"\"",
+    "reason": "ENGINE_MODES[''] is undefined, and decimal.js's toDecimalPlaces given an undefined rounding mode uses its engine's own (decimal.mjs:1969); every Decimal is a value of the Exact engine, whose mode is ROUND_HALF_UP, the mode 'halfUp' names.",
+    "proposedBy": "M3",
+    "reviewedBy": "",
+    "reviewedOn": ""
+  }
+]

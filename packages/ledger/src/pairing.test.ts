@@ -64,3 +64,30 @@ describe('pairing a claim’s lines with a reprocessing’s (PRD 13, Matching st
     );
   });
 });
+
+describe('pairing, by fixed examples', () => {
+  it('ignores an empty modifier position when it chooses among lines of one code and date', () => {
+    const other = [line('97110', '2026-03-09', ['GP']), line('97110', '2026-03-09', ['59'])];
+    expect(pairLines([line('97110', '2026-03-09', ['', '59'])], other)).toEqual([1]);
+  });
+
+  it('compares modifiers position by position, never as one run of characters', () => {
+    const other = [line('97110', '2026-03-09', ['12', '3']), line('97110', '2026-03-09', ['1', '23'])];
+    expect(pairLines([line('97110', '2026-03-09', ['1', '23'])], other)).toEqual([1]);
+  });
+
+  it('keeps a line paired by everything it holds out of the second pass, so the fallback pairs only what is left', () => {
+    const original = [line('97110', '2026-03-09', ['59']), line('97110', '2026-03-09')];
+    expect(pairLines(original, [line('97110', '2026-03-09', ['59']), line('97110', '2026-03-09', ['GP'])])).toEqual([0, 1]);
+  });
+
+  it('finds no paired line for an unpaired or absent line, whatever else the array of lines carries', () => {
+    const original = [line('97110', '2026-03-09'), line('97140', '2026-03-09')];
+    const stray = line('97140', '2026-03-09');
+    // An array is an object: properties named "null" and "undefined" are never read as a line.
+    const other = Object.assign([line('97110', '2026-03-09')], { null: stray, undefined: stray });
+    expect(pairedLine(original, 0, other)).toBe(other[0]);
+    expect(pairedLine(original, 1, other)).toBeUndefined();
+    expect(pairedLine(original, 2, other)).toBeUndefined();
+  });
+});

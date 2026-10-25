@@ -84,3 +84,20 @@ describe('allocation by weight and in order', () => {
     expect(() => takeInOrder(cents(1n), [cents(-1n)])).toThrow(LedgerError);
   });
 });
+
+describe('allocation at its edges, by fixed examples (each kill independent of a property’s seed)', () => {
+  it('refuses a check of nothing even before anything has posted against it', () => {
+    expect(() => cumulativeShare(cents(100n), cents(0n), cents(0n))).toThrow(LedgerError);
+  });
+
+  it('gives a leftover cent to the larger remainder, never to a weight of zero: [1n, [0n, 1n, 1n]], the counterexample a property found', () => {
+    expect(allocateByWeight(cents(1n), [cents(0n), cents(1n), cents(1n)])).toEqual([0n, 1n, 0n]);
+    // 2 over 1:2:4 is 2/7, 4/7 and 8/7: the floors give 1, and the one cent left goes to 4/7's remainder, the largest.
+    expect(allocateByWeight(cents(2n), [cents(1n), cents(2n), cents(4n)])).toEqual([0n, 1n, 1n]);
+  });
+
+  it('takes nothing from a capacity of zero, and refuses a negative capacity wherever it stands', () => {
+    expect(takeInOrder(cents(5n), [cents(0n), cents(10n)])).toEqual({ parts: [0n, 5n], rest: 0n });
+    expect(() => takeInOrder(cents(1n), [cents(1n), cents(-1n)])).toThrow(LedgerError);
+  });
+});

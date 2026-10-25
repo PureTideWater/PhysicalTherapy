@@ -82,7 +82,7 @@ export function formatUnroundedUsd(text: string): string {
   if (match === null) {
     throw new MoneyError('an unrounded amount is cents as decimal text');
   }
-  const magnitude = BigInt(match[2] ?? '0');
+  const magnitude = BigInt(match[2] as string); // UNROUNDED_CENTS_TEXT requires group 2: one or more digits
   const fraction = (match[3] ?? '').replace(/0+$/, '');
   const negative = match[1] === '-' && (magnitude !== 0n || fraction !== '');
   return `${negative ? '-' : ''}${formatUsd(cents(magnitude))}${fraction}`;

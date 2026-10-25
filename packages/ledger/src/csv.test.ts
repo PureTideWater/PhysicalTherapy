@@ -35,3 +35,17 @@ describe('the export CSV reader', () => {
     );
   });
 });
+
+describe('the export CSV reader’s line breaks and last line', () => {
+  it('reads a line feed followed by a carriage return as two line breaks, losing no character after them', () => {
+    expect(parseCsv('a\n\rb')).toEqual([['a'], ['b']]);
+    expect(parseCsv('a\n\rbc\r\nd')).toEqual([['a'], ['bc'], ['d']]);
+  });
+
+  it('keeps a last line that no line break ends, whatever its one field says', () => {
+    // "Stryker was here!" is the mutation tool's own replacement text: the reader keeps the field for being non-empty, never for what it says.
+    for (const text of ['two', '0', ' ', 'Stryker was here!']) {
+      expect(parseCsv(`one\n${text}`)).toEqual([['one'], [text]]);
+    }
+  });
+});

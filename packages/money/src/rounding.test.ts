@@ -1,11 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { cents } from './cents';
+import { type Cents, MoneyError, cents } from './cents';
 import { type Decimal, centsToDecimal, decimal, rate } from './decimal';
 import {
   DEFAULT_ROUNDING,
   ROUNDING_RULES,
+  type RoundingRule,
   addUnrounded,
   multiplyCents,
   roundOnce,
@@ -105,6 +106,19 @@ describe('roundToCents', () => {
   });
 });
 
+describe('roundToCents refuses an unknown rule', () => {
+  it('with a MoneyError naming the three rules', () => {
+    let thrown: unknown;
+    try {
+      roundToCents(unroundedCents(decimal('2.5')), 'ROUND_UP' as RoundingRule);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(MoneyError);
+    expect((thrown as MoneyError).message).toBe('rounding rule is not one of HALF_UP_CENT, HALF_EVEN_CENT or TRUNCATE');
+  });
+});
+
 describe('roundOnce', () => {
   it('keeps the unrounded amount and the rule beside the cents', () => {
     const value = multiplyCents(cents(3333n), rate('0.85'));
@@ -119,6 +133,12 @@ describe('multiplyCents', () => {
     expect(multiplyCents(cents(1000n), rate('1.10')).toString()).toBe('1100');
     expect(multiplyCents(cents(3333n), rate('0.85')).toString()).toBe('2833.05');
     expect(multiplyCents(cents(1n), rate('0.000001')).toString()).toBe('0.000001');
+  });
+
+  it('reads only a bigint as cents: a number cast past the type is never converted into an amount', () => {
+    // Cents go through centsToDecimal; anything else is used as the decimal it must already be, and a number is not one.
+    expect(() => multiplyCents(12 as unknown as Cents, rate('2'))).toThrow(TypeError);
+    expect(() => multiplyCents(12 as unknown as Cents, rate('2'))).not.toThrow(MoneyError);
   });
 
   it('multiplies an unrounded amount again without rounding in between', () => {
