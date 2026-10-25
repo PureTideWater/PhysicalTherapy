@@ -1,11 +1,7 @@
-import path from 'node:path';
-
-import { type IndexedRelease, indexRelease, price } from '@tp/pricing';
-import { type ReleaseContents, readRelease } from '@tp/rules/content';
+import { price } from '@tp/pricing';
 import { describe, expect, it } from 'vitest';
 
-import { repositoryRoot } from '../content-files';
-import { type EngineRun, type GoldenClaim, type GoldenExpectedLine, agreementRecords, compareLine, engineDifferences, goldenPricingInput, goldenRelease, readGoldenClaims } from './engine';
+import { type EngineRun, type GoldenExpectedLine, agreementRecords, claimRelease, claimReleaseFiles, compareLine, engineDifferences, goldenPricingInput, goldenRelease, readGoldenClaims } from './engine';
 
 /**
  * The golden comparison itself must catch a changed cent: these tests change golden expected results
@@ -17,16 +13,11 @@ import { type EngineRun, type GoldenClaim, type GoldenExpectedLine, agreementRec
  */
 const claims = readGoldenClaims();
 // Read once, while the tests are collected: each release the claims name, as files. Indexing it is the engine's code.
-const releaseFiles = new Map<string, ReleaseContents>([...new Set(claims.map(({ claim }) => claim.inputs.release.dir))].map((dir) => [dir, readRelease(path.join(repositoryRoot, dir))]));
-
-function claimRelease(claim: GoldenClaim): IndexedRelease {
-  const release = releaseFiles.get(claim.inputs.release.dir) as ReleaseContents;
-  return indexRelease({ releaseNo: release.manifest.release, manifestSha256: release.manifestSha256, records: release.records.map((located) => located.record) });
-}
+const releaseFiles = claimReleaseFiles(claims);
 
 /** A golden claim priced by the test that asks, under its release as that test indexes it. */
 function priced({ file, claim }: (typeof claims)[number]): EngineRun {
-  return { file, claim, results: price({ ...goldenPricingInput(claim), release: claimRelease(claim) }) };
+  return { file, claim, results: price({ ...goldenPricingInput(claim), release: claimRelease(claim, releaseFiles) }) };
 }
 
 const run = (id: string) => {
