@@ -141,9 +141,12 @@ describe('playwright.config.ts', () => {
       const runProbe = (failOnFlakyTests: boolean | undefined) => {
         const settings = { testDir: '.', outputDir: 'test-results', workers: 1, retries: ci.retries, failOnFlakyTests, reporter: ci.reporter };
         writeFileSync(path.join(probe, 'playwright.config.mjs'), `export default ${JSON.stringify(settings)};\n`);
+        // The probe's own environment, not the runner's: GitHub's variables would change what the github reporter prints
+        // (it names files relative to GITHUB_WORKSPACE), and CI would change Playwright's defaults.
         const env: NodeJS.ProcessEnv = { ...process.env, FORCE_COLOR: '0' };
-        delete env.CI;
-        delete env.GITHUB_ACTIONS;
+        for (const name of Object.keys(env).filter((key) => key === 'CI' || /^(?:GITHUB|RUNNER)_/.test(key))) {
+          Reflect.deleteProperty(env, name);
+        }
         return spawnSync(process.execPath, [path.join(playwright, 'cli.js'), 'test', '-c', 'playwright.config.mjs'], { cwd: probe, env, encoding: 'utf8', timeout: 50_000 });
       };
 

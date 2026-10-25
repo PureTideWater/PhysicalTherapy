@@ -761,6 +761,12 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // The 835 oracle's pyx12 on Python 3.12, before the oracle test.
       expect(stepIndex(steps(), (step) => usesAction(step, 'actions/setup-python'))).toBeLessThan(stepIndex(steps(), (step) => step.run === 'pip install pyx12'));
       expect(stepIndex(steps(), (step) => step.run === 'pip install pyx12')).toBeLessThan(stepIndex(steps(), (step) => step.run === 'pnpm test:oracle'));
+      // The oracle also reads the 10,000-claim PAR-29 remittance, generated into its ignored path and never committed:
+      // in this job no unit test writes it first, so pnpm synth --large does, once, before the oracle.
+      const large = stepIndex(steps(), (step) => step.run === 'pnpm synth --large');
+      expect([install < large, large < stepIndex(steps(), (step) => step.run === 'pnpm test:oracle')]).toEqual([true, true]);
+      expect(steps()[large]?.if).toBe("${{ !cancelled() && steps.install.outcome == 'success' }}");
+      expect(steps().filter((step) => step.run === 'pnpm synth --large')).toHaveLength(1);
       // Every step after the install runs on its own condition, so a red one leaves the others' verdicts.
       for (const step of steps().slice(install + 1)) expect(step.if, step.name ?? step.run ?? step.uses).toMatch(/^\$\{\{ (?:github\.event_name == 'pull_request' && )?!cancelled\(\)/);
     });
@@ -867,6 +873,12 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       const unit = stepIndex(steps(), (step) => step.run === 'pnpm test');
       expect([install < unit, base < unit]).toEqual([true, true]);
       expect(steps()[unit]).toEqual({ run: 'pnpm test' });
+    });
+
+    it('installs the pinned gitleaks before the unit tests, so the pre-push hook’s real secret-scan cases run rather than skip', () => {
+      const gitleaks = stepNamed(steps(), "The pinned gitleaks for the pre-push hook's tests");
+      expect(gitleaks.run).toBe('tools/gitleaks/install.sh');
+      expect(steps().indexOf(gitleaks)).toBeLessThan(stepIndex(steps(), (step) => step.run === 'pnpm test'));
     });
 
     it('gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV', () => {

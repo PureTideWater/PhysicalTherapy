@@ -48,9 +48,9 @@ filter, as these jobs (`docs/runbooks/ci.md` reads them):
 
 | Job (its check) | Needs | What it runs | Timeout (min) |
 | --- | --- | --- | --- |
-| `static` | none | `pnpm audit --prod`; the secret scan; `pnpm check:fixtures`; `pnpm verify-content`; releases and prompts unchanged; the engine freeze (a pull request's); `pnpm synth --all` and its clean diff; `pnpm typecheck` over a restored cache; `pnpm lint:logs`; `pnpm test:golden`; `pnpm test:oracle`; `pnpm licenses:check` | 15 |
+| `static` | none | `pnpm audit --prod`; the secret scan; `pnpm check:fixtures`; `pnpm verify-content`; releases and prompts unchanged; the engine freeze (a pull request's); `pnpm synth --all` and its clean diff; `pnpm typecheck` over a restored cache; `pnpm lint:logs`; `pnpm test:golden`; the 10,000-claim PAR-29 remittance (`pnpm synth --large`) and `pnpm test:oracle`; `pnpm licenses:check` | 15 |
 | `lint` | none | `pnpm lint`: ESLint in memory-bounded groups (`tools/lint/run.ts`) | 15 |
-| `unit` | none | Chromium; the engine freeze's base; `pnpm test` | 20 |
+| `unit` | none | Chromium; the pinned gitleaks the pre-push hook's tests run; the engine freeze's base; `pnpm test` | 20 |
 | `db (k/N)` | none | its own Postgres, quieted; Chromium; this shard's durations restored; `pnpm db:migrate && pnpm test:db --shard=k/N`; the files it ran | 20 |
 | `domain model` | none | its own Postgres; on a pull request, the changes since the last approved document; `pnpm db:migrate`; `pnpm db:domain-model --check --strict --require-approval` | 10 |
 | `build` | none | `pnpm build`; the web build stamped with its commit and kept as the run's `web-build` artifact; `pnpm cdk:diff` | 15 |
@@ -117,6 +117,11 @@ filter, as these jobs (`docs/runbooks/ci.md` reads them):
 - **Chromium in every vitest job.** `tools/test/ci-chromium.ts`, the unit and db projects' global setup, fails a run
   on CI with no Chromium instead of letting the printing tests skip, and a workflow test requires a Chromium install
   before any step that runs the unit or db project, in every workflow (`large-zip.yml` gains one) (CI-05).
+- **Nothing a step of the serial job left behind is assumed.** In the one job, the secret scan had installed the pinned
+  gitleaks before `pnpm test`, and `pnpm test` had written the 10,000-claim PAR-29 remittance before `pnpm test:oracle`.
+  Now `unit` installs the pinned gitleaks itself, and `tools/hooks/pre-push.test.ts` fails on CI without it rather than
+  skip its real secret-scan cases; `static` runs `pnpm synth --large` before the oracle. This pull request's first run
+  found both.
 - **A flaky journey fails the run** (`failOnFlakyTests` on CI), its one retry kept for the trace and the "flaky" label,
   and the `github` reporter names it on the pull request (CI-07).
 - **The schema approval as its own check**, `domain model`, which runs CLAUDE.md's command; the database suite keeps

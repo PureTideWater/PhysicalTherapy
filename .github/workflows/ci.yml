@@ -139,6 +139,10 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       - run: pnpm test:golden
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      # The 10,000-claim PAR-29 remittance the oracle reads too, written deterministically into its ignored path and never
+      # committed. In this job no unit test writes it first (fixtures.test.ts does, in unit), so the generation does.
+      - run: pnpm synth --large
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       - run: pnpm test:oracle
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       # Every production dependency's licence against tools/check-licenses/allowlist.json (PRD 16; docs/adr/0010).
@@ -175,6 +179,10 @@ jobs:
       # worker's tests print reports with: installed before any vitest run, which fails on CI without it rather than
       # skip a printing test (tools/test/ci-chromium.ts; docs/adr/0058).
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      # The pinned gitleaks, its release archive checked against tools/gitleaks/release.txt, which the pre-push hook's
+      # tests run for real (tools/hooks/pre-push.test.ts, which fails on CI without it rather than skip those cases).
+      - name: The pinned gitleaks for the pre-push hook's tests
+        run: tools/gitleaks/install.sh
       # The base the differential test prices the golden claims and 20,000 generated claims against, with the base
       # engine and this one (tools/engine-freeze/differential.test.ts, which fails in CI without it): a pull request's
       # merge base, or a push's previous head (its first parent when the branch is new).

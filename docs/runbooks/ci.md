@@ -22,9 +22,9 @@ The list lives in `tools/required-checks.ts`; every document that lists the chec
 
 | Job (its check) | What it runs | Timeout |
 | --- | --- | --- |
-| `static` | the dependency audit; the secret scan of the commits the run checks; the fixture check; the content checker; published releases and prompt versions unchanged; the engine freeze (pull requests); `pnpm synth --all` and its clean diff; `pnpm typecheck`; `pnpm lint:logs`; `pnpm test:golden`; `pnpm test:oracle`; `pnpm licenses:check` | 15 min |
+| `static` | the dependency audit; the secret scan of the commits the run checks; the fixture check; the content checker; published releases and prompt versions unchanged; the engine freeze (pull requests); `pnpm synth --all` and its clean diff; `pnpm typecheck`; `pnpm lint:logs`; `pnpm test:golden`; `pnpm synth --large` (the 10,000-claim remittance the oracle reads) and `pnpm test:oracle`; `pnpm licenses:check` | 15 min |
 | `lint` | `pnpm lint`, ESLint in three memory-bounded groups | 15 min |
-| `unit` | Chromium, the engine freeze's base, `pnpm test` (with coverage) | 20 min |
+| `unit` | Chromium, the pinned gitleaks (the pre-push hook's tests run it), the engine freeze's base, `pnpm test` (with coverage) | 20 min |
 | `db (k/N)` | its own Postgres, Chromium, `pnpm db:migrate && pnpm test:db --shard=k/N`, then "Files this shard ran" | 20 min |
 | `domain model` | its own Postgres; on a pull request "Changes since the last approved domain model"; `pnpm db:migrate`; `pnpm db:domain-model --check --strict --require-approval` | 10 min |
 | `build` | `pnpm build` (web and worker); the web build stamped and kept as `web-build`; `pnpm cdk:diff` | 15 min |
