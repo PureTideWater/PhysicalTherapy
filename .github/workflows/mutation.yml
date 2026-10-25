@@ -13,6 +13,9 @@ name: mutation
 # resolves for it), and nothing when it touches none, so a pull request that changes no money path passes in about a
 # minute. A workflow of its own, beside ci.yml's `all green`, so that gate stays fast on money pull requests; its own
 # concurrency group, so the two never cancel each other. Synthetic data only, no credentials, read-only token.
+#
+# Every job runs one exact Node, 24.22.0: the recorded equivalents that rest on the engine's Unicode data were checked
+# over every code point on it (tools/stryker/unicode.json), and the gate fails them on a shard that ran on other data.
 on:
   push:
     branches: [claude/build-platform]
@@ -50,7 +53,7 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 24
+          node-version: 24.22.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: What the change affects
@@ -81,7 +84,7 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 24
+          node-version: 24.22.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: The canary
@@ -104,7 +107,8 @@ jobs:
           retention-days: 14
 
   # The required check. It runs whatever the jobs above did, and fails on a failed or cancelled job, on a skipped shard
-  # job when a package was affected, and on any gate rule; it passes with "no money path changed" when none was.
+  # job when a package was affected, on outputs of the changes job other than the ones it writes (fail closed), and on
+  # any gate rule; it passes with "no money path changed" when none was.
   mutation:
     name: mutation
     needs: [changes, stryker]
@@ -119,13 +123,31 @@ jobs:
           STRYKER: ${{ needs.stryker.result }}
           ANY: ${{ needs.changes.outputs.any }}
           PACKAGES: ${{ needs.changes.outputs.packages }}
+          SHARDS: ${{ needs.changes.outputs.shards }}
         run: |
-          echo "changes: $CHANGES; stryker: $STRYKER; affected: ${PACKAGES:-none}"
+          echo "changes: $CHANGES; stryker: $STRYKER; any: ${ANY:-(none)}; packages: ${PACKAGES:-(none)}; shards: ${SHARDS:-(none)}"
           if [ "$CHANGES" != success ]; then
             echo "::error::The changes job ended $CHANGES, so what this change affects is unknown."
             exit 1
           fi
-          if [ "$ANY" != true ]; then
+          # The outputs exactly as tools/stryker/affected.ts writes them; anything else (none, or garbled) fails closed.
+          case "$ANY" in
+            true | false) ;;
+            *)
+              echo "::error::The changes job gave no verdict (any=${ANY:-(none)}), so what this change affects is unknown."
+              exit 1
+              ;;
+          esac
+          NAMES='^\[("[a-z]+(-[a-z]+)*"(,"[a-z]+(-[a-z]+)*")*)?\]$'
+          if ! printf '%s' "$SHARDS" | grep -Eq "$NAMES" || ! printf '%s' "$PACKAGES" | grep -Eq "$NAMES"; then
+            echo "::error::The changes job gave shards=${SHARDS:-(none)} and packages=${PACKAGES:-(none)}, not JSON arrays of names."
+            exit 1
+          fi
+          if [ "$ANY" = false ]; then
+            if [ "$SHARDS" != '[]' ] || [ "$PACKAGES" != '[]' ]; then
+              echo "::error::The changes job said no package is affected, yet gave shards=$SHARDS and packages=$PACKAGES."
+              exit 1
+            fi
             if [ "$STRYKER" != skipped ]; then
               echo "::error::No package was affected, yet the shard jobs ended $STRYKER."
               exit 1
@@ -133,6 +155,10 @@ jobs:
             echo "No money path changed: no mutation run." | tee -a "$GITHUB_STEP_SUMMARY"
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          if [ "$SHARDS" = '[]' ] || [ "$PACKAGES" = '[]' ]; then
+            echo "::error::The changes job said a package is affected, yet gave shards=$SHARDS and packages=$PACKAGES."
+            exit 1
           fi
           if [ "$STRYKER" != success ]; then
             echo "::error::A shard job ended $STRYKER (skipped, failed or cancelled), so the affected packages are not scored."
@@ -148,7 +174,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.needs.outputs.run == 'true'
         with:
-          node-version: 24
+          node-version: 24.22.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: steps.needs.outputs.run == 'true'
