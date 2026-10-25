@@ -1,0 +1,2355 @@
+diff --git a/apps/worker/src/reconcile/ledger-oracle.db.test.ts b/apps/worker/src/reconcile/ledger-oracle.db.test.ts
+index b371a52..9a17cd5 100644
+--- a/apps/worker/src/reconcile/ledger-oracle.db.test.ts
++++ b/apps/worker/src/reconcile/ledger-oracle.db.test.ts
+@@ -84,6 +84,18 @@ const CASES: readonly OracleCase[] = [
+     ],
+     known: { approved: 3000n, posted: 3000n, deposited: 3000n, recouped: -1800n, interest: 0n, recovered: 1200n, postedEntries: 1, lineStage: 'actionable' },
+   },
++  {
++    name: 'a reversal a forward balance offsets, after deposit, and the forward balance withheld later',
++    fixture: 'LED-12',
++    steps: [
++      { kind: 'export', file: 'posting-export.csv', as: 'posting_export' },
++      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
++      { kind: 'remittance', file: 'reversal.835' },
++      { kind: 'remittance', file: 'forward-balance-withheld.835' },
++    ],
++    // The 30.00 the corrected claim approved is taken back once, at the reversal; neither forward balance moves a figure.
++    known: { approved: 3000n, posted: 3000n, deposited: 3000n, recouped: -3000n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'actionable' },
++  },
+   {
+     name: 'a reversed manual match',
+     fixture: 'LED-07',
+diff --git a/apps/worker/src/reconcile/ledger.db.test.ts b/apps/worker/src/reconcile/ledger.db.test.ts
+index 4d87303..7deaa80 100644
+--- a/apps/worker/src/reconcile/ledger.db.test.ts
++++ b/apps/worker/src/reconcile/ledger.db.test.ts
+@@ -4,8 +4,8 @@ import path from 'node:path';
+ 
+ import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+ import { asOwner } from '@tp/db/testing';
+-import { type LedgerEntry, SYNTHETIC_PM_EXPORT_V1, ledgerTotals, roiStatement } from '@tp/ledger';
+-import { cents, parseCents } from '@tp/money';
++import { type LedgerEntry, SYNTHETIC_PM_EXPORT_V1, entriesById, ledgerTotals, periodEntries, roiStatement } from '@tp/ledger';
++import { cents, negateCents, parseCents } from '@tp/money';
+ import { deriveCaseState } from '@tp/triage';
+ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+ 
+@@ -23,7 +23,7 @@ import { unmatchedItems } from './unmatched';
+ 
+ /**
+  * The recovery ledger against PostgreSQL, through the reconcile step's own code (PRD 13; PRD 5, J10;
+- * test matrix LED-02 to LED-11). Each case is a practice of its own: its SYNTHETIC LED fixture's
++ * test matrix LED-02 to LED-13). Each case is a practice of its own: its SYNTHETIC LED fixture's
+  * original payment is loaded by the parse_835 job, priced under a signed-off 50.00-per-unit 97110
+  * schedule and triaged into a case; then the adjusted remittance, the posting and EFT exports and the
+  * recoupment arrive as the fixture says, each followed by a reconcile in the practice's job scope.
+@@ -294,6 +294,166 @@ describe('recoupments (LED-06)', () => {
+   });
+ });
+ 
++describe('a reversal that a provider-level adjustment offsets (LED-12)', () => {
++  /** LED-12's case line recovered: the adjusted payment approved, posted and deposited, proved by deposit. */
++  async function recovered(): Promise<{ readonly practice: Practice; readonly caseId: string; readonly serviceLineId: string }> {
++    const found = await scenario('LED-12');
++    await w.reconcile(found.practice, { documentId: await w.stageExport(found.practice, 'LED-12/posting-export.csv', 'posting_export') });
++    await w.reconcile(found.practice, { documentId: await w.stageExport(found.practice, 'LED-12/eft-export.csv', 'eft_export') });
++    expect(await w.lineStage(found.practice, found.serviceLineId)).toBe('recovered');
++    return found;
++  }
++
++  /** The cash the ledger holds, by plain SQL sums sharing no code with @tp/ledger: posted and deposited, net of their corrections. */
++  async function cash(practice: Practice): Promise<{ readonly posted: bigint; readonly deposited: bigint }> {
++    const sum = (stage: string) =>
++      w.sum(practice, 'SELECT sum(e.amount_cents)::text AS total FROM ledger_entry e LEFT JOIN ledger_entry t ON t.id = e.evidence_id AND e.evidence_kind = $2 WHERE e.stage = $1 OR t.stage = $1', [stage, 'ledger_entry']);
++    return { posted: await sum('posted'), deposited: await sum('deposited') };
++  }
++
++  /** The practice's latest remittance (the one just loaded), its payment and its provider-level adjustments. */
++  async function latest(practice: Practice) {
++    const [remittance] = await w.rows<{ id: string; bpr02_cents: string; bpr16_date: string }>(practice, 'SELECT id, bpr02_cents::text, bpr16_date::text FROM remittance ORDER BY bpr16_date DESC, created_at DESC LIMIT 1');
++    const adjustments = await w.rows<{ id: string; reason_code: string; amount_cents: string }>(practice, 'SELECT id, reason_code, amount_cents::text FROM provider_adjustment WHERE remittance_id = $1 ORDER BY position', [remittance?.id]);
++    const [reversal] = await w.rows<{ id: string; paid_cents: string }>(practice, "SELECT id, paid_cents::text FROM claim WHERE remittance_id = $1 AND claim_status_code = '22'", [remittance?.id]);
++    return { remittance, adjustments, reversal };
++  }
++
++  const cashOf = () => (outcomeOf('LED-12') as unknown as { cash: { reversalPaidCents: string; adjustmentCents: string; paymentCents: string; inCheckPaymentCents: string } }).cash;
++
++  it.each([
++    { offset: 'a forward balance (PLB FB)', file: 'reversal.835', code: 'FB', withheld: true },
++    { offset: 'the provider’s refund (PLB 72)', file: 'reversal-refunded.835', code: '72', withheld: false },
++  ])('moves no cash when $offset offsets the reversal, and takes back what the reversed claim approved, once, at once', async ({ file, code, withheld }) => {
++    const { practice, caseId, serviceLineId } = await recovered();
++    const before = await w.entries(practice);
++    const cashBefore = await cash(practice);
++    const totalsBefore = await jobTotals(practice);
++    await w.load(practice, `LED-12/${file}`);
++    // At its source the pair nets to no cash change: the reversal and its adjustment cancel, and the remittance pays nothing.
++    const { remittance, adjustments, reversal } = await latest(practice);
++    expect(adjustments.map((item) => ({ reason_code: item.reason_code, amount_cents: item.amount_cents }))).toEqual([{ reason_code: code, amount_cents: cashOf().adjustmentCents }]);
++    expect(reversal?.paid_cents).toBe(cashOf().reversalPaidCents);
++    expect(remittance?.bpr02_cents).toBe(cashOf().paymentCents);
++    await w.reconcile(practice);
++    // No cash entry: posted and deposited stay what the cash proved.
++    expect(await cash(practice)).toEqual(cashBefore);
++    // The earlier entries are untouched; one entry is added: the reversal's take-back of what the reversed claim approved, dated by its remittance.
++    const after = await w.entries(practice);
++    expect(after.slice(0, before.length)).toEqual(before);
++    expect(after.slice(before.length)).toEqual([
++      expect.objectContaining({ stage: 'recouped', evidence_kind: 'claim', evidence_id: reversal?.id, case_id: caseId, service_line_id: serviceLineId, effective_on: remittance?.bpr16_date, created_by: null, allocated: false }),
++    ]);
++    expect(await w.stages(practice)).toEqual(expectedStages('LED-12'));
++    // The adjustment is recorded, and is never an entry's evidence or a match.
++    const adjustmentIds = adjustments.map((item) => item.id);
++    expect(await w.rows(practice, 'SELECT id FROM ledger_entry WHERE evidence_id = ANY ($1::uuid[])', [adjustmentIds])).toEqual([]);
++    expect(await w.rows(practice, 'SELECT id FROM ledger_match WHERE provider_adjustment_id = ANY ($1::uuid[])', [adjustmentIds])).toEqual([]);
++    // Recovered falls by exactly what the reversed claim approved (never the 100.00 reversed); every other stage, and payer approved, stand.
++    const totalsAfter = await jobTotals(practice);
++    expect(totalsAfter).toMatchObject({
++      approvedCents: totalsBefore.approvedCents,
++      postedCents: totalsBefore.postedCents,
++      depositedCents: totalsBefore.depositedCents,
++      interestCents: totalsBefore.interestCents,
++      payerApprovedCents: totalsBefore.payerApprovedCents,
++      recoupedCents: negateCents(totalsBefore.approvedCents),
++      recoveredCents: parseCents(outcomeOf('LED-12').recoveredCents ?? ''),
++    });
++    // PRD 13: the line goes back to actionable with the ledger's note, the case leaves resolved, and its people are told once.
++    expect(await w.lineStage(practice, serviceLineId)).toBe('actionable');
++    const [reopen] = await w.rows<{ reason: string; reopened_from: string }>(practice, 'SELECT reason, reopened_from FROM line_status WHERE service_line_id = $1 ORDER BY seq DESC LIMIT 1', [serviceLineId]);
++    expect(reopen?.reopened_from).toBe('recovered');
++    expect(practice.cipher.decrypt('line_status.reason', reopen?.reason ?? '')).toBe(REOPEN_NOTES.recoupment);
++    expect(await w.caseState(practice, caseId)).not.toBe('resolved');
++    const told = () => asOwner(w.owner, [practice.practiceId], () => w.owner.query("SELECT user_id, counts, totals_cents FROM notification WHERE practice_id = $1 AND kind = 'recoupment' ORDER BY user_id", [practice.practiceId]));
++    const recouped = (outcomeOf('LED-12').entries ?? []).find((entry) => entry.stage === 'recouped')?.amountCents;
++    expect((await told()).rows).toEqual([practice.world.adminUserId, practice.manager].sort().map((user) => ({ user_id: user, counts: { recouped_lines: 1 }, totals_cents: { recouped: recouped } })));
++    // Once: a replay takes nothing back again, nor does the forward balance withheld from a later check.
++    await w.reconcile(practice);
++    if (withheld) {
++      await w.load(practice, 'LED-12/forward-balance-withheld.835');
++      const later = await latest(practice);
++      expect(later.adjustments.map((item) => ({ reason_code: item.reason_code, amount_cents: item.amount_cents }))).toEqual([{ reason_code: 'FB', amount_cents: (-BigInt(cashOf().adjustmentCents)).toString() }]);
++      expect((await w.reconcile(practice)).remittances.recoupments).toBe(0);
++      expect(await w.rows(practice, 'SELECT id FROM ledger_entry WHERE evidence_id = ANY ($1::uuid[])', [later.adjustments.map((item) => item.id)])).toEqual([]);
++    }
++    expect(await w.entries(practice)).toEqual(after);
++    expect((await told()).rowCount).toBe(2);
++  });
++
++  it('never counts the adjustments themselves, even while an approval stands that could absorb them', async () => {
++    const { practice, serviceLineId } = await recovered();
++    const before = await w.entries(practice);
++    const totalsBefore = await jobTotals(practice);
++    await w.load(practice, 'LED-12/adjustments-alone.835');
++    const { adjustments } = await latest(practice);
++    expect(adjustments.map((item) => item.reason_code)).toEqual(['FB', '72']);
++    await w.reconcile(practice);
++    expect(await w.entries(practice)).toEqual(before);
++    expect(await w.rows(practice, 'SELECT id FROM ledger_match WHERE provider_adjustment_id = ANY ($1::uuid[])', [adjustments.map((item) => item.id)])).toEqual([]);
++    expect(await jobTotals(practice)).toEqual(totalsBefore);
++    expect(await w.lineStage(practice, serviceLineId)).toBe('recovered');
++  });
++
++  it('deposits nothing for the case line from a check that holds the reversal and its adjustment beside another payment', async () => {
++    const { practice } = await recovered();
++    await w.load(practice, 'LED-12/reversal-in-check.835');
++    const { remittance } = await latest(practice);
++    expect(remittance?.bpr02_cents).toBe(cashOf().inCheckPaymentCents);
++    await w.reconcile(practice);
++    expect(await w.stages(practice)).toEqual(expectedStages('LED-12'));
++    const before = await w.entries(practice);
++    const cashBefore = await cash(practice);
++    const summary = await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-12/reversal-in-check-eft-export.csv', 'eft_export') });
++    expect(summary.exports).toMatchObject([{ kind: 'eft_export', outcome: 'loaded', stored: 1, problems: 0 }]);
++    // The deposit matches its remittance (the other claim's 50.00), and none of it is the case line's.
++    expect(await w.rows(practice, "SELECT remittance_id FROM ledger_match WHERE kind = 'deposit' AND remittance_id = $1 AND reversed_at IS NULL", [remittance?.id])).toEqual([{ remittance_id: remittance?.id }]);
++    expect(await w.entries(practice)).toEqual(before);
++    expect(await cash(practice)).toEqual(cashBefore);
++  });
++});
++
++describe('a later recoupment (LED-13)', () => {
++  it('is a negative event against net recovery: a new entry dated by its own remittance, the earlier entries and periods unchanged', async () => {
++    const { practice, serviceLineId } = await scenario('LED-06');
++    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-06/posting-export.csv', 'posting_export') });
++    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-06/eft-export.csv', 'eft_export') });
++    const before = await w.entries(practice);
++    const recoveredBefore = (await jobTotals(practice)).recoveredCents;
++    await w.load(practice, 'LED-06/recoupment.835');
++    await w.reconcile(practice);
++    const after = await w.entries(practice);
++    // A new entry, never an edit of an earlier one.
++    expect(after.slice(0, before.length)).toEqual(before);
++    const [wo] = await w.rows<{ id: string; paid_on: string }>(practice, "SELECT a.id, r.bpr16_date::text AS paid_on FROM provider_adjustment a JOIN remittance r ON r.id = a.remittance_id WHERE a.reason_code = 'WO'");
++    const [recoupment, ...rest] = after.slice(before.length);
++    expect(rest).toEqual([]);
++    expect(recoupment).toMatchObject({ stage: 'recouped', evidence_kind: 'provider_adjustment', evidence_id: wo?.id, service_line_id: serviceLineId, effective_on: wo?.paid_on, created_by: null });
++    const amount = parseCents(recoupment?.amount_cents ?? '0');
++    expect(amount).toBeLessThan(0n);
++    // Later: dated after every entry before it, the deposit it takes back from included.
++    const lastBefore = before.map((entry) => entry.effective_on).sort().at(-1) ?? '';
++    expect((recoupment?.effective_on ?? '') > lastBefore).toBe(true);
++    // Against net recovery: by exactly its amount, in its own period; the periods before it are not restated.
++    expect((await jobTotals(practice)).recoveredCents).toBe(recoveredBefore + amount);
++    const ledger: LedgerEntry[] = after.map((entry) => ({
++      id: entry.id,
++      caseId: entry.case_id,
++      serviceLineId: entry.service_line_id,
++      stage: entry.stage as LedgerEntry['stage'],
++      amountCents: parseCents(entry.amount_cents),
++      evidenceKind: entry.evidence_kind as LedgerEntry['evidenceKind'],
++      evidenceId: entry.evidence_id,
++      allocated: entry.allocated,
++      effectiveOn: entry.effective_on,
++    }));
++    const byId = entriesById(ledger);
++    expect(ledgerTotals(periodEntries(ledger, '2026-01-01', lastBefore), 'deposited', byId).recoveredCents).toBe(recoveredBefore);
++    expect(ledgerTotals(periodEntries(ledger, recoupment?.effective_on ?? '', '2026-12-31'), 'deposited', byId).recoveredCents).toBe(amount);
++  });
++});
++
+ describe('manual matching and its reversal (LED-07)', () => {
+   it('leaves a posting row with a typo unmatched, matches it by hand in the person’s name, and nets its reversal to zero', async () => {
+     const { practice } = await scenario('LED-07');
+diff --git a/docs/product/test-matrix.md b/docs/product/test-matrix.md
+index 4640163..10abcf9 100644
+--- a/docs/product/test-matrix.md
++++ b/docs/product/test-matrix.md
+@@ -132,6 +132,8 @@ PRC-23 and PRC-24 were added in its pull request 6b-2 (audit #33 and #16's minim
+ | LED-09 | Partial posting at check level | Pro-rata allocation flagged |
+ | LED-10 | Direct UPDATE or DELETE by the app role | Fails |
+ | LED-11 | ROI statement recompute | Equals sum of entries |
++| LED-12 | Reversal with a provider-level adjustment | No cash change: no `posted` or `deposited` entry, the adjustment never an entry; the reversal `recouped` once, at once, for what the reversed claim approved |
++| LED-13 | Later recoupment | Negative event against net recovery |
+ 
+ ## Tenancy, security and lifecycle (SEC)
+ 
+diff --git a/fixtures/synthetic/LED-12/adjusted.835 b/fixtures/synthetic/LED-12/adjusted.835
+new file mode 100644
+index 0000000..912c475
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/adjusted.835
+@@ -0,0 +1 @@
++ISA*00*          *00*          *ZZ*SYNTHSENDER    *ZZ*SYNTHRECEIVER  *260608*0915*^*00501*060120002*0*T*:~GS*HP*SYNTH*SYNTHRCV*20260608*0915*60120002*X*005010X221A1~ST*835*0001~BPR*C*30.00*C*ACH*CCP*01*996589976*DA*SYNACCT651906*1SYN00000L**01*990125605*DA*SYNACCT629508*20260608~TRN*1*SYNEFTLED12002*1SYN00000L~DTM*405*20260607~N1*PR*SYNTHETIC PAYER L~N3*630 SYNTHETIC PAYER WAY~N4*SYNTHVILLE*NC*00013~REF*2U*SYNPAYERL~PER*BL*SYNTHETIC EDI HELP DESK*TE*5555553605~N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9907993270~N3*669 SYNTHETIC CLINIC ROAD~N4*SYNTHTOWN*NC*00011~REF*TJ*996706892~LX*1~CLP*SYNPCNLED12001*22*-150.00*-70.00*0.00*12*SYNCCNLED120001*11*8~NM1*QC*1*SYNTHLASTZY48JR*SYNTHFIRSTELY****MI*SYNMBR75190354~NM1*82*1*SYNTHPT2FTL*SYNTHETIC****XX*9906267726~REF*CE*SYNPLAN-FIX-LED~SVC*HC:97110*-150.00*-70.00**2~DTM*472*20260309~CAS*CO*45*-80.00~AMT*B6*-70.00~CLP*SYNPCNLED12001*1*150.00*100.00*0.00*12*SYNCCNLED120002*11*7~NM1*QC*1*SYNTHLASTZY48JR*SYNTHFIRSTELY****MI*SYNMBR75190354~NM1*82*1*SYNTHPTCQQS*SYNTHETIC****XX*9982047034~REF*CE*SYNPLAN-FIX-LED~REF*F8*SYNCCNLED120001~SVC*HC:97110*150.00*100.00**2~DTM*472*20260309~CAS*CO*45*50.00~AMT*B6*100.00~SE*32*0001~GE*1*60120002~IEA*1*060120002~
+\ No newline at end of file
+diff --git a/fixtures/synthetic/LED-12/adjustments-alone.835 b/fixtures/synthetic/LED-12/adjustments-alone.835
+new file mode 100644
+index 0000000..8965739
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/adjustments-alone.835
+@@ -0,0 +1 @@
++ISA*00*          *00*          *ZZ*SYNTHSENDER    *ZZ*SYNTHRECEIVER  *260803*0915*^*00501*060120007*0*T*:~GS*HP*SYNTH*SYNTHRCV*20260803*0915*60120007*X*005010X221A1~ST*835*0001~BPR*C*200.00*C*ACH*CCP*01*994890398*DA*SYNACCT100559*1SYN00000L**01*993567704*DA*SYNACCT906023*20260803~TRN*1*SYNEFTLED12007*1SYN00000L~DTM*405*20260802~N1*PR*SYNTHETIC PAYER L~N3*630 SYNTHETIC PAYER WAY~N4*SYNTHVILLE*NC*00013~REF*2U*SYNPAYERL~PER*BL*SYNTHETIC EDI HELP DESK*TE*5555553605~N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9907993270~N3*669 SYNTHETIC CLINIC ROAD~N4*SYNTHTOWN*NC*00011~REF*TJ*996706892~PLB*9907993270*20261231*FB:SYNCCNLED120002*-100.00*72:SYNCCNLED120002*-100.00~SE*15*0001~GE*1*60120007~IEA*1*060120007~
+\ No newline at end of file
+diff --git a/fixtures/synthetic/LED-12/eft-export.csv b/fixtures/synthetic/LED-12/eft-export.csv
+new file mode 100644
+index 0000000..64c2652
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/eft-export.csv
+@@ -0,0 +1,2 @@
++Date,Description,Trace Number,Amount,Batch Reference,Originator ID
++2026-06-09,SYNTHETIC PAYER L HCCLAIMPMT,SYNEFTLED12002,30.00,,SYNTHSENDER
+diff --git a/fixtures/synthetic/LED-12/expected.json b/fixtures/synthetic/LED-12/expected.json
+new file mode 100644
+index 0000000..229ff82
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/expected.json
+@@ -0,0 +1,1873 @@
++{
++  "case": "LED-12",
++  "module": "LED",
++  "title": "Reversal with a provider-level adjustment",
++  "assertion": "No cash change: no `posted` or `deposited` entry, the adjustment never an entry; the reversal `recouped` once, at once, for what the reversed claim approved",
++  "synthetic": true,
++  "completesIn": 9,
++  "assertedBy": [
++    "apps/worker/src/reconcile/ledger.db.test.ts",
++    "apps/worker/src/reconcile/ledger-oracle.db.test.ts"
++  ],
++  "codeListRelease": 900001,
++  "noFileReason": null,
++  "files": [
++    {
++      "path": "original.835",
++      "sha256": "5c821057448aee562e47cd937dd27cd43cadb115ffea1537335f0fa680173128",
++      "bytes": 895,
++      "kind": "x12",
++      "description": "The original payment (a case line).",
++      "x12": {
++        "oracle": {
++          "valid": true,
++          "rejections": [],
++          "summary": {
++            "format": "tp-oracle-835/1",
++            "bom": false,
++            "interchanges": [
++              {
++                "isa06": "SYNTHSENDER",
++                "isa08": "SYNTHRECEIVER",
++                "isa09": "260406",
++                "isa12": "00501",
++                "isa13": "060120001",
++                "isa15": "T",
++                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
++                "iea01": "1",
++                "iea02": "060120001",
++                "groups": [
++                  {
++                    "gs01": "HP",
++                    "gs02": "SYNTH",
++                    "gs03": "SYNTHRCV",
++                    "gs04": "2026-04-06",
++                    "gs06": "60120001",
++                    "gs08": "005010X221A1",
++                    "ge01": "1",
++                    "ge02": "60120001",
++                    "transactions": [
++                      {
++                        "st01": "835",
++                        "st02": "0001",
++                        "se01": "23",
++                        "se02": "0001",
++                        "segmentCount": 23,
++                        "bpr": {
++                          "handling": "C",
++                          "amountCents": "7000",
++                          "creditDebit": "C",
++                          "method": "ACH",
++                          "format": "CCP",
++                          "date": "2026-04-06"
++                        },
++                        "trn": {"trace":"SYNEFTLED12001","originator":"1SYN00000L","supplemental":null},
++                        "currency": null,
++                        "refs": [],
++                        "productionDate": "2026-04-05",
++                        "payer": {
++                          "name": "SYNTHETIC PAYER L",
++                          "idQualifier": null,
++                          "id": null,
++                          "refs": [["2U","SYNPAYERL"]]
++                        },
++                        "payee": {
++                          "name": "SYNTHETIC THERAPY GROUP 01",
++                          "idQualifier": "XX",
++                          "id": "9907993270",
++                          "refs": [["TJ","996706892"]]
++                        },
++                        "claims": [
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12001",
++                            "clp02": "1",
++                            "chargeCents": "15000",
++                            "paidCents": "7000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120001",
++                            "clp08": "11",
++                            "clp09": "1",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "15000",
++                                "paidCents": "7000",
++                                "revenueCode": null,
++                                "units": "2",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-03-09",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"8000"},
++                                "refs": [],
++                                "amounts": [["B6","7000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          }
++                        ],
++                        "plb": [],
++                        "balance": {
++                          "claimsPaidCents": "7000",
++                          "plbTotalCents": "0",
++                          "paymentCents": "7000",
++                          "differenceCents": "0",
++                          "balanced": true,
++                          "claimsBalanced": true
++                        }
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        "parse": {
++          "outcome": "loaded",
++          "documentErrors": [],
++          "transactions": [
++            {
++              "interchange": 0,
++              "group": 0,
++              "transaction": 0,
++              "isa13": "060120001",
++              "gs06": "60120001",
++              "st02": "0001",
++              "status": "loaded",
++              "heldReasons": [],
++              "dedupKey": {
++                "senderId": "SYNTHSENDER",
++                "payeeId": "9907993270",
++                "isa13": "060120001",
++                "trn02": "SYNEFTLED12001",
++                "bpr02Cents": "7000"
++              },
++              "bprMethod": "ACH",
++              "bprHandling": "C",
++              "bpr16Date": "2026-04-06",
++              "payerName": "SYNTHETIC PAYER L",
++              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
++              "balance": {
++                "claimsPaidCents": "7000",
++                "plbTotalCents": "0",
++                "paymentCents": "7000",
++                "differenceCents": "0",
++                "balanced": true
++              },
++              "counts": {"claims":1,"lines":1,"reversals":0,"plbItems":0},
++              "claims": [
++                {
++                  "index": 0,
++                  "segmentIndex": 17,
++                  "patientControlNumber": "SYNPCNLED12001",
++                  "payerClaimControlNumber": "SYNCCNLED120001",
++                  "status": "1",
++                  "chargeCents": "15000",
++                  "paidCents": "7000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "1",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-03-09",
++                  "serviceTo": "2026-03-09",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 21,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "15000",
++                      "paidCents": "7000",
++                      "units": "2",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-03-09",
++                      "serviceTo": "2026-03-09",
++                      "lineAllowedCents": "7000",
++                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "8000",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 23
++                        }
++                      ]
++                    }
++                  ]
++                }
++              ],
++              "plb": [],
++              "unknownCodes": []
++            }
++          ],
++          "receipt": {
++            "transactions": 1,
++            "claims": 1,
++            "lines": 1,
++            "reversals": 0,
++            "plbTotalCents": "0",
++            "held": [],
++            "unknownCodes": [],
++            "loaded": {"transactions":1,"claims":1,"lines":1}
++          }
++        }
++      }
++    },
++    {
++      "path": "adjusted.835",
++      "sha256": "eb7c3bb02b36dd9b8dfc64a706f4f07dc4afe93bd9b64048343f6df9382298db",
++      "bytes": 1197,
++      "kind": "x12",
++      "description": "The adjusted remittance paying the difference.",
++      "x12": {
++        "oracle": {
++          "valid": true,
++          "rejections": [],
++          "summary": {
++            "format": "tp-oracle-835/1",
++            "bom": false,
++            "interchanges": [
++              {
++                "isa06": "SYNTHSENDER",
++                "isa08": "SYNTHRECEIVER",
++                "isa09": "260608",
++                "isa12": "00501",
++                "isa13": "060120002",
++                "isa15": "T",
++                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
++                "iea01": "1",
++                "iea02": "060120002",
++                "groups": [
++                  {
++                    "gs01": "HP",
++                    "gs02": "SYNTH",
++                    "gs03": "SYNTHRCV",
++                    "gs04": "2026-06-08",
++                    "gs06": "60120002",
++                    "gs08": "005010X221A1",
++                    "ge01": "1",
++                    "ge02": "60120002",
++                    "transactions": [
++                      {
++                        "st01": "835",
++                        "st02": "0001",
++                        "se01": "32",
++                        "se02": "0001",
++                        "segmentCount": 32,
++                        "bpr": {
++                          "handling": "C",
++                          "amountCents": "3000",
++                          "creditDebit": "C",
++                          "method": "ACH",
++                          "format": "CCP",
++                          "date": "2026-06-08"
++                        },
++                        "trn": {"trace":"SYNEFTLED12002","originator":"1SYN00000L","supplemental":null},
++                        "currency": null,
++                        "refs": [],
++                        "productionDate": "2026-06-07",
++                        "payer": {
++                          "name": "SYNTHETIC PAYER L",
++                          "idQualifier": null,
++                          "id": null,
++                          "refs": [["2U","SYNPAYERL"]]
++                        },
++                        "payee": {
++                          "name": "SYNTHETIC THERAPY GROUP 01",
++                          "idQualifier": "XX",
++                          "id": "9907993270",
++                          "refs": [["TJ","996706892"]]
++                        },
++                        "claims": [
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12001",
++                            "clp02": "22",
++                            "chargeCents": "-15000",
++                            "paidCents": "-7000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120001",
++                            "clp08": "11",
++                            "clp09": "8",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "-15000",
++                                "paidCents": "-7000",
++                                "revenueCode": null,
++                                "units": "2",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-03-09",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"-8000"},
++                                "refs": [],
++                                "amounts": [["B6","-7000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          },
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12001",
++                            "clp02": "1",
++                            "chargeCents": "15000",
++                            "paidCents": "10000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120002",
++                            "clp08": "11",
++                            "clp09": "7",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED120001"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "15000",
++                                "paidCents": "10000",
++                                "revenueCode": null,
++                                "units": "2",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-03-09",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"5000"},
++                                "refs": [],
++                                "amounts": [["B6","10000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          }
++                        ],
++                        "plb": [],
++                        "balance": {
++                          "claimsPaidCents": "3000",
++                          "plbTotalCents": "0",
++                          "paymentCents": "3000",
++                          "differenceCents": "0",
++                          "balanced": true,
++                          "claimsBalanced": true
++                        }
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        "parse": {
++          "outcome": "loaded",
++          "documentErrors": [],
++          "transactions": [
++            {
++              "interchange": 0,
++              "group": 0,
++              "transaction": 0,
++              "isa13": "060120002",
++              "gs06": "60120002",
++              "st02": "0001",
++              "status": "loaded",
++              "heldReasons": [],
++              "dedupKey": {
++                "senderId": "SYNTHSENDER",
++                "payeeId": "9907993270",
++                "isa13": "060120002",
++                "trn02": "SYNEFTLED12002",
++                "bpr02Cents": "3000"
++              },
++              "bprMethod": "ACH",
++              "bprHandling": "C",
++              "bpr16Date": "2026-06-08",
++              "payerName": "SYNTHETIC PAYER L",
++              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
++              "balance": {
++                "claimsPaidCents": "3000",
++                "plbTotalCents": "0",
++                "paymentCents": "3000",
++                "differenceCents": "0",
++                "balanced": true
++              },
++              "counts": {"claims":2,"lines":2,"reversals":1,"plbItems":0},
++              "claims": [
++                {
++                  "index": 0,
++                  "segmentIndex": 17,
++                  "patientControlNumber": "SYNPCNLED12001",
++                  "payerClaimControlNumber": "SYNCCNLED120001",
++                  "status": "22",
++                  "chargeCents": "-15000",
++                  "paidCents": "-7000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "8",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-03-09",
++                  "serviceTo": "2026-03-09",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 21,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "-15000",
++                      "paidCents": "-7000",
++                      "units": "2",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-03-09",
++                      "serviceTo": "2026-03-09",
++                      "lineAllowedCents": "-7000",
++                      "observedAllowed": {"cents":"-7000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "-8000",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 23
++                        }
++                      ]
++                    }
++                  ]
++                },
++                {
++                  "index": 1,
++                  "segmentIndex": 25,
++                  "patientControlNumber": "SYNPCNLED12001",
++                  "payerClaimControlNumber": "SYNCCNLED120002",
++                  "status": "1",
++                  "chargeCents": "15000",
++                  "paidCents": "10000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "7",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-03-09",
++                  "serviceTo": "2026-03-09",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 30,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "15000",
++                      "paidCents": "10000",
++                      "units": "2",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-03-09",
++                      "serviceTo": "2026-03-09",
++                      "lineAllowedCents": "10000",
++                      "observedAllowed": {"cents":"10000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "5000",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 32
++                        }
++                      ]
++                    }
++                  ]
++                }
++              ],
++              "plb": [],
++              "unknownCodes": []
++            }
++          ],
++          "receipt": {
++            "transactions": 1,
++            "claims": 2,
++            "lines": 2,
++            "reversals": 1,
++            "plbTotalCents": "0",
++            "held": [],
++            "unknownCodes": [],
++            "loaded": {"transactions":1,"claims":2,"lines":2}
++          }
++        }
++      }
++    },
++    {
++      "path": "posting-export.csv",
++      "sha256": "5369d4570b7cbcbcc994130913bd4e46ce49eba0133f3f5d68062190c4a60ebb",
++      "bytes": 154,
++      "kind": "csv",
++      "description": "The posting export for the adjusted payment."
++    },
++    {
++      "path": "eft-export.csv",
++      "sha256": "1a64f04c6a5b52044fa80c9abb723df5e2c294019644d51c4da758f224b91d31",
++      "bytes": 143,
++      "kind": "csv",
++      "description": "The bank export for the adjusted payment."
++    },
++    {
++      "path": "reversal.835",
++      "sha256": "45515285237212d6cca103b41288c750176e47a2a64b1d15d244c28731b7b43a",
++      "bytes": 913,
++      "kind": "x12",
++      "description": "The corrected claim (SYNCCNLED120002) reversed, -100.00, and the balance carried forward by a PLB FB of -100.00 naming it: BPR02 0.00, no payment.",
++      "x12": {
++        "oracle": {
++          "valid": true,
++          "rejections": [],
++          "summary": {
++            "format": "tp-oracle-835/1",
++            "bom": false,
++            "interchanges": [
++              {
++                "isa06": "SYNTHSENDER",
++                "isa08": "SYNTHRECEIVER",
++                "isa09": "260803",
++                "isa12": "00501",
++                "isa13": "060120003",
++                "isa15": "T",
++                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
++                "iea01": "1",
++                "iea02": "060120003",
++                "groups": [
++                  {
++                    "gs01": "HP",
++                    "gs02": "SYNTH",
++                    "gs03": "SYNTHRCV",
++                    "gs04": "2026-08-03",
++                    "gs06": "60120003",
++                    "gs08": "005010X221A1",
++                    "ge01": "1",
++                    "ge02": "60120003",
++                    "transactions": [
++                      {
++                        "st01": "835",
++                        "st02": "0001",
++                        "se01": "25",
++                        "se02": "0001",
++                        "segmentCount": 25,
++                        "bpr": {
++                          "handling": "H",
++                          "amountCents": "0",
++                          "creditDebit": "C",
++                          "method": "NON",
++                          "format": null,
++                          "date": "2026-08-03"
++                        },
++                        "trn": {"trace":"SYNEFTLED12003","originator":"1SYN00000L","supplemental":null},
++                        "currency": null,
++                        "refs": [],
++                        "productionDate": "2026-08-02",
++                        "payer": {
++                          "name": "SYNTHETIC PAYER L",
++                          "idQualifier": null,
++                          "id": null,
++                          "refs": [["2U","SYNPAYERL"]]
++                        },
++                        "payee": {
++                          "name": "SYNTHETIC THERAPY GROUP 01",
++                          "idQualifier": "XX",
++                          "id": "9907993270",
++                          "refs": [["TJ","996706892"]]
++                        },
++                        "claims": [
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12001",
++                            "clp02": "22",
++                            "chargeCents": "-15000",
++                            "paidCents": "-10000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120002",
++                            "clp08": "11",
++                            "clp09": "8",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED120001"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "-15000",
++                                "paidCents": "-10000",
++                                "revenueCode": null,
++                                "units": "2",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-03-09",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"-5000"},
++                                "refs": [],
++                                "amounts": [["B6","-10000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          }
++                        ],
++                        "plb": [
++                          {
++                            "provider": "9907993270",
++                            "fiscalPeriodDate": "2026-12-31",
++                            "code": "FB",
++                            "reference": "SYNCCNLED120002",
++                            "amountCents": "-10000"
++                          }
++                        ],
++                        "balance": {
++                          "claimsPaidCents": "-10000",
++                          "plbTotalCents": "-10000",
++                          "paymentCents": "0",
++                          "differenceCents": "0",
++                          "balanced": true,
++                          "claimsBalanced": true
++                        }
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        "parse": {
++          "outcome": "loaded",
++          "documentErrors": [],
++          "transactions": [
++            {
++              "interchange": 0,
++              "group": 0,
++              "transaction": 0,
++              "isa13": "060120003",
++              "gs06": "60120003",
++              "st02": "0001",
++              "status": "loaded",
++              "heldReasons": [],
++              "dedupKey": {
++                "senderId": "SYNTHSENDER",
++                "payeeId": "9907993270",
++                "isa13": "060120003",
++                "trn02": "SYNEFTLED12003",
++                "bpr02Cents": "0"
++              },
++              "bprMethod": "NON",
++              "bprHandling": "H",
++              "bpr16Date": "2026-08-03",
++              "payerName": "SYNTHETIC PAYER L",
++              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
++              "balance": {
++                "claimsPaidCents": "-10000",
++                "plbTotalCents": "-10000",
++                "paymentCents": "0",
++                "differenceCents": "0",
++                "balanced": true
++              },
++              "counts": {"claims":1,"lines":1,"reversals":1,"plbItems":1},
++              "claims": [
++                {
++                  "index": 0,
++                  "segmentIndex": 17,
++                  "patientControlNumber": "SYNPCNLED12001",
++                  "payerClaimControlNumber": "SYNCCNLED120002",
++                  "status": "22",
++                  "chargeCents": "-15000",
++                  "paidCents": "-10000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "8",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-03-09",
++                  "serviceTo": "2026-03-09",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 22,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "-15000",
++                      "paidCents": "-10000",
++                      "units": "2",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-03-09",
++                      "serviceTo": "2026-03-09",
++                      "lineAllowedCents": "-10000",
++                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "-5000",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 24
++                        }
++                      ]
++                    }
++                  ]
++                }
++              ],
++              "plb": [
++                {
++                  "segmentIndex": 26,
++                  "providerId": "9907993270",
++                  "fiscalPeriodDate": "2026-12-31",
++                  "code": "FB",
++                  "reference": "SYNCCNLED120002",
++                  "amountCents": "-10000",
++                  "category": "forward_balance",
++                  "counted": false
++                }
++              ],
++              "unknownCodes": []
++            }
++          ],
++          "receipt": {
++            "transactions": 1,
++            "claims": 1,
++            "lines": 1,
++            "reversals": 1,
++            "plbTotalCents": "-10000",
++            "held": [],
++            "unknownCodes": [],
++            "loaded": {"transactions":1,"claims":1,"lines":1}
++          }
++        }
++      }
++    },
++    {
++      "path": "reversal-refunded.835",
++      "sha256": "8ab25748cc4838f733a629a71db61b9e76a4d91eec10ac3d36908403748ef113",
++      "bytes": 913,
++      "kind": "x12",
++      "description": "The corrected claim (SYNCCNLED120002) reversed, -100.00, against the refund the provider sent (PLB 72 -100.00 naming it): BPR02 0.00, no payment.",
++      "x12": {
++        "oracle": {
++          "valid": true,
++          "rejections": [],
++          "summary": {
++            "format": "tp-oracle-835/1",
++            "bom": false,
++            "interchanges": [
++              {
++                "isa06": "SYNTHSENDER",
++                "isa08": "SYNTHRECEIVER",
++                "isa09": "260803",
++                "isa12": "00501",
++                "isa13": "060120004",
++                "isa15": "T",
++                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
++                "iea01": "1",
++                "iea02": "060120004",
++                "groups": [
++                  {
++                    "gs01": "HP",
++                    "gs02": "SYNTH",
++                    "gs03": "SYNTHRCV",
++                    "gs04": "2026-08-03",
++                    "gs06": "60120004",
++                    "gs08": "005010X221A1",
++                    "ge01": "1",
++                    "ge02": "60120004",
++                    "transactions": [
++                      {
++                        "st01": "835",
++                        "st02": "0001",
++                        "se01": "25",
++                        "se02": "0001",
++                        "segmentCount": 25,
++                        "bpr": {
++                          "handling": "H",
++                          "amountCents": "0",
++                          "creditDebit": "C",
++                          "method": "NON",
++                          "format": null,
++                          "date": "2026-08-03"
++                        },
++                        "trn": {"trace":"SYNEFTLED12004","originator":"1SYN00000L","supplemental":null},
++                        "currency": null,
++                        "refs": [],
++                        "productionDate": "2026-08-02",
++                        "payer": {
++                          "name": "SYNTHETIC PAYER L",
++                          "idQualifier": null,
++                          "id": null,
++                          "refs": [["2U","SYNPAYERL"]]
++                        },
++                        "payee": {
++                          "name": "SYNTHETIC THERAPY GROUP 01",
++                          "idQualifier": "XX",
++                          "id": "9907993270",
++                          "refs": [["TJ","996706892"]]
++                        },
++                        "claims": [
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12001",
++                            "clp02": "22",
++                            "chargeCents": "-15000",
++                            "paidCents": "-10000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120002",
++                            "clp08": "11",
++                            "clp09": "8",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED120001"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "-15000",
++                                "paidCents": "-10000",
++                                "revenueCode": null,
++                                "units": "2",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-03-09",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"-5000"},
++                                "refs": [],
++                                "amounts": [["B6","-10000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          }
++                        ],
++                        "plb": [
++                          {
++                            "provider": "9907993270",
++                            "fiscalPeriodDate": "2026-12-31",
++                            "code": "72",
++                            "reference": "SYNCCNLED120002",
++                            "amountCents": "-10000"
++                          }
++                        ],
++                        "balance": {
++                          "claimsPaidCents": "-10000",
++                          "plbTotalCents": "-10000",
++                          "paymentCents": "0",
++                          "differenceCents": "0",
++                          "balanced": true,
++                          "claimsBalanced": true
++                        }
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        "parse": {
++          "outcome": "loaded",
++          "documentErrors": [],
++          "transactions": [
++            {
++              "interchange": 0,
++              "group": 0,
++              "transaction": 0,
++              "isa13": "060120004",
++              "gs06": "60120004",
++              "st02": "0001",
++              "status": "loaded",
++              "heldReasons": [],
++              "dedupKey": {
++                "senderId": "SYNTHSENDER",
++                "payeeId": "9907993270",
++                "isa13": "060120004",
++                "trn02": "SYNEFTLED12004",
++                "bpr02Cents": "0"
++              },
++              "bprMethod": "NON",
++              "bprHandling": "H",
++              "bpr16Date": "2026-08-03",
++              "payerName": "SYNTHETIC PAYER L",
++              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
++              "balance": {
++                "claimsPaidCents": "-10000",
++                "plbTotalCents": "-10000",
++                "paymentCents": "0",
++                "differenceCents": "0",
++                "balanced": true
++              },
++              "counts": {"claims":1,"lines":1,"reversals":1,"plbItems":1},
++              "claims": [
++                {
++                  "index": 0,
++                  "segmentIndex": 17,
++                  "patientControlNumber": "SYNPCNLED12001",
++                  "payerClaimControlNumber": "SYNCCNLED120002",
++                  "status": "22",
++                  "chargeCents": "-15000",
++                  "paidCents": "-10000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "8",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-03-09",
++                  "serviceTo": "2026-03-09",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 22,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "-15000",
++                      "paidCents": "-10000",
++                      "units": "2",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-03-09",
++                      "serviceTo": "2026-03-09",
++                      "lineAllowedCents": "-10000",
++                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "-5000",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 24
++                        }
++                      ]
++                    }
++                  ]
++                }
++              ],
++              "plb": [
++                {
++                  "segmentIndex": 26,
++                  "providerId": "9907993270",
++                  "fiscalPeriodDate": "2026-12-31",
++                  "code": "72",
++                  "reference": "SYNCCNLED120002",
++                  "amountCents": "-10000",
++                  "category": "authorized_return",
++                  "counted": true
++                }
++              ],
++              "unknownCodes": []
++            }
++          ],
++          "receipt": {
++            "transactions": 1,
++            "claims": 1,
++            "lines": 1,
++            "reversals": 1,
++            "plbTotalCents": "-10000",
++            "held": [],
++            "unknownCodes": [],
++            "loaded": {"transactions":1,"claims":1,"lines":1}
++          }
++        }
++      }
++    },
++    {
++      "path": "reversal-in-check.835",
++      "sha256": "c83dbdd9b8e1ce197d2ac9f3d686f6499a054daa03014b70d1066a7101b6c156",
++      "bytes": 1246,
++      "kind": "x12",
++      "description": "The same reversal and forward balance beside another patient's claim paying 50.00: BPR02 50.00, that claim's payment.",
++      "x12": {
++        "oracle": {
++          "valid": true,
++          "rejections": [],
++          "summary": {
++            "format": "tp-oracle-835/1",
++            "bom": false,
++            "interchanges": [
++              {
++                "isa06": "SYNTHSENDER",
++                "isa08": "SYNTHRECEIVER",
++                "isa09": "260803",
++                "isa12": "00501",
++                "isa13": "060120005",
++                "isa15": "T",
++                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
++                "iea01": "1",
++                "iea02": "060120005",
++                "groups": [
++                  {
++                    "gs01": "HP",
++                    "gs02": "SYNTH",
++                    "gs03": "SYNTHRCV",
++                    "gs04": "2026-08-03",
++                    "gs06": "60120005",
++                    "gs08": "005010X221A1",
++                    "ge01": "1",
++                    "ge02": "60120005",
++                    "transactions": [
++                      {
++                        "st01": "835",
++                        "st02": "0001",
++                        "se01": "33",
++                        "se02": "0001",
++                        "segmentCount": 33,
++                        "bpr": {
++                          "handling": "C",
++                          "amountCents": "5000",
++                          "creditDebit": "C",
++                          "method": "ACH",
++                          "format": "CCP",
++                          "date": "2026-08-03"
++                        },
++                        "trn": {"trace":"SYNEFTLED12005","originator":"1SYN00000L","supplemental":null},
++                        "currency": null,
++                        "refs": [],
++                        "productionDate": "2026-08-02",
++                        "payer": {
++                          "name": "SYNTHETIC PAYER L",
++                          "idQualifier": null,
++                          "id": null,
++                          "refs": [["2U","SYNPAYERL"]]
++                        },
++                        "payee": {
++                          "name": "SYNTHETIC THERAPY GROUP 01",
++                          "idQualifier": "XX",
++                          "id": "9907993270",
++                          "refs": [["TJ","996706892"]]
++                        },
++                        "claims": [
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12001",
++                            "clp02": "22",
++                            "chargeCents": "-15000",
++                            "paidCents": "-10000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120002",
++                            "clp08": "11",
++                            "clp09": "8",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"],["F8","SYNCCNLED120001"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "-15000",
++                                "paidCents": "-10000",
++                                "revenueCode": null,
++                                "units": "2",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-03-09",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"-5000"},
++                                "refs": [],
++                                "amounts": [["B6","-10000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          },
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12005",
++                            "clp02": "1",
++                            "chargeCents": "7500",
++                            "paidCents": "5000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120005",
++                            "clp08": "11",
++                            "clp09": "1",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "7500",
++                                "paidCents": "5000",
++                                "revenueCode": null,
++                                "units": "1",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-07-06",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"2500"},
++                                "refs": [],
++                                "amounts": [["B6","5000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          }
++                        ],
++                        "plb": [
++                          {
++                            "provider": "9907993270",
++                            "fiscalPeriodDate": "2026-12-31",
++                            "code": "FB",
++                            "reference": "SYNCCNLED120002",
++                            "amountCents": "-10000"
++                          }
++                        ],
++                        "balance": {
++                          "claimsPaidCents": "-5000",
++                          "plbTotalCents": "-10000",
++                          "paymentCents": "5000",
++                          "differenceCents": "0",
++                          "balanced": true,
++                          "claimsBalanced": true
++                        }
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        "parse": {
++          "outcome": "loaded",
++          "documentErrors": [],
++          "transactions": [
++            {
++              "interchange": 0,
++              "group": 0,
++              "transaction": 0,
++              "isa13": "060120005",
++              "gs06": "60120005",
++              "st02": "0001",
++              "status": "loaded",
++              "heldReasons": [],
++              "dedupKey": {
++                "senderId": "SYNTHSENDER",
++                "payeeId": "9907993270",
++                "isa13": "060120005",
++                "trn02": "SYNEFTLED12005",
++                "bpr02Cents": "5000"
++              },
++              "bprMethod": "ACH",
++              "bprHandling": "C",
++              "bpr16Date": "2026-08-03",
++              "payerName": "SYNTHETIC PAYER L",
++              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
++              "balance": {
++                "claimsPaidCents": "-5000",
++                "plbTotalCents": "-10000",
++                "paymentCents": "5000",
++                "differenceCents": "0",
++                "balanced": true
++              },
++              "counts": {"claims":2,"lines":2,"reversals":1,"plbItems":1},
++              "claims": [
++                {
++                  "index": 0,
++                  "segmentIndex": 17,
++                  "patientControlNumber": "SYNPCNLED12001",
++                  "payerClaimControlNumber": "SYNCCNLED120002",
++                  "status": "22",
++                  "chargeCents": "-15000",
++                  "paidCents": "-10000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "8",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-03-09",
++                  "serviceTo": "2026-03-09",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 22,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "-15000",
++                      "paidCents": "-10000",
++                      "units": "2",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-03-09",
++                      "serviceTo": "2026-03-09",
++                      "lineAllowedCents": "-10000",
++                      "observedAllowed": {"cents":"-10000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "-5000",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 24
++                        }
++                      ]
++                    }
++                  ]
++                },
++                {
++                  "index": 1,
++                  "segmentIndex": 26,
++                  "patientControlNumber": "SYNPCNLED12005",
++                  "payerClaimControlNumber": "SYNCCNLED120005",
++                  "status": "1",
++                  "chargeCents": "7500",
++                  "paidCents": "5000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "1",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-07-06",
++                  "serviceTo": "2026-07-06",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 30,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "7500",
++                      "paidCents": "5000",
++                      "units": "1",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-07-06",
++                      "serviceTo": "2026-07-06",
++                      "lineAllowedCents": "5000",
++                      "observedAllowed": {"cents":"5000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "2500",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 32
++                        }
++                      ]
++                    }
++                  ]
++                }
++              ],
++              "plb": [
++                {
++                  "segmentIndex": 34,
++                  "providerId": "9907993270",
++                  "fiscalPeriodDate": "2026-12-31",
++                  "code": "FB",
++                  "reference": "SYNCCNLED120002",
++                  "amountCents": "-10000",
++                  "category": "forward_balance",
++                  "counted": false
++                }
++              ],
++              "unknownCodes": []
++            }
++          ],
++          "receipt": {
++            "transactions": 1,
++            "claims": 2,
++            "lines": 2,
++            "reversals": 1,
++            "plbTotalCents": "-10000",
++            "held": [],
++            "unknownCodes": [],
++            "loaded": {"transactions":1,"claims":2,"lines":2}
++          }
++        }
++      }
++    },
++    {
++      "path": "reversal-in-check-eft-export.csv",
++      "sha256": "522e20be408b4ca2305d5cbcde113096f13b58558e1c3b1e40c91b6b7f1d37a1",
++      "bytes": 143,
++      "kind": "csv",
++      "description": "The bank export of that check: one deposit of 50.00."
++    },
++    {
++      "path": "forward-balance-withheld.835",
++      "sha256": "8838a76cf767386c26c5a67e48c399820c9fbe4c457bf4d6888fa23fd266490c",
++      "bytes": 948,
++      "kind": "x12",
++      "description": "A later check withholding the forward balance (PLB FB 100.00 naming SYNCCNLED120002) from another patient's claim paying 150.00: BPR02 50.00.",
++      "x12": {
++        "oracle": {
++          "valid": true,
++          "rejections": [],
++          "summary": {
++            "format": "tp-oracle-835/1",
++            "bom": false,
++            "interchanges": [
++              {
++                "isa06": "SYNTHSENDER",
++                "isa08": "SYNTHRECEIVER",
++                "isa09": "260907",
++                "isa12": "00501",
++                "isa13": "060120006",
++                "isa15": "T",
++                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
++                "iea01": "1",
++                "iea02": "060120006",
++                "groups": [
++                  {
++                    "gs01": "HP",
++                    "gs02": "SYNTH",
++                    "gs03": "SYNTHRCV",
++                    "gs04": "2026-09-07",
++                    "gs06": "60120006",
++                    "gs08": "005010X221A1",
++                    "ge01": "1",
++                    "ge02": "60120006",
++                    "transactions": [
++                      {
++                        "st01": "835",
++                        "st02": "0001",
++                        "se01": "24",
++                        "se02": "0001",
++                        "segmentCount": 24,
++                        "bpr": {
++                          "handling": "C",
++                          "amountCents": "5000",
++                          "creditDebit": "C",
++                          "method": "ACH",
++                          "format": "CCP",
++                          "date": "2026-09-07"
++                        },
++                        "trn": {"trace":"SYNEFTLED12006","originator":"1SYN00000L","supplemental":null},
++                        "currency": null,
++                        "refs": [],
++                        "productionDate": "2026-09-06",
++                        "payer": {
++                          "name": "SYNTHETIC PAYER L",
++                          "idQualifier": null,
++                          "id": null,
++                          "refs": [["2U","SYNPAYERL"]]
++                        },
++                        "payee": {
++                          "name": "SYNTHETIC THERAPY GROUP 01",
++                          "idQualifier": "XX",
++                          "id": "9907993270",
++                          "refs": [["TJ","996706892"]]
++                        },
++                        "claims": [
++                          {
++                            "lx": "1",
++                            "clp01": "SYNPCNLED12006",
++                            "clp02": "1",
++                            "chargeCents": "22500",
++                            "paidCents": "15000",
++                            "patientResponsibilityCents": "0",
++                            "clp06": "12",
++                            "clp07": "SYNCCNLED120006",
++                            "clp08": "11",
++                            "clp09": "1",
++                            "cas": {},
++                            "refs": [["CE","SYNPLAN-FIX-LED"]],
++                            "dates": [],
++                            "amounts": [],
++                            "lines": [
++                              {
++                                "procedure": "HC:97110",
++                                "chargeCents": "22500",
++                                "paidCents": "15000",
++                                "revenueCode": null,
++                                "units": "3",
++                                "originalProcedure": null,
++                                "originalUnits": null,
++                                "dates": [
++                                  {
++                                    "qualifier": "472",
++                                    "date": "2026-08-10",
++                                    "format": null,
++                                    "period": null
++                                  }
++                                ],
++                                "cas": {"CO-45":"7500"},
++                                "refs": [],
++                                "amounts": [["B6","15000"]],
++                                "remarks": [],
++                                "differenceCents": "0"
++                              }
++                            ],
++                            "balance": {
++                              "claimDifferenceCents": "0",
++                              "lineChargeDifferenceCents": "0",
++                              "balanced": true
++                            }
++                          }
++                        ],
++                        "plb": [
++                          {
++                            "provider": "9907993270",
++                            "fiscalPeriodDate": "2026-12-31",
++                            "code": "FB",
++                            "reference": "SYNCCNLED120002",
++                            "amountCents": "10000"
++                          }
++                        ],
++                        "balance": {
++                          "claimsPaidCents": "15000",
++                          "plbTotalCents": "10000",
++                          "paymentCents": "5000",
++                          "differenceCents": "0",
++                          "balanced": true,
++                          "claimsBalanced": true
++                        }
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        "parse": {
++          "outcome": "loaded",
++          "documentErrors": [],
++          "transactions": [
++            {
++              "interchange": 0,
++              "group": 0,
++              "transaction": 0,
++              "isa13": "060120006",
++              "gs06": "60120006",
++              "st02": "0001",
++              "status": "loaded",
++              "heldReasons": [],
++              "dedupKey": {
++                "senderId": "SYNTHSENDER",
++                "payeeId": "9907993270",
++                "isa13": "060120006",
++                "trn02": "SYNEFTLED12006",
++                "bpr02Cents": "5000"
++              },
++              "bprMethod": "ACH",
++              "bprHandling": "C",
++              "bpr16Date": "2026-09-07",
++              "payerName": "SYNTHETIC PAYER L",
++              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
++              "balance": {
++                "claimsPaidCents": "15000",
++                "plbTotalCents": "10000",
++                "paymentCents": "5000",
++                "differenceCents": "0",
++                "balanced": true
++              },
++              "counts": {"claims":1,"lines":1,"reversals":0,"plbItems":1},
++              "claims": [
++                {
++                  "index": 0,
++                  "segmentIndex": 17,
++                  "patientControlNumber": "SYNPCNLED12006",
++                  "payerClaimControlNumber": "SYNCCNLED120006",
++                  "status": "1",
++                  "chargeCents": "22500",
++                  "paidCents": "15000",
++                  "patientResponsibilityCents": "0",
++                  "filingIndicator": "12",
++                  "facilityCode": "11",
++                  "frequencyCode": "1",
++                  "planRef": "SYNPLAN-FIX-LED",
++                  "serviceFrom": "2026-08-10",
++                  "serviceTo": "2026-08-10",
++                  "allowedCents": null,
++                  "adjustments": [],
++                  "lines": [
++                    {
++                      "lineNo": 1,
++                      "segmentIndex": 21,
++                      "procedureQualifier": "HC",
++                      "procedureCode": "97110",
++                      "modifiers": [],
++                      "revenueCode": null,
++                      "chargeCents": "22500",
++                      "paidCents": "15000",
++                      "units": "3",
++                      "originalUnits": null,
++                      "serviceFrom": "2026-08-10",
++                      "serviceTo": "2026-08-10",
++                      "lineAllowedCents": "15000",
++                      "observedAllowed": {"cents":"15000","basis":"amt_b6","allocatedFromClaim":false},
++                      "patientShareCents": "0",
++                      "adjustments": [
++                        {
++                          "group": "CO",
++                          "reason": "45",
++                          "amountCents": "7500",
++                          "quantity": null,
++                          "position": 1,
++                          "segmentIndex": 23
++                        }
++                      ]
++                    }
++                  ]
++                }
++              ],
++              "plb": [
++                {
++                  "segmentIndex": 25,
++                  "providerId": "9907993270",
++                  "fiscalPeriodDate": "2026-12-31",
++                  "code": "FB",
++                  "reference": "SYNCCNLED120002",
++                  "amountCents": "10000",
++                  "category": "forward_balance",
++                  "counted": false
++                }
++              ],
++              "unknownCodes": []
++            }
++          ],
++          "receipt": {
++            "transactions": 1,
++            "claims": 1,
++            "lines": 1,
++            "reversals": 0,
++            "plbTotalCents": "10000",
++            "held": [],
++            "unknownCodes": [],
++            "loaded": {"transactions":1,"claims":1,"lines":1}
++          }
++        }
++      }
++    },
++    {
++      "path": "adjustments-alone.835",
++      "sha256": "2697b001c60ee2427d7d33e18e441502276b0801d48c11abd24c9a47c232705c",
++      "bytes": 700,
++      "kind": "x12",
++      "description": "The same two adjustments with no claim (PLB FB -100.00 and 72 -100.00 naming SYNCCNLED120002): BPR02 200.00.",
++      "x12": {
++        "oracle": {
++          "valid": true,
++          "rejections": [],
++          "summary": {
++            "format": "tp-oracle-835/1",
++            "bom": false,
++            "interchanges": [
++              {
++                "isa06": "SYNTHSENDER",
++                "isa08": "SYNTHRECEIVER",
++                "isa09": "260803",
++                "isa12": "00501",
++                "isa13": "060120007",
++                "isa15": "T",
++                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
++                "iea01": "1",
++                "iea02": "060120007",
++                "groups": [
++                  {
++                    "gs01": "HP",
++                    "gs02": "SYNTH",
++                    "gs03": "SYNTHRCV",
++                    "gs04": "2026-08-03",
++                    "gs06": "60120007",
++                    "gs08": "005010X221A1",
++                    "ge01": "1",
++                    "ge02": "60120007",
++                    "transactions": [
++                      {
++                        "st01": "835",
++                        "st02": "0001",
++                        "se01": "15",
++                        "se02": "0001",
++                        "segmentCount": 15,
++                        "bpr": {
++                          "handling": "C",
++                          "amountCents": "20000",
++                          "creditDebit": "C",
++                          "method": "ACH",
++                          "format": "CCP",
++                          "date": "2026-08-03"
++                        },
++                        "trn": {"trace":"SYNEFTLED12007","originator":"1SYN00000L","supplemental":null},
++                        "currency": null,
++                        "refs": [],
++                        "productionDate": "2026-08-02",
++                        "payer": {
++                          "name": "SYNTHETIC PAYER L",
++                          "idQualifier": null,
++                          "id": null,
++                          "refs": [["2U","SYNPAYERL"]]
++                        },
++                        "payee": {
++                          "name": "SYNTHETIC THERAPY GROUP 01",
++                          "idQualifier": "XX",
++                          "id": "9907993270",
++                          "refs": [["TJ","996706892"]]
++                        },
++                        "claims": [],
++                        "plb": [
++                          {
++                            "provider": "9907993270",
++                            "fiscalPeriodDate": "2026-12-31",
++                            "code": "FB",
++                            "reference": "SYNCCNLED120002",
++                            "amountCents": "-10000"
++                          },
++                          {
++                            "provider": "9907993270",
++                            "fiscalPeriodDate": "2026-12-31",
++                            "code": "72",
++                            "reference": "SYNCCNLED120002",
++                            "amountCents": "-10000"
++                          }
++                        ],
++                        "balance": {
++                          "claimsPaidCents": "0",
++                          "plbTotalCents": "-20000",
++                          "paymentCents": "20000",
++                          "differenceCents": "0",
++                          "balanced": true,
++                          "claimsBalanced": true
++                        }
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        "parse": {
++          "outcome": "loaded",
++          "documentErrors": [],
++          "transactions": [
++            {
++              "interchange": 0,
++              "group": 0,
++              "transaction": 0,
++              "isa13": "060120007",
++              "gs06": "60120007",
++              "st02": "0001",
++              "status": "loaded",
++              "heldReasons": [],
++              "dedupKey": {
++                "senderId": "SYNTHSENDER",
++                "payeeId": "9907993270",
++                "isa13": "060120007",
++                "trn02": "SYNEFTLED12007",
++                "bpr02Cents": "20000"
++              },
++              "bprMethod": "ACH",
++              "bprHandling": "C",
++              "bpr16Date": "2026-08-03",
++              "payerName": "SYNTHETIC PAYER L",
++              "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
++              "balance": {
++                "claimsPaidCents": "0",
++                "plbTotalCents": "-20000",
++                "paymentCents": "20000",
++                "differenceCents": "0",
++                "balanced": true
++              },
++              "counts": {"claims":0,"lines":0,"reversals":0,"plbItems":2},
++              "claims": [],
++              "plb": [
++                {
++                  "segmentIndex": 16,
++                  "providerId": "9907993270",
++                  "fiscalPeriodDate": "2026-12-31",
++                  "code": "FB",
++                  "reference": "SYNCCNLED120002",
++                  "amountCents": "-10000",
++                  "category": "forward_balance",
++                  "counted": false
++                },
++                {
++                  "segmentIndex": 16,
++                  "providerId": "9907993270",
++                  "fiscalPeriodDate": "2026-12-31",
++                  "code": "72",
++                  "reference": "SYNCCNLED120002",
++                  "amountCents": "-10000",
++                  "category": "authorized_return",
++                  "counted": true
++                }
++              ],
++              "unknownCodes": []
++            }
++          ],
++          "receipt": {
++            "transactions": 1,
++            "claims": 0,
++            "lines": 0,
++            "reversals": 0,
++            "plbTotalCents": "-20000",
++            "held": [],
++            "unknownCodes": [],
++            "loaded": {"transactions":1,"claims":0,"lines":0}
++          }
++        }
++      }
++    }
++  ],
++  "generated": [],
++  "uploads": [],
++  "scenario": {
++    "contract": {
++      "plan": "SYNPLAN-FIX-LED",
++      "method": "FIXED_SCHEDULE",
++      "schedule": [{"code":"97110","amountCents":"5000"}]
++    },
++    "caseLine": {"file":"original.835","transaction":0,"claim":0,"line":0},
++    "packet": "submitted for the 97110 line before the adjusted remittance arrives",
++    "proofLevel": "deposited",
++    "reversal": {
++      "reverses": "adjusted.835 transaction 0 claim 1",
++      "offsetBy": {"reversal.835":"FB","reversal-refunded.835":"72","reversal-in-check.835":"FB"}
++    }
++  },
++  "outcome": {
++    "entries": [
++      {"stage":"approved","amountCents":"3000"},
++      {"stage":"posted","amountCents":"3000"},
++      {"stage":"deposited","amountCents":"3000"},
++      {"stage":"recouped","amountCents":"-3000","evidence":"reversal.835 transaction 0 claim 0"}
++    ],
++    "recoveredCents": "0",
++    "cash": {
++      "reversalPaidCents": "-10000",
++      "adjustmentCents": "-10000",
++      "paymentCents": "0",
++      "inCheckPaymentCents": "5000"
++    },
++    "adjustment": "recorded; never an entry or a match, and no posted or deposited entry is written",
++    "refunded": "the same entries as reversal.835",
++    "inCheck": "the same entries; its 50.00 deposit matches its remittance and deposits nothing for the case line",
++    "withheld": "takes nothing back again",
++    "alone": "loaded while the approval stands, the adjustments write no entry and no match",
++    "case": "reopened with a note; the owner is notified"
++  },
++  "notes": []
++}
+diff --git a/fixtures/synthetic/LED-12/forward-balance-withheld.835 b/fixtures/synthetic/LED-12/forward-balance-withheld.835
+new file mode 100644
+index 0000000..d494ef6
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/forward-balance-withheld.835
+@@ -0,0 +1 @@
++ISA*00*          *00*          *ZZ*SYNTHSENDER    *ZZ*SYNTHRECEIVER  *260907*0915*^*00501*060120006*0*T*:~GS*HP*SYNTH*SYNTHRCV*20260907*0915*60120006*X*005010X221A1~ST*835*0001~BPR*C*50.00*C*ACH*CCP*01*994153239*DA*SYNACCT674127*1SYN00000L**01*990352806*DA*SYNACCT869666*20260907~TRN*1*SYNEFTLED12006*1SYN00000L~DTM*405*20260906~N1*PR*SYNTHETIC PAYER L~N3*630 SYNTHETIC PAYER WAY~N4*SYNTHVILLE*NC*00013~REF*2U*SYNPAYERL~PER*BL*SYNTHETIC EDI HELP DESK*TE*5555553605~N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9907993270~N3*669 SYNTHETIC CLINIC ROAD~N4*SYNTHTOWN*NC*00011~REF*TJ*996706892~LX*1~CLP*SYNPCNLED12006*1*225.00*150.00*0.00*12*SYNCCNLED120006*11*1~NM1*QC*1*SYNTHLAST7AECJT*SYNTHFIRST639****MI*SYNMBR89930926~NM1*82*1*SYNTHPTDNEY*SYNTHETIC****XX*9911707955~REF*CE*SYNPLAN-FIX-LED~SVC*HC:97110*225.00*150.00**3~DTM*472*20260810~CAS*CO*45*75.00~AMT*B6*150.00~PLB*9907993270*20261231*FB:SYNCCNLED120002*100.00~SE*24*0001~GE*1*60120006~IEA*1*060120006~
+\ No newline at end of file
+diff --git a/fixtures/synthetic/LED-12/original.835 b/fixtures/synthetic/LED-12/original.835
+new file mode 100644
+index 0000000..abde47f
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/original.835
+@@ -0,0 +1 @@
++ISA*00*          *00*          *ZZ*SYNTHSENDER    *ZZ*SYNTHRECEIVER  *260406*0915*^*00501*060120001*0*T*:~GS*HP*SYNTH*SYNTHRCV*20260406*0915*60120001*X*005010X221A1~ST*835*0001~BPR*C*70.00*C*ACH*CCP*01*992905992*DA*SYNACCT097418*1SYN00000L**01*996183679*DA*SYNACCT000089*20260406~TRN*1*SYNEFTLED12001*1SYN00000L~DTM*405*20260405~N1*PR*SYNTHETIC PAYER L~N3*630 SYNTHETIC PAYER WAY~N4*SYNTHVILLE*NC*00013~REF*2U*SYNPAYERL~PER*BL*SYNTHETIC EDI HELP DESK*TE*5555553605~N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9907993270~N3*669 SYNTHETIC CLINIC ROAD~N4*SYNTHTOWN*NC*00011~REF*TJ*996706892~LX*1~CLP*SYNPCNLED12001*1*150.00*70.00*0.00*12*SYNCCNLED120001*11*1~NM1*QC*1*SYNTHLASTZY48JR*SYNTHFIRSTELY****MI*SYNMBR75190354~NM1*82*1*SYNTHPT2FTL*SYNTHETIC****XX*9906267726~REF*CE*SYNPLAN-FIX-LED~SVC*HC:97110*150.00*70.00**2~DTM*472*20260309~CAS*CO*45*80.00~AMT*B6*70.00~SE*23*0001~GE*1*60120001~IEA*1*060120001~
+\ No newline at end of file
+diff --git a/fixtures/synthetic/LED-12/posting-export.csv b/fixtures/synthetic/LED-12/posting-export.csv
+new file mode 100644
+index 0000000..7ce6581
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/posting-export.csv
+@@ -0,0 +1,2 @@
++Post Date,Check/EFT #,Payer,Claim Ref,CPT,DOS,Paid Amount,Batch,Payee ID
++06/10/2026,SYNEFTLED12002,SYNTHETIC PAYER L,,,,30.00,SYNBATCH-1201,SYNTHSENDER
+diff --git a/fixtures/synthetic/LED-12/reversal-in-check-eft-export.csv b/fixtures/synthetic/LED-12/reversal-in-check-eft-export.csv
+new file mode 100644
+index 0000000..52b396f
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/reversal-in-check-eft-export.csv
+@@ -0,0 +1,2 @@
++Date,Description,Trace Number,Amount,Batch Reference,Originator ID
++2026-08-04,SYNTHETIC PAYER L HCCLAIMPMT,SYNEFTLED12005,50.00,,SYNTHSENDER
+diff --git a/fixtures/synthetic/LED-12/reversal-in-check.835 b/fixtures/synthetic/LED-12/reversal-in-check.835
+new file mode 100644
+index 0000000..bba87a8
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/reversal-in-check.835
+@@ -0,0 +1 @@
++ISA*00*          *00*          *ZZ*SYNTHSENDER    *ZZ*SYNTHRECEIVER  *260803*0915*^*00501*060120005*0*T*:~GS*HP*SYNTH*SYNTHRCV*20260803*0915*60120005*X*005010X221A1~ST*835*0001~BPR*C*50.00*C*ACH*CCP*01*997187701*DA*SYNACCT885479*1SYN00000L**01*999139471*DA*SYNACCT731541*20260803~TRN*1*SYNEFTLED12005*1SYN00000L~DTM*405*20260802~N1*PR*SYNTHETIC PAYER L~N3*630 SYNTHETIC PAYER WAY~N4*SYNTHVILLE*NC*00013~REF*2U*SYNPAYERL~PER*BL*SYNTHETIC EDI HELP DESK*TE*5555553605~N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9907993270~N3*669 SYNTHETIC CLINIC ROAD~N4*SYNTHTOWN*NC*00011~REF*TJ*996706892~LX*1~CLP*SYNPCNLED12001*22*-150.00*-100.00*0.00*12*SYNCCNLED120002*11*8~NM1*QC*1*SYNTHLASTZY48JR*SYNTHFIRSTELY****MI*SYNMBR75190354~NM1*82*1*SYNTHPTCQQS*SYNTHETIC****XX*9982047034~REF*CE*SYNPLAN-FIX-LED~REF*F8*SYNCCNLED120001~SVC*HC:97110*-150.00*-100.00**2~DTM*472*20260309~CAS*CO*45*-50.00~AMT*B6*-100.00~CLP*SYNPCNLED12005*1*75.00*50.00*0.00*12*SYNCCNLED120005*11*1~NM1*QC*1*SYNTHLASTUC52HP*SYNTHFIRST35L****MI*SYNMBR15124558~NM1*82*1*SYNTHPTGU39*SYNTHETIC****XX*9926688059~REF*CE*SYNPLAN-FIX-LED~SVC*HC:97110*75.00*50.00**1~DTM*472*20260706~CAS*CO*45*25.00~AMT*B6*50.00~PLB*9907993270*20261231*FB:SYNCCNLED120002*-100.00~SE*33*0001~GE*1*60120005~IEA*1*060120005~
+\ No newline at end of file
+diff --git a/fixtures/synthetic/LED-12/reversal-refunded.835 b/fixtures/synthetic/LED-12/reversal-refunded.835
+new file mode 100644
+index 0000000..5ecd2bd
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/reversal-refunded.835
+@@ -0,0 +1 @@
++ISA*00*          *00*          *ZZ*SYNTHSENDER    *ZZ*SYNTHRECEIVER  *260803*0915*^*00501*060120004*0*T*:~GS*HP*SYNTH*SYNTHRCV*20260803*0915*60120004*X*005010X221A1~ST*835*0001~BPR*H*0.00*C*NON************20260803~TRN*1*SYNEFTLED12004*1SYN00000L~DTM*405*20260802~N1*PR*SYNTHETIC PAYER L~N3*630 SYNTHETIC PAYER WAY~N4*SYNTHVILLE*NC*00013~REF*2U*SYNPAYERL~PER*BL*SYNTHETIC EDI HELP DESK*TE*5555553605~N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9907993270~N3*669 SYNTHETIC CLINIC ROAD~N4*SYNTHTOWN*NC*00011~REF*TJ*996706892~LX*1~CLP*SYNPCNLED12001*22*-150.00*-100.00*0.00*12*SYNCCNLED120002*11*8~NM1*QC*1*SYNTHLASTZY48JR*SYNTHFIRSTELY****MI*SYNMBR75190354~NM1*82*1*SYNTHPTCQQS*SYNTHETIC****XX*9982047034~REF*CE*SYNPLAN-FIX-LED~REF*F8*SYNCCNLED120001~SVC*HC:97110*-150.00*-100.00**2~DTM*472*20260309~CAS*CO*45*-50.00~AMT*B6*-100.00~PLB*9907993270*20261231*72:SYNCCNLED120002*-100.00~SE*25*0001~GE*1*60120004~IEA*1*060120004~
+\ No newline at end of file
+diff --git a/fixtures/synthetic/LED-12/reversal.835 b/fixtures/synthetic/LED-12/reversal.835
+new file mode 100644
+index 0000000..9f85ada
+--- /dev/null
++++ b/fixtures/synthetic/LED-12/reversal.835
+@@ -0,0 +1 @@
++ISA*00*          *00*          *ZZ*SYNTHSENDER    *ZZ*SYNTHRECEIVER  *260803*0915*^*00501*060120003*0*T*:~GS*HP*SYNTH*SYNTHRCV*20260803*0915*60120003*X*005010X221A1~ST*835*0001~BPR*H*0.00*C*NON************20260803~TRN*1*SYNEFTLED12003*1SYN00000L~DTM*405*20260802~N1*PR*SYNTHETIC PAYER L~N3*630 SYNTHETIC PAYER WAY~N4*SYNTHVILLE*NC*00013~REF*2U*SYNPAYERL~PER*BL*SYNTHETIC EDI HELP DESK*TE*5555553605~N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9907993270~N3*669 SYNTHETIC CLINIC ROAD~N4*SYNTHTOWN*NC*00011~REF*TJ*996706892~LX*1~CLP*SYNPCNLED12001*22*-150.00*-100.00*0.00*12*SYNCCNLED120002*11*8~NM1*QC*1*SYNTHLASTZY48JR*SYNTHFIRSTELY****MI*SYNMBR75190354~NM1*82*1*SYNTHPTCQQS*SYNTHETIC****XX*9982047034~REF*CE*SYNPLAN-FIX-LED~REF*F8*SYNCCNLED120001~SVC*HC:97110*-150.00*-100.00**2~DTM*472*20260309~CAS*CO*45*-50.00~AMT*B6*-100.00~PLB*9907993270*20261231*FB:SYNCCNLED120002*-100.00~SE*25*0001~GE*1*60120003~IEA*1*060120003~
+\ No newline at end of file
+diff --git a/fixtures/synthetic/LED-13/expected.json b/fixtures/synthetic/LED-13/expected.json
+new file mode 100644
+index 0000000..53b9657
+--- /dev/null
++++ b/fixtures/synthetic/LED-13/expected.json
+@@ -0,0 +1,23 @@
++{
++  "case": "LED-13",
++  "module": "LED",
++  "title": "Later recoupment",
++  "assertion": "Negative event against net recovery",
++  "synthetic": true,
++  "completesIn": 9,
++  "assertedBy": [
++    "apps/worker/src/reconcile/ledger.db.test.ts",
++    "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
++    "packages/ledger/src/totals.test.ts",
++    "apps/worker/src/reconcile/chain.db.test.ts",
++    "apps/web/src/lib/routes/reconciliation-routes.db.test.ts"
++  ],
++  "codeListRelease": null,
++  "noFileReason": "LED-06: its recoupment after the deposit is the later recoupment; no file of its own.",
++  "files": [],
++  "generated": [],
++  "uploads": [],
++  "scenario": null,
++  "outcome": null,
++  "notes": []
++}
+diff --git a/packages/ledger/src/totals.test.ts b/packages/ledger/src/totals.test.ts
+index 3952429..56b2e77 100644
+--- a/packages/ledger/src/totals.test.ts
++++ b/packages/ledger/src/totals.test.ts
+@@ -187,6 +187,23 @@ describe('ledger properties (PRD 18: property tests on every pure function)', ()
+     );
+   });
+ 
++  it('a later recoupment is a negative event against net recovery: no earlier period changes, and its own period and the whole ledger fall by exactly its amount (LED-13)', () => {
++    // Calendar dates of 2026 as the ledger stores them (zero-padded, so their order is the text's).
++    const day = fc.tuple(fc.integer({ min: 1, max: 12 }), fc.integer({ min: 1, max: 28 })).map(([month, date]) => `2026-${String(month).padStart(2, '0')}-${String(date).padStart(2, '0')}`);
++    fc.assert(
++      fc.property(fc.array(fc.tuple(counted, amount, day), { maxLength: 12 }), amount, day, day, proofLevel, (items, value, a, b, level) => {
++        fc.pre(a !== b);
++        const [until, on] = a < b ? [a, b] : [b, a];
++        const base = items.map(([stage, figure, at]) => make(stage, figure, { on: at }));
++        const all = [...base, make('recouped', value, { on })];
++        const totalsOf = (entries: readonly LedgerEntry[], from: string, to: string) => ledgerTotals(periodEntries(entries, from, to), level, entriesById(entries));
++        expect(totalsOf(all, '2026-01-01', until)).toEqual(totalsOf(base, '2026-01-01', until));
++        expect(totalsOf(all, on, '2026-12-31').recoveredCents).toBe(totalsOf(base, on, '2026-12-31').recoveredCents - value);
++        expect(ledgerTotals(all, level).recoveredCents).toBe(ledgerTotals(base, level).recoveredCents - value);
++      }),
++    );
++  });
++
+   it('nothing is recovered without a posted or deposited entry (the flagged-as-recovered shortcut)', () => {
+     fc.assert(
+       fc.property(fc.array(fc.tuple(fc.constantFrom<CountedStage>('approved', 'recouped', 'interest'), amount), { maxLength: 10 }), proofLevel, (items, level) => {
+diff --git a/packages/synth/src/cases/matrix.ts b/packages/synth/src/cases/matrix.ts
+index 05d4c86..3f6d454 100644
+--- a/packages/synth/src/cases/matrix.ts
++++ b/packages/synth/src/cases/matrix.ts
+@@ -137,6 +137,8 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
+   { id: 'LED-09', title: 'Partial posting at check level', assertion: 'Pro-rata allocation flagged' },
+   { id: 'LED-10', title: 'Direct UPDATE or DELETE by the app role', assertion: 'Fails' },
+   { id: 'LED-11', title: 'ROI statement recompute', assertion: 'Equals sum of entries' },
++  { id: 'LED-12', title: 'Reversal with a provider-level adjustment', assertion: 'No cash change: no `posted` or `deposited` entry, the adjustment never an entry; the reversal `recouped` once, at once, for what the reversed claim approved' },
++  { id: 'LED-13', title: 'Later recoupment', assertion: 'Negative event against net recovery' },
+   { id: 'SEC-01', title: 'Every PHI table has a forced policy', assertion: 'Catalog test passes; new table without one fails' },
+   { id: 'SEC-02', title: 'Cross-tenant read and write on every table', assertion: 'Zero rows; refused' },
+   { id: 'SEC-03', title: 'Firm user after grant expiry', assertion: 'Denied on the next request' },
+diff --git a/packages/synth/src/cases/registry.ts b/packages/synth/src/cases/registry.ts
+index c811ab1..c2f5c9e 100644
+--- a/packages/synth/src/cases/registry.ts
++++ b/packages/synth/src/cases/registry.ts
+@@ -231,6 +231,15 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
+   },
+   'LED-10': none(9, 'A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts']),
+   'LED-11': none(9, 'Recomputes the ROI statement from the entries the LED-02 to LED-09 scenarios create; no file of its own.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/roi.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'packages/ledger/src/statement.test.ts']),
++  'LED-12': { completesIn: 9, build: workflow.led12, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts'] },
++  // CO-09's LED-13 is LED-06's recoupment after the deposit (reconciliation-001, section 18 and item 15).
++  'LED-13': none(9, 'LED-06: its recoupment after the deposit is the later recoupment; no file of its own.', [
++    'apps/worker/src/reconcile/ledger.db.test.ts',
++    'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
++    'packages/ledger/src/totals.test.ts',
++    'apps/worker/src/reconcile/chain.db.test.ts',
++    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
++  ]),
+   'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
+   'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests.db.test.ts']),
+   'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
+diff --git a/packages/synth/src/cases/workflow.ts b/packages/synth/src/cases/workflow.ts
+index fd6bb93..1c404a8 100644
+--- a/packages/synth/src/cases/workflow.ts
++++ b/packages/synth/src/cases/workflow.ts
+@@ -3,7 +3,7 @@
+  * Their scenarios use fixed-schedule contracts so expected amounts, variances and ledger amounts can
+  * be stated now; the milestone named in each expected.json asserts them.
+  */
+-import { centsToString, cents, formatCents, negateCents, subtractCents, sumCents } from '@tp/money';
++import { type Cents, centsToString, cents, formatCents, negateCents, subtractCents, sumCents } from '@tp/money';
+ 
+ import { type CalendarDate, addDays, calendarDate } from '../core/dates';
+ import { prettyJson } from '../core/json';
+@@ -328,6 +328,65 @@ export function led09(b: CaseBuilder): void {
+   });
+ }
+ 
++/**
++ * LED-12 (CO-09): a reversal that a provider-level adjustment offsets, so the pair moves no cash. LED-06's
++ * recovery (30.00 approved, posted and deposited, proved by deposit); then a later remittance reverses the
++ * corrected claim (CLP02 22, -100.00) and offsets the reversal with a PLB of -100.00 naming that claim: a
++ * forward balance (FB, BPR02 0.00), the provider's refund acknowledged (72, BPR02 0.00), or the forward
++ * balance inside a check that pays another patient's claim (BPR02 50.00, deposited). A later check then
++ * withholds the forward balance (FB 100.00). The ledger takes back what the reversed claim approved once,
++ * at once (PRD 13, Recoupments and reversals; docs/adr/0042), and no adjustment is ever an entry.
++ */
++export function led12(b: CaseBuilder): void {
++  const pair = recoveryPair(b, 'ACH');
++  const reference = pair.corrected.payerClaimControlNumber;
++  b.add835('original.835', pair.originalFile, 'The original payment (a case line).');
++  b.add835('adjusted.835', pair.adjustedFile, 'The adjusted remittance paying the difference.');
++  b.addFile('posting-export.csv', postingExport([{ postedOn: addDays(pair.later, 2), checkOrTrace: pair.trace, payerName: pair.base.payer.name, amount: pair.check, batch: 'SYNBATCH-1201' }]), 'csv', 'The posting export for the adjusted payment.');
++  b.addFile('eft-export.csv', eftExport([{ depositedOn: addDays(pair.later, 1), description: `${pair.base.payer.name} HCCLAIMPMT`, trace: pair.trace, amount: pair.check }]), 'csv', 'The bank export for the adjusted payment.');
++  const reversedOn = calendarDate(2026, 8, 3);
++  const reversal = reversalOf(pair.corrected);
++  // A negative PLB amount adds to the payment (docs/adr/0021): the reversal's -100.00 offset exactly.
++  const offset = negateCents(pair.corrected.paid);
++  const plb = (code: 'FB' | '72', amount: Cents) => [{ providerId: pair.base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code, reference, amount }] }];
++  const forward = oneRemittance(b, { ...pair.base, paid: reversedOn }, [reversal], 3, { method: 'NON', providerAdjustments: plb('FB', offset) });
++  b.add835('reversal.835', file(b, forward, 3, reversedOn), `The corrected claim (${reference}) reversed, -100.00, and the balance carried forward by a PLB FB of -100.00 naming it: BPR02 0.00, no payment.`);
++  const refunded = oneRemittance(b, { ...pair.base, paid: reversedOn }, [reversal], 4, { method: 'NON', providerAdjustments: plb('72', offset) });
++  b.add835('reversal-refunded.835', file(b, refunded, 4, reversedOn), `The corrected claim (${reference}) reversed, -100.00, against the refund the provider sent (PLB 72 -100.00 naming it): BPR02 0.00, no payment.`);
++  const other = therapyClaim(b.world, { caseId: b.info.id, n: 5, plan: 'SYNPLAN-FIX-LED', lines: [allowedLine(b, calendarDate(2026, 7, 6), 1, 5000n, 'none')] });
++  const inCheck = oneRemittance(b, { ...pair.base, paid: reversedOn }, [reversal, other], 5, { method: 'ACH', providerAdjustments: plb('FB', offset) });
++  b.add835('reversal-in-check.835', file(b, inCheck, 5, reversedOn), "The same reversal and forward balance beside another patient's claim paying 50.00: BPR02 50.00, that claim's payment.");
++  b.addFile('reversal-in-check-eft-export.csv', eftExport([{ depositedOn: addDays(reversedOn, 1), description: `${pair.base.payer.name} HCCLAIMPMT`, trace: traceNumber(b.info.id, 5), amount: other.paid }]), 'csv', 'The bank export of that check: one deposit of 50.00.');
++  const withheldOn = calendarDate(2026, 9, 7);
++  const paying = therapyClaim(b.world, { caseId: b.info.id, n: 6, plan: 'SYNPLAN-FIX-LED', lines: [allowedLine(b, calendarDate(2026, 8, 10), 3, 15000n, 'none')] });
++  const withheld = oneRemittance(b, { ...pair.base, paid: withheldOn }, [paying], 6, { method: 'ACH', providerAdjustments: plb('FB', pair.corrected.paid) });
++  b.add835('forward-balance-withheld.835', file(b, withheld, 6, withheldOn), `A later check withholding the forward balance (PLB FB 100.00 naming ${reference}) from another patient's claim paying 150.00: BPR02 50.00.`);
++  // The two adjustments alone, while the approval stands: whatever could absorb them, neither is ever an entry.
++  const alone = oneRemittance(b, { ...pair.base, paid: reversedOn }, [], 7, {
++    method: 'ACH',
++    providerAdjustments: [{ providerId: pair.base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code: 'FB', reference, amount: offset }, { code: '72', reference, amount: offset }] }],
++  });
++  b.add835('adjustments-alone.835', file(b, alone, 7, reversedOn), `The same two adjustments with no claim (PLB FB -100.00 and 72 -100.00 naming ${reference}): BPR02 200.00.`);
++  recoveryScenario(b);
++  b.scenario({ reversal: { reverses: 'adjusted.835 transaction 0 claim 1', offsetBy: { 'reversal.835': 'FB', 'reversal-refunded.835': '72', 'reversal-in-check.835': 'FB' } } });
++  b.outcome({
++    entries: [
++      { stage: 'approved', amountCents: centsToString(pair.difference) },
++      { stage: 'posted', amountCents: centsToString(pair.difference) },
++      { stage: 'deposited', amountCents: centsToString(pair.difference) },
++      { stage: 'recouped', amountCents: centsToString(negateCents(pair.difference)), evidence: 'reversal.835 transaction 0 claim 0' },
++    ],
++    recoveredCents: centsToString(subtractCents(pair.difference, pair.difference)),
++    cash: { reversalPaidCents: centsToString(reversal.paid), adjustmentCents: centsToString(offset), paymentCents: '0', inCheckPaymentCents: centsToString(other.paid) },
++    adjustment: 'recorded; never an entry or a match, and no posted or deposited entry is written',
++    refunded: 'the same entries as reversal.835',
++    inCheck: 'the same entries; its 50.00 deposit matches its remittance and deposits nothing for the case line',
++    withheld: 'takes nothing back again',
++    alone: 'loaded while the approval stands, the adjustments write no entry and no match',
++    case: 'reopened with a note; the owner is notified',
++  });
++}
++
+ export function job01(b: CaseBuilder): void {
+   const base = basics(b, 'J');
+   const claims = [therapyClaim(b.world, { caseId: b.info.id, n: 1, plan: 'SYNPLAN-COMM-01', lines: [therapyLine(b.world, { code: '97110', units: 2, date: base.date })] })];
