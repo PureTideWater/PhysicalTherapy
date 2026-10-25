@@ -488,8 +488,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-          # The vulnerability database the verdict is made from, downloaded by this run, never one another run cached.
+          # The vulnerability database the verdict is made from, downloaded by this run, never one another run cached,
+          # and kept outside the workspace, the worker image's build context.
           cache: false
+          cache-dir: ${{ runner.temp }}/trivy
       - name: Build the worker image
         id: worker
         if: ${{ !cancelled() }}
@@ -509,8 +511,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-          # The vulnerability database the verdict is made from, downloaded by this run, never one another run cached.
+          # The vulnerability database the verdict is made from, downloaded by this run, never one another run cached,
+          # and kept outside the workspace, the worker image's build context.
           cache: false
+          cache-dir: ${{ runner.temp }}/trivy
 
   # The required check (docs/runbooks/github-governance.md, step 4A): every job above, each of whose results it prints
   # to its log and its summary, and it passes only when every one succeeded. It runs whatever they did, a cancelled run

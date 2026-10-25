@@ -215,7 +215,8 @@ offer of 2026-10-22 ("check, mutation, capacity, approval-of-record") maps one f
   at once with mutation, capacity and approval-of-record can queue briefly.
 - Caches: a pull request restores what the build branch's push runs saved (tsc's build information, each shard's
   durations, the pnpm store, and Playwright's browsers under the key of the builds the installed Playwright pins). The
-  image scans keep none: each downloads Trivy's vulnerability database, the data its verdict is made from. If the
+  image scans keep none: each downloads Trivy's vulnerability database, the data its verdict is made from, into the
+  runner's temporary directory, outside the checkout the worker image is built from after the web scan. If the
   founder makes the build branch the default branch until launch (the series' question F1), every branch could restore
   them; Part 2 makes `release.yml` restore no cache whatever the answer.
 - What cannot be verified where the series is built (no Docker daemon, no GitHub runner): `needs` results, the

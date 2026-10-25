@@ -1148,7 +1148,11 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // Run as GitHub runs it: a shard that left no results prints nothing and passes; one that did prints each picture.
       const dir = mkdtempSync(path.join(scratch, 'pictures-'));
       expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: '' });
-      if (spawnSync('base64', ['-w', '0'], { input: '' }).status === 0) {
+      // The pictures need GNU base64's -w, as the runner has. On CI (CI set to anything but empty or "false", as
+      // tools/test/ci-chromium.ts reads it) they run whatever, so a runner without it fails here rather than skip
+      // them; elsewhere, where a BSD base64 has no -w, only the empty case runs.
+      const onCi = process.env.CI !== undefined && process.env.CI !== '' && process.env.CI !== 'false';
+      if (onCi || spawnSync('base64', ['-w', '0'], { input: '' }).status === 0) {
         mkdirSync(path.join(dir, 'apps/web/test-results/brand'), { recursive: true });
         writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-diff.png'), 'png');
         writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-expected.png'), 'png');
@@ -1187,6 +1191,11 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     // Each verdict is made from the vulnerability database this run downloads, never one another run cached (the
     // action caches it by default, and a push run's copy would be every pull request's).
     expect(scans.map((step) => step.with?.cache)).toEqual([false, false]);
+    // And kept outside the workspace: the worker image is built after the web scan from the checkout (`context: .`,
+    // whose Dockerfile copies it whole), and the action's default, the workspace's .cache/trivy, put the database in
+    // that context (1.63 GB sent to the worker's build in run 40166129200, against the checkout's 16 MB).
+    expect(builds.map((step) => step.with?.context)).toEqual(['.', '.']);
+    expect(scans.map((step) => step.with?.['cache-dir'])).toEqual(['${{ runner.temp }}/trivy', '${{ runner.temp }}/trivy']);
     expect(existsSync(path.join(WORKFLOWS, 'supply-chain.yml'))).toBe(false);
   });
 

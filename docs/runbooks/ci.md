@@ -151,7 +151,8 @@ hash, the durations only order a shard's files, whose membership the paths alone
 list of builds the installed Playwright pins, whose install fetches any build missing from the cache (on a hit it
 fetches only the system libraries; in run 40166129200, whose seven installs took 18 to 29 seconds, the browsers'
 download was about 10 of `e2e (1/2)`'s 24). The image scans keep no cache: each downloads Trivy's vulnerability
-database, the data its verdict is made from. To clear one:
+database, the data its verdict is made from, into the runner's temporary directory, outside the checkout the worker
+image is then built from. To clear one:
 `gh cache list --key tsc-v1-` and `gh cache delete <id>`.
 
 ## Running the same checks locally
