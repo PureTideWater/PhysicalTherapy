@@ -655,3 +655,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - the pipeline, the merge procedure under the ruleset, and the decision rules (Q3, the visible-change ruling, cost and security to the co-founder through this session);
     - the records rules, the SAVE rule for workflow agents, the Tuesday 12:00 UTC deadline, and the never-list.
   - This session watches their status files, takes their questions to the co-founder, and logs their merges here.
+- **2026-10-25 ~23:50 UTC: a fifth parallel session: the release content checks (#7, #30, #31, #59; queue item 14)**, session_01W9rDrzhJaxXahvsufd7yC4, `co-001/release-content-checks`, status `approval-summaries/lane-b-release-content-checks-status.md`.
+  - Claimed with ADR 0071 if needed and RCC-01 to RCC-08 (a new series).
+  - #30's content-pipeline exception is already granted (2026-10-20 adoption). #59's parts in #42's files (`monitoring.ts`, `fields.ts`) are split into a later PR after #42 merges.
+  - Its `publish-content.yml` overlap with ci-deps (F4) is resolved under rule 6.
