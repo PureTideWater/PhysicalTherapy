@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,8 +15,11 @@ import {
   DIRECTORY_READS,
   GLOBAL_INPUTS,
   TEST_TOOLING,
+  UNCALLED_READS,
   affected,
+  affectedSince,
   closureOf,
+  closureProblems,
   covers,
   dataLiterals,
   globToRegExp,
@@ -28,6 +32,9 @@ import {
   shardsFor,
   specifiers,
   trackedFiles,
+  treeAt,
+  unionClosures,
+  unionGlobal,
 } from './affected';
 
 /**
@@ -347,4 +354,260 @@ describe('on this repository', () => {
     expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(6);
     expect(shardsFor([] as MutationPackage[])).toEqual([]);
   });
+});
+
+/** A synthetic world's files on one side of a change: the four money packages, an upstream helper and a site. */
+function syntheticWorld(repo: SyntheticRepository): SyntheticRepository {
+  repo.write('pnpm-workspace.yaml', 'packages:\n  - apps/*\n  - packages/*\n').write('package.json', '{"name":"root"}').write('pnpm-lock.yaml', LOCK);
+  for (const pkg of [...MUTATION_PACKAGES, 'helper']) repo.write(`packages/${pkg}/package.json`, JSON.stringify({ name: `@tp/${pkg}`, exports: { '.': './src/index.ts' } }));
+  repo.write('apps/site/package.json', JSON.stringify({ name: '@tp/site' })).write('apps/site/src/page.ts', "import { cents } from '@tp/money';\nexport const p = cents;\n");
+  repo.write('packages/money/src/index.ts', "import Decimal from 'decimal.js';\nexport const cents = (n: bigint) => n;\nexport const D = Decimal;\n");
+  repo.write('packages/money/src/index.test.ts', "import { it } from 'vitest';\nimport { cents } from './index';\nit('a', () => cents(1n));\n");
+  repo.write('packages/pricing/src/index.ts', "import { cents } from '@tp/money';\nexport const a = cents;\n");
+  repo.write('packages/ledger/src/index.ts', "import { cents } from '@tp/money';\nexport const total = cents;\n");
+  repo.write('packages/packets/src/index.ts', "import { a } from '@tp/pricing';\nexport const packet = a;\n");
+  repo.write('packages/helper/src/index.ts', 'export const helper = 1;\n');
+  return repo;
+}
+
+describe('a change that deletes or moves a file: its sets, and its closures on both sides', () => {
+  // The merge base holds a money test, a helper only it imports, a ledger test and money's tsconfig; the head deletes
+  // the test and the helper, renames the ledger test into the exclusions and deletes the tsconfig.
+  const base = syntheticWorld(new SyntheticRepository())
+    .write('packages/money/src/extra.test.ts', "import { it } from 'vitest';\nimport { build } from '../../helper/src/builder';\nimport { cents } from './index';\nit('b', () => cents(build()));\n")
+    .write('packages/helper/src/builder.ts', 'export const build = () => 2n;\n')
+    .write('packages/ledger/src/index.test.ts', "import { it } from 'vitest';\nimport { total } from './index';\nit('c', () => total(1n));\n")
+    .write('packages/money/tsconfig.json', '{}');
+  const head = syntheticWorld(new SyntheticRepository()).write('packages/ledger/src/index.db.test.ts', "import { it } from 'vitest';\nimport { total } from './index';\nit('c', () => total(1n));\n");
+  const closuresOf = (repo: SyntheticRepository) => MUTATION_PACKAGES.map((pkg) => closureOf(pkg, repo.root, repo.files, synthetic));
+  const headOnly = (files: string[]) => affected({ files }, closuresOf(head), globalFiles(head.root, head.files, synthetic), synthetic.tooling);
+  const bothSides = (files: string[]) => affected({ files }, unionClosures(closuresOf(head), closuresOf(base)), unionGlobal(globalFiles(head.root, head.files, synthetic), globalFiles(base.root, base.files, synthetic)), synthetic.tooling);
+  afterAll(() => {
+    base.remove();
+    head.remove();
+  });
+
+  it('affects the package of a deleted test, by its test set and by its closure at the merge base, with the helper only it imported', () => {
+    const deleted = ['packages/helper/src/builder.ts', 'packages/money/src/extra.test.ts'];
+    expect(headOnly(deleted).packages).toEqual(['money']);
+    const both = bothSides(deleted);
+    expect(both.packages).toEqual(['money']);
+    expect(both.reasons.money).toEqual(['packages/helper/src/builder.ts (in its closure at the merge base)', 'packages/money/src/extra.test.ts (in its closure at the merge base)']);
+    // The helper alone, deleted with nothing else, is no file of the head's sets: only the merge base's closure holds it.
+    expect(headOnly(['packages/helper/src/builder.ts']).packages).toEqual([]);
+    expect(bothSides(['packages/helper/src/builder.ts']).packages).toEqual(['money']);
+  });
+
+  it('affects the package of a test renamed into the exclusions (a database test), by its old name', () => {
+    const renamed = ['packages/ledger/src/index.db.test.ts', 'packages/ledger/src/index.test.ts'];
+    expect(headOnly(renamed).packages).toEqual(['ledger']);
+    expect(headOnly(renamed).reasons.ledger).toEqual(['packages/ledger/src/index.test.ts (its mutate or test set)']);
+    expect(bothSides(renamed).packages).toEqual(['ledger']);
+    // The new name alone is excluded, so it is no package's.
+    expect(bothSides(['packages/ledger/src/index.db.test.ts']).packages).toEqual([]);
+  });
+
+  it('affects every package whose closure a deleted manifest lay in, which only the merge base still holds', () => {
+    expect(headOnly(['packages/money/tsconfig.json']).packages).toEqual([]);
+    expect(bothSides(['packages/money/tsconfig.json']).packages).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    expect(bothSides(['packages/money/tsconfig.json']).reasons.money).toEqual(['packages/money/tsconfig.json (a manifest of its closure at the merge base)']);
+  });
+
+  it('gives none for a deleted file no closure held on either side', () => {
+    expect(bothSides(['apps/site/src/old.ts', 'docs/gone.md']).packages).toEqual([]);
+  });
+
+  it('diffs a real repository from its merge base, the merge base’s tree read from git, and stops on what a closure cannot account for', () => {
+    const repo = syntheticWorld(new SyntheticRepository());
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', ...args], { cwd: repo.root, encoding: 'utf8' }).trim();
+    try {
+      repo.write('packages/money/src/extra.test.ts', "import { it } from 'vitest';\nimport { build } from '../../helper/src/builder';\nit('b', () => build());\n").write('packages/helper/src/builder.ts', 'export const build = () => 2n;\n');
+      git('init', '-q', '-b', 'main');
+      git('add', '-A');
+      git('commit', '-q', '-m', 'base');
+      const baseCommit = git('rev-parse', 'HEAD');
+      // The merge base's tree as git holds it, apart from the working tree.
+      expect(treeAt(baseCommit, (root, files) => [files.includes('packages/helper/src/builder.ts'), readFileSync(path.join(root, 'packages/helper/src/builder.ts'), 'utf8')], repo.root)).toEqual([true, 'export const build = () => 2n;\n']);
+      git('rm', '-q', 'packages/money/src/extra.test.ts', 'packages/helper/src/builder.ts');
+      git('commit', '-q', '-m', 'delete a money test and its helper');
+      const run = affectedSince(baseCommit, repo.root, synthetic);
+      expect(run.mergeBase).toBe(baseCommit);
+      expect(run.result.packages).toEqual(['money']);
+      expect(run.result.reasons.money).toEqual(['packages/helper/src/builder.ts (in its closure at the merge base)', 'packages/money/src/extra.test.ts (in its closure at the merge base)']);
+      // A closure that names data the list lacks stops the run before anything is decided.
+      repo.write('packages/money/src/data.test.ts', "import { it } from 'vitest';\nconst file = 'fixtures/money/rates.json';\nit('d', () => file);\n").write('fixtures/money/rates.json', '{}');
+      git('add', '-A');
+      git('commit', '-q', '-m', 'a test that names data');
+      expect(() => affectedSince(baseCommit, repo.root, synthetic)).toThrow('money: packages/money/src/data.test.ts: fixtures/money/rates.json');
+    } finally {
+      repo.remove();
+    }
+  });
+});
+
+describe('data a closure reads: the path forms the scan finds, and every file-system reader accounted for', () => {
+  it('finds a data path after an interpolation, a bare root after ./ or ../, and a bare root in a nested path call', () => {
+    expect(dataLiterals('readFileSync(`${REPO}/fixtures/synthetic/CAS-01/expected.json`)')).toEqual(['fixtures/synthetic/CAS-01/expected.json']);
+    expect(dataLiterals('const at = `${base}fixtures/golden/claims`;')).toEqual(['fixtures/golden/claims']);
+    expect(dataLiterals("new URL('../../../fixtures', import.meta.url)")).toEqual(['fixtures']);
+    expect(dataLiterals("const docs = './docs';")).toEqual(['docs']);
+    // A bare root stands for the whole directory: what is joined to it is read at run time.
+    expect(dataLiterals("path.join(repositoryRoot(), 'fixtures', 'golden')")).toEqual(['fixtures']);
+    expect(dataLiterals("path.join(root(path.dirname(here)), 'content', 'releases', name)")).toEqual(['content']);
+    expect(dataLiterals("path.resolve(import.meta.dirname, '../../../fixtures/synthetic')")).toEqual(['fixtures/synthetic']);
+    expect(dataLiterals("const url = new URL('fixtures', base);")).toEqual(['fixtures']);
+    // A bare word outside a path call is not a path (a column named content), and a root inside a longer path is not
+    // the repository's.
+    expect(dataLiterals("select('content', 'title'); const x = 'packages/rules/content/a.json';")).toEqual([]);
+  });
+
+  /** A pricing closure over a small world, with the test given and the list given. */
+  function pricingClosure(test: string, data: AffectedConfig['data']['pricing'], options: Partial<AffectedConfig> = {}) {
+    const repo = syntheticWorld(new SyntheticRepository()).write('packages/pricing/src/read.test.ts', test).write('fixtures/golden/claims/G1.json', '{}').write('fixtures/golden/claims/G2.json', '{}');
+    try {
+      return closureOf('pricing', repo.root, repo.files, { ...synthetic, data: { ...synthetic.data, pricing: data }, ...options });
+    } finally {
+      repo.remove();
+    }
+  }
+
+  it('fails a closure file that reads the file system unless a data entry names it among its readers: a root held in a variable, an array joined', () => {
+    for (const test of [
+      "import { readdirSync } from 'node:fs';\nimport path from 'node:path';\nconst DIR = 'fixtures';\nexport const all = (root: string) => readdirSync(path.join(root, DIR));\n",
+      "import { readFile } from 'node:fs/promises';\nexport const one = () => readFile(['fixtures', 'golden', 'claims', 'G1.json'].join('/'));\n",
+    ]) {
+      const closure = pricingClosure(test, [{ glob: 'fixtures/golden/**', why: '' }]);
+      expect(closure.uncovered, test).toEqual([]);
+      expect(closure.unaccounted, test).toEqual(['packages/pricing/src/read.test.ts: reads the file system (node:fs), but no DATA_FILES entry of pricing names it among its readers, and neither DIRECTORY_READS nor UNCALLED_READS lists it']);
+      expect(pricingClosure(test, [{ glob: 'fixtures/golden/**', why: '', readers: ['packages/pricing/src/read.test.ts'] }]).unaccounted, test).toEqual([]);
+    }
+  });
+
+  it('takes a reader that reads nothing a mutation run calls only with the functions that read, each named in no other closure file', () => {
+    const test = "import { readFileSync } from 'node:fs';\nimport { cents } from '@tp/money';\nexport function sniff(file: string) { return readFileSync(file); }\nexport const c = cents;\n";
+    const read = { file: 'packages/pricing/src/read.test.ts', onlyIn: ['sniff'], why: 'nothing calls it' };
+    expect(pricingClosure(test, [], { uncalledReads: [read] }).unaccounted).toEqual([]);
+    expect(pricingClosure(test, [], { uncalledReads: [{ ...read, onlyIn: ['sniff', 'cents'] }] }).unaccounted).toEqual([
+      'packages/pricing/src/read.test.ts: UNCALLED_READS says it reads only in cents, which other closure files name too (packages/money/src/index.ts, packages/pricing/src/index.ts)',
+    ]);
+    expect(pricingClosure(test, [], { uncalledReads: [{ ...read, onlyIn: ['missing'] }] }).unaccounted).toEqual(['packages/pricing/src/read.test.ts: UNCALLED_READS says it reads only in missing, which it does not name']);
+  });
+
+  it('holds a directory read to every file the reader names there, and takes a name with an interpolation as a pattern', () => {
+    const test = "import { readFileSync } from 'node:fs';\nimport path from 'node:path';\nconst DIR = path.resolve(import.meta.dirname, '../../../fixtures/golden/claims');\nexport const read = (id: string) => [readFileSync(path.join(DIR, 'G1.json')), readFileSync(path.join(DIR, 'G2.json')), readFileSync(path.join(DIR, `${id}.json`))];\n";
+    const data = [{ glob: 'fixtures/golden/claims/G1.json', why: '' }, { glob: 'fixtures/golden/claims/G2.json', why: '' }, { glob: 'fixtures/golden/claims/*.json', why: '' }];
+    const entry = { file: 'packages/pricing/src/read.test.ts', directory: 'fixtures/golden/claims', reads: ['fixtures/golden/claims/G1.json', 'fixtures/golden/claims/G2.json', 'fixtures/golden/claims/*.json'], why: 'three names' };
+    expect(pricingClosure(test, data, { directoryReads: [entry] })).toMatchObject({ uncovered: [], unaccounted: [] });
+    // A name a listed pattern matches is listed; a name or a pattern nothing listed matches is not.
+    expect(pricingClosure(test, data, { directoryReads: [{ ...entry, reads: ['fixtures/golden/claims/G1.json', 'fixtures/golden/claims/*.json'] }] }).unaccounted).toEqual([]);
+    expect(pricingClosure(test, data, { directoryReads: [{ ...entry, reads: ['fixtures/golden/claims/G1.json', 'fixtures/golden/claims/G2.json'] }] }).unaccounted).toEqual([
+      'packages/pricing/src/read.test.ts: names fixtures/golden/claims/*.json under fixtures/golden/claims, which its DIRECTORY_READS entry does not list among its reads',
+    ]);
+    expect(pricingClosure(test, data, { directoryReads: [{ ...entry, reads: ['fixtures/golden/claims/G1.json', 'fixtures/golden/claims/*.json'].slice(0, 1) }] }).unaccounted).toEqual([
+      'packages/pricing/src/read.test.ts: names fixtures/golden/claims/G2.json under fixtures/golden/claims, which its DIRECTORY_READS entry does not list among its reads',
+      'packages/pricing/src/read.test.ts: names fixtures/golden/claims/*.json under fixtures/golden/claims, which its DIRECTORY_READS entry does not list among its reads',
+    ]);
+    expect(pricingClosure(test, data.slice(0, 2), { directoryReads: [entry] }).uncovered).toEqual(['packages/pricing/src/read.test.ts: fixtures/golden/claims (reads fixtures/golden/claims/*.json)']);
+  });
+});
+
+describe('workspace imports: every package pnpm-workspace.yaml lists, resolved as the mutation aliases resolve them', () => {
+  const repo = new SyntheticRepository();
+  let money: Closure;
+  beforeAll(() => {
+    syntheticWorld(repo).write('pnpm-workspace.yaml', 'packages:\n  - apps/*\n  - packages/*\n  - tools\n  - tools/lib\n');
+    repo.write('tools/package.json', JSON.stringify({ name: '@tp/tools', exports: { './workspace': './release/workspace.ts', './conditions': { types: './conditions.d.ts', node: './conditions.ts' }, './array': ['./array.ts', './array.js'] } }));
+    repo.write('tools/release/workspace.ts', 'export const w = 1;\n').write('tools/conditions.ts', 'export const c = 1;\n').write('tools/array.ts', 'export const a = 1;\n');
+    repo.write('tools/lib/package.json', JSON.stringify({ name: '@tp/lib', exports: { '.': { import: './index.ts', default: './index.cjs' }, './assets/*': './assets/*', './assets/private/*': null } }));
+    repo.write('tools/lib/index.ts', 'export const l = 1;\n').write('tools/lib/assets/mark.svg', '<svg/>').write('tools/lib/assets/private/key.txt', 'x');
+    repo.write(
+      'packages/money/src/workspace.test.ts',
+      "import { it } from 'vitest';\nimport { w } from '@tp/tools/workspace';\nimport { c } from '@tp/tools/conditions';\nimport { a } from '@tp/tools/array';\nimport { l } from '@tp/lib';\nimport mark from '@tp/lib/assets/mark.svg';\nit('w', () => [w, c, a, l, mark]);\n",
+    );
+    money = closureOf('money', repo.root, repo.files, synthetic);
+  });
+  afterAll(() => repo.remove());
+
+  it('follows tools, nested workspace packages, conditions, arrays and subpath patterns into the closure', () => {
+    for (const file of ['tools/release/workspace.ts', 'tools/conditions.ts', 'tools/array.ts', 'tools/lib/index.ts', 'tools/lib/assets/mark.svg']) expect(money.files, file).toContain(file);
+    expect(money.unresolved).toEqual([]);
+    expect(affected({ files: ['tools/release/workspace.ts'] }, [money], globalFiles(repo.root, repo.files, synthetic), synthetic.tooling).packages).toEqual(['money']);
+  });
+
+  it('names a workspace-scoped import that resolves to no file: an unexported or excluded subpath, a package without exports, a scope’s unknown name, a missing relative file', () => {
+    repo.write(
+      'packages/money/src/broken.test.ts',
+      "import { it } from 'vitest';\nimport { x } from '@tp/tools/nothing';\nimport key from '@tp/lib/assets/private/key.txt';\nimport { p } from '@tp/site';\nimport { y } from '@tp/unknown';\nimport { z } from './missing';\nimport Decimal from 'decimal.js';\nit('x', () => [x, key, p, y, z, Decimal]);\n",
+    );
+    expect(closureOf('money', repo.root, repo.files, synthetic).unresolved).toEqual([
+      'packages/money/src/broken.test.ts: ./missing',
+      'packages/money/src/broken.test.ts: @tp/lib/assets/private/key.txt',
+      'packages/money/src/broken.test.ts: @tp/site',
+      'packages/money/src/broken.test.ts: @tp/tools/nothing',
+      'packages/money/src/broken.test.ts: @tp/unknown',
+    ]);
+  });
+});
+
+describe('what stops the changes job, and the tooling’s own packages, on this repository', () => {
+  const files = trackedFiles();
+  const closures = repositoryClosures(repositoryRoot, files);
+  const global = globalFiles(repositoryRoot, files);
+  const lock = readFileSync(path.join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8');
+  const version = (name: string) => {
+    const importers = (parse(lock) as { importers: Record<string, Record<string, Record<string, { version: string }> | undefined>> }).importers;
+    for (const fields of Object.values(importers)) for (const field of Object.values(fields)) if (field?.[name] !== undefined) return field[name].version.replace(/\(.*$/, '');
+    throw new Error(`no ${name} in the lockfile`);
+  };
+
+  it('accounts for every closure: no unlisted data, no unlisted file-system reader, no import that resolves to no file', () => {
+    expect(closureProblems(closures, global, parseLockfile(lock))).toEqual([]);
+    for (const closure of closures) {
+      expect(closure.unresolved, closure.pkg).toEqual([]);
+      expect(closure.unaccounted, closure.pkg).toEqual([]);
+    }
+    // Every listed reader reads the file system and lies in its package's closure, and every uncalled reader too.
+    for (const [pkg, entries] of Object.entries(DATA_FILES)) {
+      const closure = closures.find((candidate) => candidate.pkg === pkg);
+      for (const reader of entries.flatMap((entry) => entry.readers ?? [])) {
+        expect(closure?.files, `${pkg}: ${reader}`).toContain(reader);
+        expect(specifiers(readFileSync(path.join(repositoryRoot, reader), 'utf8')), reader).toContain('node:fs');
+      }
+    }
+    for (const read of UNCALLED_READS) expect(closures.some((closure) => closure.files.includes(read.file)), read.file).toBe(true);
+  });
+
+  it('runs the ledger for the exports templates.test.ts reads, and for no other synthetic fixture', () => {
+    const affects = (changed: string[]) => affected({ files: changed }, closures, global).packages;
+    expect(affects(['fixtures/synthetic/CI-15/expected.json'])).toEqual([]);
+    expect(affects(['fixtures/synthetic/LED-04/original.835', 'fixtures/synthetic/emr/spry_era_v0/era-export.csv'])).toEqual([]);
+    expect(affects(['fixtures/synthetic/LED-04/posting-export.csv'])).toEqual(['ledger']);
+    expect(affects(['fixtures/synthetic/LED-09/lines-posting-export.csv'])).toEqual(['ledger']);
+    expect(affects(['fixtures/synthetic/emr/spry_posting_v0/posting-export.csv'])).toEqual(['ledger']);
+    expect(affects(['fixtures/synthetic/emr/prompt_era_v0/manifest.json'])).toEqual(['ledger']);
+  });
+
+  it('gives each package a deleted or renamed test of its own, on the head’s sets and on both sides’ closures', () => {
+    const without = (removed: readonly string[], added: readonly string[] = []) => [...files.filter((file) => !removed.includes(file)), ...added];
+    for (const [changed, removed, added, expected] of [
+      [['packages/money/src/cents.test.ts'], ['packages/money/src/cents.test.ts'], [], ['money']],
+      [['packages/pricing/src/engine.test.ts'], ['packages/pricing/src/engine.test.ts'], [], ['pricing']],
+      [['tools/golden-worksheet/engine.golden.test.ts'], ['tools/golden-worksheet/engine.golden.test.ts'], [], ['pricing']],
+      [['packages/packets/src/scan.test.ts'], ['packages/packets/src/scan.test.ts'], [], ['packets']],
+      [['packages/ledger/src/allocation.db.test.ts', 'packages/ledger/src/allocation.test.ts'], ['packages/ledger/src/allocation.test.ts'], ['packages/ledger/src/allocation.db.test.ts'], ['ledger']],
+      [['fixtures/golden/claims/G001.json'], ['fixtures/golden/claims/G001.json'], [], ['pricing']],
+    ] as const) {
+      const head = repositoryClosures(repositoryRoot, without(removed, added));
+      expect(affected({ files: changed }, head, globalFiles(repositoryRoot, without(removed, added))).packages, changed.join(', ')).toEqual(expected);
+      expect(affected({ files: changed }, unionClosures(head, closures), unionGlobal(globalFiles(repositoryRoot, without(removed, added)), global)).packages, changed.join(', ')).toEqual(expected);
+    }
+  }, 120_000);
+
+  it('gives all four for a bump of tsx, which runs the tooling, or of yaml, which the changes job reads the lockfile with', () => {
+    const affects = (after: string) => affected({ files: ['pnpm-lock.yaml'], lockfile: { before: lock, after } }, closures, global).packages;
+    expect(affects(bump(lock, 'tsx', version('tsx'), '99.0.0'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    expect(affects(bump(lock, 'yaml', version('yaml'), '99.0.0'))).toEqual(['money', 'pricing', 'ledger', 'packets']);
+    expect(TEST_TOOLING).toContain('tsx');
+    expect([...(global.imports.get('tools') ?? [])]).toContain('yaml');
+  }, 60_000);
 });
