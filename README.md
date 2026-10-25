@@ -122,9 +122,9 @@ committed one, so any schema change, or an edit to the document alone, leaves it
 migration merges without one (CLAUDE.md, Schema gate). The document lists each applied migration's SHA-256 and each
 function body's, and shows a disabled or replica-only trigger as not enforced, rewrite rules and default privileges, so
 an edit to a migration after it was signed fails the gate too (`domain-model-drift.db.test.ts`). Milestone 1 does not
-start until the founder approves the document; until then that case fails. The document records PostgreSQL's major
-version beside the catalog's own text, so it is checked on PostgreSQL 18, as CI runs; on an older server its drift case
-fails (on 16, at the version line alone).
+start until the founder approves the document; until then the `domain model` check fails. The document records
+PostgreSQL's major version beside the catalog's own text, so it is checked on PostgreSQL 18, as CI runs; on an older
+server its drift case fails (on 16, at the version line alone).
 
 Each approval opens with the changes since the last approved document (docs/adr/0063): `pnpm db:domain-model
 --summary-since <ref>` compares the document at a git ref (the base branch, whose document is approved) with the working

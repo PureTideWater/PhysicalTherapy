@@ -39,7 +39,11 @@ reads (the session's proxy refuses GitHub's artifact host).
 What a run checks: on a pull request, its commits beyond the base branch (`origin/<base>..HEAD`; the engine freeze and
 the differential test against the merge base); on a push, the commits beyond the branch's previous head
 (`github.event.before`), or the last commit alone when the branch is new. "The commits this run checks", the first
-step of `static`, prints the range.
+step of `static`, prints the range. The engine freeze's own check (`tools/engine-freeze/check.ts`) runs on pull
+requests only, because its exception names a pull request, which a push does not carry: a merge's push follows its
+pull request's run, which the check gated, and a direct push to `claude/build-platform`, which the ruleset of the
+governance runbook's step 4A blocks once the founder applies it, is until then checked by the unit job's differential
+test alone, which prices the base's engine and this commit's.
 
 ## Reading a red gate
 
@@ -49,7 +53,7 @@ step of `static`, prints the range.
 2. Open the red job.
    - **`static`:** every step reports; the red ones are the findings. A red "The commits this run checks" means the
      range's base is not in the clone (on a push, a previous head the branch no longer holds, which a force push
-     leaves; the ruleset blocks those).
+     leaves; once the founder applies step 4A's ruleset, it blocks those).
    - **`db (k/N)`:** the failing file and test are in the suite step's output. "Files this shard ran" lists the files
      the shard ran, with the ten slowest. Run the file locally on its own (below); every db file makes its own
      database, so a shard's failure is a file's, never the shard's order.
@@ -139,10 +143,15 @@ alone, then the others), and the capacity measurement refuses a 2-CPU runner (do
 | The pnpm store | setup-node's own | every job | every job |
 | tsc's build information, `node_modules/.cache/tsc` | `tsc-v1-<os>-<lockfile hash>-<commit>` | `static`, when its typecheck ran | `static`, by the prefix with the lockfile's hash, then any |
 | Each db shard's test durations, `node_modules/.vite/vitest` | `vitest-db-v1-<os>-<N>-<k>-<commit>` | each `db` shard, whatever its result | the same shard, by prefix |
+| Playwright's browsers, `~/.cache/ms-playwright` | `playwright-v1-<os>-<hash of playwright-core's browsers.json>` | `unit`, on a miss | `unit`, every `db` and `e2e` shard, by the exact key |
 
 A pull request restores its own caches and its base branch's, and only push runs on the build branch write the base
 branch's, so the first pull request after a CI change runs cold. A cache only saves time: tsc compares every input's
-hash, and the durations only order a shard's files, whose membership the paths alone fix. To clear one:
+hash, the durations only order a shard's files, whose membership the paths alone fix, and the browsers' key is the
+list of builds the installed Playwright pins, whose install fetches any build missing from the cache (on a hit it
+fetches only the system libraries; in run 40166129200, whose seven installs took 18 to 29 seconds, the browsers'
+download was about 10 of `e2e (1/2)`'s 24). The image scans keep no cache: each downloads Trivy's vulnerability
+database, the data its verdict is made from. To clear one:
 `gh cache list --key tsc-v1-` and `gh cache delete <id>`.
 
 ## Running the same checks locally

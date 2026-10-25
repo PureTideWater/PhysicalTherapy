@@ -76,7 +76,9 @@ filter, as these jobs (`docs/runbooks/ci.md` reads them):
   `github.event.before..HEAD` (a merge's first parent, or every commit of a multi-commit push), falling back to
   `HEAD^1` for a new branch, and a previous head the clone does not hold fails the step rather than check fewer commits.
   The unit job's differential test compares with a pull request's merge base or a push's previous head. The engine
-  freeze's own check runs on pull requests only: its exception names a pull request.
+  freeze's own check runs on pull requests only: its exception names a pull request, which a push does not carry, and
+  a merge's push follows the pull request's gated run; until step 4A's ruleset blocks direct pushes, a direct push is
+  checked by the differential test alone (`docs/runbooks/ci.md`).
 - **History.** `static`, `unit` and `domain model` check out the whole history (the scan, the differential test's
   `git archive` of the base, the summary's base document); no checkout keeps the token, since no step calls GitHub.
 - **Artifacts.** Upload-artifact v4 names are unique per run and immutable, so every per-run name (`web-build`,
@@ -134,7 +136,9 @@ filter, as these jobs (`docs/runbooks/ci.md` reads them):
 
 ### The required checks
 
-From this pull request, `claude/build-platform`'s ruleset requires, and "Protect main" from the launch pull request:
+Once the founder applies `claude/build-platform`'s ruleset (governance runbook, step 4A, after this pull request's first
+green push run), it requires these, and so does "Protect main" from the launch pull request; until then nothing
+enforces them:
 
 <!-- required-checks -->
 - `all green` (ci.yml: every ci.yml job, the image and licence gates among them)
@@ -159,9 +163,11 @@ offer of 2026-10-22 ("check, mutation, capacity, approval-of-record") maps one f
   merge is reported beside it: on a pull request touching a watched path the capacity gate, about 13 to 16 minutes,
   sets it; shortening that run changes what the founder ruled it measures, so it goes to the founder with those
   numbers, after the first five push runs.
-- No test lost, read on the pull request's run: unit, golden and e2e counts equal 49514e8's (unit 4,524 and 1 skipped,
-  golden 38, e2e 51); the database shards together run 49514e8's 9,041 less the approval case and the route-count check
-  (now a unit test, `route-tests/partition.test.ts`), plus the snapshot equivalence case.
+- No test lost, read on the pull request's run: unit is 49514e8's 4,524 and 1 skipped plus this pull request's own,
+  132 new by full name less 12 renamed (4,644 and 1 skipped on 9144b56, each renamed test asserting the same on the new
+  graph); golden and e2e equal 49514e8's (38 and 51); the database shards together run 49514e8's 9,041 less the
+  approval case and the route-count check (now a unit test, `route-tests/partition.test.ts`), plus the snapshot
+  equivalence case.
 - **The journeys run the build that ships.** Measured on 2026-10-25 at this pull request's head (three
   `pnpm --filter @tp/web build` runs, 69, 72 and 76 s): two builds with no e2e setting and one with every variable the
   e2e web server sets (`apps/web/playwright.config.ts`: the database URLs, the local providers and their directories,
@@ -183,6 +189,7 @@ offer of 2026-10-22 ("check, mutation, capacity, approval-of-record") maps one f
 | Lint per workspace in parallel (audit #109's words) | Web is the floor whatever the split, since its program compiles every workspace's source; more processes add memory, not speed (notice N9) |
 | `incremental` in each tsconfig | The engine freeze refuses any change to `packages/pricing/` outside `src`; the root runner passes the same options on the command line |
 | Shard e2e by duration | Playwright 1.56.1 and 1.64.1 shard by test count; their only weighting is an internal variable |
+| Three e2e shards on the public runners | Still by count: on 9144b56's durations the slowest shard's tests would take 3:57 instead of 4:24, 27 s off the wall for about 1.5 more runner-minutes a run, and the 3-minute monitoring journey's place, which sets it, moves with every journey added |
 | Mutation inside ci.yml | `all green` stays the fast signal; mutation's own triggers (the schedule, labels) and its 13 to 17 minutes on money pull requests stay apart, under their own required gate (Part 4) |
 | Pins only in Part 2 | ci.yml's rewrite already names each action; taking the SHAs the release and capacity workflows run costs nothing and leaves no tag-pinned action in the required gate between the two pull requests |
 
@@ -207,8 +214,10 @@ offer of 2026-10-22 ("check, mutation, capacity, approval-of-record") maps one f
 - Thirteen jobs at the peak's eleven or so at once fit GitHub Free's 20 concurrent jobs per account; two lanes pushing
   at once with mutation, capacity and approval-of-record can queue briefly.
 - Caches: a pull request restores what the build branch's push runs saved (tsc's build information, each shard's
-  durations, the pnpm store). If the founder makes the build branch the default branch until launch (the series'
-  question F1), every branch could restore them; Part 2 makes `release.yml` restore no cache whatever the answer.
+  durations, the pnpm store, and Playwright's browsers under the key of the builds the installed Playwright pins). The
+  image scans keep none: each downloads Trivy's vulnerability database, the data its verdict is made from. If the
+  founder makes the build branch the default branch until launch (the series' question F1), every branch could restore
+  them; Part 2 makes `release.yml` restore no cache whatever the answer.
 - What cannot be verified where the series is built (no Docker daemon, no GitHub runner): `needs` results, the
   artifacts between jobs and `overwrite` on a re-run, `github.event.repository.private`, `github.event.before`, the
   caches. The pull request's own runs and the first push runs prove them; every verdict is in the job logs.
