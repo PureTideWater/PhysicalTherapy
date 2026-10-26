@@ -2047,8 +2047,16 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
       expect(green.report.testResults.map((file) => path.relative(repositoryRoot, file.name)).sort()).toEqual([...TESTS].sort());
       expect(green.report.numFailedTests, failures(green.report)).toBe(0);
       expect(green.report.numTotalTests).toBeGreaterThan(80);
-      expect(green.report.numPassedTests).toBe(green.report.numTotalTests - 1);
-      expect(outcomes(green.report).filter((result) => result.status !== 'passed').map((result) => [result.file, result.fullName.endsWith(SELF), result.status])).toEqual([['tools/test/workflows.test.ts', true, 'skipped']]);
+      // The spawned run has this run's PATH, so it skips actionlint's test exactly when this run does (CI installs none).
+      const lintSkipped = (process.env.ACTIONLINT ?? spawnSync('/bin/sh', ['-c', 'command -v actionlint'], { encoding: 'utf8' }).stdout.trim()) === '';
+      const skips = [SELF, ...(lintSkipped ? ['every workflow passes actionlint'] : [])];
+      expect(green.report.numPassedTests).toBe(green.report.numTotalTests - skips.length);
+      expect(
+        outcomes(green.report)
+          .filter((result) => result.status !== 'passed')
+          .map((result) => `${result.file} ${result.status} ${skips.find((name) => result.fullName.endsWith(name)) ?? result.fullName}`)
+          .sort(),
+      ).toEqual(skips.map((name) => `tools/test/workflows.test.ts skipped ${name}`).sort());
 
       // One checkout's persist-credentials removed: the rule that holds it fails on the copy, so the run read the copy.
       const broken = rewrittenCopy((file, text) => (file.endsWith('large-zip.yml') ? text.replace('\n        with: { persist-credentials: false }', '') : text));
