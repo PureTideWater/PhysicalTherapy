@@ -20,6 +20,15 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 
 - 2026-10-26 03:55 UTC: the 5-hour limit stopped the build at ~02:30 UTC (stage 1's three agents done; eval, serving, apps and integrate failed with the limit). The worker restarted; `setup-container.sh` re-run (both clusters up); wf_95daa8e9-fea resumed with resumeFromRunId (task woijlp7nr), the eval builder continuing from its progress file.
 
+- 2026-10-26 ~04:45 UTC: **Build done** (wf_95daa8e9-fea; summary `approval-summaries/lane-b-model-eval-gate-build-summary.md`). Local, Node 24: typecheck, lint, lint:logs, lint:copy pass; unit 5,095 passed / 3 skipped / 1 failed (a `packages/packets` property-test flake at seed 2019154346, closure unchanged since 6ddd587, passes on rerun: not this PR's); golden 215 passed (~19 s); db files 7 + 15 passed; synth idempotent; engine freeze, verify-content, check:fixtures pass.
+- 2026-10-26 ~05:00 UTC: the first push was refused by gitleaks (`generic-api-key` on a report field `twinKey` holding a SHA-256). Renamed to `twinSha256`, re-recorded through the CLI, folded into the two unpushed commits (tree otherwise identical), pushed.
+- 2026-10-26 05:05 UTC: **Draft PR #53** (https://github.com/PureTideWater/PhysicalTherapy/pull/53), head 388f213c; description from the template, written with update_pull_request and proved byte for byte; subscribed.
+- 2026-10-26 05:08 UTC: **Two adversarial reviews** running (wf_f15d6416-cdd): AI safety and evaluation correctness; security (security-reviewer.md); each finding verified by a skeptic.
+
+## Proposals outside this PR
+- `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).
+- A CLI option to run the twins twice and compare them, in place of the runbook's manual comparison.
+
 ## For the founder (founder-kept; nothing waits on them)
 - **F1:** the per-field recall and precision floors (`eval/floors.json` ships unset; production refuses a real provider until set). Before the first real-model baseline run.
 - **F2:** whether the data-rights addendum covers keeping an accepted, uncorrected proposal as an evaluation example (legal text). Not built until ruled.

@@ -10,6 +10,8 @@ gallery page.
 ## The parts
 - **`setup.sh`** makes a detached worktree of `TOUR_REF` at `/home/user/screens` and installs its packages under the lock.
   - `TOUR_REF` defaults to `origin/claude/build-platform`; a PR's before and after shots use its base, then its head.
+  - To re-serve an existing build, set `TOUR_REF` to the commit it was built from (`git -C /home/user/screens rev-parse HEAD`). Otherwise a moved branch checks out newer sources under the old build, and `serve.sh` prepares the database from those sources.
+  - It installs under the lock, so it waits while a server holds it. Mid-session, copy a changed spec with `cp`, then re-run `setup.sh` after `stop`.
   - It then copies the scripts and specs into `$TOUR_DIR`, links `node_modules` and writes the `package.json`.
   - It does not copy `build-only.sh`, `reserve.sh` or `batches.py`: run those by their path here.
 - **`env.sh`** gives every step the same synthetic environment:
@@ -34,7 +36,7 @@ gallery page.
   - **Skips:** a state the map names that cannot be shown on synthetic data is recorded in `skipped` with its reason, never faked. So is a shot that fails, with the first line of its error. A full run also lists every not-reachable route with the map's reason, and any reachable route left without a shot.
   - **Writes:** the spec writes only the on-screen steps the map names, with synthetic values:
     - the public audit request, a support ticket, the screening send and its conversion;
-    - the reviewer's support grants (SYN-TOUR-1 to 4 on PACKETS, PACKET DEADLINES, REPORTS and LAYOUT);
+    - the reviewer's support grants (SYN-TOUR-1 to 4 on PACKETS, PACKET DEADLINES, REPORTS and LAYOUT), also opened for a `p.support-access.empty` retake, whose shot opens SYN-TOUR-4;
     - the packet's approval request;
     - and, last, each undone at once: a queued audit report, SYN-CON-E2E ended, the billing firm suspended then reinstated, an empty group created, lockout locked, maintenance on then off.
     - It never publishes terms, switches the global model kill switch or approves another split.
@@ -102,5 +104,46 @@ If PG18 is down after a container restart: `runuser -u postgres -- /opt/pg18/bin
   - A held request must not be unrouted while its handler still waits. Playwright then lets it through, so a "held and aborted" submit was sent. heldShot waits for the handler to abort first.
   - A rail link clicked at 390 px right after the Menu opens shows no loading state; three seconds later, once the prefetch has settled, it does. capLoading scrolls the link into view and waits before the click.
   - At 390 px in mobile emulation a filled date field's label takes the pointer over the submit button below it. `press()` dispatches the click when it cannot land.
-  - A field focused by a refusal keeps the mobile visual viewport offset after `scrollTo`, so a full-page shot drew the sticky header mid-page. snap blurs the field first and says so in the shot's note.
+  - A field focused by a refusal keeps the mobile visual viewport offset after `scrollTo`, so a full-page shot drew the sticky header mid-page. snap blurs the field first and says so in the shot's note. The blur alone was not enough: `toTop` now checks that the page is at the top before every shot (see "The second retake", below).
   - Steps without a timeout hung the first run. The capture now has a 15 s action timeout, a 45 s navigation timeout and a 240 s bound per step. Its tests no longer run as a serial group, so one failure does not skip the rest.
+
+## The second retake (2026-10-26)
+- **What:** the 22 shots the image checkers flagged as capture faults (`batches/retake-input.json`). They were retaken on a fresh prepare of the same build (6ddd587, `TOUR_REF` pinned to it), with populate first (all 10 tests passed in 3.4 min).
+  - A TOUR_ONLY capture of all 22 took 16 shots.
+  - A same-database retake of the other 6 took them all.
+  - `batches/retake.json` holds the 22 entries. `shots.json` still holds 857 shots and 78 skips, and no other entry changed.
+- **The heavy lock:** about 10.4 minutes (re-serve 04:12:44 to 04:23:01, plus about 3 s for each of the two `setup.sh` installs).
+- **What the spec does now:**
+  - **The sticky header mid-page (7 shots at 390 px):** a full-page shot resizes the view to the whole page, and the resize keeps the visual viewport's place in the document. So a visual viewport left below the top scrolls the page there during the shot, and the sticky header is drawn at that place.
+    - At 390 px a page wider than the viewport lets the visual viewport sit below the top. A refusal's focus or a click's scroll into view puts it there, and `window.scrollTo` moves only the layout viewport.
+    - `toTop` checks the layout scroll, the visual viewport's place and the header's sticky shift, and needs all three at 0 at two checks in a row.
+    - In order, it tries `scrollTo`, a blur, `document.documentElement.scrollIntoView`, a wheel and a touch swipe. If none gets the page to the top, the shot fails with the numbers, so a retake keeps the earlier shot.
+    - It logs `VIEWPORT <id>` with the before state whenever more than `scrollTo` was needed. In this retake, all 7 needed `scrollIntoView`. For example, p.access-log.older.390 had layout scroll 0 but its visual viewport at y 513.
+  - **Filtered empty states:** `filterToEmpty` reaches them through the filter form, as a person does: State Open on PACKETS' cases, and Payer SYNTHETIC PAYER Q on LAYOUT's anomalies.
+    - `?state=resolved` matched PACKETS' one case.
+    - `?run=` of a run without cohorts left the Pricing run select reading Every run, because it lists only runs with cohorts.
+    - The step settles before it looks for the message. Without that, the first try missed the message every time.
+  - **`p.proof-level.default`:** opens the other group's practice with the most lines the change would move, using the page's own count. The counts are logged under `RECORDS proof-level counts`.
+    - On the populated data every practice counts 0 (LEDGER is deposited with no line posted), so the shot stays on LEDGER.
+    - Its note says that 0 is the real count. No populate spec leaves a line the change would move.
+  - **`p.support-access.empty`:** opens a grant of the other group that has no reads, chosen when the shot is taken. The grants' reads are logged under `RECORDS grant reads`.
+    - Every journey grant holds 3 to 33 reads once populate has run, so the shot opens the reviewer's SYN-TOUR-4 on LAYOUT, which nothing reads before the writes test.
+  - **SYNTHETIC CONSOLE EMPTY GROUP:** the writes test creates this group last. A console.organizations or console.billing shot as the platform administrator now fails with the reason, and keeps the earlier shot, when the group is already on the database. Five 390 px shots had listed it after the first same-database retake.
+  - **`p.abstraction-ledger.adjust-open`:** the click's scroll into view left the entries table scrolled part of the way across, which cut the opened form at the right edge. This was judged a capture fault.
+    - The page draws the whole form in the table's last column, an `overflow-x-auto` scroller, and nothing in the product sets that scroller's offset.
+    - The step now scrolls the table to its end, as a person swipes it. The product finding stands: at 390 px the table overflows with no cue that it scrolls.
+- **Product findings the retake keeps** (not capture faults): tables that overflow at 390 px (the shots are 439 to 667 px wide), the raw field keys in refusals (`effectiveFrom`, `organizationId`), and the empty fields after a refusal.
+- **The check of the retake:** all 22 are ok (`verify/retake.json`, the shots.json fields plus `verdict`, `ok`, `fixable` and `note`). Each earlier fault is gone:
+  - the 7 header shots have the header at the top and nowhere else;
+  - the 5 console shots list only the seeded organizations;
+  - the 4 filtered empty states show the filter beside the message;
+  - the two `p.support-access.empty` shots read "No records read";
+  - and the Adjust form shows whole.
+  - The 3 `p.proof-level.default` images are pixel-identical to the earlier ones. 0 is the page's real count: its query (`lib/routes/settings.ts`) moves only payer_approved lines whose posting covers the approved amount, and no populate spec leaves one. So their relabelled note resolves them. A non-zero default needs a populate change.
+- **How to check a sticky-header fix without trusting the eye on a 15,000 px image:** cut the logo strip (x 10 to 150, y 8 to 48) from the top of the shot and slide it down the page, comparing pixels at each step. A fixed shot has dark logo pixels at the top and no close match below. A faulty one has a blank top band and the logo lower down.
+  - To see where a retake changed, run `compare -fuzz 1% new.png old.png -compose src diff.png`, then `convert diff.png -trim -format '%@' info:`.
+  - For console.compliance.error.390, only the top 391 rows changed.
+- **Product findings the check adds:**
+  - On a line's page, the Note field carries no invalid mark, although the refusal says "Check the fields marked below". This shows at 1280 too.
+  - An older access-log page says nothing of being older and has no link back to the newest.
+  - A support-access grant's page marks Practice home in the rail.

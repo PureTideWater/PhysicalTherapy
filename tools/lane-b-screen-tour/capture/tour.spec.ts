@@ -182,6 +182,63 @@ async function one(sql: string, params: readonly unknown[] = []): Promise<string
   return withDatabase(async (client) => (await client.query<{ id: string }>(sql, [...params])).rows[0]?.id ?? '');
 }
 
+/** The other group's practices by the lines a proof-level change would move (proofLevelPage's own count), most first. */
+async function proofLevelPick(): Promise<{ id: string; name: string; moving: number } | undefined> {
+  const rows = await withDatabase(
+    async (client) =>
+      (
+        await client.query<{ id: string; name: string; moving: number }>(
+          `WITH practices AS (
+             SELECT p.id, p.name, coalesce(p.settings ->> 'proof_level', 'posted') AS level FROM practice p
+              WHERE p.organization_id = (SELECT organization_id FROM practice WHERE id = $1)
+           ), latest AS (
+             SELECT pr.id AS practice_id, pr.level,
+                    (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_id ORDER BY s.seq DESC LIMIT 1) AS stage,
+                    coalesce((SELECT sum(e.amount_cents) FROM ledger_entry e WHERE e.service_line_id = cl.service_line_id AND e.stage = 'approved'), 0) AS approved,
+                    coalesce((SELECT sum(e.amount_cents) FROM ledger_entry e
+                               WHERE e.service_line_id = cl.service_line_id AND e.stage = (CASE WHEN pr.level = 'posted' THEN 'deposited' ELSE 'posted' END)
+                                 AND NOT EXISTS (SELECT 1 FROM ledger_entry r WHERE r.stage = 'reversed' AND r.evidence_id = e.id)), 0) AS proved
+               FROM practices pr JOIN case_line cl ON cl.practice_id = pr.id
+           )
+           SELECT pr.id, pr.name,
+                  (SELECT count(*) FROM latest l WHERE l.practice_id = pr.id
+                      AND ((l.level = 'posted' AND l.stage = 'recovered' AND l.proved < l.approved)
+                        OR (l.level = 'deposited' AND l.stage = 'payer_approved' AND l.approved > 0 AND l.proved >= l.approved)))::int AS moving
+             FROM practices pr
+            ORDER BY moving DESC, (pr.name = 'SYNTHETIC OTHER PRACTICE LEDGER') DESC, pr.name`,
+          [need('other')],
+        )
+      ).rows,
+  );
+  log(`RECORDS proof-level counts: ${rows.map((row) => `${row.name} ${String(row.moving)}`).join('; ')}`);
+  return rows[0] !== undefined && rows[0].moving > 0 ? rows[0] : undefined;
+}
+
+/**
+ * A support grant of the other group with no read under it (the support-access page's own count), open ones first, then
+ * the newest. Every journey grant (SYN-JOURNEY-1 and -2) holds reads once populate has run (17 to 33 on 2026-10-26: the
+ * journeys work under them), so the one with none is the reviewer's newest tour grant, SYN-TOUR-4 on LAYOUT, which the
+ * console test opens on screen and nothing reads under before the writes test.
+ */
+async function unreadGrant(): Promise<{ practiceId: string; grantId: string; name: string; ticket: string } | undefined> {
+  const rows = await withDatabase(
+    async (client) =>
+      (
+        await client.query<{ practice_id: string; grant_id: string; name: string; ticket: string; reads: number; open: boolean }>(
+          `SELECT g.practice_id, g.id AS grant_id, p.name, g.ticket, (now() < g.expires_at) AS open,
+                  (SELECT count(*) FROM audit_event e WHERE e.grant_id = g.id AND e.practice_id = g.practice_id AND e.action = 'read')::int AS reads
+             FROM support_grant g JOIN practice p ON p.id = g.practice_id
+            WHERE p.organization_id = (SELECT organization_id FROM practice WHERE id = $1)
+            ORDER BY reads, (now() < g.expires_at) DESC, g.created_at DESC, g.id`,
+          [need('other')],
+        )
+      ).rows,
+  );
+  log(`RECORDS grant reads: ${rows.map((row) => `${row.ticket} on ${row.name} ${String(row.reads)}${row.open ? '' : ' (ended)'}`).join('; ')}`);
+  const pick = rows[0];
+  return pick !== undefined && pick.reads === 0 ? { practiceId: pick.practice_id, grantId: pick.grant_id, name: pick.name, ticket: pick.ticket } : undefined;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Pages, sessions and shots.
 
@@ -202,6 +259,108 @@ async function settle(page: Page): Promise<void> {
 async function settleHeld(page: Page): Promise<void> {
   await fontsReady(page);
   await page.waitForTimeout(400);
+}
+
+/** Where the page stands: the layout scroll, the visual viewport's place in the document, and the sticky header's. */
+interface ViewState {
+  readonly scrollX: number;
+  readonly scrollY: number;
+  readonly pageLeft: number;
+  readonly pageTop: number;
+  /** How far the app header's sticky position has moved it down the page: 0 at the top (and on a page without it). */
+  readonly header: number;
+  /** The focused element's tag ('' for none or the body). */
+  readonly focused: string;
+}
+async function viewState(page: Page): Promise<ViewState> {
+  return page.evaluate(() => {
+    const header = document.querySelector('[data-slot="app-header"]');
+    const active = document.activeElement;
+    return {
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      pageLeft: window.visualViewport?.pageLeft ?? window.scrollX,
+      pageTop: window.visualViewport?.pageTop ?? window.scrollY,
+      // The header is the shell's first child: its sticky shift is its distance below the shell's top.
+      header: header === null ? 0 : header.getBoundingClientRect().top - (header.parentElement ?? document.body).getBoundingClientRect().top,
+      focused: active === null || active === document.body ? '' : active.tagName.toLowerCase(),
+    };
+  });
+}
+const atTop = (state: ViewState): boolean => Math.max(Math.abs(state.scrollX), Math.abs(state.scrollY), Math.abs(state.pageLeft), Math.abs(state.pageTop), Math.abs(state.header)) < 1;
+const stateText = (state: ViewState): string =>
+  `scroll ${String(Math.round(state.scrollX))},${String(Math.round(state.scrollY))} visual ${String(Math.round(state.pageLeft))},${String(Math.round(state.pageTop))} header ${String(Math.round(state.header))}${state.focused === '' ? '' : ` focus ${state.focused}`}`;
+
+/**
+ * Brings the page, its visual viewport and its sticky header to the top before a full-page shot, and checks it.
+ *
+ * Why (2026-10-26, seven 390 px shots with the header painted mid-page): a full-page shot in Chromium resizes the view to
+ * the whole page, and the resize keeps the visual viewport's place in the document, so a visual viewport left below the
+ * top scrolls the page there during the shot and the sticky header is drawn at that place. In mobile emulation a page
+ * wider than 390 px lets the visual viewport sit below the layout viewport's top; a click's scroll into view or a focus
+ * puts it there, and window.scrollTo moves only the layout viewport. The steps, each tried only while the page is not yet
+ * at the top: scrollTo; a blur of the focused element (a refusal focuses the field it names); a scrollIntoView of the
+ * document (which moves the visual viewport too); a wheel; a touch swipe to the top. The page is at the top when the
+ * layout scroll, the visual viewport's place and the header's place are all 0 at two checks in a row. If no step gets it
+ * there, the shot fails with the numbers (a retake keeps the earlier shot) rather than being saved wrong.
+ */
+async function toTop(page: Page, id: string): Promise<{ readonly blurred: boolean }> {
+  const frames = (): Promise<void> =>
+    page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))).catch(() => undefined);
+  const before = await viewState(page);
+  let blurred = false;
+  const steps: (readonly [string, () => Promise<unknown>])[] = [
+    ['scrollTo', () => page.evaluate(() => window.scrollTo(0, 0))],
+    [
+      'blur',
+      async () => {
+        blurred = (await viewState(page)).focused !== '';
+        await page.evaluate(() => {
+          if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) document.activeElement.blur();
+          window.scrollTo(0, 0);
+        });
+      },
+    ],
+    ['scrollIntoView', () => page.evaluate(() => document.documentElement.scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' }))],
+    [
+      'wheel',
+      async () => {
+        await page.mouse.move(0, 0);
+        await page.mouse.wheel(-100_000, -100_000);
+      },
+    ],
+    [
+      'touch',
+      async () => {
+        const cdp = await page.context().newCDPSession(page);
+        try {
+          // Positive distances scroll towards the top and the left, from a point on the header.
+          await cdp.send('Input.synthesizeScrollGesture', { x: 10, y: 10, xDistance: 100_000, yDistance: 100_000, gestureSourceType: 'touch', speed: 200_000 });
+        } finally {
+          await cdp.detach().catch(() => undefined);
+        }
+      },
+    ],
+  ];
+  const used: string[] = [];
+  let now = before;
+  for (const [name, step] of steps) {
+    await step().catch(() => undefined);
+    used.push(name);
+    await frames();
+    await page.waitForTimeout(150);
+    now = await viewState(page);
+    if (!atTop(now)) continue;
+    // Settled: still at the top a moment later.
+    await frames();
+    await page.waitForTimeout(250);
+    now = await viewState(page);
+    if (atTop(now)) break;
+  }
+  await page.mouse.move(0, 0).catch(() => undefined);
+  if (!atTop(now)) throw new Error(`the page did not come back to the top for the full-page shot (before: ${stateText(before)}; after ${used.join(', ')}: ${stateText(now)})`);
+  if (used.length > 1) log(`VIEWPORT ${id}: before ${stateText(before)}; at the top after ${used.join(', ')}`);
+  return { blurred };
 }
 
 interface Meta {
@@ -235,21 +394,9 @@ async function snap(page: Page, meta: Meta, options: { dark?: boolean; held?: bo
     await page.mouse.move(0, 0).catch(() => undefined);
   }
   // A full-page shot of a scrolled page draws the sticky header where the viewport was (mid-page at 390 px after a form
-  // step): back to the top first.
-  // In mobile emulation a focused field (a refusal moves focus to the field it names) keeps the visual viewport offset
-  // after scrollTo; only a blur resets it (probe, 2026-10-26). The field keeps its invalid marking; the note says so.
-  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
-  await page.waitForTimeout(150);
-  const offset = await page.evaluate(() => (window.visualViewport?.pageTop ?? 0) + (window.visualViewport?.pageLeft ?? 0)).catch(() => 0);
-  let blurred = '';
-  if (offset > 1) {
-    await page.evaluate(() => {
-      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      window.scrollTo(0, 0);
-    });
-    await page.waitForTimeout(150);
-    blurred = ' The focused field was blurred so the full-page shot starts at the top (a mobile visual-viewport offset).';
-  }
+  // step or a click low on the page): back to the top first, and checked (toTop, below).
+  const top = await toTop(page, idOf(meta, width));
+  const blurred = top.blurred ? ' The focused field was blurred so the full-page shot starts at the top (a mobile visual-viewport offset).' : '';
   const base = { path: shown(page), routePattern: meta.route, role: meta.role, width, state: meta.state, note: `${meta.note ?? ''}${blurred}`.trim() };
   if (takeLight) {
     const file = `${PNG}/${id}.png`;
@@ -404,6 +551,14 @@ interface Cap {
   readonly note?: string;
 }
 
+/**
+ * The screens that list every organization to the platform administrator. The writes test makes SYNTHETIC CONSOLE EMPTY
+ * GROUP last, so no other shot lists it; a retake on the same database after it would (the checkers found it on five
+ * 390 px console shots, 2026-10-26), so such a retake fails with the reason and keeps the earlier shot.
+ */
+const LISTS_ORGANIZATIONS = new Set(['console.organizations', 'console.billing']);
+let groupMade = false;
+
 /** One state of one route: opened as the persona at each width, readied, acted on, saved (dark too for a default). */
 async function cap(browser: Browser, c: Cap): Promise<void> {
   const state = c.state ?? 'default';
@@ -412,6 +567,9 @@ async function cap(browser: Browser, c: Cap): Promise<void> {
   for (const width of c.widths ?? WIDTHS) {
     const shotIds = [idOf(meta, width), ...(dark && width === 1280 ? [idOf(meta, width, true)] : [])];
     await attempt(shotIds, c.route, async () => {
+      if (groupMade && c.persona === 'platform-admin' && LISTS_ORGANIZATIONS.has(c.key)) {
+        throw new Error('SYNTHETIC CONSOLE EMPTY GROUP, which the run makes last, is on this database and the screen would list it: retake on a fresh prepare');
+      }
       const { page, dispose } = await open(browser, c.persona, width);
       try {
         await go(page, c.persona, typeof c.path === 'function' ? await c.path() : c.path);
@@ -612,6 +770,39 @@ async function shellControls(browser: Browser, c: { key: string; route: string; 
 /** A URL notice (?notice=, ?saved=1 ...): the success alert the product shows after a write, opened without the write. */
 function notice(browser: Browser, c: { key: string; route: string; persona: string; path: () => string; name?: string; ready?: (page: Page) => Promise<void> }): Promise<void> {
   return cap(browser, { key: c.key, route: c.route, persona: c.persona, path: c.path, state: `interaction:${c.name ?? 'notice'}`, ready: c.ready, note: 'The success alert, opened by its URL without the write that would show it.' });
+}
+
+/**
+ * A list's filtered empty state, reached through its filter form as a person reaches it: each option of the select in
+ * turn (the preferred ones first), Filter pressed (the form is a GET), until the list says nothing matches. The checkers
+ * (2026-10-26) found the URL-only shots wrong: ?state=resolved matched PACKETS' one case, and an ?run= of a run without
+ * cohorts left the Pricing run select reading Every run (it lists only runs with cohorts), so no filter showed.
+ */
+async function filterToEmpty(page: Page, form: string, select: string, prefer: RegExp, empty: string): Promise<void> {
+  const field = page.locator(`${form} ${select}`).first();
+  const name = (await field.getAttribute('name')) ?? '';
+  const options = await field.locator('option').evaluateAll((items) => items.map((item) => ({ value: (item as HTMLOptionElement).value, label: (item.textContent ?? '').trim() })));
+  const choices = options.filter((option) => option.value !== '');
+  const order = [...choices.filter((option) => prefer.test(option.label)), ...choices.filter((option) => !prefer.test(option.label))];
+  const tried: string[] = [];
+  for (const option of order) {
+    await page.locator(`${form} ${select}`).first().selectOption(option.value);
+    await press(page.locator(`${form} button[type="submit"]`).first());
+    await page.waitForURL((url) => url.searchParams.get(name) === option.value);
+    // The list renders after the URL changes (a check at once missed every message in the first try): settle first.
+    await settle(page);
+    const shows = await page
+      .getByText(empty, { exact: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: 5_000 })
+      .then(
+        () => true,
+        () => false,
+      );
+    if (shows) return;
+    tried.push(option.label);
+  }
+  throw new Error(`every option of ${select} matches something (${tried.join(' | ')})`);
 }
 
 /**
@@ -1294,9 +1485,11 @@ async function screeningShots(browser: Browser): Promise<void> {
 test('console and account', async ({ browser }) => {
   test.setTimeout(40 * 60_000);
   const A = 'platform-admin';
+  groupMade = (await one("SELECT id FROM organization WHERE name = 'SYNTHETIC CONSOLE EMPTY GROUP'")) !== '';
 
   // The reviewer's support grants, opened on screen by the platform administrator (route map, "How to use it").
-  if (['console.support', 'p.packet-review', 'p.report-review'].some(wantedPrefix)) {
+  // p.support-access.empty shoots the newest of them (SYN-TOUR-4 on LAYOUT, which nothing reads before the writes test).
+  if (['console.support', 'p.packet-review', 'p.report-review', 'p.support-access.empty'].some(wantedPrefix)) {
     const page = await (await desktopOf(browser, A)).newPage();
     try {
       for (const [index, practiceKey] of (['packets', 'deadlines', 'reports', 'layout'] as const).entries()) {
@@ -1731,7 +1924,30 @@ test('practice workflow', async ({ browser }) => {
   const openAdjust = async (page: Page): Promise<void> => {
     await page.locator('summary').filter({ hasText: /^Adjust$/ }).first().click();
   };
-  await cap(browser, { key: 'p.abstraction-ledger', route: abl, persona: CS, path: () => LG('/abstraction/ledger'), state: 'interaction:adjust-open', act: openAdjust, note: 'The Adjust form opened, not submitted.' });
+  // At 390 px the entries table scrolls sideways inside its card, and the Adjust form opens in its last column (Correct).
+  // The click's own scroll into view stops the table part way, as far as the summary needs, which cut the opened form at
+  // the right edge (checkers, 2026-10-26); the product draws the whole form in that column (error-adjust-zero.390, where
+  // the focused field brings it in). A person swipes the table to read the form they opened: the step does the same.
+  const showAdjust = async (page: Page): Promise<void> => {
+    await openAdjust(page);
+    await page
+      .locator('details[open]')
+      .filter({ has: page.locator('summary').filter({ hasText: /^Adjust$/ }) })
+      .first()
+      .evaluate((details) => {
+        const scroller = details.closest('.overflow-x-auto');
+        if (scroller instanceof HTMLElement) scroller.scrollLeft = scroller.scrollWidth;
+      });
+  };
+  await cap(browser, {
+    key: 'p.abstraction-ledger',
+    route: abl,
+    persona: CS,
+    path: () => LG('/abstraction/ledger'),
+    state: 'interaction:adjust-open',
+    act: showAdjust,
+    note: 'The Adjust form opened, not submitted; at 390 px the entries table, which scrolls sideways, is swiped to its end so the form shows whole.',
+  });
   await cap(browser, {
     key: 'p.abstraction-ledger',
     route: abl,
@@ -1781,7 +1997,16 @@ test('practice workflow', async ({ browser }) => {
   const an = '/p/[practiceId]/anomalies';
   await cap(browser, { key: 'p.anomalies', route: an, persona: 'pricing-manager', path: () => L('/anomalies'), note: 'Legacy tour shot 12-anomalies.' });
   await cap(browser, { key: 'p.anomalies', route: an, persona: 'billing-manager', path: () => N('/anomalies'), state: 'empty' });
-  await cap(browser, { key: 'p.anomalies', route: an, persona: 'pricing-manager', path: () => L(`/anomalies?run=${need('marchRun')}`), state: 'empty', variant: 'empty-filtered', note: 'Filtered to the March run: no cohort matches.' });
+  await cap(browser, {
+    key: 'p.anomalies',
+    route: an,
+    persona: 'pricing-manager',
+    path: () => L('/anomalies'),
+    state: 'empty',
+    variant: 'empty-filtered',
+    act: (page) => filterToEmpty(page, 'form[aria-label="Filter the cohorts"]', 'select[name="payer"]', /SYNTHETIC PAYER Q/, 'No cohort matches these filters.'),
+    note: 'Filtered with the Payer select and Filter to a payer of LAYOUT with no cohort: the select shows the filter beside the message.',
+  });
   await capLoading(browser, { key: 'p.anomalies', route: an, persona: 'pricing-manager', from: () => L('/claims'), link: rail(() => L('/anomalies')) });
   await cap(browser, { key: 'p.anomalies', route: an, persona: 'pricing-manager', path: () => L(`/anomalies?anomaly=${need('anomaly')}`), state: 'interaction:cohort', note: 'A cohort opened (its Flagged lines and the two actions, not pressed).' });
   await cap(browser, { key: 'p.anomalies', route: an, persona: 'ledger-viewer', path: () => L(`/anomalies?anomaly=${need('anomaly')}`), state: 'interaction:cohort-viewer', note: 'The open cohort as a viewer.' });
@@ -1790,7 +2015,16 @@ test('practice workflow', async ({ browser }) => {
   const cs = '/p/[practiceId]/cases';
   await cap(browser, { key: 'p.cases', route: cs, persona: 'packet-approver', path: () => PK('/cases'), note: 'Legacy tour shot 13-cases.' });
   await cap(browser, { key: 'p.cases', route: cs, persona: 'billing-manager', path: () => N('/cases'), state: 'empty' });
-  await cap(browser, { key: 'p.cases', route: cs, persona: 'packet-approver', path: () => PK('/cases?state=resolved'), state: 'empty', variant: 'empty-filtered' });
+  await cap(browser, {
+    key: 'p.cases',
+    route: cs,
+    persona: 'packet-approver',
+    path: () => PK('/cases'),
+    state: 'empty',
+    variant: 'empty-filtered',
+    act: (page) => filterToEmpty(page, 'form[aria-label="Filter the cases"]', 'select[name="state"]', /^Open$/i, 'No case matches these filters.'),
+    note: 'Filtered with the State select and Filter to a state no PACKETS case is in (its one case is resolved).',
+  });
   await capLoading(browser, { key: 'p.cases', route: cs, persona: 'packet-approver', from: () => PK(), link: rail(() => PK('/cases')) });
   await cap(browser, {
     key: 'p.cases',
@@ -2574,14 +2808,44 @@ test('practice set-up', async ({ browser }) => {
   await notice(browser, { key: 'p.pricing-settings', route: ps, persona: 'practice-admin', path: () => P('north', '/settings/pricing?notice=saved'), name: 'notice' });
 
   const pv = '/p/[practiceId]/settings/proof-level';
-  await cap(browser, { key: 'p.proof-level', route: pv, persona: 'other-admin', path: () => P('ledger', '/settings/proof-level'), note: 'LEDGER: a real count of lines the change would move.' });
+  // Its default shows a real, non-zero count of lines the change would move. LEDGER's is 0 on the populated data (no line
+  // is posted, so lowering its deposited level moves nothing), which read the same as the empty state (checkers,
+  // 2026-10-26): the shot opens the practice of the other group (other-admin's) with the most, by the page's own count.
+  let proof = { id: ids.ledger ?? '', name: 'SYNTHETIC OTHER PRACTICE LEDGER', moving: 0 };
+  if (['p.proof-level.default.1280', 'p.proof-level.default.1280-dark', 'p.proof-level.default.390'].some(wanted)) proof = (await proofLevelPick()) ?? proof;
+  await cap(browser, {
+    key: 'p.proof-level',
+    route: pv,
+    persona: 'other-admin',
+    path: () => `/p/${proof.id}/settings/proof-level`,
+    note:
+      proof.moving > 0
+        ? `${proof.name}: the change would move ${String(proof.moving)} line${proof.moving === 1 ? '' : 's'}, the most of the other group's practices (LEDGER's count is 0).`
+        : 'LEDGER: 0 is the real count; no practice of the other group has a line the change would move on the populated data, so this default reads like the empty state.',
+  });
   await cap(browser, { key: 'p.proof-level', route: pv, persona: 'practice-admin', path: () => P('north', '/settings/proof-level'), state: 'empty', note: 'NORTH: the change would move 0 lines.' });
   await cap(browser, { key: 'p.proof-level', route: pv, persona: 'ledger-manager', path: () => P('ledger', '/settings/proof-level'), state: 'interaction:read-only' });
   await notice(browser, { key: 'p.proof-level', route: pv, persona: 'other-admin', path: () => P('ledger', '/settings/proof-level?notice=saved'), name: 'notice' });
 
   const sa = '/p/[practiceId]/support-access/[supportGrantId]';
   await cap(browser, { key: 'p.support-access', route: sa, persona: 'other-admin', path: () => P('other', `/support-access/${need('grantConE2E')}`), note: 'SYN-CON-E2E: the contract specialist’s reads.' });
-  await cap(browser, { key: 'p.support-access', route: sa, persona: 'other-admin', path: () => P('monitoring', `/support-access/${need('grantMonitoring')}`), state: 'empty', note: 'MONITORING’s SYN-JOURNEY-1 (the specialist worked beside the browser there; the tour’s own specialist shots may have added reads).' });
+  // The empty state needs a grant nothing was read under. MONITORING's SYN-JOURNEY-1 had 17 reads (checkers, 2026-10-26),
+  // and so does every journey grant once populate has run: the grant is chosen when the shot is taken (unreadGrant).
+  const emptyGrant = ['p.support-access.empty.1280', 'p.support-access.empty.390'].some(wanted) ? await unreadGrant() : undefined;
+  await cap(browser, {
+    key: 'p.support-access',
+    route: sa,
+    persona: 'other-admin',
+    path: () => {
+      if (emptyGrant === undefined) throw new Error('every support grant of the other group has a read (the console test opens the reviewer’s SYN-TOUR grants)');
+      return `/p/${emptyGrant.practiceId}/support-access/${emptyGrant.grantId}`;
+    },
+    state: 'empty',
+    note:
+      emptyGrant === undefined
+        ? ''
+        : `${emptyGrant.ticket} on ${emptyGrant.name}: a grant nothing was read under when the shot was taken (every journey grant holds the journeys’ reads).`,
+  });
   await cap(browser, { key: 'p.support-access', route: sa, persona: 'pricing-manager', path: () => P('layout', `/support-access/${need('grantLayout')}`), state: 'error', variant: 'error-forbidden', ready: denied });
 });
 

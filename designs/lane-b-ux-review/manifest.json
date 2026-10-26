@@ -1934,7 +1934,7 @@
   "state": "default",
   "verdict": "ok",
   "fixable": false,
-  "note": "Billing status as platform-admin after populate: three SYNTHETIC organizations, all Good, THERAPY GROUP 'Monthly (active)', Owed $0.00, Practices '\u2014'; 'Issue an audit invoice' form ($2,500.00). Settled, synthetic."
+  "note": "Billing status as platform-admin after populate: three SYNTHETIC organizations, all Good, THERAPY GROUP 'Monthly (active)', Owed $0.00, Practices '—'; 'Issue an audit invoice' form ($2,500.00). Settled, synthetic."
  },
  {
   "id": "console.billing.default.1280-dark",
@@ -2025,7 +2025,7 @@
   "state": "default",
   "verdict": "other",
   "fixable": false,
-  "note": "Right page, role and state (platform-admin, 17 control cards, Policies, Record evidence, Records kept 'Nothing recorded yet.'), settled and synthetic. But the image is 492 px wide, not 390: the page scrolls sideways at 390. The cause is the header-less Policies table: its 'Draft, awaiting approval' badges run past the card and the viewport (to x\u2248492), and the mono paths overlap the names ('management' runs into 'management.md'). The control cards themselves wrap cleanly (checked in slices). This is how the product renders, a layout finding for reviewers, not a capture fault."
+  "note": "Right page, role and state (platform-admin, 17 control cards, Policies, Record evidence, Records kept 'Nothing recorded yet.'), settled and synthetic. But the image is 492 px wide, not 390: the page scrolls sideways at 390. The cause is the header-less Policies table: its 'Draft, awaiting approval' badges run past the card and the viewport (to x≈492), and the mono paths overlap the names ('management' runs into 'management.md'). The control cards themselves wrap cleanly (checked in slices). This is how the product renders, a layout finding for reviewers, not a capture fault."
  },
  {
   "id": "console.compliance.error.1280",
@@ -2038,7 +2038,7 @@
   "state": "error",
   "verdict": "ok",
   "fixable": false,
-  "note": "Compliance error state as platform-admin: 'Not done' / 'occurredOn: evidence is recorded for what has happened' in Record evidence, the date field focused with a red border, Records kept still 'Nothing recorded yet.' The page above the form matches the default shot exactly (checked by pixel diff). Settled, synthetic. For reviewers (product): after the refusal every field is empty again (Policy '\u2014', date, reference, SHA-256), so the person cannot see or fix what was refused; the message shows the raw key 'occurredOn'."
+  "note": "Compliance error state as platform-admin: 'Not done' / 'occurredOn: evidence is recorded for what has happened' in Record evidence, the date field focused with a red border, Records kept still 'Nothing recorded yet.' The page above the form matches the default shot exactly (checked by pixel diff). Settled, synthetic. For reviewers (product): after the refusal every field is empty again (Policy '—', date, reference, SHA-256), so the person cannot see or fix what was refused; the message shows the raw key 'occurredOn'."
  },
  {
   "id": "console.compliance.sent.1280",
@@ -2922,7 +2922,7 @@
   "state": "error",
   "verdict": "ok",
   "fixable": false,
-  "note": "Forbidden state as the route map names: billing-manager@synthetic.test on THERAPY GROUP\u2019s billing ID gets Not available to your role / As Billing manager, you cannot do this here (Billing manager cannot choose the organization\u2019s plan and payment method and read its invoices). Your organization's administrator manages its billing., inside the shell with the account rail (Billing current). Settled, synthetic. Minor for reviewers: no page heading or organization name, the reason reads awkwardly (cannot choose ... and read its invoices), and the two apostrophes differ (curly in organization\u2019s, straight in organization's)."
+  "note": "Forbidden state as the route map names: billing-manager@synthetic.test on THERAPY GROUP’s billing ID gets Not available to your role / As Billing manager, you cannot do this here (Billing manager cannot choose the organization’s plan and payment method and read its invoices). Your organization's administrator manages its billing., inside the shell with the account rail (Billing current). Settled, synthetic. Minor for reviewers: no page heading or organization name, the reason reads awkwardly (cannot choose ... and read its invoices), and the two apostrophes differ (curly in organization’s, straight in organization's)."
  },
  {
   "id": "settings.users.default.1280",
@@ -3630,14 +3630,15 @@
   "id": "p.anomalies.empty-filtered.1280",
   "file": "p.anomalies.empty-filtered.1280.png",
   "routePattern": "/p/[practiceId]/anomalies",
-  "path": "/p/ffa6584c-0bef-4e22-a0fe-42f680cc5190/anomalies?run=c640e85c-5948-438b-aeaa-517daf0801de",
+  "path": "/p/8d3faf3f-15c2-4782-861b-a0d844dfbba6/anomalies?run=&payer=a99283c1-9c66-4e85-b213-0e079a4c4baf",
   "role": "pricing-manager",
   "width": 1280,
   "theme": "light",
   "state": "empty",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Shows 'No cohort matches these filters.' as pricing-manager on LAYOUT, but nothing on screen shows a filter: the Pricing run select reads 'Every run' because its options are only runs that have anomalies (lib/triage/queries.ts:220-226 anomalyRuns), so the March run in ?run= has no option and the page contradicts itself. A person cannot reach this state with the form. Better capture: pick SYNTHETIC PAYER Q in the Payer select (payerOptions lists every payer of the practice) and press Filter, so the select shows the active filter beside the empty message. Product finding for reviewers either way: a ?run= without anomalies falls back visually to 'Every run'."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the Payer select now reads SYNTHETIC PAYER Q beside 'No cohort matches these filters.', so the filter that empties the list is visible (Pricing run 'Every run'). Right page (Anomalies, Cohorts), role pricing-manager on SYNTHETIC OTHER PRACTICE L... (LAYOUT), light, settled, viewport-sized page with nothing cut off, synthetic only. Route-map note: its suggested ?run=<marchRun> path stays invisible in the form; this Payer path replaces it.",
+  "retaken": true
  },
  {
   "id": "p.anomalies.loading.1280",
@@ -3734,14 +3735,15 @@
   "id": "p.cases.empty-filtered.1280",
   "file": "p.cases.empty-filtered.1280.png",
   "routePattern": "/p/[practiceId]/cases",
-  "path": "/p/1b29933f-191f-41ba-a904-34ec7d882a98/cases?state=resolved",
+  "path": "/p/fcff42b4-a1c8-471f-8f28-cf98afae3dfd/cases?state=open&payer=&owner=&deadline=",
   "role": "packet-approver",
   "width": 1280,
   "theme": "light",
   "state": "empty",
-  "verdict": "state-not-shown",
-  "fixable": true,
-  "note": "Meant to show the filtered empty state, but ?state=resolved matches PACKETS' only case, which is Resolved on the populated data: the table shows the SYNTHETIC PAYER Q row with the Resolved chip instead of 'No case matches these filters.' Retake with a state no PACKETS case has, e.g. /p/<packets>/cases?state=open (CASE_STATES in packages/triage/src/stages.ts:83), ideally chosen through the State select and Filter."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the By deadline filter row reads State 'Open', Every payer, Anyone, Any deadline, and below it 'No case matches these filters.' instead of the Resolved PACKETS row; the header line agrees ('$0.00 across 0 cases ... the filters admit'). Right page (Cases), role packet-approver on SYNTHETIC OTHER PRACTICE P... (PACKETS), light, settled, full page to the bottom, synthetic only (the SK6CS-K6CSK reference is the field's placeholder).",
+  "retaken": true
  },
  {
   "id": "p.cases.loading.1280",
@@ -5600,7 +5602,7 @@
   "state": "default",
   "verdict": "other",
   "fixable": false,
-  "note": "Right page, role and state (pricing-manager on SYNTHETIC OTHER PRACTICE L..., March against April, run cards stacked, 'Every difference' current, the same 32 second-run-only and 3 first-run-only rows as at 1280); settled, full page, synthetic. Product finding, not a capture fault: at a 390 viewport the document is 434 px wide. The five-column diff table has no scroll wrapper: the Cause column crosses the card border at x=373 and the trace links sit past the viewport (x\u2248395-434), so the page scrolls sideways and no trace link is visible at phone width. Every cell wraps to one word per line ('Only / one / run / priced / the / line'), so each row is about 130 px tall and the page is 5455 px long. Same copy observations as the 1280 shot."
+  "note": "Right page, role and state (pricing-manager on SYNTHETIC OTHER PRACTICE L..., March against April, run cards stacked, 'Every difference' current, the same 32 second-run-only and 3 first-run-only rows as at 1280); settled, full page, synthetic. Product finding, not a capture fault: at a 390 viewport the document is 434 px wide. The five-column diff table has no scroll wrapper: the Cause column crosses the card border at x=373 and the trace links sit past the viewport (x≈395-434), so the page scrolls sideways and no trace link is visible at phone width. Every cell wraps to one word per line ('Only / one / run / priced / the / line'), so each row is about 130 px tall and the page is 5455 px long. Same copy observations as the 1280 shot."
  },
  {
   "id": "p.compare.diff-filter.1280",
@@ -5652,7 +5654,7 @@
   "state": "default",
   "verdict": "cropped",
   "fixable": false,
-  "note": "Right page, role and state at 390 (ledger-manager on LEDGER, Menu; stat cards stacked with the same totals $30.00 / $0.00 / $30.00 / -$18.00 / $0.00 / $12.00, template, uploader, exports, the unmatched posting row, the case line and Ledger entries); settled, full page (checked in three slices), synthetic. Product finding, not a capture fault: the case-line ledger table and the Ledger entries table sit in scroll wrappers clipped at the card or column edge, so Evidence is cut ('remittanc', 'export ro', 'adjustme') and the 'Written by' and 'Reason' columns are hidden with no scroll cue: at phone width you cannot see who reversed the posting match or why. Also the Exports table runs past the viewport (Matched at x\u2248405), so the image is 405 px wide and the page scrolls sideways (as batch 08 noted for the other LEDGER 390 shots)."
+  "note": "Right page, role and state at 390 (ledger-manager on LEDGER, Menu; stat cards stacked with the same totals $30.00 / $0.00 / $30.00 / -$18.00 / $0.00 / $12.00, template, uploader, exports, the unmatched posting row, the case line and Ledger entries); settled, full page (checked in three slices), synthetic. Product finding, not a capture fault: the case-line ledger table and the Ledger entries table sit in scroll wrappers clipped at the card or column edge, so Evidence is cut ('remittanc', 'export ro', 'adjustme') and the 'Written by' and 'Reason' columns are hidden with no scroll cue: at phone width you cannot see who reversed the posting match or why. Also the Exports table runs past the viewport (Matched at x≈405), so the image is 405 px wide and the page scrolls sideways (as batch 08 noted for the other LEDGER 390 shots)."
  },
  {
   "id": "p.reconciliation.empty.1280",
@@ -6367,7 +6369,7 @@
   "state": "default",
   "verdict": "ok",
   "fixable": false,
-  "note": "Monthly variance summary, September 2026 (default last month) for SYNTHETIC OTHER PRACTICE MONITORING as monitoring-manager, the named state: Monthly digests lists September 2026 (sent 2026-10-26 01:26 UTC); Choose the month form, Download the summary CSV, Generate the month\u2019s PDF, By stage, By payer, Packets approved alone, Share card. Settled, full page, synthetic. Observation for reviewers: MONITORING has no line in 2026-09, so every By stage figure is 0 and By payer reads No line has a service date in 2026-09, so the populated table look comes only from p.report-document.default."
+  "note": "Monthly variance summary, September 2026 (default last month) for SYNTHETIC OTHER PRACTICE MONITORING as monitoring-manager, the named state: Monthly digests lists September 2026 (sent 2026-10-26 01:26 UTC); Choose the month form, Download the summary CSV, Generate the month’s PDF, By stage, By payer, Packets approved alone, Share card. Settled, full page, synthetic. Observation for reviewers: MONITORING has no line in 2026-09, so every By stage figure is 0 and By payer reads No line has a service date in 2026-09, so the populated table look comes only from p.report-document.default."
  },
  {
   "id": "p.monthly.default.1280-dark",
@@ -7348,40 +7350,43 @@
   "id": "p.proof-level.default.1280",
   "file": "p.proof-level.default.1280.png",
   "routePattern": "/p/[practiceId]/settings/proof-level",
-  "path": "/p/ef0c9101-ab7f-4669-b3a3-c90110857e2e/settings/proof-level",
+  "path": "/p/bd9bc91f-235b-40f2-999a-c039ac02705e/settings/proof-level",
   "role": "other-admin",
   "width": 1280,
   "theme": "light",
   "state": "default",
-  "verdict": "state-not-shown",
-  "fixable": true,
-  "note": "Right page and role (other-admin on SYNTHETIC OTHER PRACTICE L..., 'Now: deposited', the form with select, checkbox and 'Save proof level'), settled, not cut off. But the default state is meant to show LEDGER's real non-zero moving count and the image reads 'Changing to posted would move 0 lines.', the same as the empty state. Capture needs LEDGER after reconciliation.spec with at least one line recovered by posting but not yet deposited (or the practice at the other level) so the count is non-zero; if 0 is genuinely right for that data, relabel this shot. Minor product note: the select's option text is cut off ('practice-ma')."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault resolved by relabel, as the earlier note allowed: the image is pixel-identical to the earlier shot ('Changing to posted would move 0 lines.'), and 0 is the real count. The retake logged the page's own count as 0 for all seven practices of the other group (RECORDS proof-level counts), and the query (lib/routes/settings.ts:366-378) moves only payer_approved lines whose posting covers the approved amount, which no populate spec leaves; the note now says this default reads like the empty state. Right page (Proof level, Now: deposited, select, checkbox, Save proof level), role other-admin on SYNTHETIC OTHER PRACTICE L... (LEDGER), light, settled, synthetic. A non-zero default would need a populate change, not a capture fix. Product note: the select's option text is cut ('practice-ma').",
+  "retaken": true
  },
  {
   "id": "p.proof-level.default.1280-dark",
   "file": "p.proof-level.default.1280-dark.png",
   "routePattern": "/p/[practiceId]/settings/proof-level",
-  "path": "/p/ef0c9101-ab7f-4669-b3a3-c90110857e2e/settings/proof-level",
+  "path": "/p/bd9bc91f-235b-40f2-999a-c039ac02705e/settings/proof-level",
   "role": "other-admin",
   "width": 1280,
   "theme": "dark (tokens only)",
   "state": "default",
-  "verdict": "state-not-shown",
-  "fixable": true,
-  "note": "Dark tokens applied, right page and role (other-admin, 'Now: deposited', form), settled. Same fault as p.proof-level.default.1280: 'Changing to posted would move 0 lines.' instead of LEDGER's real non-zero count, so it matches the empty state; recapture once LEDGER has a line the change would move."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Same as the 1280 light shot: pixel-identical to the earlier image, '0 lines' is the real count on the populated data and the note now says so. Dark tokens applied (dark shell, rail, card; light Save button), right page and role (other-admin on LEDGER), settled, synthetic.",
+  "retaken": true
  },
  {
   "id": "p.proof-level.default.390",
   "file": "p.proof-level.default.390.png",
   "routePattern": "/p/[practiceId]/settings/proof-level",
-  "path": "/p/ef0c9101-ab7f-4669-b3a3-c90110857e2e/settings/proof-level",
+  "path": "/p/bd9bc91f-235b-40f2-999a-c039ac02705e/settings/proof-level",
   "role": "other-admin",
   "width": 390,
   "theme": "light",
   "state": "default",
-  "verdict": "state-not-shown",
-  "fixable": true,
-  "note": "Right page and role (other-admin, avatar O, 'Now: deposited', form), settled, full page. Same fault as p.proof-level.default.1280: 'would move 0 lines' rather than a real non-zero count. Product note: the select's option text is cut off at 390 ('the payment is pos')."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Same as the 1280 shot: pixel-identical to the earlier image, '0 lines' is the real count and the note is relabelled. Right page and role (other-admin, avatar O), mobile header at the top, light, settled, full page 390 wide, synthetic. Product note: the select's option text is cut at 390 ('the payment is pos').",
+  "retaken": true
  },
  {
   "id": "p.proof-level.empty.1280",
@@ -7465,14 +7470,15 @@
   "id": "p.support-access.empty.1280",
   "file": "p.support-access.empty.1280.png",
   "routePattern": "/p/[practiceId]/support-access/[supportGrantId]",
-  "path": "/p/d5cd616c-912c-47cd-a7d9-e1f9139ea858/support-access/e405a10b-f324-47f2-8e2a-fa7cf38fc63a",
+  "path": "/p/8d3faf3f-15c2-4782-861b-a0d844dfbba6/support-access/2d6b8e72-3f12-4c5e-84ed-bff6bd2f206e",
   "role": "other-admin",
   "width": 1280,
   "theme": "light",
   "state": "empty",
-  "verdict": "state-not-shown",
-  "fixable": true,
-  "note": "Right page and role (other-admin, 'Support access for ticket SYN-JOURNEY-1' on SYNTHETIC OTHER PRACTICE M..., Open badge, synthetic reason), settled, full page. But the empty state ('No records read') is not shown: the Records read table holds 17 contract_workflow reads at 01:25 UTC. Capture should take this grant before any specialist reads it, or pick a SYN-JOURNEY-1 grant whose read count is 0 (route map: SELECT count(*) FROM audit_event WHERE grant_id = <id> AND action = 'read'), e.g. LEDGER's."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: Records read now shows the empty state 'No records read / Nothing of this practice was read under this grant.' Right page and role: other-admin on SYNTHETIC OTHER PRACTICE L... (LAYOUT), 'Support access for ticket SYN-TOUR-4', Open, 2026-10-26 04:21 to 08:21 UTC, 'Reason: SYNTHETIC SCREEN TOUR'; the run logged 0 reads for this grant. Light, settled, synthetic. It opens the tour's own SYN-TOUR-4 grant, not a SYN-JOURNEY-1 grant as the route map suggests, because every journey grant holds 17 to 33 reads after populate; the note says so. Product note: the rail marks Practice home (the page's shell section is 'practice').",
+  "retaken": true
  },
  {
   "id": "p.support-access.error-forbidden.1280",
@@ -7524,7 +7530,7 @@
   "state": "empty",
   "verdict": "ok",
   "fixable": false,
-  "note": "LAYOUT's queued report checklist as reviewer: 'The report is not generated yet; the checklist opens once it is ready.' Settled, synthetic. For reviewers (product, not capture): the intro still offers PDF and line CSV links for files that do not exist yet and reads 'windows judged on \u2014.'"
+  "note": "LAYOUT's queued report checklist as reviewer: 'The report is not generated yet; the checklist opens once it is ready.' Settled, synthetic. For reviewers (product, not capture): the intro still offers PDF and line CSV links for files that do not exist yet and reads 'windows judged on —.'"
  },
  {
   "id": "p.report-review.empty.390",
@@ -7537,7 +7543,7 @@
   "state": "empty",
   "verdict": "ok",
   "fixable": false,
-  "note": "LAYOUT's queued report checklist at 390 as reviewer: the not-generated-yet message; fits 390, settled, synthetic. Same reviewer note: PDF and line CSV links shown before the files exist, and 'windows judged on \u2014.'"
+  "note": "LAYOUT's queued report checklist at 390 as reviewer: the not-generated-yet message; fits 390, settled, synthetic. Same reviewer note: PDF and line CSV links shown before the files exist, and 'windows judged on —.'"
  },
  {
   "id": "console.support.ended.1280",
@@ -7602,7 +7608,7 @@
   "state": "interaction:suspended",
   "verdict": "ok",
   "fixable": false,
-  "note": "SYNTHETIC BILLING FIRM suspended: subtitle 'firm \u00b7 suspended', 'Suspended' card with 'Reinstate the organization'; settled, full length, synthetic. Product findings for reviewers: the Grants row still reads 'in force' with no hint of the suspension, the card says runs are refused 'with the reason' but no reason is asked or shown, and the status line uses plain text with no suspended badge."
+  "note": "SYNTHETIC BILLING FIRM suspended: subtitle 'firm · suspended', 'Suspended' card with 'Reinstate the organization'; settled, full length, synthetic. Product findings for reviewers: the Grants row still reads 'in force' with no hint of the suspension, the card says runs are refused 'with the reason' but no reason is asked or shown, and the status line uses plain text with no suspended badge."
  },
  {
   "id": "console.organization.suspended.390",
@@ -7615,7 +7621,7 @@
   "state": "interaction:suspended",
   "verdict": "other",
   "fixable": false,
-  "note": "Suspended state shown correctly (SYNTHETIC BILLING FIRM, 'firm \u00b7 suspended', 'Reinstate the organization'), settled, synthetic. The image is 654 px wide, not 390: the Members and Agreements tables spill past their cards and the 390 viewport, so the page scrolls sideways. That is how the product renders: a reviewer finding, not a capture fault. Grants row still reads 'in force' while suspended."
+  "note": "Suspended state shown correctly (SYNTHETIC BILLING FIRM, 'firm · suspended', 'Reinstate the organization'), settled, synthetic. The image is 654 px wide, not 390: the Members and Agreements tables spill past their cards and the 390 viewport, so the page scrolls sideways. That is how the product renders: a reviewer finding, not a capture fault. Grants row still reads 'in force' while suspended."
  },
  {
   "id": "settings.billing-org.suspended.1280",
@@ -7860,9 +7866,10 @@
   "width": 390,
   "theme": "light",
   "state": "error",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Error state shown correctly ('Not done' / 'name: required', Name field invalid and focused), settled, synthetic. But the table lists SYNTHETIC CONSOLE EMPTY GROUP, the group the run creates for the empty-new-group shot; the route map says create it last so no other shot lists it, and the 1280 error shot and default.390 show only the four seeded organizations. Capture ordering fault: retake before the create. Product finding: Created dates wrap at 390."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: four seeded organizations only, no SYNTHETIC CONSOLE EMPTY GROUP. Error state shown: Name field marked red and focused, 'Not done / Check the fields marked below. / name: required' under it, nothing created. Role platform-admin, mobile header at the top, light, settled, full page 390 wide, synthetic. Product note kept: Created dates wrap at 390.",
+  "retaken": true
  },
  {
   "id": "console.organizations.error-forbidden.390",
@@ -7886,9 +7893,10 @@
   "width": 390,
   "theme": "light",
   "state": "interaction:help",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Help panel open at 390 as platform admin, settled, synthetic. But the table lists SYNTHETIC CONSOLE EMPTY GROUP, created by the run for the empty-new-group shot; the route map says create it last so no other shot lists it, and help.1280 shows only the four seeded organizations. Capture ordering fault: retake before the create. Product finding: Created dates wrap at 390."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: four seeded organizations only, no SYNTHETIC CONSOLE EMPTY GROUP. Help panel open under 'Help with this screen' ('Organizations, practices, members, invitations and agreements. Directory records only.', Ask support about this screen, Service status). Role platform-admin, light, settled, full page 390 wide, synthetic. Product note kept: Created dates wrap at 390.",
+  "retaken": true
  },
  {
   "id": "console.organizations.account-menu.390",
@@ -7899,9 +7907,10 @@
   "width": 390,
   "theme": "light",
   "state": "interaction:account-menu",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Right page, role and state (account menu open, platform-admin@synthetic.test), settled, synthetic. But the table lists SYNTHETIC CONSOLE EMPTY GROUP, the group the run creates for the empty-new-group shot; the route map says create it at the end so no other shot lists it, and the 1280 pair shows only the four seeded organizations. Capture ordering fault: retake before the create. Product finding for reviewers (not a capture fault): at 390 the Created dates wrap as '2026-10-' / '26'."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the table lists only the four seeded organizations (SYNTHETIC BILLING FIRM, OTHER GROUP, THERAPY GROUP, SYNTHETIC COMPANY (INTERNAL)), no SYNTHETIC CONSOLE EMPTY GROUP. Account menu open (platform-admin@synthetic.test, Platform administrator, Sign out) over the page heading, as the interaction should show; role platform-admin, light, settled, full page 390 wide, synthetic. Product note kept: the Created dates wrap as '2026-10-' / '26'.",
+  "retaken": true
  },
  {
   "id": "console.organizations.menu.390",
@@ -7912,9 +7921,10 @@
   "width": 390,
   "theme": "light",
   "state": "interaction:menu",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Menu open at 390 showing the Internal console nav (Organizations and practices active ... Support tickets, then Devices ... Help and support), settled. But the table beneath lists SYNTHETIC CONSOLE EMPTY GROUP, created by the run for the empty-new-group shot; the route map says create it last so no other shot lists it. Capture ordering fault: retake before the create. Product finding for reviewers: the open menu overlays the page with no backdrop, so table rows show directly under the last nav item."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the rows under the open menu are the four seeded organizations, no SYNTHETIC CONSOLE EMPTY GROUP. Menu open with the Internal console nav (Organizations and practices marked, Support to Support tickets, then Devices, Notification preferences, Billing, Help and support). Role platform-admin, light, settled, synthetic. Product note kept: the open menu has no backdrop, so the table shows straight under it.",
+  "retaken": true
  },
  {
   "id": "console.organization.empty.390",
@@ -8159,9 +8169,10 @@
   "width": 390,
   "theme": "light",
   "state": "error",
-  "verdict": "other",
-  "fixable": true,
-  "note": "The error state itself is right (SYNTHETIC BILLING FIRM, 'Not done', organizationId: no payment method on file), settled and synthetic. But the table has a fourth row, 'SYNTHETIC CONSOLE EMPTY GROUP', that the seed (three organizations), console.billing.default.390 and console.billing.error.1280 do not have: data drift from a later capture step, so the two widths of one state disagree. Retake after resetting, or before the step that creates that group. Same product notes as at 1280 (raw 'organizationId' key)."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the Billing status table holds the three seeded customer organizations (SYNTHETIC BILLING FIRM, SYNTHETIC OTHER GROUP, SYNTHETIC THERAPY GROUP, Monthly (active)) and no SYNTHETIC CONSOLE EMPTY GROUP, matching console.billing.error.1280 row for row. Right page, role platform-admin (avatar P) and error state: SYNTHETIC BILLING FIRM selected, 'Not done / Check the fields marked below. / organizationId: the organization has no payment method on file...'. Mobile header at the top, light, settled, full page 390 wide, synthetic only. Product note kept: the raw 'organizationId' key in the refusal.",
+  "retaken": true
  },
  {
   "id": "console.compliance.error.390",
@@ -8172,9 +8183,10 @@
   "width": 390,
   "theme": "light",
   "state": "error",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Right page, role and error state: in Record evidence 'Not done' / 'Check the fields marked below.' / 'occurredOn: evidence is recorded for what has happened' with the date field marked red, Records kept still 'Nothing recorded yet.'; settled, synthetic. Capture fault (fixable): the sticky header is painted in the wrong place. The top 56 px, where PaidWhole and Menu belong, is blank, and the header bar sits at y\u2248345-400 over the content, cutting off the 'Send to the compliance platform' button and the top of the Tenant isolation card (pixel diff against console.compliance.default.390: only rows 10-55 and 345-400 differ above the form). Blurring the field did not clear the visual-viewport offset; scroll to 0 and wait for the header before the full-page shot. Product findings, not capture faults: the image is 492 px wide (the Policies table pushes the page sideways, as on default.390), and after the refusal every field is empty again (Policy '\u2014', date, reference, SHA-256), as at 1280."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the mobile header (PaidWhole, P, Menu) is at the top, and 'Send to the compliance platform' and the top of the Tenant isolation card are clear; against the earlier shot only the top 391 rows changed, and the logo band appears only at the top. Right page (SOC 2 Type I evidence), role platform-admin and error state at the foot: Record evidence with 'Date it happened' marked red, 'Not done / Check the fields marked below. / occurredOn: evidence is recorded for what has happened', Records kept 'Nothing recorded yet.' Light, settled, full page, synthetic only (repository paths and policy names, no person). Product findings kept: the image is 492 px wide (the Policies table's status chips push past the card), the raw 'occurredOn' key, and every field empty again after the refusal (Policy '—', date, reference, SHA-256).",
+  "retaken": true
  },
  {
   "id": "console.compliance.sent.390",
@@ -8551,7 +8563,7 @@
   "state": "empty",
   "verdict": "ok",
   "fixable": false,
-  "note": "Empty state at 390: Billing: SYNTHETIC OTHER GROUP as other-admin (avatar O, Choose a ... picker, Menu header): In good standing, Plan select Monitoring, monthly: $500.00 a month with Choose plan, No payment method on file., the Test mode forms and EmptyState No invoices yet / Add a payment method, then choose a plan. Fits 390 with no sideways scroll (no Invoices table in the empty state). Settled, full page; bank and card numbers are the simulator\u2019s published test values only. Same product observations as the 1280 shot (Plan card above Payment method; In good standing before any plan)."
+  "note": "Empty state at 390: Billing: SYNTHETIC OTHER GROUP as other-admin (avatar O, Choose a ... picker, Menu header): In good standing, Plan select Monitoring, monthly: $500.00 a month with Choose plan, No payment method on file., the Test mode forms and EmptyState No invoices yet / Add a payment method, then choose a plan. Fits 390 with no sideways scroll (no Invoices table in the empty state). Settled, full page; bank and card numbers are the simulator’s published test values only. Same product observations as the 1280 shot (Plan card above Payment method; In good standing before any plan)."
  },
  {
   "id": "settings.billing-org.loading.390",
@@ -8596,14 +8608,15 @@
   "id": "settings.users.error.390",
   "file": "settings.users.error.390.png",
   "routePattern": "/settings/organizations/[organizationId]/users",
-  "path": "/settings/organizations/b33626a7-1aba-4ba3-969a-880797ebf19b/users",
+  "path": "/settings/organizations/948b592c-27c7-4088-99ce-ac5929c0456a/users",
   "role": "practice-admin",
   "width": 390,
   "theme": "light",
   "state": "error",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Capture fault: the sticky header (PaidWhole / Choose a practice / P / Menu) is painted partway down the page, about a third of the way, over the idle@synthetic.test row, and the top of the image is an empty band where the header belongs; the full-page shot was taken with a leftover scroll offset despite the blur step. Re-shoot after scrolling to top (window.scrollTo(0,0) and waiting a frame) or with the header un-stuck for the capture. Otherwise right page/role/state: 'Not done' email refusal alert, Email field red. The product findings from the 1280/390 shots also show: Email field empty after refusal, Members table overflowing 390 px to about 667 px."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the mobile header (PaidWhole, 'Choose a ...', P, Menu) is at the top and the Members rows (idle@synthetic.test and the rest) are clear; the logo band appears only at the top. Right page (Users and roles, SYNTHETIC THERAPY GROUP), role practice-admin ('(you)' on practice-admin@synthetic.test) and error state: Invite someone with the Email field marked red and 'Not done / ... email: this address cannot be invited from here; if the person is a member already, change their role below, otherwise a platform administrator adds them'. Light, settled, full page, synthetic only (synthetic.test addresses). Product findings kept: the Members table overflows 390 (image 667 px wide, the Role forms past the card), and the Email field is empty after the refusal.",
+  "retaken": true
  },
  {
   "id": "settings.users.notice-invited.390",
@@ -8869,14 +8882,15 @@
   "id": "p.abstraction-ledger.adjust-open.390",
   "file": "p.abstraction-ledger.adjust-open.390.png",
   "routePattern": "/p/[practiceId]/abstraction/ledger",
-  "path": "/p/ef0c9101-ab7f-4669-b3a3-c90110857e2e/abstraction/ledger",
+  "path": "/p/bd9bc91f-235b-40f2-999a-c039ac02705e/abstraction/ledger",
   "role": "contract-specialist",
   "width": 390,
   "theme": "light",
   "state": "interaction:adjust-open",
-  "verdict": "cropped",
-  "fixable": true,
-  "note": "REVISED. The opened Adjust form is cut off at the right edge (labels 'Change... sign low', consequence text one word per line, 'Adjust the amount' clipped) and '#'/'Money moved' are off the left: clicking 'Adjust' left the overflowing table's scroller at a partial offset. p.abstraction-ledger.error-adjust-zero.390 shows that with the scroller fully right (the field focused) the whole form fits legibly in the Correct column, so a capture step that scrolls the form into view horizontally (focus the amount field, or set the scroller's scrollLeft to its maximum) before the shot fixes it. The underlying product finding (the table overflows at 390 with no scroll cue) stands."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: with the entries table swiped to its end, the opened Adjust form shows whole and legible in the Correct column: 'Change in dollars (a minus sign lowers it)', 'Why the amount is corrected', the full consequence text by the checkbox, and 'Adjust the amount', not submitted. Right page (Contract abstraction > Ledger corrections), role contract-specialist (avatar C) on LEDGER, ledger totals and the Shortfalls empty card above; mobile header at the top, light, settled, full page 390 wide, synthetic only. As the note says, the table's first columns (#, Money moved, the amount) are off the left at this offset, as when a person swipes it. Product finding kept: at 390 the entries table overflows with no cue that it scrolls.",
+  "retaken": true
  },
  {
   "id": "p.abstraction-ledger.error-adjust-zero.390",
@@ -8999,14 +9013,15 @@
   "id": "p.anomalies.empty-filtered.390",
   "file": "p.anomalies.empty-filtered.390.png",
   "routePattern": "/p/[practiceId]/anomalies",
-  "path": "/p/ffa6584c-0bef-4e22-a0fe-42f680cc5190/anomalies?run=c640e85c-5948-438b-aeaa-517daf0801de",
+  "path": "/p/8d3faf3f-15c2-4782-861b-a0d844dfbba6/anomalies?run=&payer=a99283c1-9c66-4e85-b213-0e079a4c4baf",
   "role": "pricing-manager",
   "width": 390,
   "theme": "light",
   "state": "empty",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Same as the 1280 shot: 'No cohort matches these filters.' with both selects reading 'Every run' / 'Every payer', so the filtered state is not visible; retake by filtering on SYNTHETIC PAYER Q through the form."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: Payer select reads SYNTHETIC PAYER Q next to Filter, with 'No cohort matches these filters.' below; Pricing run 'Every run'. Right page and role (pricing-manager, avatar P, practice switcher 'SYNTHETI...'), mobile header at the top, light, settled, synthetic only, 390 wide with no overflow.",
+  "retaken": true
  },
  {
   "id": "p.anomalies.loading.390",
@@ -9064,14 +9079,15 @@
   "id": "p.cases.empty-filtered.390",
   "file": "p.cases.empty-filtered.390.png",
   "routePattern": "/p/[practiceId]/cases",
-  "path": "/p/1b29933f-191f-41ba-a904-34ec7d882a98/cases?state=resolved",
+  "path": "/p/fcff42b4-a1c8-471f-8f28-cf98afae3dfd/cases?state=open&payer=&owner=&deadline=",
   "role": "packet-approver",
   "width": 390,
   "theme": "light",
   "state": "empty",
-  "verdict": "state-not-shown",
-  "fixable": true,
-  "note": "Same as the 1280 shot: State 'Resolved' shows the Resolved PACKETS case, not the empty filtered message; retake with ?state=open (or another state with no case)."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: State 'Open' with Every payer / Anyone / Any deadline and 'No case matches these filters.' at the foot of the page. Right page and role (packet-approver, avatar P), mobile header at the top, light, settled, full page, 390 wide with no sideways overflow, synthetic only. Product note, not a capture fault: the Pricing run select's text is cut at 390 ('release 9000').",
+  "retaken": true
  },
  {
   "id": "p.cases.loading.390",
@@ -9597,14 +9613,15 @@
   "id": "p.contracts.error.390",
   "file": "p.contracts.error.390.png",
   "routePattern": "/p/[practiceId]/contracts",
-  "path": "/p/45ff87a9-ccdb-4a32-8252-998991c08a47/contracts",
+  "path": "/p/0c05c3c5-0276-43ae-8258-da1b96b088f3/contracts",
   "role": "era-manager",
   "width": 390,
   "theme": "light",
   "state": "error",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Right page, role and error state (the overlap refusal 'effectiveFrom: versions of one contract never overlap ...' under the tag form, Effective from marked), synthetic only. Capture fault: the sticky mobile header is painted mid-page (about y=740 in the 2160 px image), over the end of the Contract calendar text and the top of 'The contract specialist's questions' heading, and the top of the shot has no header, so the visual-viewport offset was not cleared by the blur; scroll to the top and wait for the viewport to settle (or blur before submitting is too late: blur, scroll to 0, then shoot). Product findings, not capture faults: the Contracts table spills past its card and the viewport (Effective, Method, Status, Coverage share), so the page is 664 px wide; the same lost-choices reset, raw key 'effectiveFrom' and 'marked below' wording as at 1280. The filter Payer select again reads SYNTHETIC PAYER C on an unfiltered URL."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the mobile header (PaidWhole, practice switcher, E, Menu) is at the top of the shot and nowhere else; the Contract calendar text and 'The contract specialist's questions' heading are clear. A template match of the logo band finds it only at the top (the earlier shot had a blank band there). Right page, role era-manager and error state: under Documents to tag to a payer, Effective from marked red and 'Not done / Check the fields marked below. / effectiveFrom: versions of one contract never overlap: amend the version in force, or supersede it'. Light, settled, full page, synthetic only. Product findings kept: the Contracts table spills past its card (image 664 px wide), the raw 'effectiveFrom' key, the choices reset after the refusal (Contract back to 'A new contract with this payer', dates empty), and the filter's Payer select reads SYNTHETIC PAYER C on an unfiltered URL.",
+  "retaken": true
  },
  {
   "id": "p.contracts.error-forbidden.390",
@@ -9662,14 +9679,15 @@
   "id": "p.contract.error.390",
   "file": "p.contract.error.390.png",
   "routePattern": "/p/[practiceId]/contracts/[contractId]",
-  "path": "/p/45ff87a9-ccdb-4a32-8252-998991c08a47/contracts/42205f91-9402-4a87-b3fa-5f52612c28df",
+  "path": "/p/0c05c3c5-0276-43ae-8258-da1b96b088f3/contracts/dc3308cc-0870-42e1-b223-fc72f79368b3",
   "role": "era-manager",
   "width": 390,
   "theme": "light",
   "state": "error",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Capture fault: the sticky header (PaidWhole, practice switcher, Menu) is painted mid-page at about y=250, over the 'Versions' heading, leaving a blank band at the top; the blur step did not remove the visual-viewport offset. Otherwise right page, role and state ('Not done' overlap refusal, Effective from marked), all synthetic. Retake with the viewport reset (e.g. reload-free scroll to top after blur, or a viewport-sized shot) . Also the product overflow seen in p.contract.default.390: Versions table wider than 390 (capture 439 px wide), and the 'effectiveFrom:' raw key in the issue text."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the mobile header sits at the top and the Versions heading and table are clear; the logo band appears only at the top. Right page (SYNTHETIC PAYER C AGREEMENT), role era-manager (avatar E) and error state: in 'Add an uploaded document to this contract', Effective from marked red and 'Not done / ... effectiveFrom: versions of one contract never overlap: amend the version in force, or supersede it'. Light, settled, full page, synthetic only. Product findings kept: the Versions table overflows 390 (image 439 px wide), the raw 'effectiveFrom' key, and the date field empty after the refusal.",
+  "retaken": true
  },
  {
   "id": "p.contract.viewer.390",
@@ -9909,14 +9927,15 @@
   "id": "p.line.error.390",
   "file": "p.line.error.390.png",
   "routePattern": "/p/[practiceId]/lines/[lineId]",
-  "path": "/p/ffa6584c-0bef-4e22-a0fe-42f680cc5190/lines/5ddd75e0-5d0d-4d5a-b850-80322a77798e?run=c640e85c-5948-438b-aeaa-517daf0801de",
+  "path": "/p/8d3faf3f-15c2-4782-861b-a0d844dfbba6/lines/2ebf2bbe-43c3-4bd5-8a23-67f172a64dae?run=b217a002-3e11-40fb-989f-71f6b9166aa7",
   "role": "pricing-manager",
   "width": 390,
   "theme": "light",
   "state": "error",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Capture artifact: the sticky mobile header (PaidWhole, practice switcher, P, Menu) is painted about 460 px down, across the Pricing card between Variance and Adjustments, and the top of the page has no header. The page was still scrolled when the full-page shot was taken, despite the blur. Fix: after the blur, scroll to 0 (window.scrollTo(0,0)), wait for the visual viewport to settle, then shoot. The error itself is shown correctly at the bottom ('Not done / Check the fields marked below. - note: required'). Separate product finding, not a capture fault: the shot is 509 px wide because the unwrapped rule release manifest hash overflows the 390 viewport."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the mobile header (PaidWhole, 'SYNTHETI...', P, Menu) is at the top and the Pricing card reads cleanly from Expected allowed through Variance, Adjustments and Run; the logo band appears only at the top. Right page (Line 1: 97110, Actionable), role pricing-manager and error state at the foot: Notes, 'Not done / Check the fields marked below. / note: required'. Light, settled, full page, synthetic only (SYNTHETIC PAYER Q, SYNTHLASTSBGCDE / SYNTHFIRSTGQV, SYNPCNCAS08001, SYNCCNCAS080001, UUIDs). Product findings kept: the image is 509 px wide because the rule release manifest hash does not wrap, and the Note field carries no invalid mark although the alert says 'marked below' (the 1280 shot and the earlier 390 shot are the same, so this is the product, not the capture).",
+  "retaken": true
  },
  {
   "id": "p.mapping.all-plans.390",
@@ -10189,7 +10208,7 @@
   "state": "interaction:diff-filter",
   "verdict": "ok",
   "fixable": false,
-  "note": "Compare two runs at 390 as pricing-manager with 'In the first run only' current (bold): the three 97110 x 2 rows, $100.00 'Dispute by 2027-04-08', 'Not priced by this run', 'First trace'; settled, full page, 390 px wide, synthetic. Product observations: the 'First trace' links (x\u2248355-382) run through the card's right padding and across its border at x=373, so they sit half outside the card; cells wrap one word per line; same filter and summary observations as the 1280 shot."
+  "note": "Compare two runs at 390 as pricing-manager with 'In the first run only' current (bold): the three 97110 x 2 rows, $100.00 'Dispute by 2027-04-08', 'Not priced by this run', 'First trace'; settled, full page, 390 px wide, synthetic. Product observations: the 'First trace' links (x≈355-382) run through the card's right padding and across its border at x=373, so they sit half outside the card; cells wrap one word per line; same filter and summary observations as the 1280 shot."
  },
  {
   "id": "p.reconciliation.empty.390",
@@ -10845,27 +10864,29 @@
   "id": "p.access-log.record-filter.390",
   "file": "p.access-log.record-filter.390.png",
   "routePattern": "/p/[practiceId]/settings/access-log",
-  "path": "/p/1b29933f-191f-41ba-a904-34ec7d882a98/settings/access-log?object_type=case&object_id=43563de4-620f-477c-977c-610e559f601b",
+  "path": "/p/fcff42b4-a1c8-471f-8f28-cf98afae3dfd/settings/access-log?object_type=case&object_id=8bf541f4-797f-484a-be79-a0cb74b612c5",
   "role": "other-admin",
   "width": 390,
   "theme": "light",
   "state": "interaction:record-filter",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Capture fault: the sticky top bar is painted about 175px down, below the Access log heading, over the Overview and Users and roles pills, leaving a blank band at the top. The blur step did not remove the visual-viewport offset (same fix as access-log.older.390). Otherwise right page, role and state ('Who acted on one case record. Show everything', 50 case reads, Older entries), synthetic. Separate product finding: the table overflows 390 (PNG 455px wide), so the page scrolls sideways."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the mobile header (PaidWhole, 'SYNTHETI...', O, Menu) is at the top and the Overview and Users and roles pills are clear; the logo band appears only at the top. Right page and role (Access log, other-admin on PACKETS), state shown: 'Who acted on one case record. Show everything' over that case's reads (packet-approver and packet-drafter read (case_review), ownership, 04:14 to 04:17 UTC). On this fresh database the case has fewer than 50 reads, so the page ends without Older entries (the earlier shot had 50 and the link); the state is the same. Light, settled, full page, synthetic only. Product finding kept: the table overflows 390 (image 455 px wide).",
+  "retaken": true
  },
  {
   "id": "p.access-log.older.390",
   "file": "p.access-log.older.390.png",
   "routePattern": "/p/[practiceId]/settings/access-log",
-  "path": "/p/1b29933f-191f-41ba-a904-34ec7d882a98/settings/access-log?before=2026-10-26T02%3A02%3A11.699Z",
+  "path": "/p/fcff42b4-a1c8-471f-8f28-cf98afae3dfd/settings/access-log?before=2026-10-26T04%3A14%3A58.563Z",
   "role": "other-admin",
   "width": 390,
   "theme": "light",
   "state": "interaction:older",
-  "verdict": "other",
-  "fixable": true,
-  "note": "Capture fault: in the full-page shot the sticky top bar (logo, practice switcher, Menu) is painted about 350px down, over the Export and deletion and Billing pills, and the top of the page is a blank band where the bar belongs. The blur step did not fix the visual-viewport offset; scroll to 0 and settle before the shot, or capture with the bar unstuck. Otherwise right page and role, an older page (?before=) with Older entries, synthetic (incl. contract-specialist 'support (ticket SYN-JOURNEY-1)'). Separate product finding: the table overflows 390 (PNG 526px wide), so the page scrolls sideways. Its rows (02:02 UTC) differ from the 1280 older shot because the log grew between captures."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: the mobile header (PaidWhole, 'SYNTHETI...', O, Menu) is at the top and the Export and deletion and Billing pills are clear; the logo band appears only at the top. Right page and role (Access log, other-admin on PACKETS), state shown: a page past the first 50 (?before=04:14:58), entries all 04:14 UTC (packet-approver ownership reads, packet-reviewer reads through 'support (ticket SYN-JOURNEY-2)', 'a job of the practice' system reads), Older entries at the foot. Light, settled, full page, synthetic only. Product findings kept: the table overflows 390 (image now 627 px wide, the What and Record columns), and nothing on the page says it is an older page or links back to the newest.",
+  "retaken": true
  },
  {
   "id": "p.agreements.empty.390",
@@ -11118,14 +11139,15 @@
   "id": "p.support-access.empty.390",
   "file": "p.support-access.empty.390.png",
   "routePattern": "/p/[practiceId]/support-access/[supportGrantId]",
-  "path": "/p/d5cd616c-912c-47cd-a7d9-e1f9139ea858/support-access/e405a10b-f324-47f2-8e2a-fa7cf38fc63a",
+  "path": "/p/8d3faf3f-15c2-4782-861b-a0d844dfbba6/support-access/2d6b8e72-3f12-4c5e-84ed-bff6bd2f206e",
   "role": "other-admin",
   "width": 390,
   "theme": "light",
   "state": "empty",
-  "verdict": "state-not-shown",
-  "fixable": true,
-  "note": "Right page and role (other-admin, avatar O, 'Support access for ticket SYN-JOURNEY-1', Open badge, 2026-10-26 01:25 to 05:25 UTC, 'Reason: SYNTHETIC JOURNEY ACCESS'), settled, full page, UUIDs only. But the empty state ('No records read') is not shown: the Records read table holds 17 rate_record and contract_version reads at 01:25 UTC, same as p.support-access.empty.1280. Capture should shoot this grant before any specialist reads it, or pick a SYN-JOURNEY-1 grant whose read count is 0 (SELECT count(*) FROM audit_event WHERE grant_id = <id> AND action = 'read'). Separate product finding, not a capture fault: the image is 425 px wide at a 390 viewport because the Records read table overflows its card (Purpose runs past the card edge), as in p.support-access.default.390."
+  "verdict": "ok",
+  "fixable": false,
+  "note": "Old fault gone: 'No records read / Nothing of this practice was read under this grant.' in the Records read card. SYN-TOUR-4, Open, 04:21 to 08:21 UTC, Reason SYNTHETIC SCREEN TOUR, as other-admin (avatar O); mobile header at the top, light, settled, 390 wide with no overflow now that no table is drawn, synthetic only.",
+  "retaken": true
  },
  {
   "id": "p.support-access.error-forbidden.390",
