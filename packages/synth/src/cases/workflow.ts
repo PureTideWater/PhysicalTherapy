@@ -617,7 +617,7 @@ export function led15(b: CaseBuilder): void {
   const partialApproved = subtractCents(partialCorrected.paid, partialOriginal.paid);
   b.outcome({
     entries: [],
-    matches: [{ kind: 'claim', outcome: 'approved' }],
+    claimMatches: [{ kind: 'claim', outcome: 'approved' }],
     payerResponses: 0,
     correction: 'patient_balance',
     words: "Payer corrected; balance is the patient's",
@@ -635,11 +635,11 @@ export function led15(b: CaseBuilder): void {
       billableToPatient: { deductibleCents: centsToString(subtractCents(shareOf(lineOf(partialCorrected), '1'), shareOf(lineOf(partialOriginal), '1'))) },
       lowered: {
         entries: [ledEntry('approved', partialApproved), ledEntry('deposited', partialApproved), ledEntry('recouped', negateCents(subtractCents(partialCorrected.paid, partialLowered.paid)), 'partial-lowered.835 transaction 0 claim 1')],
-        matches: [{ kind: 'claim', outcome: 'approved' }, { kind: 'claim', outcome: 'decreased' }],
+        claimMatches: [{ kind: 'claim', outcome: 'approved' }, { kind: 'claim', outcome: 'decreased' }],
       },
     },
     raisedLower: {
-      matches: [{ kind: 'claim', outcome: 'decreased' }],
+      claimMatches: [{ kind: 'claim', outcome: 'decreased' }],
       entries: [],
       payerResponses: 0,
       words: 'higher allowed, lower payment: nothing approved to take back',

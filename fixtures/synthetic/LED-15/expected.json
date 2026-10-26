@@ -2718,7 +2718,7 @@
   },
   "outcome": {
     "entries": [],
-    "matches": [{"kind":"claim","outcome":"approved"}],
+    "claimMatches": [{"kind":"claim","outcome":"approved"}],
     "payerResponses": 0,
     "correction": "patient_balance",
     "words": "Payer corrected; balance is the patient's",
@@ -2747,11 +2747,11 @@
             "evidence": "partial-lowered.835 transaction 0 claim 1"
           }
         ],
-        "matches": [{"kind":"claim","outcome":"approved"},{"kind":"claim","outcome":"decreased"}]
+        "claimMatches": [{"kind":"claim","outcome":"approved"},{"kind":"claim","outcome":"decreased"}]
       }
     },
     "raisedLower": {
-      "matches": [{"kind":"claim","outcome":"decreased"}],
+      "claimMatches": [{"kind":"claim","outcome":"decreased"}],
       "entries": [],
       "payerResponses": 0,
       "words": "higher allowed, lower payment: nothing approved to take back",

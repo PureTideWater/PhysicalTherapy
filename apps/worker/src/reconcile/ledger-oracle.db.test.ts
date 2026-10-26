@@ -125,6 +125,13 @@ const CASES: readonly OracleCase[] = [
     known: { approved: 2400n, posted: 2400n, deposited: 2400n, recouped: -2400n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'actionable' },
   },
   {
+    name: 'a correction a deductible absorbed, its line row posted',
+    fixture: 'LED-15',
+    steps: [{ kind: 'export', file: 'lines-posting-export.csv', as: 'posting_export' }],
+    // The allowed amount 30.00 higher and the payment the same 40.00: no entry, and the 40.00 row proves nothing.
+    known: { approved: 0n, posted: 0n, deposited: 0n, recouped: 0n, interest: 0n, recovered: 0n, postedEntries: 0, lineStage: 'actionable' },
+  },
+  {
     name: 'a correction on a line with an unchanged copay, deposited',
     fixture: 'LED-16',
     steps: [{ kind: 'export', file: 'eft-export.csv', as: 'eft_export' }],
