@@ -7,7 +7,7 @@ One parallel Lane B session runs both PRs, one after the other (the orchestrator
 - **Next step:** builders finish (P done by 02:13 UTC; W, K, L, then integrator and critic), then the draft PR. Priority A before B (orchestrator, 02:16 UTC). A self check-in is set for 03:50 UTC in case the session limit stops the workflow (resume wf_13f2f539-6ee with resumeFromRunId; progress files in the scratchpad's fiw-build/progress).
 
 ## Log (UTC)
-- 2026-10-26 01:12: A design pushed. 01:14: branch `co-001/figures-in-words` cut from 6ddd587 (worktree installed); builders started (wf_13f2f539-6ee). 01:19: B design pushed; ADR 0076 reserved for B. 02:16: usage-limit warning from the orchestrator; check-in set.
+- 2026-10-26 01:12: A design pushed. 01:14: branch `co-001/figures-in-words` cut from 6ddd587 (worktree installed); builders started (wf_13f2f539-6ee). 01:19: B design pushed; ADR 0076 reserved for B. 02:16: usage-limit warning from the orchestrator; check-in set. ~02:20: the session limit stopped builders W, K and L mid-run (P had finished: 502 packets unit tests, 155 golden-tool tests pass); the machine restarted. 03:49: setup re-run (both clusters up), the build resumed (wf_13f2f539-6ee, resumeFromRunId; P cached, W, K, L continue from their progress files).
 - 2026-10-26 ~00:20: machine set up (`tools/setup-container.sh` printed OK; `gh api user` is PureTideWater). `claude/build-platform` at 6ddd587. #42 open (143 files; none in the packets, packet review or line-trace pages except the shared synth matrix and registry, rule 6).
 
 ## PR A: every figure explained in words (#38)
