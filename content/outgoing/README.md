@@ -9,7 +9,10 @@ publishes it on merge.
 
 ```text
 content/outgoing/<n>/
-  RELEASE.md        date, records, sources, who verified them, and the impact on existing runs
+  RELEASE.md        date, records, sources, who verified them, coverage against the release before, and the
+                    impact on existing runs
+  COVERAGE.md       what each content is loaded for, and what the release covers less than the one before
+                    and why (content/sources/README.md, "Coverage"); the content checker recomputes it
   MANIFEST.json     the SHA-256 of every other file in the directory
   <type>/<year>/... the rule records and second passes at L2 or higher, copied from content/drafts
 ```

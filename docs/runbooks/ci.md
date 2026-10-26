@@ -32,6 +32,17 @@ The list lives in `tools/required-checks.ts`; every document that lists the chec
 | `images` | both images built from their Dockerfiles and scanned by Trivy | 20 min |
 | `all green` | every job's result, to its log and its summary | 5 min |
 
+Beside ci.yml, two workflows of the release content checks (docs/adr/0071) run on a schedule. Neither is a required
+check, and their schedules fire only from the default branch (the founder's ruling F1 (a)); until then they run on
+request. Each issue they open holds only public references: page addresses, file names, release numbers and run links.
+
+| Workflow, job | What it runs | Timeout |
+| --- | --- | --- |
+| `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
+| `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title, or one saying the check failed. It alone holds `issues: write`, checks nothing out and runs no repository code | 5 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built, the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07); its report kept as `release-capacity` | 180 min |
+| `release-capacity`, `notify` | on its failure: opens or comments on the issue "Release capacity test failing" (label `release-capacity`). It alone holds `issues: write` and checks nothing out | 5 min |
+
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
 the others' verdicts. Every verdict a job writes to its summary it also writes to its log, which is what the verifier
 reads (the session's proxy refuses GitHub's artifact host).
@@ -134,7 +145,9 @@ GitHub's standard runner for a private repository has 2 CPUs and 8 GB, not 4 and
 from `github.event.repository.private`: six `db` shards and three `e2e` shards, so the wall stays near 10 minutes, at
 about 70 to 80 billed minutes a push instead of about 45. The lint runner fits its groups to the host's memory (web
 alone, then the others), and the capacity measurement refuses a 2-CPU runner (docs/runbooks/screening-capacity.md, "The
-8-core runner"). Read the budget after the first private week (docs/runbooks/github-governance.md, step 1).
+8-core runner"). The two scheduled workflows of docs/adr/0071 add at most about 1,250 runner minutes a month (about
+450 for the daily calendar, 780 for the weekly real-size test), inside GitHub Team's included 3,000. Read the budget
+after the first private week (docs/runbooks/github-governance.md, step 1).
 
 ## Caches
 

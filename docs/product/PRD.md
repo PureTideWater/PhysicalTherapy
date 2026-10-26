@@ -370,7 +370,7 @@ Two kinds of content drive the engine, and both are treated as code: global rule
 | Record type | Source | Key fields | Refresh |
 | --- | --- | --- | --- |
 | `pfs_rvu` | CMS physician fee schedule relative value files | HCPCS, modifier, work RVU, practice-expense RVU (facility and non-facility), malpractice RVU, status, global days, multiple-procedure indicator, effective year and quarter | Each year and each quarterly update |
-| `pfs_gpci` | CMS GPCI file | Locality, work, practice-expense and malpractice indices, year | Yearly |
+| `pfs_gpci` | CMS GPCI file | Locality, work, practice-expense and malpractice indices, year | Quarterly, in each quarter's relative value zip |
 | `conversion_factor` | CMS final rule | Year, value, applicability (qualifying APM participant or not) | Yearly |
 | `mppr_rate` | CMS MPPR rate file for therapy | HCPCS, the practice-expense share reduced, effective date | When CMS updates it (the file was last updated February 24, 2026 to add 97026) |
 | `therapy_threshold` | CMS therapy page and final rule | Year, KX threshold for PT and SLP combined, KX threshold for OT, medical review threshold | Yearly |
@@ -380,9 +380,9 @@ Two kinds of content drive the engine, and both are treated as code: global rule
 | `carc`, `rarc`, `claim_status_code` | X12 external code lists | Code, description, effective and deactivation dates | Three times a year |
 | `state_prompt_pay` | State statutes and insurance departments | State, days to pay, interest rule, exclusions (self-funded plans), effective date, source | On change |
 | `dispute_window` | Medicare rules; commercial defaults | Program, window type, days | On change |
-| `locality_map` | CMS locality by ZIP | ZIP, locality code, year | Yearly |
+| `locality_map` | CMS locality by ZIP | ZIP, locality code, year | Quarterly |
 
-Every record carries `source` (title, URL, retrieved date, SHA-256 of the file), `effective_from`, `effective_to`, `verification` (L1 script-checked, L2 read against the source by a person, L3 confirmed by a reimbursement specialist), and `notes`. The checker refuses a release when any record lacks a source, any effective window overlaps another for the same key, any numeric field fails its range, or any quote does not appear in the stored source text.
+Every record carries `source` (title, URL, retrieved date, SHA-256 of the file), `effective_from`, `effective_to`, `verification` (L1 script-checked, L2 read against the source by a person, L3 confirmed by a reimbursement specialist), and `notes`. The checker refuses a release when any record lacks a source, any effective window overlaps another for the same key, any numeric field fails its range, or any quote does not appear in the stored source text. It also refuses (docs/adr/0071) a quarterly file's record (RVU, GPCI, ZIP, MUE) whose window leaves one CMS quarter, a per-code MPPR window that is open or leaves its calendar year, a hand-typed record of those types, a gap inside the dates a content is loaded for, and a release that stops covering a code and date the release before it covered, unless the dates are older than a six-year look-back, closed by the source's own dates, or withdrawn by a note two people signed; each release records its coverage in `COVERAGE.md`. The importer refuses a quarterly file imported for a window outside the quarter the file states.
 
 ### Contract rate records
 
@@ -785,6 +785,7 @@ The product runs on a calendar set by fee-schedule years and renewal seasons, an
 | Break-glass access | A support ticket needing PHI | Create the grant with reason and expiry; notify the practice administrator; work; expiry; the read list goes to the administrator |
 | Incident response | A security event or a suspected breach | Contain (revoke, rotate, isolate); preserve evidence; assess scope from the audit log; notify under the BAA clocks and the HIPAA rule; customer communication; post-incident review |
 | Content release | A fee-schedule year, a code list update, a state rule change | Draft with sources; checker; pull request; publish on merge; customer release note; affected-run diffs |
+| Content updates (`docs/runbooks/content-updates.md`) | A content-due issue from the content calendar, or the console's Content due | Import the period's files with the issue's commands; verify; assemble; publish 14 days before the period starts, or within 3 business days of a late publication; review a calendar entry against its source page |
 | Practice offboarding | A deletion request | Legal-hold check; export delivered; retention window; key destruction; certificate; backup aging noted |
 | Payer pattern escalation | A pattern recurring across customers | Document aggregate evidence under the data-rights terms; counsel review; the customer's own escalation (never the company's) |
 | Job failure | Three failed attempts | Operator alert; held files and failed runs shown to the customer; manual replay with the same idempotency key |
