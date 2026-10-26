@@ -868,3 +868,12 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - the six stopped sessions sent a resume message. ci-deps was idle with its own check-ins scheduled (merge at ~15:15, the lockfile re-resolve after 19:20), and the #135 session resumed on its own.
   - **materiality-cents merged as #54 (7ef421b, 08:56:17 UTC):** the third parallel item, after its fresh-clone verification. The main checkout is fast-forwarded to it.
   - **Lesson kept:** the limit now stops the account about every two to three hours of eight-session work. Two things keep that from losing work: every agent's progress file, and a resume message sent the moment the limit resets.
+- **2026-10-26 ~09:08 UTC: the checklist PR is up as draft #55 (eea716d).**
+  - **The file:** `.claude/agents/ux-brand-reviewer.md`, 99 lines. Every check cites its rule, or is marked "(recommendation)" or "(baseline)".
+  - **The template:** `.github/pull_request_template.md`'s reviewer comment now names the new reviewer. Open #48 edits lines 1-8 of the same file, so the two never touch the same lines.
+  - **Its design:** one adversarial review, 19 points, all applied.
+  - **The two improvements it took:**
+    - D1, a wider trigger: `packages/ui/src`, `packages/brand/src`, and any file whose strings reach a screen;
+    - D5, the template comment.
+  - **16 px fields stay a recommendation:** ADR 0056 sets dense controls at 14, and the PR that changes the fields amends ADR 0056.
+  - **Now:** its two adversarial reviews (brand and copy; consistency and fitness for use) and the fix round with the documentation-only suite (wf_2db9e9db-7fd). Then the push, the fresh-clone verification reading CI, and the merge.
