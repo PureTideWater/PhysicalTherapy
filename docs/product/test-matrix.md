@@ -227,3 +227,17 @@ reserved for the series' later pull requests; CI-15 to CI-17 are the mutation wo
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
 
+
+## Database function diffs (DBF)
+
+The generated function files of combined audit #111 (docs/adr/0068): one file per function name in
+`packages/db/functions`, written by `pnpm db:domain-model --out`, checked beside the domain model, and shown as diffs in
+the summary that opens each approval.
+
+| ID | Case | Assertion |
+| --- | --- | --- |
+| DBF-01 | Function files of a freshly migrated database | Regenerated exactly, no file missing, extra or different, under any search_path, DateStyle, IntervalStyle and TimeZone of the connection; a stray file fails `--check` |
+| DBF-02 | A function changed by one line | Only that function's file changes, by that line and its body-hash line, the hash of the body alone (between the dollar quotes, or the SQL-standard body) equal to Appendix C's for a plpgsql and a SQL-standard body; a grant added, SECURITY DEFINER flipped or `SET search_path` removed each changes the file |
+| DBF-03 | Function file names | One file per name, overloads in one file in signature order; a name outside `^[a-z_][a-z0-9_]*$` or over 63 bytes, or an aggregate, refused; output the same for any input order |
+| DBF-04 | Writing and checking the directory | `--out` writes and removes stale `*.sql` only, leaves the README and refuses a symlink; `--check` exits 1 naming each file and its first differing line; the document's text and SHA-256 are the same with the files as without |
+| DBF-05 | Privileges, triggers and the summary | PUBLIC revoked or granted, grant option, grantor, sorted grantees and owner each one line; comment and trigger lines; the summary's diff of each changed file, SECURITY DEFINER and scope functions first, or one line when the base has none |

@@ -57,8 +57,9 @@ test alone, which prices the base's engine and this commit's.
    - **`db (k/N)`:** the failing file and test are in the suite step's output. "Files this shard ran" lists the files
      the shard ran, with the ten slowest. Run the file locally on its own (below); every db file makes its own
      database, so a shard's failure is a file's, never the shard's order.
-   - **`domain model`:** "documents differ" means a migration without the regenerated document
-     (`pnpm db:domain-model --out`, through `/new-migration`); an approval refusal on a schema pull request means the
+   - **`domain model`:** "documents differ", or a function file named missing, extra, differing or refused, means a migration
+     without the regenerated document and `packages/db/functions` (`pnpm db:domain-model --out`, through
+     `/new-migration`, then commit both; docs/adr/0068); an approval refusal on a schema pull request means the
      founder has not signed yet, and the job prints the SHA-256 to sign (governance runbook, "A pull request that asks
      you to approve the domain model"). Nothing else is waiting on it: the database suite reports on its own.
    - **`e2e (k/M)`:** the failing journey is in the step's output and annotated on the pull request. A screenshot

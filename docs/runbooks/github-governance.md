@@ -439,8 +439,14 @@ Install the GitHub app (App Store or Google Play) and sign in as yourself, never
 1. Read **Changes since the last approved document** in the `domain model` check's summary (in the browser:
    **Checks** → **ci** → **domain model** → **Summary**): row-level security, policies, the PHI registry and grants
    come first, then tables, columns, constraints, functions, triggers and the divergence rows, one line each, with the
-   old and new document SHA-256. That copy is the one that counts: the code wrote it. The build also puts it at the top of the description,
-   but the build wrote that copy; if the two differ, request changes. If anything surprises you, request changes.
+   old and new document SHA-256. Below them, **Function definitions changed since** shows each database function the
+   pull request changes as its changed lines (removed in red, added in green), SECURITY DEFINER and tenant-scope
+   functions first, including a change to a function's grants or settings that the one-line list cannot show
+   (docs/adr/0068). That copy is the one that counts: the code wrote it. The build also puts it at the top of the
+   description, but the build wrote that copy; if the two differ, request changes. If anything surprises you, request
+   changes. **Files changed** shows the same lines: under `packages/db/functions`, one file per changed function,
+   listed above the migration. Those files are generated, never edited by hand, and your approval is still of the
+   document, by its hash.
 2. Sign the approval line yourself. The build posts the exact line, with your name, today's date and the document's
    SHA-256, as a suggested change: one comment on the document's approval line, posted with the GitHub API, which
    GitHub records as a comment (never an approval or a request for changes); its edit tools refuse to write the line

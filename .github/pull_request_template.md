@@ -56,8 +56,9 @@ pipeline, the security program, or the milestones and their gates without an exc
 ## Domain model
 
 <!-- Only when a migration changes docs/product/domain-model.md: the document's SHA-256 before and after, as
-`pnpm db:domain-model --summary-since <base>` prints them, and that summary; the copy in the `domain model` check's job
-summary is the one that counts. The build posts the approval line as a suggested change and never writes it. Otherwise:
+`pnpm db:domain-model --summary-since <base>` prints them, and that summary, its diffs of the changed function files
+(packages/db/functions; docs/adr/0068) included; the copy in the `domain model` check's job summary is the one that
+counts. The build posts the approval line as a suggested change and never writes it. Otherwise:
 "No migration; the document is unchanged." -->
 
 ## The founder's approval

@@ -1,4 +1,7 @@
 import { type ApprovalCheck, approvalFields, approvalLineOf, approvalProblems, comparableText, documentSha256 } from './approval';
+import { cOrder } from './functions';
+import { unifiedDiffs } from './history';
+import { fenceFor } from './render';
 
 /**
  * "Changes since the last approved document" (docs/adr/0063): what a regenerated
@@ -584,6 +587,70 @@ export function renderSummary(input: SummaryInput): string {
       continue;
     }
     out.push(`**${title}** (${String(these.length)})`, '', ...these.map(changeLine), '');
+  }
+  return out.join('\n');
+}
+
+/** The function files a summary compares (docs/adr/0068): the base's and this run's, each file name to content. */
+export interface FunctionChangesInput {
+  /** The ref and commit the base's files were read at, as for the document. */
+  readonly ref: string;
+  readonly commit: string;
+  /** The base's files; null when the base has no packages/db/functions (the pull request that first adds them). */
+  readonly before: ReadonlyMap<string, string> | null;
+  /** This run's files: the generated set under --out or --check, else the working tree's. */
+  readonly after: ReadonlyMap<string, string>;
+  /** Where `after` came from, in words. */
+  readonly source: string;
+  /** The directory as the repository names it, for the diffs' headers. */
+  readonly directory: string;
+}
+
+/**
+ * Whether a function file is about a SECURITY DEFINER function or one that sets the tenant scope (a SET of
+ * app.practice_ids in its header, or a set_config of it in its body): those diffs are read first. pg_get_functiondef
+ * prints a setting's name through quote_identifier, so a dotted name like this one arrives in double quotes
+ * (` SET "app.practice_ids" TO ...`); the unquoted form is matched too.
+ */
+export const sensitiveFunctionFile = (text: string): boolean =>
+  /^ (?:\w+ )*SECURITY DEFINER\b/m.test(text) || /^ SET "?app\.practice_ids"? TO\b/m.test(text) || /set_config\s*\(\s*'app\.practice_ids'/i.test(text);
+
+/**
+ * "Function definitions changed since REF" (docs/adr/0068; design review R2): every function file that differs
+ * between the base and this run, each as git's unified diff in a fenced diff block, SECURITY DEFINER and
+ * scope-setting functions first (either side counts, so a flip to invoker is first too), then by name. Appendix C
+ * shows a changed body only as a changed hash and a header-only change (a DEFAULT, STRICT, LEAKPROOF, the owner, a
+ * grant) not at all; this section shows the changed lines themselves. When the base has no function files, one line
+ * says so, with the count, and compares nothing.
+ */
+export function renderFunctionChanges(input: FunctionChangesInput): string {
+  const { ref, commit, before, after, source, directory } = input;
+  const out: string[] = [`## Function definitions changed since ${ref}`, ''];
+  if (before === null) {
+    out.push(
+      `- The base has no function files (\`${directory}\` at \`${ref}\`, commit \`${commit.slice(0, 12)}\`): ${String(after.size)} ${after.size === 1 ? 'file' : 'files'} added, nothing to compare.`,
+      '',
+    );
+    return out.join('\n');
+  }
+  const diffs = unifiedDiffs(before, after, directory);
+  const sensitive = (name: string): boolean => sensitiveFunctionFile(before.get(name) ?? '') || sensitiveFunctionFile(after.get(name) ?? '');
+  const names = [...diffs.keys()].sort((a, b) => Number(sensitive(b)) - Number(sensitive(a)) || cOrder(a, b));
+  out.push(`- Compared: \`${directory}\` at \`${ref}\` (commit \`${commit.slice(0, 12)}\`) with ${source}.`);
+  if (names.length === 0) {
+    out.push('- No function file changed.', '');
+    return out.join('\n');
+  }
+  const added = names.filter((n) => !before.has(n)).length;
+  const removed = names.filter((n) => !after.has(n)).length;
+  out.push(
+    `- ${String(names.length)} ${names.length === 1 ? 'file' : 'files'} changed (${String(added)} added, ${String(removed)} removed), SECURITY DEFINER and scope-setting functions first: ${names.map((n) => `\`${n}\``).join(', ')}`,
+    '',
+  );
+  for (const name of names) {
+    const diff = diffs.get(name) ?? '';
+    const fence = fenceFor(diff);
+    out.push(`### \`${directory}/${name}\`${sensitive(name) ? ' (SECURITY DEFINER or sets app.practice_ids)' : ''}`, '', `${fence}diff`, diff, fence, '');
   }
   return out.join('\n');
 }

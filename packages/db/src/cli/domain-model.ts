@@ -9,29 +9,45 @@ import {
   DOMAIN_MODEL_DOCUMENT,
   type DocumentAtRef,
   DomainModelError,
+  FUNCTIONS_DIRECTORY,
   REPO_ROOT,
+  compareFunctionDirectory,
+  describeDifference,
   documentApprovalProblems,
   documentAtRef,
   documentToWrite,
   firstDifference,
+  functionFilesAtCommit,
   generateDomainModel,
+  hasUncommittedInputs,
   readApprovers,
+  readFunctionDirectory,
+  renderFunctionChanges,
   renderSummary,
+  sameDirectory,
+  writeFunctionDirectory,
 } from '../domain-model';
 
 /**
- * `pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--strict] [--require-approval] [--json FILE]
- *  [--summary-since REF] [--database-url URL] [--commit SHA] [--branch NAME]`: Change Order 001, CO-02.
+ * `pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--functions DIR] [--strict] [--require-approval]
+ *  [--json FILE] [--summary-since REF] [--database-url URL] [--commit SHA] [--branch NAME]`: Change Order 001,
+ *  CO-02.
  *
- * Generates docs/product/domain-model.md from the database at DATABASE_URL (or --database-url), which
- * must be freshly migrated with `pnpm db:migrate`; this command migrates nothing and only reads.
+ * Generates docs/product/domain-model.md, and the function files (one per function name, its definition,
+ * owner and privileges; docs/adr/0068), from the database at DATABASE_URL (or --database-url), which must be
+ * freshly migrated with `pnpm db:migrate`; this command migrates nothing and only reads.
  *
- *   --out    writes the document (FILE defaults to docs/product/domain-model.md). An existing valid
- *            approval line is kept when the regenerated text is identical; any change leaves it awaiting.
+ *   --out    writes the document (FILE defaults to docs/product/domain-model.md) and the function files.
+ *            An existing valid approval line is kept when the regenerated text is identical; any change
+ *            leaves it awaiting. In the functions directory it writes each changed file, removes each
+ *            `*.sql` no function produces, and never follows a symlink or touches the README.
  *   --check  regenerates and compares with the document, ignoring the "Approved by:" line and the
  *            provenance line (commit and branch, the document's fifth line), so a pull request that
- *            changes no schema passes whatever its commit; exits 1 and prints the first differing line
- *            when they differ.
+ *            changes no schema passes whatever its commit, and compares the functions directory: every
+ *            missing, extra and differing file, and any symlink or directory, each with its first
+ *            differing line. It reports both, then exits 1 if either differs.
+ *   --functions DIR  the functions directory (default packages/db/functions), for --out, --check and
+ *            --summary-since; resolved against the caller's directory, as FILE is.
  *   --require-approval  with --check: also exits 1 unless the document's last line, and no other, is
  *            an approval that names a person on packages/db/domain-model/approvers.json (exactly, apart
  *            from spaces at either end; an empty list refuses every approval), gives a date (YYYY-MM-DD,
@@ -45,17 +61,21 @@ import {
  *            policies, the PHI registry and grants first, with both documents' SHA-256 and approval state
  *            (summary.ts, docs/adr/0063). Alone it reads no database and compares with
  *            docs/product/domain-model.md as it is; with --out or --check, with the text they generate.
+ *            Then "Function definitions changed since REF": each function file that differs between REF and
+ *            this run's files (the generated set with --out or --check, else the functions directory as the
+ *            working tree holds it), as a unified diff, SECURITY DEFINER and scope-setting functions first.
  *            A ref git cannot resolve, or a commit without the document, exits 2.
  *
  * The provenance line names the commit and branch (git, unless --commit is given), and says "with
  * uncommitted changes to its inputs" when git reports changes under packages/db or to the Data
- * dictionary, so a document is only said to come from a commit that holds what generated it. The
+ * dictionary (GENERATOR_INPUTS: the function files excluded, since they are an output), so a document
+ * is only said to come from a commit that holds what generated it. The
  * comparison skips that line only where and as the generator writes it, so a commit (--commit or git's)
  * that is not 7 to 40 lower-case hexadecimal digits, or a branch that is not a git ref name in letters,
  * digits, ".", "_", "/" and "-", exits 2 before the database is read.
  */
 const USAGE =
-  'usage: pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--strict] [--require-approval] [--json FILE] [--summary-since REF] [--database-url URL] [--commit SHA] [--branch NAME]\n';
+  'usage: pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--functions DIR] [--strict] [--require-approval] [--json FILE] [--summary-since REF] [--database-url URL] [--commit SHA] [--branch NAME]\n';
 
 function fail(message: string, code: number): never {
   process.stderr.write(`db:domain-model: ${message}\n`);
@@ -86,6 +106,7 @@ try {
       out: { type: 'string' },
       check: { type: 'string' },
       json: { type: 'string' },
+      functions: { type: 'string' },
       strict: { type: 'boolean', default: false },
       'require-approval': { type: 'boolean', default: false },
       'summary-since': { type: 'string' },
@@ -109,9 +130,7 @@ if (values['require-approval'] && values.check === undefined) fail('--require-ap
 const base = process.env.INIT_CWD ?? process.cwd();
 const outPath = values.out === undefined ? undefined : path.resolve(base, values.out);
 const checkPath = values.check === undefined ? undefined : path.resolve(base, values.check);
-
-/** The generator's inputs: its code, the migrations, the Drizzle schema, its data files and the Data dictionary. */
-const INPUTS = ['packages/db', 'docs/product/data-dictionary.md'];
+const functionsDir = values.functions === undefined ? FUNCTIONS_DIRECTORY : path.resolve(base, values.functions);
 
 /** The last approved document, read before the database so that a ref git cannot resolve exits 2 first. */
 let since: DocumentAtRef | undefined;
@@ -128,10 +147,17 @@ function named(file: string): string {
   return `\`${relative.startsWith('..') || path.isAbsolute(relative) ? file : relative}\``;
 }
 
-/** The changes since the document at --summary-since, against `text` from `source`. */
-function printSummary(text: string, source: string, approvers: readonly string[]): void {
+/**
+ * The changes since the document at --summary-since, against `text` from `source`, then the function files that
+ * changed since it, against `functionFiles` from `functionsSource`.
+ */
+function printSummary(text: string, source: string, approvers: readonly string[], functionFiles: ReadonlyMap<string, string>, functionsSource: string): void {
   if (since === undefined) return;
   process.stdout.write(`${renderSummary({ before: since, after: { text, source }, check: { approvers } })}\n`);
+  // The base's files are packages/db/functions at REF, whatever --functions names for this run's.
+  const directory = path.relative(REPO_ROOT, FUNCTIONS_DIRECTORY).split(path.sep).join('/');
+  const before = functionFilesAtCommit(since.commit);
+  process.stdout.write(`${renderFunctionChanges({ ref: since.ref, commit: since.commit, before, after: functionFiles, source: functionsSource, directory })}\n`);
 }
 
 if (values.out === undefined && values.check === undefined) {
@@ -143,7 +169,13 @@ if (values.out === undefined && values.check === undefined) {
     if (error instanceof DomainModelError) fail(error.message, 2);
     throw error;
   }
-  printSummary(readFileSync(DOMAIN_MODEL_DOCUMENT, 'utf8'), `${named(DOMAIN_MODEL_DOCUMENT)} in the working tree`, names);
+  printSummary(
+    readFileSync(DOMAIN_MODEL_DOCUMENT, 'utf8'),
+    `${named(DOMAIN_MODEL_DOCUMENT)} in the working tree`,
+    names,
+    readFunctionDirectory(functionsDir),
+    `the files in ${named(functionsDir)} in the working tree`,
+  );
   process.exit(0);
 }
 
@@ -156,7 +188,7 @@ try {
     strict: values.strict,
     commit: values.commit ?? git(['rev-parse', 'HEAD']),
     branch: values.branch ?? git(['branch', '--show-current']),
-    uncommitted: values.commit === undefined && git(['status', '--porcelain', '--', ...INPUTS]) !== '',
+    uncommitted: values.commit === undefined && hasUncommittedInputs(),
   });
 } catch (error) {
   if (error instanceof DomainModelError) fail(error.message, 2);
@@ -168,14 +200,33 @@ let checked: string | undefined;
 if (checkPath !== undefined) {
   const existing = readFileSync(checkPath, 'utf8');
   checked = existing;
+  // Both the document and the functions directory are reported before either exits.
+  let differs = false;
   const difference = firstDifference(existing, generated.text);
   if (difference !== null) {
-    fail(
-      `${checkPath} does not match the schema; regenerate it (pnpm db:domain-model --out on a freshly migrated database). First difference at line ${String(difference.line)}:\n- ${difference.existing}\n+ ${difference.generated}`,
-      1,
+    differs = true;
+    process.stderr.write(
+      `db:domain-model: ${checkPath} does not match the schema; regenerate it (pnpm db:domain-model --out on a freshly migrated database). First difference at line ${String(difference.line)}:\n- ${difference.existing}\n+ ${difference.generated}\n`,
     );
+  } else {
+    process.stdout.write(`${checkPath} matches the schema at ${String(generated.head)}\n`);
   }
-  process.stdout.write(`${checkPath} matches the schema at ${String(generated.head)}\n`);
+  let directory;
+  try {
+    directory = compareFunctionDirectory(functionsDir, generated.functionFiles);
+  } catch (error) {
+    if (error instanceof DomainModelError) fail(error.message, 2);
+    throw error;
+  }
+  if (!sameDirectory(directory)) {
+    differs = true;
+    process.stderr.write(
+      `db:domain-model: ${functionsDir} does not match the functions of the schema; regenerate it (pnpm db:domain-model --out on a freshly migrated database):\n  ${describeDifference(functionsDir, directory).join('\n  ')}\n`,
+    );
+  } else {
+    process.stdout.write(`${functionsDir} matches the schema's ${String(generated.functionFiles.size)} function names\n`);
+  }
+  if (differs) process.exit(1);
   if (values['require-approval']) {
     const problems = documentApprovalProblems(existing, generated.sha256, { approvers });
     if (problems.length) {
@@ -188,13 +239,26 @@ if (checkPath !== undefined) {
   }
 }
 let written: string | undefined;
+let functionsWritten: { readonly written: readonly string[]; readonly removed: readonly string[] } | undefined;
 if (outPath !== undefined) {
   written = documentToWrite(existsSync(outPath) ? readFileSync(outPath, 'utf8') : null, generated.text, { approvers });
   writeFileSync(outPath, written);
+  try {
+    functionsWritten = writeFunctionDirectory(functionsDir, generated.functionFiles);
+  } catch (error) {
+    if (error instanceof DomainModelError) fail(error.message, 2);
+    throw error;
+  }
 }
 if (values.json !== undefined) writeFileSync(path.resolve(base, values.json), generated.json);
 process.stdout.write(`${outPath === undefined ? '' : `wrote ${outPath}: `}${generated.summary}\n`);
 for (const p of generated.strictProblems) process.stdout.write(`  ${p}\n`);
-if (written !== undefined && outPath !== undefined) printSummary(written, `the text written to ${named(outPath)}`, approvers);
-else if (checked !== undefined && checkPath !== undefined) printSummary(checked, `${named(checkPath)}, which matches the schema`, approvers);
-else printSummary(generated.text, 'the text regenerated from the database', approvers);
+if (functionsWritten !== undefined) {
+  process.stdout.write(
+    `wrote ${functionsDir}: ${String(generated.functionFiles.size)} function files, ${String(functionsWritten.written.length)} written, ${String(functionsWritten.removed.length)} removed\n`,
+  );
+}
+const files = generated.functionFiles;
+if (written !== undefined && outPath !== undefined) printSummary(written, `the text written to ${named(outPath)}`, approvers, files, `the files written to ${named(functionsDir)}`);
+else if (checked !== undefined && checkPath !== undefined) printSummary(checked, `${named(checkPath)}, which matches the schema`, approvers, files, `${named(functionsDir)}, which matches the schema`);
+else printSummary(generated.text, 'the text regenerated from the database', approvers, files, 'the files generated from the database');

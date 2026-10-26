@@ -17,6 +17,25 @@ migrated database) and open the pull request's description with the output of
 post the line `--check --require-approval` names (the founder's name, the date, the hash) as a suggested change for
 the founder to commit, and ask for their review of that commit (docs/runbooks/github-governance.md, step 6).
 
+The same `--out` also writes packages/db/functions: one generated file per database function name, every overload of
+it in that file (docs/adr/0068; packages/db/functions/README.md). Commit every file it writes or removes in the same
+pull request, before the founder signs, since any later commit dismisses the approval; never edit one by hand
+(`--check` and the database suite's drift case fail a hand edit and a missing regeneration alike). Report each changed
+function as its file's diff, which the summary prints under "Function definitions changed since <base>", not as the
+migration's `CREATE OR REPLACE FUNCTION` block: a recreation that changes nothing changes no file. Read each diff for
+these hazards and name every one you find in the pull request's description:
+
+- SECURITY DEFINER without `SET search_path`, or with `pg_temp` anywhere but last;
+- `LEAKPROOF` added; `STRICT` removed;
+- a volatility change on a function a policy calls;
+- any `GRANT ... TO PUBLIC`, or a grant to a role that did not have one;
+- an owner change (`ALTER FUNCTION ... OWNER TO`);
+- a new overload of a scope function (`allowed_practice_ids`, `effective_practice_access`, the `app_actor_*`
+  functions);
+- a read of `app.practice_ids` removed or changed.
+
+A `-- Trigger function of:` line added is a new trigger on another table, not a change to the function.
+
 The route: `.claude/hooks/protect-github.sh` refuses the GitHub connector's review tools, so post the suggestion with
 the GitHub API as one pull-request comment on the approval line, the last line of docs/product/domain-model.md in the
 pull request's head:

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { copyFileSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -17,11 +18,23 @@ import { type GeneratedDomainModel, generateDomainModel } from './generate';
  * fix to a pull request's new migration would be, must change the document and its hash, even when the
  * edit only changes a function's body. And the document must show what changes behaviour without
  * changing a table: a trigger disabled or set to replica-only, a rewrite rule, a default privilege.
+ * The function files (docs/adr/0068; DBF-02) must show the same edit as the line it changed, and the changes the
+ * document shows only as a hash or not at all: a grant, SECURITY DEFINER, a SET search_path.
  * Synthetic schema only: a probe migration appended to a copy of the migrations directory.
  */
 const PROBE = '29991231000000_gate_probe.sql';
-const probe = (body: string): string =>
-  ['-- The domain model drift probe (domain-model-drift.db.test.ts); never a real migration.', `CREATE FUNCTION gate_probe() RETURNS integer LANGUAGE sql IMMUTABLE AS $$ ${body} $$;`, 'REVOKE ALL ON FUNCTION gate_probe() FROM PUBLIC;', ''].join('\n');
+/** The probe function: a plpgsql body over several lines, of which `statement` is the one the edit changes. */
+const probe = (statement: string): string =>
+  [
+    '-- The domain model drift probe (domain-model-drift.db.test.ts); never a real migration.',
+    'CREATE FUNCTION gate_probe() RETURNS integer LANGUAGE plpgsql IMMUTABLE AS $$',
+    'BEGIN',
+    `  ${statement}`,
+    'END',
+    '$$;',
+    'REVOKE ALL ON FUNCTION gate_probe() FROM PUBLIC;',
+    '',
+  ].join('\n');
 
 const directories: string[] = [];
 const databases: ScratchDatabase[] = [];
@@ -51,8 +64,8 @@ let first: Awaited<ReturnType<typeof migratedWithProbe>> | undefined;
 let edited: Awaited<ReturnType<typeof migratedWithProbe>> | undefined;
 
 beforeAll(async () => {
-  first = await migratedWithProbe('SELECT 1');
-  edited = await migratedWithProbe('SELECT 2');
+  first = await migratedWithProbe('RETURN 1;');
+  edited = await migratedWithProbe('RETURN 2;');
 }, 180_000);
 
 afterAll(async () => {
@@ -115,6 +128,81 @@ describe('the domain model and an edited migration', () => {
 
       const privileges = await change('ALTER DEFAULT PRIVILEGES FOR ROLE tp_owner IN SCHEMA public GRANT ALL ON TABLES TO tp_app');
       expect(privileges).toContain('- Default privileges (ALTER DEFAULT PRIVILEGES): for `tp_owner` in `public` on tables: `tp_app=arwdDxtm/tp_owner`');
+    } finally {
+      await client.end();
+    }
+  }, 60_000);
+});
+
+/** The first 16 hex digits of the body hash Appendix C prints for `signature`. */
+function appendixHash(text: string, signature: string): string | undefined {
+  const row = lineWith(text, `| \`${signature}\` |`);
+  return row === undefined ? undefined : /\| `([0-9a-f]{16})` \|$/.exec(row)?.[1];
+}
+
+const sha16 = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 16);
+
+/** The lines that differ between two texts of the same length in lines, as [line number, before, after]. */
+function changedLines(before: string, after: string): [number, string, string][] {
+  const a = before.split('\n');
+  const b = after.split('\n');
+  expect(b.length, 'the same number of lines').toBe(a.length);
+  return a.flatMap((line, i): [number, string, string][] => (line === b[i] ? [] : [[i + 1, line, b[i] ?? '']]));
+}
+
+describe('DBF-02: the function files and an edited function', () => {
+  it("a one-line body edit changes only that function's file, by that line and its body-hash line", () => {
+    const { before, after } = both();
+    expect([...after.functionFiles.keys()]).toEqual([...before.functionFiles.keys()]);
+    const changed = [...after.functionFiles].filter(([name, text]) => before.functionFiles.get(name) !== text).map(([name]) => name);
+    expect(changed).toEqual(['gate_probe.sql']);
+    const lines = changedLines(before.functionFiles.get('gate_probe.sql') ?? '', after.functionFiles.get('gate_probe.sql') ?? '');
+    expect(lines.map(([, was, is]) => [was, is])).toEqual([
+      [`-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ${String(appendixHash(before.text, 'gate_probe()'))}`, `-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ${String(appendixHash(after.text, 'gate_probe()'))}`],
+      ['  RETURN 1;', '  RETURN 2;'],
+    ]);
+  });
+
+  it('the hash of the text between the delimiters is the Appendix C value, for a plpgsql body and a SQL-standard one', () => {
+    const { after } = both();
+    const plpgsql = after.functionFiles.get('gate_probe.sql') ?? '';
+    const between = /\nAS \$function\$([\s\S]*?)\$function\$;\n/.exec(plpgsql)?.[1];
+    expect(between).toBe('\nBEGIN\n  RETURN 2;\nEND\n');
+    expect(sha16(between ?? '')).toBe(appendixHash(after.text, 'gate_probe()'));
+    expect(plpgsql).toContain(`as Appendix C prints it: ${sha16(between ?? '')}\n`);
+    // screening_standing has a SQL-standard body (RETURN ...): no dollar quotes, its body the text after the header.
+    const standard = after.functionFiles.get('screening_standing.sql') ?? '';
+    const body = /\n(RETURN [\s\S]*?);\nALTER FUNCTION /.exec(standard)?.[1];
+    expect(body).toMatch(/^RETURN CASE /);
+    expect(sha16(body ?? '')).toBe(appendixHash(after.text, 'screening_standing(bigint,bigint,bigint,bigint)'));
+    expect(standard).toContain(`-- Body SHA-256 (the SQL-standard body only, from RETURN or BEGIN ATOMIC), as Appendix C prints it: ${sha16(body ?? '')}\n`);
+  });
+
+  it('a grant added, a SECURITY DEFINER flip and a SET search_path removed each change the file', async () => {
+    if (first === undefined) throw new Error('the probe database was not migrated');
+    const { database, migrationsDir } = first;
+    const client = new pg.Client({ connectionString: database.url });
+    await client.connect();
+    try {
+      let previous = first.document.functionFiles;
+      /** Runs `sql`, regenerates, and returns the lines `file` changed by; no other file may change. */
+      const change = async (sql: string, file: string): Promise<[number, string, string][] | string[]> => {
+        await client.query(sql);
+        const files = (await generateDomainModel({ databaseUrl: database.url, migrationsDir, commit: '0000000', branch: 'probe' })).functionFiles;
+        const changed = [...files].filter(([name, text]) => previous.get(name) !== text).map(([name]) => name);
+        expect(changed, sql).toEqual([file]);
+        const was = previous.get(file) ?? '';
+        const is = files.get(file) ?? '';
+        previous = files;
+        const a = was.split('\n');
+        const b = is.split('\n');
+        // Lines added or removed: the lines one side has that the other lacks.
+        return a.length === b.length ? changedLines(was, is) : [...b.filter((line) => !a.includes(line)).map((l) => `+${l}`), ...a.filter((line) => !b.includes(line)).map((l) => `-${l}`)];
+      };
+
+      expect(await change('GRANT EXECUTE ON FUNCTION gate_probe() TO tp_app', 'gate_probe.sql')).toEqual(['+GRANT EXECUTE ON FUNCTION public.gate_probe() TO tp_app;']);
+      expect(await change('ALTER FUNCTION gate_probe() SECURITY DEFINER', 'gate_probe.sql')).toEqual([[expect.any(Number), ' IMMUTABLE', ' IMMUTABLE SECURITY DEFINER']]);
+      expect(await change('ALTER FUNCTION allowed_practice_ids() RESET search_path', 'allowed_practice_ids.sql')).toEqual(["- SET search_path TO 'pg_catalog', 'public', 'pg_temp'"]);
     } finally {
       await client.end();
     }

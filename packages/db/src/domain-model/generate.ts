@@ -7,6 +7,7 @@ import { documentSha256, provenanceProblems } from './approval';
 import { type Catalog, readCatalog } from './catalog-reads';
 import { crossCheck } from './cross-check';
 import { INFORMATIONAL, compareWithDictionary, explain, parseDictionary } from './dictionary';
+import { renderFunctionFiles } from './functions';
 import { readMigrationText } from './migration-text';
 import { areaProblems, buildModel } from './model';
 import { renderDocument } from './render';
@@ -22,6 +23,11 @@ import { DEFAULT_SOURCES, DomainModelError, type DomainModelSources, readAreaFil
  * files, the Data dictionary, the area map and the explanations. The output is deterministic: no
  * database name, no timestamp, no collation-dependent order; the commit and branch go on the
  * provenance line, which `--check` and the approval hash ignore.
+ *
+ * From the same catalog read, in the same snapshot, it also renders the function files (functions.ts,
+ * docs/adr/0068): one file per function name, its definition, owner and privileges, which `--out` writes to
+ * packages/db/functions. The document's renderer ignores what only the files print, so the document's text
+ * is the same with them as without.
  */
 export interface GenerateOptions extends Partial<DomainModelSources> {
   readonly databaseUrl: string;
@@ -51,6 +57,8 @@ export interface GeneratedDomainModel {
   readonly strictProblems: readonly string[];
   /** The model as JSON, for --json. */
   readonly json: string;
+  /** The function files, file name (`<name>.sql`) to content, in C order of the names (functions.ts). */
+  readonly functionFiles: ReadonlyMap<string, string>;
 }
 
 export async function generateDomainModel(options: GenerateOptions): Promise<GeneratedDomainModel> {
@@ -66,6 +74,7 @@ export async function generateDomainModel(options: GenerateOptions): Promise<Gen
   const model = buildModel(catalog, migrations, areaFile);
   const { areaOf, problems } = areaProblems(areaFile.areas, model);
   if (problems.length) throw new DomainModelError(`the area map does not match the schema:\n  ${problems.join('\n  ')}`);
+  const functionFiles = renderFunctionFiles(catalog);
 
   const dictionary = parseDictionary(readFileSync(sources.dictionaryPath, 'utf8'));
   const compared = compareWithDictionary(model, dictionary);
@@ -108,6 +117,7 @@ export async function generateDomainModel(options: GenerateOptions): Promise<Gen
         null,
         2,
       ) + '\n',
+    functionFiles,
   };
 }
 
@@ -117,7 +127,7 @@ async function readDatabase(databaseUrl: string): Promise<{ catalog: Catalog; cr
   await client.connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    // What pg_get_expr, pg_get_viewdef and format_type print depends on these; pin them.
+    // What pg_get_expr, pg_get_viewdef, pg_get_functiondef, regprocedure and format_type print depends on these; pin them.
     await client.query('SET LOCAL search_path = public');
     await client.query("SET LOCAL IntervalStyle = 'postgres'");
     await client.query("SET LOCAL DateStyle = 'ISO, MDY'");

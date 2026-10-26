@@ -19,6 +19,15 @@ export {
   provenanceProblems,
 } from './approval';
 export { type GenerateOptions, type GeneratedDomainModel, generateDomainModel } from './generate';
+export { FUNCTION_FILE_BANNER, FUNCTIONS_README, renderFunctionFiles } from './functions';
+export {
+  type DirectoryDifference,
+  compareFunctionDirectory,
+  describeDifference,
+  readFunctionDirectory,
+  sameDirectory,
+  writeFunctionDirectory,
+} from './function-files';
 export {
   APPROVERS_FILE,
   APPROVERS_FORMAT,
@@ -27,16 +36,19 @@ export {
   DOMAIN_MODEL_DOCUMENT,
   DomainModelError,
   type DomainModelSources,
+  FUNCTIONS_DIRECTORY,
+  GENERATOR_INPUTS,
   GITHUB_LOGIN,
   REPO_ROOT,
   readApproverRecords,
   readApprovers,
 } from './sources';
-export { type DocumentAtRef, documentAtRef } from './history';
+export { type DocumentAtRef, documentAtRef, functionFilesAtCommit, hasUncommittedInputs, unifiedDiffs } from './history';
 export {
   type DocumentChange,
   type DocumentFact,
   type DocumentReading,
+  type FunctionChangesInput,
   SUMMARY_CATEGORIES,
   type SummaryCategory,
   type SummaryInput,
@@ -45,5 +57,6 @@ export {
   documentChanges,
   readDocument,
   readingChanges,
+  renderFunctionChanges,
   renderSummary,
 } from './summary';

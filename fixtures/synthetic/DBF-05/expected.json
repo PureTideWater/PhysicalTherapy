@@ -1,0 +1,17 @@
+{
+  "case": "DBF-05",
+  "module": "DBF",
+  "title": "Privileges, triggers and the summary",
+  "assertion": "PUBLIC revoked or granted, grant option, grantor, sorted grantees and owner each one line; comment and trigger lines; the summary's diff of each changed file, SECURITY DEFINER and scope functions first, or one line when the base has none",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["packages/db/src/domain-model/functions.test.ts","packages/db/src/domain-model/summary.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The files and the summary are rendered from catalog rows and directories the test builds; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

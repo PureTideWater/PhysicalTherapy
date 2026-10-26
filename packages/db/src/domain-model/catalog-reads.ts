@@ -1,7 +1,8 @@
 /**
  * The catalog reads behind the domain model (CO-02). Every query reads the PostgreSQL catalog
  * (pg_class, pg_attribute, pg_constraint, pg_index, pg_policy, pg_trigger with each trigger's enabled
- * state, pg_proc with each function's body, pg_rules, pg_default_acl, privileges) or the two tables
+ * state, pg_proc with each function's body, definition, owner, ACL and comment, pg_rules, pg_default_acl,
+ * privileges) or the two tables
  * that are themselves catalog data, phi_table_registry and schema_migrations (each applied file's name
  * and SHA-256); none reads a row of any other table. The generator runs them in one READ ONLY
  * transaction.
@@ -82,6 +83,8 @@ export interface TriggerRow {
   /** pg_trigger.tgenabled: O fires (origin and local), A always, R only under replica, D never. */
   readonly enabled: string;
   readonly function_name: string;
+  /** The trigger function's signature as Appendix C prints it, so its function file can name the trigger. */
+  readonly function_signature: string;
   readonly function_src: string | null;
 }
 export interface FunctionRow {
@@ -96,6 +99,38 @@ export interface FunctionRow {
   readonly execute_public: boolean;
   /** The body: prosrc, or the SQL-standard body (BEGIN ATOMIC) as PostgreSQL prints it. */
   readonly src: string | null;
+  /** pg_proc.prokind: f a function, p a procedure, w a window function, a an aggregate. */
+  readonly kind: string;
+  /**
+   * The whole CREATE OR REPLACE statement as pg_get_functiondef prints it (header, every SET and the body), for
+   * kinds f, p and w; null for an aggregate, on which pg_get_functiondef raises. The function files print it
+   * (functions.ts); the document does not.
+   */
+  readonly definition: string | null;
+  /** The owner's name, and the same name quoted as an identifier (quote_ident) for the statements the files print. */
+  readonly owner: string;
+  readonly owner_ident: string;
+  /** Every EXECUTE entry of the function's ACL, the default ACL when proacl is null, the owner's own entry among them. */
+  readonly acl: readonly FunctionAclRow[];
+  /** COMMENT ON FUNCTION, or null. */
+  readonly comment: string | null;
+  /** A member of an extension (pg_depend deptype 'e'): its definition belongs to the extension's version. */
+  readonly extension_member: boolean;
+  /**
+   * Whether the body is SQL-standard (prosqlbody: RETURN ... or BEGIN ATOMIC ... END), which pg_get_functiondef prints
+   * without dollar quotes, rather than prosrc between them; the function files label the body-hash line for which.
+   */
+  readonly sql_standard_body: boolean;
+}
+/** One entry of a function's ACL (aclexplode), EXECUTE being the only privilege a function has. */
+export interface FunctionAclRow {
+  /** The grantee's name, or null for PUBLIC (grantee 0). */
+  readonly grantee: string | null;
+  /** The grantee quoted as an identifier, or PUBLIC. */
+  readonly grantee_ident: string;
+  readonly grantor: string;
+  readonly grantor_ident: string;
+  readonly grantable: boolean;
 }
 export interface PrivilegeRow {
   readonly table_name: string;
@@ -275,7 +310,7 @@ export async function readCatalog(client: Queryable, options: { readonly managed
   const triggers = await rows<TriggerRow>(
     client,
     `SELECT c.relname AS table_name, t.tgname AS name, pg_get_triggerdef(t.oid, true) AS def, t.tgenabled::text AS enabled,
-            p.proname AS function_name, p.prosrc AS function_src
+            p.proname AS function_name, p.oid::regprocedure::text AS function_signature, p.prosrc AS function_src
        FROM pg_trigger t
        JOIN pg_class c ON c.oid = t.tgrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -293,7 +328,21 @@ export async function readCatalog(client: Queryable, options: { readonly managed
                    WHERE g.privilege_type = 'EXECUTE' AND g.grantee <> 0 AND g.grantee <> p.proowner
                    ORDER BY pg_get_userbyid(g.grantee)::text COLLATE "C")::text[] AS execute_roles,
             EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) g WHERE g.privilege_type = 'EXECUTE' AND g.grantee = 0) AS execute_public,
-            CASE WHEN p.prosqlbody IS NULL THEN p.prosrc ELSE pg_get_function_sqlbody(p.oid) END AS src
+            CASE WHEN p.prosqlbody IS NULL THEN p.prosrc ELSE pg_get_function_sqlbody(p.oid) END AS src,
+            p.prokind::text AS kind,
+            CASE WHEN p.prokind IN ('f','p','w') THEN pg_get_functiondef(p.oid) END AS definition,
+            pg_get_userbyid(p.proowner)::text AS owner, quote_ident(pg_get_userbyid(p.proowner)) AS owner_ident,
+            coalesce((SELECT json_agg(json_build_object(
+                         'grantee', CASE WHEN g.grantee = 0 THEN NULL ELSE pg_get_userbyid(g.grantee)::text END,
+                         'grantee_ident', CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END,
+                         'grantor', pg_get_userbyid(g.grantor)::text,
+                         'grantor_ident', quote_ident(pg_get_userbyid(g.grantor)),
+                         'grantable', g.is_grantable)
+                       ORDER BY g.grantee <> 0, pg_get_userbyid(g.grantee)::text COLLATE "C", pg_get_userbyid(g.grantor)::text COLLATE "C")
+                        FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) g WHERE g.privilege_type = 'EXECUTE'), '[]'::json) AS acl,
+            obj_description(p.oid, 'pg_proc') AS comment,
+            EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e') AS extension_member,
+            p.prosqlbody IS NOT NULL AS sql_standard_body
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
       WHERE n.nspname = 'public'
       ORDER BY p.oid::regprocedure::text COLLATE "C"`,

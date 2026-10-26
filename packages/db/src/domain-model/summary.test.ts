@@ -9,7 +9,18 @@ import { APPROVAL_PREFIX, approvalLineOf, awaitingApprovalLine, documentSha256, 
 import { documentAtRef } from './history';
 import { fenceFor } from './render';
 import { DOMAIN_MODEL_DOCUMENT, DomainModelError } from './sources';
-import { type DocumentChange, SUMMARY_CATEGORIES, changeLine, contrast, documentChanges, readDocument, readingChanges, renderSummary } from './summary';
+import {
+  type DocumentChange,
+  SUMMARY_CATEGORIES,
+  changeLine,
+  contrast,
+  documentChanges,
+  readDocument,
+  readingChanges,
+  renderFunctionChanges,
+  renderSummary,
+  sensitiveFunctionFile,
+} from './summary';
 
 /**
  * "Changes since the last approved document" (docs/adr/0063) on synthetic schema changes: the committed
@@ -350,5 +361,112 @@ describe('documentAtRef', () => {
     expect(() => documentAtRef(first, { repoRoot: root, document })).toThrow(/has no docs\/product\/domain-model\.md$/);
     expect(() => documentAtRef('--output=x', { repoRoot: root, document })).toThrow(/is not a git ref$/);
     expect(() => documentAtRef('main two', { repoRoot: root, document })).toThrow(/is not a git ref$/);
+  });
+});
+
+describe('DBF-05: "Function definitions changed since REF"', () => {
+  /** A function file as functions.ts prints it, cut down to what these cases change. */
+  const file = (name: string, options: { readonly body?: string; readonly definer?: boolean; readonly grants?: readonly string[] } = {}): string =>
+    [
+      `-- ${name}()`,
+      '-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0123456789abcdef',
+      '-- Trigger function of: (none)',
+      `CREATE OR REPLACE FUNCTION public.${name}()`,
+      ' RETURNS integer',
+      ' LANGUAGE sql',
+      ...(options.definer === true ? [' STABLE SECURITY DEFINER', " SET search_path TO 'pg_catalog', 'public', 'pg_temp'"] : [' STABLE']),
+      'AS $function$',
+      `  ${options.body ?? 'SELECT 1'}`,
+      '$function$;',
+      `ALTER FUNCTION public.${name}() OWNER TO tp_owner;`,
+      `REVOKE ALL ON FUNCTION public.${name}() FROM PUBLIC;`,
+      ...(options.grants ?? []).map((role) => `GRANT EXECUTE ON FUNCTION public.${name}() TO ${role};`),
+      '',
+    ].join('\n');
+  const base = { ref: 'origin/main', commit: 'f'.repeat(40), source: 'the files written to `packages/db/functions`', directory: 'packages/db/functions' };
+  /** The lines the diff blocks add or remove, their ---/+++ headers aside. */
+  const changedLines = (text: string): string[] =>
+    [...text.matchAll(/^```diff\n([\s\S]*?)\n```$/gm)].flatMap((m) => (m[1] ?? '').split('\n').filter((line) => /^[+-]/.test(line) && !/^(?:--- |\+\+\+ )/.test(line)));
+
+  it('shows a header-only change, a grant added, as the line it adds, in a fenced diff block', () => {
+    const before = new Map([['gate_probe.sql', file('gate_probe')]]);
+    const after = new Map([['gate_probe.sql', file('gate_probe', { grants: ['tp_app'] })]]);
+    const text = renderFunctionChanges({ ...base, before, after });
+    expect(text).toContain('## Function definitions changed since origin/main\n');
+    expect(text).toContain('- Compared: `packages/db/functions` at `origin/main` (commit `ffffffffffff`) with the files written to `packages/db/functions`.');
+    expect(text).toContain('- 1 file changed (0 added, 0 removed), SECURITY DEFINER and scope-setting functions first: `gate_probe.sql`');
+    expect(text).toContain('### `packages/db/functions/gate_probe.sql`\n\n```diff\ndiff --git a/packages/db/functions/gate_probe.sql b/packages/db/functions/gate_probe.sql\n');
+    expect(text).toContain('\n--- a/packages/db/functions/gate_probe.sql\n+++ b/packages/db/functions/gate_probe.sql\n');
+    expect(changedLines(text)).toEqual(['+GRANT EXECUTE ON FUNCTION public.gate_probe() TO tp_app;']);
+    expect(text.trimEnd().endsWith('```')).toBe(true);
+  });
+
+  it('a body edited by one line is that line, removed and added', () => {
+    const text = renderFunctionChanges({ ...base, before: new Map([['gate_probe.sql', file('gate_probe')]]), after: new Map([['gate_probe.sql', file('gate_probe', { body: 'SELECT 2' })]]) });
+    expect(changedLines(text)).toEqual(['-  SELECT 1', '+  SELECT 2']);
+  });
+
+  it('puts SECURITY DEFINER and scope-setting functions first, either side counting, then by name, with added and removed files', () => {
+    const before = new Map([
+      ['gate_probe_a.sql', file('gate_probe_a')],
+      ['gate_probe_flip.sql', file('gate_probe_flip', { definer: true })],
+      ['gate_probe_gone.sql', file('gate_probe_gone')],
+      ['gate_probe_same.sql', file('gate_probe_same')],
+      ['gate_probe_scope.sql', file('gate_probe_scope', { body: "SELECT set_config('app.practice_ids', '{}', true)" })],
+    ]);
+    const after = new Map([
+      ['gate_probe_a.sql', file('gate_probe_a', { body: 'SELECT 2' })],
+      ['gate_probe_flip.sql', file('gate_probe_flip')],
+      ['gate_probe_new.sql', file('gate_probe_new')],
+      ['gate_probe_same.sql', file('gate_probe_same')],
+      ['gate_probe_scope.sql', file('gate_probe_scope', { body: "SELECT set_config('app.practice_ids', '{}', false)" })],
+    ]);
+    const text = renderFunctionChanges({ ...base, before, after });
+    const headings = text.split('\n').filter((line) => line.startsWith('### '));
+    expect(headings).toEqual([
+      '### `packages/db/functions/gate_probe_flip.sql` (SECURITY DEFINER or sets app.practice_ids)',
+      '### `packages/db/functions/gate_probe_scope.sql` (SECURITY DEFINER or sets app.practice_ids)',
+      '### `packages/db/functions/gate_probe_a.sql`',
+      '### `packages/db/functions/gate_probe_gone.sql`',
+      '### `packages/db/functions/gate_probe_new.sql`',
+    ]);
+    expect(text).toContain('- 5 files changed (1 added, 1 removed)');
+    expect(text).toContain('--- /dev/null\n+++ b/packages/db/functions/gate_probe_new.sql\n');
+    expect(text).toContain('--- a/packages/db/functions/gate_probe_gone.sql\n+++ /dev/null\n');
+    expect(text).not.toContain('gate_probe_same.sql');
+    // A new file like a removed one is an addition and a removal, never read as a rename.
+    expect(text).not.toContain('rename from');
+    expect(sensitiveFunctionFile(file('gate_probe', { definer: true }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe'))).toBe(false);
+    expect(sensitiveFunctionFile(`${file('gate_probe')}\n SET app.practice_ids TO '{}'`)).toBe(true);
+    // As pg_get_functiondef prints it: quote_identifier puts a dotted setting name in double quotes.
+    expect(sensitiveFunctionFile(`${file('gate_probe')}\n SET "app.practice_ids" TO '{}'`)).toBe(true);
+    expect(sensitiveFunctionFile(`${file('gate_probe')}\n SET "app.practice_idsx" TO '{}'`)).toBe(false);
+  });
+
+  it('fences a diff whose body holds a line of three backticks with a longer fence', () => {
+    const text = renderFunctionChanges({ ...base, before: new Map([['gate_probe.sql', file('gate_probe')]]), after: new Map([['gate_probe.sql', file('gate_probe', { body: "SELECT E'```'" })]]) });
+    expect(text).toContain('````diff\n');
+    expect(text.trimEnd().endsWith('````')).toBe(true);
+  });
+
+  it('says so when no function file changed', () => {
+    const files = new Map([['gate_probe.sql', file('gate_probe')]]);
+    expect(renderFunctionChanges({ ...base, before: files, after: new Map(files) })).toContain('- No function file changed.');
+  });
+
+  it('when the base has no function files, one line with the count, and nothing compared', () => {
+    const after = new Map([
+      ['gate_probe_a.sql', file('gate_probe_a')],
+      ['gate_probe_b.sql', file('gate_probe_b')],
+    ]);
+    expect(renderFunctionChanges({ ...base, before: null, after })).toBe(
+      [
+        '## Function definitions changed since origin/main',
+        '',
+        '- The base has no function files (`packages/db/functions` at `origin/main`, commit `ffffffffffff`): 2 files added, nothing to compare.',
+        '',
+      ].join('\n'),
+    );
   });
 });
