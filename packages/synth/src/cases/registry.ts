@@ -208,6 +208,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/packets/unattested.test.ts',
     'apps/web/e2e/unattested.spec.ts',
   ]),
+  // Lane B (co-001/materiality-cents): settings stored in cents are shown and entered in dollars, and a form saved unchanged keeps them.
+  'CAS-38': none(8, 'A practice setting read and shown: no file.', ['apps/web/src/components/settings/defaults.test.tsx', 'apps/web/src/lib/routes/console-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-39': none(8, 'A practice setting read and saved: no file.', [
+    'apps/web/src/lib/money-input.test.ts',
+    'apps/web/src/lib/routes/defaults-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

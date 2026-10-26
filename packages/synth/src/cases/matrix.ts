@@ -150,6 +150,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'Submission of an export whose pricing went stale after it was made',
     assertion: 'Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused',
   },
+  {
+    id: 'CAS-38',
+    title: 'The materiality and pursuit settings show stored cents as dollars',
+    assertion:
+      'With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says "$5.00 per line and $250.00 per case" and "$45.00 an hour", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget is typed in dollars, as its hint says',
+  },
+  {
+    id: 'CAS-39',
+    title: 'Saving the defaults form unchanged changes nothing',
+    assertion:
+      'Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

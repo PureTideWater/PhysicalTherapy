@@ -1,0 +1,21 @@
+{
+  "case": "CAS-38",
+  "module": "CAS",
+  "title": "The materiality and pursuit settings show stored cents as dollars",
+  "assertion": "With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says \"$5.00 per line and $250.00 per case\" and \"$45.00 an hour\", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget is typed in dollars, as its hint says",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/web/src/components/settings/defaults.test.tsx",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "apps/web/e2e/triage.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A practice setting read and shown: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
