@@ -23,7 +23,16 @@ on:
   schedule:
     # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (audit #54).
     - cron: "41 6 * * 1"
+  # On request, on the release's runner by default, or once on ubuntu-26.04 as an advisory probe whose numbers decide the
+  # capacity chain's later move (the founder's F5; issue #41, O5): a dispatched 26.04 run opens no issue, and the launch
+  # check refuses its report for its runner image.
   workflow_dispatch:
+    inputs:
+      runner:
+        description: The runner image to measure on (ubuntu-26.04 is an advisory probe)
+        type: choice
+        options: [ubuntu-24.04, ubuntu-26.04]
+        default: ubuntu-24.04
   # A push to the build branch measures any change to what the images or the harness are built from; a pull request
   # measures one that changes a path of the derived watched list (the changes job below).
   push:
@@ -42,6 +51,9 @@ on:
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - docker-compose.yml
+      # The capacity job's own setup scripts: its cached system packages' check and its browser check.
+      - tools/ci/apt-archives.sh
+      - tools/ci/browser-build.ts
       - .github/workflows/screening-capacity.yml
   # Every pull request: the gate decides from its changed files (the changes job's watched list) whether to measure.
   pull_request:
@@ -62,7 +74,7 @@ jobs:
   # does, so a pull request cannot drop its own path. Reads file names and that list only: no install, no repository
   # code run.
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       measure: ${{ steps.watched.outputs.measure }}
@@ -129,8 +141,10 @@ jobs:
     # runner stops as "runner too small". Once the repository is private its standard runner has 2, so this label (and the
     # release's capacity job's, the same runner) becomes a 4-core larger runner, which needs an organization on GitHub
     # Team (docs/runbooks/screening-capacity.md, "The 8-core runner"); until then a private run is refused as too small
-    # and the screening cannot open.
-    runs-on: ubuntu-24.04
+    # and the screening cannot open. ubuntu-24.04, the release's runner (RELEASE_RUNNER in launch-check.ts), on every
+    # event but a dispatch that names ubuntu-26.04: the advisory probe of the founder's F5, while every other job of every
+    # workflow but the release's capacity chain runs on ubuntu-26.04.
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     # A run takes 30 to 60 minutes (the scale release, two image builds, five scenarios, S4 three times); a hung scenario
     # stops at 100 instead of GitHub's 360 (docs/adr/0063). S4's two more runs (the founder's ruling of 2026-10-23) need
     # about 3 minutes: CI's S4 took 59 s on 19aa09c and 78 s on 54ec890 from its cold restart (about 20 s) to S5's start;
@@ -149,18 +163,23 @@ jobs:
         with:
           driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
 
-      # The production images, from their Dockerfiles, as ci.yml's images job builds them. Every run reads the layer cache;
+      # The production images, from their Dockerfiles, as ci.yml's images job builds them: each as an archive with no
+      # attestation manifest, loaded below once its identity is read from its bytes. Every run reads the layer cache;
       # only a push to the build branch writes it, and only the final layers (mode=min): both Dockerfiles copy the whole
       # checkout before installing, so the install and build layers change with every commit and exporting them each run
       # would churn the repository's 10 GB of Actions cache (audit #53 part 1's capacity review).
+      - name: The images' directory
+        run: mkdir -p "$RUNNER_TEMP/image"
       - name: Build the web image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
-          load: true
           push: false
           tags: tp-web:capacity
+          outputs: type=docker,dest=${{ runner.temp }}/image/web.tar
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=screening-capacity-web
           cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-web' || '' }}
 
@@ -169,18 +188,82 @@ jobs:
         with:
           context: .
           file: apps/worker/Dockerfile
-          load: true
           push: false
           tags: tp-worker:capacity
+          outputs: type=docker,dest=${{ runner.temp }}/image/worker.tar
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=screening-capacity-worker
           cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-worker' || '' }}
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
+      # Each archive's identity read from its bytes (tools/screening-capacity/image-id.ts, node: modules only), then the
+      # load, then the loaded tag proved to be that image on this runner's store: the config digest on the classic store,
+      # the archive's top-level descriptor on the containerd store (docs/adr/0066, Part 3).
+      - name: Load the images as built
+        run: |
+          store=classic
+          if [ "$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "driver-type"}}{{index . 1}}{{end}}{{end}}')" = io.containerd.snapshotter.v1 ]; then
+            store=containerd
+          fi
+          for image in web worker; do
+            identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/$image.tar")"
+            config="$(jq -r '.config' <<< "$identity")"
+            target="$(jq -r '.target // empty' <<< "$identity")"
+            docker load --input "$RUNNER_TEMP/image/$image.tar"
+            if [ "$store" = containerd ]; then want="$target"; else want="$config"; fi
+            id="$(docker image inspect -f '{{.Id}}' "tp-$image:capacity")"
+            if [ -z "$want" ] || [ "$id" != "$want" ]; then
+              echo "::error title=$image::tp-$image:capacity loaded as $id on the $store image store, not its archive's ${want:-digest for it}"
+              exit 1
+            fi
+            echo "$image: config $config, loaded as $id on the $store image store"
+          done
       - run: pnpm install --frozen-lockfile
+      # The runner image's name and version, from the runner's own environment: the system packages' cache key, this
+      # job's own (ubuntu24, or ubuntu26 for the probe).
+      - name: The runner image
+        id: runner-image
+        run: |
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "::error title=The runner image::the runner names no ImageOS or ImageVersion, so the system packages' cache has no key"
+            exit 1
+          fi
+          echo "key=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+      # The .deb files Playwright's --with-deps fetched on an earlier run, each used only once its SHA-256 is the signed
+      # index's for its exact version (tools/ci/apt-archives.sh; docs/adr/0066, Part 3).
+      - name: Restore the browsers' system packages
+        id: apt
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-v1-${{ steps.runner-image.outputs.key }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json') }}
+          restore-keys: |
+            apt-v1-${{ steps.runner-image.outputs.key }}-
+            apt-v1-${{ steps.runner-image.outputs.os }}-
+      - name: Check the restored system packages against the signed index
+        run: tools/ci/apt-archives.sh verify "$RUNNER_TEMP/apt-archives"
       # The browser the uploads are sent from: Playwright's own Chromium, as ci.yml installs it.
-      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      - id: browser-install
+        run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      # Every file of the headless shell's and Chromium's builds against apps/web/e2e/browser.json. Unlike ci.yml's
+      # jobs, nothing here runs past a red check: a measurement is never made with another browser than the record's.
+      - name: Check the browser builds against browser.json
+        run: node tools/ci/browser-build.ts
+      # This job's own system packages, on a miss, by the build branch's own runs only (a pull request's cache is its own
+      # scope, which no other run reads).
+      - name: Collect the system packages apt downloaded
+        if: ${{ github.event_name != 'pull_request' && steps.apt.outputs.cache-hit != 'true' }}
+        run: tools/ci/apt-archives.sh collect "$RUNNER_TEMP/apt-archives"
+      - name: Save the browsers' system packages
+        if: ${{ github.event_name != 'pull_request' && steps.apt.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: ${{ steps.apt.outputs.cache-primary-key }}
 
       # The SYNTHETIC scale release, kept between runs by the SHA-256 of what generates it: built in a step of its own
       # and saved straight after, so a measurement that fails still leaves it cached for the next run.
@@ -246,7 +329,7 @@ jobs:
     name: screening-capacity gate
     needs: [changes, capacity]
     if: ${{ always() }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Pass when nothing watched changed, else only on a passing measurement
@@ -277,12 +360,13 @@ jobs:
           fi
           echo "the capacity measurement passed every check but time, which is advisory here; a release's capacity run holds it binding"
 
-  # A failure outside a pull request opens one issue, or comments on the one already open. This job holds the
-  # workflow's only write permission and runs no repository code: it checks nothing out.
+  # A failure outside a pull request opens one issue, or comments on the one already open, but a dispatched ubuntu-26.04
+  # probe's, which is advisory and goes to issue #41 by hand (the founder's F5). This job holds the workflow's only write
+  # permission and runs no repository code: it checks nothing out.
   notify:
     needs: capacity
-    if: failure() && github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    if: failure() && github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.runner == 'ubuntu-26.04')
+    runs-on: ubuntu-26.04
     # One call to the issues API; a hung call stops at 5 minutes instead of GitHub's 360 (docs/adr/0063).
     timeout-minutes: 5
     permissions:

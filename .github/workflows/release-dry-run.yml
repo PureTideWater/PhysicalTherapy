@@ -1,13 +1,13 @@
 name: release-dry-run
 
-# The release's chain without a release (docs/adr/0066, Part 2). Only a tag runs release.yml, and only the founder makes
-# tags, so a change to it, to the actions it pins or to the images' Dockerfiles and their pnpm installer would otherwise
-# run first on the founder's tag. On every pull request and push that changes one of those files, this runs release.yml's own build and
-# hand-over steps on the web image: it builds the image as release.yml does, saves it with its identity, uploads it and
-# downloads it as release.yml's jobs do, checks that the image loaded is the image built, and logs in to the GitHub
-# container registry with the job's own token; it writes the image's bill of materials as release.yml does, and runs
-# the capacity job's setup up to its frozen install with no cache. It never tags, pushes or attests, and holds no write
-# permission.
+# The release's chain without a release (docs/adr/0066, Parts 2 and 3). Only a tag runs release.yml, and only the
+# founder makes tags, so a change to it, to the actions it pins or to the images' Dockerfiles and their pnpm installer
+# would otherwise run first on the founder's tag. On every pull request and push that changes one of those files, this
+# runs release.yml's own build and hand-over steps on the web image: it builds the image as release.yml does, saves it
+# with its identity as the job's outputs, uploads it and downloads it as release.yml's jobs do, checks each download
+# against those outputs and the image loaded against the image built, and logs in to the GitHub container registry
+# with the job's own token; it writes the image's bill of materials as release.yml does, and runs the capacity job's
+# setup up to its frozen install with no cache. It never tags, pushes or attests, and holds no write permission.
 # workflows.test.ts holds every step it shares with release.yml to the same action and the same inputs.
 #
 # Advisory: none of its jobs is a required check (the ruleset "Protect the build branch"), so its path filter can never
@@ -46,11 +46,16 @@ defaults:
 
 jobs:
   # release.yml's build job for the web image alone, with no scan (ci.yml's images job scans both images on every pull
-  # request) and no cache, as release.yml restores none.
+  # request) and no cache, as release.yml restores none. Its identity leaves as release.yml's do, as this job's outputs.
+  # The worker's browser check is release.yml's alone here: ci.yml's images job runs it on every pull request.
   build:
     runs-on: ubuntu-24.04
     # About 6 minutes; three times that.
     timeout-minutes: 20
+    outputs:
+      sha256_web: ${{ steps.identity.outputs.sha256_web }}
+      config_web: ${{ steps.identity.outputs.config_web }}
+      target_web: ${{ steps.identity.outputs.target_web }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,6 +82,8 @@ jobs:
           load: true
           push: false
           tags: ${{ steps.image.outputs.ref }}
+          provenance: false
+          sbom: false
           build-args: |
             STATIC_ASSET_ORIGIN=
           labels: |
@@ -97,22 +104,51 @@ jobs:
           cache-dir: ${{ runner.temp }}/trivy
       - run: jq -e '.spdxVersion and (.packages | length > 0)' sbom-web-dry-run.spdx.json > /dev/null
 
-      # release.yml's step, word for word: docker save and docker load keep the image's ID.
-      - name: Save the built image
+      # Node 24 with no cache, as release.yml's build job takes it.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # release.yml's step, word for word: the archive, its identity read from its bytes and proved on this store, and
+      # the job's outputs.
+      - name: Save the scanned image and record its identity
+        id: identity
         env:
           REF: ${{ steps.image.outputs.ref }}
           IMAGE: web
         run: |
           mkdir -p "$RUNNER_TEMP/image"
           docker save "$REF" | gzip -1 > "$RUNNER_TEMP/image/$IMAGE.tar.gz"
-          docker image inspect -f '{{.Id}}' "$REF" > "$RUNNER_TEMP/image/$IMAGE.id"
-          echo "$IMAGE: $(cat "$RUNNER_TEMP/image/$IMAGE.id")"
+          identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/$IMAGE.tar.gz")"
+          config="$(jq -r '.config' <<< "$identity")"
+          target="$(jq -r '.target // empty' <<< "$identity")"
+          store=classic
+          if [ "$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "driver-type"}}{{index . 1}}{{end}}{{end}}')" = io.containerd.snapshotter.v1 ]; then
+            store=containerd
+          fi
+          if [ "$store" = containerd ]; then want="$target"; else want="$config"; fi
+          id="$(docker image inspect -f '{{.Id}}' "$REF")"
+          if [ -z "$want" ] || [ "$id" != "$want" ]; then
+            echo "::error title=$IMAGE::$REF is $id on the $store image store, not its archive's ${want:-digest for it}"
+            exit 1
+          fi
+          sha="$(sha256sum "$RUNNER_TEMP/image/$IMAGE.tar.gz" | cut -d ' ' -f 1)"
+          echo "$sha  $IMAGE.tar.gz" > "$RUNNER_TEMP/image/$IMAGE.tar.sha256"
+          echo "$config" > "$RUNNER_TEMP/image/$IMAGE.id"
+          {
+            echo "sha256_$IMAGE=$sha"
+            echo "config_$IMAGE=$config"
+            echo "target_$IMAGE=$target"
+          } >> "$GITHUB_OUTPUT"
+          echo "$IMAGE: archive SHA-256 $sha, config $config, top-level descriptor ${target:-none}, on the $store image store"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-web
           path: |
             ${{ runner.temp }}/image/web.tar.gz
+            ${{ runner.temp }}/image/web.tar.sha256
             ${{ runner.temp }}/image/web.id
           if-no-files-found: error
           compression-level: 0
@@ -120,7 +156,7 @@ jobs:
           overwrite: true
 
   # release.yml's push job up to its push: the download of every image artifact, the registry login and the identity
-  # check, then nothing more. Read permissions only.
+  # check against the build's outputs, then nothing more: no tag, no push and so no registry check. Read permissions only.
   push:
     needs: build
     runs-on: ubuntu-24.04
@@ -142,26 +178,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # release.yml's push script with its image list cut to the web image, its tag to this run's, and its tag and push
-      # lines removed.
-      - name: Load the image and check it is the one built
+      # release.yml's check with its image list cut to the web image and its tag to this run's.
+      - name: Check each archive against the build's outputs and load it as the image built
+        env:
+          BUILD: ${{ toJSON(needs.build.outputs) }}
         run: |
           repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          store=classic
+          if [ "$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "driver-type"}}{{index . 1}}{{end}}{{end}}')" = io.containerd.snapshotter.v1 ]; then
+            store=containerd
+          fi
           for image in web; do
-            docker load --input "$RUNNER_TEMP/image/$image.tar.gz"
-            ref="$repository/$image:dry-run-$GITHUB_RUN_ID"
-            id=$(docker image inspect -f '{{.Id}}' "$ref")
-            if [ "$id" != "$(cat "$RUNNER_TEMP/image/$image.id")" ]; then
-              echo "::error::$image is not the image that was scanned"
+            archive="$RUNNER_TEMP/image/$image.tar.gz"
+            sha="$(jq -r --arg key "sha256_$image" '.[$key] // empty' <<< "$BUILD")"
+            config="$(jq -r --arg key "config_$image" '.[$key] // empty' <<< "$BUILD")"
+            target="$(jq -r --arg key "target_$image" '.[$key] // empty' <<< "$BUILD")"
+            if [ -z "$sha" ] || [ -z "$config" ]; then
+              echo "::error title=$image::the build job recorded no identity for $image"
               exit 1
             fi
-            echo "$image $id"
+            echo "$sha  $archive" | sha256sum --check --strict
+            docker load --input "$archive"
+            ref="$repository/$image:dry-run-$GITHUB_RUN_ID"
+            if [ "$store" = containerd ]; then want="$target"; else want="$config"; fi
+            id="$(docker image inspect -f '{{.Id}}' "$ref")"
+            if [ -z "$want" ] || [ "$id" != "$want" ]; then
+              echo "::error title=$image::$ref loaded as $id on the $store image store, not the ${want:-digest} the build recorded"
+              exit 1
+            fi
+            echo "$image: $id, the image built"
           done
 
   # release.yml's capacity job up to its frozen install (the ci-infra review's N4): the steps a tag runs first there,
-  # each with release.yml's inputs (a download by name, pnpm/action-setup with cache: false, setup-node with
-  # package-manager-cache: false, then pnpm install --frozen-lockfile), so a change to them runs on a pull request. The
-  # measurement itself, 100 minutes on the production image, stays the tag's (and screening-capacity.yml's).
+  # each with release.yml's inputs (a download by name, the archive's check against the build's outputs and its load,
+  # pnpm/action-setup with cache: false, setup-node with package-manager-cache: false, then pnpm install
+  # --frozen-lockfile), so a change to them runs on a pull request. The measurement itself, 100 minutes on the production
+  # image, stays the tag's (and screening-capacity.yml's).
   capacity:
     needs: build
     runs-on: ubuntu-24.04
@@ -176,6 +228,37 @@ jobs:
         with:
           name: image-web
           path: ${{ runner.temp }}/image
+
+      # release.yml's check with its image list cut to the web image and its tag to this run's.
+      - name: Check each archive against the build's outputs and load it as the image built
+        env:
+          BUILD: ${{ toJSON(needs.build.outputs) }}
+        run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          store=classic
+          if [ "$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "driver-type"}}{{index . 1}}{{end}}{{end}}')" = io.containerd.snapshotter.v1 ]; then
+            store=containerd
+          fi
+          for image in web; do
+            archive="$RUNNER_TEMP/image/$image.tar.gz"
+            sha="$(jq -r --arg key "sha256_$image" '.[$key] // empty' <<< "$BUILD")"
+            config="$(jq -r --arg key "config_$image" '.[$key] // empty' <<< "$BUILD")"
+            target="$(jq -r --arg key "target_$image" '.[$key] // empty' <<< "$BUILD")"
+            if [ -z "$sha" ] || [ -z "$config" ]; then
+              echo "::error title=$image::the build job recorded no identity for $image"
+              exit 1
+            fi
+            echo "$sha  $archive" | sha256sum --check --strict
+            docker load --input "$archive"
+            ref="$repository/$image:dry-run-$GITHUB_RUN_ID"
+            if [ "$store" = containerd ]; then want="$target"; else want="$config"; fi
+            id="$(docker image inspect -f '{{.Id}}' "$ref")"
+            if [ -z "$want" ] || [ "$id" != "$want" ]; then
+              echo "::error title=$image::$ref loaded as $id on the $store image store, not the ${want:-digest} the build recorded"
+              exit 1
+            fi
+            echo "$image: $id, the image built"
+          done
 
       # pnpm and Node with no cache, as release.yml's capacity job: the store is filled from the registry by the
       # lockfile's integrity hashes.
