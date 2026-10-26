@@ -31,6 +31,7 @@ Design 7.2 is its contract. It holds:
 - the daily `content_due` platform job: `apps/worker/src/jobs/platform.ts`, `platform.test.ts`, `apps/worker/src/worker.test.ts`, its stage alarms in `monitoring.ts` with a new `infra/lib/content.ts`, its log fields in `packages/observability/src/fields.ts` if any are new. It needs Lane A's migration `operator_content_coverage()` first (in LANES.md "Handed to Lane A");
 - `tools/screening-capacity/watched-paths.txt` regenerated (`platform.ts` will import `@tp/rules/calendar`), and screening-capacity moved to the quarterly scale release 900110 (`run.ts`);
 - the digest line for months waiting on Medicare content (`apps/worker/src/digest/job.ts`) and the Pricing settings list of them (`apps/web/src/lib/routes/settings.ts`);
+- the rule-releases help text naming Content due (`apps/web/src/components/help.ts`, #42's file; UX review nit 15);
 - new test-matrix rows, numbers to reserve then.
 
 ## Proposals outside this item
