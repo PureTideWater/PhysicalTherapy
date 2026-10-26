@@ -518,6 +518,8 @@ describe("a line's cash is its share of CLP04 (docs/adr/0067; the combined audit
       { paidCents: -1n, claimAdjustment: part(1n, 3n, 2n) },
     ]);
     expect(pay(-3n, [svc(0n, 0n, false), svc(0n, 0n), svc(0n, 0n)]).map((item) => item.claimAdjustment)).toEqual([null, part(2n, 3n, 2n), part(1n, 3n, 2n)]);
+    // A zero charge beside others takes no share, but the first line still takes a cent left, as the parser's rule gives it.
+    expect(pay(-27199n, [svc(0n, 0n), svc(1n, 0n), svc(1n, 0n)]).map((item) => item.claimAdjustment?.partCents)).toEqual([1n, 13599n, 13599n]);
   });
 
   it('adds the lines’ cash up to CLP04 exactly, each part within a cent of its exact fraction (property)', () => {
@@ -539,10 +541,12 @@ describe("a line's cash is its share of CLP04 (docs/adr/0067; the combined audit
           const { partCents, exactNumerator, exactDenominator } = item.claimAdjustment;
           expect(exactDenominator > 0n).toBe(true);
           expect(item.paidCents).toBe(spec.paid - partCents);
+          // Truncated, then perhaps given one of the cents left: at most a cent from the exact part (a zero charge's exact part is 0, and it can take a cent left, as the parser's rule gives it).
           const gap = partCents * exactDenominator - exactNumerator;
-          expect(gap < exactDenominator && -gap < exactDenominator).toBe(true);
+          expect(gap <= exactDenominator && -gap <= exactDenominator).toBe(true);
         }
       }),
+      { numRuns: 2000 },
     );
   });
 });

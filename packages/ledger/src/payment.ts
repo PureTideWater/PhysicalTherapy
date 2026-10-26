@@ -1,4 +1,4 @@
-import { type Cents, ZERO_CENTS, cents, maxCents, minCents, negateCents, sumCents } from '@tp/money';
+import { type Cents, ZERO_CENTS, cents, compareCents, maxCents, minCents, negateCents, sumCents } from '@tp/money';
 
 import { reprocessing } from './matching';
 import { LedgerError } from './stages';
@@ -63,13 +63,13 @@ export function claimLinePayments(input: { readonly claimPaidCents: Cents; reado
   }
   const own = lines.some((line) => line.carriesAdjustments);
   const takes = lines.map((line) => !own || line.carriesAdjustments);
-  const weights = lines.map((line, index) => (takes[index] === true ? (line.chargeCents < ZERO_CENTS ? -line.chargeCents : line.chargeCents) : 0n));
+  const weights = lines.map((line, index) => (takes[index] === true ? maxCents(line.chargeCents, negateCents(line.chargeCents)) : ZERO_CENTS));
   const sum = weights.reduce((total, weight) => total + weight, 0n);
   const count = BigInt(takes.filter(Boolean).length);
   const exact = weights.map((weight) => (sum === 0n ? { exactNumerator: left, exactDenominator: count } : { exactNumerator: left * weight, exactDenominator: sum }));
   const parts = exact.map((fraction, index) => (takes[index] === true ? fraction.exactNumerator / fraction.exactDenominator : 0n));
   let rest = left - parts.reduce((total, part) => total + part, 0n);
-  const step = rest < 0n ? -1n : 1n;
+  const step = BigInt(compareCents(cents(rest), ZERO_CENTS));
   for (let index = 0; rest !== 0n; index += 1) {
     if (takes[index] === true) {
       parts[index] = (parts[index] as bigint) + step;
