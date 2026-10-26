@@ -94,6 +94,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "Priced with the approved split's setting, read as `tp_app`. The run records the split, and the practice's own setting wins",
   },
+  {
+    id: 'PRC-25',
+    title: 'A late line priced by a newer run of the month, then the older re-run accepted',
+    assertion:
+      "Refused as `superseded`, in the worker and through the screens. The late line keeps its pricing in effect and the newer run stays in effect. The re-run's page says a newer run of these service dates is in effect, links to it and offers no Accept button. When that run was priced after the re-run and would price nothing differently now, the page says there is nothing more to accept and offers no re-run; otherwise it offers the re-run of that run",
+  },
+  {
+    id: 'PRC-26',
+    title: 'Two re-runs of one run, the second priced after the first, accepted in either order and at once',
+    assertion:
+      "Whichever acceptance commits first, the month ends on the second re-run. Accepting the first after the second is refused as `superseded`. Accepting the second after the first succeeds, and its page lists the changes against the first. An acceptance whose changes were shown against a run other than the one it would replace is refused as `diff_changed`. Of two acceptances made at once, the first re-run's is refused as `superseded` whatever the timestamps. The second re-run's, when its transaction began before the other acceptance's, is refused as `changed_meanwhile`, and made again it succeeds. An accepted re-run is the run in effect for its period, and nothing deadlocks",
+  },
+  {
+    id: 'PRC-27',
+    title: 'A re-run whose service dates overlap a run of another period, or a run still being priced',
+    assertion:
+      "A run of another period that took effect after the original and was priced after the re-run, or under a later release or a later place-of-service split, refuses it (`superseded`). Of two runs priced at once, the one that read its inputs last counts as priced last. No shared line goes back to older pricing, and re-running the original again is accepted. One priced before the re-run, under the same release and split, does not refuse it, and its own lines stay in effect. The re-run's page lists exactly the lines whose pricing in effect accepting changes, each against the run of whichever period holds it, and an acceptance whose changes were shown against other runs than hold those lines now is refused as `diff_changed`. A run pinned to a withdrawn release does not count as newer. A first run of overlapping dates being priced refuses acceptance (`newer_run_pending`). One queued refuses new re-runs but not acceptance, and when it completes it takes effect after the accepted re-run",
+  },
+  {
+    id: 'PRC-28',
+    title: 'Re-running a run that is not in effect',
+    assertion:
+      'A run that a later run or an accepted re-run replaced, and a re-run nobody accepted, are not re-run (`not_in_effect`). Their pages offer the run in effect for those service dates instead. A run in effect is re-run as before. A re-run of a re-run nobody accepted, left from before this rule, is not accepted (`superseded`)',
+  },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
   { id: 'CAS-03', title: 'Lines grouped by payer pattern from traces', assertion: 'One case per pattern' },

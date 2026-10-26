@@ -144,6 +144,29 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/db/src/location.db.test.ts',
     'apps/web/e2e/onboarding.spec.ts',
   ]),
+  // Combined audit #10 (`co-001/superseded-rerun`; docs/adr/0037, amendment of 2026-10-26): an older re-run is not accepted over newer pricing.
+  'PRC-25': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
+  'PRC-26': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+  ]),
+  'PRC-27': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+  ]),
+  'PRC-28': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
   'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },

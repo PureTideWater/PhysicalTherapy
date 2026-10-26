@@ -346,7 +346,7 @@ describe('every line is judged from its pricing in effect (PRD 5, J6 and J17; do
     const manager = <T>(run: (scope: Parameters<Parameters<typeof withPracticeScope>[2]>[0]) => Promise<T>) => withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, run);
     const rerun = await manager((scope) => createRerun(scope, { practiceId: practice.practiceId, pricingRunId: sixteenth, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }));
     await w.pricing.execute(practice, rerun.pricingRunId);
-    await manager((scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId: rerun.pricingRunId }));
+    await manager((scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId: rerun.pricingRunId, replacesId: sixteenth , heldByIds: [] }));
     expect(await rows(practice, 'SELECT variance_cents::text FROM priced_line WHERE pricing_run_id = $1', [rerun.pricingRunId])).toEqual([{ variance_cents: '0' }]);
     expect(summary(await w.triage(practice, rerun.pricingRunId))).toMatchObject({ validatedLines: 0, casesOpened: 0, linesAdded: 0 });
     // The 17th's line was priced under the mapping since corrected and not priced again: validated, it waits with

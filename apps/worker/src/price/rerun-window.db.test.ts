@@ -107,6 +107,12 @@ describe('a re-run that moves only the dispute windows', () => {
     expect(diff.summary).toEqual({
       compared: 3,
       changed: 3,
+      pricedChanged: 3,
+      pricedToUnpriced: 0,
+      unpricedToPriced: 0,
+      unpricedChanged: 0,
+      pricedToUnpricedReasons: [],
+      unpricedToPricedReasons: [],
       onlyBefore: 0,
       onlyAfter: 0,
       mappingChanged: 0,

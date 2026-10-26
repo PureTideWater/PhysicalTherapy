@@ -1,0 +1,22 @@
+{
+  "case": "PRC-28",
+  "module": "PRC",
+  "title": "Re-running a run that is not in effect",
+  "assertion": "A run that a later run or an accepted re-run replaced, and a re-run nobody accepted, are not re-run (`not_in_effect`). Their pages offer the run in effect for those service dates instead. A run in effect is re-run as before. A re-run of a re-run nobody accepted, left from before this rule, is not accepted (`superseded`)",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "apps/worker/src/price/rerun.db.test.ts",
+    "apps/worker/src/price/rerun-rule.property.test.ts",
+    "apps/web/src/lib/routes/reruns-routes.db.test.ts",
+    "apps/web/e2e/pricing.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "No file of its own: SYNTHETIC 835s the pricing world already loads.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
