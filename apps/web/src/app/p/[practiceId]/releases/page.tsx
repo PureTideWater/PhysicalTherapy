@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
+import { ReleaseLoadedThrough } from '../../../../components/pricing/content';
 import { RunStateBadges } from '../../../../components/pricing/display';
 import { ReleaseChanges, ReleaseStatusText } from '../../../../components/releases/note';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -65,21 +66,7 @@ export default async function ReleasesPage(props: Props) {
                 <CardTitle>What this release covers</CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="flex flex-col gap-1 text-sm" aria-label="Loaded through">
-                  {loadedThrough
-                    .filter((family) => family.open || family.through !== null)
-                    .map((family) => (
-                      <li key={family.family} data-family={family.family} data-through={family.through ?? 'open'}>
-                        {family.open ? (
-                          `${family.title}: in force, no end date`
-                        ) : (
-                          <>
-                            {family.title}: loaded through <span className="font-mono tabular-nums">{family.through}</span>
-                          </>
-                        )}
-                      </li>
-                    ))}
-                </ul>
+                <ReleaseLoadedThrough families={loadedThrough} />
               </CardContent>
             </Card>
           )}

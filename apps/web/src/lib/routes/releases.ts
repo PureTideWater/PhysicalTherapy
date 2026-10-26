@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { practiceRoute } from '../http/invoke';
 import { NotFoundError } from '../http/route';
 import { type RunSummary, runsInEffect } from '../pricing/queries';
-import { type FamilyThrough, familiesLoadedThrough, windowsInForce } from '../releases/content-through';
+import { DATED_FAMILY_CONTENTS, type FamilyThrough, familiesLoadedThrough, windowsInForce } from '../releases/content-through';
 import { type PublishedRelease, type ReleaseNote, publishedReleases, releaseNote } from '../releases/queries';
 import { opaqueId } from './schemas';
 
@@ -40,7 +40,8 @@ export interface ReleasesPageData {
   readonly canRerun: boolean;
   /**
    * Through what date the release in force loads each content family on today's date (audit #59; docs/adr/0071), in the
-   * content calendar's order; the families typed in when they change are left out. Empty when no release is in force.
+   * content calendar's order, a family it does not load or loads only from a later day included; the families typed in
+   * when they change are left out. Empty when no release is in force.
    */
   readonly loadedThrough: readonly FamilyThrough[];
 }
@@ -73,7 +74,7 @@ export const releasesPage = practiceRoute({
       }
       impact = await runReleaseImpact(scope, run, await storedReleaseSource(scope.client, note.releaseNo), request.requestId);
     }
-    const windows = await windowsInForce(scope.client);
+    const windows = await windowsInForce(scope.client, DATED_FAMILY_CONTENTS);
     return {
       practiceId,
       releases: await publishedReleases(scope.client),

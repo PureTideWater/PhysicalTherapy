@@ -693,6 +693,13 @@ describe('Content due on the console’s Rule releases page (audit #59; docs/adr
     expect(due.problems).toEqual([]);
   });
 
+  it('is not shown to a practice user: the practice’s own administrator is refused the page, and no content due comes back (review sec-app)', async () => {
+    const practiceToken = await sessionFor(world.adminUserId, 'totp');
+    const page = await run(ruleReleasesPage, practiceToken);
+    expect(page).toMatchObject({ status: 'forbidden', permission: 'rule_release.manage' });
+    expect(page).not.toHaveProperty('data');
+  });
+
   it('reads the MUE as ended on a day after it runs out', async () => {
     expect((await dueAt('2027-01-05T15:00:00Z')).items.find((item) => item.family === 'ncci_mue')).toMatchObject({ stage: 'ended', loadedThrough: '2026-12-31' });
   });

@@ -6,7 +6,7 @@ import { releaseContentSpans } from '@tp/worker/pricing';
 import { PricingWorld, RELEASE } from '@tp/worker/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { contentSpansOf, contentWindowsOf, familiesLoadedThrough, forgetContentThrough, multirangeLiteral, releaseManifest, windowsInForce } from './content-through';
+import { DATED_FAMILY_CONTENTS, contentSpansOf, contentWindowsOf, familiesLoadedThrough, forgetContentThrough, multirangeLiteral, releaseManifest, windowsInForce } from './content-through';
 
 /**
  * The per-content windows the web reads (audit #7 and #59; docs/adr/0071; test matrix RCC-08), against a scratch
@@ -57,6 +57,8 @@ describe('the loaded-through dates', () => {
       through: '2026-12-31',
       open: false,
       loaded: true,
+      partly: false,
+      from: null,
     });
     expect(rows.find((row) => row.family === 'fee_schedule')).toMatchObject({
       through: '2026-12-31',
@@ -79,6 +81,37 @@ describe('the loaded-through dates', () => {
       through: '2026-12-31',
       open: false,
       loaded: true,
+    });
+  });
+});
+
+describe('a family the release does not load, or loads only later (review S1)', () => {
+  it('is listed all the same: 900001 has no ZIP+4 file, so the ZIP locality family is only partly loaded', async () => {
+    const rows = await counted(async (scope) => familiesLoadedThrough((await windowsInForce(scope.client, DATED_FAMILY_CONTENTS))?.windows ?? null, '2026-11-20'));
+    expect(rows.find((row) => row.family === 'zip_locality')).toEqual({ family: 'zip_locality', title: expect.any(String) as string, through: null, open: false, loaded: false, partly: true, from: null });
+    expect(rows.map((row) => row.family)).toEqual(familiesLoadedThrough(null, '2026-11-20').map((row) => row.family));
+  });
+
+  it('gives a family loaded only from a later day the first day it is loaded', async () => {
+    const rows = await counted(async (scope) => familiesLoadedThrough(await contentWindowsOf(scope.client, RELEASE, manifest), '2025-06-01'));
+    expect(rows.find((row) => row.family === 'ncci_mue')).toEqual({ family: 'ncci_mue', title: 'Medicare unit limits (MUE)', through: null, open: false, loaded: true, partly: false, from: '2026-01-01' });
+  });
+});
+
+describe('the contents a page reads (sec-app improvement)', () => {
+  it('reads only the record types of the contents asked, kept apart from the whole release, with the same families', async () => {
+    await counted(async (scope, queries) => {
+      const whole = await contentWindowsOf(scope.client, RELEASE, manifest);
+      const fee = await contentWindowsOf(scope.client, RELEASE, manifest, ['pfs_rvu']);
+      expect([...fee.keys()]).toEqual(['pfs_rvu']);
+      expect(fee.get('pfs_rvu')).toEqual(whole.get('pfs_rvu'));
+      const dated = await contentWindowsOf(scope.client, RELEASE, manifest, DATED_FAMILY_CONTENTS);
+      expect(dated.has('sequestration')).toBe(false);
+      expect([...dated.keys()]).toEqual(expect.arrayContaining(['mppr_code', 'mppr_general', 'ncci_mue', 'pfs_gpci']));
+      expect(familiesLoadedThrough(dated, '2026-11-20')).toEqual(familiesLoadedThrough(whole, '2026-11-20'));
+      const afterReads = queries();
+      expect(await contentWindowsOf(scope.client, RELEASE, manifest, ['pfs_rvu'])).toBe(fee);
+      expect(queries()).toBe(afterReads);
     });
   });
 });

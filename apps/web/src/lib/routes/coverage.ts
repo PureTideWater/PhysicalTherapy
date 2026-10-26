@@ -106,7 +106,7 @@ export const coveragePage = practiceRoute({
     const inEffect = await coverageInEffect(scope, practiceId);
     const counts = new Map(inEffect.reasons.map((entry) => [entry.reason, entry.lines]));
     const waitingOnContent = await monthsWaitingOnContent(scope, practiceId);
-    const inForce = await windowsInForce(scope.client);
+    const inForce = await windowsInForce(scope.client, ['pfs_rvu']);
     return {
       practiceId,
       lines: await lineTotals(scope, practiceId),

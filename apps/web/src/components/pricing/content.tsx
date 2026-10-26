@@ -1,4 +1,7 @@
+import type { ReactNode } from 'react';
+
 import { type ContentWaitMonth, waitingOnText } from '../../lib/pricing/content';
+import type { FamilyThrough } from '../../lib/releases/content-through';
 import { Money } from '../remittances/display';
 import { ScrollTable } from '../scroll-table';
 
@@ -34,5 +37,59 @@ export function MonthsWaitingOnContent({ months, label }: { readonly months: rea
         </tbody>
       </table>
     </ScrollTable>
+  );
+}
+
+/**
+ * Through what date the release in force loads each content family (audit #59; docs/adr/0071), as the Releases page
+ * lists them: every family it is given, one the release does not load, loads only in part or loads only from a later
+ * day included, in words, so the list is never read as complete when it is not. Dates in the mono face.
+ */
+export function ReleaseLoadedThrough({ families }: { readonly families: readonly FamilyThrough[] }) {
+  return (
+    <ul className="flex flex-col gap-1 text-sm" aria-label="Loaded through">
+      {families.map((family) => (
+        <li key={family.family} data-family={family.family} data-through={throughState(family)}>
+          {throughText(family)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The row's state for tests and the screen tour: a date, open, later, partly or not_loaded. */
+function throughState(family: FamilyThrough): string {
+  if (family.open) {
+    return 'open';
+  }
+  if (family.through !== null) {
+    return family.through;
+  }
+  if (family.loaded) {
+    return 'later';
+  }
+  return family.partly ? 'partly' : 'not_loaded';
+}
+
+function throughText(family: FamilyThrough): ReactNode {
+  if (family.open) {
+    return `${family.title}: in force, no end date`;
+  }
+  if (family.through !== null) {
+    return (
+      <>
+        {family.title}: loaded through <span className="font-mono tabular-nums">{family.through}</span>
+      </>
+    );
+  }
+  if (!family.loaded) {
+    return family.partly ? `${family.title}: only partly loaded in this release` : `${family.title}: not loaded in this release`;
+  }
+  return family.from === null ? (
+    `${family.title}: loaded only from a later date`
+  ) : (
+    <>
+      {family.title}: loaded only from <span className="font-mono tabular-nums">{family.from}</span>
+    </>
   );
 }

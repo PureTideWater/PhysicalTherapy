@@ -159,6 +159,7 @@ export const ruleReleasesPage = platformRoute({
       prepared: params.prepared ?? null,
       contentDue: await dueContent(
         scope.client,
+        // None is in force only when none is published: a withdrawal must reinstate an earlier release (reinstated_release_no NOT NULL), so the last one in force is never withdrawn.
         releases.find((release) => release.inForce),
         root,
         nextRelease,
