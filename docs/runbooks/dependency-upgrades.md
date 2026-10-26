@@ -78,6 +78,22 @@ Once a week, after Thursday's npm batch:
 
 For the first four weekly batches after the switch, read the bot queue time as `docs/runbooks/ci.md` says.
 
+## Where every package comes from
+
+Every package resolves from `https://registry.npmjs.org/`, the registry whose publish times, integrity and trust
+evidence `pnpm toolchain:check` reads. It refuses:
+- a lockfile entry whose `resolution` is anything but `{integrity: sha512-…}` (a tarball is accepted only under
+  `https://registry.npmjs.org/`): a git, directory or other host's resolution is refused, since a frozen install fetches
+  what `tarball` names and checks only the lockfile's own integrity;
+- an entry the pull request adds whose integrity is not the registry's `dist.integrity` for that version: resolve it
+  again (`pnpm install --lockfile-only`) rather than editing the lockfile by hand;
+- a `registry` or `@scope:registry` setting in `.npmrc` or `pnpm-workspace.yaml` other than registry.npmjs.org;
+- a `.pnpmfile.cjs`, a `pnpmfile` or `global-pnpmfile` setting, or `configDependencies`: each can rewrite a manifest or
+  a resolution where the check cannot see it.
+
+A package that is not on the public registry (a fork, a private package) is a decision for the founder, not a
+setting.
+
 ## The release age (F2 (b))
 
 pnpm 10.34.8 checks the release age only when it resolves: `pnpm install --frozen-lockfile` never does, and

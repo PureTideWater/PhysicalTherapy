@@ -484,6 +484,12 @@ in `static`, networked, against the range step's base reduced with `git merge-ba
   action-setup's `self-update` escapes the workspace's gate, and without the rule a hand bump could make every CI job
   run a pnpm published minutes before); and it warns when a newer 10.x is at least three days old;
 - neither Dockerfile carries a pnpm literal;
+- every lockfile entry resolves from registry.npmjs.org by its sha512 integrity alone (`{integrity}`, or with a tarball
+  under `https://registry.npmjs.org/`; a git, directory or other host's resolution fails, since a frozen install fetches
+  whatever `tarball` names and checks only the lockfile's own integrity), and each entry the change adds carries the
+  registry's `dist.integrity` for that version; `.npmrc` and `pnpm-workspace.yaml` name no other registry, default or
+  scoped, and the repository has no pnpmfile and no config dependency, either of which could rewrite a resolution out
+  of the check's sight;
 - `trust-exceptions.json` equals `trustPolicyExclude`, each entry still in the lockfile; `audit-exceptions.json` equals
   `auditConfig.ignoreGhsas` (empty), an entry over 30 days old failing; each override has its entry;
 - every networked read fails closed after three tries, naming the host.

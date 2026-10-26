@@ -3,7 +3,7 @@ import { stringify } from 'yaml';
 
 import { type CheckEvent, type Finding, type Tree, checkToolchain, dockerfileRule } from './check';
 import { compareVersions, parseSelector, rangeHolds, splitSpec } from './policy';
-import { type Advisory, NetworkReadError, type Packument, type Registry } from './registry';
+import { type Advisory, NetworkReadError, type Packument, type Registry, type VersionFacts } from './registry';
 
 /**
  * check-toolchain's rules on synthetic trees, against recorded synthetic registry answers (no network). Now is
@@ -26,8 +26,20 @@ const TIMES: Record<string, Record<string, string>> = {
   'semver': { '6.3.1': '2023-07-10T22:57:32.000Z' },
 };
 
-/** A registry that answers from TIMES and an advisory table, counting reads; `fail` names packages whose reads fail closed. */
-function fakeRegistry(options: { readonly advisories?: Record<string, Advisory[]>; readonly fail?: readonly string[]; readonly times?: Record<string, Record<string, string>> } = {}): Registry & { readonly reads: string[] } {
+/** Synthetic per-version facts (integrity, trust evidence, declared dependencies); a version not listed has the defaults. */
+type Facts = Record<string, Record<string, Partial<VersionFacts>>>;
+const DEFAULT_FACTS: VersionFacts = { integrity: 'sha512-synthetic', evidence: null, dependencies: {} };
+
+/** Bulk advisory answers by `name@version`. */
+type AdvisoryTable = Record<string, Advisory[]>;
+
+/**
+ * A registry that answers from TIMES, FACTS and an advisory table keyed by `name@version` (a bare version key is
+ * pnpm's), counting reads; `fail` names packages whose reads fail closed.
+ */
+function fakeRegistry(
+  options: { readonly advisories?: AdvisoryTable; readonly fail?: readonly string[]; readonly times?: Record<string, Record<string, string>>; readonly facts?: Facts } = {},
+): Registry & { readonly reads: string[] } {
   const reads: string[] = [];
   const times = { ...TIMES, ...options.times };
   return {
@@ -38,15 +50,25 @@ function fakeRegistry(options: { readonly advisories?: Record<string, Advisory[]
         return Promise.reject(new NetworkReadError(`registry.npmjs.org: reading ${name}'s registry document failed after 3 tries with backoff (last: HTTP 503); check-toolchain fails closed`));
       }
       const time = times[name];
-      return time === undefined ? Promise.reject(new NetworkReadError(`registry.npmjs.org: reading ${name}'s registry document failed (HTTP 404); check-toolchain fails closed`)) : Promise.resolve({ name, versions: Object.keys(time), time });
+      if (time === undefined) {
+        return Promise.reject(new NetworkReadError(`registry.npmjs.org: reading ${name}'s registry document failed (HTTP 404); check-toolchain fails closed`));
+      }
+      const facts = Object.fromEntries(Object.keys(time).map((version) => [version, { ...DEFAULT_FACTS, ...options.facts?.[name]?.[version] }]));
+      return Promise.resolve({ name, versions: Object.keys(time), time, facts });
     },
     advisories(packages) {
       reads.push('advisories');
       if (options.fail?.includes('advisories')) {
         return Promise.reject(new NetworkReadError('registry.npmjs.org: reading the bulk advisory endpoint failed after 3 tries with backoff (last: fetch failed); check-toolchain fails closed'));
       }
-      const hits = options.advisories?.[packages.pnpm?.[0] ?? ''];
-      const answer: Record<string, readonly Advisory[]> = hits === undefined ? {} : { pnpm: hits };
+      const answer: Record<string, Advisory[]> = {};
+      for (const [name, versions] of Object.entries(packages)) {
+        const hits = versions.flatMap((version) => options.advisories?.[`${name}@${version}`] ?? (name === 'pnpm' ? options.advisories?.[version] : undefined) ?? []);
+        const unique = [...new Map(hits.map((hit) => [hit.url, hit])).values()];
+        if (unique.length > 0) {
+          answer[name] = unique;
+        }
+      }
       return Promise.resolve(answer);
     },
   };
@@ -68,7 +90,18 @@ interface Shape {
   readonly trust?: readonly Record<string, string>[];
   readonly overrides?: readonly Record<string, string>[];
   readonly dockerfiles?: Record<string, string>;
+  /** A lockfile entry's resolution, by key, in place of `{integrity: sha512-synthetic}`. */
+  readonly resolutions?: Record<string, unknown>;
+  /** The lockfile's top-level `overrides:` map. */
+  readonly lockOverrides?: Record<string, string>;
+  /** package.json fields beside name and packageManager. */
+  readonly packageJson?: Record<string, unknown>;
+  readonly npmrc?: string;
+  readonly pnpmfile?: string;
 }
+
+/** packageManager as the tree holds it. */
+const PACKAGE_MANAGER = 'pnpm@10.34.8';
 
 const TRUST = [{ package: 'semver@6.3.1', reason: 'published without provenance after a version with it, reached through @babel/core', added: '2026-10-26' }];
 
@@ -77,11 +110,12 @@ function tree(shape: Shape = {}): Tree {
   const workspace = { minimumReleaseAge: 4320, minimumReleaseAgeExclude: [], trustPolicy: 'no-downgrade', trustPolicyExclude: ['semver@6.3.1'], ...shape.workspace };
   const locked = shape.locked ?? ['old-lib@1.0.0', 'semver@6.3.1'];
   return {
-    packageJson: JSON.stringify({ name: 'synthetic', packageManager: shape.packageManager ?? 'pnpm@10.34.8' }),
+    packageJson: JSON.stringify({ name: 'synthetic', packageManager: shape.packageManager ?? PACKAGE_MANAGER, ...shape.packageJson }),
     workspace: stringify(workspace),
     lockfile: stringify({
       lockfileVersion: '9.0',
-      packages: Object.fromEntries(locked.map((key) => [key, { resolution: { integrity: 'sha512-synthetic' } }])),
+      ...(shape.lockOverrides === undefined ? {} : { overrides: shape.lockOverrides }),
+      packages: Object.fromEntries(locked.map((key) => [key, { resolution: shape.resolutions !== undefined && key in shape.resolutions ? shape.resolutions[key] : { integrity: 'sha512-synthetic' } }])),
       snapshots: shape.snapshots ?? Object.fromEntries(locked.map((key) => [key, null])),
     }),
     releaseAgeExceptions: JSON.stringify({ entries: shape.releaseAge ?? [] }),
@@ -89,6 +123,8 @@ function tree(shape: Shape = {}): Tree {
     trustExceptions: JSON.stringify({ entries: shape.trust ?? TRUST }),
     overrides: JSON.stringify({ entries: shape.overrides ?? [] }),
     dockerfiles: shape.dockerfiles ?? { 'apps/web/Dockerfile': DOCKERFILE, 'apps/worker/Dockerfile': DOCKERFILE },
+    ...(shape.npmrc === undefined ? {} : { npmrc: shape.npmrc }),
+    ...(shape.pnpmfile === undefined ? {} : { pnpmfile: shape.pnpmfile }),
   };
 }
 
@@ -106,7 +142,7 @@ describe('check-toolchain', () => {
     const findings = await run(tree());
     expect(problems(findings)).toEqual([]);
     expect(problems(findings, 'warning')).toEqual([]);
-    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'Dockerfiles', 'audit exceptions', 'release-age excludes', 'lockfile release age', 'trust excludes', 'overrides']);
+    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'Dockerfiles', 'audit exceptions', 'release-age excludes', 'lockfile resolutions', 'lockfile release age', 'lockfile integrity', 'trust excludes', 'overrides']);
   });
 
   it('fails on a moderate or worse advisory against packageManager’s pnpm, and warns on a low one', async () => {
@@ -291,6 +327,67 @@ describe('check-toolchain', () => {
       "pnpm release age: registry.npmjs.org: reading pnpm's registry document failed after 3 tries with backoff (last: HTTP 503); check-toolchain fails closed",
       "lockfile release age: registry.npmjs.org: reading young-lib's registry document failed after 3 tries with backoff (last: HTTP 503); check-toolchain fails closed",
     ]);
+  });
+
+  it('refuses a lockfile entry that does not resolve from registry.npmjs.org by its sha512 integrity alone (S1)', async () => {
+    const refused = (key: string, resolution: unknown) =>
+      `lockfile resolutions: ${key}: resolves ${JSON.stringify(resolution)}; every entry resolves from https://registry.npmjs.org by its sha512 integrity alone (a tarball only under https://registry.npmjs.org/), so a git, directory or other host's tarball is refused`;
+    const cases: Record<string, unknown>[] = [
+      { integrity: 'sha512-AAAA', tarball: 'https://evil.example/evilpkg-9.9.9.tgz' },
+      { integrity: 'sha512-AAAA', tarball: 'https://registry.npmjs.org.evil.example/old-lib/-/old-lib-1.0.0.tgz' },
+      { integrity: 'sha512-AAAA', tarball: 'http://registry.npmjs.org/old-lib/-/old-lib-1.0.0.tgz' },
+      { integrity: 'sha512-AAAA', tarball: 'https://user:pass@registry.npmjs.org/old-lib/-/old-lib-1.0.0.tgz' },
+      { type: 'git', repo: 'https://github.com/octo/old-lib.git', commit: 'a'.repeat(40) },
+      { type: 'directory', directory: '../old-lib' },
+      { tarball: 'https://registry.npmjs.org/old-lib/-/old-lib-1.0.0.tgz' },
+      { integrity: 'sha1-AAAA' },
+    ];
+    for (const resolution of cases) {
+      // The entry is the base's too: the rule reads every entry, not only those a change adds.
+      const shape = { resolutions: { 'old-lib@1.0.0': resolution } };
+      expect(problems(await run(tree(shape), tree(shape))), JSON.stringify(resolution)).toEqual([refused('old-lib@1.0.0', resolution)]);
+    }
+    const missing = problems(await run(tree({ resolutions: { 'old-lib@1.0.0': null } }), tree()));
+    expect(missing).toEqual(['lockfile resolutions: old-lib@1.0.0: resolves null; every entry resolves from https://registry.npmjs.org by its sha512 integrity alone (a tarball only under https://registry.npmjs.org/), so a git, directory or other host\'s tarball is refused']);
+    // The registry's own tarball URL, with its integrity, is accepted.
+    const own = { integrity: 'sha512-synthetic', tarball: 'https://registry.npmjs.org/old-lib/-/old-lib-1.0.0.tgz' };
+    expect(problems(await run(tree({ resolutions: { 'old-lib@1.0.0': own } })))).toEqual([]);
+  });
+
+  it('fails an added version whose lockfile integrity is not the registry’s dist.integrity (S1)', async () => {
+    const adds = tree({ locked: ['old-lib@1.0.0', 'old-lib@1.1.0', 'semver@6.3.1'] });
+    expect(problems(await run(adds, tree(), { registry: fakeRegistry({ facts: { 'old-lib': { '1.1.0': { integrity: 'sha512-other' } } } }) }))).toEqual([
+      "lockfile integrity: old-lib@1.1.0: the lockfile's integrity sha512-synthetic is not registry.npmjs.org's dist.integrity sha512-other for it; resolve it again from the registry",
+    ]);
+    expect(problems(await run(adds, tree(), { registry: fakeRegistry({ facts: { 'old-lib': { '1.1.0': { integrity: null } } } }) }))).toEqual([
+      'lockfile integrity: old-lib@1.1.0: registry.npmjs.org gives no dist.integrity for it, so the lockfile\'s cannot be confirmed',
+    ]);
+    // An entry the base already holds is not read again.
+    const registry = fakeRegistry({ facts: { 'old-lib': { '1.0.0': { integrity: 'sha512-other' } } } });
+    expect(problems(await run(tree(), tree(), { registry }))).toEqual([]);
+    expect(registry.reads).not.toContain('old-lib');
+  });
+
+  it('refuses a registry other than registry.npmjs.org, and a pnpmfile or config dependency that could rewrite resolutions (S1)', async () => {
+    const npmjs = ['registry=https://registry.npmjs.org/', 'registry = "https://registry.npmjs.org"', '; a comment', '# another', '@tp:registry=https://registry.npmjs.org/', 'engine-strict=true'].join('\n');
+    expect(problems(await run(tree({ npmrc: npmjs })))).toEqual([]);
+    const refusals: [Shape, string][] = [
+      [{ npmrc: 'registry=https://evil.example/' }, 'settings: .npmrc: registry is https://evil.example/; every package resolves from https://registry.npmjs.org/, the registry check-toolchain reads'],
+      [{ npmrc: '@tp:registry=https://npm.pkg.github.com' }, 'settings: .npmrc: @tp:registry is https://npm.pkg.github.com; every package resolves from https://registry.npmjs.org/, the registry check-toolchain reads'],
+      [{ npmrc: 'registry=${NPM_REGISTRY}' }, 'settings: .npmrc: registry is ${NPM_REGISTRY}; every package resolves from https://registry.npmjs.org/, the registry check-toolchain reads'],
+      [{ workspace: { registry: 'https://evil.example' } }, 'settings: pnpm-workspace.yaml: registry is https://evil.example; every package resolves from https://registry.npmjs.org/, the registry check-toolchain reads'],
+      [{ workspace: { '@tp:registry': 'https://evil.example' } }, 'settings: pnpm-workspace.yaml: @tp:registry is https://evil.example; every package resolves from https://registry.npmjs.org/, the registry check-toolchain reads'],
+      [{ workspace: { registries: { default: 'https://evil.example/' } } }, 'settings: pnpm-workspace.yaml: registries.default is https://evil.example/; every package resolves from https://registry.npmjs.org/, the registry check-toolchain reads'],
+      [{ pnpmfile: 'module.exports = { hooks: {} }' }, 'settings: .pnpmfile.cjs exists; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
+      [{ workspace: { pnpmfile: 'hooks.cjs' } }, 'settings: pnpm-workspace.yaml: pnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
+      [{ workspace: { globalPnpmfile: '/tmp/hooks.cjs' } }, 'settings: pnpm-workspace.yaml: globalPnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
+      [{ workspace: { configDependencies: { hooks: '1.0.0+sha512-synthetic' } } }, 'settings: pnpm-workspace.yaml: configDependencies is set; a config dependency loads a pnpmfile, which can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
+      [{ npmrc: 'pnpmfile=hooks.cjs' }, 'settings: .npmrc: pnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
+      [{ npmrc: 'global-pnpmfile=/tmp/hooks.cjs' }, 'settings: .npmrc: global-pnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
+    ];
+    for (const [shape, message] of refusals) {
+      expect(problems(await run(tree(shape))), message).toEqual([message]);
+    }
   });
 
   it('holds the gates as ruled: at least three days, and no trust downgrade', async () => {

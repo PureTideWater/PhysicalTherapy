@@ -9,11 +9,25 @@ import { z } from 'zod';
 
 export const REGISTRY = 'https://registry.npmjs.org';
 
-/** A package's versions and their publish times (`time[version]`, an ISO instant), from its full registry document. */
+/** A version's trust evidence as pnpm's trustPolicy ranks it: a trusted publisher over provenance over none. */
+export type TrustEvidence = 'trustedPublisher' | 'provenance';
+
+/** What check-toolchain keeps of one version's manifest in the registry document. */
+export interface VersionFacts {
+  /** `dist.integrity`, the Subresource Integrity string a lockfile entry must equal (null: the registry gives none). */
+  readonly integrity: string | null;
+  /** As pnpm 10.34.8 reads it: `_npmUser.trustedPublisher`, else `dist.attestations.provenance`, else none. */
+  readonly evidence: TrustEvidence | null;
+  /** The declared `dependencies` and `optionalDependencies`, name to range. */
+  readonly dependencies: Readonly<Record<string, string>>;
+}
+
+/** A package's versions, their publish times (`time[version]`, an ISO instant) and facts, from its full registry document. */
 export interface Packument {
   readonly name: string;
   readonly versions: readonly string[];
   readonly time: Readonly<Record<string, string>>;
+  readonly facts: Readonly<Record<string, VersionFacts>>;
 }
 
 /** One advisory as the bulk endpoint returns it. */
@@ -89,6 +103,27 @@ const packumentSchema = z.looseObject({
   time: z.record(z.string(), z.string()).optional(),
 });
 
+const rangesSchema = z.record(z.string(), z.string()).catch({});
+const manifestSchema = z
+  .looseObject({
+    dist: z
+      .looseObject({ integrity: z.string().optional().catch(undefined), attestations: z.looseObject({ provenance: z.unknown() }).optional().catch(undefined) })
+      .optional()
+      .catch(undefined),
+    _npmUser: z.looseObject({ trustedPublisher: z.unknown() }).optional().catch(undefined),
+    dependencies: rangesSchema.optional(),
+    optionalDependencies: rangesSchema.optional(),
+  })
+  .catch({});
+
+/** One version's facts; the evidence is read exactly as pnpm's trust check reads it (getTrustEvidence). */
+export function versionFacts(manifest: unknown): VersionFacts {
+  const parsed = manifestSchema.parse(manifest ?? {});
+  const truthy = (value: unknown) => value !== undefined && value !== null && value !== false && value !== '' && value !== 0;
+  const evidence: TrustEvidence | null = truthy(parsed._npmUser?.trustedPublisher) ? 'trustedPublisher' : truthy(parsed.dist?.attestations?.provenance) ? 'provenance' : null;
+  return { integrity: parsed.dist?.integrity ?? null, evidence, dependencies: { ...parsed.dependencies, ...parsed.optionalDependencies } };
+}
+
 const advisorySchema = z.looseObject({
   id: z.union([z.number(), z.string()]),
   url: z.string(),
@@ -116,7 +151,13 @@ export function createRegistry(fetchImpl: Fetch = fetch, options: ReadOptions = 
           if (!parsed.success) {
             throw new NetworkReadError(`${new URL(registry).host}: ${name}'s registry document is not one (${parsed.error.issues[0]?.message ?? 'unreadable'}); check-toolchain fails closed`);
           }
-          return { name: parsed.data.name, versions: Object.keys(parsed.data.versions ?? {}), time: parsed.data.time ?? {} };
+          const manifests = parsed.data.versions ?? {};
+          return {
+            name: parsed.data.name,
+            versions: Object.keys(manifests),
+            time: parsed.data.time ?? {},
+            facts: Object.fromEntries(Object.entries(manifests).map(([version, manifest]) => [version, versionFacts(manifest)])),
+          };
         })();
         cache.set(name, read);
       }
