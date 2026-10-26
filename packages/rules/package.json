@@ -6,6 +6,7 @@
   "description": "Rule record schema, CMS and X12 file parsers, the import command and the release loader.",
   "exports": {
     ".": "./src/index.ts",
+    "./calendar": "./src/calendar.ts",
     "./content": "./src/content.ts",
     "./import": "./src/import.ts",
     "./loader": "./src/loader.ts",
