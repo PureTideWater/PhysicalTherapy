@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { z } from 'zod';
 
-import { RULE_RECORD_TYPES, type RuleRecord, type RuleRecordType, type SecondPassRecord, TRANSCRIBED_FIELDS, isoDate } from './schema';
+import { RULE_RECORD_TYPES, type RuleRecord, type RuleRecordType, type SecondPassRecord, RECORD_DATING, TRANSCRIBED_FIELDS, isoDate, recordTypesDated } from './schema';
 
 /**
  * Canonical JSON: object keys sorted at every level, no whitespace. Two records with the same
@@ -479,10 +479,10 @@ export function contentGaps(records: Iterable<RuleRecord>): ContentGap[] {
 export type CoverageMap = ReadonlyMap<string, string>;
 
 /** The types whose window comes from the file's own dates (ncci.ts:81-89, x12-code-list.ts:56, conversion-factor.ts:56). */
-export const SOURCE_DATED_TYPES = ['ncci_ptp', 'carc', 'rarc', 'claim_status_code', 'conversion_factor'] as const satisfies readonly RuleRecordType[];
+export const SOURCE_DATED_TYPES = recordTypesDated('source_dated');
 
-function isSourceDated(type: string): boolean {
-  return SOURCE_DATED_TYPES.some((dated) => dated === type);
+function isSourceDated(type: RuleRecordType): boolean {
+  return RECORD_DATING[type] === 'source_dated';
 }
 
 interface Coverage {
@@ -564,8 +564,19 @@ function splitIdentity(identity: string): { readonly record_type: RuleRecordType
   return { record_type: identity.slice(0, space) as RuleRecordType, key: JSON.parse(identity.slice(space + 1)) as CoverageKey };
 }
 
-function compareLosses(a: CoverageLoss, b: CoverageLoss): number {
+/** Losses in the order COVERAGE.md lists them: by record type, canonical key, then start. */
+export function compareLosses(a: CoverageLoss, b: CoverageLoss): number {
   return compareText(a.record_type, b.record_type) || compareText(canonicalJson(a.key), canonicalJson(b.key)) || compareText(a.from, b.from);
+}
+
+/** A coverage loss as the assembler and the checker name it: record type, canonical key and dates. */
+export function lossText(loss: CoverageLoss): string {
+  return `${loss.record_type} ${canonicalJson(loss.key)} ${loss.from} to ${loss.to ?? 'open'}`;
+}
+
+/** What makes two losses (or a loss and a withdrawn entry) the same: record type, key and dates, never the signatures. */
+export function lossIdentity(loss: CoverageLoss): string {
+  return canonicalJson({ record_type: loss.record_type, key: loss.key, from: loss.from, to: loss.to });
 }
 
 /**
@@ -678,7 +689,20 @@ export type WithdrawnEntry = ReleaseCoverage['withdrawn'][number];
 export const coverageWithdrawnNoteSchema = z.strictObject({
   format: z.literal('tp-coverage-withdrawn/1'),
   previous_release: z.number().int().positive(),
-  withdrawn: z.array(withdrawn).min(1),
+  // A loss withdrawn twice would pass the assembler's set and fail the assembled release's check far from its cause.
+  withdrawn: z
+    .array(withdrawn)
+    .min(1)
+    .superRefine((entries, context) => {
+      const seen = new Set<string>();
+      entries.forEach((entry, index) => {
+        const identity = lossIdentity(entry);
+        if (seen.has(identity)) {
+          context.addIssue({ code: 'custom', message: `withdraws ${lossText(entry)} a second time: list each loss once`, path: [index] });
+        }
+        seen.add(identity);
+      });
+    }),
 });
 export type CoverageWithdrawnNote = z.infer<typeof coverageWithdrawnNoteSchema>;
 
@@ -767,9 +791,53 @@ export function readJsonBlock(text: string): { value?: unknown; problems: string
   if (blocks.length !== 1) {
     return { problems: [`holds ${String(blocks.length)} \`\`\`json blocks: it must hold exactly one`] };
   }
+  let value: unknown;
   try {
-    return { value: JSON.parse(blocks[0] as string) as unknown, problems: [] };
+    value = JSON.parse(blocks[0] as string) as unknown;
   } catch {
     return { problems: ['its ```json block is not valid JSON'] };
   }
+  const repeated = repeatedKey(blocks[0] as string);
+  if (repeated !== null) {
+    return { problems: [`its \`\`\`json block names ${JSON.stringify(repeated)} twice in one object: JSON keeps only the last, so a reader and the checker would read different values`] };
+  }
+  return { value, problems: [] };
+}
+
+/**
+ * The first key named twice in one object of `json`, which JSON.parse has already accepted, or null. JSON.parse keeps
+ * the last of repeated keys, so a block whose first "withdrawn" is empty and whose second is not reads as the second.
+ */
+function repeatedKey(json: string): string | null {
+  /** Per open container: the keys of an object, or null for an array. */
+  const open: (Set<string> | null)[] = [];
+  for (let at = 0; at < json.length; at += 1) {
+    const char = json[at];
+    if (char === '{') {
+      open.push(new Set<string>());
+    } else if (char === '[') {
+      open.push(null);
+    } else if (char === '}' || char === ']') {
+      open.pop();
+    } else if (char === '"') {
+      let end = at + 1;
+      while (json[end] !== '"') {
+        end += json[end] === '\\' ? 2 : 1;
+      }
+      let next = end + 1;
+      while (/\s/.test(json[next] ?? '')) {
+        next += 1;
+      }
+      const keys = open.at(-1);
+      if (keys !== null && keys !== undefined && json[next] === ':') {
+        const key = JSON.parse(json.slice(at, end + 1)) as string;
+        if (keys.has(key)) {
+          return key;
+        }
+        keys.add(key);
+      }
+      at = end;
+    }
+  }
+  return null;
 }

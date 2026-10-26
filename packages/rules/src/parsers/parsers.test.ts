@@ -284,7 +284,7 @@ describe('ZIP5 (locality_map)', () => {
     ['a line with no year and quarter (Z1)', 'ZZ000119999901\n', 'line 1: year and quarter "" at 76-80 is not YYYYQ'],
     ['a year and quarter that is not YYYYQ (Z1)', `${line('ZZ000119999901', '2026X')}\n`, 'line 1: year and quarter "2026X" at 76-80 is not YYYYQ'],
     ['a quarter 5 (Z1)', `${line('ZZ000119999901', '20265')}\n`, 'line 1: year and quarter "20265" at 76-80 is not YYYYQ'],
-    ['a line one character longer than the record (Z1)', `${line('ZZ000119999901')} \n`, 'line 1: year and quarter "20261" at 76-80 is not YYYYQ'],
+    ['a line one character longer than the record (Z1)', `${line('ZZ000119999901')} \n`, 'line 1: 81 characters; a ZIP5 record is 80 (the year and quarter at 76-80)'],
     // Z2 zip5_quarter_mismatch, the ZIP9 parser's message with ZIP5.
     [
       'a file of another quarter (Z2)',

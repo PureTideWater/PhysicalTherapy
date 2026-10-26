@@ -10,7 +10,8 @@ import {
   type CoverageMap,
   FIRST_SYNTHETIC_RELEASE,
   MANIFEST_FILE,
-  QUARTERLY_RECORD_TYPES,
+  type QuarterlyRecordType,
+  RECORD_DATING,
   type ReleaseCoverage,
   type RuleRecord,
   type RuleRecordType,
@@ -23,6 +24,8 @@ import {
   coverageMap,
   coverageRegression,
   coverageWithdrawnNoteSchema,
+  dayAfter,
+  dayBefore,
   decodeSourceText,
   describeIssues,
   diffTranscriptions,
@@ -31,14 +34,20 @@ import {
   isSecondPassFile,
   isSyntheticReleaseNumber,
   lookBackCutoff,
+  lossIdentity,
+  lossText,
   manifestSchema,
   quarterLabel,
+  quarterWindowProblem,
   quoteIndex,
   readJsonBlock,
+  recordIdentity,
   recordLabel,
   releaseCoverageSchema,
+  renderCoverageFile,
   secondPassPathFor,
   sha256,
+  statedQuarter,
   syntheticMarkers,
   unquotedValues,
   windowQuarter,
@@ -53,6 +62,7 @@ import {
   readRecordFile,
   readSecondPassFile,
   releaseDirOf,
+  releaseNumbers,
 } from '@tp/rules/content';
 
 /**
@@ -76,14 +86,16 @@ import {
  * - in content (never in a fixture), whatever the record's method: a quarterly record's window
  *   leaves one CMS quarter, a ZIP record's quoted lines state another quarter, a per-code MPPR
  *   window is open or leaves its calendar year, a quarterly or per-code MPPR record is hand-typed,
- *   or records of one source file carry different windows (audit #30);
+ *   records of one stored source file carry different windows, or a PPRRVU, GPCI or MUE record's window is not the
+ *   quarter its stored file states (audit #30);
  * - a content has no record in force on dates inside the ones it is loaded for (a gap;
  *   locality_map_plus_four, sparse by design, excepted);
  * - a numbered release has no COVERAGE.md, or one whose release, previous release, dates, contents
  *   or coverage losses do not match its records and its previous release's: it may stop covering
  *   what the previous release covered only before the six-year look-back, where the source's own
- *   dates close it, or where a note signed by two people withdraws it; the previous release must be
- *   readable;
+ *   dates close it (a parsed record's quoted row stating that end), or where a note signed by two people withdraws
+ *   it; the previous release must be readable and match its manifest; COVERAGE.md must be exactly what the assembler
+ *   writes; a release numbered below one already prepared or published is refused;
  * - content/drafts/COVERAGE-WITHDRAWN.md is malformed, or names a release other than the newest.
  */
 
@@ -162,6 +174,8 @@ interface StoredSource {
   readonly problem?: string;
   readonly sha256?: string;
   readonly has?: (quote: string) => boolean;
+  /** The decoded text (already held by `has`), for the quarter the file states (C17). */
+  readonly text?: string;
   /** The fixture file with the same bytes, when the stored source is a copy of one. */
   readonly fixtureCopyOf?: string;
 }
@@ -188,7 +202,8 @@ function sourceReader(root: string): (sourcePath: string) => StoredSource {
       const hash = sha256(bytes);
       fixtures ??= fixtureFileHashes(root);
       const copyOf = sourcePath.startsWith('fixtures/') ? undefined : fixtures.get(hash);
-      stored = { sha256: hash, has: quoteIndex(decodeSourceText(bytes)), ...(copyOf === undefined ? {} : { fixtureCopyOf: copyOf }) };
+      const text = decodeSourceText(bytes);
+      stored = { sha256: hash, has: quoteIndex(text), text, ...(copyOf === undefined ? {} : { fixtureCopyOf: copyOf }) };
     } catch {
       stored = { problem: `the stored source ${sourcePath} is missing (or is not a regular file)` };
     }
@@ -197,8 +212,8 @@ function sourceReader(root: string): (sourcePath: string) => StoredSource {
   };
 }
 
-function isQuarterly(type: RuleRecordType): boolean {
-  return QUARTERLY_RECORD_TYPES.some((quarterly) => quarterly === type);
+function isQuarterly(type: RuleRecordType): type is QuarterlyRecordType {
+  return RECORD_DATING[type] === 'quarterly';
 }
 
 function windowText(record: RuleRecord): string {
@@ -334,7 +349,11 @@ function listedAtMost(problems: readonly string[]): string[] {
 /** The contents read from files with no dates of their own (C16); the general MPPR rate is hand-typed and excepted. */
 const UNDATED_CONTENTS: ReadonlySet<ContentId> = new Set(UNDATED_RECORD_TYPES.map((type): ContentId => (type === 'mppr_rate' ? 'mppr_code' : type)));
 
-/** Records of one file share its window (C16): each quarterly and per-code MPPR span is a union of whole-file windows. */
+/**
+ * Records of one stored file share its window (C16): each quarterly and per-code MPPR span is a union of whole-file
+ * windows. A file is its stored path, not its bytes: CMS ships the same GPCI file in every quarter's RVU zip, stored once
+ * per quarter under a name that states it (GPCI2026_Q1.csv, GPCI2026_Q2.csv), and C17 ties each copy to its quarter.
+ */
 function fileWindowProblems(records: readonly RuleRecord[]): string[] {
   const firstWindow = new Map<string, { readonly window: string; reported: boolean }>();
   const problems: string[] = [];
@@ -343,7 +362,7 @@ function fileWindowProblems(records: readonly RuleRecord[]): string[] {
     if (!UNDATED_CONTENTS.has(content)) {
       continue;
     }
-    const file = `${content} ${record.source.sha256}`;
+    const file = `${content} ${record.source.path}`;
     const window = windowText(record);
     const first = firstWindow.get(file);
     if (first === undefined) {
@@ -353,6 +372,56 @@ function fileWindowProblems(records: readonly RuleRecord[]): string[] {
       problems.push(
         `${content} records from one file (${record.source.path}) carry different windows (${first.window} and ${window}): a file is imported for one window, so import it again rather than editing a record's dates`,
       );
+    }
+  }
+  return problems;
+}
+
+/**
+ * C17 (audit #30 R2, INT-PIPE-3): a parsed PPRRVU, GPCI or MUE record's window lies in the quarter its stored file
+ * states, read as the importer reads it (statedQuarter: the first 5 lines, the stored name and source.url), and starts
+ * on the day the file takes effect when it states one. So a draft re-dated by hand to another quarter is refused, as the
+ * importer would refuse the file for that window. ZIP records are C3's; a window leaving one quarter (C1) and a
+ * hand-typed record (C15) are refused already. One problem per stored file, address and window.
+ */
+function statedQuarterProblems(records: readonly RuleRecord[], readSource: (sourcePath: string) => StoredSource): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const record of records) {
+    const { record_type: type, source } = record;
+    if (!isQuarterly(type) || type === 'locality_map' || type === 'locality_map_plus_four' || source.method === 'hand_typed') {
+      continue;
+    }
+    const window = windowQuarter(record.effective_from, record.effective_to);
+    const once = `${type} ${source.path} ${source.url ?? ''} ${windowText(record)}`;
+    if (window === null || seen.has(once)) {
+      continue;
+    }
+    seen.add(once);
+    const { text } = readSource(source.path);
+    if (text === undefined) {
+      // The record reports the missing file itself.
+      continue;
+    }
+    const which = `${type} records of ${source.path} (${windowText(record)})`;
+    let stated;
+    try {
+      stated = statedQuarter(type, { fileName: source.path, url: source.url ?? '', text });
+    } catch (error) {
+      problems.push(`${which}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+    if (stated === null) {
+      problems.push(
+        `${which}: the stored file states no quarter that can be read in its first lines, its name or source.url, so its window cannot be checked: import it again with pnpm rules:import, keeping CMS's quarter token in its name (content/sources/README.md)`,
+      );
+      continue;
+    }
+    const problem = quarterWindowProblem(stated.quarter, stated.effective, record.effective_from, record.effective_to);
+    if (problem === 'outside' || problem === 'missing') {
+      problems.push(`${which}: the stored file states ${quarterLabel(stated.quarter)}, and the window is in ${quarterLabel(window)}: a file is imported for the quarter it states, so import it again rather than editing a record's dates`);
+    } else if (problem === 'not_effective_day') {
+      problems.push(`${which}: the stored file takes effect on ${stated.effective ?? ''}, so the window starts that day: import it again rather than editing a record's dates`);
     }
   }
   return problems;
@@ -391,14 +460,6 @@ function contentsDifferences(listed: ReleaseCoverage['contents'], computed: read
   return differences.map((what) => `COVERAGE.md's contents do not match the release's records (${what})`);
 }
 
-function lossText(loss: CoverageLoss): string {
-  return `${loss.record_type} ${canonicalJson(loss.key)} ${loss.from} to ${loss.to ?? 'open'}`;
-}
-
-function lossIdentity(loss: CoverageLoss): string {
-  return canonicalJson({ record_type: loss.record_type, key: loss.key, from: loss.from, to: loss.to });
-}
-
 /** The entries of `listed` that `computed` lacks, and of `computed` that `listed` lacks, each counted as often as it appears. */
 function unmatched(listed: readonly CoverageLoss[], computed: readonly CoverageLoss[]): { readonly extra: CoverageLoss[]; readonly missing: CoverageLoss[] } {
   const left = new Map<string, number>();
@@ -432,30 +493,56 @@ export interface CoverageCache {
   remember(dir: string, baseline: Baseline): void;
 }
 
-/** The prepared date a release's COVERAGE.md records, or null when it has none that can be read (that set reports it). */
-function preparedOnOf(dir: string): string | null {
+/** A release's COVERAGE.md as it reads, or null when it has none that can be read (that set reports it). */
+function coverageOf(dir: string): ReleaseCoverage | null {
   try {
     const block = readJsonBlock(readFileSync(path.join(dir, COVERAGE_FILE), 'utf8'));
     const parsed = releaseCoverageSchema.safeParse(block.value);
-    return block.problems.length === 0 && parsed.success ? parsed.data.prepared_on : null;
+    return block.problems.length === 0 && parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
 }
 
-/** Reads a release's records file by file into its coverage map, holding none of them; the first problem fails it. */
+/** The first way a release's files differ from its MANIFEST.json, or undefined when they match (readRelease's comparison). */
+function manifestProblem(dir: string, where: string, listed: readonly ContentFile[]): string | undefined {
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(path.join(dir, MANIFEST_FILE), 'utf8')) as unknown;
+  } catch {
+    return `${where}/${MANIFEST_FILE} is missing or not valid JSON`;
+  }
+  const manifest = manifestSchema.safeParse(data);
+  if (!manifest.success) {
+    return `${where}/${MANIFEST_FILE}: ${describeIssues(manifest.error)[0] ?? 'does not read'}`;
+  }
+  const linked = listed.find((file) => file.symlink);
+  if (linked !== undefined) {
+    return `${where}/${linked.path} is a symbolic link`;
+  }
+  const present = new Map(listed.filter((file) => file.path !== MANIFEST_FILE).map((file) => [file.path, sha256(readFileSync(path.join(dir, file.path)))]));
+  const differences = compareManifest(manifest.data, present);
+  return differences[0] === undefined ? undefined : `${where}: ${differences[0]}`;
+}
+
+/**
+ * Reads a release's records file by file into its coverage map, holding none of them; the first problem fails it. The
+ * files must also match the release's MANIFEST.json, as the assembler's readRelease requires, so the baseline is always
+ * the sealed set and never a file added or edited after it was sealed.
+ */
 function readBaseline(root: string, dir: string): BaselineRead {
   const where = toPosix(path.relative(root, dir));
-  let files: ContentFile[];
+  let listed: ContentFile[];
   try {
     if (!lstatSync(dir).isDirectory()) {
       return { problem: `${where} is not a directory` };
     }
     readdirSync(dir);
-    files = listContentFiles(dir).filter((file) => !file.symlink && isRecordFile(file.path));
+    listed = listContentFiles(dir);
   } catch {
     return { problem: `${where} cannot be listed` };
   }
+  const files = listed.filter((file) => !file.symlink && isRecordFile(file.path));
   if (files.length === 0) {
     return { problem: `${where} holds no record file` };
   }
@@ -476,8 +563,9 @@ function readBaseline(root: string, dir: string): BaselineRead {
     }
   }
   const map = coverageMap(records());
-  const problem = problems[0];
-  return problem === undefined ? { map, preparedOn: preparedOnOf(dir) } : { problem };
+  // A record that does not read is named first; then the files must be the ones the manifest seals.
+  const problem = problems[0] ?? manifestProblem(dir, where, listed);
+  return problem === undefined ? { map, preparedOn: coverageOf(dir)?.prepared_on ?? null } : { problem };
 }
 
 export function coverageCache(root: string): CoverageCache {
@@ -506,6 +594,72 @@ export function coverageCache(root: string): CoverageCache {
   };
 }
 
+/** The column a parsed row states its end in: the day after the record's last (NCCI's deletion date), or the last day (X12's stop date). */
+const CLOSING_DATE: Readonly<Partial<Record<RuleRecordType, (to: string) => string>>> = {
+  ncci_ptp: dayAfter,
+  carc: (to) => to,
+  rarc: (to) => to,
+  claim_status_code: (to) => to,
+};
+
+/** True when `text` states the ISO date `date` as the parsers read one: YYYYMMDD, YYYY-MM-DD or M/D/YYYY, as a number of its own. */
+function statesDate(text: string, date: string): boolean {
+  const [year = '', month = '', day = ''] = date.split('-');
+  const forms = [`${year}${month}${day}`, `${year}-${month}-${day}`, `0?${String(Number.parseInt(month, 10))}/0?${String(Number.parseInt(day, 10))}/${year}`];
+  return forms.some((form) => new RegExp(`(?<![\\d/-])${form}(?![\\d/-])`).test(text));
+}
+
+/**
+ * Closed by source means the source's own dates closed a coverage (C12): for a parsed NCCI or X12 record, the row it
+ * quotes, which C-quotes finds in the stored file, must state the end that closes it, so the carve-out is what the
+ * source says and not what a draft's effective_to says. Hand-typed records are compared with their second
+ * transcription instead, and the conversion factors quote the final rule's sentence, not a row.
+ */
+function closingRowProblems(records: readonly RuleRecord[], closed: readonly CoverageLoss[]): string[] {
+  if (closed.length === 0) {
+    return [];
+  }
+  const wanted = new Set(closed.map((loss) => `${loss.record_type} ${canonicalJson(loss.key)}|${dayBefore(loss.from)}`));
+  const problems: string[] = [];
+  for (const record of records) {
+    const closing = CLOSING_DATE[record.record_type];
+    const to = record.effective_to;
+    if (closing === undefined || to === null || record.source.method === 'hand_typed' || !wanted.has(`${recordIdentity(record)}|${to}`)) {
+      continue;
+    }
+    const date = closing(to);
+    if (!record.quotes.some((quote) => statesDate(quote, date))) {
+      problems.push(
+        `${recordLabel(record)} closes coverage the release before covered from ${dayAfter(to)} (closed_by_source), but quotes no row stating ${date}, the end its window gives: the source's own dates close a coverage, so import the source again rather than editing a record's dates`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * A release numbered below one already prepared or published (INT-PIPE-2). The release above was then assembled
+ * before this one, against the release before this one (its COVERAGE.md names that release and was prepared no later),
+ * so it may drop what this one covers. The problem is reported on the release numbered out of order, beside C8 on the
+ * release above.
+ */
+function numberedBelowNewest(root: string, n: number, prepared: string, previous: number | null, numbers: readonly number[]): string[] {
+  const later = numbers.filter((number) => number > n);
+  if (later.length === 0) {
+    return [];
+  }
+  const above = Math.min(...later);
+  const dir = releaseDirOf(root, above);
+  const aboveCoverage = dir === null ? null : coverageOf(dir);
+  if (aboveCoverage === null || aboveCoverage.previous_release !== previous || aboveCoverage.prepared_on > prepared) {
+    // Release `above` was assembled after this one, or its own COVERAGE.md reports the problem.
+    return [];
+  }
+  return [
+    `release ${String(above)} already exists and was compared with ${previous === null ? 'no release' : `release ${String(previous)}`}, the release before ${String(n)}, so release ${String(n)} is numbered below the newest: a new release takes a number above the newest (${String(Math.max(...later) + 1)}), so remove it and assemble it again under that number`,
+  ];
+}
+
 /**
  * Audit #30 R3 on a numbered release (C5 to C14): its COVERAGE.md must hold exactly what the assembler computes from
  * its records and its previous release's, and it may stop covering what that release covered only as the three
@@ -524,7 +678,8 @@ function coverageProblems(root: string, set: ContentSet, records: readonly RuleR
   if (!existsSync(file)) {
     return ['COVERAGE.md is missing: a prepared release records its coverage (pnpm release:assemble writes it)'];
   }
-  const block = readJsonBlock(readFileSync(file, 'utf8'));
+  const text = readFileSync(file, 'utf8');
+  const block = readJsonBlock(text);
   if (block.problems.length > 0) {
     return block.problems.map((problem) => `COVERAGE.md: ${problem}`);
   }
@@ -539,12 +694,18 @@ function coverageProblems(root: string, set: ContentSet, records: readonly RuleR
     cache.remember(absolute, { map: next, preparedOn: prepared });
   }
   const problems: string[] = [];
+  if (text !== renderCoverageFile(coverage)) {
+    // What a reviewer reads (the prose, the first of repeated keys, the order) is then what the checker reads (INT-PIPE-4).
+    problems.push('COVERAGE.md is not exactly what pnpm release:assemble writes for the block it holds: assemble the release again, never edit the file by hand');
+  }
   if (coverage.release !== n) {
     problems.push(`COVERAGE.md names release ${String(coverage.release)}, but the directory is ${String(n)}`);
   }
   let previous: number | null;
+  let numbers: number[];
   try {
     previous = previousReleaseNumber(root, n);
+    numbers = releaseNumbers(root);
   } catch {
     problems.push(`the previous release of ${String(n)} cannot be read (content/releases or content/outgoing cannot be listed), so this release's coverage cannot be compared`);
     return problems;
@@ -552,6 +713,7 @@ function coverageProblems(root: string, set: ContentSet, records: readonly RuleR
   if (coverage.previous_release !== previous) {
     problems.push(`COVERAGE.md names previous release ${coverage.previous_release === null ? 'none' : String(coverage.previous_release)}, but the release before ${String(n)} is ${previous === null ? 'none' : String(previous)}`);
   }
+  problems.push(...numberedBelowNewest(root, n, prepared, previous, numbers));
   if (prepared > today) {
     problems.push(`COVERAGE.md is prepared on ${prepared}, after today (${today})`);
   }
@@ -592,6 +754,7 @@ function coverageProblems(root: string, set: ContentSet, records: readonly RuleR
     }
     listing.push(...withdrawn.extra.map((loss) => `COVERAGE.md lists withdrawn ${lossText(loss)}, which is not a coverage loss of that kind`));
     problems.push(...listedAtMost(listing));
+    problems.push(...listedAtMost(closingRowProblems(records, regression.closedBySource)));
   }
   coverage.withdrawn.forEach((entry, index) => {
     if (entry.withdrawn_on > prepared) {
@@ -742,6 +905,7 @@ export function checkContentSet(
   const inSet = (problem: string) => `${set.dir}: ${problem}`;
   if (!set.synthetic) {
     problems.push(...fileWindowProblems(records).map(inSet));
+    problems.push(...listedAtMost(statedQuarterProblems(records, readSource)).map(inSet));
   }
   problems.push(
     ...listedAtMost(

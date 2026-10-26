@@ -348,15 +348,18 @@ describe('release:assemble and coverage (audit #30 R3 and R4; docs/adr/0071)', (
     expect(existsSync(path.join(root, NOTE))).toBe(true);
   });
 
-  it('refuses a note written for another release (A5)', () => {
+  it('refuses a release numbered below the newest, keeping the note it would have read (A5, INT-PIPE-2)', () => {
     writeDrafts([draft('L2')]);
     assembleRelease({ root, release: 1, today: '2026-10-21' });
     assembleRelease({ root, release: 3, today: '2026-10-21' });
-    // The newest release is 3, so the drafts check takes the note; release 2 comes after 1.
+    // The newest release is 3, so the drafts check takes the note. Release 2 would be compared with release 1, while 3
+    // was compared with 1 too and may cover what 2 drops: a release number is above the newest, so A5's mismatch of the
+    // note and the release before is refused first, by the number.
     writeNote(3, [withdrawal()]);
     expect(() => assembleRelease({ root, release: 2, today: '2026-10-22' })).toThrow(
-      'release 2 not assembled: content/drafts/COVERAGE-WITHDRAWN.md names release 3, but the release before 2 is 1',
+      new ReleaseToolError('release 2 not assembled: release 3 exists; a new release takes a number above the newest (4)'),
     );
+    expect(existsSync(path.join(root, 'content/outgoing/2'))).toBe(false);
     expect(existsSync(path.join(root, NOTE))).toBe(true);
   });
 

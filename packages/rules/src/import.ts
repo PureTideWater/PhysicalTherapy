@@ -4,11 +4,10 @@ import path from 'node:path';
 import { buildParsedRecords } from './build';
 import { fixtureFileHashes } from './content';
 import { syntheticMarkers } from './guards';
-import { PARSERS, RuleImportError, compareConversionFactorPasses, zipFileQuarter } from './parsers';
+import { PARSERS, RuleImportError, compareConversionFactorPasses, statedQuarter } from './parsers';
 import type { ImportWindow, ImportableType, ParseOptions, ParseOutcome, RuleFileParser } from './parsers/types';
 import { REVIEW_SUFFIX, decodeSourceText, serializeRecords, sha256 } from './records';
 import {
-  type CmsQuarter,
   QUARTERLY_RECORD_TYPES,
   type QuarterlyRecordType,
   UNDATED_RECORD_TYPES,
@@ -84,106 +83,6 @@ function window(request: ImportRequest): ImportWindow {
   return { year: request.year, effectiveFrom, effectiveTo };
 }
 
-// ---------------------------------------------------------------------------------------------
-// The quarter a quarterly file states (audit #30, docs/adr/0071)
-
-/** What a quarterly file states (R2): its quarter, and the day it takes effect when it states one. */
-export interface StatedQuarter {
-  readonly quarter: CmsQuarter;
-  readonly effective: string | null;
-}
-
-const QUARTER_MONTHS: Readonly<Record<string, CmsQuarter['quarter']>> = { jan: 1, apr: 2, jul: 3, oct: 4, january: 1, april: 2, july: 3, october: 4 };
-
-interface QuarterPattern {
-  readonly pattern: RegExp;
-  /** Read in the first 5 lines of the text only, never in a file name. */
-  readonly titleOnly: boolean;
-  readonly read: (match: RegExpExecArray) => CmsQuarter | { readonly date: readonly [month: string, day: string, year: string] };
-}
-
-/**
- * The patterns a quarter is read by (case-insensitive), each giving the quarter or, for an effective date, the date.
- * They are the contract until the first real download shows what CMS writes: a later parser pull request may add
- * patterns, and never removes the refusal.
- */
-const QUARTER_PATTERNS: readonly QuarterPattern[] = [
-  { pattern: /\bRVU(\d{2})([A-D])\b/gi, titleOnly: false, read: (m) => ({ year: 2000 + Number.parseInt(m[1] ?? '', 10), quarter: ('ABCD'.indexOf((m[2] ?? '').toUpperCase()) + 1) as CmsQuarter['quarter'] }) },
-  { pattern: /(?:PPRRVU|GPCI)(\d{2})_(JAN|APR|JUL|OCT)/gi, titleOnly: false, read: (m) => ({ year: 2000 + Number.parseInt(m[1] ?? '', 10), quarter: QUARTER_MONTHS[(m[2] ?? '').toLowerCase()] ?? 1 }) },
-  { pattern: /(20\d{2})[ _-]?Q([1-4])\b/gi, titleOnly: false, read: (m) => ({ year: Number.parseInt(m[1] ?? '', 10), quarter: Number.parseInt(m[2] ?? '', 10) as CmsQuarter['quarter'] }) },
-  { pattern: /\b(JAN|APR|JUL|OCT)[ _-]?(20\d{2})\b/gi, titleOnly: false, read: (m) => ({ year: Number.parseInt(m[2] ?? '', 10), quarter: QUARTER_MONTHS[(m[1] ?? '').toLowerCase()] ?? 1 }) },
-  { pattern: /\b(January|April|July|October)\s+(20\d{2})\b/gi, titleOnly: true, read: (m) => ({ year: Number.parseInt(m[2] ?? '', 10), quarter: QUARTER_MONTHS[(m[1] ?? '').toLowerCase()] ?? 1 }) },
-  { pattern: /\bEff(?:ective)?\.?:?\s+(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b/gi, titleOnly: false, read: (m) => ({ date: [m[1] ?? '', m[2] ?? '', m[3] ?? ''] }) },
-];
-
-/** The last path segment of a URL, percent-decoded, with its query and fragment dropped. */
-function urlFileName(url: string): string {
-  const segment = url.replace(/[?#].*$/s, '').split('/').at(-1) ?? '';
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
-}
-
-/**
- * The quarter a quarterly file states (R2). ZIP5 and ZIP9: the year and quarter (YYYYQ) at 76-80 of the first line
- * that is not blank; the parsers check every other line. PPRRVU, GPCI and MUE: every match of the patterns above in
- * the first 5 lines of the text, the file's base name, and the last path segment of `--url` (the address the file was
- * downloaded from: for a file taken out of a zip, the zip's, whose name carries CMS's token). Null when the file
- * states no quarter; throws RuleImportError when it states two, two effective days, or an effective day that is no
- * date.
- */
-export function statedQuarter(type: QuarterlyRecordType, source: { readonly fileName: string; readonly url: string; readonly text: string }): StatedQuarter | null {
-  const name = path.basename(source.fileName);
-  if (type === 'locality_map' || type === 'locality_map_plus_four') {
-    const first = source.text.split(/\r?\n/).find((line) => line.trim() !== '');
-    const field = first === undefined ? null : zipFileQuarter(first);
-    return field === null ? null : { quarter: { year: Number.parseInt(field.slice(0, 4), 10), quarter: Number.parseInt(field.slice(4), 10) as CmsQuarter['quarter'] }, effective: null };
-  }
-  const titles = source.text.split(/\r?\n/, 5).join('\n');
-  const quarters = new Map<string, CmsQuarter>();
-  const effectives = new Set<string>();
-  const notDates: string[] = [];
-  for (const [text, isTitle] of [[titles, true], [name, false], [urlFileName(source.url), false]] as const) {
-    for (const { pattern, titleOnly, read } of QUARTER_PATTERNS) {
-      if (titleOnly && !isTitle) {
-        continue;
-      }
-      for (const match of text.matchAll(pattern)) {
-        const stated = read(match);
-        if ('date' in stated) {
-          const [month, day, year] = stated.date;
-          const iso = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-          if (!isIsoDate(iso)) {
-            notDates.push(JSON.stringify(match[0]));
-            continue;
-          }
-          effectives.add(iso);
-          const quarter = cmsQuarterOfDate(iso);
-          quarters.set(quarterLabel(quarter), quarter);
-        } else {
-          quarters.set(quarterLabel(stated), stated);
-        }
-      }
-    }
-  }
-  const labels = [...quarters.keys()];
-  if (notDates.length > 0) {
-    // An effective date that is no date states a quarter of none, so it never agrees with anything.
-    throw new RuleImportError(`${name} states two quarters (${notDates[0] ?? ''}, which is no date, and ${labels[0] ?? notDates[1] ?? 'none'}); import each quarter's file on its own`);
-  }
-  if (labels.length > 1) {
-    throw new RuleImportError(`${name} states two quarters (${labels[0] ?? ''} and ${labels[1] ?? ''}); import each quarter's file on its own`);
-  }
-  const days = [...effectives].sort();
-  if (days.length > 1) {
-    throw new RuleImportError(`${name} states two quarters (effective ${days[0] ?? ''} and effective ${days[1] ?? ''}); import each quarter's file on its own`);
-  }
-  const [quarter] = quarters.values();
-  return quarter === undefined ? null : { quarter, effective: days[0] ?? null };
-}
-
 function isQuarterly(type: ImportableType): type is QuarterlyRecordType {
   return (QUARTERLY_RECORD_TYPES as readonly string[]).includes(type);
 }
@@ -227,6 +126,56 @@ function refuseUndatedWindow(request: ImportRequest, importWindow: ImportWindow,
       `the MPPR list is a calendar year's file, so its window ends inside ${importWindow.effectiveFrom.slice(0, 4)}: the window given is ${importWindow.effectiveFrom} to ${importWindow.effectiveTo ?? 'open'}`,
     );
   }
+}
+
+/**
+ * A file with no dates of its own is imported for one window, and its draft is named after the file. A draft of the
+ * same name holding another window is another quarter's (or year's), kept by "Keep every quarter": it is never replaced
+ * (audit #30, INT-PIPE-1). The same window may be imported again, so a correction is re-imported over its own draft.
+ */
+function refuseOtherWindowsDraft(request: ImportRequest, draft: string, fileName: string, importWindow: ImportWindow): void {
+  if (!(UNDATED_RECORD_TYPES as readonly string[]).includes(request.type)) {
+    return;
+  }
+  const target = path.join(request.root, draft);
+  if (!existsSync(target)) {
+    return;
+  }
+  let held: unknown;
+  try {
+    held = JSON.parse(readFileSync(target, 'utf8')) as unknown;
+  } catch {
+    throw new RuleImportError(`${draft} already exists and is not valid JSON: remove it or give the file its own name before importing`);
+  }
+  const wanted = `${importWindow.effectiveFrom} to ${importWindow.effectiveTo ?? 'open'}`;
+  const windows = new Set(
+    (Array.isArray(held) ? held : [held]).map((record: unknown) => {
+      const { effective_from: from, effective_to: to } = (typeof record === 'object' && record !== null ? record : {}) as { effective_from?: unknown; effective_to?: unknown };
+      return `${heldDate(from)} to ${to === null ? 'open' : heldDate(to)}`;
+    }),
+  );
+  const other = [...windows].find((window) => window !== wanted);
+  if (other !== undefined) {
+    throw new RuleImportError(
+      `${draft} already holds the records of ${other}, imported from a file of the same name: give the file for ${wanted} its own name${quarterName(request.type, fileName, importWindow)}, so every quarter is kept (content/sources/README.md)`,
+    );
+  }
+}
+
+/** A date as a held draft stores it, shown as it is: a string itself, anything else as JSON ("missing" when absent). */
+function heldDate(value: unknown): string {
+  return typeof value === 'string' ? value : value === undefined ? 'missing' : JSON.stringify(value);
+}
+
+/** ", such as GPCI2026_Q4.csv": a quarterly file's name with its quarter's token added, as content/sources/README.md row 2 renames it. */
+function quarterName(type: ImportableType, fileName: string, importWindow: ImportWindow): string {
+  if (!isQuarterly(type)) {
+    return '';
+  }
+  const { year, quarter } = cmsQuarterOfDate(importWindow.effectiveFrom);
+  const dot = fileName.lastIndexOf('.');
+  const [stem, extension] = dot > 0 ? [fileName.slice(0, dot), fileName.slice(dot)] : [fileName, ''];
+  return `, such as ${stem}${stem.endsWith(String(year)) ? '' : `_${String(year)}`}_Q${String(quarter)}${extension}`;
 }
 
 /** A file as read, before it is parsed. */
@@ -359,11 +308,12 @@ export function importRuleFile(request: ImportRequest): ImportResult {
     checkedOn: request.today,
   });
 
-  const source = storeSource(request.root, request.type, first);
-  const secondPassSource = second === undefined ? null : storeSource(request.root, request.type, second);
   const stem = first.name.replace(/\.[^.]*$/, '');
   const draft = path.posix.join('content', 'drafts', request.type, String(request.year), `${stem}.json`);
   const review = path.posix.join('content', 'drafts', request.type, String(request.year), `${stem}${REVIEW_SUFFIX}`);
+  refuseOtherWindowsDraft(request, draft, first.name, importWindow);
+  const source = storeSource(request.root, request.type, first);
+  const secondPassSource = second === undefined ? null : storeSource(request.root, request.type, second);
   mkdirSync(path.dirname(path.join(request.root, draft)), { recursive: true });
   writeFileSync(path.join(request.root, draft), serializeRecords(records));
   writeFileSync(

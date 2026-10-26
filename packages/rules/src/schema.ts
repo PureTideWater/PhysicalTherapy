@@ -73,11 +73,47 @@ export function cmsQuarterOf(isoDateText: string): CmsQuarterLetter {
 // ---------------------------------------------------------------------------------------------
 // Quarterly and undated files (audit #30, docs/adr/0071)
 
+/**
+ * Where each record type's window comes from, in one table that names every type, so a new type cannot pass the
+ * quarter (C1, C17), one-file (C16) and closed-by-source rules unclassified:
+ * - quarterly: a CMS file with no dates of its own that changes every quarter, imported for a window inside one;
+ * - annual: the MPPR list, a calendar year's file with no dates of its own (its general reduction is hand-typed);
+ * - source_dated: a file whose rows carry their own dates (NCCI PTP, the X12 code lists, the conversion-factor CSV);
+ * - hand_typed: typed by a person from a document, with a second transcription.
+ */
+export type RecordDating = 'quarterly' | 'annual' | 'source_dated' | 'hand_typed';
+export const RECORD_DATING = {
+  pfs_rvu: 'quarterly',
+  pfs_gpci: 'quarterly',
+  conversion_factor: 'source_dated',
+  mppr_rate: 'annual',
+  therapy_threshold: 'hand_typed',
+  assistant_modifier: 'hand_typed',
+  sequestration: 'hand_typed',
+  ncci_ptp: 'source_dated',
+  ncci_mue: 'quarterly',
+  carc: 'source_dated',
+  rarc: 'source_dated',
+  claim_status_code: 'source_dated',
+  state_prompt_pay: 'hand_typed',
+  dispute_window: 'hand_typed',
+  locality_map: 'quarterly',
+  locality_map_plus_four: 'quarterly',
+  denial_category: 'hand_typed',
+} as const satisfies Record<RuleRecordType, RecordDating>;
+/** The record types RECORD_DATING classifies as `dating`. */
+export type RecordTypeDated<D extends RecordDating> = { [T in RuleRecordType]: (typeof RECORD_DATING)[T] extends D ? T : never }[RuleRecordType];
+
+/** The record types of one dating, in RULE_RECORD_TYPES order. */
+export function recordTypesDated<D extends RecordDating>(dating: D): readonly RecordTypeDated<D>[] {
+  return RULE_RECORD_TYPES.filter((type): type is RecordTypeDated<D> => RECORD_DATING[type] === dating);
+}
+
 /** Files with no dates of their own that change every CMS quarter: imported for a window inside one quarter (audit #30, ADR 0071). */
-export const QUARTERLY_RECORD_TYPES = ['pfs_rvu', 'pfs_gpci', 'ncci_mue', 'locality_map', 'locality_map_plus_four'] as const satisfies readonly RuleRecordType[];
-export type QuarterlyRecordType = (typeof QUARTERLY_RECORD_TYPES)[number];
+export const QUARTERLY_RECORD_TYPES = recordTypesDated('quarterly');
+export type QuarterlyRecordType = RecordTypeDated<'quarterly'>;
 /** Files with no dates of their own: the quarterly ones and the annual MPPR list. A window read from one is never open. */
-export const UNDATED_RECORD_TYPES = [...QUARTERLY_RECORD_TYPES, 'mppr_rate'] as const satisfies readonly RuleRecordType[];
+export const UNDATED_RECORD_TYPES: readonly RecordTypeDated<'quarterly' | 'annual'>[] = [...QUARTERLY_RECORD_TYPES, ...recordTypesDated('annual')];
 
 /** A CMS quarter of a year: quarter 1 is January to March. */
 export interface CmsQuarter {

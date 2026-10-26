@@ -4,7 +4,8 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { type ImportRequest, importRuleFile, statedQuarter } from './import';
+import { type ImportRequest, importRuleFile } from './import';
+import { statedQuarter } from './parsers';
 import { type ImportableType, RuleImportError } from './parsers';
 import { sha256 } from './records';
 import { parseRuleRecord } from './schema';
@@ -344,6 +345,11 @@ describe('importRuleFile', () => {
         { effectiveTo: '2026-04-30' },
         "pfs_rvu is a quarterly file for 2026-Q1, so its window lies inside 2026-01-01 to 2026-03-31 (the whole quarter, or a correction's part of it); the window given is 2026-01-01 to 2026-04-30",
       ],
+      [
+        'I3 quarter_two_stated (an effective day that is no date, and no other quarter)',
+        () => ({ file: titled('PPRRVU.csv', 'Effective 02/30/2026') }),
+        'PPRRVU.csv states an effective date that is no date ("Effective 02/30/2026"): import the file CMS published, or fix the parser in a pull request if CMS writes its dates another way (content/sources/README.md)',
+      ],
       ['I6 quarter_year_mismatch', { year: 2025 }, '--year 2025 is not the year of the quarter PPRRVU26_JAN.csv states (2026-Q1)'],
       [
         'I7 quarter_effective_mismatch',
@@ -360,6 +366,26 @@ describe('importRuleFile', () => {
       expect(existsSync(path.join(root, 'content'))).toBe(false);
     });
 
+    it("never replaces another quarter's draft of a file whose name states no quarter, and keeps that draft byte for byte (INT-PIPE-1)", () => {
+      const q4Url = 'https://example.invalid/files/zip/rvu26d.zip';
+      const q1 = importRuleFile(request({ type: 'pfs_gpci', file: download('GPCI_SYNTHETIC.csv', 'GPCI2026.csv'), url: Q1_GPCI_URL }));
+      const held = readFileSync(path.join(root, q1.draft));
+      const review = readFileSync(path.join(root, q1.review));
+      expect(() => importRuleFile(request({ type: 'pfs_gpci', file: download('GPCI_SYNTHETIC.csv', 'GPCI2026.csv'), url: q4Url, ...Q4 }))).toThrow(
+        new RuleImportError(
+          'content/drafts/pfs_gpci/2026/GPCI2026.json already holds the records of 2026-01-01 to 2026-03-31, imported from a file of the same name: give the file for 2026-10-01 to 2026-12-31 its own name, such as GPCI2026_Q4.csv, so every quarter is kept (content/sources/README.md)',
+        ),
+      );
+      expect(readFileSync(path.join(root, q1.draft)).equals(held)).toBe(true);
+      expect(readFileSync(path.join(root, q1.review)).equals(review)).toBe(true);
+      // The same window is imported again over its own draft; renamed for its quarter, Q4 keeps a draft of its own.
+      expect(importRuleFile(request({ type: 'pfs_gpci', file: download('GPCI_SYNTHETIC.csv', 'GPCI2026.csv'), url: Q1_GPCI_URL })).draft).toBe(q1.draft);
+      const q4 = importRuleFile(request({ type: 'pfs_gpci', file: download('GPCI_SYNTHETIC.csv', 'GPCI2026_Q4.csv'), url: q4Url, ...Q4 }));
+      expect(q4.sha256).toBe(q1.sha256);
+      expect(windowOf(q4.draft)[0]).toEqual(['2026-10-01', '2026-12-31']);
+      expect(windowOf(q1.draft)[0]).toEqual(['2026-01-01', '2026-03-31']);
+    });
+
     it('takes the calendar year for the MPPR list when no window is given', () => {
       const result = importRuleFile(request({ type: 'mppr_rate', file: download('MPPR_SYNTHETIC.csv', 'MPPR2026.csv'), effectiveFrom: undefined, effectiveTo: undefined }));
       expect(new Set(windowOf(result.draft).map((window) => window.join(' to ')))).toEqual(new Set(['2026-01-01 to 2026-12-31']));
@@ -372,7 +398,8 @@ describe('importRuleFile', () => {
 
     it.each([
       ['RVU26D.csv', q4],
-      ['rvu26d_pprrvu.csv', null],
+      // A token ends at anything but a letter or a digit, an underscore included (INT-PIPE-5).
+      ['rvu26d_pprrvu.csv', q4],
       ['PPRRVU26_OCT.csv', q4],
       ['GPCI26_oct.csv', q4],
       ['MUE_2026Q4.csv', q4],
@@ -381,6 +408,39 @@ describe('importRuleFile', () => {
       ['MUE.csv', null],
     ])('reads %s', (fileName, expected) => {
       expect(statedQuarter('pfs_rvu', { fileName, url, text: 'HCPCS,MOD\n' })).toEqual(expected);
+    });
+
+    it.each([
+      ['rvu26d_updated.zip', q4],
+      ['rvu26ar.zip', { quarter: { year: 2026, quarter: 1 }, effective: null }],
+      ['RVU26D-2.zip', q4],
+      ['XRVU26D.zip', null],
+      ['RVU26DX.zip', null],
+      ['RVU26DRX.zip', null],
+      ['RVU26E.zip', null],
+    ])('reads the download address %s, a token ending at anything but a letter or a digit (INT-PIPE-5)', (zip, expected) => {
+      expect(statedQuarter('pfs_gpci', { fileName: 'GPCI2026.csv', url: `https://example.invalid/files/${zip}`, text: '' })).toEqual(expected);
+    });
+
+    it.each([
+      ['MUE_PRACTITIONER_2026Q4_v2.csv', q4],
+      ['MCR_MUE_PractitionerServices_Eff_10-01-2026.csv', { ...q4, effective: '2026-10-01' }],
+      ['MUE_Eff.10-01-2026.csv', { ...q4, effective: '2026-10-01' }],
+      ['MUE_OCT2026_v2.csv', q4],
+      ['MUE_2026Q4X.csv', null],
+      ['MUE_XOCT2026.csv', null],
+      ['MUE_Effort_10-01-2026.csv', null],
+    ])('reads the file name %s, a token touching an underscore or a dot (INT-PIPE-5)', (fileName, expected) => {
+      expect(statedQuarter('ncci_mue', { fileName, url, text: '' })).toEqual(expected);
+    });
+
+    it('still refuses a name that states two quarters once both tokens read (INT-PIPE-5)', () => {
+      expect(() => statedQuarter('pfs_rvu', { fileName: 'RVU26D_2026Q3.csv', url, text: '' })).toThrow(
+        new RuleImportError("RVU26D_2026Q3.csv states two quarters (2026-Q4 and 2026-Q3); import each quarter's file on its own"),
+      );
+      expect(() => statedQuarter('ncci_mue', { fileName: 'MUE_2026Q4_Eff_07-01-2026.csv', url, text: '' })).toThrow(
+        new RuleImportError("MUE_2026Q4_Eff_07-01-2026.csv states two quarters (2026-Q4 and 2026-Q3); import each quarter's file on its own"),
+      );
     });
 
     it('reads the title lines, an effective day included, but never past the fifth line', () => {

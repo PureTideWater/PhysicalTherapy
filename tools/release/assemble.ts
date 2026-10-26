@@ -4,7 +4,6 @@ import path from 'node:path';
 import {
   COVERAGE_FILE,
   COVERAGE_WITHDRAWN_FILE,
-  type CoverageLoss,
   LOOK_BACK_YEARS,
   MANIFEST_FILE,
   RELEASE_NOTES_FILE,
@@ -12,7 +11,7 @@ import {
   type RuleRecord,
   type WithdrawnEntry,
   buildManifest,
-  canonicalJson,
+  compareLosses,
   compareText,
   contentGaps,
   contentSummaries,
@@ -22,6 +21,8 @@ import {
   dayAfter,
   describeIssues,
   lookBackCutoff,
+  lossIdentity,
+  lossText,
   readJsonBlock,
   recordLabel,
   releaseCoverageSchema,
@@ -95,19 +96,6 @@ export interface ReleaseNotesCoverage {
   readonly beforeCutoff: number;
   readonly closedBySource: number;
   readonly withdrawn: readonly WithdrawnEntry[];
-}
-
-/** A coverage loss as the assembler and the checker name it: record type, canonical key and dates. */
-function lossText(loss: CoverageLoss): string {
-  return `${loss.record_type} ${canonicalJson(loss.key)} ${loss.from} to ${loss.to ?? 'open'}`;
-}
-
-function lossIdentity(loss: CoverageLoss): string {
-  return canonicalJson({ record_type: loss.record_type, key: loss.key, from: loss.from, to: loss.to });
-}
-
-function compareLosses(a: CoverageLoss, b: CoverageLoss): number {
-  return compareText(a.record_type, b.record_type) || compareText(canonicalJson(a.key), canonicalJson(b.key)) || compareText(a.from, b.from);
 }
 
 /** The section RELEASE.md gives the coverage, before the impact. */
@@ -413,6 +401,11 @@ export function assembleRelease(request: AssembleRequest): AssembleResult {
     if (existsSync(path.join(root, existing))) {
       throw new ReleaseToolError(`${existing} already exists; a release number is used once`);
     }
+  }
+  // A number below the newest would be compared with an older release, and the newest would then fail C8 (INT-PIPE-2).
+  const newest = previousReleaseNumber(root, Number.MAX_SAFE_INTEGER);
+  if (newest !== null && release < newest) {
+    throw new ReleaseToolError(`release ${String(release)} not assembled: release ${String(newest)} exists; a new release takes a number above the newest (${String(newest + 1)})`);
   }
 
   const check = checkContentSet(root, contentSetAt(root, DRAFTS));

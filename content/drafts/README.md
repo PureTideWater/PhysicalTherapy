@@ -15,16 +15,19 @@ Contract rate records are never here; they live in the database under each pract
    hand-typed records whose two transcriptions differ. It also refuses (docs/adr/0071):
    - in real content, a quarterly record (RVU, GPCI, ZIP5, ZIP9, MUE) whose window leaves one CMS quarter, a ZIP
      record whose quoted lines state another quarter, a per-code MPPR window that is open or leaves its calendar
-     year, a hand-typed quarterly or per-code MPPR record, and records of one source file with different windows;
+     year, a hand-typed quarterly or per-code MPPR record, records of one stored source file with different
+     windows, and an RVU, GPCI or MUE record whose window is not the quarter its stored file states;
    - a content with a gap inside the dates it is loaded for;
-   - a prepared or published release with no `COVERAGE.md`, or one that does not match its records and the
-     release before it, or that covers less than that release beyond the allowances
-     ([content/sources/README.md](../sources/README.md), "Coverage");
-   - a malformed `COVERAGE-WITHDRAWN.md` here, or one that names a release other than the newest.
+   - a prepared or published release with no `COVERAGE.md`, or one that is not exactly what the assembler writes,
+     that does not match its records and the release before it (which must match its own manifest), or that
+     covers less than that release beyond the allowances ([content/sources/README.md](../sources/README.md),
+     "Coverage"); and a release numbered below one already prepared or published;
+   - a malformed `COVERAGE-WITHDRAWN.md` here, one that withdraws a range twice, or one that names a release other
+     than the newest.
 3. **Prepare.** The `/load-release` skill runs `pnpm release:assemble <n>`, which copies the drafts at L2 or
    higher into [`content/outgoing/<n>/`](../outgoing/README.md) with `RELEASE.md`, `COVERAGE.md` and
    `MANIFEST.json`, and lists the drafts it left out (still at L1) in `RELEASE.md`. It refuses a gap inside a
-   content and a coverage loss no allowance explains, before writing anything.
+   content, a coverage loss no allowance explains and a number below the newest release, before writing anything.
 4. **Publish.** On merge to main, CI (`.github/workflows/publish-content.yml`) runs the checker on the release,
    verifies the manifest, refuses any record below L2 or marked synthetic, moves the release to
    `content/releases/<n>/` and tags it `content-release-<n>`. Nothing else writes `content/releases`.

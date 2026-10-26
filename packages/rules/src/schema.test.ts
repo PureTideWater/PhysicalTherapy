@@ -5,6 +5,7 @@ import {
   DENIAL_CATEGORIES,
   MIN_QUOTE_LENGTH,
   QUARTERLY_RECORD_TYPES,
+  RECORD_DATING,
   RULE_RECORD_TYPES,
   UNDATED_RECORD_TYPES,
   VERIFICATION_LEVELS,
@@ -19,6 +20,7 @@ import {
   parseRuleRecord,
   quarterLabel,
   quarterWindowProblem,
+  recordTypesDated,
   secondPassSchema,
   windowQuarter,
 } from './schema';
@@ -310,6 +312,14 @@ describe('CMS quarters of a year (audit #30)', () => {
     expect(QUARTERLY_RECORD_TYPES).toEqual(['pfs_rvu', 'pfs_gpci', 'ncci_mue', 'locality_map', 'locality_map_plus_four']);
     expect(UNDATED_RECORD_TYPES).toEqual([...QUARTERLY_RECORD_TYPES, 'mppr_rate']);
     expect(UNDATED_RECORD_TYPES.every((type) => isRuleRecordType(type))).toBe(true);
+  });
+
+  it('classifies every record type once, and every list of types follows the table', () => {
+    expect(Object.keys(RECORD_DATING).sort()).toEqual([...RULE_RECORD_TYPES].sort());
+    expect(recordTypesDated('quarterly')).toEqual(QUARTERLY_RECORD_TYPES);
+    expect(recordTypesDated('annual')).toEqual(['mppr_rate']);
+    expect(recordTypesDated('source_dated')).toEqual(['conversion_factor', 'ncci_ptp', 'carc', 'rarc', 'claim_status_code']);
+    expect(recordTypesDated('hand_typed')).toEqual(['therapy_threshold', 'assistant_modifier', 'sequestration', 'state_prompt_pay', 'dispute_window', 'denial_category']);
   });
 
   it.each([

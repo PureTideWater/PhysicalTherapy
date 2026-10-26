@@ -1,6 +1,6 @@
 import { cmsQuarterOfDate } from '../schema';
 import { RuleImportError, textLines } from './delimited';
-import { zipFileQuarter } from './locality-plus-four';
+import { ZIP9_RECORD_LENGTH, zipFileQuarter } from './locality-plus-four';
 import type { ParseOutcome, ParsedRow, RuleFileParser } from './types';
 
 /**
@@ -42,7 +42,13 @@ function parse(text: string, window: { effectiveFrom: string; effectiveTo: strin
     }
     const quarter = zipFileQuarter(raw);
     if (quarter === null) {
-      throw new RuleImportError(`${at}: year and quarter ${JSON.stringify(raw.slice(75, 80))} at 76-80 is not YYYYQ`);
+      const field = raw.slice(75, 80);
+      // A YYYYQ field on a line of the wrong length: the length is the fault, as the ZIP9 parser says.
+      throw new RuleImportError(
+        /^\d{4}[1-4]$/.test(field)
+          ? `${at}: ${String(raw.length)} characters; a ZIP5 record is ${String(ZIP9_RECORD_LENGTH)} (the year and quarter at 76-80)`
+          : `${at}: year and quarter ${JSON.stringify(field)} at 76-80 is not YYYYQ`,
+      );
     }
     if (quarter !== expected) {
       throw new RuleImportError(

@@ -16,8 +16,11 @@ import {
   contentSummaries,
   coverageMap,
   coverageRegression,
+  coverageWithdrawnNoteSchema,
   dayAfter,
   lookBackCutoff,
+  lossIdentity,
+  lossText,
   mergeRanges,
   readJsonBlock,
   releaseCoverageSchema,
@@ -350,6 +353,34 @@ describe('COVERAGE.md', () => {
     expect(readJsonBlock('```json\n{ nope\n```\n').problems).toEqual(['its ```json block is not valid JSON']);
     expect(readJsonBlock('# Note\r\n\r\n```json\r\n{"a": 1}\r\n```\r\n')).toEqual({ value: { a: 1 }, problems: [] });
     expect(readJsonBlock('```js\n{}\n```\n').problems).toEqual(['holds 0 ```json blocks: it must hold exactly one']);
+  });
+
+  it('refuses a key named twice in one object, which JSON.parse would read as its last (INT-PIPE-4)', () => {
+    const twice = (json: string) => readJsonBlock(`\`\`\`json\n${json}\n\`\`\`\n`).problems;
+    const message = (key: string) => `its \`\`\`json block names ${JSON.stringify(key)} twice in one object: JSON keeps only the last, so a reader and the checker would read different values`;
+    expect(twice('{"withdrawn": [], "format": "x", "withdrawn": [1]}')).toEqual([message('withdrawn')]);
+    expect(twice('{"a": [{"k": 1, "k" : 2}]}')).toEqual([message('k')]);
+    expect(twice('{"\\u0061": 1, "a": 2}')).toEqual([message('a')]);
+    // The same key in two objects, a key's text as a value, and escaped quotes are all one key each.
+    expect(twice('{"a": {"k": 1}, "b": {"k": 2}, "c": ["k", "k"], "d\\"": "a", "e": "x\\\\"}')).toEqual([]);
+    expect(readJsonBlock(renderCoverageFile(second)).problems).toEqual([]);
+  });
+
+  it('names a loss and its identity once for the assembler and the checker', () => {
+    const loss: CoverageLoss = { record_type: 'ncci_ptp', key: PAIR, from: '2026-10-01', to: null };
+    expect(lossText(loss)).toBe(`ncci_ptp ${JSON.stringify(PAIR)} 2026-10-01 to open`);
+    expect(lossIdentity({ ...loss, key: Object.fromEntries(Object.entries(PAIR).reverse()) })).toBe(lossIdentity(loss));
+    expect(lossIdentity(second.withdrawn[0] as CoverageLoss)).toBe(lossIdentity({ record_type: 'denial_category', key: { carc: '9001', group_code: 'CO', rarc: null }, from: '2026-01-01', to: null }));
+  });
+
+  it('refuses a drafts note that withdraws one loss twice', () => {
+    const note = { format: 'tp-coverage-withdrawn/1', previous_release: 1, withdrawn: second.withdrawn };
+    expect(coverageWithdrawnNoteSchema.safeParse(note).success).toBe(true);
+    const twice = coverageWithdrawnNoteSchema.safeParse({ ...note, withdrawn: [...second.withdrawn, { ...second.withdrawn[0], reason: 'the same loss, another reason' }] });
+    expect(twice.success).toBe(false);
+    expect(twice.error?.issues).toEqual([
+      expect.objectContaining({ path: ['withdrawn', 1], message: 'withdraws denial_category {"carc":"9001","group_code":"CO","rarc":null} 2026-01-01 to open a second time: list each loss once' }),
+    ]);
   });
 });
 

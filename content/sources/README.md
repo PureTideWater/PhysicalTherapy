@@ -60,7 +60,7 @@ the parser in a pull request rather than editing the file.
 | # | Record type | What to download | From | Command |
 | --- | --- | --- | --- | --- |
 | 1 | `pfs_rvu` | The relative value file zip of the quarter (RVU26D for 2026 Q4); inside it, the PPRRVU file in CSV form | CMS, "PFS Relative Value Files" (https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files) | `pnpm rules:import --type pfs_rvu --year 2026 --file PPRRVU26_OCT.csv --effective-from 2026-10-01 --effective-to 2026-12-31 --url <the RVU26D zip's download address>` |
-| 2 | `pfs_gpci` | The GPCI file from the same zip (CSV). If it carries the work GPCI both with and without the 1.0 floor, say which Medicare applies in 2026 with `--gpci-floor with` or `--gpci-floor without` (from the final rule); every record names the heading it was read from | Same RVU26D zip | `pnpm rules:import --type pfs_gpci --year 2026 --file GPCI2026.csv --effective-from 2026-10-01 --effective-to 2026-12-31 --url <the RVU26D zip's download address> [--gpci-floor with\|without]` |
+| 2 | `pfs_gpci` | The GPCI file from the same zip (CSV). If it carries the work GPCI both with and without the 1.0 floor, say which Medicare applies in 2026 with `--gpci-floor with` or `--gpci-floor without` (from the final rule); every record names the heading it was read from | Same RVU26D zip | Rename the zip's `GPCI2026.csv` to `GPCI2026_Q4.csv` first (every RVU zip of the year ships a `GPCI2026.csv`, often with the same bytes), then `pnpm rules:import --type pfs_gpci --year 2026 --file GPCI2026_Q4.csv --effective-from 2026-10-01 --effective-to 2026-12-31 --url <the RVU26D zip's download address> [--gpci-floor with\|without]` |
 | 3 | `locality_map` | The ZIP code to carrier locality file for the current quarter; inside it, the fixed-width `ZIP5_<month><year>.txt` | CMS, "Zip Code to Carrier Locality File" (physician fee schedule pages on cms.gov) | `pnpm rules:import --type locality_map --year 2026 --file ZIP5_OCT2026.txt --effective-from 2026-10-01 --effective-to 2026-12-31 --url <download address>` |
 | 4 | `conversion_factor` | Nothing to download as a table: read the two CY 2026 conversion factors (qualifying APM participants and everyone else) in the CY 2026 physician fee schedule final rule, and prepare the CSV below **twice**, independently | The final rule in the Federal Register (https://www.federalregister.gov), and the RVU26A zip's documentation | `pnpm rules:import --type conversion_factor --year 2026 --file cf-2026-a.csv --second-pass cf-2026-b.csv --url <Federal Register URL>` |
 | 5 | `mppr_rate` | The therapy MPPR rate file (last updated February 24, 2026 to add 97026) | CMS therapy services (https://www.cms.gov/medicare/coding-billing/therapy-services) | `pnpm rules:import --type mppr_rate --year 2026 --file MPPR_THERAPY_2026.csv --url <download address>` |
@@ -89,13 +89,21 @@ Effective windows:
   - the importer refuses a window that leaves that quarter, an open one, or a file whose stated quarter differs;
   - `--url` is the address the file was downloaded from: for a file taken out of a zip (PPRRVU, GPCI), the zip's
     own address, whose name carries CMS's quarter token (`RVU26D`); keep the token (`RVU26D`, `_OCT`, `2026Q4`)
-    in the file name too if you rename it.
+    in the file name too if you rename it;
+  - rename a file whose name carries no quarter token to add one (`GPCI2026.csv` becomes `GPCI2026_Q4.csv`). The
+    draft is named after the file, and the importer refuses to replace a draft of the same name that holds another
+    window, so each quarter keeps its own stored file and draft even when CMS ships the same bytes again.
 
   RVU records also carry the fee schedule year and the CMS quarter (A January, B April, C July, D October), taken
   from the window's start. The importer reads the quarter a file states: for ZIP5 and ZIP9, the year and quarter
   at positions 76-80 of its lines; for PPRRVU, GPCI and MUE, the quarter token or effective date in its title lines,
-  its name or its download address. It refuses a file that states none, or two: if a real file states its quarter
-  another way, fix the parser in a pull request, as for a layout.
+  its name or its download address. A token ends at anything but a letter or a digit, so an underscore, a dash or a
+  dot touching it still separates it (`rvu26d_updated.zip`, `MUE_PRACTITIONER_2026Q4_v2.csv`); an RVU token may
+  carry CMS's revision letter (`RVU24AR`), and an effective date may follow `Eff` or `Effective` with a space, an
+  underscore, a colon, a dot or a dash (`MCR_MUE_PractitionerServices_Eff_10-01-2026.csv`). It refuses a file that
+  states none, or two: if a real file states its quarter another way, fix the parser in a pull request, as for a
+  layout. The content checker reads the stored file's quarter the same way and refuses a PPRRVU, GPCI or MUE record
+  whose window is in another quarter, or does not start on the day the file takes effect.
 - **A correction inside a quarter.** When CMS reissues a quarter's file with values that take effect on a day
   inside the quarter, remove that quarter's draft, import the original file for the quarter's first day to the
   day before the correction, and import the corrected file from the correction's day to the quarter's last day.
@@ -166,7 +174,8 @@ the new one must cover it too, with three allowances, each listed in `COVERAGE.m
   prepared in 2026) may go: six years covers line data's retention (contract term plus six years) and every
   Medicare window.
 - **Closed by the source's own dates.** An NCCI PTP pair's deletion date, or a code list's stop date, that closes
-  a record the previous release had open.
+  a record the previous release had open. The row the closing record quotes must state that date: an end typed into
+  a draft by hand closes nothing.
 - **Withdrawn on purpose,** with a signed note. Anything else the assembler refuses, and prints the exact ranges.
 
 To withdraw coverage on purpose, write `content/drafts/COVERAGE-WITHDRAWN.md` before assembling: a heading, any
@@ -191,7 +200,8 @@ prose, and one `json` block:
 }
 ```
 
-Each entry is one range exactly as the assembler printed it, with one reason and two different named people. The
+Each entry is one range exactly as the assembler printed it, listed once, with one reason and two different named
+people. The
 founder's code-owner review of the pull request that adds the note is the second signature of record. The
 assembler copies the note's entries into the release's `COVERAGE.md` and `RELEASE.md`, then removes the note from
 the drafts once the release verifies; the checker refuses a note that names a release other than the newest.

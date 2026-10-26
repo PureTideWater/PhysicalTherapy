@@ -171,11 +171,11 @@ export function readRelease(dir: string): ReleaseContents {
 const RELEASE_PARENTS = ['content/releases', 'content/outgoing'] as const;
 
 /**
- * The highest release number below `release` that exists in content/releases or content/outgoing. A parent that does
- * not exist yet holds none; any other failure to read it throws, so an unreadable directory never passes for a first
- * release with nothing to compare (review m3).
+ * Every release number in content/releases and content/outgoing, ascending, each once. A parent that does not exist yet
+ * holds none; any other failure to read it throws, so an unreadable directory never passes for a first release with
+ * nothing to compare (review m3).
  */
-export function previousReleaseNumber(root: string, release: number): number | null {
+export function releaseNumbers(root: string): number[] {
   const numbers = RELEASE_PARENTS.flatMap((parent) => {
     let names: string[];
     try {
@@ -189,8 +189,13 @@ export function previousReleaseNumber(root: string, release: number): number | n
     }
     return names.filter((name) => /^[1-9]\d*$/.test(name)).map((name) => Number.parseInt(name, 10));
   });
-  const earlier = numbers.filter((number) => number < release);
-  return earlier.length === 0 ? null : Math.max(...earlier);
+  return [...new Set(numbers)].sort((a, b) => a - b);
+}
+
+/** The highest release number below `release` that exists in content/releases or content/outgoing (releaseNumbers). */
+export function previousReleaseNumber(root: string, release: number): number | null {
+  const earlier = releaseNumbers(root).filter((number) => number < release);
+  return earlier.at(-1) ?? null;
 }
 
 /** The directory of release `n`: published (content/releases) first, then prepared (content/outgoing); null when neither holds it. */

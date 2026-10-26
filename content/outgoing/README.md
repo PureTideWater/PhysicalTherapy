@@ -1,9 +1,9 @@
 # content/outgoing
 
 Content releases prepared for publication (PRD section 9, step 3). The `/load-release` skill
-(`pnpm release:assemble <n>`) assembles the next release here from the drafts at L2 or higher, listing any it
-left out in `RELEASE.md`; `pnpm release:dry-run <n>` lists what it changes and the runs it would change. CI
-publishes it on merge.
+(`pnpm release:assemble <n>`, `<n>` above the newest release) assembles the next release here from the drafts at
+L2 or higher, listing any it left out in `RELEASE.md`; `pnpm release:dry-run <n>` lists what it changes and the
+runs it would change. CI publishes it on merge.
 
 ## Layout of a prepared release
 
@@ -12,7 +12,8 @@ content/outgoing/<n>/
   RELEASE.md        date, records, sources, who verified them, coverage against the release before, and the
                     impact on existing runs
   COVERAGE.md       what each content is loaded for, and what the release covers less than the one before
-                    and why (content/sources/README.md, "Coverage"); the content checker recomputes it
+                    and why (content/sources/README.md, "Coverage"); the content checker recomputes it and
+                    refuses a file that is not exactly what the assembler writes
   MANIFEST.json     the SHA-256 of every other file in the directory
   <type>/<year>/... the rule records and second passes at L2 or higher, copied from content/drafts
 ```
