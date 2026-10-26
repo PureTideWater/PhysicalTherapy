@@ -456,7 +456,10 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/billing.spec.ts',
     'apps/web/e2e/onboarding.spec.ts',
   ]),
-  'BIL-04': none(11, 'A synthetic organization pays through the routes on the local simulator, by the simulator’s test card and bank account; no file.', ['apps/web/src/lib/routes/billing-routes.db.test.ts']),
+  'BIL-04': none(11, 'A synthetic organization pays through the routes on the local simulator, by the simulator’s test card and bank account, and the simulator renews its plan; no file.', [
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+    'packages/billing/src/local.test.ts',
+  ]),
   // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
   'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),
   'CI-02': none(0, 'The partition reads the route registry; no file.', ['apps/web/src/lib/routes/route-tests/partition.test.ts']),

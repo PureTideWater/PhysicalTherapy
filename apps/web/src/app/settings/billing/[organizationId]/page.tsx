@@ -3,7 +3,7 @@ import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDesc
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../../components/action-form';
-import { PaymentMethodCard } from '../../../../components/billing/payment-method-card';
+import { PAYMENT_METHOD_NAME, PaymentMethodCard } from '../../../../components/billing/payment-method-card';
 import { SelectField } from '../../../../components/field';
 import { utc, utcDate } from '../../../../components/format';
 import { Money } from '../../../../components/remittances/display';
@@ -18,7 +18,6 @@ export const metadata: Metadata = { title: 'Organization billing' };
 
 const STANDING: Readonly<Record<string, string>> = { good: 'In good standing', past_due: 'Past due', suspended: 'Suspended for nonpayment' };
 const INVOICE_STATUS: Readonly<Record<string, string>> = { open: 'Open', paid: 'Paid', void: 'Void', uncollectible: 'Uncollectible', draft: 'Draft' };
-const METHOD: Readonly<Record<string, string>> = { us_bank_account: 'ACH bank account', card: 'Card' };
 const KIND: Readonly<Record<string, string>> = { subscription: 'Subscription', audit: 'Audit', other: 'Other' };
 
 /**
@@ -26,7 +25,8 @@ const KIND: Readonly<Record<string, string>> = { subscription: 'Subscription', a
  * administrator: the standing and any suspension notice, the payment method (a bank account by ACH, preferred
  * and shown first, or a card: Stripe Elements in production, the local simulator's test values in development;
  * components/billing/payment-method-card.tsx, docs/adr/0073), then the plan (monthly or annual), which needs a
- * method on file, and the invoices. What is chosen here happens at Stripe and shows once Stripe reports it.
+ * method on file (with none, the plans' prices and a sentence asking for one stand in for the form), and the
+ * invoices. What is chosen here happens at Stripe and shows once Stripe reports it.
  */
 export default async function OrganizationBillingPage(props: { readonly params: Promise<{ organizationId: string }> }) {
   const page = await loadPage(organizationBillingPage, props);
@@ -63,7 +63,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
         paymentMethod={paymentMethod}
         provider={provider}
         testRouting={testRouting}
-        formKeys={<FormKeys />}
+        formKeys={() => <FormKeys />}
         csrfToken={await pageCsrfToken()}
         addSimulatedPaymentMethod={addSimulatedPaymentMethod}
         settleSimulatedPayments={settleSimulatedPayments}
@@ -75,7 +75,20 @@ export default async function OrganizationBillingPage(props: { readonly params: 
           <CardDescription>Monitoring, billed monthly or annually to the payment method on file.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">
-          {billing.subscription === null ? (
+          {billing.subscription === null && paymentMethod === null ? (
+            // A plan is refused until a method is on file, so the form waits for one; the prices still show.
+            <div className="flex flex-col gap-2" data-plan="needs-method">
+              <ul className="flex flex-col gap-1">
+                <li>
+                  {catalog.plans.monthly.name}: <Money value={catalog.plans.monthly.amountCents} /> a month
+                </li>
+                <li>
+                  {catalog.plans.annual.name}: <Money value={catalog.plans.annual.amountCents} /> a year
+                </li>
+              </ul>
+              <p>Add a payment method above, then choose a plan here.</p>
+            </div>
+          ) : billing.subscription === null ? (
             <ActionForm action={choosePlan} submit="Choose plan" className="grid max-w-md gap-4">
               <FormKeys />
               <input type="hidden" name="organizationId" value={organizationId} />
@@ -130,6 +143,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                       ) : (
                         <a className="underline" href={invoice.hostedInvoiceUrl} rel="noreferrer noopener" target="_blank">
                           {invoice.number ?? 'View'}
+                          <span className="sr-only"> (opens in a new tab)</span>
                         </a>
                       )}
                     </td>
@@ -140,7 +154,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                       <Badge variant={invoice.status === 'paid' ? 'outline' : invoice.firstFailedAt === null ? 'secondary' : 'destructive'}>{INVOICE_STATUS[invoice.status] ?? invoice.status}</Badge>
                       {invoice.firstFailedAt === null || invoice.status === 'paid' ? null : <span className="ml-2 text-xs">payment failed {utcDate(invoice.firstFailedAt)}</span>}
                     </td>
-                    <td className="py-1">{invoice.paidAt === null ? '—' : `${utc(invoice.paidAt)}${invoice.paymentMethodKind === null ? '' : `, ${METHOD[invoice.paymentMethodKind] ?? invoice.paymentMethodKind}`}`}</td>
+                    <td className="py-1">{invoice.paidAt === null ? '—' : `${utc(invoice.paidAt)}${invoice.paymentMethodKind === null ? '' : `, ${PAYMENT_METHOD_NAME[invoice.paymentMethodKind] ?? invoice.paymentMethodKind}`}`}</td>
                   </tr>
                 ))}
               </tbody>

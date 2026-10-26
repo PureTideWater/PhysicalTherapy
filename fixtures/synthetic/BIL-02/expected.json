@@ -2,7 +2,7 @@
   "case": "BIL-02",
   "module": "BIL",
   "title": "What Stripe is asked to collect and charge",
-  "assertion": "The SetupIntent's `allowed_payment_method_types`, the subscription's and the audit invoice's `payment_method_types` each send exactly `['us_bank_account', 'card']`, bank first, from the shared order, whose module imports nothing but types; the subscription saves no default of its own (`'off'`), and a new default clears any subscription's own default so the customer's governs every invoice",
+  "assertion": "The SetupIntent's `allowed_payment_method_types`, the subscription's and the audit invoice's `payment_method_types` each send exactly `['us_bank_account', 'card']`, bank first, from the shared order, whose module imports nothing but types; the subscription saves no default of its own (`'off'`), and a new default becomes each live subscription's own default too, never cleared, so the customer's and every subscription's agree",
   "synthetic": true,
   "completesIn": 11,
   "assertedBy": ["packages/billing/src/stripe.test.ts","packages/billing/src/types.test.ts"],
