@@ -406,7 +406,10 @@ the founder's tag.
   `node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea`, the index digest
   (Node 24.22.1, pushed 2026-10-21T17:39Z): Debian 13 trixie, where `24-slim` was Debian 12 bookworm (notice N7). Each
   installs the pnpm `package.json`'s `packageManager` names, read after `COPY package.json`, so no image carries a pnpm
-  version of its own.
+  version of its own, and only through `tools/check-toolchain/install-pnpm.sh`: it packs that version from the
+  registry (`npm pack`, which checks the registry's own integrity) and installs the tarball only when its sha512
+  equals `packageManager`'s `+sha512.<hex>` suffix, so the bytes are the ones committed, not only the ones one
+  registry answer vouches for (security review N1).
 - `docker-compose.yml` pins
   `postgres:18-trixie@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6` (pushed
   2026-10-21T19:08Z), the index `postgres:18` already resolved to, so the pin changes no bits for CI or the capacity
@@ -443,7 +446,8 @@ the founder's tag.
 
 #### pnpm 10.34.8, its lockfile and the licence fix
 
-`packageManager` moves to `pnpm@10.34.8` (published 2026-10-23T18:06:37Z), which fixes all 23 advisories and has none
+`packageManager` moves to `pnpm@10.34.8+sha512.f627a8e9…c5a8` (published 2026-10-23T18:06:37Z; the suffix is the hex
+of the registry's `dist.integrity` for its tarball, in corepack's form), which fixes all 23 advisories and has none
 (npm's bulk advisory endpoint, 2026-10-25). It is kept over 10.34.9 (`latest-10` from 2026-10-25T17:54Z), whose one
 change concerns a switch to pnpm 11 or 12 that a 10.x `packageManager` never makes, and on which the licence diff was
 measured. pnpm stays on major 10, not 12.15.0 (notice N10): GitHub's list of the pnpm versions Dependabot supports
@@ -473,10 +477,14 @@ exclude:
 | fast-uri (through ajv), by refresh | 3.1.8 | 3.1.9 | 2026-10-19 |
 | qs (through typed-rest-client), by override | 6.15.1 | 6.16.1 | 2026-10-14 |
 
-typescript-eslint moves with eslint, in lockstep. qs needs an override, `"typed-rest-client@2>qs": "6.16.1"` in
+typescript-eslint moves with eslint, in lockstep. qs needs an override, `"typed-rest-client>qs": "6.16.1"` in
 `pnpm-workspace.yaml`, because Stryker 10.1.1's `typed-rest-client ~2.3.0` pins qs to exactly 6.15.1; it closes qs's
-three moderate advisories, and `check-toolchain` keeps it with its reason and its removal trigger (Stryker on
-typed-rest-client 3, or on qs 6.16.0 or later), failing an override whose target has left the lockfile. eslint and
+three moderate advisories, and `check-toolchain` keeps it with its reason and its removal trigger, failing an override
+whose target has left the lockfile. The selector carries no version scope: typed-rest-client 3.0.0 still pins qs
+6.15.1 exactly and 3.1.0 pins 6.15.3 (two of the three advisories, by npm's bulk endpoint), so a `@2` scope would stop
+applying on a move to either and bring them back under `--audit-level=high`, which passes moderates. Only
+typed-rest-client 3.1.1 (2026-09-08) and later declare `qs: ^6.16.0`, so the trigger is Stryker on typed-rest-client
+3.1.1 or later (registry, read 2026-10-26). eslint and
 typescript-eslint join the catalog, and every manifest names each package the catalog holds as `catalog:`, root's five
 literal copies (`@types/node`, fast-check, tsx, typescript, vitest) and `tools/`'s eslint and typescript-eslint among
 them, so a Dependabot catalog update moves one line; `no-duplicated-versions.test.ts` holds it.
@@ -508,15 +516,42 @@ in `static`, networked, against the range step's base reduced with `git merge-ba
   `time`, or listed in `minimumReleaseAgeExclude` with a live entry in `tools/check-toolchain/release-age-exceptions.json`;
 - each exclude is one exact version (`name@x.y.z`; a bare name, a pattern or a union fails), with its advisory, reason,
   date added and expiry, and the two lists are equal. An entry the change adds expires no earlier than the version's
-  publish time plus three days and no later than seven days after it was added; an expired entry fails a pull request
-  that edits either list and warns everywhere else, since it can no longer change a resolution;
+  publish time plus three days and no later than seven days after it was added, and its advisory must be one npm's bulk
+  advisory endpoint reports against a version of that package the base runs (its lockfile, or `packageManager` for pnpm)
+  and not against the excluded version, so "a security fix" is checked, not only well formed; an expired entry fails a
+  pull request that edits either list and warns everywhere else, since it can no longer change a resolution;
 - `packageManager`'s pnpm has no moderate or worse advisory (npm's bulk advisory endpoint); it fails while that pnpm is
   under three days old unless that exact version has a live exclude, as any version the lockfile adds would (CQ3 (a):
   action-setup's `self-update` escapes the workspace's gate, and without the rule a hand bump could make every CI job
   run a pnpm published minutes before); and it warns when a newer 10.x is at least three days old;
-- neither Dockerfile carries a pnpm literal;
+- `packageManager` carries `+sha512.<hex>` equal to the registry's `dist.integrity` for its pnpm, and neither
+  Dockerfile carries a pnpm literal or installs pnpm other than by `install-pnpm.sh`, which checks the tarball against
+  that suffix. Changing the suffix resolves nothing, so it landed in phase 1. Nothing else reads it: pnpm 10.34.8's own
+  switch (`parsePackageManager`) and action-setup v6.1.0 (`readTargetVersion` at `ea17c68`) strip it, and pnpm switched
+  to 10.34.7 under a wrong digest (2026-10-26), so CI's pnpm rests on the registry's integrity as before;
+  dependabot-core reads the version with `^pnpm@(\d+.\d+.\d+)` and treats any `pnpm@` value as a pin, so the suffix
+  changes nothing for it; and a frozen install under 10.34.8 accepts it;
+- every lockfile entry resolves from registry.npmjs.org by its sha512 integrity alone (`{integrity}`, or with a tarball
+  under `https://registry.npmjs.org/`; a git, directory or other host's resolution fails, since a frozen install fetches
+  whatever `tarball` names and checks only the lockfile's own integrity), and each entry the change adds carries the
+  registry's `dist.integrity` for that version; `.npmrc` and `pnpm-workspace.yaml` name no other registry, default or
+  scoped, and the repository has no pnpmfile and no config dependency (in `pnpm-workspace.yaml` or `package.json`),
+  either of which could rewrite a resolution out of the check's sight;
+- every version the change adds holds the trust policy where it lands, from the registry documents the release-age rule
+  already read, exactly as pnpm 10.34.8's `failIfTrustDowngraded` reads them: it fails when any version of its package
+  published before it (prereleases left out unless it is one) had stronger evidence, a trusted publisher
+  (`_npmUser.trustedPublisher`) over provenance (`dist.attestations`) over none, unless `trustPolicyExclude` names that
+  exact version. pnpm 10 applies `trustPolicy` only when it resolves: a frozen install never checks it and pnpm 10 has
+  no `trustLockfile`, so without the rule a downgraded version could land by a hand-edited hunk, a local
+  `--config.trust-policy=off` or a resolver that does not pass the policy, and nothing on CI would see it. The rule
+  covers what a change adds against its base; a version already locked was checked when it was added (the 614 of
+  this pull request's base once, semver 6.3.1 alone failing), and its bytes are held by its integrity. The gates rule
+  refuses `trustPolicyIgnoreAfter`, and any trust-policy or release-age key in `.npmrc`, so the two gates have one
+  source and the check reads it;
 - `trust-exceptions.json` equals `trustPolicyExclude`, each entry still in the lockfile; `audit-exceptions.json` equals
-  `auditConfig.ignoreGhsas` (empty), an entry over 30 days old failing; each override has its entry;
+  `auditConfig.ignoreGhsas` (empty), an entry over 30 days old failing; each override has its entry, whether it comes
+  from `pnpm-workspace.yaml`, `package.json`'s `pnpm.overrides` or Yarn's `resolutions` (which pnpm applies too), and
+  `overrides.json` also equals the lockfile's own `overrides` map, which is what pnpm applied whatever the source;
 - every networked read fails closed after three tries, naming the host.
 
 `static` keeps `pnpm audit --prod` and adds `pnpm audit --audit-level=high`; both pass, qs and fast-uri being
@@ -632,7 +667,9 @@ together.
   starts `publish-content.yml` with its `cache: pnpm`, restores no store the build branch saved.
 - A young security fix is red until a person adds its dated exclude to both lists; the weekly triage removes expired
   ones (`docs/runbooks/dependency-upgrades.md`). A young version merged into the lockfile stops every full
-  re-resolution, Dependabot's included, until it is three days old.
+  re-resolution, Dependabot's included, until it is three days old. Dependabot's file `ignore` entries hold for security
+  updates too, so an advisory fixed only in an ignored major raises an alert and no pull request: the weekly triage
+  reads open alerts as well as pull requests and takes such a fix as a deliberate upgrade (security review N4).
 - `packageManager` moves only by a person's pull request, on `check-toolchain`'s warning or an advisory against the
   pinned pnpm, which turns `static` red on every pull request until that pull request merges first.
 - A Lane A or Lane B pull request that resolves the lockfile does so under pnpm 10.34.8 and both gates, starting from

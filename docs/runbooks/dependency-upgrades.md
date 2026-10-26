@@ -30,8 +30,10 @@ docs/runbooks/github-governance.md, "The default branch until launch"):
 | the node image and compose's postgres | Wednesday 04:43 | 7 days | one, `container-images` |
 
 Majors are ignored for `@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`, the node image and
-compose's postgres: each moves in a pull request of its own (below). Monday holds the weekly mutation (05:23),
-large-zip (06:17) and capacity (06:41) runs, so no ecosystem runs then.
+compose's postgres: each moves in a pull request of its own (below). The ignores hold for security updates too, so an
+advisory fixed only in one of those majors raises an alert and no pull request: the weekly triage reads the alerts for
+that reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no
+ecosystem runs then.
 
 npm's cooldown equals the release age on purpose (the co-founder's CQ1 (a)). Dependabot hands pnpm its own release
 age whenever that is longer than the repository's: its update checker probes each candidate with the version's
@@ -65,18 +67,54 @@ Once a week, after Thursday's npm batch:
      is not about the update (a flaky journey, a runner lost) is fixed or re-run as any other (docs/runbooks/ci.md);
    - `browser-tests`: red by design (below);
    - a group that moves a money closure's packages runs mutation in full; read its survivors like any other.
-3. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below);
+3. **Open Dependabot alerts.** An alert can stand with no pull request behind it, so read the alerts, not only the
+   pull requests:
+
+   ```sh
+   gh api "repos/PureTideWater/PhysicalTherapy/dependabot/alerts?state=open&per_page=100" --paginate \
+     --jq '.[] | [.number, .security_advisory.ghsa_id, .security_advisory.severity, .dependency.package.name,
+       (.security_vulnerability.first_patched_version.identifier // "no fix"), .html_url] | @tsv'
+   ```
+
+   For each, find the `security` group's pull request that fixes it. When there is none:
+   - **the fix is only in a major the file ignores** (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`,
+     `pg-boss`): a file `ignore` entry applies to security updates too, so Dependabot opens nothing. (Alerts cover the
+     npm packages and the actions; the images' advisories surface in the images job's scan.) Handle it by hand as a
+     deliberate upgrade (below, "The upgrades made on purpose"), in its own pull request, at once for a moderate or
+     worse advisory on anything the product runs; if the advisory cannot reach what we run, record why in an audit
+     exception (below) instead;
+   - **no fixed version yet**: an audit exception with its reason and expiry (below), and the alert read again weekly;
+   - **the fix is under three days old**: the pull request is red until its dated exclude is added (below, "The
+     release age"); add it when the fix cannot wait.
+   Never dismiss an alert without a written reason in the alert and, for a dependency we run, the founder's agreement.
+4. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below);
    `pnpm toolchain:check` warns of each on every run until then. Read the audit exceptions likewise: an entry nearing
    30 days is fixed or renewed (below).
-4. **`check-toolchain`'s warnings.** A newer pnpm 10.x at least three days old: make the `packageManager` pull request
+5. **`check-toolchain`'s warnings.** A newer pnpm 10.x at least three days old: make the `packageManager` pull request
    (below). An action whose tag moved under an unchanged pin (a push run's warning from `pnpm actions:check`): read
    why upstream moved it; a pin is a commit, so nothing we run changed, but a moved tag on a security tool is reported
    to the founder.
-5. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
+6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
    them with `@dependabot show <dependency> ignore conditions` on any Dependabot pull request, and remove one with
    `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist.
 
 For the first four weekly batches after the switch, read the bot queue time as `docs/runbooks/ci.md` says.
+
+## Where every package comes from
+
+Every package resolves from `https://registry.npmjs.org/`, the registry whose publish times, integrity and trust
+evidence `pnpm toolchain:check` reads. It refuses:
+- a lockfile entry whose `resolution` is anything but `{integrity: sha512-…}` (a tarball is accepted only under
+  `https://registry.npmjs.org/`): a git, directory or other host's resolution is refused, since a frozen install fetches
+  what `tarball` names and checks only the lockfile's own integrity;
+- an entry the pull request adds whose integrity is not the registry's `dist.integrity` for that version: resolve it
+  again (`pnpm install --lockfile-only`) rather than editing the lockfile by hand;
+- a `registry` or `@scope:registry` setting in `.npmrc` or `pnpm-workspace.yaml` other than registry.npmjs.org;
+- a `.pnpmfile.cjs`, a `pnpmfile` or `global-pnpmfile` setting, or `configDependencies` (in either file or in
+  `package.json`'s `pnpm` field): each can rewrite a manifest or a resolution where the check cannot see it.
+
+A package that is not on the public registry (a fork, a private package) is a decision for the founder, not a
+setting.
 
 ## The release age (F2 (b))
 
@@ -96,7 +134,9 @@ Dependabot's npm runs to fail until it ages.
 2. In `tools/check-toolchain/release-age-exceptions.json`, add the same entry: `package` (`name@x.y.z`), `advisory`
    (the GHSA id), `reason`, `added` and `expires` as UTC instants. The expiry must be no earlier than the version's
    publish time plus three days (`npm view <name> 'time["x.y.z"]'`), so it covers the whole young window, and no later
-   than seven days after `added`.
+   than seven days after `added`. `check-toolchain` asks npm's bulk advisory endpoint whether that advisory affects a
+   version of the package the base runs (the lockfile's, or `packageManager`'s for pnpm) and not the excluded version,
+   and refuses the entry otherwise: a package the base does not run yet has nothing to fix.
 3. Resolve (`pnpm install --lockfile-only`), run `pnpm toolchain:check`, and say in the pull request's description why
    the fix cannot wait three days.
 
@@ -113,6 +153,14 @@ and date; `check-toolchain` holds the two equal and fails an entry the lockfile 
 `semver@6.3.1` (2023, no provenance, after 7.5.1 with it), reached through `@babel/core` (the co-founder's CQ2 (a)). A
 new trust failure on a recent version is a security question for the founder, not an exclude.
 
+pnpm 10 applies the policy only when it resolves, never in a frozen install, so `pnpm toolchain:check` applies it again
+to every version a pull request adds to the lockfile, from the registry's own documents, the same way pnpm does: a
+version fails when any version of its package published before it had stronger evidence, unless `trustPolicyExclude`
+names that exact version. A version that fails there was resolved with the policy off (a `--config.trust-policy=off`, a
+hand edit, a resolver that does not pass it): resolve it again under the workspace's settings, and treat a recent one
+as above. `trustPolicyIgnoreAfter` is refused, since it would pass a future downgrade of any old version, and so is any
+`trust-policy*` or `minimum-release-age*` key in `.npmrc`: both gates are set in `pnpm-workspace.yaml` alone.
+
 ## Audit exceptions
 
 `static` runs `pnpm audit --prod` and `pnpm audit --audit-level=high`. When an advisory has no fixed version yet, or
@@ -127,27 +175,39 @@ or renewed by a person, with a new reason, at least monthly. The list is empty.
 
 ## Transitive packages and overrides
 
-A transitive package moves by a lockfile refresh when its parent's range allows the fixed version
-(`pnpm update <name>`). When a parent pins the old version exactly, use an override in `pnpm-workspace.yaml`'s `overrides`, scoped to
-that parent (`"parent@major>child": "x.y.z"`), and add its entry to `tools/check-toolchain/overrides.json`: the selector,
-the version, the reason, the date added and `removeWhen`, the event that makes it unnecessary (the parent moving to a
-range that allows the fix). `check-toolchain` fails an override without its entry, or one whose target has left the
-lockfile; remove both then. The qs override (`typed-rest-client@2>qs`, 6.16.1) goes when Stryker depends on
-typed-rest-client 3, or on a typed-rest-client whose qs range reaches 6.16.0.
+A transitive package moves by a lockfile refresh when its parent's range allows the fixed version (`pnpm update
+<name>`). When a parent pins the old version exactly, use an override in `pnpm-workspace.yaml`'s `overrides`, scoped to
+that parent (`"parent>child": "x.y.z"`), and add its entry to `tools/check-toolchain/overrides.json`: the selector, the
+version, the reason, the date added and `removeWhen`, the event that makes it unnecessary (the parent moving to a range
+that allows the fix). `check-toolchain` fails an override without its entry, or one whose target has left the lockfile;
+remove both then. It reads every place pnpm takes an override from: `pnpm-workspace.yaml`, `package.json`'s
+`pnpm.overrides` and its `resolutions` (Yarn's field, which pnpm applies as overrides), and holds `overrides.json` equal
+to the lockfile's own `overrides` map, which records what pnpm applied. Write an override in `pnpm-workspace.yaml` only.
+The qs override (`typed-rest-client>qs`, 6.16.1, with no version scope on the parent) goes when Stryker depends on
+typed-rest-client 3.1.1 or later, the first to declare `qs: ^6.16.0`. typed-rest-client 3.0.0 pins qs 6.15.1 and 3.1.0
+pins 6.15.3, both with moderate advisories that `--audit-level=high` passes, so a move to either keeps the override; a
+selector scoped to one parent major would silently stop applying on such a move. Scope a selector to a parent range only
+when every version outside it is known to allow the fix; read each version's own range with `npm view <parent>@<version>
+dependencies.<child>`.
 
 ## pnpm itself
 
 Dependabot never moves `packageManager` (it reads it only to choose the pnpm it runs), so a person does, in a one-line
 pull request:
 1. When `pnpm toolchain:check` warns that a newer 10.x is at least three days old (the weekly triage), set
-   `packageManager` to `pnpm@<that version>`. Both Dockerfiles install the version it names, and the workflows'
+   `packageManager` to `pnpm@<that version>+sha512.<hex>`, the hex of the registry's `dist.integrity` for that
+   version's tarball: set the version alone, run `pnpm toolchain:check`, and its `pnpm integrity` error names the exact
+   value from the registry. Both Dockerfiles install the version it names through
+   `tools/check-toolchain/install-pnpm.sh`, which refuses a tarball whose sha512 differs, and the workflows'
    `pnpm/action-setup` switches to it, so nothing else names a version.
 2. Run `pnpm install --lockfile-only` under the new pnpm (with `--fix-lockfile` if `tools/check-licenses`' libc rule
    names an entry written before pnpm wrote libc fields), then `pnpm licenses:check` and `pnpm toolchain:check`.
 
 `check-toolchain` refuses a `packageManager` pnpm under three days old unless that exact version has a live exclude in
 both lists (CQ3 (a)): `pnpm/action-setup` switches to it with `pnpm self-update` in its own directory, where the
-workspace's release age never applies.
+workspace's release age never applies. It also refuses a `packageManager` without the `+sha512` suffix, or with one
+that is not the registry's: only the images check the suffix (pnpm's own switch and `pnpm/action-setup` strip it), so
+it is held equal to the registry where it is written.
 
 **The outage this prevents.** An advisory published against the pinned pnpm turns `static` red on every pull request of
 both lanes. The remedy is the same pull request to the first fixed version, with its dated exclude if it is under three

@@ -63,9 +63,12 @@ differential test, which prices the base's engine and this commit's.
        closed" names the host that refused or rate-limited the read: re-run the job. On a push run an unchanged pin's
        moved tag is a warning, never a failure, read at the weekly triage (docs/runbooks/dependency-upgrades.md).
      - **"Toolchain"** (`pnpm toolchain:check`) names the rule and the version: an advisory against the pinned pnpm, a
-       pnpm or a version the lockfile adds under three days old with no dated exclude, an exclude or exception list out
-       of step with `pnpm-workspace.yaml`, an override without its entry. "… check-toolchain fails closed" names the
-       registry host it could not read: re-run the job. Each other remedy is in docs/runbooks/dependency-upgrades.md.
+       pnpm or a version the lockfile adds under three days old with no dated exclude, `packageManager` without the
+       registry's sha512, a lockfile entry not resolved from registry.npmjs.org by its integrity or not equal to the
+       registry's, an added version with weaker trust evidence than an earlier one, an exclude or exception list out of
+       step with `pnpm-workspace.yaml`, an override without its entry or missing from the lockfile's own map. "…
+       check-toolchain fails closed" names the registry host it could not read: re-run the job. Each other remedy is
+       in docs/runbooks/dependency-upgrades.md.
    - **"Wait for the database" in `db`, `domain model` or `e2e`:** compose's own log follows the error. A pull refused
      or slow (Docker Hub) is an infrastructure failure: re-run the job. A healthcheck that never passes is the image's
      or `docker-compose.yml`'s; read the last step, "The database's log".

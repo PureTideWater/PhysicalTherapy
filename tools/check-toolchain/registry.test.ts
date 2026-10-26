@@ -52,10 +52,35 @@ describe('the registry reads', () => {
     const { fetch, requests } = scripted([json(document)]);
     const registry = createRegistry(fetch, { sleep: () => Promise.resolve() });
     const [first, second] = await Promise.all([registry.packument('@scope/pkg'), registry.packument('@scope/pkg')]);
-    expect(first).toEqual({ name: '@scope/pkg', versions: ['1.0.0', '1.1.0'], time: document.time });
+    expect(first).toEqual({
+      name: '@scope/pkg',
+      versions: ['1.0.0', '1.1.0'],
+      time: document.time,
+      facts: { '1.0.0': { integrity: null, evidence: null, dependencies: {} }, '1.1.0': { integrity: null, evidence: null, dependencies: {} } },
+    });
     expect(second).toBe(first);
     expect(requests.map((request) => request.url)).toEqual(['https://registry.npmjs.org/@scope%2Fpkg']);
     expect(packumentUrl('plain')).toBe('https://registry.npmjs.org/plain');
+  });
+
+  it('keep each version’s integrity, trust evidence and declared dependencies', async () => {
+    const document = {
+      name: 'pkg',
+      versions: {
+        '1.0.0': { dist: { integrity: 'sha512-one' }, dependencies: { a: '^1.0.0' } },
+        '1.1.0': { dist: { integrity: 'sha512-two', attestations: { url: 'https://registry.npmjs.org/-/npm/v1/attestations/pkg@1.1.0', provenance: { predicateType: 'https://slsa.dev/provenance/v1' } } }, optionalDependencies: { b: '2.0.0' } },
+        '1.2.0': { dist: { integrity: 'sha512-three', attestations: { provenance: {} } }, _npmUser: { name: 'GitHub Actions', trustedPublisher: { id: 'github' } }, dependencies: { a: '^1.1.0' }, optionalDependencies: { b: '2.1.0' } },
+        '1.3.0': { dist: { attestations: { url: 'x' } }, _npmUser: { name: 'someone' } },
+      },
+      time: { '1.0.0': '2020-01-01T00:00:00.000Z', '1.1.0': '2021-01-01T00:00:00.000Z', '1.2.0': '2022-01-01T00:00:00.000Z', '1.3.0': '2023-01-01T00:00:00.000Z' },
+    };
+    const registry = createRegistry(scripted([json(document)]).fetch, { sleep: () => Promise.resolve() });
+    expect((await registry.packument('pkg')).facts).toEqual({
+      '1.0.0': { integrity: 'sha512-one', evidence: null, dependencies: { a: '^1.0.0' } },
+      '1.1.0': { integrity: 'sha512-two', evidence: 'provenance', dependencies: { b: '2.0.0' } },
+      '1.2.0': { integrity: 'sha512-three', evidence: 'trustedPublisher', dependencies: { a: '^1.1.0', b: '2.1.0' } },
+      '1.3.0': { integrity: null, evidence: null, dependencies: {} },
+    });
   });
 
   it('refuse a document that is not one', async () => {

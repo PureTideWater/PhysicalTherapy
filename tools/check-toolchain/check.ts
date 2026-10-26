@@ -18,16 +18,18 @@ import {
   parseJsonFile,
   parseSelector,
   parseYamlFile,
+  pnpmDigest,
   pnpmVersion,
   rangeHolds,
   releaseAgeExceptionsSchema,
   type ReleaseAgeException,
+  sha512Hex,
   snapshotSpec,
   splitSpec,
   trustExceptionsSchema,
   workspaceSchema,
 } from './policy';
-import { NetworkReadError, type Packument, type Registry } from './registry';
+import { NetworkReadError, type Packument, type Registry, type TrustEvidence } from './registry';
 
 /**
  * `pnpm toolchain:check` (designs/lane-b-ci.md §3.2.1, "Audit and toolchain"; test matrix CI-14; ADR 0066 Part 2): the
@@ -45,7 +47,12 @@ export const FILES = {
   releaseAgeExceptions: 'tools/check-toolchain/release-age-exceptions.json',
   trustExceptions: 'tools/check-toolchain/trust-exceptions.json',
   overrides: 'tools/check-toolchain/overrides.json',
+  npmrc: '.npmrc',
+  pnpmfile: '.pnpmfile.cjs',
 } as const;
+
+/** The one registry every package resolves from, and the one check-toolchain reads. */
+export const NPMJS = 'https://registry.npmjs.org/';
 
 /** One tree's text of those files (undefined: absent), and its Dockerfiles by path. */
 export type Tree = { readonly [key in keyof typeof FILES]?: string } & { readonly dockerfiles?: Readonly<Record<string, string>> };
@@ -76,7 +83,28 @@ interface Config {
   readonly releaseAgeExceptions: readonly ReleaseAgeException[];
   readonly trustExceptions: ReturnType<typeof trustExceptionsSchema.parse>['entries'];
   readonly overrides: ReturnType<typeof overrideEntriesSchema.parse>['entries'];
+  /** `.npmrc`'s settings, key to value, in file order (absent: none). */
+  readonly npmrc: readonly (readonly [string, string])[];
+  /** Whether the tree holds a `.pnpmfile.cjs`. */
+  readonly pnpmfile: boolean;
   readonly problems: readonly string[];
+}
+
+/** `.npmrc`'s `key=value` lines, comments and blank lines dropped, a quoted value unquoted. */
+export function npmrcSettings(text: string | undefined): [string, string][] {
+  if (text === undefined) {
+    return [];
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith(';'))
+    .map((line): [string, string] => {
+      const at = line.indexOf('=');
+      const key = (at === -1 ? line : line.slice(0, at)).trim();
+      const value = at === -1 ? 'true' : line.slice(at + 1).trim();
+      return [key, /^(["']).*\1$/.test(value) ? value.slice(1, -1) : value];
+    });
 }
 
 function readConfig(tree: Tree): Config {
@@ -97,6 +125,8 @@ function readConfig(tree: Tree): Config {
     releaseAgeExceptions: take(parseJsonFile(FILES.releaseAgeExceptions, tree.releaseAgeExceptions, releaseAgeExceptionsSchema, { entries: [] }), { entries: [] }).entries,
     trustExceptions: take(parseJsonFile(FILES.trustExceptions, tree.trustExceptions, trustExceptionsSchema, { entries: [] }), { entries: [] }).entries,
     overrides: take(parseJsonFile(FILES.overrides, tree.overrides, overrideEntriesSchema, { entries: [] }), { entries: [] }).entries,
+    npmrc: npmrcSettings(tree.npmrc),
+    pnpmfile: tree.pnpmfile !== undefined,
     problems,
   };
 }
@@ -163,8 +193,9 @@ function liveExcludes(head: Config, now: Date): ReadonlySet<string> {
 const REMEDY =
   'wait until then, or, for a security fix, add it to pnpm-workspace.yaml’s minimumReleaseAgeExclude and to tools/check-toolchain/release-age-exceptions.json with its advisory, the date added and an expiry (docs/runbooks/dependency-upgrades.md, "The release age")';
 
-function gatesRule(workspace: Workspace): Finding[] {
+function gatesRule(head: Config): Finding[] {
   const rule = 'gates';
+  const { workspace } = head;
   const findings: Finding[] = [];
   const minutes = workspace.minimumReleaseAge;
   if (minutes === undefined || minutes < MINIMUM_RELEASE_AGE_MINUTES) {
@@ -173,10 +204,90 @@ function gatesRule(workspace: Workspace): Finding[] {
   if (workspace.trustPolicy !== 'no-downgrade') {
     findings.push({ level: 'error', rule, message: `${FILES.workspace}: trustPolicy is ${String(workspace.trustPolicy ?? 'unset')}, not no-downgrade (CQ2 (a))` });
   }
-  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `minimumReleaseAge ${String(minutes)} minutes, trustPolicy no-downgrade` }];
+  // S2: pnpm 10.34.8 honours trustPolicyIgnoreAfter (minutes since publish), which would pass a downgrade of any older version.
+  if ('trustPolicyIgnoreAfter' in workspace) {
+    findings.push({
+      level: 'error',
+      rule,
+      message: `${FILES.workspace}: trustPolicyIgnoreAfter is set; it waives the trust policy for every version published longer ago than that many minutes, so a future downgrade of any old version would pass (CQ2 (a))`,
+    });
+  }
+  // The gates live in one file: an .npmrc setting would override or loosen them where this check does not read.
+  for (const [key] of head.npmrc) {
+    const plain = key.toLowerCase().replace(/[-_]/g, '').replace(/\[\]$/, '');
+    if (plain.startsWith('trustpolicy') || plain.startsWith('minimumreleaseage')) {
+      findings.push({ level: 'error', rule, message: `${FILES.npmrc}: ${key} is set; the release age and the trust policy are set in ${FILES.workspace} alone, where check-toolchain reads and holds them` });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `minimumReleaseAge ${String(minutes)} minutes, trustPolicy no-downgrade, neither loosened elsewhere` }];
 }
 
-function pnpmRules(version: string, pnpm: Packument | Error, advisories: Awaited<ReturnType<Registry['advisories']>> | Error, live: ReadonlySet<string>, minutes: number, now: Date): Finding[] {
+/** Whether a registry setting names registry.npmjs.org itself (with or without its trailing slash). */
+function isNpmjs(value: unknown): boolean {
+  return value === NPMJS || value === NPMJS.slice(0, -1);
+}
+
+const PNPMFILE = 'a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none';
+
+/**
+ * S1: every package resolves from registry.npmjs.org, the registry whose times, integrity and trust check-toolchain
+ * reads, and nothing rewrites a resolution out of its sight: no other registry (default or scoped) in `.npmrc` or
+ * `pnpm-workspace.yaml`, no pnpmfile and no config dependency (which loads one).
+ */
+function settingsRule(head: Config): Finding[] {
+  const rule = 'settings';
+  const findings: Finding[] = [];
+  const registry = (file: string, key: string, value: unknown) => {
+    if (!isNpmjs(value)) {
+      findings.push({ level: 'error', rule, message: `${file}: ${key} is ${typeof value === 'string' ? value : JSON.stringify(value)}; every package resolves from ${NPMJS}, the registry check-toolchain reads` });
+    }
+  };
+  for (const [key, value] of head.npmrc) {
+    if (key === 'registry' || /^@[^:]+:registry$/.test(key)) {
+      registry(FILES.npmrc, key, value);
+    }
+    if (key === 'pnpmfile' || key === 'global-pnpmfile') {
+      findings.push({ level: 'error', rule, message: `${FILES.npmrc}: ${key} is set; ${PNPMFILE}` });
+    }
+  }
+  const workspace = head.workspace as Record<string, unknown>;
+  for (const [key, value] of Object.entries(workspace)) {
+    if (key === 'registry' || /^@[^:]+:registry$/.test(key)) {
+      registry(FILES.workspace, key, value);
+    }
+    if (key === 'registries') {
+      const entries = value !== null && typeof value === 'object' ? Object.entries(value) : [['', value] as const];
+      for (const [scope, url] of entries) {
+        registry(FILES.workspace, scope === '' ? key : `${key}.${scope}`, url);
+      }
+    }
+    if (key === 'pnpmfile' || key === 'globalPnpmfile') {
+      findings.push({ level: 'error', rule, message: `${FILES.workspace}: ${key} is set; ${PNPMFILE}` });
+    }
+    if (key === 'configDependencies' && value !== null && !(typeof value === 'object' && Object.keys(value).length === 0)) {
+      findings.push({ level: 'error', rule, message: `${FILES.workspace}: ${key} is set; a config dependency loads a pnpmfile, which can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none` });
+    }
+  }
+  // pnpm 10 also reads configDependencies from package.json's pnpm field.
+  const fromManifest = head.packageJson.pnpm?.configDependencies;
+  if (fromManifest !== undefined && fromManifest !== null && !(typeof fromManifest === 'object' && Object.keys(fromManifest).length === 0)) {
+    findings.push({ level: 'error', rule, message: `${FILES.packageJson}: pnpm.configDependencies is set; a config dependency loads a pnpmfile, which can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none` });
+  }
+  if (head.pnpmfile) {
+    findings.push({ level: 'error', rule, message: `${FILES.pnpmfile} exists; ${PNPMFILE}` });
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `every package resolves from ${NPMJS}; no pnpmfile or config dependency` }];
+}
+
+function pnpmRules(
+  packageManager: string,
+  version: string,
+  pnpm: Packument | Error,
+  advisories: Awaited<ReturnType<Registry['advisories']>> | Error,
+  live: ReadonlySet<string>,
+  minutes: number,
+  now: Date,
+): Finding[] {
   const findings: Finding[] = [];
   // Advisories: moderate or worse fails, a low one warns.
   if (advisories instanceof Error) {
@@ -236,10 +347,43 @@ function pnpmRules(version: string, pnpm: Packument | Error, advisories: Awaited
           message: `pnpm ${newer} (published ${pnpm.time[newer] ?? '?'}) is newer than packageManager's ${version} and at least ${ageWords(minutes)} old; Dependabot never moves packageManager, so bump it by hand at the weekly triage (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
         },
   );
+  findings.push(pnpmIntegrityRule(packageManager, version, pnpm));
   return findings;
 }
 
-/** Neither Dockerfile names a pnpm version: both derive it from package.json's packageManager. */
+/**
+ * N1: packageManager carries `+sha512.<hex>` of the registry's tarball for its pnpm, which both Dockerfiles check the
+ * tarball they install against (tools/check-toolchain/install-pnpm.sh). Neither pnpm's own switch nor action-setup
+ * reads the suffix (each strips it), so it is held here, equal to the registry's dist.integrity.
+ */
+function pnpmIntegrityRule(packageManager: string, version: string, pnpm: Packument): Finding {
+  const rule = 'pnpm integrity';
+  const registry = sha512Hex(pnpm.facts[version]?.integrity);
+  if (registry === null) {
+    return { level: 'error', rule, message: `registry.npmjs.org gives no sha512 dist.integrity for pnpm ${version}; check-toolchain fails closed` };
+  }
+  const want = `pnpm@${version}+sha512.${registry}`;
+  const digest = pnpmDigest(packageManager);
+  if (digest === null) {
+    return {
+      level: 'error',
+      rule,
+      message: `${FILES.packageJson}: packageManager ${JSON.stringify(packageManager)} carries no +sha512.<hex>; set it to "${want}", the registry's dist.integrity for pnpm ${version} in hex, which both Dockerfiles check the tarball against (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
+    };
+  }
+  if (digest !== registry) {
+    return { level: 'error', rule, message: `${FILES.packageJson}: packageManager's sha512 ${digest} is not the registry's dist.integrity for pnpm ${version} (${registry}); set packageManager to "${want}"` };
+  }
+  return { level: 'ok', rule, message: `packageManager's sha512 is the registry's dist.integrity for pnpm ${version}` };
+}
+
+/** The one way an image installs pnpm: install-pnpm.sh, which checks the tarball against packageManager's sha512 (N1). */
+export const PNPM_INSTALLER = 'tools/check-toolchain/install-pnpm.sh';
+
+/**
+ * Neither Dockerfile names a pnpm version, and each installs pnpm only by copying install-pnpm.sh and running it on
+ * package.json, which derives the version from packageManager and checks the tarball against its sha512.
+ */
 export function dockerfileRule(dockerfiles: Readonly<Record<string, string>>, version: string | null): Finding[] {
   const rule = 'Dockerfiles';
   const findings: Finding[] = [];
@@ -254,12 +398,19 @@ export function dockerfileRule(dockerfiles: Readonly<Record<string, string>>, ve
       if (literal) {
         findings.push({ level: 'error', rule, message: `${file}:${String(index + 1)} names a pnpm version; derive it from package.json's packageManager, so one field moves every pnpm` });
       }
+      const instruction = line.trim();
+      const other = !instruction.startsWith('#') && /\bpnpm\b/.test(instruction) && (/\b(?:npm|yarn)\s+(?:install|i|add)\b/.test(instruction) || /\bcorepack\b/.test(instruction) || /\bnpx\s+(?:-y\s+)?pnpm\b/.test(instruction));
+      if (other) {
+        findings.push({ level: 'error', rule, message: `${file}:${String(index + 1)} installs pnpm other than through ${PNPM_INSTALLER}, which alone checks the tarball against packageManager's sha512` });
+      }
     });
-    if (!text.includes('packageManager')) {
-      findings.push({ level: 'error', rule, message: `${file} does not derive its pnpm from package.json's packageManager` });
+    const copied = /^COPY\s+(?:--\S+\s+)*tools\/check-toolchain\/install-pnpm\.sh\s+(\S+)\s*$/m.exec(text)?.[1];
+    const runs = copied !== undefined && new RegExp(`^RUN\\s+sh\\s+${copied.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}\\s+package\\.json\\b`, 'm').test(text);
+    if (!runs) {
+      findings.push({ level: 'error', rule, message: `${file} does not install pnpm with ${PNPM_INSTALLER} (COPY it, then RUN sh <it> package.json), which checks the tarball against packageManager's sha512` });
     }
   }
-  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${files.join(' and ')} derive pnpm from packageManager; no pnpm literal` }];
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${files.join(' and ')} install pnpm with ${PNPM_INSTALLER}, from packageManager and checked against its sha512; no pnpm literal` }];
 }
 
 function auditRule(head: Config, now: Date): Finding[] {
@@ -283,6 +434,56 @@ function auditRule(head: Config, now: Date): Finding[] {
     }
   }
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(ignored.length)} audit exception(s), equal in both lists and in date` }];
+}
+
+const EXCLUDE_PURPOSE = 'an exclude is only for the fix of an advisory against what we run (docs/runbooks/dependency-upgrades.md, "The release age")';
+
+/** The versions of a package the base runs, other than `except`: its lockfile's, and packageManager's for pnpm. */
+function baseVersions(base: Config, name: string, except: string): string[] {
+  const versions = new Set<string>();
+  for (const key of base.lockfile === null ? [] : lockedPackages(base.lockfile)) {
+    const spec = splitSpec(key);
+    if (spec.name === name) {
+      versions.add(spec.version);
+    }
+  }
+  const pnpm = name === 'pnpm' ? pnpmVersion(base.packageJson.packageManager) : null;
+  if (pnpm !== null) {
+    versions.add(pnpm);
+  }
+  versions.delete(except);
+  return [...versions].sort(compareVersions);
+}
+
+/** Whether an advisory list names a GHSA (the bulk endpoint gives it as the advisory's GitHub URL). */
+function namesGhsa(advisories: readonly { readonly url: string }[] | undefined, ghsa: string): boolean {
+  return (advisories ?? []).some((advisory) => advisory.url.replace(/\/+$/, '').split('/').at(-1)?.toUpperCase() === ghsa.toUpperCase());
+}
+
+/**
+ * N3: an exclude this change adds names an advisory npm's bulk endpoint reports against a version of the package the
+ * base runs, and not against the excluded version itself, so "a security fix" is checked rather than only well formed.
+ */
+async function excludeAdvisoryFindings(entry: ReleaseAgeException, base: Config, registry: Registry): Promise<Finding[]> {
+  const rule = 'release-age excludes';
+  const { name, version } = splitSpec(entry.package);
+  const before = baseVersions(base, name, version);
+  if (before.length === 0) {
+    return [{ level: 'error', rule, message: `${entry.package}: the base locks no other version of ${name}, so no advisory against what we run can be fixed by it; ${EXCLUDE_PURPOSE}` }];
+  }
+  try {
+    const [against, itself] = await Promise.all([registry.advisories({ [name]: before }), registry.advisories({ [name]: [version] })]);
+    const findings: Finding[] = [];
+    if (!namesGhsa(against[name], entry.advisory)) {
+      findings.push({ level: 'error', rule, message: `${entry.package}: the bulk advisory endpoint does not report ${entry.advisory} against the version${before.length === 1 ? '' : 's'} the base locks (${before.join(', ')}); ${EXCLUDE_PURPOSE}` });
+    }
+    if (namesGhsa(itself[name], entry.advisory)) {
+      findings.push({ level: 'error', rule, message: `${entry.package}: the bulk advisory endpoint reports ${entry.advisory} against ${entry.package} itself, so it is not the fix` });
+    }
+    return findings;
+  } catch (error) {
+    return [failClosed(rule, error)];
+  }
 }
 
 async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInput, minutes: number, registry: Registry): Promise<Finding[]> {
@@ -330,6 +531,7 @@ async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInp
       } catch (error) {
         findings.push(failClosed(rule, error));
       }
+      findings.push(...(await excludeAdvisoryFindings(entry, base, registry)));
     }
     if (expires <= now) {
       // Once expired the version is three days old, so the exclude changes no resolution: it fails only where the
@@ -344,15 +546,66 @@ async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInp
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(listed.length)} exclude(s), each one exact version, equal in both lists and in date` }];
 }
 
-async function lockfileRule(head: Config, base: Config, live: ReadonlySet<string>, minutes: number, now: Date, registry: Registry): Promise<Finding[]> {
-  const rule = 'lockfile release age';
-  if (head.lockfile === null) {
+/** The lockfile's own description of an entry's source: `resolution`, as `pnpm install --frozen-lockfile` fetches it. */
+function resolutionOf(entry: unknown): unknown {
+  return entry !== null && typeof entry === 'object' && 'resolution' in entry ? entry.resolution : null;
+}
+
+/** A sha512 Subresource Integrity string, the only form the registry gives for a current package. */
+const SHA512_SRI = /^sha512-[A-Za-z0-9+/]+={0,2}$/;
+
+/** Whether a tarball URL is on registry.npmjs.org over https, with no credentials, port, query or fragment. */
+function npmjsTarball(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.host === 'registry.npmjs.org' && url.username === '' && url.password === '' && url.search === '' && url.hash === '' && value.startsWith(NPMJS);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * S1: every lockfile entry resolves from the registry by its sha512 integrity alone, `{integrity}`, or with a
+ * tarball on registry.npmjs.org. A frozen install fetches whatever `tarball` names and checks only the lockfile's own
+ * integrity, so a git, directory or other host's resolution under a registry-looking key would install bytes from
+ * anywhere. Offline, over every entry, not only those a change adds.
+ */
+export function lockfileResolutionRule(lockfile: Lockfile | null): Finding[] {
+  const rule = 'lockfile resolutions';
+  if (lockfile === null) {
     return [{ level: 'error', rule, message: `${FILES.lockfile} is missing` }];
   }
-  const before = base.lockfile === null ? new Set<string>() : lockedPackages(base.lockfile);
-  const added = [...lockedPackages(head.lockfile)].filter((key) => !before.has(key)).sort();
   const findings: Finding[] = [];
-  const names = [...new Set(added.map((key) => splitSpec(key).name))];
+  const entries = Object.entries(lockfile.packages ?? {});
+  for (const [key, entry] of entries) {
+    const resolution = resolutionOf(entry);
+    const fields = resolution !== null && typeof resolution === 'object' ? (resolution as Record<string, unknown>) : null;
+    const keys = fields === null ? [] : Object.keys(fields).sort();
+    const shaped = fields !== null && typeof fields.integrity === 'string' && SHA512_SRI.test(fields.integrity) && (keys.join() === 'integrity' || (keys.join() === 'integrity,tarball' && npmjsTarball(fields.tarball)));
+    if (!shaped) {
+      findings.push({
+        level: 'error',
+        rule,
+        message: `${key}: resolves ${JSON.stringify(resolution)}; every entry resolves from ${NPMJS.slice(0, -1)} by its sha512 integrity alone (a tarball only under ${NPMJS}), so a git, directory or other host's tarball is refused`,
+      });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `all ${String(entries.length)} entries resolve from ${NPMJS} by sha512 integrity` }];
+}
+
+/** The versions the head's lockfile adds against the base, and each one's registry document (or why it was not read). */
+interface Added {
+  readonly keys: readonly string[];
+  readonly documents: ReadonlyMap<string, Packument | Error>;
+}
+
+async function readAdded(head: Config, base: Config, registry: Registry): Promise<Added> {
+  const before = base.lockfile === null ? new Set<string>() : lockedPackages(base.lockfile);
+  const keys = head.lockfile === null ? [] : [...lockedPackages(head.lockfile)].filter((key) => !before.has(key)).sort();
+  const names = [...new Set(keys.filter((key) => SEMVER.test(splitSpec(key).version)).map((key) => splitSpec(key).name))];
   const documents = new Map<string, Packument | Error>();
   await mapLimit(names, 8, async (name) => {
     documents.set(
@@ -365,14 +618,34 @@ async function lockfileRule(head: Config, base: Config, live: ReadonlySet<string
       }),
     );
   });
+  return { keys, documents };
+}
+
+/** Each added registry version with its document; a version that is not one, or whose document was not read, is reported once by the release-age rule. */
+function* addedDocuments(added: Added): Generator<{ readonly key: string; readonly name: string; readonly version: string; readonly document: Packument }> {
+  for (const key of added.keys) {
+    const { name, version } = splitSpec(key);
+    const document = added.documents.get(name);
+    if (SEMVER.test(version) && document !== undefined && !(document instanceof Error)) {
+      yield { key, name, version, document };
+    }
+  }
+}
+
+function lockfileRule(head: Config, added: Added, live: ReadonlySet<string>, minutes: number, now: Date): Finding[] {
+  const rule = 'lockfile release age';
+  if (head.lockfile === null) {
+    return [{ level: 'error', rule, message: `${FILES.lockfile} is missing` }];
+  }
+  const findings: Finding[] = [];
   let young = 0;
-  for (const key of added) {
+  for (const key of added.keys) {
     const { name, version } = splitSpec(key);
     if (!SEMVER.test(version)) {
       findings.push({ level: 'error', rule, message: `${key}: not a registry version, so its release age cannot be read; take it from the registry` });
       continue;
     }
-    const document = documents.get(name);
+    const document = added.documents.get(name);
     if (document === undefined || document instanceof Error) {
       findings.push(failClosed(rule, document ?? new NetworkReadError(`registry.npmjs.org: ${name} was not read`)));
       continue;
@@ -394,10 +667,78 @@ async function lockfileRule(head: Config, base: Config, live: ReadonlySet<string
       }
     }
   }
-  const failed = findings.length > 0;
-  return failed
+  return findings.length > 0
     ? findings
-    : [{ level: 'ok', rule, message: added.length === 0 ? 'the lockfile adds no version against the base' : `the lockfile adds ${String(added.length)} version(s) against the base, each at least ${ageWords(minutes)} old${young > 0 ? ` or under a live dated exclude (${String(young)})` : ''}` }];
+    : [{ level: 'ok', rule, message: added.keys.length === 0 ? 'the lockfile adds no version against the base' : `the lockfile adds ${String(added.keys.length)} version(s) against the base, each at least ${ageWords(minutes)} old${young > 0 ? ` or under a live dated exclude (${String(young)})` : ''}` }];
+}
+
+/** S1: each added version's lockfile integrity is the registry's `dist.integrity` for it, read from the document already fetched. */
+function lockfileIntegrityRule(head: Config, added: Added): Finding[] {
+  const rule = 'lockfile integrity';
+  const findings: Finding[] = [];
+  let checked = 0;
+  for (const { key, version, document } of addedDocuments(added)) {
+    const resolution = resolutionOf(head.lockfile?.packages?.[key]);
+    const locked = resolution !== null && typeof resolution === 'object' ? (resolution as Record<string, unknown>).integrity : undefined;
+    const registered = document.facts[version]?.integrity ?? null;
+    checked += 1;
+    if (registered === null) {
+      findings.push({ level: 'error', rule, message: `${key}: registry.npmjs.org gives no dist.integrity for it, so the lockfile's cannot be confirmed` });
+    } else if (locked !== registered) {
+      findings.push({ level: 'error', rule, message: `${key}: the lockfile's integrity ${String(locked)} is not registry.npmjs.org's dist.integrity ${registered} for it; resolve it again from the registry` });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: checked === 0 ? 'no added version to compare' : `${String(checked)} added version(s), each with the registry's dist.integrity` }];
+}
+
+const TRUST_RANK: Readonly<Record<TrustEvidence, number>> = { trustedPublisher: 2, provenance: 1 };
+const TRUST_WORDS: Readonly<Record<TrustEvidence | 'none', string>> = { trustedPublisher: 'a trusted publisher', provenance: 'a provenance attestation', none: 'no trust evidence' };
+
+/**
+ * S2: pnpm's `trustPolicy: no-downgrade`, held where a version lands. pnpm applies it only when it resolves (never in a
+ * frozen install, and pnpm 10 has no trustLockfile), so a downgraded version could arrive by a hand-edited hunk, a
+ * local `--config.trust-policy=off` or a resolver that does not apply it. Over every version the lockfile adds, from the
+ * documents already fetched, exactly as pnpm 10.34.8's failIfTrustDowngraded reads them: the strongest evidence of any
+ * version published before this one (prereleases left out unless this is one), a trusted publisher over provenance over
+ * none, fails when this version's is weaker. An exact trustPolicyExclude entry passes its version.
+ */
+function lockfileTrustRule(head: Config, added: Added): Finding[] {
+  const rule = 'lockfile trust';
+  const excluded = new Set(head.workspace.trustPolicyExclude ?? []);
+  const findings: Finding[] = [];
+  let checked = 0;
+  for (const { key, version, document } of addedDocuments(added)) {
+    if (excluded.has(key)) {
+      continue;
+    }
+    checked += 1;
+    const published = document.time[version];
+    if (published === undefined) {
+      continue; // the release-age rule reports a version with no publish time
+    }
+    const at = Date.parse(published);
+    const prerelease = SEMVER.exec(version)?.[4] !== undefined;
+    let strongest: TrustEvidence | null = null;
+    for (const other of document.versions) {
+      const time = document.time[other];
+      const evidence = document.facts[other]?.evidence ?? null;
+      if (time === undefined || evidence === null || !(Date.parse(time) < at) || (!prerelease && SEMVER.exec(other)?.[4] !== undefined)) {
+        continue;
+      }
+      if (strongest === null || TRUST_RANK[evidence] > TRUST_RANK[strongest]) {
+        strongest = evidence;
+      }
+    }
+    const current = document.facts[version]?.evidence ?? null;
+    if (strongest !== null && (current === null || TRUST_RANK[strongest] > TRUST_RANK[current])) {
+      findings.push({
+        level: 'error',
+        rule,
+        message: `${key} has ${TRUST_WORDS[current ?? 'none']}, but a version published before it had ${TRUST_WORDS[strongest]}: a trust downgrade, the sign a maintainer's account may have published it outside the project's pipeline. pnpm's trustPolicy no-downgrade holds only where pnpm resolves, never in a frozen install, so it is held here where the version lands; a recent one is a security question for the founder, an old fixed one an exact trustPolicyExclude with its entry (docs/runbooks/dependency-upgrades.md, "The trust policy")`,
+      });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: checked === 0 ? 'no added version to compare' : `${String(checked)} added version(s), none with weaker trust evidence than a version published before it` }];
 }
 
 function trustRule(head: Config): Finding[] {
@@ -444,20 +785,35 @@ function overrideApplies(lockfile: Lockfile, selector: string, version: string):
 
 function overridesRule(head: Config): Finding[] {
   const rule = 'overrides';
-  const declared: Record<string, string> = { ...head.packageJson.pnpm?.overrides, ...head.workspace.overrides };
-  const findings = sameMembers(
-    rule,
-    Object.entries(declared).map(([selector, version]) => `${selector}: ${version}`),
-    `the pnpm overrides (${FILES.workspace}, ${FILES.packageJson})`,
-    head.overrides.map((entry) => `${entry.selector}: ${entry.version}`),
-    FILES.overrides,
-  );
+  // pnpm 10.34.8 applies package.json's resolutions (Yarn's field) and pnpm.overrides, and the workspace's overrides.
+  const declared: Record<string, string> = { ...head.packageJson.resolutions, ...head.packageJson.pnpm?.overrides, ...head.workspace.overrides };
+  const pairs = (map: Readonly<Record<string, string>>) => Object.entries(map).map(([selector, version]) => `${selector}: ${version}`);
+  const entries = head.overrides.map((entry) => `${entry.selector}: ${entry.version}`);
+  const findings = sameMembers(rule, pairs(declared), `the pnpm overrides (${FILES.workspace}, ${FILES.packageJson})`, entries, FILES.overrides);
+  // S3: the lockfile's own map is what pnpm applied, from any source; a frozen install refuses one that differs.
+  if (head.lockfile !== null) {
+    findings.push(...sameMembers(rule, pairs(head.lockfile.overrides ?? {}), `${FILES.lockfile}'s overrides (what pnpm applied)`, entries, FILES.overrides));
+  }
   for (const entry of head.overrides) {
     if (declared[entry.selector] === entry.version && head.lockfile !== null && !overrideApplies(head.lockfile, entry.selector, entry.version)) {
       findings.push({ level: 'error', rule, message: `the override ${entry.selector}: ${entry.version} no longer applies to anything ${FILES.lockfile} resolves (its target left); remove it and its entry (removal trigger: ${entry.removeWhen})` });
     }
   }
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(head.overrides.length)} override(s), each with its entry and still applied` }];
+}
+
+/**
+ * The rules that read only the tree, with no base and no registry: the gates, the settings, the Dockerfiles' pnpm
+ * install, every lockfile entry's resolution, the trust excludes and the overrides. The unit tests run them on the repository's real tree, so a list
+ * out of step with pnpm's settings fails offline as well as in static's networked run (ci-infra N3).
+ */
+export function checkOffline(tree: Tree): Finding[] {
+  const head = readConfig(tree);
+  if (head.problems.length > 0) {
+    return head.problems.map((message) => ({ level: 'error', rule: 'files', message }));
+  }
+  const dockerfiles = dockerfileRule(tree.dockerfiles ?? {}, pnpmVersion(head.packageJson.packageManager));
+  return [...gatesRule(head), ...settingsRule(head), ...dockerfiles, ...lockfileResolutionRule(head.lockfile), ...trustRule(head), ...overridesRule(head)];
 }
 
 /** Every rule, in order. Never throws for a network failure: each fails closed as an error finding. */
@@ -468,7 +824,8 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
     return head.problems.map((message) => ({ level: 'error', rule: 'files', message }));
   }
   const findings: Finding[] = base.problems.map((message) => ({ level: 'warning', rule: 'files', message: `the base's ${message}; its lists are read as empty` }));
-  findings.push(...gatesRule(head.workspace));
+  findings.push(...gatesRule(head));
+  findings.push(...settingsRule(head));
   const minutes = Math.max(head.workspace.minimumReleaseAge ?? 0, MINIMUM_RELEASE_AGE_MINUTES);
   const live = liveExcludes(head, input.now);
   const version = pnpmVersion(head.packageJson.packageManager);
@@ -479,12 +836,16 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
       registry.packument('pnpm').catch((error: unknown) => (error instanceof Error ? error : new Error(String(error)))),
       registry.advisories({ pnpm: [version] }).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error)))),
     ]);
-    findings.push(...pnpmRules(version, pnpm, advisories, live, minutes, input.now));
+    findings.push(...pnpmRules(head.packageJson.packageManager ?? '', version, pnpm, advisories, live, minutes, input.now));
   }
   findings.push(...dockerfileRule(input.head.dockerfiles ?? {}, version));
   findings.push(...auditRule(head, input.now));
   findings.push(...(await releaseAgeExcludeRule(head, base, input, minutes, registry)));
-  findings.push(...(await lockfileRule(head, base, live, minutes, input.now, registry)));
+  findings.push(...lockfileResolutionRule(head.lockfile));
+  const added = await readAdded(head, base, registry);
+  findings.push(...lockfileRule(head, added, live, minutes, input.now));
+  findings.push(...lockfileIntegrityRule(head, added));
+  findings.push(...lockfileTrustRule(head, added));
   findings.push(...trustRule(head));
   findings.push(...overridesRule(head));
   return findings;
