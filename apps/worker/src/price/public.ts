@@ -28,6 +28,7 @@ export {
   compareRuns,
 } from './diff';
 export { type ImpactOptions, type ImpactRun, type RunImpact, completeRuns, runReleaseImpact } from './impact';
+export { coversMore, termsUnchangedSince } from '../monitor/plan';
 export { ELIGIBLE_RUN, IN_EFFECT_SINCE, PRICED_IN_EFFECT, RUN_IN_EFFECT } from './in-effect';
 export {
   type LinePricingNow,

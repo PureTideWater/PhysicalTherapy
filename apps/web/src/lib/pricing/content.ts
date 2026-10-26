@@ -1,6 +1,16 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { type DateRange, cmsQuarterOfDate, cmsQuarterWindow, dayAfter, quarterLabel, subtractRanges } from '@tp/rules';
-import { CONTENT_FAILURE_CODES, type ContentFailureCode, type ContentFamily, type ContentSpans, contentsOf, coveredDays, familiesOf } from '@tp/worker/pricing';
+import {
+  CONTENT_FAILURE_CODES,
+  type ContentFailureCode,
+  type ContentFamily,
+  type ContentSpans,
+  contentsOf,
+  coveredDays,
+  coversMore,
+  familiesOf,
+  termsUnchangedSince,
+} from '@tp/worker/pricing';
 
 import type { Totals } from '../contracts/mapping-queries';
 import { contentSpansOf, releaseManifest } from '../releases/content-through';
@@ -41,18 +51,6 @@ export interface ContentWaitMonth {
   readonly totals: Totals;
 }
 
-/**
- * Whether a run created at `createdAt` saw the practice's terms as they are now: the twin of the monitor's
- * termsUnchangedSince() (apps/worker/src/monitor/plan.ts), which @tp/worker/pricing does not export yet. Both read the
- * newest created_at or updated_at of the practice's plan mappings and contract versions, kept by trigger.
- */
-function termsUnchangedSince(practice: string, createdAt: string): string {
-  return `${createdAt} >= coalesce((SELECT max(greatest(x.created_at, x.updated_at))
-                                     FROM (SELECT created_at, updated_at FROM payer_plan_mapping WHERE practice_id = ${practice}
-                                           UNION ALL
-                                           SELECT created_at, updated_at FROM contract_version WHERE practice_id = ${practice}) x), '-infinity')`;
-}
-
 function isContentFailureCode(code: string): code is ContentFailureCode {
   return (CONTENT_FAILURE_CODES as readonly string[]).includes(code);
 }
@@ -72,14 +70,6 @@ function quartersOf(ranges: readonly DateRange[]): string[] {
     }
   }
   return [...labels].sort();
-}
-
-/**
- * Whether release `now` loads more of [from, to] than the failed release did, for a content of the families: the
- * monitor's coversMore() (plan.ts), over the spans this process keeps.
- */
-function coversMore(spansNow: ContentSpans, spansFailed: ContentSpans, families: readonly ContentFamily[], from: string, to: string): boolean {
-  return families.flatMap(contentsOf).some((content) => subtractRanges(coveredDays(spansNow, content, from, to), coveredDays(spansFailed, content, from, to)).length > 0);
 }
 
 /** A family's short name, as Medicare publishes it. */
@@ -158,11 +148,15 @@ export async function monthsWaitingOnContent(scope: PracticeScope<ScopeClient>, 
     }
     const families = familiesOf(row.failure_code);
     const spansFailed = await contentSpansOf(client, row.release_no, row.manifest_sha256);
-    const kind: ContentWaitKind = !row.terms_unchanged
-      ? 'terms_changed'
-      : spansNow !== null && inForce !== row.release_no && coversMore(spansNow, spansFailed, families, row.period_from, row.period_to)
-        ? 'repricing'
-        : 'waiting';
+    // The monitor's own predicate, over the spans this process keeps: the release in force and the failed run's.
+    const repricing =
+      inForce !== null &&
+      spansNow !== null &&
+      inForce !== row.release_no &&
+      (await coversMore(client, { failureCode: row.failure_code, releaseNo: row.release_no }, inForce, { periodFrom: row.period_from, periodTo: row.period_to }, (releaseNo) =>
+        Promise.resolve(releaseNo === inForce ? spansNow : spansFailed),
+      ));
+    const kind: ContentWaitKind = !row.terms_unchanged ? 'terms_changed' : repricing ? 'repricing' : 'waiting';
     months.push({
       periodFrom: row.period_from,
       periodTo: row.period_to,
