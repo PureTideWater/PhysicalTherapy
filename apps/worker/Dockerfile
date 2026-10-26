@@ -2,14 +2,20 @@
 # The worker image: one bundled ESM file (apps/worker/build.ts). Build from the repository root:
 #   docker build -f apps/worker/Dockerfile -t tp-worker .
 
-FROM node:24-slim AS build
-RUN npm install --global pnpm@10.28.0
+# Node 24 on Debian 13 (trixie), by the index digest Dependabot's docker entry updates; both stages, both images.
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS build
 WORKDIR /repo
+# pnpm at the exact version package.json's packageManager names, so no version is written here
+# (tools/check-toolchain refuses one). npm installs it, checking the registry's integrity hash: the base
+# image's corepack would need its signing keys current, and Node 25 and later no longer bundle it.
+COPY package.json ./
+RUN pnpm_version="$(node -p "const m = /^pnpm@(\d+\.\d+\.\d+)(\+sha\d+\.[0-9a-f]+)?$/.exec(require('./package.json').packageManager ?? ''); if (m === null) throw new Error('package.json: packageManager is not pnpm@x.y.z'); m[1]")" \
+ && npm install --global --no-audit --no-fund "pnpm@${pnpm_version}"
 COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/worker..."
 RUN pnpm --filter @tp/worker build
 
-FROM node:24-slim AS runtime
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS runtime
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
