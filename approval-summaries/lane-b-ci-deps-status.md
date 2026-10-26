@@ -13,7 +13,7 @@ Open questions: none.
 | 2026-10-26 00:30 | Started | setup-container printed OK; `gh api user` reads PureTideWater. `claude/build-platform` at 6ddd587; #42 still open (draft); Dependabot #40 and #33 open. |
 | 2026-10-26 00:41 | Licence commit | 0e7776c, alone: `packageManager` pnpm 10.28.0 → 10.34.8; `pnpm install --lockfile-only --fix-lockfile` under 10.34.8 gives `git diff --numstat` **43 0** on `pnpm-lock.yaml`, 27 `libc: [glibc]` and 16 `libc: [musl]` (`grep -c '^ *libc: \['`: 0 at 6ddd587, 43 at 0e7776c); the musl exception leaves `allowlist.json`; `pnpm licenses:check` passes (185 production packages), and `pnpm licenses list --prod --json` lists no linuxmusl package. As the design measured at 49514e8. |
 | 2026-10-26 00:45 | Gates commit | 6eae41a, alone: `minimumReleaseAge: 4320`, `minimumReleaseAgeExclude: []`, `trustPolicy: no-downgrade`, `trustPolicyExclude: [semver@6.3.1]` (F2 (b); CQ2 (a)). A frozen install under 10.34.8 still passes. |
-| 2026-10-26 00:50 | Build | Builders D1 (workflows, pins, release chain), D2 (toolchain, compose, images, capacity tools; no resolution) and D3 (documents, test matrix, synth) from 6eae41a, then an integrator, the draft PR, and two adversarial reviews. |
+| 2026-10-26 00:55 | Build | Workflow wf_5ed84ad8-764 (`workflow-scripts/lane-b-ci-deps-build-wf_5ed84ad8-764.js`): builders D1 (workflows, pins, release chain), D2 (toolchain, compose, images, capacity tools; no resolution) and D3 (documents, test matrix, synth) in worktrees `/home/user/ci-deps-d1..d3` from 6eae41a; then an integrator in `/home/user/ci-deps`, one push and the draft PR; then two adversarial reviews (CI and test infrastructure; security and supply chain) in fresh clones. Progress files in the session scratchpad; a monitor reports stalls. |
 
 ### The plan, and the choices it makes (each the recommended option)
 - **Two phases, because of the release age.** Every commit that changes `pnpm-lock.yaml` or a resolution setting must
@@ -33,7 +33,9 @@ Open questions: none.
 
 ## ci-browser (CI 3 of 4; `co-001/ci-browser`)
 
-Not started. Its re-read (a scout, the design brought current, one reviewer) runs while ci-deps waits for 19:18:50Z.
+| Time (UTC) | Stage | Detail |
+|---|---|---|
+| 2026-10-26 01:00 | Re-read | Workflow wf_90aa53c6-376 (`workflow-scripts/lane-b-ci-browser-reread-wf_90aa53c6-376.js`), beside ci-deps' build (two heavy workflows at most): two scouts (files and code; versions, browsers and runners) against 6ddd587 plus ci-deps' §3.2, a reviser writing §3.3 current with V3, O6, O7 and the browser layout folded in, one adversarial reviewer, then the fold. The result replaces §3.3 in `designs/lane-b-ci.md`. |
 
 ## Proposals outside these PRs
 - `tools/setup-container.sh` pins pnpm 10.28.0 (`:36-37, 72-74`). Once ci-deps merges, it should move to 10.34.8 with
