@@ -36,7 +36,7 @@
     "@tp/ui": "workspace:*",
     "@tp/worker": "workspace:*",
     "aws-jwt-verify": "^5.2.1",
-    "next": "^16.4.1",
+    "next": "^16.4.3",
     "otpauth": "^9.5.2",
     "pg-boss": "^12.38.0",
     "react": "catalog:",
