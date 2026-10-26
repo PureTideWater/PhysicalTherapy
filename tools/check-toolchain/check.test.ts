@@ -559,14 +559,18 @@ describe('the committed lists', () => {
     expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'Dockerfiles', 'lockfile resolutions', 'trust excludes', 'overrides']);
     // packageManager carries the tarball's sha512 the images check (N1); the networked rule holds it to the registry.
     expect(JSON.parse(real.packageJson ?? '{}')).toMatchObject({ packageManager: expect.stringMatching(/^pnpm@\d+\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/) as unknown });
-    // The slip it exists to catch: an override in pnpm-workspace.yaml without its overrides.json entry. The real tree
-    // carries the qs override and its entry; the same tree with the entry dropped fails.
+    // The slip it exists to catch: an override without its overrides.json entry. Whatever overrides the real tree
+    // declares (none, the qs one, or more), each has its entry, and the same tree with the entries dropped fails once
+    // for each; the synthetic case in the overrides block holds the rule even when the real tree declares none.
     const { parse } = await import('yaml');
-    expect((parse(real.workspace ?? '') as { overrides?: Record<string, string> }).overrides).toEqual({ 'typed-rest-client>qs': '6.16.1' });
-    const entries = (JSON.parse(real.overrides ?? '{}') as { entries: { selector: string }[] }).entries;
-    expect(entries.map((entry) => entry.selector)).toEqual(['typed-rest-client>qs']);
-    expect(problems(checkOffline({ ...real, overrides: JSON.stringify({ entries: [] }) }))).toContain(
-      'overrides: the pnpm overrides (pnpm-workspace.yaml, package.json) lists typed-rest-client>qs: 6.16.1, which tools/check-toolchain/overrides.json does not; the two lists are kept equal',
+    const manifest = JSON.parse(real.packageJson ?? '{}') as { resolutions?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } };
+    const workspace = parse(real.workspace ?? '') as { overrides?: Record<string, string> } | null;
+    const declared = Object.entries({ ...manifest.resolutions, ...manifest.pnpm?.overrides, ...workspace?.overrides }).map(([selector, version]) => `${selector}: ${version}`);
+    const entries = (JSON.parse(real.overrides ?? '{}') as { entries: { selector: string; version: string }[] }).entries;
+    expect(entries.map((entry) => `${entry.selector}: ${entry.version}`).sort()).toEqual([...declared].sort());
+    const dropped = problems(checkOffline({ ...real, overrides: JSON.stringify({ entries: [] }) }));
+    expect(dropped.filter((problem) => problem.startsWith('overrides: the pnpm overrides ')).sort()).toEqual(
+      declared.map((pair) => `overrides: the pnpm overrides (pnpm-workspace.yaml, package.json) lists ${pair}, which tools/check-toolchain/overrides.json does not; the two lists are kept equal`).sort(),
     );
   });
 });
