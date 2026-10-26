@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { inflateSync } from 'node:zlib';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { calendarDate } from '../core/dates';
 import { helveticaWidth, writePdf, writeRichPdf } from '../formats/pdf';
@@ -199,6 +199,14 @@ describe('the contract set v2 (MOD-09)', () => {
   const large = contractSetV2Large();
   const manifest = contractSetV2Manifest(committed, large);
   const all = [...committed, ...large];
+  // The committed files and the large tier's facts, rendered once for the tests that read them whole: the large tier
+  // alone is five documents of up to 80 pages, and rendering it in each test outran vitest's 5 s on CI's runner.
+  let v2Files: ReturnType<typeof contractSetV2Files>;
+  let largeFacts: ReturnType<typeof largeContractFacts>;
+  beforeAll(() => {
+    v2Files = contractSetV2Files();
+    largeFacts = largeContractFacts();
+  }, 120_000);
   const truthOf = (id: string) => {
     const found = all.find((item) => item.truth.id === id)?.truth;
     if (found === undefined) {
@@ -326,7 +334,7 @@ describe('the contract set v2 (MOD-09)', () => {
       expect(b).toMatchObject({ twinOf: clean, pageText: fidelity, unfaithfulBecause: fidelity === 'faithful' ? null : 'hidden_text' });
       expect({ ...b, id: a.id, twinOf: null, pageText: a.pageText, unfaithfulBecause: null }).toEqual(a);
     }
-    const holding = [...contractSetV2Files(), ...largeContractFacts().map((file) => ({ path: file.path, bytes: file.data }))].filter((file) => Buffer.from(file.bytes).includes(INJECTION_CANARY)).map((file) => file.path);
+    const holding = [...v2Files, ...largeFacts.map((file) => ({ path: file.path, bytes: file.data }))].filter((file) => Buffer.from(file.bytes).includes(INJECTION_CANARY)).map((file) => file.path);
     expect(holding).toEqual(['contract-set-v2/V11-table/document.pdf', 'contract-set-v2/V13-prose/document.pdf', 'contract-set-v2/V15-scanned/textract.json']);
     expect(contractSetFiles().some((file) => Buffer.from(file.bytes).includes(INJECTION_CANARY))).toBe(false);
     expect(all.some((item) => JSON.stringify(item.truth).includes(INJECTION_CANARY) || JSON.stringify(item.truth).includes(INJECTION_AMOUNT))).toBe(false);
@@ -376,13 +384,13 @@ describe('the contract set v2 (MOD-09)', () => {
     expect(files[0]?.path).toBe('contract-set-v2/set.json');
     expect(JSON.parse(String(files[0]?.bytes))).toEqual(manifest);
     expect(contractSetV2Files().map((file) => sha256(file.bytes))).toEqual(files.map((file) => sha256(file.bytes)));
-  });
+  }, 60_000);
 
   it('is the MOD-09 case: its committed files, the large tier as generated entries, and an ignored generated directory', () => {
     const generated = findCase('MOD-09')?.generate();
     expect(generated?.expected.noFileReason).toBeNull();
-    expect(generated?.expected.files.map((file) => file.path)).toEqual(contractSetV2Files().map((file) => file.path));
-    expect(generated?.expected.generated.map((file) => [file.path, file.sha256, file.bytes])).toEqual(largeContractFacts().map((file) => [file.path, file.sha256, file.bytes]));
+    expect(generated?.expected.files.map((file) => file.path)).toEqual(v2Files.map((file) => file.path));
+    expect(generated?.expected.generated.map((file) => [file.path, file.sha256, file.bytes])).toEqual(largeFacts.map((file) => [file.path, file.sha256, file.bytes]));
     expect(generated?.expected.generated.every((file) => file.oracle === undefined)).toBe(true);
     expect(generated?.files.find((file) => file.path === 'MOD-09/.gitignore')?.bytes).toEqual(new Uint8Array(Buffer.from('generated/\n')));
   });
@@ -417,7 +425,7 @@ describe('the contract set v2 (MOD-09)', () => {
     const committedExpected = path.join(syntheticRoot, 'MOD-09/expected.json');
     expect(existsSync(committedExpected)).toBe(true);
     const pins = (JSON.parse(readFileSync(committedExpected, 'utf8')) as { generated: { path: string; sha256: string }[] }).generated.map((file) => [file.path, file.sha256]);
-    expect(pins).toEqual(largeContractFacts().map((file) => [file.path, file.sha256]));
+    expect(pins).toEqual(largeFacts.map((file) => [file.path, file.sha256]));
     expect(readFileSync(path.join(syntheticRoot, 'MOD-09/.gitignore'), 'utf8')).toBe('generated/\n');
   });
 });
