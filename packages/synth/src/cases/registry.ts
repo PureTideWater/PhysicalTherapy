@@ -12,7 +12,7 @@ import * as par from './par';
 import * as pricing from './pricing';
 import { VARIANTS } from './variants';
 import * as workflow from './workflow';
-import { addContractSet, addNarrativeSet } from '../eval/cases';
+import { addContractSet, addContractSetV2, addNarrativeSet } from '../eval/cases';
 
 type Build = (b: CaseBuilder) => void;
 
@@ -184,6 +184,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/unattested-submission-routes.db.test.ts',
     'apps/web/src/lib/packets/unattested.test.ts',
     'apps/web/e2e/unattested.spec.ts',
+  ]),
+  // Lane B (co-001/materiality-cents): settings stored in cents are shown and entered in dollars, and a form saved unchanged keeps them.
+  'CAS-38': none(8, 'A practice setting read and shown: no file.', ['apps/web/src/components/settings/defaults.test.tsx', 'apps/web/src/lib/routes/console-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-39': none(8, 'A practice setting read and saved: no file.', [
+    'apps/web/src/lib/money-input.test.ts',
+    'apps/web/src/lib/routes/defaults-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
   ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
@@ -447,6 +455,22 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/models-routes.db.test.ts',
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/models.spec.ts',
+  ]),
+  // The model evaluation gate and per-feature serving (combined audit #84; docs/adr/0070 Parts 1 and 2).
+  'MOD-07': none(10, 'The gate’s counting rule, scored on the MOD-09 set and on permitted examples; no file of its own.', [
+    'packages/model-gateway/eval/score.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'packages/model-gateway/src/permitted.test.ts',
+    'apps/worker/src/models/permitted.db.test.ts',
+  ]),
+  'MOD-08': none(10, 'Faults injected into the MOD-09 set’s reference answers.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/contract-terms.test.ts']),
+  'MOD-09': { completesIn: 10, build: addContractSetV2, assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/synth/src/eval/eval.test.ts'] },
+  'MOD-10': none(10, 'The twins and decoys are cases of the MOD-09 set.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/eval/score.test.ts']),
+  'MOD-11': none(10, 'Serving is read from eval/baseline.json and eval/floors.json; no file.', [
+    'packages/model-gateway/src/config.test.ts',
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),

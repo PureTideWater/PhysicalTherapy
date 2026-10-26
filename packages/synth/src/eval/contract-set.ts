@@ -16,6 +16,12 @@
  * to case, from a seeded generator, so the set is the same on every run. Distracting figures (filing
  * and dispute windows, section numbers, days to pay) sit beside the terms as they do in a contract.
  * Nothing here is a real payer, provider or rate.
+ *
+ * Each truth is written in format /2 (docs/adr/0070 Part 1): tier small, page text faithful (every
+ * text PDF and CSV is read as written, and every scan's recorded answer is error-free), no pair or
+ * twin, the amended rows' original and amendment records named as expected conflicts, and each record's
+ * role. The documents and recordings are the bytes they were under format /1; the set v2 generator
+ * (contract-set-v2.ts) reuses this file's terms, writers and layout.
  */
 import { type Cents, centsToString, formatCents } from '@tp/money';
 
@@ -25,12 +31,13 @@ import { Random } from '../core/random';
 import { type Exhibit, exhibitPageLines, exhibitPdf } from '../formats/exhibit';
 import { scannedPdf, textractRecording } from '../formats/scan';
 import {
-  CONTRACT_SET_FORMAT,
+  CONTRACT_SET_V1_FORMAT,
   CONTRACT_TRUTH_FORMAT,
   type ContractLayout,
-  type ContractSetCase,
-  type ContractSetManifest,
+  type ContractSetV1Case,
+  type ContractSetV1Manifest,
   type ContractTruth,
+  type ContractTruthRecord,
   type TruthField,
   type TruthFieldValue,
   type TruthFlags,
@@ -41,8 +48,8 @@ export const CONTRACT_SET_SIZE = 40;
 /** The directory under the MOD-01 case that holds the set. */
 export const CONTRACT_SET_DIR = 'contract-set';
 
-type Method = 'FIXED_SCHEDULE' | 'PERCENT_OF_MEDICARE' | 'LESSER_OF' | 'PER_VISIT';
-type Rounding = 'HALF_UP_CENT' | 'HALF_EVEN_CENT' | 'TRUNCATE';
+export type Method = 'FIXED_SCHEDULE' | 'PERCENT_OF_MEDICARE' | 'LESSER_OF' | 'PER_VISIT';
+export type Rounding = 'HALF_UP_CENT' | 'HALF_EVEN_CENT' | 'TRUNCATE';
 
 /** Page text as evidence compares it (the same normalization as @tp/contracts normalizePageText). */
 export function normalizeText(text: string): string {
@@ -71,7 +78,7 @@ export function writtenDate(date: CalendarDate, style: number): string {
 }
 
 /** An amount written with a dollar sign and cents, without the sign, or (for whole dollars) as dollars only. */
-function writtenAmount(amount: Cents, style: number): string {
+export function writtenAmount(amount: Cents, style: number): string {
   const text = formatCents(amount);
   if (style === 2 && text.endsWith('.00')) {
     return `$${text.slice(0, -3)}`;
@@ -79,12 +86,12 @@ function writtenAmount(amount: Cents, style: number): string {
   return style === 1 ? text : `$${text}`;
 }
 
-const writtenPercent = (percent: string, style: number) => (style === 1 ? `${percent} percent` : `${percent}%`);
+export const writtenPercent = (percent: string, style: number) => (style === 1 ? `${percent} percent` : `${percent}%`);
 
-const listed = (items: readonly string[]) => (items.length === 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`);
+export const listed = (items: readonly string[]) => (items.length === 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`);
 
 /** Wraps a sentence at word boundaries into lines of at most `width` characters. */
-function wrap(sentence: string, width = 88): string[] {
+export function wrap(sentence: string, width = 88): string[] {
   const lines: string[] = [];
   let current = '';
   for (const word of sentence.split(' ')) {
@@ -104,7 +111,7 @@ function wrap(sentence: string, width = 88): string[] {
 // ---------------------------------------------------------------------------------------------------
 // What each case states
 
-interface RateRow {
+export interface RateRow {
   readonly codes: readonly string[];
   readonly modifiers: readonly string[];
   readonly places: readonly string[];
@@ -114,7 +121,7 @@ interface RateRow {
   readonly year: number | null;
 }
 
-interface CaseSpec {
+export interface CaseSpec {
   readonly id: string;
   readonly layout: ContractLayout;
   readonly drawnAs: 'table' | 'prose' | 'csv';
@@ -135,16 +142,16 @@ interface CaseSpec {
   readonly amendment: { readonly from: CalendarDate; readonly rows: readonly RateRow[] } | null;
 }
 
-const TIMED_CODES = ['97110', '97112', '97116', '97140', '97150', '97530', '97535', '97542', '97750', '97760', '97763', '97032', '97033', '97035', 'G0283'];
-const EVALUATION_CODES = ['97161', '97162', '97163', '97164', '97165', '97166', '97167', '97168'];
-const MODIFIERS = ['GP', 'GO', 'KX', '59', 'CQ', 'CO'];
-const PLACES = ['11', '22', '12', '19'];
-const PERCENTAGES = ['100', '105', '110', '112.5', '115', '120', '125', '130', '87.5', '95'];
-const STARTS: readonly CalendarDate[] = [calendarDate(2026, 1, 1), calendarDate(2026, 2, 1), calendarDate(2026, 3, 1), calendarDate(2026, 4, 1), calendarDate(2025, 7, 1), calendarDate(2026, 1, 15)];
-const ENDS: readonly (CalendarDate | null)[] = [null, calendarDate(2026, 12, 31), calendarDate(2027, 6, 30), null, calendarDate(2027, 12, 31)];
-const ROUNDINGS: readonly (Rounding | null)[] = [null, 'HALF_UP_CENT', 'HALF_EVEN_CENT', 'TRUNCATE', null];
+export const TIMED_CODES = ['97110', '97112', '97116', '97140', '97150', '97530', '97535', '97542', '97750', '97760', '97763', '97032', '97033', '97035', 'G0283'];
+export const EVALUATION_CODES = ['97161', '97162', '97163', '97164', '97165', '97166', '97167', '97168'];
+export const MODIFIERS = ['GP', 'GO', 'KX', '59', 'CQ', 'CO'];
+export const PLACES = ['11', '22', '12', '19'];
+export const PERCENTAGES = ['100', '105', '110', '112.5', '115', '120', '125', '130', '87.5', '95'];
+export const STARTS: readonly CalendarDate[] = [calendarDate(2026, 1, 1), calendarDate(2026, 2, 1), calendarDate(2026, 3, 1), calendarDate(2026, 4, 1), calendarDate(2025, 7, 1), calendarDate(2026, 1, 15)];
+export const ENDS: readonly (CalendarDate | null)[] = [null, calendarDate(2026, 12, 31), calendarDate(2027, 6, 30), null, calendarDate(2027, 12, 31)];
+export const ROUNDINGS: readonly (Rounding | null)[] = [null, 'HALF_UP_CENT', 'HALF_EVEN_CENT', 'TRUNCATE', null];
 
-function draw<T>(random: Random, items: readonly T[], count: number): T[] {
+export function draw<T>(random: Random, items: readonly T[], count: number): T[] {
   const pool = [...items];
   const out: T[] = [];
   while (out.length < count && pool.length > 0) {
@@ -201,7 +208,7 @@ function rowsFor(random: Random, method: Method, lesserOf: CaseSpec['lesserOf'],
   }));
 }
 
-function flagsFor(random: Random): TruthFlags | null {
+export function flagsFor(random: Random): TruthFlags | null {
   if (!random.chance(35)) {
     return null;
   }
@@ -255,13 +262,13 @@ export function contractSetSpecs(): CaseSpec[] {
 // ---------------------------------------------------------------------------------------------------
 // Writing a case out, and its truth
 
-const ROUNDING_TEXT: Readonly<Record<Rounding, string>> = {
+export const ROUNDING_TEXT: Readonly<Record<Rounding, string>> = {
   HALF_UP_CENT: 'All payment amounts are rounded half up to the nearest cent.',
   HALF_EVEN_CENT: 'All payment amounts are rounded to the nearest cent, an exact half going to the even cent.',
   TRUNCATE: 'All payment amounts are truncated to the whole cent.',
 };
 
-function flagsText(flags: TruthFlags): string {
+export function flagsText(flags: TruthFlags): string {
   const applies = (on: boolean, what: string, plural = false) => `${what} ${on ? (plural ? 'apply' : 'applies') : plural ? 'do not apply' : 'does not apply'}`;
   return [
     'Adjustments: the',
@@ -273,7 +280,7 @@ function flagsText(flags: TruthFlags): string {
   ].join(' ');
 }
 
-function methodClause(spec: CaseSpec): string {
+export function methodClause(spec: CaseSpec): string {
   if (spec.kind === 'exhibit') {
     return spec.method === 'PERCENT_OF_MEDICARE' ? 'Rates below are percentages of the Medicare Physician Fee Schedule.' : 'Rates below are fixed amounts per unit of service.';
   }
@@ -292,7 +299,7 @@ function methodClause(spec: CaseSpec): string {
   }
 }
 
-function rateText(spec: CaseSpec, row: RateRow): string {
+export function rateText(spec: CaseSpec, row: RateRow): string {
   if (row.amount !== null) {
     return `${writtenAmount(row.amount, spec.amountStyle)} ${spec.method === 'PER_VISIT' ? 'per visit' : 'per unit'}`;
   }
@@ -301,7 +308,7 @@ function rateText(spec: CaseSpec, row: RateRow): string {
 }
 
 /** A table row: code, modifiers, place and rate in columns two or more spaces apart. */
-function tableRow(spec: CaseSpec, row: RateRow): string {
+export function tableRow(spec: CaseSpec, row: RateRow): string {
   const codes = row.codes.join(', ');
   const modifiers = row.modifiers.length === 0 ? '-' : row.modifiers.join(' ');
   const places = row.places.length === 0 ? '-' : row.places.join(' ');
@@ -309,7 +316,7 @@ function tableRow(spec: CaseSpec, row: RateRow): string {
 }
 
 /** A sentence of prose that states one row's rate. */
-function proseSentence(spec: CaseSpec, row: RateRow): string {
+export function proseSentence(spec: CaseSpec, row: RateRow): string {
   const modifiers = row.modifiers.length === 0 ? '' : ` billed with modifier${row.modifiers.length > 1 ? 's' : ''} ${listed(row.modifiers)}`;
   const places = row.places.length === 0 ? '' : ` in place of service ${listed(row.places)}`;
   const codes = `CPT ${listed(row.codes)}`;
@@ -328,13 +335,13 @@ function proseSentence(spec: CaseSpec, row: RateRow): string {
   }
 }
 
-interface Placed {
+export interface Placed {
   readonly page: number;
   readonly quote: string;
 }
 
 /** A document being laid out: pages of lines, and where each quoted sentence or row was put. */
-class Layout {
+export class Layout {
   readonly pages: { heading: string; lines: string[] }[] = [];
 
   page(heading: string): void {
@@ -362,20 +369,20 @@ class Layout {
   }
 }
 
-interface Written {
-  readonly records: TruthRecord[];
+export interface Written {
+  readonly records: ContractTruthRecord[];
   readonly exhibit: Exhibit | null;
   readonly csv: string | null;
   /** Each page's text as evidence compares it. */
   readonly pageTexts: readonly string[];
 }
 
-function field(value: TruthFieldValue['value'], written: TruthFieldValue['written'], at: Placed): TruthFieldValue {
+export function field(value: TruthFieldValue['value'], written: TruthFieldValue['written'], at: Placed): TruthFieldValue {
   return { value, written, page: at.page, quote: at.quote };
 }
 
 /** The fields one row's record states, given where its row, its method clause and the shared terms were written. */
-function recordFields(
+export function recordFields(
   spec: CaseSpec,
   row: RateRow,
   at: { readonly row: Placed; readonly method: Placed; readonly from: Placed | null; readonly to: Placed | null; readonly rounding: Placed | null; readonly flags: Placed | null },
@@ -419,7 +426,7 @@ function recordFields(
   return fields;
 }
 
-const label = (row: RateRow, where: string) => `${where}: ${row.codes.join(', ')}${row.modifiers.length > 0 ? ` ${row.modifiers.join(' ')}` : ''}${row.places.length > 0 ? ` POS ${row.places.join(' ')}` : ''}`;
+export const label = (row: RateRow, where: string) => `${where}: ${row.codes.join(', ')}${row.modifiers.length > 0 ? ` ${row.modifiers.join(' ')}` : ''}${row.places.length > 0 ? ` POS ${row.places.join(' ')}` : ''}`;
 
 function writePdfCase(spec: CaseSpec, random: Random): Written {
   const layout = new Layout();
@@ -455,7 +462,7 @@ function writePdfCase(spec: CaseSpec, random: Random): Written {
     from = layout.sentence(`Fee schedule effective ${fromWritten}.`);
     method = layout.sentence(methodClause(spec));
   }
-  const records: TruthRecord[] = [];
+  const records: ContractTruthRecord[] = [];
   const shared = { method, from, to, rounding, flags };
   if (spec.drawnAs === 'prose') {
     layout.page('Article 3. Rates');
@@ -463,7 +470,7 @@ function writePdfCase(spec: CaseSpec, random: Random): Written {
       const at = layout.sentence(proseSentence(spec, row));
       // In prose, the sentence that states a rate also states its method.
       const own = spec.method === 'LESSER_OF' || spec.method === 'PER_VISIT' ? at : method;
-      records.push({ label: label(row, 'Article 3'), fields: recordFields(spec, row, { ...shared, row: at, method: own }, spec.from, fromWritten) });
+      records.push({ label: label(row, 'Article 3'), role: 'term', fields: recordFields(spec, row, { ...shared, row: at, method: own }, spec.from, fromWritten) });
     }
   } else {
     if (spec.kind === 'contract') {
@@ -472,7 +479,7 @@ function writePdfCase(spec: CaseSpec, random: Random): Written {
     layout.line(`${'Codes'.padEnd(20)}  ${'Modifier'.padEnd(8)}  ${'POS'.padEnd(5)}  ${spec.amountStyle === 1 ? 'Rate (USD)' : 'Rate'}`);
     for (const row of spec.rows) {
       const at = layout.line(tableRow(spec, row));
-      records.push({ label: label(row, spec.kind === 'contract' ? 'Exhibit A' : 'Exhibit'), fields: recordFields(spec, row, { ...shared, row: at }, spec.from, fromWritten) });
+      records.push({ label: label(row, spec.kind === 'contract' ? 'Exhibit A' : 'Exhibit'), role: 'term', fields: recordFields(spec, row, { ...shared, row: at }, spec.from, fromWritten) });
     }
   }
   if (spec.amendment !== null) {
@@ -481,7 +488,7 @@ function writePdfCase(spec: CaseSpec, random: Random): Written {
     const amendFrom = layout.sentence(`Effective ${amendWritten}, the rates below replace the rates stated earlier for the same codes.`);
     for (const row of spec.amendment.rows) {
       const at = spec.drawnAs === 'prose' ? layout.sentence(proseSentence(spec, row)) : layout.line(tableRow(spec, row));
-      records.push({ label: label(row, 'Amendment 1'), fields: recordFields(spec, row, { ...shared, row: at, from: amendFrom }, spec.amendment.from, amendWritten) });
+      records.push({ label: label(row, 'Amendment 1'), role: 'amendment', fields: recordFields(spec, row, { ...shared, row: at, from: amendFrom }, spec.amendment.from, amendWritten) });
     }
   }
   const exhibit: Exhibit = { title: `SYNTHETIC ${spec.kind === 'contract' ? 'agreement' : 'fee schedule'} ${spec.id}`, pages: layout.pages };
@@ -492,7 +499,7 @@ function writePdfCase(spec: CaseSpec, random: Random): Written {
 const csvField = (text: string) => (/[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text);
 
 /** A CSV exhibit: a heading block, then one row per rate; the page reader joins a row's fields with tabs. */
-function writeCsvCase(spec: CaseSpec): Written {
+export function writeCsvCase(spec: CaseSpec): Written {
   const fromWritten = writtenDate(spec.from, spec.dateStyle);
   const rows: string[][] = [
     ['SYNTHETIC CONTRACT EXHIBIT - INVENTED TERMS - NOT A REAL AGREEMENT'],
@@ -504,20 +511,20 @@ function writeCsvCase(spec: CaseSpec): Written {
   const text = (fields: readonly string[]) => normalizeText(fields.filter((item) => item.trim() !== '').join('\t'));
   const from: Placed = { page: 1, quote: text(rows[2] ?? []) };
   const method: Placed = { page: 1, quote: text(rows[3] ?? []) };
-  const records: TruthRecord[] = [];
+  const records: ContractTruthRecord[] = [];
   for (const row of spec.rows) {
     const basis = row.amount === null ? (row.year === null ? 'of the Medicare fee schedule in effect' : `of the ${String(row.year)} Medicare fee schedule`) : 'per unit';
     const rate = row.amount === null ? writtenPercent(row.percentage ?? '100', spec.percentStyle) : writtenAmount(row.amount, spec.amountStyle);
     const fields = [row.codes.join(' '), row.modifiers.join(' '), row.places.join(' '), rate, basis];
     rows.push(fields);
-    records.push({ label: label(row, 'CSV row'), fields: recordFields(spec, row, { method, from, to: null, rounding: null, flags: null, row: { page: 1, quote: text(fields) } }, spec.from, fromWritten) });
+    records.push({ label: label(row, 'CSV row'), role: 'term', fields: recordFields(spec, row, { method, from, to: null, rounding: null, flags: null, row: { page: 1, quote: text(fields) } }, spec.from, fromWritten) });
   }
   const csv = `${rows.map((fields) => fields.map(csvField).join(',')).join('\r\n')}\r\n`;
   return { records, exhibit: null, csv, pageTexts: [normalizeText(rows.map((fields) => fields.filter((item) => item.trim() !== '').join('\t')).join('\n'))] };
 }
 
 /** Throws unless every field's quote is on its page and every written value is in its quote: the set's own MOD-01 check. */
-function checkTruth(id: string, records: readonly TruthRecord[], pageTexts: readonly string[]): void {
+export function checkTruth(id: string, records: readonly TruthRecord[], pageTexts: readonly string[]): void {
   for (const record of records) {
     for (const [name, value] of Object.entries(record.fields)) {
       const page = pageTexts[value.page - 1];
@@ -546,10 +553,21 @@ export function fieldCount(records: readonly TruthRecord[]): number {
   return records.reduce((sum, record) => sum + Object.keys(record.fields).length, 0);
 }
 
+/**
+ * The expected conflicts of a case: each amended row's original record (the first rows, in order) and
+ * the amendment record that replaces its rate from a later date over the same scope. Both are records
+ * the document states; nothing in it says the original stops, so both are proposed and each is flagged
+ * against the other for the specialist.
+ */
+export function amendmentConflicts(records: readonly ContractTruthRecord[]): [number, number][] {
+  const terms = records.filter((record) => record.role === 'term').length;
+  return records.flatMap((record, index): [number, number][] => (record.role === 'amendment' ? [[index - terms, index]] : []));
+}
+
 /** Every file of the set, and the manifest that lists its cases. */
 export function contractSetFiles(): ContractSetFile[] {
   const files: ContractSetFile[] = [];
-  const cases: ContractSetCase[] = [];
+  const cases: ContractSetV1Case[] = [];
   for (const spec of contractSetSpecs()) {
     const random = new Random(`tp-synth/MOD-01/${spec.id}/layout`);
     const written = spec.drawnAs === 'csv' ? writeCsvCase(spec) : writePdfCase(spec, random);
@@ -568,6 +586,12 @@ export function contractSetFiles(): ContractSetFile[] {
       contentType: spec.drawnAs === 'csv' ? 'text/csv' : 'application/pdf',
       scan: scanned ? 'textract.json' : null,
       pages: written.pageTexts.length,
+      tier: 'small',
+      pageText: 'faithful',
+      unfaithfulBecause: null,
+      pairOf: null,
+      twinOf: null,
+      conflicts: amendmentConflicts(written.records),
       records: written.records,
     };
     if (written.csv !== null) {
@@ -584,8 +608,8 @@ export function contractSetFiles(): ContractSetFile[] {
     files.push({ path: `${dir}/truth.json`, bytes: prettyJson(truth), kind: 'json', description: `${spec.id}: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth).` });
     cases.push({ id: spec.id, dir, layout: spec.layout, kind: spec.kind, records: written.records.length, fields: fieldCount(written.records) });
   }
-  const manifest: ContractSetManifest = {
-    format: CONTRACT_SET_FORMAT,
+  const manifest: ContractSetV1Manifest = {
+    format: CONTRACT_SET_V1_FORMAT,
     synthetic: true,
     note: 'SYNTHETIC: 40 invented contracts and exhibits for the model gateway evaluation (PRD 14). No real payer, provider or rate.',
     cases,
