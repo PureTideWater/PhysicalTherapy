@@ -855,3 +855,8 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **What they do:** filter by area, role, state, theme and the checker's verdict; open a shot full size with its route, role and the checker's note. `#shot-id` links straight to a shot.
   - **Images:** lossless WebP, 42.7 MB in all against 155 MB of PNG. The builder is `tools/lane-b-screen-gallery/`.
   - **Next:** once the synthesis lands, the findings that cite each shot are added to both galleries. The next re-tour compares against these files.
+- **2026-10-26 ~05:20 UTC: the checklist PR `co-001/ux-brand-reviewer` started, run from this session while the synthesis works.**
+  - **Workflow wf_f49e6c03-028:** a designer, then one adversarial reviewer, then a reviser, then one builder. Worktree `/home/user/ux-brand-reviewer`, cut from 4d99df8.
+  - **Inputs:** the brand's rules and the 335 raw findings, or the synthesis if it lands first. The checklist targets recurring defect classes, not single bugs.
+  - **Q4 applies:** the `model:` key follows the other reviewer files, and the suite is documentation-only.
+  - **Next:** the draft PR, two adversarial reviews (brand and copy; consistency with the other reviewer files and the brief's "Then"), the fix round with the documentation-only suite, a fresh-clone verification reading CI, then the merge.
