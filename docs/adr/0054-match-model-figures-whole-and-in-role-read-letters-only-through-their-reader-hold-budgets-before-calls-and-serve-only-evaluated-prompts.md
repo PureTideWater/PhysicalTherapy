@@ -1,6 +1,8 @@
 # 0054. Match model figures whole and in their role, read letters only through their reader, hold budgets before calls, and serve only evaluated prompts
 
-- **Status:** accepted; the real-model gate still waits on model access (see Consequences)
+- **Status:** accepted; the real-model gate still waits on model access (see Consequences); amended 2026-10-26 by
+  [0070](0070-gate-models-on-wrong-but-verified-fields-and-people-set-floors-serve-each-model-feature-on-its-own-evaluation-and-check-contracts-against-the-practices-records-before-the-model.md), Part 1: the permitted run's report and comparison, and Part 2: production serves each model feature
+  on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Purposes and their verifiers; PHI minimization; Provider and data path; Operational limits;
@@ -214,3 +216,50 @@ and the screen that would call it.
   closes. Until the first of these is committed, production refuses the real providers.
 - The permitted run spends from each practice's daily budget like any call. Run it outside working hours, or raise the
   practice's budget for the run.
+
+## Amendment (`co-001/model-eval-gate`, 2026-10-26): the permitted run's report, and serving each feature on its own evaluation
+
+Combined audit #84, adopted by the founder with the whole audit on 2026-10-20, changes two of the decisions above
+(docs/adr/0070, Parts 1 and 2, give them in full). The text above stays as it was decided; where it differs, this
+amendment holds.
+
+**Part 1: the permitted run** ("The permitted examples are evaluated inside the PHI boundary" above).
+
+- The report is `tp-model-eval-permitted/2`. Each field is tallied as the synthetic gate tallies it (`tp`, `wrong`,
+  `extra`, `rejected`, `rejected_right`, `rejected_extra`, `missed`, through `src/tally.ts`), so a wrong value the
+  verifier passed is counted apart from a rejection; precision and recall are derived from those counts as before. It
+  still never holds a document's text, a quote or a figure: counts, problem codes and the sorted example IDs.
+- Each example is scored against the final records cited from its own document (an example written before this
+  change is scored on all its records and counted apart), never against another document's records in the version.
+- "An example the run could not score ... counts as proposing nothing" above changes for a refusal: an example whose
+  call was refused is counted under `refused`, by its code, apart from the misses, and is not tallied; a rise in
+  refusals fails the comparison on its own (`refused_rose`). The other cases still count as proposing nothing.
+- With `--against`, the run exits 1 also when the two reports' example IDs differ (`examples_changed`; equal counts
+  of different examples no longer pass as the same), when wrong but verified rises overall or on any field
+  (`wrong_verified_rose`). An earlier report of format `/1` (`earlier_report_format`), or a file that is not a
+  permitted-run report, is refused before any call is made, with exit 2: run the earlier side again on the current
+  code.
+- A call the gateway refuses because the feature, or the variant an example asks for, is off or not evaluable is a
+  refusal (`refused:not_evaluated`, `refused:kill_switch`, `refused:feature_off`), not a miss; `eval record-permitted`
+  (Part 2) refuses to record a run holding one, or a failed call, since that run did not measure the model.
+
+**Part 2: production serves each feature on its own evaluation** ("The gate holds the prompt's content, and production
+serves only what the gate recorded" above).
+
+- "In production, `readGatewayConfig` refuses a real provider until `eval/baseline.json` holds an entry for every
+  current prompt version ... The refusal works like unconfirmed prices: every model feature is off" becomes: in
+  production on a real provider, each purpose, and each contract variant, is served only when its own current prompt
+  version, content hash, model and variant have an entry that parses under the strict baseline schema, every recall
+  and precision floor of `eval/floors.json` is set and met by its counts, each model it pins has a confirmed price, and
+  (for contracts) the permitted run's record is in the entry. Anything else turns **that feature** off
+  (`ModelFeatureOffError('not_evaluated')`, hand entry), never the whole provider. The gateway computes what it serves
+  from the committed files itself; no caller can hand it a wider set. `readGatewayConfig` still throws when nothing is
+  served, so the screens' and the worker's handling of that case is unchanged.
+- Evidence requests and the denial-letter reader have no synthetic set, so a real provider never serves them in
+  production until each has one.
+- A new prompt version or model reaches users in two steps: the synthetic record (`eval --provider configured
+  --record`) makes the feature evaluable only, and `evaluate-permitted --against` inside the PHI boundary, then `eval
+  record-permitted`, serves it (`docs/runbooks/model-evaluation.md`).
+- `assertEvaluated`, `unevaluatedModels`, `EVALUATED_PURPOSES`, `MissingEvaluation`, `RECORDED_EVALUATIONS`,
+  `RecordedEvaluation` and `assertPricesConfirmed` are removed; serving is `servingDecisions` in `src/evaluated.ts`,
+  and an unconfirmed price turns off only the features whose models it prices (`price_unconfirmed`).

@@ -1,0 +1,185 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V14",
+  "layout": "scanned",
+  "drawnAs": "table",
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": "textract.json",
+  "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Exhibit A: 97533 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97533"],"written":["97533"],"page":3,"quote":"97533 - 19 $147.09 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":3,"quote":"97533 - 19 $147.09 per unit"},
+        "amount": {"value":"14709","written":"$147.09","page":3,"quote":"97533 - 19 $147.09 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97024 POS 11",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97024"],"written":["97024"],"page":3,"quote":"97024 - 11 $83.15 per unit"},
+        "places_of_service": {"value":["11"],"written":["11"],"page":3,"quote":"97024 - 11 $83.15 per unit"},
+        "amount": {"value":"8315","written":"$83.15","page":3,"quote":"97024 - 11 $83.15 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97129 CQ POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97129"],"written":["97129"],"page":3,"quote":"97129 CQ 12 $74.36 per unit"},
+        "modifiers": {"value":["CQ"],"written":["CQ"],"page":3,"quote":"97129 CQ 12 $74.36 per unit"},
+        "places_of_service": {"value":["12"],"written":["12"],"page":3,"quote":"97129 CQ 12 $74.36 per unit"},
+        "amount": {"value":"7436","written":"$74.36","page":3,"quote":"97129 CQ 12 $74.36 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97755",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97755"],"written":["97755"],"page":3,"quote":"97755 - - $113.91 per unit"},
+        "amount": {"value":"11391","written":"$113.91","page":3,"quote":"97755 - - $113.91 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92606",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["92606"],"written":["92606"],"page":3,"quote":"92606 - - $107.32 per unit"},
+        "amount": {"value":"10732","written":"$107.32","page":3,"quote":"92606 - - $107.32 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97036 CO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97036"],"written":["97036"],"page":3,"quote":"97036 CO - $49.78 per unit"},
+        "modifiers": {"value":["CO"],"written":["CO"],"page":3,"quote":"97036 CO - $49.78 per unit"},
+        "amount": {"value":"4978","written":"$49.78","page":3,"quote":"97036 CO - $49.78 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97804",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97804"],"written":["97804"],"page":3,"quote":"97804 - - $56.93 per unit"},
+        "amount": {"value":"5693","written":"$56.93","page":3,"quote":"97804 - - $56.93 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97530",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97530"],"written":["97530"],"page":3,"quote":"97530 - - $50.24 per unit"},
+        "amount": {"value":"5024","written":"$50.24","page":3,"quote":"97530 - - $50.24 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "January 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective January 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

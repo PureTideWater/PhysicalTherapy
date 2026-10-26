@@ -1,0 +1,17 @@
+{
+  "case": "DBF-01",
+  "module": "DBF",
+  "title": "Function files of a freshly migrated database",
+  "assertion": "Regenerated exactly, no file missing, extra or different, under any search_path, DateStyle, IntervalStyle, TimeZone, identifier quoting, float digits and bytea output of the connection; a stray file fails `--check`",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["packages/db/src/domain-model/function-files.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The function files are generated from a scratch database the drift file migrates; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

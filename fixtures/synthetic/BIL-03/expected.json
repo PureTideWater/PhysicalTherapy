@@ -1,0 +1,21 @@
+{
+  "case": "BIL-03",
+  "module": "BIL",
+  "title": "The page says the bank account is preferred",
+  "assertion": "The Payment method card, with Stripe and with the simulator, leads its description with the bank account; with nothing on file it says \"A bank account (ACH) is preferred for annual plans and audits.\"; with a card on file it says that and \"A new payment method replaces the one on file.\"; with a bank account on file it says only the second; a card's brand reads as a person reads it; the simulator lists its bank form before its card form, each with a request key of its own; the page shows the Payment method card before the Plan card, and with nothing on file the Plan card shows the prices and asks for a method instead of offering a plan; the practice onboarding step reads \"Add a payment method and choose a plan\"",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": [
+    "apps/web/src/components/billing/billing.test.tsx",
+    "apps/web/e2e/billing.spec.ts",
+    "apps/web/e2e/onboarding.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The Payment method card is rendered from props the test passes, and the page from a synthetic organization on the local simulator; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

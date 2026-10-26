@@ -30,9 +30,9 @@ import { opaqueId } from './schemas';
  * billing, and Internal console, Organizations and practices: billing status; docs/adr/0050):
  *
  * - Settings > Billing (/settings/billing): the organizations the person manages billing for, and each one's
- *   page (/settings/billing/<organization>): its plan, its payment method (ACH or card, collected by Stripe
- *   Elements, or by the local simulator's form in development), its invoices, its standing and any
- *   suspension. Organization routes: the organization's administrator (organization.billing), checked here
+ *   page (/settings/billing/<organization>): its payment method (a bank account by ACH, preferred and shown
+ *   first, or a card, collected by Stripe Elements, or by the local simulator's form in development;
+ *   docs/adr/0073), its plan, its invoices, its standing and any suspension. Organization routes: the organization's administrator (organization.billing), checked here
  *   and again by the database; no practice is in scope, so nothing here can show PHI.
  * - The webhook (/api/billing/webhook): public, verified by Stripe's signature, recorded once by event ID.
  * - The console's billing status per organization (/console/billing), and an audit invoice issued from it

@@ -6,6 +6,11 @@ export function utc(date: Date | string | null | undefined): string {
   return `${new Date(date).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
+/** A moment to the second, UTC: what tells two runs of one minute apart in a run's name. */
+export function utcSeconds(date: Date | string): string {
+  return `${new Date(date).toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+}
+
 /** A calendar date, UTC. */
 export function utcDate(date: Date | string): string {
   return new Date(date).toISOString().slice(0, 10);

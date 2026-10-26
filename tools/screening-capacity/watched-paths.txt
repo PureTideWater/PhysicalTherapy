@@ -341,6 +341,7 @@ packages/ledger/src/templates.ts
 packages/ledger/src/totals.ts
 packages/model-gateway/config/models.json
 packages/model-gateway/eval/baseline.json
+packages/model-gateway/eval/floors.json
 packages/model-gateway/prompts/draft-packet-narrative/v1/prompt.json
 packages/model-gateway/prompts/draft-packet-narrative/v1/schema.json
 packages/model-gateway/prompts/propose-contract-terms/v1/prompt.json
@@ -349,11 +350,13 @@ packages/model-gateway/prompts/read-denial-letter/v1/prompt.json
 packages/model-gateway/prompts/read-denial-letter/v1/schema.json
 packages/model-gateway/prompts/suggest-evidence-requests/v1/prompt.json
 packages/model-gateway/prompts/suggest-evidence-requests/v1/schema.json
+packages/model-gateway/src/baseline-format.ts
 packages/model-gateway/src/config.ts
 packages/model-gateway/src/errors.ts
 packages/model-gateway/src/evaluated.ts
 packages/model-gateway/src/figures.ts
 packages/model-gateway/src/flags.ts
+packages/model-gateway/src/floors-format.ts
 packages/model-gateway/src/functions/contract-terms.ts
 packages/model-gateway/src/functions/denial-letter.ts
 packages/model-gateway/src/functions/evidence-requests.ts
@@ -377,6 +380,7 @@ packages/model-gateway/src/redact.ts
 packages/model-gateway/src/spec.ts
 packages/model-gateway/src/specs.ts
 packages/model-gateway/src/store.ts
+packages/model-gateway/src/tally.ts
 packages/model-gateway/src/untrusted.ts
 packages/money/src/cents.ts
 packages/money/src/decimal.ts
@@ -447,8 +451,10 @@ packages/synth/src/core/dates.ts
 packages/synth/src/core/json.ts
 packages/synth/src/core/random.ts
 packages/synth/src/eval/cases.ts
+packages/synth/src/eval/contract-set-v2.ts
 packages/synth/src/eval/contract-set.ts
 packages/synth/src/eval/formats.ts
+packages/synth/src/eval/large-contracts.ts
 packages/synth/src/eval/narrative-set.ts
 packages/synth/src/expected/parse.ts
 packages/synth/src/expected/types.ts

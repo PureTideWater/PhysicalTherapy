@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C33",
   "layout": "scanned",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": "textract.json",
   "pages": 4,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [[0,3],[1,4]],
   "records": [
     {
       "label": "Article 3: 97116 CQ GP POS 19",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -65,6 +72,7 @@
     },
     {
       "label": "Article 3: 97760 KX CQ",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -112,6 +120,7 @@
     },
     {
       "label": "Article 3: 97168 CO POS 12",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -165,6 +174,7 @@
     },
     {
       "label": "Amendment 1: 97116 CQ GP POS 19",
+      "role": "amendment",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -218,6 +228,7 @@
     },
     {
       "label": "Amendment 1: 97760 KX CQ",
+      "role": "amendment",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",

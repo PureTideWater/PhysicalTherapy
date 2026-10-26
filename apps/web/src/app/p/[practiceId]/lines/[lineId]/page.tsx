@@ -1,4 +1,5 @@
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
+import { formatUnroundedUsd } from '@tp/money';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -7,6 +8,7 @@ import { utc } from '../../../../../components/format';
 import { Fact, LineStatusChip, Money, basisName, claimStatusName, period } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { notComputedWindowText } from '../../../../../lib/contracts/display';
+import { labelOf } from '../../../../../lib/copy/words';
 import { loadPage } from '../../../../../lib/http/next';
 import { linePage } from '../../../../../lib/routes/remittances';
 import { addLineNoteAction } from './actions';
@@ -66,14 +68,27 @@ export default async function LinePage(props: {
               {pricing.unpricedReason === null ? (
                 <>
                   <Fact label="Expected allowed">
-                    <Money value={pricing.expectedAllowedCents} /> <span className="text-xs text-muted-foreground">(unrounded {pricing.expectedUnrounded} cents)</span>
+                    <Money value={pricing.expectedAllowedCents} />{' '}
+                    {pricing.expectedUnrounded === null ? null : (
+                      <span className="text-xs text-muted-foreground">
+                        (unrounded <span className="font-mono tabular-nums">{formatUnroundedUsd(pricing.expectedUnrounded)}</span>)
+                      </span>
+                    )}
                   </Fact>
                   <Fact label="Variance">
                     <Money value={pricing.varianceCents} /> {BigInt(pricing.varianceCents ?? '0') < 0n ? <span className="text-xs text-muted-foreground">(overpaid: recorded, never pursued)</span> : null}
                   </Fact>
                   <Fact label="Method">{pricing.method ?? '—'}</Fact>
                   <Fact label="Adjustments">
-                    {pricing.adjustmentsApplied.length === 0 ? 'None' : pricing.adjustmentsApplied.map((item) => `${item.name} (${item.before_cents} to ${item.after_cents} cents)`).join('; ')}
+                    {pricing.adjustmentsApplied.length === 0
+                      ? 'None'
+                      : pricing.adjustmentsApplied.map((item, index) => (
+                          <span key={`${item.name}-${String(index)}`}>
+                            {index === 0 ? null : '; '}
+                            {labelOf(item.name)} (<span className="font-mono tabular-nums">{formatUnroundedUsd(item.before_cents)}</span> to{' '}
+                            <span className="font-mono tabular-nums">{formatUnroundedUsd(item.after_cents)}</span>)
+                          </span>
+                        ))}
                   </Fact>
                   {canReadPhi ? (
                     <Fact label="Dispute window ends">

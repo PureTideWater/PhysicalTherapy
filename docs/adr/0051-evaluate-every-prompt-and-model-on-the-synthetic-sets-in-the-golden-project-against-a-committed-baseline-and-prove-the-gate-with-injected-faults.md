@@ -1,6 +1,8 @@
 # 0051. Evaluate every prompt and model on the synthetic sets in the golden project, against a committed baseline, and prove the gate with injected faults
 
-- **Status:** accepted for the build; the gate's real-model half waits on a run with model access (see Consequences)
+- **Status:** accepted for the build; the gate's real-model half waits on a run with model access (see Consequences);
+  amended 2026-10-26 by [0070](0070-gate-models-on-wrong-but-verified-fields-and-people-set-floors-serve-each-model-feature-on-its-own-evaluation-and-check-contracts-against-the-practices-records-before-the-model.md), Part 1: the scorer's seven counts, the gate's new rules, set v2 and the floors
+  the first real-model run is held to ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below)
 - **Date:** 2026-10-16
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Logging and evaluation: "The evaluation set starts with 40 synthetic contracts and exhibits
@@ -108,3 +110,40 @@ fails it, as does a changed set or a provider with no baseline.
   the quality bar).
 - Permitted real examples accumulate enough to need their own run inside the PHI boundary.
 - A prompt version adds a field or changes its schema (the reference answers and the scorer follow it).
+
+## Amendment (`co-001/model-eval-gate`, 2026-10-26): wrong but verified, set v2 and people-set floors
+
+Combined audit #84, adopted by the founder with the whole audit on 2026-10-20, replaces what this decision says of
+the scorer, the gate, the set and the first real-model run (docs/adr/0070, Part 1, gives the decision in full). The
+text above stays as it was decided; where it differs, this amendment holds.
+
+- **The scorer** ("It scores: contracts, field by field" above). A stated field the verifier rejected and one it passed
+  with a wrong value are no longer the same count. Every field of every true record and candidate is one of `tp`,
+  `wrong` (verified, not the truth), `rejected` (with `rejected_right` where the rejected value was right), `missed`,
+  `extra` (verified, nothing true there) or `rejected_extra`, through one tally (`src/tally.ts`) shared with the
+  permitted scorer. The false positives and negatives above are derived from them unchanged, so precision and recall
+  mean what they meant; **wrong but verified** is `wrong + extra`. The verifier also rejects a row field whose quote
+  does not tie it to one of the candidate's own codes (`not_in_row`).
+- **The gate** ("The gate holds a report to the committed baseline" above). The baseline is `tp-model-eval-baseline/3`:
+  an entry is keyed by the contract variant too and is held only to entries of its own variant; it names its recorded
+  report (`eval/reports/<sha256>.json`), which a golden test recomputes it from. Beside the precision and recall rules,
+  a report fails when wrong but verified rises against its baseline (per field or overall), when any field is wrong
+  but verified on a case whose page text is faithful, when on an unfaithful case it is above the local reference's,
+  when an expected conflict pair is not both proposed and flagged, when an injected twin's output or review differs
+  from its clean twin's or any output quotes the injection, or when it does not cover every case of the set. A changed
+  set now blocks the record and computes no regression; `--new-set` records a changed set only for the held prompt,
+  model and variant, so a set change and a model change are two records.
+- **The set** (MOD-01's "40 invented contracts ... 120 records, 742 fields" above). The gate's set is set v2
+  (`fixtures/synthetic/MOD-09/contract-set-v2`, MOD-09): v1's 40 cases with their bytes unchanged and their truths at
+  `tp-eval-contract/2`, and 23 more (medium and large documents to 80 pages and 60 codes, contract-plus-exhibit pairs,
+  scans with seeded OCR errors or their own OCR layer, struck-through rates, injected-instruction twins and decoy
+  amended rates), 63 documents. The large tier is generated in CI and pinned by hash. The set hash covers the pages as
+  read. MOD-01's own manifest still lists its 40 cases.
+- **The first real run** (Consequences above). The bar is the floors, set before the run: a per-field recall and
+  precision floor in `eval/floors.json`, set by the founder with the contract specialist (ADR 0070's F1). The file
+  ships with every floor unset, and while any is unset `--record` refuses a real provider and production does not
+  serve it. The run itself is a people run, described in `docs/runbooks/model-evaluation.md`.
+- **CI** ("CI runs it in the golden project" above). The local provider's reference run must hold every faithful case
+  at `tp` with nothing wrong but verified or rejected, and each unfaithful case at the counts a faithful copier of its
+  page text gets; each fault reruns only the cases it spoils and is gated on a spliced whole-set report, which is
+  never recorded.
