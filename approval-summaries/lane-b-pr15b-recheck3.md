@@ -1,0 +1,17 @@
+# recheck3 (HEAD 7167a67a)
+
+## started
+- worktree recheck3-wt at 7167a67a, installed
+- pure probe (claimLinePayments+keptClaimPart): X3 (both lines bare before; line 1 gains own CAS, line 2 unchanged, CLP04 240->200): line 2 cash 120->150 (+30) while claim -40; kept 3000 computed but ignored since line 2 no longer a taker. CANDIDATE FINDING (unchanged line's cash moves). X3b (reverse) OK.
+- pure: N1 correction cash 64/40 (kept 30 on L2); a reversal of that correction splits by weight: -61.17/-42.83 (not mirror of 64/40). Checking take-back in db (X2).
+- db probe run 1 (log progress/recheck3-probe-run.log, out progress/recheck3-probe-out.txt): E11 2400/no_change/no_change, deposit 2400=payerApproved. N1 2400 approve+deposit; N4 reversal -2400 recouped, recovered 0. N2 2800, N2b 2800 (check 28.00). N3=N7 1715 (deterministic). N5=N5b L1 2352 then L2 1568 both runs. N6 no entry. N8a=N8b 920 on L1 both. All match the fixer's claims.
+- X1 (L1 70->100, L2 70->80 with line PR-1 20, L3 unchanged; claim PR-2 42->46; claim +16.00): L1 approved 2622, L2 'decreased' (-1022), L3 no_change. With OTHER on the check deposited 2622; X1b (check 16.00) deposited capped 1600. Sum of changed lines = CLP04 change; same per-line shape as recheck2's N3 (note, not a finding). X1c (claim-level PR-1 30 new, L1->100, L2->80, L3 same): L1 1066 approved/deposited, claim +8.00, L2 decreased; same shape.
+- X2 (N1, deposit, reversal alone): recouped -2400, recovered 0. OK. X2b (reversal + re-correction L1 110, PR-2 28): second approval 800 = CLP04 +8.00; L2 keeps. OK.
+- X3 (all bare) opened no case; retrying with bare underpaid lines.
+- X3 (all lines bare at charge 150) and X3b (bare, unbalanced) open no case / fail to load. X3c (probe835 given a charge field; both lines bare charge 60 paid 60, claim PR-2 24 -> CLP04 96; correction: L1 own PR-1 10 paid 50, L2 bare unchanged, claim PR-2 10 -> CLP04 100, +4.00): L2 (payer did not change it) payment +1200, other reductions -1200, coinsurance -12.00; L1 -800. No approval (allowed did not rise). CONFIRMED FINDING F1: keptClaimPart's part dropped when a kept line stops taking (takers set flips once any line carries CAS); unchanged line's cash moves. Property test (payment.test.ts ~805) builds every line with at() => carriesAdjustments true, so never covers it. Pure: with a negative claim-level CAS the dropped kept part lands on the changed line as a gain (L1 +15.00 vs claim +10.00) => over-approval possible.
+- NEXT: invariants, UX words.
+- invariants PASS (ledger src 3 files, ledger.db identical, LED-01..13/pricing/migrations/domain-model/golden/releases 0 diff, trailers ok, no model id/float). db payment-terms+ledger+oracle 91/91; unit ledger+display 253/253.
+- UX words: AllowedSum sums checked for every branch (allowed = pays + share + other; fell-by words; took-all only when share = allowed); display tests' amountsOf sum check covers 11 cases. spansCorrections misses a cumulative payment below zero, but W1 probe (decrease then deductible-taken correction) reads nothing_to_take_back (outcome is cumulative), so patient_balance/other_reductions always have cumulative pay >= 0: unreachable, no finding. Brand: no AI/owed/bare recovered; Money for every amount; lint:copy passed per suite. PASS.
+- probes saved to pr15b-review/recheck3-probes/.
+- worktree recheck3-wt removed; /home/user/pr15b clean at 7167a67a.
+- VERDICT: fix. F1 (medium): kept part dropped when the takers set flips (X3c). Everything else holds.
