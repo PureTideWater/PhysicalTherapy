@@ -189,5 +189,10 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
 
 - **2026-10-25, from Lane B: Lane A's screen-changing PRs take the same UX and brand reviewer (the co-founder, acting for the founder, 2026-10-25 ~21:10 UTC).** Add to LANES.md rule 1, for both lanes: every pull request that changes something a person sees takes the UX and brand review (`.claude/agents/ux-brand-reviewer.md`, once Lane B's checklist PR merges) as one of its two adversarial reviews, with before and after screenshots at 1280 px and 390 px. Lane B does not edit LANES.md's rules; Lane A makes this change.
 
+- **2026-10-26, from Lane B's #111 (readable database-function diffs, `co-001/db-function-diffs`): one coordination step for #42; no decision needed.**
+  - **What it adds:** `pnpm db:domain-model --out` will also write `packages/db/functions/<name>.sql`, one file per database function. The db job and the domain-model job's `--check` fail when those files are out of date. The domain model's text and hash do not change.
+  - **For #42:** if #111 merges first, #42's next `--out` writes its function files too. Commit that before the founder signs #42's approval line, because a commit after his approval dismisses it. If #42 merges first, #111 regenerates on #42's schema before it merges.
+  - Design: `designs/lane-b-db-function-diffs.md`. Status: `approval-summaries/lane-b-db-function-diffs-status.md`.
+
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
