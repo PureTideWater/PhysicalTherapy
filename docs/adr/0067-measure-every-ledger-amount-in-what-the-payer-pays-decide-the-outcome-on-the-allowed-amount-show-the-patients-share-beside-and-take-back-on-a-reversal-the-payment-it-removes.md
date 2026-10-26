@@ -54,12 +54,38 @@ back, and the deductible-absorbed outcome.
 
 ## Decision
 
-All amounts are integer cents; no amount the ledger writes is divided. The arithmetic is one new pure file,
-`packages/ledger/src/payment.ts` (`paymentChain`, `paymentOutcome`, `reversalTakeBack`, `patientShareChange`),
-mutation-tested under money-ledger; the reconcile step in `apps/worker/src/reconcile` calls it.
+All amounts are integer cents. The one division is a line's part of its claim's claim-level CAS, below, rounded once
+with its exact fraction kept beside the cents; every amount the ledger writes is a difference of those. The arithmetic
+is one new pure file, `packages/ledger/src/payment.ts` (`claimLinePayments`, `paymentChain`, `paymentOutcome`,
+`reversalTakeBack`, `patientShareChange`), mutation-tested under money-ledger; the reconcile step in
+`apps/worker/src/reconcile` reads the rows and calls it.
 
 **Notation.** For a case line, `p0` and `a0` are the original's paid and observed allowed amounts. The line's chain is
 its standing claim matches in ledger order; each claim match `n` has its paired line's `paid(n)` and `allowed(n)`.
+
+**A line's cash, `paid(n)`, is its share of CLP04** (`claimLinePayments`; the engine review's B1). The payer pays a
+claim CLP04, which is its lines' SVC03 less the claim-level CAS (every group, signed) that no SVC03 already holds:
+`D = Σ SVC03 − CLP04`. When the patient's share (or a CO such as CO-253) is sent at the claim's level, SVC03 alone
+overstates what the payer paid on the line: a correction from SVC03 70.00 to 100.00 with the claim's PR-2 rising
+14.00 to 20.00 pays 24.00 (CLP04 56.00 to 80.00), not 30.00, and approving 30.00 would count the patient's 6.00 and
+leave it approved and never provable by the 24.00 deposit (probe E8, now LED-14's claim-level variant).
+
+- A line carrying CAS of its own balances alone, so its SVC03 holds none of the claim-level CAS; a line carrying none
+  is balanced by the claim and its SVC03 may already hold its part (PAR-10's lines, where `D` is 0). So `D` is split
+  over the lines that carry CAS of their own, or over every line when none does.
+- The split is the parser's own rule, `@tp/edi835 allocateProRata` (the rule behind the observed allowed and the
+  patient's share allocated from the claim): by the magnitude of each line's charge, each part truncated toward zero
+  once, the cents left given one at a time in line order. Its exact fraction, `D × charge / Σ charges` (`D / n` when
+  every such charge is zero), is kept beside the cents.
+- `paid(n)` is SVC03 less the part, so a claim's lines add up to its CLP04 exactly, and the chain, every posting and
+  deposit share, and the billable to the patient read it. A claim-level PR is then the patient's share once, in
+  billable to the patient, and never again in the other reductions. A line-level posting row is still matched on
+  SVC03 as sent, which is what it posts; what it proves is the line's cash share.
+- `allocateByWeight` (largest remainder) was the other candidate. It refuses a negative total or weight, and a
+  reversal's charges and CAS are negative; and its remainder rule differs from the parser's, so a line's cash and its
+  allocated share could disagree by a cent and show a cent of other reductions that is not there.
+- With no claim-level CAS, `D` is 0 and `paid(n)` is SVC03. No LED-01 to LED-13 claim carries claim-level CAS, so
+  their amounts do not move.
 
 - **Paid baseline `P_b`:** starts at `p0`; each standing `approved` claim match sets it to `paid(n)`; each recouped
   entry matched to the line after that adds its (negative, cash) amount. `P_b⁻(n)` is the baseline just before `n`.

@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
-import { entriesById, recomputeStatement, roiStatementCsv } from '@tp/ledger';
+import { allocateProRata } from '@tp/edi835';
+import { claimLinePayments, entriesById, recomputeStatement, roiStatementCsv } from '@tp/ledger';
+import { cents } from '@tp/money';
+import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Practice } from '../price/test-support/pricing-world';
@@ -180,6 +183,43 @@ describe('a line with coinsurance (LED-14)', () => {
       { stage: 'recouped', amountCents: '-1000' },
     ]);
     expect(await claimOutcomes(led.practice)).toEqual(['approved', 'decreased']);
+  });
+
+  it('measures a line’s cash as its share of CLP04 when the coinsurance sits at the claim’s level (probe E8)', async () => {
+    const led = await scenario('LED-14', 'claim-level-adjusted.835', 'claim-level-original.835');
+    // SVC03 rose 70.00 to 100.00, but the claim's PR-2 rose 14.00 to 20.00: CLP04 56.00 to 80.00, so the payer paid 24.00 more, never 30.00.
+    expect(await w.stages(led.practice)).toEqual([{ stage: 'approved', amountCents: '2400' }]);
+    await exported(led.practice, 'LED-14/claim-level-eft-export.csv', 'eft_export');
+    expect(await w.stages(led.practice)).toEqual([
+      { stage: 'approved', amountCents: '2400' },
+      { stage: 'deposited', amountCents: '2400' },
+    ]);
+    expect(await totals(led.practice)).toMatchObject({ approvedCents: 2400n, depositedCents: 2400n, recoveredCents: 2400n, payerApprovedCents: 2400n });
+    expect(await w.lineStage(led.practice, led.serviceLineId)).toBe('recovered');
+    // The claim's 6.00 more PR is the patient's, shown once as billable, never again as the payer's other reductions.
+    const correction = await correctionOf(led.practice, led.serviceLineId);
+    expect(correction?.billable).toMatchObject({
+      allowedIncreaseCents: 3000n,
+      paymentIncreaseCents: 2400n,
+      shareChange: { coinsuranceCents: 600n, deductibleCents: 0n, copayCents: 0n, otherCents: 0n },
+      otherReductionCents: 0n,
+      billableCents: 600n,
+      allocatedFromClaim: true,
+    });
+    expect(correction?.matches).toMatchObject([{ reading: 'approved', entryCents: 2400n, change: { paymentIncreaseCents: 2400n, otherReductionCents: 0n, billableCents: 600n } }]);
+  });
+
+  it('splits the claim-level CAS no SVC03 holds by the parser’s own rule, the one the patient’s share is allocated by (property)', () => {
+    const amount = fc.bigInt({ min: -200_000n, max: 200_000n });
+    fc.assert(
+      fc.property(amount, fc.array(fc.tuple(amount, amount), { minLength: 1, maxLength: 6 }), (claimPaid, lines) => {
+        const parts = claimLinePayments({ claimPaidCents: cents(claimPaid), lines: lines.map(([charge, paid]) => ({ chargeCents: cents(charge), servicePaidCents: cents(paid), carriesAdjustments: true })) }).map(
+          (line, index) => (lines[index] as [bigint, bigint])[1] - line.paidCents,
+        );
+        const left = lines.reduce((sum, [, paid]) => sum + paid, 0n) - claimPaid;
+        expect(parts).toEqual(allocateProRata(cents(left), lines.map(([charge]) => cents(charge))));
+      }),
+    );
   });
 });
 

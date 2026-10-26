@@ -9,14 +9,80 @@ import { LedgerError } from './stages';
  * `reprocessing()`, but every amount the ledger writes is the payer's cash: an approval is the payer's payment
  * increase on the line, a posting or deposit share is what a claim paid on the line net of the payment it
  * replaced, and a reversal takes back the payment it removes. The patient's share is worked out beside, as
- * billable to the patient, and counted in no total. Every amount is a difference of stored integer cents; nothing
- * here divides, reads a row, a clock or a model.
+ * billable to the patient, and counted in no total. Every amount is a difference of stored integer cents, but for
+ * one division: a line's part of the claim-level adjustments its SVC03 leaves out (`claimLinePayments`), rounded
+ * once with its exact fraction kept beside it. Nothing here reads a row, a clock or a model.
  */
 
-/** What a line was allowed and what the payer paid on it. */
+/** What a line was allowed and what the payer paid on it: `paidCents` is the line's cash, its share of CLP04 (`claimLinePayments`). */
 export interface PaidLine {
   readonly allowedCents: Cents;
   readonly paidCents: Cents;
+}
+
+/** A line of a claim as its claim's cash is split: its charge (SVC02), its payment (SVC03), and whether it carries CAS of its own. */
+export interface ClaimPaymentLine {
+  readonly chargeCents: Cents;
+  readonly servicePaidCents: Cents;
+  readonly carriesAdjustments: boolean;
+}
+
+/** A line's part of the claim-level adjustments its SVC03 leaves out, rounded once, with the exact fraction beside it. */
+export interface ClaimAdjustmentPart {
+  /** The part in cents, signed as the adjustments are (a reversal's is negative). */
+  readonly partCents: Cents;
+  /** The exact part before rounding: `exactNumerator / exactDenominator`, the denominator more than zero. */
+  readonly exactNumerator: bigint;
+  readonly exactDenominator: bigint;
+}
+
+export interface LinePayment {
+  /** The line's cash: SVC03 less its part, so the claim's lines add up to CLP04 exactly. */
+  readonly paidCents: Cents;
+  /** Null when the line takes no part (SVC03 is its cash). */
+  readonly claimAdjustment: ClaimAdjustmentPart | null;
+}
+
+/**
+ * A claim's cash by line (docs/adr/0067; the combined audit's #12 on its claim-level path). The payer pays the
+ * claim CLP04, which is the lines' SVC03 less the claim-level CAS (every group, signed) that no SVC03 already
+ * holds: `D = Σ SVC03 − CLP04`. A line carrying CAS of its own balances alone (SVC02 − its CAS − SVC03 = 0), so
+ * its SVC03 holds none of the claim-level CAS, while a line carrying none is balanced by the claim and its SVC03
+ * may already hold its part; so D is split over the lines that carry CAS of their own (every line when none
+ * does), in proportion to their charges' magnitudes, by the parser's own rule (@tp/edi835 allocateProRata, the
+ * claim-level PR's split behind the observed allowed and the patient's share): each part truncated toward zero,
+ * once, the cents left given one at a time in line order, each beside its exact fraction `D × charge / Σ charges`
+ * (`D / n` when every such charge is zero). A line's cash is SVC03 less its part; the parts add up to D, so the
+ * lines' cash adds up to CLP04 exactly. With no claim-level CAS, D is zero and each line's cash is its SVC03.
+ */
+export function claimLinePayments(input: { readonly claimPaidCents: Cents; readonly lines: readonly ClaimPaymentLine[] }): LinePayment[] {
+  const { lines } = input;
+  const left = sumCents(lines.map((line) => line.servicePaidCents)) - input.claimPaidCents;
+  if (left === 0n || lines.length === 0) {
+    return lines.map((line) => ({ paidCents: line.servicePaidCents, claimAdjustment: null }));
+  }
+  const own = lines.some((line) => line.carriesAdjustments);
+  const takes = lines.map((line) => !own || line.carriesAdjustments);
+  const weights = lines.map((line, index) => (takes[index] === true ? (line.chargeCents < ZERO_CENTS ? -line.chargeCents : line.chargeCents) : 0n));
+  const sum = weights.reduce((total, weight) => total + weight, 0n);
+  const count = BigInt(takes.filter(Boolean).length);
+  const exact = weights.map((weight) => (sum === 0n ? { exactNumerator: left, exactDenominator: count } : { exactNumerator: left * weight, exactDenominator: sum }));
+  const parts = exact.map((fraction, index) => (takes[index] === true ? fraction.exactNumerator / fraction.exactDenominator : 0n));
+  let rest = left - parts.reduce((total, part) => total + part, 0n);
+  const step = rest < 0n ? -1n : 1n;
+  for (let index = 0; rest !== 0n; index += 1) {
+    if (takes[index] === true) {
+      parts[index] = (parts[index] as bigint) + step;
+      rest -= step;
+    }
+  }
+  return lines.map((line, index) => {
+    const part = cents(parts[index] as bigint);
+    if (takes[index] !== true) {
+      return { paidCents: line.servicePaidCents, claimAdjustment: null };
+    }
+    return { paidCents: cents(line.servicePaidCents - part), claimAdjustment: { partCents: part, ...(exact[index] as Pick<ClaimAdjustmentPart, 'exactNumerator' | 'exactDenominator'>) } };
+  });
 }
 
 /**

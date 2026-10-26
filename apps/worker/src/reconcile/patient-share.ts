@@ -19,7 +19,9 @@ import { type ChainClaim, type ClaimLine, type LineChain, chainContext, lineChai
  * - Each standing claim match of a case line is read against the line its baselines stood on just
  *   before it (@tp/ledger paymentChain): the allowed increase, the payer's payment increase (the
  *   chain's own `net`, the figure the ledger posts), the patient's share by reason, signed, and the rest,
- *   the payer's other reductions (@tp/ledger patientShareChange).
+ *   the payer's other reductions (@tp/ledger patientShareChange). A line's payment is its cash, its share
+ *   of CLP04 (remittances.ts claimLines), so a claim-level PR is taken off the payment by the same rule
+ *   that allocates it to the share: shown once, as billable to the patient, never as other reductions.
  * - A line's correction pays nothing more when its latest standing approving claim match wrote no entry
  *   and its payment increase is zero: "patient_balance" when the patient's share rose ("Payer
  *   corrected; balance is the patient's"), else "other_reductions". Never recovered, never no change.

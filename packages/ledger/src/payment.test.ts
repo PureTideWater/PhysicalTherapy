@@ -8,6 +8,7 @@ import {
   type PatientShare,
   type PaymentEvent,
   type ShareLine,
+  claimLinePayments,
   originalBaselines,
   patientShareChange,
   paymentChain,
@@ -450,6 +451,97 @@ describe('billable to the patient beside the ledger, counted in no total (PRD 13
         expect(shared + result.otherReductionCents).toBe(allowedAfter - allowedBefore - payment);
         expect(result.billableCents).toBe(shared > 0n ? shared : 0n);
         expect(result.allocatedFromClaim).toBe(false);
+      }),
+    );
+  });
+});
+
+describe("a line's cash is its share of CLP04 (docs/adr/0067; the combined audit's #12 on its claim-level path, B1)", () => {
+  const svc = (charge: bigint, paid: bigint, carries = true) => ({ chargeCents: cents(charge), servicePaidCents: cents(paid), carriesAdjustments: carries });
+  const pay = (claimPaid: bigint, lines: readonly ReturnType<typeof svc>[]) => claimLinePayments({ claimPaidCents: cents(claimPaid), lines });
+  const part = (partCents: bigint, exactNumerator: bigint, exactDenominator: bigint) => ({ partCents: cents(partCents), exactNumerator, exactDenominator });
+
+  it('keeps SVC03 when the claim carries no claim-level CAS (CLP04 is the lines’ SVC03)', () => {
+    expect(pay(9000n, [svc(10000n, 6000n), svc(5000n, 3000n)])).toEqual([
+      { paidCents: 6000n, claimAdjustment: null },
+      { paidCents: 3000n, claimAdjustment: null },
+    ]);
+    // A claim whose CAS sits at the claim's level only, its lines' SVC03 already net of it (PAR-10): nothing more to take.
+    expect(pay(13600n, [svc(16000n, 8800n, false), svc(9500n, 4800n, false)])).toEqual([
+      { paidCents: 8800n, claimAdjustment: null },
+      { paidCents: 4800n, claimAdjustment: null },
+    ]);
+    expect(pay(5600n, [])).toEqual([]);
+  });
+
+  it('takes a claim-level PR off the one line it covers (probe E8): SVC03 70.00, the claim’s PR-2 14.00, CLP04 56.00', () => {
+    expect(pay(5600n, [svc(15000n, 7000n)])).toEqual([{ paidCents: 5600n, claimAdjustment: part(1400n, 1400n * 15000n, 15000n) }]);
+    expect(pay(8000n, [svc(15000n, 10000n)])).toEqual([{ paidCents: 8000n, claimAdjustment: part(2000n, 2000n * 15000n, 15000n) }]);
+    // Its reversal, every amount negated.
+    expect(pay(-5600n, [svc(-15000n, -7000n)])).toEqual([{ paidCents: -5600n, claimAdjustment: part(-1400n, -1400n * 15000n, 15000n) }]);
+  });
+
+  it('splits the claim-level CAS by charge, each part truncated once, the cents left one at a time in line order, the exact fraction beside', () => {
+    // 1.00 over charges 100.00 and 50.00: 66.67 and 33.33 cents exactly; 66 and 33, and the cent left to the first.
+    expect(pay(8900n, [svc(10000n, 6000n), svc(5000n, 3000n)])).toEqual([
+      { paidCents: 5933n, claimAdjustment: part(67n, 100n * 10000n, 15000n) },
+      { paidCents: 2967n, claimAdjustment: part(33n, 100n * 5000n, 15000n) },
+    ]);
+    // A negative claim-level CAS (the payer added back): -66 and -33, the cent left to the first, signed.
+    expect(pay(9100n, [svc(10000n, 6000n), svc(5000n, 3000n)])).toEqual([
+      { paidCents: 6067n, claimAdjustment: part(-67n, -100n * 10000n, 15000n) },
+      { paidCents: 3033n, claimAdjustment: part(-33n, -100n * 5000n, 15000n) },
+    ]);
+    // Weighted by the charges' magnitudes on a reversal.
+    expect(pay(-8900n, [svc(-10000n, -6000n), svc(-5000n, -3000n)])).toEqual([
+      { paidCents: -5933n, claimAdjustment: part(-67n, -100n * 10000n, 15000n) },
+      { paidCents: -2967n, claimAdjustment: part(-33n, -100n * 5000n, 15000n) },
+    ]);
+    // Two cents left over three lines go to the first two.
+    expect(pay(9898n, [svc(5000n, 3300n), svc(5000n, 3300n), svc(5000n, 3300n)]).map((item) => item.claimAdjustment?.partCents)).toEqual([1n, 1n, 0n]);
+  });
+
+  it('splits it over the lines carrying CAS of their own only, whose SVC03 holds none of it, and skips the others for the cents left', () => {
+    // The first line carries no CAS (balanced by the claim, its SVC03 already net of its part): the 1.01 goes to the other two, 50 cents each and the cent left to the second.
+    expect(pay(14899n, [svc(5000n, 5000n, false), svc(5000n, 5000n), svc(5000n, 5000n)])).toEqual([
+      { paidCents: 5000n, claimAdjustment: null },
+      { paidCents: 4949n, claimAdjustment: part(51n, 101n * 5000n, 10000n) },
+      { paidCents: 4950n, claimAdjustment: part(50n, 101n * 5000n, 10000n) },
+    ]);
+    // No line carries CAS of its own: every line takes its part.
+    expect(pay(9900n, [svc(10000n, 5000n, false), svc(10000n, 5000n, false)]).map((item) => item.claimAdjustment)).toEqual([part(50n, 100n * 10000n, 20000n), part(50n, 100n * 10000n, 20000n)]);
+  });
+
+  it('splits it evenly when every charge that takes it is zero', () => {
+    expect(pay(-3n, [svc(0n, 0n), svc(0n, 0n)])).toEqual([
+      { paidCents: -2n, claimAdjustment: part(2n, 3n, 2n) },
+      { paidCents: -1n, claimAdjustment: part(1n, 3n, 2n) },
+    ]);
+    expect(pay(-3n, [svc(0n, 0n, false), svc(0n, 0n), svc(0n, 0n)]).map((item) => item.claimAdjustment)).toEqual([null, part(2n, 3n, 2n), part(1n, 3n, 2n)]);
+  });
+
+  it('adds the lines’ cash up to CLP04 exactly, each part within a cent of its exact fraction (property)', () => {
+    const amount = fc.bigInt({ min: -200_000n, max: 200_000n });
+    const lineArb = fc.record({ charge: amount, paid: amount, carries: fc.boolean() });
+    fc.assert(
+      fc.property(amount, fc.array(lineArb, { minLength: 1, maxLength: 6 }), (claimPaid, specs) => {
+        const lines = specs.map((spec) => svc(spec.charge, spec.paid, spec.carries));
+        const result = pay(claimPaid, lines);
+        expect(result.reduce((sum, item) => sum + item.paidCents, 0n)).toBe(claimPaid);
+        const own = specs.some((spec) => spec.carries);
+        for (const [index, item] of result.entries()) {
+          const spec = specs[index] as (typeof specs)[number];
+          if (item.claimAdjustment === null) {
+            expect(item.paidCents).toBe(spec.paid);
+            continue;
+          }
+          expect(!own || spec.carries).toBe(true);
+          const { partCents, exactNumerator, exactDenominator } = item.claimAdjustment;
+          expect(exactDenominator > 0n).toBe(true);
+          expect(item.paidCents).toBe(spec.paid - partCents);
+          const gap = partCents * exactDenominator - exactNumerator;
+          expect(gap < exactDenominator && -gap < exactDenominator).toBe(true);
+        }
       }),
     );
   });

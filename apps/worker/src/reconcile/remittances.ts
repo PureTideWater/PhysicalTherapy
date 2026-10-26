@@ -1,5 +1,6 @@
 import type { PracticeCipher } from '@tp/db/runtime';
 import {
+  type ClaimAdjustmentPart,
   type ClaimCandidate,
   type PairableLine,
   type PaidLine,
@@ -9,6 +10,7 @@ import {
   type PaymentOutcome,
   type ReversalTakeBack,
   allocateByWeight,
+  claimLinePayments,
   countedStage,
   entriesById,
   pairedLine,
@@ -48,6 +50,10 @@ import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
  *   paying less (the founder's ruling on Q2), takes back the payment decrease (a recouped entry, at most
  *   what was approved; none when the payment did not fall or nothing is approved); the same, or lower with
  *   nothing approved, is a payer response "reprocessed, no change" (the submissions' record).
+ * - A line's cash, everywhere the chain reads it, is its share of its claim's CLP04 (claimLines, @tp/ledger
+ *   claimLinePayments): SVC03 less its part of the claim-level CAS (every group, signed) that no SVC03 holds,
+ *   split by charge over the lines carrying CAS of their own by the parser's rule, rounded once with the exact
+ *   fraction beside it; SVC03 itself when the claim carries none.
  * - A reversal of a claim attached to a case line, with no correction of it in the same remittance,
  *   takes back the payment it removes above the original (@tp/ledger reversalTakeBack: its own claim's
  *   approval while an earlier payment of the line stands, every approval its payment carried when nothing
@@ -196,10 +202,19 @@ export interface ClaimLine extends PairableLine {
   readonly claimId: string;
   readonly lineNo: number;
   readonly observedAllowedCents: Cents;
+  /** The line's cash, its share of CLP04 (@tp/ledger claimLinePayments): what every amount of the chain reads. */
   readonly paidCents: Cents;
+  /** SVC03 as sent: what a line-level posting row of the line posts. */
+  readonly servicePaidCents: Cents;
+  /** Its part of the claim-level CAS SVC03 leaves out, with the exact fraction beside the cents; null when it takes none. */
+  readonly claimAdjustment: ClaimAdjustmentPart | null;
 }
 
-/** The lines of the claims named, in line order, by claim. */
+/**
+ * The lines of the claims named, in line order, by claim, each with its cash: SVC03 less its part of the
+ * claim-level CAS that no SVC03 holds, so the claim's lines add up to its CLP04 (@tp/ledger
+ * claimLinePayments; docs/adr/0067). Read from stored rows only.
+ */
 export async function claimLines(scope: Scope, claimIds: readonly string[]): Promise<Map<string, ClaimLine[]>> {
   const { rows } = await scope.client.query<{
     id: string;
@@ -210,27 +225,43 @@ export async function claimLines(scope: Scope, claimIds: readonly string[]): Pro
     units: string | null;
     service_date: string | null;
     observed_allowed_cents: string;
+    charge_cents: string;
     paid_cents: string;
+    claim_paid_cents: string;
+    carries_adjustments: boolean;
   }>(
     `SELECT s.id, s.claim_id, s.line_no, s.procedure_code, s.modifiers, s.units::text AS units, s.service_date::text AS service_date,
-            s.observed_allowed_cents::text AS observed_allowed_cents, s.paid_cents::text AS paid_cents
-       FROM service_line s WHERE s.claim_id = ANY ($1::uuid[]) ORDER BY s.claim_id, s.line_no`,
+            s.observed_allowed_cents::text AS observed_allowed_cents, s.charge_cents::text AS charge_cents, s.paid_cents::text AS paid_cents,
+            c.paid_cents::text AS claim_paid_cents, EXISTS (SELECT 1 FROM adjustment a WHERE a.service_line_id = s.id) AS carries_adjustments
+       FROM service_line s JOIN claim c ON c.id = s.claim_id WHERE s.claim_id = ANY ($1::uuid[]) ORDER BY s.claim_id, s.line_no`,
     [[...new Set(claimIds)]],
   );
   const byClaim = new Map<string, ClaimLine[]>();
-  for (const row of rows) {
-    const line: ClaimLine = {
-      serviceLineId: row.id,
-      claimId: row.claim_id,
-      lineNo: row.line_no,
-      procedureCode: row.procedure_code,
-      modifiers: row.modifiers,
-      units: row.units,
-      serviceDate: row.service_date,
-      observedAllowedCents: parseCents(row.observed_allowed_cents),
-      paidCents: parseCents(row.paid_cents),
-    };
-    byClaim.set(row.claim_id, [...(byClaim.get(row.claim_id) ?? []), line]);
+  for (const claimId of new Set(rows.map((row) => row.claim_id))) {
+    const own = rows.filter((row) => row.claim_id === claimId);
+    const payments = claimLinePayments({
+      claimPaidCents: parseCents((own[0] as (typeof own)[number]).claim_paid_cents),
+      lines: own.map((row) => ({ chargeCents: parseCents(row.charge_cents), servicePaidCents: parseCents(row.paid_cents), carriesAdjustments: row.carries_adjustments })),
+    });
+    byClaim.set(
+      claimId,
+      own.map((row, index) => {
+        const payment = payments[index] as (typeof payments)[number];
+        return {
+          serviceLineId: row.id,
+          claimId: row.claim_id,
+          lineNo: row.line_no,
+          procedureCode: row.procedure_code,
+          modifiers: row.modifiers,
+          units: row.units,
+          serviceDate: row.service_date,
+          observedAllowedCents: parseCents(row.observed_allowed_cents),
+          paidCents: payment.paidCents,
+          servicePaidCents: parseCents(row.paid_cents),
+          claimAdjustment: payment.claimAdjustment,
+        };
+      }),
+    );
   }
   return byClaim;
 }

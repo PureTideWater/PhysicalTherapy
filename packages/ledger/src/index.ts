@@ -23,7 +23,7 @@ export {
   preferredCandidates,
   reprocessing,
 } from './matching';
-export { type ClaimAllocation, type PaidLine, type PatientShare, type PatientShareChange, type PaymentBaselines, type PaymentChain, type PaymentEvent, type PaymentOutcome, type ReversalTakeBack, type ShareLine, originalBaselines, patientShareChange, paymentChain, paymentMatchOutcome, paymentOutcome, paymentStep, reversalTakeBack, unpaidPayment } from './payment';
+export { type ClaimAdjustmentPart, type ClaimAllocation, type ClaimPaymentLine, type LinePayment, type PaidLine, type PatientShare, type PatientShareChange, type PaymentBaselines, type PaymentChain, type PaymentEvent, type PaymentOutcome, type ReversalTakeBack, type ShareLine, claimLinePayments, originalBaselines, patientShareChange, paymentChain, paymentMatchOutcome, paymentOutcome, paymentStep, reversalTakeBack, unpaidPayment } from './payment';
 export { type OpenCase, type RoiInput, type RoiStatement, approvedUnproved, previousQuarter, quarterOf, quarterPeriod, ratioText, roiStatement } from './roi';
 export {
   RECONCILIATION_REASONS,

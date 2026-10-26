@@ -19,11 +19,12 @@ import { type ClaimLine, chainContext, lineChain } from './remittances';
  *   level, when every row found its remittance and the totals agree. A remittance is deposited once.
  * - Each standing match then posts (or deposits) each case line's share of its remittance: the cash the
  *   remittance paid on the line's reprocessing, net of the payment it replaced (for each claim matched to
- *   the case line, its paired line's payment, @tp/ledger pairLines, less what the remittances had paid the
- *   line just before it, @tp/ledger paymentChain; at the claim level, that claim's alone; a remittance
- *   holding no claim matched to the line, a reversal alone, gives it no share; docs/adr/0067). A
- *   line-level row (one with a procedure code) posts only the case lines paired with the claim's lines it
- *   posts (postsLine: its code, its date when it has one, its amount exactly); a row with a claim
+ *   the case line, its paired line's cash, its share of CLP04, @tp/ledger pairLines and
+ *   claimLinePayments, less what the remittances had paid the line just before it, @tp/ledger
+ *   paymentChain; at the claim level, that claim's alone; a remittance holding no claim matched to the
+ *   line, a reversal alone, gives it no share; docs/adr/0067). A line-level row (one with a procedure
+ *   code) posts only the case lines paired with the claim's lines it posts (postsLine: its code, its date
+ *   when it has one, its amount exactly, against SVC03 as sent); a row with a claim
  *   reference and no code posts its claim whole. A partial check-level posting allocates the share pro
  *   rata: what the check's postings up to it allocate, less what those before it did, flagged allocated;
  *   the parts add up to the share. A line never posts (or deposits) more than the ledger approved for it,
@@ -352,7 +353,8 @@ export async function settleMatches(scope: Scope, practiceId: string, createdBy:
         return true;
       }
       const line = paired.get(match.claimId as string)?.get(serviceLineId);
-      return line !== undefined && postsLine({ amountCents: amount, procedureCode: code, serviceDate: date }, line);
+      // Matched on SVC03 as sent, as the row was (claimsWithReference); what it proves is the line's cash share.
+      return line !== undefined && postsLine({ amountCents: amount, procedureCode: code, serviceDate: date }, { ...line, paidCents: line.servicePaidCents });
     };
     for (const [serviceLineId, share] of owed) {
       const caseId = caseOf.get(serviceLineId);

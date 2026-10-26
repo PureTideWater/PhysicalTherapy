@@ -9,7 +9,7 @@ import { type CalendarDate, addDays, calendarDate } from '../core/dates';
 import { prettyJson } from '../core/json';
 import { eftExport, postingExport } from '../formats/csv';
 import { dollars, reversalOf } from '../x12/factory';
-import { type Claim, type ServiceLine } from '../x12/model';
+import { type CasSegment, type Claim, type ServiceLine } from '../x12/model';
 import { type CaseBuilder } from './builder';
 import { therapyClaim, therapyLine, traceNumber } from './common';
 import { addExhibit } from './contracts';
@@ -450,8 +450,8 @@ function ledOriginal(b: CaseBuilder, n: number, lines: readonly ServiceLine[]): 
   return therapyClaim(b.world, { caseId: b.info.id, n, plan: LED_PLAN, lines });
 }
 
-/** A correction of `previous` (CLP frequency 7, REF F8 naming it) under the same patient and patient control number. */
-function correctionOf(b: CaseBuilder, n: number, previous: Claim, lines: readonly ServiceLine[]): Claim {
+/** A correction of `previous` (CLP frequency 7, REF F8 naming it) under the same patient and patient control number, with claim-level CAS when given. */
+function correctionOf(b: CaseBuilder, n: number, previous: Claim, lines: readonly ServiceLine[], adjustments?: readonly CasSegment[]): Claim {
   return therapyClaim(b.world, {
     caseId: b.info.id,
     n,
@@ -461,7 +461,18 @@ function correctionOf(b: CaseBuilder, n: number, previous: Claim, lines: readonl
     frequencyCode: '7',
     refs: [{ qualifier: 'F8', value: previous.payerClaimControlNumber }],
     lines,
+    ...(adjustments === undefined ? {} : { adjustments }),
   });
+}
+
+/** A 97110 x 2 line charged 150.00 and allowed `allowed` (AMT B6) carrying only its CO-45: its patient's share sits at its claim's level. */
+function claimShareLine(b: CaseBuilder, allowed: bigint): ServiceLine {
+  return therapyLine(b.world, { code: '97110', units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed, b6: true, share: 'none' });
+}
+
+/** 20% coinsurance of `allowed` as a claim-level CAS (PR-2), so the claim pays CLP04 = SVC03 less it. */
+function coinsuranceAtClaim(allowed: bigint): CasSegment[] {
+  return [{ group: 'PR', items: [{ reason: '2', amount: cents(allowed / 5n) }] }];
 }
 
 /** Another patient's claim paying 150.00 (97110 x 3), beside a reversal so the check's BPR02 is not negative. */
@@ -504,7 +515,11 @@ function ledEntry(stage: string, amount: Cents, evidence?: string): Record<strin
  * (allowed 75.00, PR-2 15.00, paid 60.00) is approved for 4.00, its payment over the original's. The same
  * correction in a check beside another patient's claim (174.00) posted in part (87.00) proves 12.00, the
  * line's net share pro rata; and a lower reprocessing (allowed 87.50, PR-2 17.50, paid 70.00) loaded
- * before the same reconcile takes back the payment decrease, 10.00.
+ * before the same reconcile takes back the payment decrease, 10.00. In its own practice (claim-level-*),
+ * the same coinsurance sent at the claim's level (the line SVC03 70.00 and 100.00, the claim's PR-2 14.00
+ * and 20.00, CLP04 56.00 and 80.00): the line's cash is its share of CLP04, so the ledger approves and
+ * deposits the 24.00 the payer paid, never the 30.00 of SVC03, and the claim's 6.00 more PR is billable
+ * to the patient, never another reduction (docs/adr/0067).
  */
 export function led14(b: CaseBuilder): void {
   const base = ledBase(b);
@@ -533,8 +548,30 @@ export function led14(b: CaseBuilder): void {
   b.addFile('shared-posting-export.csv', postingExport([{ postedOn: addDays(adjustedOn, 3), checkOrTrace: shared.trace, payerName: base.payer.name, amount: sharedPosted, batch: 'SYNBATCH-1403' }]), 'csv', 'A posting export with one check-level row posting part of the shared check, 87.00 of 174.00, no line detail.');
   const lowered = correctionOf(b, 6, corrected, [shareLine(b, 8750n, 'coinsurance')]);
   b.add835('lowered.835', ledRemittance(b, base, 6, calendarDate(2026, 7, 6), [reversalOf(corrected), lowered, otherClaim(b, 7)]).file, "A lower reprocessing: the correction reversed and paid again allowed 87.50, CO-45 62.50, PR-2 coinsurance 17.50, paid 70.00, beside another patient's claim paying 150.00: BPR02 140.00.");
+  const claimLevelOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 8, plan: LED_PLAN, lines: [claimShareLine(b, 7000n)], adjustments: coinsuranceAtClaim(7000n) });
+  b.add835(
+    'claim-level-original.835',
+    ledRemittance(b, base, 8, base.paid, [claimLevelOriginal]).file,
+    "Another patient's original payment (its own case line), the coinsurance at the claim's level: 97110 x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00 on the line, the claim's PR-2 coinsurance 14.00, CLP04 56.00.",
+  );
+  const claimLevelCorrected = correctionOf(b, 9, claimLevelOriginal, [claimShareLine(b, 10000n)], coinsuranceAtClaim(10000n));
+  const claimLevel = ledRemittance(b, base, 9, adjustedOn, [reversalOf(claimLevelOriginal), claimLevelCorrected]);
+  b.add835(
+    'claim-level-adjusted.835',
+    claimLevel.file,
+    "Its adjusted remittance: the original reversed (the claim's PR-2 -14.00, CLP04 -56.00) and the correction allowed 100.00, CO-45 50.00 and SVC03 100.00 on the line, the claim's PR-2 coinsurance 20.00, CLP04 80.00: BPR02 24.00.",
+  );
+  b.addFile('claim-level-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: claimLevel.trace, amount: claimLevel.check }]), 'csv', 'The bank export of that check: one deposit of 24.00 matched by trace number and amount.');
   recoveryScenario(b);
-  b.scenario({ shareKind: 'coinsurance', variants: { reissued: ['reversal.835', 'reissued.835'], shared: ['shared-adjusted.835', 'shared-posting-export.csv'], onePass: ['adjusted.835 and lowered.835 loaded, then one reconcile'] } });
+  b.scenario({
+    shareKind: 'coinsurance',
+    variants: {
+      reissued: ['reversal.835', 'reissued.835'],
+      shared: ['shared-adjusted.835', 'shared-posting-export.csv'],
+      onePass: ['adjusted.835 and lowered.835 loaded, then one reconcile'],
+      claimLevel: ['claim-level-original.835', 'claim-level-adjusted.835', 'claim-level-eft-export.csv'],
+    },
+  });
   const caseLine = lineOf(original);
   const correctedLine = lineOf(corrected);
   const approved = subtractCents(corrected.paid, original.paid);
@@ -558,6 +595,21 @@ export function led14(b: CaseBuilder): void {
     reissued: { approvedCents: centsToString(subtractCents(reissue.paid, original.paid)), coinsuranceCents: centsToString(subtractCents(shareOf(lineOf(reissue), '2'), shareOf(caseLine, '2'))), payerResponses: 0 },
     shared: { checkCents: centsToString(shared.check), postedRowCents: centsToString(sharedPosted), postedCents: centsToString(cents((approved * sharedPosted) / shared.check)), allocated: true },
     onePass: { entries: [ledEntry('approved', approved), ledEntry('recouped', negateCents(subtractCents(corrected.paid, lowered.paid)))], outcomes: ['approved', 'decreased'] },
+    claimLevel: {
+      // CLP04 less CLP04: each claim's one line takes all of its claim-level PR, so its cash is CLP04.
+      entries: [
+        ledEntry('approved', subtractCents(claimLevelCorrected.paid, claimLevelOriginal.paid), 'claim-level-adjusted.835 transaction 0 claim 1'),
+        ledEntry('deposited', claimLevel.check, 'claim-level-eft-export.csv row 1'),
+      ],
+      payerApprovedCents: centsToString(subtractCents(claimLevelCorrected.paid, claimLevelOriginal.paid)),
+      billableToPatient: {
+        allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(claimLevelCorrected)), allowedOf(lineOf(claimLevelOriginal)))),
+        paymentIncreaseCents: centsToString(subtractCents(claimLevelCorrected.paid, claimLevelOriginal.paid)),
+        coinsuranceCents: centsToString(cents((10000n - 7000n) / 5n)),
+        otherReductionCents: '0',
+        allocatedFromClaim: true,
+      },
+    },
   });
 }
 
