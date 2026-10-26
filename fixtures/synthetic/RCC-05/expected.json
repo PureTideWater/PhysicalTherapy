@@ -2,12 +2,14 @@
   "case": "RCC-05",
   "module": "RCC",
   "title": "The month waits, then prices",
-  "assertion": "The monitor starts no daily run while the release in force covers no more of the month and the practice's terms are unchanged, and plans it once either changes; Coverage shows the month, its quarter, families, lines and billed dollars, and each fee-schedule quarter or locked year not loaded; a complete run with lines stopped by unloaded content logs one content alert",
+  "assertion": "The monitor starts no daily run while the release in force covers no more of the month and the practice's terms are unchanged, and plans it once either changes; Coverage's route returns the month, its quarter, families, lines and billed dollars, a headline of lines and dollars, and each fee-schedule quarter or locked year not loaded; a complete run with lines stopped by unloaded content logs one content alert",
   "synthetic": true,
   "completesIn": 7,
   "assertedBy": [
     "apps/worker/src/monitor/monitor.db.test.ts",
     "apps/web/src/lib/pricing/content.db.test.ts",
+    "apps/web/src/lib/routes/coverage-content.db.test.ts",
+    "apps/web/src/components/pricing/content.test.tsx",
     "apps/worker/src/price/content.db.test.ts"
   ],
   "codeListRelease": null,

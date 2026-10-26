@@ -2,7 +2,7 @@
   "case": "RCC-08",
   "module": "RCC",
   "title": "Content due",
-  "assertion": "The calendar names every content but PaidWhole's own; content ending within 45 or 14 days, ended, due with no draft, or overdue is reported with the exact import commands, as is a calendar entry never reviewed or older than 13 months; before any release is published the drafts are judged and the titles say so; the console shows Content due, customers see each family's loaded-through date; the workflow's check job only reads and its notify job alone writes issues, once per title, showing only plain file names from source pages",
+  "assertion": "The calendar names every content but PaidWhole's own; content ending within 45 or 14 days, ended, due with no draft, or overdue is reported with the exact import commands, as is a calendar entry never reviewed or older than 13 months; before any release is published the drafts are judged and the titles say so; the console shows Content due, customers see every family of the release in force, loaded through a date, open, loaded only from a later date, partly loaded or not loaded; the source watch finds a new matching file whatever its name, shows plain names as they are and others percent-encoded, reports a page that lists no matching file any more, and reads pages over https from the calendar's hosts only, at most 5 MiB; the workflow's check job only reads and its notify job alone writes issues, once per title and at most 20 new ones a run, listing the rest in one issue",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": [
@@ -10,6 +10,8 @@
     "tools/content-calendar/content-calendar.test.ts",
     "apps/web/src/lib/routes/console-routes.db.test.ts",
     "apps/web/src/lib/releases/content-through.db.test.ts",
+    "apps/web/src/lib/routes/reruns-routes.db.test.ts",
+    "apps/web/src/components/pricing/content.test.tsx",
     "tools/test/workflows.test.ts"
   ],
   "codeListRelease": null,
