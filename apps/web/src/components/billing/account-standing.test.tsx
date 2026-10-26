@@ -212,7 +212,7 @@ describe('the standing on the billing page (BIL-05)', () => {
 
   it('prints one date, the label’s, for a suspension for nonpayment, and links the Pay form of the holding invoice', () => {
     const html = markup(standingOf('group', 'active', 'suspended'));
-    expect(html.match(/since/g)).toHaveLength(1);
+    expect(html.match(/\d{4}-\d{2}-\d{2}/g)).toEqual(['2026-10-01']);
     expect(html).toContain('Suspended for nonpayment since 2026-10-01');
     expect(html).toContain(`<a class="underline" href="#pay-${INVOICE.id}">Pay SIM-0002</a>`);
     expect(html).toContain('a bank (ACH) payment restarts them once the bank settles it');

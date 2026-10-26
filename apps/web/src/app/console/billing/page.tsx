@@ -14,12 +14,21 @@ import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Billing status' };
 
-const STANDING: Readonly<Record<string, string>> = { good: 'Good', past_due: 'Past due', suspended: 'Suspended for nonpayment' };
+/** The one standing (standingKind) in the operator's words; billing's own standing beside it when the record's wins. */
+const STANDING: Readonly<Record<string, string>> = {
+  good: 'Good',
+  past_due: 'Past due',
+  suspended_nonpayment: 'Suspended for nonpayment',
+  suspended_by_paidwhole: 'Suspended (PaidWhole)',
+  closed: 'Closed',
+};
+const BILLING_STANDING: Readonly<Record<string, string>> = { past_due: 'past due', suspended: 'suspended for nonpayment' };
 const KIND: Readonly<Record<string, string>> = { group: 'Practice group', firm: 'Billing firm' };
 
 /**
  * Internal console: billing status per organization (PRD 7, Organizations and practices: "billing status";
- * PRD 3: the platform administrator "manages ... billing"; docs/adr/0050): each group's and firm's standing,
+ * PRD 3: the platform administrator "manages ... billing"; docs/adr/0050): each group's and firm's one standing (the
+ * record's status and billing's, PaidWhole's suspensions first; @tp/billing/standing) with billing's own beside it,
  * plan, what it owes and the latest nightly usage snapshot (granted and active practices, the seam firm
  * invoicing reads in milestone 12), and an audit invoice issued from here. Organization records and
  * invoices only; no practice's data.
@@ -49,18 +58,21 @@ export default async function ConsoleBillingPage() {
             </thead>
             <tbody>
               {organizations.map((row) => (
-                <tr key={row.organizationId} className="border-t" data-standing={row.standing}>
+                <tr key={row.organizationId} className="border-t" data-standing={row.standingKind}>
                   <td className="py-1 pr-3">
                     {row.name} <span className="text-xs text-muted-foreground">({KIND[row.kind] ?? row.kind})</span>
-                    {row.status === 'active' ? null : (
-                      <Badge className="ml-2" variant="destructive">
-                        {row.status}
-                      </Badge>
-                    )}
                   </td>
                   <td className="py-1 pr-3">
-                    <Badge variant={row.standing === 'good' ? 'outline' : 'destructive'}>{STANDING[row.standing] ?? row.standing}</Badge>
-                    {row.suspendedSince !== null ? <span className="ml-2 text-xs">since {utcDate(row.suspendedSince)}</span> : row.pastDueSince !== null ? <span className="ml-2 text-xs">since {utcDate(row.pastDueSince)}</span> : null}
+                    <Badge variant={row.standingKind === 'good' ? 'outline' : 'destructive'}>{STANDING[row.standingKind] ?? row.standingKind}</Badge>
+                    {row.standingKind === 'suspended_nonpayment' && row.suspendedSince !== null ? (
+                      <span className="ml-2 text-xs">since {utcDate(row.suspendedSince)}</span>
+                    ) : row.pastDueSince === null ? null : row.standingKind === 'past_due' ? (
+                      <span className="ml-2 text-xs">since {utcDate(row.pastDueSince)}</span>
+                    ) : row.standingKind === 'suspended_by_paidwhole' || row.standingKind === 'closed' ? (
+                      <span className="ml-2 text-xs">
+                        billing {BILLING_STANDING[row.standing] ?? row.standing} since {utcDate(row.suspendedSince ?? row.pastDueSince)}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="py-1 pr-3">{row.plan === null ? 'None' : `${row.plan === 'monthly' ? 'Monthly' : 'Annual'} (${row.subscriptionStatus ?? ''})`}</td>
                   <td className="py-1 pr-3 font-mono tabular-nums">{formatUsd(parseCents(row.openCents))}</td>

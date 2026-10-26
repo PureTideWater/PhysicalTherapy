@@ -89,7 +89,7 @@ test('an organization administrator pays by test ACH: the bank account, the mont
 
 test('a group suspended by PaidWhole reads "Suspended by PaidWhole", never "In good standing", with the notice, the support ticket’s link and the note that payment does not lift it (BIL-06)', async ({ page }) => {
   const group = await withDatabase(async (client) => (await client.query<{ id: string; status: string }>('SELECT id, status FROM organization WHERE name = $1', [SYNTHETIC_SUSPENDED_GROUP])).rows);
-  expect(group).toEqual([{ id: expect.any(String) as string, status: 'suspended' }]);
+  expect(group.map((row) => row.status)).toEqual(['suspended']);
   const organizationId = group[0]?.id ?? '';
   await signInWithTotp(page, 'suspended-admin');
   await page.goto(`/settings/billing/${organizationId}`);

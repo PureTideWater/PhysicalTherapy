@@ -91,6 +91,9 @@ interface OrganizationRow {
   readonly standing: OrganizationBilling['standing'];
   readonly past_due_since: Date | null;
   readonly suspended_since: Date | null;
+  readonly holding_invoice_id: string | null;
+  readonly holding_number: string | null;
+  readonly holding_remaining_cents: string | null;
 }
 
 interface InvoiceRow {
@@ -119,8 +122,10 @@ const CURRENT_SUBSCRIPTION = `SELECT id, plan, status, current_period_end, cance
 export async function organizationBilling(client: ReadClient, organizationId: string, invoiceLimit = 24): Promise<OrganizationBilling | null> {
   const [organization] = await rows<OrganizationRow>(
     client,
-    `SELECT o.id, o.name, o.kind, o.status, o.billing_customer_ref IS NOT NULL AS has_customer, s.standing, s.past_due_since, s.suspended_since
+    `SELECT o.id, o.name, o.kind, o.status, o.billing_customer_ref IS NOT NULL AS has_customer, s.standing, s.past_due_since, s.suspended_since,
+            h.id AS holding_invoice_id, h.number AS holding_number, h.amount_remaining_cents::text AS holding_remaining_cents
        FROM organization o JOIN billing_standing s ON s.organization_id = o.id
+       LEFT JOIN invoice h ON h.id = s.invoice_id
       WHERE o.id = $1`,
     [organizationId],
   );
@@ -145,7 +150,10 @@ export async function organizationBilling(client: ReadClient, organizationId: st
     standing: organization.standing,
     pastDueSince: organization.past_due_since,
     suspendedSince: organization.suspended_since,
-    holdingInvoice: null,
+    holdingInvoice:
+      organization.holding_invoice_id === null
+        ? null
+        : { id: organization.holding_invoice_id, number: organization.holding_number, amountRemainingCents: parseCents(organization.holding_remaining_cents ?? '0') },
     subscription:
       subscription === undefined
         ? null
@@ -184,8 +192,17 @@ export interface BillingServices {
   readonly provider: BillingProvider;
 }
 
-async function customerOf(client: BillingClient, organizationId: string): Promise<{ readonly name: string; readonly kind: string; readonly ref: string | null } | undefined> {
-  return (await billingRows<{ name: string; kind: string; ref: string | null }>(client, 'SELECT name, kind, billing_customer_ref AS ref FROM organization WHERE id = $1', [organizationId]))[0];
+async function customerOf(
+  client: BillingClient,
+  organizationId: string,
+): Promise<{ readonly name: string; readonly kind: string; readonly status: OrganizationBilling['status']; readonly ref: string | null } | undefined> {
+  return (
+    await billingRows<{ name: string; kind: string; status: OrganizationBilling['status']; ref: string | null }>(
+      client,
+      'SELECT name, kind, status, billing_customer_ref AS ref FROM organization WHERE id = $1',
+      [organizationId],
+    )
+  )[0];
 }
 
 /** The organization's Stripe customer: created once (keyed by the organization), its reference recorded once. */
@@ -240,9 +257,12 @@ const ABANDONED_CLAIM = "interval '1 hour'";
  * place (subscription_claim), taken before Stripe is asked: two submissions made before the first one's
  * webhook arrives (two tabs, a form rendered twice) cannot both subscribe. Stripe's idempotency key is the
  * claim's, so a retry of the same claim never creates a second subscription. The claim ends when the
- * subscription does (events.ts).
+ * subscription does (events.ts). A closed organization takes no new plan (its open invoices are still paid).
  */
 export async function subscribe(services: BillingServices, organizationId: string, plan: PlanInterval, _requestKey: string): Promise<string> {
+  if ((await withBilling(services.pool, (client) => customerOf(client, organizationId)))?.status === 'closed') {
+    throw new BillingRefusedError('plan', 'a closed organization takes no new plan');
+  }
   if ((await currentSubscription(services, organizationId)) !== undefined) {
     throw new BillingRefusedError('plan', 'the organization already has a plan; cancel it first to choose another');
   }

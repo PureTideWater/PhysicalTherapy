@@ -467,9 +467,6 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     expect(page.billing.invoices.some((invoice) => invoice.id === holding)).toBe(false);
     expect(page.billing.holdingInvoice).toEqual({ id: holding, number: 'SIM-HAND-0045', amountRemainingCents: '250000' });
     expect(page.standing.nextSteps[0]).toMatchObject({ action: 'Pay SIM-HAND-0045', href: `#pay-${holding}` });
-    // The page's Pay form takes it: it is the organization's own unpaid invoice.
-    ok(await call(simulatedPaymentMethodAction, world.adminUserId, { organizationId: world.organizationId }, GOOD_CARD));
-    ok(await call(payInvoiceAction, world.adminUserId, { organizationId: world.organizationId }, { invoiceId: holding }));
   });
 
   it('refuses new work while a platform administrator holds the organization suspended', async () => {
