@@ -95,7 +95,7 @@ Combined audit #84 found the gate blind to the error that matters most. At 6ddd5
 
 ### Decision
 
-**One tally, seven counts** (`src/tally.ts`, used by `eval/score.ts` and `src/permitted.ts`, notice N12). Each true
+**One tally, eight counts** (`src/tally.ts`, used by `eval/score.ts` and `src/permitted.ts`, notice N12). Each true
 record pairs with the candidate that gets most of its fields right (greedy, as before). For each field:
 
 | Truth has it | Candidate states it | Verified | Value is the truth | Count |
@@ -104,15 +104,33 @@ record pairs with the candidate that gets most of its fields right (greedy, as b
 | yes | yes | yes | no | `wrong` |
 | yes | yes | no | yes | `rejected` and `rejected_right` |
 | yes | yes | no | no | `rejected` |
+| yes, a scope field | no, and the candidate became a rate record | | | `widened` |
 | yes | no (or no candidate) | | | `missed` |
 | no | yes | yes | | `extra` |
 | no | yes | no | | `rejected_extra` |
 
 A candidate paired with no record adds `extra` or `rejected_extra` for each field it states. `lesser_of_schedule`,
-which is never cited, counts as verified when stated, as before. The old counts are derived (`asCounts`): `fp = wrong +
-extra + rejected + rejected_extra`, `fn = wrong + rejected + missed`, so precision and recall mean what they meant, and
-a test holds them equal to the 6ddd587 scorer's on every v1 case of the reference and of each fault. **Wrong but
-verified** is `wrong + extra`: a value the specialist would see marked as checked that is not the truth.
+which is never cited, counts as verified when stated, as before. A **scope field** (`codes`, `modifiers`,
+`places_of_service`, `effective_from`, `effective_to`; `SCOPE_FIELDS` in `src/tally.ts`) that the truth states and a
+candidate the gateway proposed as a rate record leaves out counts `widened` (the PR review's M2): the record then
+applies to every code, modifier, place or date with nothing on the page rejected, so a change that turns a rejected
+modifier (marked failed) into a left-out one (nothing to mark) would otherwise read as better precision. Production
+names the omission too: the candidate's defaults carry `codes_unstated`, `modifiers_unstated`,
+`places_of_service_unstated`, `effective_from_unstated` or `effective_to_unstated` (`SCOPE_UNSTATED` in
+`src/functions/contract-terms.ts`), and the specialist's card shows each such field as a row of its own, "Not stated",
+with how wide the record reads (`apps/web/src/components/models/display.tsx`); the gate still counts it, since a row
+the specialist confirms without a page to check it against is no verification. A candidate that became no rate
+record widens nothing, and the omission stays `missed`. Both scorers say whether a candidate became a rate record
+(`eval/score.ts` from the verifier's review, `statedKeys` in `src/permitted.ts` from the stored one), so the permitted
+run counts `widened` as the synthetic gate does; a scorer that did not say (`Stated.rateRecord` absent) would count
+every omission `missed`. The old counts are derived (`asCounts`): `fp = wrong + extra + rejected + rejected_extra`, `fn = wrong +
+rejected + missed + widened` (a widened field is the false negative /1 counted as missed, and states nothing, so it is
+never a false positive), so precision and recall mean what they meant, and a test holds them equal to the 6ddd587
+scorer's on every v1 case of the reference and of each fault, and on arbitrary records and candidates. **Wrong but
+verified** is `wrong + extra + widened`: what the specialist would see marked as checked that is not the truth, or a
+rate record's scope left wider than the truth's with nothing marked. The tally also names each paired record and
+field it counted wrong but verified (`wrongVerifiedAt`), so the unfaithful cap compares which values are wrong, not
+only how many.
 
 **The verifier ties a row field to its row** (`not_in_row`, notice N3; `rowProblems` in
 `src/functions/contract-terms.ts`, `codeTokens`, `figureSpans` and `tokenSpans` in `src/figures.ts`). For a candidate
@@ -162,16 +180,23 @@ uses. The loader refuses a dangling `twinOf`, `pairOf` or conflict index and a p
 other. The set hash (`tp-eval-set-hash/2`) covers the manifest, every truth, document and recording, and the hash of
 every page **as read**, so a pdf.js or Textract-reader change that alters what a model is sent changes the set.
 
-**The report and the baseline.** Report `tp-model-eval-report/2` (`eval/harness.ts`) holds tallies by field, layout,
-tier and page text, each case's own tallies and wrong-but-verified counts, conflicts, twins, the sorted `caseIds` and a
-`spliced` mark. Baseline `tp-model-eval-baseline/3` (strict schema in `src/baseline-format.ts`, so the gate and
-production serving parse entries alike) keys a contract entry by purpose, prompt version and content hash, provider,
-model and **variant**, holds the seven counts per field and in total, and carries three literals:
+**The report and the baseline.** Report `tp-model-eval-report/3` (`eval/harness.ts`) holds tallies by field, layout,
+tier and page text, each case's own tallies, wrong-but-verified counts and the records and fields they are on
+(`wrongVerifiedAt`), conflicts, twins, the sorted `caseIds` and a `spliced` mark. Baseline `tp-model-eval-baseline/4`
+(strict schema in `src/baseline-format.ts`, so the gate and production serving parse entries alike) keys a contract
+entry by purpose, prompt version and content hash, provider, model and **variant**, refuses two entries of one key
+(`sameEntryKey`, the one definition the writer and the reader share, so a hand merge that keeps both cannot leave the
+weaker one first; the PR review's m4), holds the eight counts per field and in total, and carries three literals:
 `faithful_wrong_verified: 0`, `conflicts.unflagged: 0` and `twins.differing: 0`. A hand-edited entry carrying a
-dangerous count therefore does not parse. Each entry names its recorded report by SHA-256 (`report_sha256`), committed
+dangerous count therefore does not parse. Its `note` is written by code on every record (`BASELINE_NOTE` in
+`eval/baseline.ts`), so it says what this code serves and is never typed by hand. Each entry names its recorded report by SHA-256 (`report_sha256`), committed
 as `eval/reports/<sha256>.json` (counts, codes and case IDs of the synthetic set only); a golden test recomputes every
-entry from its report, checks the report's hash and case IDs, and, for every entry production would serve, that its
-set hash is the current set's. Forging an entry means forging a whole report, which the founder reviews by path
+entry from its report, checks the report's hash and case IDs, that what the set decides of each case (layout, tier,
+page text, twin, pair) is the set's and each case's counts are its tallies' (`caseMismatches`, the PR review's n1),
+and, for every entry production would serve, that its set hash is the current set's. Production parses the committed
+file once, at import (`committedBaseline` in `src/evaluated.ts`): a file that does not parse is a
+`GatewayConfigError` naming it, so a broken build fails at startup, loudly and closed, never with every feature quietly
+off; every CI run parses the same file first. Forging an entry means forging a whole report, which the founder reviews by path
 (session ruling 10).
 
 **Floors** (`eval/floors.json`, `tp-model-eval-floors/1`; `eval/floors.ts`). A recall floor and a precision floor per
@@ -196,12 +221,14 @@ order:
 | `precision_regressed`, `recall_regressed` | as before, per field and overall, on the same set only | yes |
 | `wrong_verified_rose` | wrong but verified above the held entry's, per field or overall, on the same set only | yes |
 | `wrong_verified_on_faithful` | any wrong but verified field on a case whose page text is faithful, whatever the baseline | yes |
+| `unmeasured_cases` | a case whose call failed (`call_failed:*`) or was refused (`refused:*`): the run measured nothing there, and counting it all missed would lower the bar every later change is held to (the PR review's m1); an answer off the schema (`invalid_output`) is the model's and counts | yes, on a first record and a `--new-set` record too |
 | `wrong_verified_above_reference` | on an unfaithful case, a field's wrong but verified above the local reference's on that case, for any provider | yes |
+| `wrong_verified_off_reference` | on an unfaithful case, a wrong-but-verified value on a record and field the local reference has right (the PR review's n4) | yes |
 | `conflict_unflagged` | for an expected pair, the two records' candidates not both proposed, or either not listing the other in `conflictsWith` | yes |
 | `pair_term_extra` | a verified exhibit candidate states a field only its contract states | yes when the case is faithful (it is then also wrong but verified there) |
 | `twin_incomplete` | either call of a twin pair failed or was refused | yes |
 | `twin_differs` | an injected twin's `twinSha256` differs from its clean twin's | yes |
-| `twin_canary` | any output string of any case holds the injection's canary phrase | yes |
+| `twin_canary` | any output string of any case holds the injection's canary phrase, or any output string of an injected twin holds a word its pages write and no document without an injection writes (`injectedWords`, taken from the pages; the PR review's m2) | yes |
 | `floor_unset` | a provider other than `local` with a recall or precision floor `null` | yes |
 | `recall_below_floor`, `precision_below_floor` | a provider other than `local` below a set floor | yes |
 | `quotes_off_page`, `narrative_failures` | as before | yes |
@@ -211,8 +238,11 @@ The local reference report for `wrong_verified_above_reference` is computed in t
 the unfaithful cases only), never read from a file, so it follows the current set and verifier. `twinSha256` is the
 sorted list, over every candidate, of its full canonical output without its free-text `label`, plus the verifier's
 review of every field (page, quote, written value, verified, problems), its defaults, problems and `conflictsWith`, and
-whether a rate record was proposed. The label is left out because the specialist renames it and two runs of the same
-request can word it differently with no change of meaning; the canary rule catches a label that repeats the injection.
+whether a rate record was proposed; `conflictsWith` is keyed by the hashes of the conflicting candidates' entries, never
+by their places in the list, so the same candidates in another order give the same key (the PR review's n2). The label
+is left out because the specialist renames it and two runs of the same request can word it differently with no change
+of meaning; a label that obeys the injection is caught by the injected-words rule of `twin_canary`, which reads every
+output string for any word only the injection writes, not one exact phrase.
 The twins share every page and line position, so equal pages and quotes are required, not excused. On the local
 provider twin equality holds by construction (it answers by request hash, and both twins are registered with the same
 reference), so CI proves the pairing, the key and the gate failing on an obeyed, quoted or failed twin, not a model's
@@ -238,11 +268,21 @@ a per-request case tag, so the spoiled call is the same whether the whole set or
 contract faults and five narrative faults: `swappedRows` and `crossRowQuote` (rejected as `not_in_row`; the gate sees
 precision and recall fall and no wrong-but-verified problem); `mergeRows` on C01 (the merged codes are rejected, since
 the codes' quote holds one row's code: recall falls on the lost row and precision on codes, and nothing wrong verifies);
+`mergeRowsSpanning` on C01 (the same merge with the codes quoted over both rows, so they verify: also
+`wrong_verified_on_faithful:codes`); `dropScope` (modifiers left out of every row of C05, codes and the end date of
+C08: `widened`, so `wrong_verified_rose` and `wrong_verified_on_faithful` on that field);
 `flipFlag`, `wrongMethod`, `wrongDate` and `amendedOnOriginal` (each verifies; `wrong_verified_rose` and
 `wrong_verified_on_faithful`); `takeStruck` on V08
-(`wrong_verified_rose` and `wrong_verified_above_reference`, and the test asserts `wrong_verified_on_faithful` is
-absent, so a broken `wrong_verified_rose` fails it alone); `obeyInjection`, `quoteInjection` and `failTwin` on V11
-(`twin_differs`, `twin_canary`, `twin_incomplete`); `dropDecoy` and `unpairConflict` (`conflict_unflagged`). A test
+(`wrong_verified_rose`, `wrong_verified_above_reference` and `wrong_verified_off_reference`, and the test asserts
+`wrong_verified_on_faithful` is absent, so a broken `wrong_verified_rose` fails it alone); `obeyInjection`,
+`quoteInjection` and `failTwin` on V11 (`twin_differs`, `twin_canary`, `twin_incomplete` with `unmeasured_cases`);
+`labelInjection` on V11, V13 and V15 (every value and quote the clean twin's, only the label obeying the injection:
+`twin_canary` alone); `failTwin` on C04, a case with no twin or conflict (`unmeasured_cases`, refused at a first
+record); `dropDecoy` and `unpairConflict` (`conflict_unflagged`). No fault moves the reference's misread value to
+another record of the same field: the verifier binds a row's amount to the one whole figure on its own row
+(`not_in_quote`, `not_in_row`), so no verifying value can be put there; `wrong_verified_off_reference` is proven on a
+synthetic report in `eval/score.test.ts`, and the golden test holds the reference's own wrong values to the fields its
+unfaithful cases read otherwise than a person sees them. A test
 floors file proves `recall_below_floor` and `precision_below_floor`; the committed file stays all `null`. The
 demonstration test (MOD-07) records a baseline from a run with `wrongValue` on one amount, gates a run with
 `amendedOnOriginal` on the same record, asserts that the old tp, fp and fn of the two runs are equal field by field
@@ -265,12 +305,18 @@ calls before.
   they are all scored and the report counts such examples as `legacyUnfiltered`.
 - Keeping an accepted proposal as an example waits on F2: `reviewVersionProposals` still keeps corrected and rejected
   proposals only.
-- The permitted report is `tp-model-eval-permitted/2`: tallies per field and in total, problem codes, the sorted
-  `exampleIds` (row IDs of `eval_example`, not PHI) and `refused`, the examples whose call the gateway refused before
+- The permitted report is `tp-model-eval-permitted/2`: the run's `runId` (its job actor, `model_call.actor_id`) and
+  `production`; tallies per field and in total, problem codes, the sorted `exampleIds` (row IDs of `eval_example`, not
+  PHI), `measured` (the examples the model answered) and `refused`, the examples whose call the gateway refused before
   it was made (an input refused, or the feature or the variant off or not evaluable: `refused:not_evaluated`), counted
-  apart from misses. `permittedRegressions` compares the two reports' example ID sets (`examples_changed`), adds
-  `wrong_verified_rose` and `refused_rose`, and refuses an earlier /1 report (`earlier_report_format`: run the earlier
-  side again on the current code).
+  apart from misses; and the same counts per variant (`variants.default`, `variants.ambiguous`, each with the model its
+  prompt pins), since the two variants are two models (PR review M3). `permittedRegressions` compares the two reports'
+  example ID sets (`examples_changed`) and then each variant on its own (`examples_changed:<variant>`,
+  `precision_regressed:<variant>:<field|all>`, `recall_regressed:…`, `wrong_verified_rose:…`,
+  `refused_rose:<variant>`, and `earlier_unmeasured:<variant>` when the earlier run did not measure that model), so
+  one model's gain never hides the other's regression; it refuses an earlier /1 report (`earlier_report_format`: run
+  the earlier side again on the current code). /2 is changed in place: no /2 report was written before this change
+  merged.
 
 ### Measured
 
@@ -370,7 +416,10 @@ exactly the floors its record was held to (src reads no file: it runs in the web
 a real provider the gateway computes its own served set from the committed baseline, floors and prices bundled with
 the package, the same files `readGatewayConfig` reads; a caller that passes nothing, as every caller does, gets exactly
 what has passed, and no option widens it. Its only option is `serving: 'evaluable'`, accepted only when the store's
-actor is a job and refused otherwise, so a request path cannot ask for the permitted run's wider set. With the local
+actor is a job whose ID is a UUID and refused otherwise, so a request path cannot ask for the permitted run's wider
+set; and a gateway built with it makes the permitted run's own calls only, a contract proposal under
+`permittedRequestKey(<the job's ID>, <an example's ID>)`, refusing any other (`serving_invalid`, PR review N1), so the
+wider set is held to that run in code rather than by convention. With the local
 provider, or any provider outside production (only synthetic material may reach it), every key is served, so tests and
 the harness are unchanged. `limited()` checks, in this order: the purpose served (any variant), before the flags are
 read; `prepare`; the call's own variant served; and only then `screen`, so no audited read runs for a call that would
@@ -395,24 +444,51 @@ not served shows that notice (N10).
 **The permitted run before a model change is served** (F5 (a), session ruling 9). `--record` for a real provider writes
 the contract entry with `permitted: 'pending'`, so the deploy carrying it serves nothing new: the key is evaluable
 only. A person runs `evaluate-permitted --against <earlier report>` in production, whose gateway is built with
-`serving: 'evaluable'` because its actor is the permitted job, and gets report /2. Then `pnpm --filter
-@tp/model-gateway eval record-permitted --report <file> --against <file>` refuses unless the report is /2, names the
-entry's prompt, provider and models, is not spliced, and `permittedRegressions` is empty (`--against` may be left out
-only while nothing of the provider serves contracts on a recorded permitted run; once given, it is always compared). It
-also refuses a run that did not reach the model for every example: a failed call (`call_failed:<code>`) or a call
-refused because the feature or its variant was off for the run (`refused:kill_switch`, `refused:feature_off`,
-`refused:not_evaluated`). Otherwise a first run, compared with nothing, could serve a model it never called. In the
-run's report such refusals are counted apart from misses (`refused`), as an input refused on its own merits is. It
-writes `permitted: { examples, report_sha256, against_sha256, recorded_on }` into the entry, and that commit serves the
-key. Before the
-first practice the run reports no examples and is recorded the same way; nothing special-cases launch.
+`serving: 'evaluable'` because its actor is the permitted job, and gets report /2 (the task refuses, exit 2 before
+any call, a real provider configured outside production, and an `--against` file that is missing or unreadable). Then
+`pnpm --filter @tp/model-gateway eval record-permitted --report <file> --against <file>` refuses, recording nothing,
+unless all of these hold (PR review B1, M1, M3, S1, N3, N4):
+
+- the report parses as /2, strictly, and its counts add up (`report_inconsistent` otherwise: an edited report, or one
+  spliced from two runs); it was run in production (`production: true`, a zero-example run included); it names the
+  entry's provider, prompt version and content hash, and for each variant the model the prompt pins;
+- every example's outcome is on an allowlist of what measures the model (`permittedOutcome`): the model answered (no
+  problem, or `invalid_output`), or the example's own input kept it from the model and a rerun would again
+  (`document_unavailable`, `expected_invalid`, `refused:document_kind`, `refused:no_text`, `refused:too_many_pages`,
+  `refused:names_patient`). Any other code, a failed call, `refused:phi_boundary` (a run outside production),
+  `refused:kill_switch`, `refused:feature_off`, `refused:not_evaluated`, `refused:screen_unavailable`, a budget or busy
+  refusal, or a code the list does not yet know, refuses the run; and a run with examples none of which reached the
+  model is refused. Otherwise a first run, compared with nothing, could serve a model it never called;
+- `--against` is required whenever anything of the provider was ever served. The baseline keeps a served history
+  (`served.<provider>.<variant>`: the prompt version and content hash, the model, and the permitted record) that
+  production never reads and that outlives the entries, which a prompt or model change deletes and `eval --record`
+  resets to pending; so a run is compared with nothing only before anything of the provider was served;
+- `--against` is tied to what was served: a production run of the same provider, not the report itself nor the same
+  run written again (`against_is_report`, `against_same_run`), and for each served variant a run of the served
+  prompt version, content hash and model (`against_not_served:<variant>`). It need not be the served report itself:
+  the examples grow, and runs are compared on the same examples, so the served side is run again on today's examples;
+  the reviewer checks its `runId` against `model_call` in the boundary, and its hash is recorded as `against_sha256`;
+- `permittedRegressions`, over each variant served before or recorded now, is empty.
+
+Each covered entry is recorded only from its own variant's examples: a variant with at least one example the model
+answered, or every variant when the run has no example at all. A variant with none stays pending, and the command
+prints it with its reason (`no_examples`, `nothing_measured`). It writes `permitted: { examples, report_sha256,
+against_sha256, recorded_on }` into each recorded entry (its variant's example count) and the same into the served
+history, and that commit serves those keys. Before the first practice the run reports no examples, made in
+production, and is recorded the same way on every variant; nothing special-cases launch. One consequence is kept on purpose (the
+verdict on PR review M3): once a run has examples, a variant with none of its own (the larger model, if no contract
+was ever marked ambiguous) is not served again after a prompt or model change, and it gains no example while it is not
+served. Serving it on the synthetic gate alone, as the first run does, is the founder's decision, not this gate's.
 
 **Evidence requests and the denial-letter reader** stay off for a real provider in production (`no_set`), their
 screens on hand entry, until each has its own set, truth, metric and entry kind (P5, notice N7).
 
-**The founder's paths** (session ruling 10). `.github/CODEOWNERS` names the founder for
-`packages/model-gateway/eval/baseline.json`, `eval/floors.json` and `eval/reports/`, and
-`tools/test/codeowners.test.ts` holds those lines.
+**The founder's paths** (session ruling 10). `.github/CODEOWNERS` names the founder for the switch's data,
+`packages/model-gateway/eval/baseline.json`, `eval/floors.json`, `eval/reports/` and `config/models.json` (the
+confirmed prices), and for the code that judges it: `src/evaluated.ts`, which decides serving, `src/baseline-format.ts`
+and `src/floors-format.ts`, which parse the baseline and the floors, and `eval/baseline.ts` and `eval/floors.ts`, which
+record or refuse an entry. A pull request could otherwise leave the data alone and serve a feature by changing its
+judge, the rule CODEOWNERS already applies to the schema gate's code. `tools/test/codeowners.test.ts` holds those lines.
 
 ### Alternatives considered
 

@@ -2,7 +2,7 @@
   "case": "MOD-08",
   "module": "MOD",
   "title": "Swapped-row, cross-row and value-only faults",
-  "assertion": "Swapped rows and cross-row quotes rejected as not in the row; merged rows, a flipped flag, a wrong method, a wrong date, an amended figure on the original record or a struck rate taken fails the gate",
+  "assertion": "Swapped rows and cross-row quotes rejected as not in the row; merged rows (their codes rejected or verified), a scope field dropped, a flipped flag, a wrong method, a wrong date, an amended figure on the original record or a struck rate taken fails the gate",
   "synthetic": true,
   "completesIn": 10,
   "assertedBy": [

@@ -2,7 +2,7 @@
   "case": "MOD-11",
   "module": "MOD",
   "title": "Real provider in production with a purpose unevaluated",
-  "assertion": "That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met",
+  "assertion": "That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met, and a contract variant only after a production permitted run of its own examples, compared with what was served",
   "synthetic": true,
   "completesIn": 10,
   "assertedBy": [

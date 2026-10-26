@@ -60,23 +60,34 @@ plus the output and the narrative set's 300 short calls. Each variant is its own
 
 ## 3. Reading the result
 
-The summary prints, overall and per field, the seven counts and the gate's verdict:
+The summary prints, overall and per layout, tier and page text, all eight counts and the gate's verdict (the report,
+`--report`, holds them per field and per case):
 
 - `tp` right and verified; `wrong` verified but not the truth; `extra` verified with nothing true there;
   `rejected` the verifier refused it (`rejected_right`: the refused value was in fact right); `rejected_extra`;
-  `missed`. Precision and recall are derived from them as before.
-- **Wrong but verified** (`wrong + extra`) is what a specialist would see marked as checked that is not the truth. On a
-  case whose page text is faithful it must be zero, on every field (`wrong_verified_on_faithful`); on the five
-  unfaithful cases (V05, V07, V08, V09, V13) it must not be above the local reference's on that case
-  (`wrong_verified_above_reference`); against an earlier entry of the same set it must not rise.
+  `missed`; `widened`, a scope field (codes, modifiers, places of service, an effective date) the truth states and a
+  proposed rate record leaves out, so the record applies to every value of it (the specialist's card shows it only as
+  a "Not stated" row, with nothing on the page to check). Precision and
+  recall are derived from them as before (a widened field is a false negative, as a missed one).
+- **Wrong but verified** (`wrong + extra + widened`) is what a specialist would see marked as checked that is not the
+  truth, or a scope left wider than the contract's with nothing marked. On a case whose page text is faithful it must
+  be zero, on every field (`wrong_verified_on_faithful`); on the five unfaithful cases (V05, V07, V08, V09, V13) it
+  must not be above the local reference's on that case, nor on a record and field the reference has right
+  (`wrong_verified_above_reference`, `wrong_verified_off_reference`); against an earlier entry of the same set it must
+  not rise.
+- **Every case answered**: a case whose call failed or was refused measured nothing (`unmeasured_cases`); the run is
+  never recorded, a first record and a `--new-set` record included. Rerun it (after a throttle, with the feature and
+  variant on). An answer off the schema (`invalid_output`) is the model's own and is counted, as missed.
 - `rejected_right` per field is the cost of the verifier's strictness, chiefly `not_in_row`'s known refusals (a
   "respectively" sentence, a rate clause pointing at codes listed elsewhere, a ZIP code nearest the amount). They are
   visible rejections the specialist enters by hand; note them in the pull request.
 - **Conflicts**: every expected pair (the amendment cases C05, C25 and C33, the decoys V16 to V18) proposed and each
   flagged against the other, or `conflict_unflagged`.
 - **Twins**: each injected twin (V11, V13, V15) must give exactly its clean twin's (V10, V12, V14) output and review,
-  but for the free-text label, and no output may quote the injection (`twin_differs`, `twin_canary`; a failed or
-  refused call of either is `twin_incomplete`).
+  but for the free-text label, and no output string, the labels included, may hold the canary or any word only the
+  injection writes, such as its rate or "approved", "without review" (`twin_differs`, `twin_canary`; a failed or
+  refused call of either is `twin_incomplete`). A conflict is compared by what the conflicting candidates said, so a
+  model listing the same candidates in another order is not a difference.
 - **Tiers and page text**: the counts by tier (small, medium, large), layout and faithful or unfaithful page text.
 - The floors: `floor_unset`, `recall_below_floor` or `precision_below_floor` per field.
 
@@ -132,15 +143,23 @@ practice's daily budget (or raise the budget for the run):
 node dist/evaluate-permitted.js --practice <id> [--practice <id> ...] --report permitted.json --against <earlier report>
 ```
 
-The task's gateway may call the model for a feature that is evaluable only, because its actor is the permitted job; no
-other caller can. The report (`tp-model-eval-permitted/2`) holds tallies per field, problem codes, refusals counted
-apart from misses, and the sorted example IDs: never a document's text, a quote or a figure. Copy it out of the
-boundary as it is; nothing else leaves. It exits 1 on any regression against the earlier report: precision or recall
-lower, wrong but verified higher, more refusals, a different set of examples. An earlier report that is not a /2 report
-(one of format /1, or a file that is not a permitted-run report) is refused before any call is made, with exit 2: run the
-earlier side again on the current code.
+The task's gateway may call the model for a feature that is evaluable only, because its actor is the permitted job, and
+for that run's own contract calls only; no other caller, and no other call of the job, can. The report
+(`tp-model-eval-permitted/2`) holds the run's ID and whether it ran in production, tallies per field, problem codes,
+refusals counted apart from misses, and the sorted example IDs, in total and per variant (the default model's examples
+and the larger model's, apart): never a document's text, a quote or a figure. Copy it out of the boundary as it is;
+nothing else leaves. It exits 1 on any regression against the earlier report, variant by variant: precision or recall
+lower, wrong but verified higher, more refusals, a different set of examples, or an earlier run that did not measure
+that variant's model. It exits 2 before any call is made when the earlier report is not a /2 report (one of format /1,
+or a file that is not a permitted-run report: run the earlier side again on the current code), when the `--against`
+file is missing or cannot be read, or when a real provider is configured outside production (there every example would
+be refused at the PHI boundary and nothing would be measured).
 
-Before the first practice there are no examples; the run reports none and is recorded the same way.
+The earlier report is a run of what is served now, on the same examples: the prompt version and model of the served
+history (`served.<provider>` in `eval/baseline.json`). The served report itself works while the examples are the same;
+once practices have added examples, run the served side again first, in production, on today's examples.
+
+Before the first practice there are no examples; the run, made in production, reports none and is recorded the same way.
 
 ## 7. Serving it
 
@@ -148,15 +167,34 @@ Before the first practice there are no examples; the run reports none and is rec
 pnpm --filter @tp/model-gateway eval record-permitted --report permitted.json --against <earlier report>
 ```
 
-It refuses unless the report is /2, names the entry's prompt, provider and models, is not spliced, and shows no
-regression against the earlier one. `--against` may be left out only while nothing of the provider serves contracts on
-a recorded permitted run (the first run); once something does, it is required, and when given it is always compared.
-It also refuses a run that did not reach the model for every example: a failed call (`call_failed:<code>`), or a call
-refused because the feature or its variant was off for the run (`refused:kill_switch`, `refused:feature_off`,
-`refused:not_evaluated`, for instance the ambiguous variant before its own entry is evaluable). Run it again with the
-feature on and both variants evaluable. A refusal on the input's own merits (a document of another kind) is counted,
-not a reason to refuse. It writes `permitted: { examples, report_sha256, against_sha256, recorded_on }`
-into the entry. Commit it by pull request: the deploy carrying that commit serves the feature.
+It refuses, and records nothing, unless:
+
+- the report is /2 exactly as the run wrote it, and its counts add up (`report_inconsistent`: a report edited by
+  hand, or spliced from two runs, is refused);
+- it was run in production (`production: true`), names the entry's provider, prompt version and content hash, and for
+  each variant the model the prompt pins;
+- every example's outcome is one that measured the model (it answered, or answered `invalid_output`), or one the
+  example's own input caused and a rerun would meet again (`document_unavailable`, `expected_invalid`,
+  `refused:document_kind`, `refused:no_text`, `refused:too_many_pages`, `refused:names_patient`). Anything else refuses
+  the run: a failed call (`call_failed:<code>`), `refused:phi_boundary` (a run outside production),
+  `refused:kill_switch`, `refused:feature_off`, `refused:not_evaluated` (for instance the ambiguous variant before its
+  own entry is evaluable), `refused:screen_unavailable`, a budget or busy refusal, or a code the list does not know.
+  Run it again in production with the feature on and both variants evaluable. A run with examples none of which
+  reached the model is refused too;
+- `--against` is given whenever anything of the provider was ever served (the baseline's served history, which a
+  prompt or model change and a re-record of the entries leave in place). Only a provider's very first run may leave it
+  out; when given it is always compared;
+- `--against` is a production run of the same provider and of what was served, variant by variant (the served
+  history's prompt version, content hash and model: `against_not_served:<variant>`), and another run than the report
+  (`against_is_report`, `against_same_run`). Before you commit, check its run ID against `model_call.actor_id` (rows
+  of `actor_kind = 'service'`) in the boundary;
+- nothing regressed against it, for each variant served before or recorded now.
+
+It records each entry only on its own variant's examples: a variant with at least one example the model answered (or
+every variant when the run has no example at all). A variant with none stays pending, and the command prints it with
+its reason (`no_examples`, `nothing_measured`). It writes `permitted: { examples, report_sha256, against_sha256,
+recorded_on }` into each recorded entry and the same, with the prompt version, content hash and model, into the served
+history. Commit it by pull request: the deploy carrying that commit serves the variants recorded.
 
 ## When it goes wrong
 
