@@ -1,0 +1,155 @@
+{
+ "verdict": "sound-with-changes",
+ "needsMigration": false,
+ "findings": [
+  {
+   "id": "DBF-R1",
+   "severity": "blocking",
+   "section": "3.1 Content: Defined by",
+   "problem": "The \"Defined by\" line comes from migration-text.ts's functionDefinedBy, a regex over CREATE (OR REPLACE) FUNCTION statements. It never sees ALTER FUNCTION run as dynamic SQL inside a DO block. 20261015180000_tenancy_hardening.sql:630 runs `EXECUTE format('ALTER FUNCTION %s SET search_path = pg_catalog, public, pg_temp', f)` over every SECURITY DEFINER function. So the file for allowed_practice_ids would say \"Defined by: 20261015140000_tenancy.sql\" alone, while the SET search_path its header prints was set by the hardening migration. The design's own example lists tenancy_hardening, which the helper cannot produce. On the tenancy functions, the most security-relevant ones, the line points the reviewer at the wrong migration. It also undercuts the design's claim that a recreation with an unchanged body shows the reviewer a no-op.",
+   "evidence": "migration-text.ts:132 (CREATE_FUNCTION regex) and :215. tenancy_hardening.sql:625-632 (the DO loop). grep finds `CREATE FUNCTION allowed_practice_ids` only at 20261015140000_tenancy.sql:252, whose SET search_path is `pg_catalog, public`; the catalog holds 'pg_catalog', 'public', 'pg_temp'.",
+   "fix": "Drop the \"Defined by\" line: git log -p on the file already gives each function's history from the catalog's truth. If it stays, rename it \"CREATE statements in (migration text; ALTER, GRANT and DO blocks not tracked)\", correct the example, and add a DBF-05 case for a function altered in a DO block."
+  },
+  {
+   "id": "DBF-R2",
+   "severity": "should",
+   "section": "3.2 --summary-since pointer / 3.3 runbook step 6",
+   "problem": "The summary reads function rows from Appendix C (summary.ts:270), so it notes a function only when its Appendix C row changes. Several attributes are printed in the new file but are not in Appendix C: argument names and DEFAULTs, STRICT, LEAKPROOF, PARALLEL, COST/ROWS and owner. A change to only these changes the file but no summary line, and so gets no \"(diff: ...)\" pointer. For example, priced_line_deadline_status(target uuid, minimum_level text DEFAULT 'L2'::text) would change its default with no row change. Step 6 of the runbook says the summary is the copy that counts, so the founder would never be pointed at that file.",
+   "evidence": "summary.ts:270-275 parses the 9 Appendix C cells. render.ts:471 lists the columns. In the probe database, 2 functions have argument defaults and 1 is STRICT (uuid_half).",
+   "fix": "--summary-since REF should also list every file under packages/db/functions that changed between REF and the working tree (git diff --name-status REF -- packages/db/functions; git is already available there and the CI step has fetch-depth 0). It should print each file's diff in a fenced diff block, SECURITY DEFINER and scope-setting functions first. The founder then reads the actual lines in the summary that counts. Adding this to the summary step needs no workflow change."
+  },
+  {
+   "id": "DBF-R3",
+   "severity": "should",
+   "section": "3.1 body hash binding",
+   "problem": "The design says the body-hash line binds the file to the approved document. It binds only the body: bodySha256 is the SHA-256 of prosrc, or of pg_get_function_sqlbody for a SQL-standard body (model.ts, functions map). It covers neither the header (defaults, STRICT, LEAKPROOF, COST, PARALLEL, owner) nor the ACL. The value does match: allowed_practice_ids hashes to f2ef1aad2276f6cd, as in domain-model.md:6454. But a founder could read the line as covering the whole file. What actually ties the files to the approval is the drift check together with Appendix D's migration hashes.",
+   "evidence": "model.ts: bodySha256 = sha256(f.src). The query computes sha256(prosrc) = f2ef1aad2276f6cdc855... and pg_get_functiondef prints prosrc verbatim between the $function$ delimiters.",
+   "fix": "Label the line \"Body SHA-256 (the body between the delimiters only), Appendix C\". In the README and ADR, state that the files are bound by the drift check plus Appendix D's migration hashes, not by this line. Add a DBF-02 assertion that hashing the text between the delimiters equals the Appendix C value, for both a plpgsql function and screening_standing (the SQL-standard body)."
+  },
+  {
+   "id": "DBF-R4",
+   "severity": "should",
+   "section": "5 Coordination (#42)",
+   "problem": "The approval of record is the founder's APPROVED review of the PR's latest commit (ADR 0063; runbook step 6.4). #42 already changes docs/product/domain-model.md and adds 20261107090000_mail_streams.sql. If Lane B merges first, #42 goes red in the db and domain model jobs until it commits its function files. That is a new commit, which dismisses any approval the founder has already given. The design names the red check but not the lost approval.",
+   "evidence": "/tmp/claude-0/pr42-files.txt includes docs/product/domain-model.md and packages/db/migrations/20261107090000_mail_streams.sql. ci.yml:351 runs `pnpm db:domain-model --check --strict --require-approval`. runbook github-governance.md step 6 item 4.",
+   "fix": "Add an ordering rule to section 5. Either merge Lane B only after #42 lands (Lane B then regenerates on #42's schema), or, if Lane B lands first, tell Lane A before the founder signs #42 so the function files go into the commit the founder approves. Put the rule in the ops lane notes."
+  },
+  {
+   "id": "DBF-R5",
+   "severity": "should",
+   "section": "3.1 generation",
+   "problem": "pg_get_functiondef raises an error for aggregates (prokind 'a'), so the generator would crash the first time a migration adds an aggregate. Procedures ('p') and window functions ('w') are not addressed either. The design checks only that all are 'f' today. The catalog query in catalog-reads.ts reads every pg_proc row in public.",
+   "evidence": "psql: `select pg_get_functiondef('pg_catalog.sum(int4)'::regprocedure)` gives ERROR: \"sum\" is an aggregate function. The probe database has 338 rows, all prokind 'f'.",
+   "fix": "Branch on prokind. 'f', 'p' and 'w' use pg_get_functiondef. For 'a', either refuse with a DomainModelError (exit 2) that names the aggregate and asks for generator support, or render CREATE AGGREGATE from pg_aggregate. Add a DBF-03 or DBF-05 case."
+  },
+  {
+   "id": "DBF-R6",
+   "severity": "should",
+   "section": "3.1 privileges",
+   "problem": "When PUBLIC holds EXECUTE, the design prints nothing for it. It only drops the `REVOKE ALL ... FROM PUBLIC` line. Opening a SECURITY DEFINER function to PUBLIC, the most dangerous grant change, would show as one removed line, which a reviewer easily reads as cleanup. The grantor is also ignored, as is an owner that revoked its own EXECUTE. NULL proacl, meaning default privileges with PUBLIC EXECUTE, must go through acldefault as model.ts does.",
+   "evidence": "In the probe database every proacl looks like {tp_owner=X/tp_owner,tp_app=X/tp_owner}. catalog-reads.ts already uses coalesce(p.proacl, acldefault('f', p.proowner)).",
+   "fix": "Always print one explicit line for PUBLIC: `REVOKE ALL ... FROM PUBLIC;` when PUBLIC lacks EXECUTE, `GRANT EXECUTE ... TO PUBLIC;` when it has it, so widening adds a line. Print `GRANTED BY <role>` when the grantor is not the owner, and the owner's own EXECUTE when it was revoked. Read the ACL via aclexplode(coalesce(proacl, acldefault('f', proowner))). Add DBF-05 cases for each."
+  },
+  {
+   "id": "DBF-R7",
+   "severity": "should",
+   "section": "3.2 drift / reviewer UX",
+   "problem": "The design treats GitHub collapsing the files as impossible because there is no linguist-generated attribute, and only pins that .gitattributes does not mark them generated. GitHub Linguist also detects generated files by heuristics, and a two-line header saying \"Generated by ... Do not edit\" may trigger one. If it does, Files changed collapses exactly these diffs. No .gitattributes exists today.",
+   "evidence": "`git check-ignore` and `ls -a` at the repository root: no .gitattributes. The file banner in design section 3.1 starts with \"Generated by\". Plausible, not verified against Linguist's current heuristics.",
+   "fix": "Add `.gitattributes` with `packages/db/functions/*.sql linguist-generated=false` (an explicit false overrides detection), plus a test that pins the line. Avoid conventional markers such as \"@generated\" and \"DO NOT EDIT\" in the banner."
+  },
+  {
+   "id": "DBF-R8",
+   "severity": "should",
+   "section": "CODEOWNERS (not in design)",
+   "problem": "The design says nothing about CODEOWNERS. Today the `*` line covers the directory, but the named lines (pinned in codeowners.test.ts) list the schema and its approval, so that coverage holds even without the `*` line. The function files are a review surface of the schema.",
+   "evidence": ".github/CODEOWNERS: lines for /packages/db/migrations/, /docs/product/domain-model.md and /packages/db/domain-model/. tools/test/codeowners.test.ts:53-75 pins the exact list. .github/CODEOWNERS is not in #42's file list.",
+   "fix": "Add `/packages/db/functions/ @PureTideWater` under \"The schema and its approval\". Update codeowners.test.ts's ordered list, and its tracked-file test, which needs a tracked file under the directory: the README satisfies it."
+  },
+  {
+   "id": "DBF-R9",
+   "severity": "should",
+   "section": "2 / 3.1 determinism",
+   "problem": "pg_get_functiondef output depends on search_path: argument and return types outside the path come out schema-qualified. The generator pins search_path=public, so output is deterministic only if the function-file reads run inside readDatabase's pinned transaction. The design says \"same snapshot\" but does not test that the pinned settings decide the output. A minor-version difference between CI's floating postgres:18 image and local 18.4 is the same risk the document already carries through pg_get_expr, pg_get_viewdef and pg_get_function_sqlbody. Nothing depends on OIDs or locale.",
+   "evidence": "md5 of every pg_get_functiondef: 66be6b47... under search_path public, '$user',public or public,pg_catalog, and e02543928... under pg_catalog. The diff is `contract_version_documents_ok(v contract_version)` vs `(v public.contract_version)`. generate.ts:116-120 pins the settings.",
+   "fix": "Read definitions in readCatalog under readDatabase's pinned SET LOCALs, never in a separate query or connection. Add a DBF-01 case: open the connection with a different search_path, DateStyle and TimeZone and check the output is the same. Note in ADR 0068 that the image is a floating tag, as it already is for the document."
+  },
+  {
+   "id": "DBF-R10",
+   "severity": "nit",
+   "section": "1 facts",
+   "problem": "The counts are off. The migrated head has 338 pg_proc rows and 337 distinct names, not 338 functions in 339 rows.",
+   "evidence": "psql: count(*)=338, count(distinct proname)=337, and the overloaded name is submit_prospect_request (2 rows). 44 migrations, head 20261106090000_screening_consumer.sql.",
+   "fix": "Correct to \"338 functions under 337 names\"."
+  },
+  {
+   "id": "DBF-R11",
+   "severity": "nit",
+   "section": "3.1 Where",
+   "problem": "GitHub sorts Files changed by path, so packages/db/functions/ comes before packages/db/migrations/ ('f' < 'm'). The function files appear above the migration, not under it.",
+   "evidence": "Lexical order of the two paths.",
+   "fix": "Fix the sentence. If migration-first order matters, it would take a name that sorts after migrations/ (e.g. packages/db/schema-functions/), but functions/ reads better. Keep it and correct the rationale."
+  },
+  {
+   "id": "DBF-R12",
+   "severity": "nit",
+   "section": "3.1 header",
+   "problem": "The example's per-overload header `-- public.allowed_practice_ids()` does not match the signature the document prints, `allowed_practice_ids()` (regprocedure under search_path=public), so searching Appendix C for the header text finds nothing.",
+   "evidence": "docs/product/domain-model.md:6454.",
+   "fix": "Print the signature exactly as Appendix C does (FunctionRow.signature)."
+  },
+  {
+   "id": "DBF-R13",
+   "severity": "nit",
+   "section": "3.1 Trigger function of",
+   "problem": "\"Trigger function of\" lists every table.trigger, so set_updated_at (49 triggers) and reject_change (28) change in every PR that adds a table. The document already lists each table's triggers.",
+   "evidence": "psql: set_updated_at 49, reject_change 28, refuse_new_work_while_suspended 7.",
+   "fix": "Either drop the line, or print one trigger per line sorted in C order so a new table adds exactly one line. The README should say the line is churn, not a behaviour change."
+  },
+  {
+   "id": "DBF-R14",
+   "severity": "nit",
+   "section": "3.1 formatting",
+   "problem": "pg_get_functiondef ends with \"$function$\\n\", so appending ';' needs the trailing newline stripped first. .editorconfig sets trim_trailing_whitespace and insert_final_newline for all files. prosrc is verbatim, so a future body with trailing whitespace or tabs would be rewritten by any editor that obeys .editorconfig, and the file would then drift.",
+   "evidence": "od -c on pg_get_functiondef(allowed_practice_ids) ends `$function$\\n`. .editorconfig [*] has trim_trailing_whitespace = true. No trailing whitespace or tabs in today's 7,659 lines.",
+   "fix": "Strip one trailing newline, then add \";\\n\". Add `[packages/db/functions/**]` with trim_trailing_whitespace and insert_final_newline unset to .editorconfig, as fixtures/** already does."
+  },
+  {
+   "id": "DBF-R15",
+   "severity": "nit",
+   "section": "3.2 CLI",
+   "problem": "--check exits on the first document difference (cli/domain-model.ts, the checkPath block), so whether the directory is also stale goes unreported. Neither --functions's path base (INIT_CWD like --out, or REPO_ROOT) nor how a custom `--check FILE` relates to the directory is specified. --check's strictness about \"any other entry\" would also trip locally on .DS_Store, which is gitignored.",
+   "evidence": "cli/domain-model.ts: `fail(...)` on firstDifference, before the remaining checks run. .gitignore lists .DS_Store.",
+   "fix": "Compute the document and directory results, print both, then exit 1. Resolve --functions against INIT_CWD like --out, defaulting to REPO_ROOT/packages/db/functions. Ignore gitignored entries, or refuse only entries git would commit (committableFiles)."
+  },
+  {
+   "id": "DBF-R16",
+   "severity": "nit",
+   "section": "3.1 scope",
+   "problem": "An extension installed into public later (e.g. pgcrypto) would put its member functions into the files, and their definitions vary with extension version across environments.",
+   "evidence": "Probe: only plpgsql is installed and 0 extension-member functions are in public.",
+   "fix": "Exclude pg_depend deptype 'e' members from the files, or refuse them with a clear message, matching whatever the document does."
+  },
+  {
+   "id": "DBF-R17",
+   "severity": "nit",
+   "section": "3.3 security reviewer",
+   "problem": "The reviewer checklist leaves out header-level hazards the files newly expose.",
+   "evidence": ".claude/agents/security-reviewer.md has no function-file guidance today.",
+   "fix": "Add: pg_temp not last in SET search_path; LEAKPROOF added; STRICT removed (changes NULL handling); a volatility change on a function used in policies; GRANT TO PUBLIC; an owner change; a new overload of a scope function (overload resolution can pick the wrong one)."
+  }
+ ],
+ "improvements": [
+  "Section 2's no-migration claim holds. The design reads only the catalog, in the existing READ ONLY transaction, and the renderer is untouched, so the document's text and SHA-256 stay the same. DBF-04's byte-identical assertion is the right guard. Keep it.",
+  "The drift check works without a workflow change. ci.yml's domain model job runs `pnpm db:domain-model --check --strict --require-approval`, tools/test/workflows.test.ts:1045-1059 pins only that step text, and the db job runs domain-model.db.test.ts. The engine freeze reads only packages/db/migrations/. The fixture guard only searches .sql text for an X12 header (0 \"ISA\" in all 338 definitions). gitleaks uses its default rules. ESLint does not read .sql. No .gitignore rule matches the directory. Nothing else reacts to the new files.",
+  "Excluding packages/db/functions from the provenance line's uncommitted-inputs check is right, since INPUTS = ['packages/db', ...] (cli/domain-model.ts) would otherwise flag every second --out. Add a unit test that the exclude pathspec still flags migration edits.",
+  "Put the function diffs into the summary (see DBF-R2), so the founder reads the changed lines in the copy the code wrote and does not have to open Files changed on a phone.",
+  "When #42 or the next schema PR regenerates the document anyway (it needs approval regardless), add one sentence to Appendix C's intro pointing at packages/db/functions/<name>.sql. That costs no extra approval.",
+  "Extend .claude/hooks/protect-content.sh (founder-owned) to refuse hand edits to packages/db/functions/*.sql, the way it guards migrations. Add a CLAUDE.md \"Never\" line: never edit packages/db/functions by hand, regenerate it. Both are founder-owned files, so propose them; Lane B does not edit them.",
+  "Mention the files in packages/compliance/src/controls.ts's CO-02 control (controls.ts:310), so the compliance record of the domain-model job covers them.",
+  "In the bootstrap PR's description, say that it adds 337 generated files that need no line-by-line read, and that future PRs show only changed functions.",
+  "ADR 0068 is warranted because it changes what the founder reviews under ADR 0063. Keep it short. It should record the layout, the bound (drift check plus Appendix D, not the body-hash line), the deparse dependence on the pinned settings and the PostgreSQL major version, and the rejected options. Cross-reference ADRs 0063 and 0066.",
+  "Add the DBF rows to docs/product/test-matrix.md as their own block, so they do not conflict with #42's edits to the same shared file.",
+  "Missing tests to add: the pinned-settings determinism case (DBF-R9), the aggregate/procedure case (DBF-R5), the explicit PUBLIC grant line (DBF-R6), the summary listing a header-only change (DBF-R2), the codeowners and .gitattributes pins, the README surviving --out, and --check reporting both the document and the directory."
+ ]
+}

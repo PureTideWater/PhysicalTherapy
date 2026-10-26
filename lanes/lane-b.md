@@ -203,7 +203,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **As its own PR, next in Lane B's queue,** when it is larger or of another kind. Add it to LANES.md as a dated item "on the co-founder's standing direction of 2026-10-25" (one PR per change, LANES rule 5).
   - **Handed to Lane A** when it needs a migration, or changes frozen code (the engine under `packages/pricing`, the ledger's existing behaviour, the content pipeline).
   - **Wording, brand and what a person sees: done without asking** (the co-founder, 2026-10-25 ~21:34 UTC). Each takes the recommended option at once, within `.claude/rules/brand.md`, CO-11 and the PRD. The PR description and this log report it to him afterwards, and he may reverse any.
-  - **To the co-founder first** when it changes cost or makes a security trade-off (his Q3), with the recommended option.
+  - **Cost and security trade-offs: decided without asking too** (the co-founder, 2026-10-26 ~00:20 UTC: "Don't ask for approvals anymore just build and optimize"). Take the recommended option: for security, the safer one. Record it with its reasons in the design or PR description and in this log. Nothing waits on a question to him.
   - **The founder's, through the co-founder:** the domain model, release tags, owner-admin settings, legal text (the terms, the cookie notice, the screening terms, the AMA notice, HANDOFF's counsel list), and any reversal of a recorded founder ruling.
   - Never skip a pipeline stage for it, and never stop a running workflow for it. A finding inside a running workflow is applied at its next stage, or in the next workflow.
 - **Node.** The shell's default `node` is 22. Run `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` in every command or script.
@@ -659,3 +659,39 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - Claimed with ADR 0071 if needed and RCC-01 to RCC-08 (a new series).
   - #30's content-pipeline exception is already granted (2026-10-20 adoption). #59's parts in #42's files (`monitoring.ts`, `fields.ts`) are split into a later PR after #42 merges.
   - Its `publish-content.yml` overlap with ci-deps (F4) is resolved under rule 6.
+- **2026-10-26 ~00:05 UTC: #111's session: design reviewed, no migration; a coordination step handed to Lane A.**
+  - Its design review took all 17 findings. There is no workflow change, and the domain model's text and hash are unchanged.
+  - After it merges, `db:domain-model --out` also writes one SQL file per database function, checked in CI. If #111 merges first, #42 commits those files before the founder signs its approval line. Added to LANES.md "Handed to Lane A".
+  - **The UX route map is done** (`designs/lane-b-ux-review/route-map.{json,md}`, committed with the review): all 83 pages are reachable on synthetic data, 35 from the seed and 48 after the populate journeys.
+    - Six extra entries name pages that do not exist. They came from this session's own scout file lists, which were partly retyped from a truncated listing instead of copied from the generated file. The checker caught all six and added the real pages that were missing; the six are removed before the map is committed.
+    - **Lesson:** pass a generated list to a workflow verbatim (read the whole file), never retyped.
+- **2026-10-26 ~00:20 UTC: the co-founder: "Don't ask for approvals anymore just build and optimize."**
+  - **Ruling:** every Lane B choice takes the recommended option without asking him, cost and security trade-offs included (security: the safer option). Each is recorded with its reasons and reported afterwards. The "Improve as you go" convention says so.
+  - **Unchanged, because they are not his to give** (LANES.md delegation of 2026-10-25): the domain model's approval, release tags, owner-admin settings and legal text's sign-off stay the founder's. Lane B does not ask about them. It records each one where it is needed, under "Waiting on someone", for the founder and Lane A.
+  - **The approval question of ~00:10 UTC** (whether the co-founder may approve in his own name) is dropped. It is noted for the founder: a dated delegation line in LANES.md plus a small governance PR would let the co-founder's own approval count as the approval of record. Lane B never signs the founder's name.
+  - Sent to all five parallel sessions: decide and record, never wait on a question.
+- **2026-10-26 ~00:30 UTC: the parallel sessions' briefs corrected on #42's shared documents.**
+  - The briefs said "never touch a file #42 changes". That is stricter than LANES.md, which lets the shared documents follow rule 6.
+  - #42 changes four of them: `docs/product/test-matrix.md`, `docs/product/reconciliation-001.md`, `packages/synth/src/cases/matrix.ts` and `registry.ts`, plus amendments to older ADRs. Every new test-matrix row also needs its matrix and registry entries (`packages/synth/src/fixtures.test.ts`). PR 15 changed all of them while #42 was open.
+  - Sent to all five: add rows and entries there under rule 6 (the PR merged second keeps both), and leave every other #42 file alone.
+  - #111's reservation is widened to synth cases DBF-01 to DBF-05 (no-file entries). Its session had held back for want of that.
+  - **Messages to the sessions do not interrupt them:** they arrive as queued notifications, which the session reads between steps (seen in #111's transcript).
+- **2026-10-26 ~00:25 UTC: two more parallel sessions, and two follow-on items for warm sessions.** Each was checked against #42's 143 files and the items already running.
+
+  | Item | Session | Branch | Status file |
+  |---|---|---|---|
+  | #38, then #48 (queue items 7 and 9; the packet pages) | session_01DMD91cYkbNgkEp1nmeSwpy | `co-001/figures-in-words`, then `co-001/narrative-draft` | `lane-b-figures-in-words-status.md` |
+  | #135 (queue item 13; billing pages, not #42's worker billing files) | session_01SbDNvf4ojucLA3uyPfs1FC | `co-001/bank-account-first` | `lane-b-bank-account-first-status.md` |
+  | #46 (queue item 6), after 15b merges | PR 15b's session (session_01Rv82bANhoRiK91FKEN7Pff) | `co-001/verified-seal` | `lane-b-verified-seal-status.md` |
+  | #32 (queue item 10), after #10 merges | #10's session (session_01CwzySVsjqgoXijLDMKj7VG) | `co-001/unmapped-plan` | `lane-b-unmapped-plan-status.md` |
+
+  - #46 shares the report code with 15b, and #32 shares the pricing-run code with #10, so each follows in the warm session rather than running beside it.
+  - Every screen-changing PR takes the UX and brand review, with before-and-after screenshots, and folds in the baseline's findings on its screens once `designs/lane-b-ux-review.md` lands.
+  - The new briefs carry the 00:20 ruling (decide without asking) and the rule-6 exception for #42's four shared documents.
+  - **Not started, with why:**
+    - ci-deps: its re-read is finishing here; it then gets its own session, and ci-browser follows in it;
+    - #113: after ci-deps' CLAUDE.md line;
+    - #49 and the post-#42 items 15 and 16: they wait for #42;
+    - #52: legal text, the founder's sign-off;
+    - #138, the formatter: both lanes idle;
+    - #122: after PR 16.
