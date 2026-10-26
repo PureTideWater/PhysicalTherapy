@@ -41,7 +41,7 @@ Open questions: none.
 - e2e: 26 and 25 passed, none flaky;
 - Stryker: skipped, no money path changed. |
 | 2026-10-26 11:06 | **Merged** | #50 merged with a merge commit, expectedHeadSha c4f2742: **9d3ab335a850c64fea6a3e478d807c269ec90826**. The PR was marked ready first; that re-ran approval-of-record, and the merge waited for it to pass. The description was rewritten with update_pull_request and read back identical. |
-| 2026-10-26 11:07 | After the merge | Unsubscribed from #50. The main checkout is fast-forwarded to 9d3ab33, with pnpm install. The worktree `/home/user/superseded-rerun` and the local branch are removed (the remote branch stays). This session has no scheduled check-in left. The push runs on 9d3ab33 (ci, mutation, screening-capacity) are being read. |
+| 2026-10-26 11:07 | After the merge | Unsubscribed from #50. The main checkout is fast-forwarded to 9d3ab33, with pnpm install. The worktree `/home/user/superseded-rerun` and the local branch are removed (the remote branch stays). This session has no scheduled check-in left. The push runs on 9d3ab33 all passed by 11:25 UTC: ci, mutation, screening-capacity. |
 
 **Proposal for Lane A:** the trigger mirror in `pricing_run_rules()` (design §5.2). Recommended, not urgent; it needs the founder's exception for a pricing table.
 
