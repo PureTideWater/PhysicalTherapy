@@ -8,6 +8,7 @@ import type { NewerReason, RerunAcceptance, RerunAcceptanceView, RunNames, RunSt
 import { shareOf } from '../../lib/pricing/view';
 import { utcSeconds } from '../format';
 import { Money } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 
 /**
  * Display pieces of the Pricing runs screens (PRD 7): a run's state, its coverage as shares worked out
@@ -448,28 +449,30 @@ export function UnpricedReasons({ coverage }: { readonly coverage: RunCoverage }
   }
   return (
     <>
-      <table className="w-full text-left text-sm" aria-label="Unpriced reasons">
-        <thead className="text-muted-foreground">
-          <tr>
-            <th className="py-1 pr-3 font-medium">Reason</th>
-            <th className="py-1 pr-3 font-medium">Remedy</th>
-            <th className="py-1 pr-3 text-right font-medium">Lines</th>
-            <th className="py-1 text-right font-medium">Billed</th>
-          </tr>
-        </thead>
-        <tbody>
-          {reasons.map((entry) => (
-            <tr key={entry.reason} className="border-t" data-reason={entry.reason}>
-              <td className="py-1 pr-3 font-mono text-xs">{entry.reason}</td>
-              <td className="py-1 pr-3">{unpricedReasonText(entry.reason).remedy}</td>
-              <td className="py-1 pr-3 text-right font-mono tabular-nums">{entry.lines}</td>
-              <td className="py-1 text-right">
-                <Money value={entry.charge_cents} />
-              </td>
+      <ScrollTable label="Unpriced reasons">
+        <table className="w-full text-left text-sm" aria-label="Unpriced reasons">
+          <thead className="text-muted-foreground">
+            <tr>
+              <th className="py-1 pr-3 font-medium">Reason</th>
+              <th className="py-1 pr-3 font-medium">Remedy</th>
+              <th className="py-1 pr-3 text-right font-medium">Lines</th>
+              <th className="py-1 text-right font-medium">Billed</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {reasons.map((entry) => (
+              <tr key={entry.reason} className="border-t" data-reason={entry.reason}>
+                <td className="py-1 pr-3 font-mono text-xs">{entry.reason}</td>
+                <td className="py-1 pr-3">{unpricedReasonText(entry.reason).remedy}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{entry.lines}</td>
+                <td className="py-1 text-right">
+                  <Money value={entry.charge_cents} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </ScrollTable>
       {coverage.engine_errors.length === 0 ? null : (
         <p className="pt-3 text-sm">
           Engine errors by detail: {coverage.engine_errors.map((entry) => `${entry.detail} (${String(entry.lines)}${entry.pages_operator ? ', operator alerted' : ', for review'})`).join('; ')}.
@@ -491,52 +494,54 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
     return <p className="text-sm text-muted-foreground">No line of this run was priced, so there is no variance to show.</p>;
   }
   return (
-    <table className="w-full text-left text-sm" aria-label="Variance by payer pattern">
-      <thead className="text-muted-foreground">
-        <tr>
-          <th className="py-1 pr-3 font-medium">Payer and plan</th>
-          <th className="py-1 pr-3 font-medium">Priced under</th>
-          <th className="py-1 pr-3 text-right font-medium">Lines</th>
-          <th className="py-1 pr-3 text-right font-medium">Underpaid lines</th>
-          <th className="py-1 pr-3 text-right font-medium">Underpaid (validated)</th>
-          <th className="py-1 text-right font-medium">Overpaid (recorded)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {patterns.map((pattern) => {
-          const version = pattern.contract_version_id === null ? undefined : names.versions[pattern.contract_version_id];
-          return (
-            <tr key={`${pattern.plan_id}:${pattern.mapping_kind}:${pattern.contract_version_id ?? ''}:${pattern.rate_record_id ?? ''}`} className="border-t align-top" data-plan={pattern.plan_id}>
-              <td className="py-1 pr-3">
-                {names.payers[pattern.payer_id] ?? 'Payer'}
-                <div className="font-mono text-xs">
-                  <Link className="underline" href={`/p/${practiceId}/mapping/${pattern.plan_id}`}>
-                    {names.plans[pattern.plan_id] ?? pattern.plan_id}
-                  </Link>
-                </div>
-              </td>
-              <td className="py-1 pr-3">
-                {version === undefined ? (
-                  (KIND_TEXT[pattern.mapping_kind] ?? pattern.mapping_kind)
-                ) : (
-                  <Link className="underline" href={`/p/${practiceId}/contracts/versions/${pattern.contract_version_id ?? ''}`}>
-                    {version.title}, version {version.versionNo}
-                  </Link>
-                )}
-                {pattern.rate_record_id === null ? null : <div className="font-mono text-xs text-muted-foreground">rate record {pattern.rate_record_id}</div>}
-              </td>
-              <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.lines}</td>
-              <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.underpaid_lines}</td>
-              <td className="py-1 pr-3 text-right">
-                <Money value={pattern.underpaid_cents} />
-              </td>
-              <td className="py-1 text-right">
-                <Money value={pattern.overpaid_cents} />
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <ScrollTable label="Variance by payer pattern">
+      <table className="w-full text-left text-sm" aria-label="Variance by payer pattern">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="py-1 pr-3 font-medium">Payer and plan</th>
+            <th className="py-1 pr-3 font-medium">Priced under</th>
+            <th className="py-1 pr-3 text-right font-medium">Lines</th>
+            <th className="py-1 pr-3 text-right font-medium">Underpaid lines</th>
+            <th className="py-1 pr-3 text-right font-medium">Underpaid (validated)</th>
+            <th className="py-1 text-right font-medium">Overpaid (recorded)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {patterns.map((pattern) => {
+            const version = pattern.contract_version_id === null ? undefined : names.versions[pattern.contract_version_id];
+            return (
+              <tr key={`${pattern.plan_id}:${pattern.mapping_kind}:${pattern.contract_version_id ?? ''}:${pattern.rate_record_id ?? ''}`} className="border-t align-top" data-plan={pattern.plan_id}>
+                <td className="py-1 pr-3">
+                  {names.payers[pattern.payer_id] ?? 'Payer'}
+                  <div className="font-mono text-xs">
+                    <Link className="underline" href={`/p/${practiceId}/mapping/${pattern.plan_id}`}>
+                      {names.plans[pattern.plan_id] ?? pattern.plan_id}
+                    </Link>
+                  </div>
+                </td>
+                <td className="py-1 pr-3">
+                  {version === undefined ? (
+                    (KIND_TEXT[pattern.mapping_kind] ?? pattern.mapping_kind)
+                  ) : (
+                    <Link className="underline" href={`/p/${practiceId}/contracts/versions/${pattern.contract_version_id ?? ''}`}>
+                      {version.title}, version {version.versionNo}
+                    </Link>
+                  )}
+                  {pattern.rate_record_id === null ? null : <div className="font-mono text-xs text-muted-foreground">rate record {pattern.rate_record_id}</div>}
+                </td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.lines}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.underpaid_lines}</td>
+                <td className="py-1 pr-3 text-right">
+                  <Money value={pattern.underpaid_cents} />
+                </td>
+                <td className="py-1 text-right">
+                  <Money value={pattern.overpaid_cents} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </ScrollTable>
   );
 }

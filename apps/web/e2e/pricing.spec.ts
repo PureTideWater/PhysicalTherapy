@@ -4,7 +4,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { practiceId, registerKeyAndSignIn, signInWithTotp } from './helpers';
 import { startLocalWorker } from './worker';
 
@@ -172,6 +172,38 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     await expect(page.locator('[data-state="no-changes"]')).toContainText("Accepting this re-run changes no line's pricing in effect");
     await expect(page.locator('[data-state="diff-summary"]')).toHaveCount(0);
     await expect(page.locator('[data-state="awaiting-acceptance"]')).toBeVisible();
+    // The run page fits a phone: each wide table (Unpriced reasons, Variance by payer pattern, Run lines) scrolls inside
+    // its own region, which clips the visually hidden header cell it holds, and says so while it scrolls (UX confirm of
+    // PR #50, NEW-A and N3).
+    await atPhoneWidth(page, 'The re-run’s page');
+    const viewport = page.viewportSize();
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(page.locator('[data-state="scrolls-sideways"]').first()).toBeVisible();
+      // At 320 px the page's own content fits too: nothing in main reaches past the window (the header's menus are the
+      // shell's, outside this page).
+      await page.setViewportSize({ width: 320, height: 844 });
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const main = document.querySelector('main');
+              return main === null ? null : { overflow: main.scrollWidth - main.clientWidth, fits: main.getBoundingClientRect().right <= window.innerWidth };
+            }),
+          { message: 'the re-run’s page content at 320 px' },
+        )
+        .toEqual({ overflow: 0, fits: true });
+      await expect(page.locator('[data-state="scrolls-sideways"]').first()).toBeVisible();
+      if (viewport !== null) {
+        await page.setViewportSize(viewport);
+      }
+      // A table that fits says nothing of scrolling.
+      await expect(page.locator('[data-state="scrolls-sideways"]')).toHaveCount(0);
+    } finally {
+      if (viewport !== null) {
+        await page.setViewportSize(viewport);
+      }
+    }
     // Until a person accepts the re-run, Coverage reads the first run.
     await page.goto(`/p/${other}/coverage`);
     await expect(page.getByRole('region', { name: 'Priced share' })).toContainText('Priced: 3 of 3 lines');

@@ -83,7 +83,7 @@ export default async function ComparePricingRunsPage(props: Props) {
       <Card role="region" aria-label="Diff">
         <CardHeader>
           <CardTitle>What changed</CardTitle>
-          {heldBy !== null && acceptingChanges(diff.summary) === 0 ? null : (
+          {acceptingChanges(diff.summary) === 0 ? null : (
             <CardDescription data-state="diff-summary">
               <DiffSummaryText summary={diff.summary} accepting={heldBy !== null} />
             </CardDescription>

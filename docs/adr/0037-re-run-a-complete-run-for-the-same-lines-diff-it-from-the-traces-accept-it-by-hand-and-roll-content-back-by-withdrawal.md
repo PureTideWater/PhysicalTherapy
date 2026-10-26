@@ -58,6 +58,11 @@ recorded when a release row is permanent (ADR 0009), and what the console may re
   (`20261021090000_run_diffs_and_runs_in_effect.sql` replaced the first, which compared the amount, the reason
   and the adjustments only, so a re-run that moved every window, or a quarterly NCCI update that raised a review
   flag, listed nothing). Each listed line's two priced lines are audited reads (purpose `run_comparison`).
+  *Amended 2026-10-26 (`co-001/superseded-rerun`):* the summary's "priced on both sides" means a priced line with no
+  unpriced reason on each side; only those lines are counted as compared and totalled in expected allowed. A line
+  priced on one side and unpriced on the other is counted as such, its unpriced reasons named by their closed-list
+  codes (`pricedToUnpriced`, `unpricedToPriced`), never shown as a line priced at $0.00; with no line priced on both
+  sides the summary has no totals, and a diff that lists no line has no summary (UX confirm of PR #50, NEW-B).
 - **The cause comes from the two traces** (`lineCauses`, `causes.ts`, pure): the mapping (another
   `mapping_id` or kind), the contract version (another version or rate record), a rule record (a record of the
   same rule, type and key, whose value or window differs, looked up in `rule_record` by release and SHA-256:

@@ -246,7 +246,7 @@ export default async function PricingRunPage(props: Props) {
               <p className="text-sm text-muted-foreground">The diff appears once the run is complete.</p>
             ) : (
               <>
-                {heldBy !== null && acceptingChanges(diff.summary) === 0 ? null : (
+                {acceptingChanges(diff.summary) === 0 ? null : (
                   <p className="text-sm" data-state="diff-summary">
                     <DiffSummaryText summary={diff.summary} accepting={heldBy !== null} />
                   </p>

@@ -58,6 +58,13 @@ describe('a run’s unpriced reasons', () => {
     expect(html).toContain('$2,400.00');
   });
 
+  it('scroll sideways inside their own named region, so neither widens a phone-width page (UX confirm of PR #50, NEW-A)', () => {
+    expect(renderToStaticMarkup(<UnpricedReasons coverage={coverage({ NO_AGREEMENT: 1 })} />)).toMatch(/^<div role="region" aria-label="Unpriced reasons, scrolls sideways" tabindex="0" class="relative /);
+    expect(renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, versions: {} }} />)).toMatch(
+      /^<div role="region" aria-label="Variance by payer pattern, scrolls sideways" tabindex="0" class="relative /,
+    );
+  });
+
   it('give every header but the last the right padding its column’s cells have, so no two headers run together (C2)', () => {
     for (const html of [renderToStaticMarkup(<UnpricedReasons coverage={coverage({ NO_AGREEMENT: 1 })} />), renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, versions: {} }} />)]) {
       const headers = [...html.matchAll(/<th class="([^"]*)"/g)].map((match) => match[1] ?? '');

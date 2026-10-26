@@ -291,7 +291,7 @@ describe('a re-run under release 2 through the screens (PRC-19)', () => {
     const page = ok(await call(pricingRunPage, viewer, { ...P(), runId: second }));
     expect(page.run).toMatchObject({ rerunOfId: first, releaseNo: 900004, acceptedAt: null, inEffect: false });
     expect(page.canRerun).toBe(false);
-    expect(page.diff?.summary).toMatchObject({ compared: 4, changed: 2, onlyBefore: 0, onlyAfter: 0 });
+    expect(page.diff?.summary).toMatchObject({ compared: 4, changed: 2, pricedChanged: 2, pricedToUnpriced: 0, unpricedToPriced: 0, onlyBefore: 0, onlyAfter: 0 });
     expect(page.diff?.lines.map((line) => [line.procedureCode, line.causes.map((cause) => (cause.kind === 'release_record' ? `${cause.recordType} ${cause.key.hcpcs ?? ''}` : cause.kind))])).toEqual([
       ['97110', ['pfs_rvu 97110']],
       ['97110', ['pfs_rvu 97110']],

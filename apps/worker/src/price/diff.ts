@@ -61,19 +61,30 @@ export interface DiffRun {
 }
 
 export interface DiffSummary {
-  /** Lines both runs priced. */
+  /**
+   * Lines both sides priced: each has a priced line with no unpriced reason on both sides. A line one side left
+   * unpriced is never counted here, nor its NULL expected allowed summed as $0.00 (UX confirm of PR #50, NEW-B).
+   */
   readonly compared: number;
-  /** Of those, the ones whose expected allowed, reason, adjustments, window, review flags or terms differ. */
+  /** Of the lines on both sides, priced or not, the ones whose expected allowed, reason, adjustments, window, review flags or terms differ. */
   readonly changed: number;
+  /** Of `changed`: those both sides priced, those priced before and unpriced after, the reverse, and those unpriced on both sides. */
+  readonly pricedChanged: number;
+  readonly pricedToUnpriced: number;
+  readonly unpricedToPriced: number;
+  readonly unpricedChanged: number;
+  /** The unpriced reasons (closed-list codes, sorted) of the lines priced before and unpriced after, after; and of the reverse, before. */
+  readonly pricedToUnpricedReasons: readonly string[];
+  readonly unpricedToPricedReasons: readonly string[];
   readonly onlyBefore: number;
   readonly onlyAfter: number;
   /** Changed lines under another mapping, and under another contract version or rate record. */
   readonly mappingChanged: number;
   readonly versionChanged: number;
-  /** Changed lines whose dispute window ends on another day (or has none in one run), and whose review flags differ. */
+  /** Lines both sides priced whose dispute window ends on another day (or is known on one side only); changed lines whose review flags differ. */
   readonly windowChanged: number;
   readonly reviewFlagsChanged: number;
-  /** Expected allowed over the lines both runs priced, before and after: integer cents as text. */
+  /** Expected allowed over the lines both sides priced (`compared`), before and after: integer cents as text. */
   readonly beforeExpectedCents: string;
   readonly afterExpectedCents: string;
 }
@@ -261,6 +272,12 @@ function diffRun(row: RunRow | undefined): DiffRun {
 interface SummaryRow {
   readonly compared: number;
   readonly changed: number;
+  readonly priced_changed: number;
+  readonly priced_to_unpriced: number;
+  readonly unpriced_to_priced: number;
+  readonly unpriced_changed: number;
+  readonly priced_to_unpriced_reasons: string[];
+  readonly unpriced_to_priced_reasons: string[];
   readonly only_before: number;
   readonly only_after: number;
   readonly mapping_changed: number;
@@ -271,20 +288,32 @@ interface SummaryRow {
   readonly after_expected_cents: string;
 }
 
+/** A line both sides priced: a priced line on each side, neither unpriced. */
+const PRICED_BOTH = 'a.id IS NOT NULL AND b.id IS NOT NULL AND a.unpriced_reason IS NULL AND b.unpriced_reason IS NULL';
+const PRICED_TO_UNPRICED = 'a.id IS NOT NULL AND b.id IS NOT NULL AND a.unpriced_reason IS NULL AND b.unpriced_reason IS NOT NULL';
+const UNPRICED_TO_PRICED = 'a.id IS NOT NULL AND b.id IS NOT NULL AND a.unpriced_reason IS NOT NULL AND b.unpriced_reason IS NULL';
+const UNPRICED_BOTH = 'a.id IS NOT NULL AND b.id IS NOT NULL AND a.unpriced_reason IS NOT NULL AND b.unpriced_reason IS NOT NULL';
+
 async function summaryOf(client: ScopeClient, sides: string, practiceId: string, before: string, after: string): Promise<DiffSummary> {
   const { rows } = await client.query<SummaryRow>(
     `WITH ${sides}
-     SELECT count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL)::int AS compared,
+     SELECT count(*) FILTER (WHERE ${PRICED_BOTH})::int AS compared,
             count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${DIFFERS})::int AS changed,
+            count(*) FILTER (WHERE ${PRICED_BOTH} AND ${DIFFERS})::int AS priced_changed,
+            count(*) FILTER (WHERE ${PRICED_TO_UNPRICED})::int AS priced_to_unpriced,
+            count(*) FILTER (WHERE ${UNPRICED_TO_PRICED})::int AS unpriced_to_priced,
+            count(*) FILTER (WHERE ${UNPRICED_BOTH} AND ${DIFFERS})::int AS unpriced_changed,
+            coalesce(array_agg(DISTINCT b.unpriced_reason ORDER BY b.unpriced_reason) FILTER (WHERE ${PRICED_TO_UNPRICED}), '{}') AS priced_to_unpriced_reasons,
+            coalesce(array_agg(DISTINCT a.unpriced_reason ORDER BY a.unpriced_reason) FILTER (WHERE ${UNPRICED_TO_PRICED}), '{}') AS unpriced_to_priced_reasons,
             count(*) FILTER (WHERE b.id IS NULL)::int AS only_before,
             count(*) FILTER (WHERE a.id IS NULL)::int AS only_after,
             count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${DIFFERS} AND a.mapping_id IS DISTINCT FROM b.mapping_id)::int AS mapping_changed,
             count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${DIFFERS}
                                AND (a.contract_version_id IS DISTINCT FROM b.contract_version_id OR a.rate_record_id IS DISTINCT FROM b.rate_record_id))::int AS version_changed,
-            count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${WINDOW_DIFFERS})::int AS window_changed,
+            count(*) FILTER (WHERE ${PRICED_BOTH} AND ${WINDOW_DIFFERS})::int AS window_changed,
             count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${FLAGS_DIFFER})::int AS review_flags_changed,
-            coalesce(sum(a.expected_allowed_cents) FILTER (WHERE b.id IS NOT NULL), 0)::text AS before_expected_cents,
-            coalesce(sum(b.expected_allowed_cents) FILTER (WHERE a.id IS NOT NULL), 0)::text AS after_expected_cents
+            coalesce(sum(a.expected_allowed_cents) FILTER (WHERE ${PRICED_BOTH}), 0)::text AS before_expected_cents,
+            coalesce(sum(b.expected_allowed_cents) FILTER (WHERE ${PRICED_BOTH}), 0)::text AS after_expected_cents
        FROM a FULL JOIN b ON b.service_line_id = a.service_line_id`,
     [practiceId, before, after],
   );
@@ -292,6 +321,12 @@ async function summaryOf(client: ScopeClient, sides: string, practiceId: string,
   return {
     compared: row.compared,
     changed: row.changed,
+    pricedChanged: row.priced_changed,
+    pricedToUnpriced: row.priced_to_unpriced,
+    unpricedToPriced: row.unpriced_to_priced,
+    unpricedChanged: row.unpriced_changed,
+    pricedToUnpricedReasons: row.priced_to_unpriced_reasons,
+    unpricedToPricedReasons: row.unpriced_to_priced_reasons,
     onlyBefore: row.only_before,
     onlyAfter: row.only_after,
     mappingChanged: row.mapping_changed,

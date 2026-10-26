@@ -266,9 +266,16 @@ describe('MAP-03: a re-run after a mapping is corrected', () => {
     expect(await snapshot(first)).toEqual(before);
 
     const diff = await compare(target, first, created.pricingRunId);
+    // The three lines were NO_AGREEMENT under the wrong mapping: none was priced by both runs, so none is totalled (UX confirm of PR #50, NEW-B).
     expect(diff.summary).toEqual({
-      compared: 3,
+      compared: 0,
       changed: 3,
+      pricedChanged: 0,
+      pricedToUnpriced: 0,
+      unpricedToPriced: 3,
+      unpricedChanged: 0,
+      pricedToUnpricedReasons: [],
+      unpricedToPricedReasons: ['NO_AGREEMENT'],
       onlyBefore: 0,
       onlyAfter: 0,
       mappingChanged: 3,
@@ -276,7 +283,7 @@ describe('MAP-03: a re-run after a mapping is corrected', () => {
       windowChanged: 0,
       reviewFlagsChanged: 0,
       beforeExpectedCents: '0',
-      afterExpectedCents: expect.stringMatching(/^[1-9]\d*$/),
+      afterExpectedCents: '0',
     });
     expect(diff.lines).toHaveLength(3);
     for (const line of diff.lines) {
@@ -677,10 +684,23 @@ describe('PRC-27: what accepting a re-run changes, under overlapping periods (pa
     const again = await repriced(target, quarter);
     expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: quarter });
     // Against the January-to-March run every line changes (the corrected mapping); in effect, each already reads the February run's same pricing.
-    expect((await compare(target, quarter, again)).summary).toMatchObject({ compared: 4, changed: 4 });
+    // Priced lines become NO_AGREEMENT: counted as such, never as priced at $0.00 (UX confirm of PR #50, NEW-B).
+    expect((await compare(target, quarter, again)).summary).toMatchObject({
+      compared: 0,
+      changed: 4,
+      pricedChanged: 0,
+      pricedToUnpriced: 4,
+      unpricedToPriced: 0,
+      unpricedChanged: 0,
+      pricedToUnpricedReasons: ['NO_AGREEMENT'],
+      unpricedToPricedReasons: [],
+      windowChanged: 0,
+      beforeExpectedCents: '0',
+      afterExpectedCents: '0',
+    });
     const diff = await acceptanceOf(target, again, quarter);
     expect([diff.before.id, diff.after.id]).toEqual([quarter, again]);
-    expect(diff.summary).toMatchObject({ compared: 4, changed: 0, onlyBefore: 0, onlyAfter: 0 });
+    expect(diff.summary).toMatchObject({ compared: 0, changed: 0, pricedToUnpriced: 0, unpricedToPriced: 0, unpricedChanged: 0, onlyBefore: 0, onlyAfter: 0 });
     // A page read before the February run took effect showed no other run: that acceptance is refused, and nothing changes.
     expect(await errorOf(accept(target, again, quarter, target.manager, []))).toMatchObject({ name: 'RerunRefusedError', reason: 'diff_changed' });
     expect(await inEffectRun(quarter)).toBe(true);
@@ -699,7 +719,7 @@ describe('PRC-27: what accepting a re-run changes, under overlapping periods (pa
     );
     const again = await repriced(target, quarter);
     const diff = await expectExact(target, again, quarter, [february]);
-    expect(diff.summary).toMatchObject({ compared: 4, changed: 4 });
+    expect(diff.summary).toMatchObject({ compared: 0, changed: 4, unpricedToPriced: 4, unpricedToPricedReasons: ['NO_AGREEMENT'], beforeExpectedCents: '0', afterExpectedCents: '0' });
     expect(diff.lines.map((line) => [line.before?.pricingRunId, line.before?.unpricedReason, line.after?.pricingRunId, line.after?.unpricedReason])).toEqual(
       diff.lines.map(() => [february, 'NO_AGREEMENT', again, null]),
     );
@@ -1104,7 +1124,7 @@ describe('PRC-19: a re-run under release 2 with one changed RVU', () => {
     expectTracesRecompute(linesB, RERUN_RELEASE);
 
     const diff = await compare(prc19, runA, runB);
-    expect(diff.summary).toMatchObject({ compared: 4, changed: 2, onlyBefore: 0, onlyAfter: 0, mappingChanged: 0, versionChanged: 0, windowChanged: 0, reviewFlagsChanged: 0 });
+    expect(diff.summary).toMatchObject({ compared: 4, changed: 2, pricedChanged: 2, pricedToUnpriced: 0, unpricedToPriced: 0, unpricedChanged: 0, onlyBefore: 0, onlyAfter: 0, mappingChanged: 0, versionChanged: 0, windowChanged: 0, reviewFlagsChanged: 0 });
     expect(diff.lines.map((line) => line.serviceLineId).sort()).toEqual(affected);
     expect(diff.lines.map((line) => line.changes)).toEqual([
       ['expected_allowed', 'adjustments'],

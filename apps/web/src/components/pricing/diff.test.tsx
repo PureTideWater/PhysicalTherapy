@@ -117,6 +117,12 @@ describe('what accepting a re-run changes (payment-engine review of PR #50, F4)'
   const summary: DiffSummary = {
     compared: 4,
     changed: 1,
+    pricedChanged: 1,
+    pricedToUnpriced: 0,
+    unpricedToPriced: 0,
+    unpricedChanged: 0,
+    pricedToUnpricedReasons: [],
+    unpricedToPricedReasons: [],
     onlyBefore: 1,
     onlyAfter: 0,
     mappingChanged: 0,
@@ -155,17 +161,54 @@ describe('what accepting a re-run changes (payment-engine review of PR #50, F4)'
     expect(text(renderToStaticMarkup(<DiffSummaryText summary={{ ...summary, onlyBefore: 0, windowChanged: 1 }} accepting />))).toBe(
       'Accepting this re-run changes the pricing in effect of 1 line: 1 priced differently (1 with another dispute window). Expected allowed on the 4 lines priced both now and once accepted: $0.00 now, $50.00 once accepted.',
     );
-    expect(text(renderToStaticMarkup(<DiffSummaryText summary={{ ...summary, compared: 0, changed: 0, onlyBefore: 1, onlyAfter: 2 }} accepting />))).toBe(
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={{ ...summary, compared: 0, changed: 0, pricedChanged: 0, onlyBefore: 1, onlyAfter: 2 }} accepting />))).toBe(
       'Accepting this re-run changes the pricing in effect of 3 lines: 1 no longer priced and 2 priced only once accepted.',
     );
   });
 
-  it('says nothing when accepting changes no line, leaving the table’s one no-changes line (UX recheck N2)', () => {
-    const none = { ...summary, changed: 0, onlyBefore: 0, onlyAfter: 0 };
+  it('says nothing when the diff lists no line, in either wording, leaving the table’s one no-changes line (UX recheck N2; UX confirm, N2 residual)', () => {
+    const none = { ...summary, changed: 0, pricedChanged: 0, onlyBefore: 0, onlyAfter: 0 };
     expect(acceptingChanges(none)).toBe(0);
     expect(renderToStaticMarkup(<DiffSummaryText summary={none} accepting />)).toBe('');
-    // The two-run wording is unchanged.
-    expect(text(renderToStaticMarkup(<DiffSummaryText summary={none} />))).toContain('0 of 4 lines both runs priced are priced differently');
+    expect(renderToStaticMarkup(<DiffSummaryText summary={none} />)).toBe('');
+  });
+
+  it('never counts a line unpriced on one side as priced, nor totals it as $0.00, naming the reasons by code (UX confirm, NEW-B)', () => {
+    // A re-run whose three lines, priced now, are NO_AGREEMENT once accepted: no line is priced on both sides.
+    const unpriced: DiffSummary = {
+      ...summary,
+      compared: 0,
+      changed: 3,
+      pricedChanged: 0,
+      pricedToUnpriced: 3,
+      pricedToUnpricedReasons: ['NO_AGREEMENT'],
+      onlyBefore: 0,
+      beforeExpectedCents: '0',
+      afterExpectedCents: '0',
+    };
+    const accepting = renderToStaticMarkup(<DiffSummaryText summary={unpriced} accepting />);
+    expect(text(accepting)).toBe('Accepting this re-run changes the pricing in effect of 3 lines: 3 priced now and unpriced once accepted (NO_AGREEMENT).');
+    expect(accepting).toContain('<span class="font-mono text-xs">NO_AGREEMENT</span>');
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={unpriced} />))).toBe('No line is priced by both runs; 3 priced by the first run and unpriced by the second (NO_AGREEMENT).');
+    // And back, beside lines priced on both sides, whose totals alone are summed.
+    const mixed: DiffSummary = {
+      ...summary,
+      compared: 2,
+      changed: 4,
+      pricedChanged: 1,
+      unpricedToPriced: 2,
+      unpricedToPricedReasons: ['NO_AGREEMENT', 'NO_MAPPING'],
+      unpricedChanged: 1,
+      onlyBefore: 0,
+      beforeExpectedCents: '7567',
+      afterExpectedCents: '8000',
+    };
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={mixed} accepting />))).toBe(
+      'Accepting this re-run changes the pricing in effect of 4 lines: 1 priced differently, 2 unpriced now (NO_AGREEMENT, NO_MAPPING) and priced once accepted and 1 unpriced both now and once accepted, under another reason or terms. Expected allowed on the 2 lines priced both now and once accepted: $75.67 now, $80.00 once accepted.',
+    );
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={mixed} />))).toBe(
+      '1 of 2 lines both runs priced is priced differently; 2 unpriced by the first run (NO_AGREEMENT, NO_MAPPING) and priced by the second; 1 unpriced by both, under another reason or terms. Expected allowed over the lines both priced: $75.67 before, $80.00 after.',
+    );
   });
 
   it('scrolls sideways inside a named region the keyboard reaches at a phone’s width (UX recheck N3)', () => {
