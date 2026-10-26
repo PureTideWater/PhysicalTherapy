@@ -219,6 +219,10 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **What it adds:** `operator_content_coverage()`, SECURITY DEFINER with `search_path` pinned and EXECUTE to `tp_operator` only. It returns the release in force and, per content, the date multirange of its windows, the newest `effective_from` and the newest source retrieved date. It returns no key, value or quote.
   - **Why a migration:** platform jobs run as `tp_operator`, which has no grant on rule objects, and a GRANT on `rule_record` would be DDL on a rule table. So #59's "Database: no" holds for Lane B's PR, but not for the daily job.
   - Status: `approval-summaries/lane-b-release-content-checks-status.md`.
+- **2026-10-26, from Lane B's materiality cents (#54, merged as 7ef421b): two steps in a #42 file, for Lane A after #42 merges; no migration.**
+  - **`apps/web/src/lib/routes/settings.ts` adopts the shared money-input helper.** #54 added `dollarsField` and `dollarsForInput`, now used by Settings → Defaults, the cases page, the workbench, the console's practice settings and the model budget. It left `settings.ts` alone because the file is in #42. Its materiality save should take `dollarsField` too, so every dollar field parses one way.
+  - **One limit for amounts.** The stores accept 12 digits of cents, but `settings.ts`'s save takes 11 (`\d{1,9}(\.\d{1,2})?`). The fix is the same helper, with the stores' limit.
+  - Status: `approval-summaries/lane-b-materiality-cents-status.md`.
 
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
