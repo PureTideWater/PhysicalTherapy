@@ -116,6 +116,8 @@ PRC-23 and PRC-24 were added in its pull request 6b-2 (audit #33 and #16's minim
 | CAS-27 | Export with no correspondence contact | Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing; Postgres refuses the export without a name and phone |
 | CAS-28 | Packet found by its reference | Every version of the practice whose reference matches, none of another practice |
 | CAS-29 | Submission of an export whose pricing went stale after it was made | Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused |
+| CAS-38 | The materiality and pursuit settings show stored cents as dollars | With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says "$5.00 per line and $250.00 per case" and "$45.00 an hour", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget is typed in dollars, as its hint says |
+| CAS-39 | Saving the defaults form unchanged changes nothing | Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents |
 
 ## Ledger (LED)
 
