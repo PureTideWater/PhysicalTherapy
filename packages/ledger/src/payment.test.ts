@@ -692,6 +692,21 @@ describe('a line the payer did not change keeps its part of the claim-level CAS 
     return { next, after, gains: after.map((item, index) => item.paidCents - (was[index] as LinePayment).paidCents) };
   };
 
+  it('keeps an unchanged bare line’s part when another line gains CAS of its own and so changes who takes a part (RR3-1)', () => {
+    // Two bare lines (no CAS of their own, SVC03 the charge), and a claim-level CAS of 40.00 split 20.00 / 20.00.
+    const bare = (charge: bigint): ClaimPaymentLine => ({ chargeCents: cents(charge), servicePaidCents: cents(charge), carriesAdjustments: false, lineReductionCents: cents(0n) });
+    const before = { claimPaid: 16000n, lines: [bare(10000n), bare(10000n)] };
+    // The correction gives line 1 CAS of its own (CO 30.00, SVC03 70.00); line 2 is unchanged; the claim pays 150.00.
+    const changed: ClaimPaymentLine = { chargeCents: cents(10000n), servicePaidCents: cents(7000n), carriesAdjustments: true, lineReductionCents: cents(3000n) };
+    const { next, after, gains } = corrected(before, 15000n, [changed, bare(10000n)]);
+    expect(next[1]?.keptCents).toBe(2000n);
+    // Line 2 keeps its 20.00 and its cash (80.00); line 1 takes the rest of the claim-level CAS (0.00).
+    expect(after.map((item) => item.paidCents)).toEqual([7000n, 8000n]);
+    expect(after[1]?.claimAdjustment).toEqual(part(2000n, 2000n, 1n));
+    expect(gains).toEqual([-1000n, 0n]);
+    expect(after.reduce((total, item) => total + item.paidCents, 0n)).toBe(15000n);
+  });
+
   it('keeps a part only when the line’s charge, own CAS, CAS carried and SVC03 are its paired line’s', () => {
     const was = at(7000n);
     const taken = { line: was, part: part(1400n, 1400n, 1n) };
@@ -759,10 +774,12 @@ describe('a line the payer did not change keeps its part of the claim-level CAS 
     expect(corrected(n1, 10400n, [at(10000n), at(7000n)]).gains).toEqual([0n, 0n]);
   });
 
-  it('gives a kept part only to a line that takes a part, and the cents left only to the lines the rest is spread over', () => {
-    // Line 1 carries no CAS beside a line that does: it takes no part, kept or not.
+  it('keeps a kept part even on a line that takes no new part, and gives the cents left only to the lines the rest is spread over', () => {
+    // Line 1 carries no CAS beside a line that does, so it takes no share of the rest, but it keeps its part (RR3-1).
     const bare = { chargeCents: cents(5000n), servicePaidCents: cents(5000n), carriesAdjustments: false, lineReductionCents: cents(0n), keptCents: cents(100n) };
-    expect(claimAdjustmentParts(cents(500n), [bare, { ...at(7000n), keptCents: null }])).toEqual([null, part(500n, 500n * 7000n, 7000n)]);
+    expect(claimAdjustmentParts(cents(500n), [bare, { ...at(7000n), keptCents: null }])).toEqual([part(100n, 100n, 1n), part(400n, 400n * 7000n, 7000n)]);
+    // Without a kept part it takes none.
+    expect(claimAdjustmentParts(cents(500n), [{ ...bare, keptCents: null }, { ...at(7000n), keptCents: null }])).toEqual([null, part(500n, 500n * 7000n, 7000n)]);
     // Three cents over three changed lines of equal weight beside a kept line: one each, none to the kept line.
     expect(claimAdjustmentParts(cents(104n), [{ ...at(7000n), keptCents: cents(101n) }, at(7000n), at(7000n), at(7000n)]).map((item) => item?.partCents)).toEqual([101n, 1n, 1n, 1n]);
     // A rest of minus three cents on two even-weighted lines: -1 each, the cent left to the first.
@@ -805,15 +822,19 @@ describe('a line the payer did not change keeps its part of the claim-level CAS 
   it('leaves the cash of every line the payer did not change as it was, and puts the claim’s whole change on the others (property)', () => {
     const allowed = fc.bigInt({ min: 0n, max: 15_000n });
     const claimLevel = fc.bigInt({ min: -50_000n, max: 50_000n });
+    // Lines with CAS of their own and bare lines (SVC03 the charge, no CAS: RR3-1), a changed line free to gain or lose CAS.
+    const shaped = (amount: bigint, bare: boolean): ClaimPaymentLine =>
+      bare ? { chargeCents: cents(amount), servicePaidCents: cents(amount), carriesAdjustments: false, lineReductionCents: cents(0n) } : at(amount);
+    const spec = fc.record({ allowed, changed: fc.boolean(), to: allowed, bare: fc.boolean(), bareAfter: fc.boolean() });
     fc.assert(
-      fc.property(fc.array(fc.record({ allowed, changed: fc.boolean(), to: allowed }), { minLength: 1, maxLength: 6 }), claimLevel, claimLevel, (specs, before, after) => {
-        const was = specs.map((spec) => at(spec.allowed));
-        const now = specs.map((spec) => at(spec.changed ? spec.to : spec.allowed));
+      fc.property(fc.array(spec, { minLength: 1, maxLength: 6 }), claimLevel, claimLevel, (specs, before, after) => {
+        const was = specs.map((item) => shaped(item.allowed, item.bare));
+        const now = specs.map((item) => (item.changed ? shaped(item.to, item.bareAfter) : shaped(item.allowed, item.bare)));
         const sum = (lines: readonly ClaimPaymentLine[]) => lines.reduce((total, item) => total + item.servicePaidCents, 0n);
         const { after: result, gains } = corrected({ claimPaid: sum(was) - before, lines: was }, sum(now) - after, now);
         const claimGain = sum(now) - after - (sum(was) - before);
         expect(result.reduce((total, item) => total + item.paidCents, 0n)).toBe(sum(now) - after);
-        const same = specs.map((spec) => !spec.changed || spec.to === spec.allowed);
+        const same = specs.map((item) => !item.changed || (item.to === item.allowed && item.bareAfter === item.bare));
         if (same.includes(false)) {
           for (const [index, gain] of gains.entries()) {
             if (same[index] === true) {

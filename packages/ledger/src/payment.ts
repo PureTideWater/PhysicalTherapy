@@ -77,18 +77,27 @@ const keptOf = (line: ClaimSplitLine): Cents | null => line.keptCents ?? null;
  * CAS of their own (every line when none does): a line carrying CAS balances alone (SVC02 − its CAS − SVC03 = 0), so
  * its SVC03 holds none of the claim-level CAS, while a line carrying none is balanced by the claim and its SVC03 may
  * already hold its part. Of those, a line that keeps its part of the claim it corrects (`keptClaimPart`) takes no
- * share of the rest, which is spread over the others; when every one keeps its part, over them all (`spreadOver`).
+ * share of the rest, which is spread over the others; when every one keeps its part, over them all (`spreadOver`). A
+ * line that keeps a part keeps it even when it no longer takes one (`claimAdjustmentParts`).
  */
 function takersOf(lines: readonly ClaimSplitLine[]): boolean[] {
   const own = lines.some((line) => line.carriesAdjustments);
   return lines.map((line) => !own || line.carriesAdjustments);
 }
 
-/** `takersOf`'s lines less those keeping a part, or all of them when every one keeps its part. */
+/**
+ * The lines the rest is spread over: `takersOf`'s lines less those keeping a part; when none is left, the lines keeping
+ * no part even if they take none (a changed line that lost its own CAS beside one that kept it), so the rest never
+ * moves onto a line the payer did not change; when every line keeps its part, `takersOf`'s lines.
+ */
 function spreadOver(lines: readonly ClaimSplitLine[]): boolean[] {
   const takes = takersOf(lines);
-  const changed = lines.map((line, index) => takes[index] === true && keptOf(line) === null);
-  return changed.includes(true) ? changed : takes;
+  const keepsNone = lines.map((line) => keptOf(line) === null);
+  const changed = keepsNone.map((none, index) => none && takes[index] === true);
+  if (changed.includes(true)) {
+    return changed;
+  }
+  return keepsNone.includes(true) ? keepsNone : takes;
 }
 
 /** The weights of the lines `takes` names (`claimAllocations`), null for the others. */
@@ -138,8 +147,9 @@ export function keptClaimPart(line: ClaimPaymentLine, previous: { readonly line:
  * With no line keeping a part it is the split of the whole total by weight. The parts add up to the total exactly.
  */
 export function claimAdjustmentParts(totalCents: Cents, lines: readonly ClaimSplitLine[]): (ClaimAdjustmentPart | null)[] {
-  const takes = takersOf(lines);
-  const kept = lines.map((line, index) => (takes[index] === true ? keptOf(line) : null));
+  // A line keeps its part whether or not it takes one now: the set of lines that take a part changes when another line
+  // gains or loses CAS of its own, and a line the payer did not change keeps its cash all the same (RR3-1).
+  const kept = lines.map(keptOf);
   if (lines.length === 0 || (totalCents === ZERO_CENTS && kept.every((part) => part === null || part === ZERO_CENTS))) {
     return lines.map(() => null);
   }

@@ -103,7 +103,10 @@ leave it approved and never provable by the 24.00 deposit (probe E8, now LED-14'
   it is the split by weight above exactly (N3 and N5 do not move). Each part is the part kept plus one share of the
   rest, truncated once with the cents left in line order to the lines it is spread over, its exact fraction
   `(kept × Σ weights + rest × weight) / Σ weights` beside it (`kept / 1` for a line keeping its part), and the parts
-  add up to `D` exactly. An unchanged line's cash is then what it was, so the changed lines' cash changes add up to
+  add up to `D` exactly. A line keeps its part even when it no longer takes one, because another line gained or lost
+  CAS of its own and so changed which lines take a part (the third re-check's RR3-1); and when no changed line takes a
+  part (a changed line lost its own CAS beside one that kept it), the rest is spread over the changed lines all the
+  same, never over a line the payer did not change. An unchanged line's cash is then what it was, so the changed lines' cash changes add up to
   the claim's CLP04 change exactly: a single changed line is approved exactly what its claim paid more, 24.00 in N1,
   28.00 in N2 and nothing in N6 (LED-14's claim-level-met, -both and -absorbed variants), and E11's 24.00, 0 and 0
   stand. Where several lines changed, one may rise by more than the claim while another falls, which is that line's
