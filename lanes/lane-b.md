@@ -894,3 +894,7 @@ HANDOFF.md; LANES.md rule 10).
   - **The re-run passed** (run 40320655101, attempt 2): `db (2/4)` and `all green` green, so all three push runs on 0e28f9b are green.
 - **2026-10-26 12:41 UTC: PR 15b merged as #51 (c355633).** Ledger amounts in payment terms (audit #12, ADR 0067, LED-14 to LED-18), after two fix rounds, the payment-engine and UX reviews, and the fresh-clone verification. Its follow-on #46 (the Verified seal) stays queued, not started.
 - **2026-10-26 14:25 UTC: the release content checks merged as #49 (d725977).** Audits #7, #30, #31 and #59 (ADR 0071, RCC-01 to RCC-08), after two adversarial reviews, a fix round, three base merges (six conflicted code files, both sides kept) and the fresh-clone verification. Its real-size test found SUITE-CAP-1 (handed to Lane A). The parts in #42's files wait for #42 (its status file's "Split for after #42 merges"). Ten Lane B merges on 2026-10-26; only ci-deps (#48) remains, tonight.
+- **2026-10-26 ~15:50 UTC: usage 96% (the co-founder's reading); the cap is 98%.**
+  - **Continues:** ci-deps (#48) finishes tonight on the required stages only (~1% expected). If a step fails beyond a quick fix, it stops at a recorded step for the next session.
+  - **Stays stopped for Lane A:** `co-001/ux-forms` (17bbb70). Every PR it waited on (#50, #51, #52) has merged. Its design, build notes and status file say what remains.
+  - **This session:** no more half-hourly monitors. A check at 19:45 UTC, and ci-deps' message when it merges.
