@@ -7,7 +7,7 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
-## Start here (Lane B): the state at 2026-10-26 ~10:35 UTC, the handoff to Lane A
+## Start here (Lane B): the state at 2026-10-26 ~21:10 UTC, the handoff to Lane A
 A session that continues Lane B's work reads this section first, after `../LANES.md`. From 2026-10-27 that is a Lane A
 session: the co-founder works Lane A from then on. Lane A runs on another Claude account against the same GitHub
 repository, so everything it needs is here, in LANES.md, in the status files (`approval-summaries/lane-b-*-status.md`)
@@ -39,16 +39,16 @@ HANDOFF.md; LANES.md rule 10).
   | #56 | UX PR 2, a suspended organization never reads "In good standing" (UX-004; BIL-05, BIL-06) | 0e28f9b | 2026-10-26 12:11 |
   | #51 | PR 15b, ledger amounts in payment terms (#12; ADR 0067, LED-14 to LED-18) | c355633 | 2026-10-26 12:41 |
   | #49 | the release content checks (#7, #30, #31, #59; ADR 0071, RCC-01 to RCC-08) | d725977 | 2026-10-26 14:25 |
+  | #48 | ci-deps (CI 2 of 4; ADR 0066): every action and image pinned, Dependabot's groups, cooldowns and trust rules | e908c21 | 2026-10-26 21:06 |
 
 - **Open Lane B PRs at this writing**, each run by its own Lane B session, each told to finish to its merge or stop at
   a clean, recorded step. The status file says exactly where it is:
 
   | PR | Item | Head | Status file | Next step |
   | --- | --- | --- | --- | --- |
-  | #48 | ci-deps (CI 2 of 4; ADR 0066) | fb0af1d (the base merge and the login pin, 2026-10-26 ~15:30 UTC) | `lane-b-ci-deps-status.md` (its top) | after 15:11, 18:06 and 19:18 UTC today: the login pin, the pnpm age, the bumps; then the suite, CI, verification, merge |
 
-  #48's `static` check is red by design until 2026-10-26T18:06:38Z (pnpm 10.34.8's three-day age, CQ3 (a)). When
-  #48 merges, the founder's three repository settings are due: `designs/lane-b-settings-after-ci-deps.md`.
+  **No Lane B PR is open.** #48 merged last, so the founder's three repository settings are now due:
+  `designs/lane-b-settings-after-ci-deps.md` (F1 (a) the default branch, F2 (a) Dependabot alerts and security updates, then F3 SHA pinning).
 - **Stopped at a clean point: branch pushed, no PR, the status file a handoff, nothing running:**
 
   | Branch | Head | Item | What remains | Status file |
@@ -97,9 +97,9 @@ HANDOFF.md; LANES.md rule 10).
 - **Repository rules:** the ruleset "Protect the build branch" (F7) requires `all green`, `mutation`,
   `screening-capacity gate` and `approval-of-record`, up to date, through a PR, with no bypass. `main` is unchanged by
   rule: no PR into `main` and no release tag before launch (CLAUDE.md "Merging", ADR 0063).
-- **CI on the tip:** green on c355633 (#51's merge: ci, mutation, screening-capacity). The last measured counts, on
-  #51's head 8f35161 (which held every merge before it): unit 5,859 and 1 skipped; db 9,169 and 1 skipped; e2e 54. The
-  mutation gate passed, with `payment.ts` at 100%.
+- **The tip:** e908c21 (#48's merge, 2026-10-26 21:06 UTC). The last measured counts, on #48's head 7b6b10b (which
+  held every merge before it): unit 6,265 and 1 skipped; db 9,222 and 1 skipped; e2e 54. Its push runs were still
+  running at this writing; read them first.
 - **Proposals:** each status file ends with the improvements its session found but did not build (LANES.md's "improve
   as you go"). #10's, for example: a stuck run's operator view and action, two first runs of one period priced out of
   creation order, a detection of lines with no pricing in effect, and `color-scheme: dark` for form controls (also UX
@@ -112,11 +112,11 @@ HANDOFF.md; LANES.md rule 10).
   everything they built is on GitHub.
 
 ### Next actions, in order (for whoever continues Lane B's work)
-1. **Read the status files** of the open PRs above. Finish #48 (ci-deps) if it is still open: its last
-   steps run after 19:18 UTC on 2026-10-26. Follow "Merging" below: base merged in with a merge commit, CI green on that head,
+1. **The founder's three settings,** now due (#48 merged): `designs/lane-b-settings-after-ci-deps.md`. Then read Dependabot's
+   first runs after the default-branch switch (`lane-b-ci-deps-status.md`). Also pin pnpm 10.34.8 in `tools/setup-container.sh`
+   on this branch, as ci-deps' merge asks. Follow "Merging" below: base merged in with a merge commit, CI green on that head,
    the fresh-clone verification, ready, then `merge_pull_request` with `expectedHeadSha`.
-2. **When #48 merges,** the founder clicks the three settings in `designs/lane-b-settings-after-ci-deps.md`; then
-   ci-browser (`co-001/ci-browser`, phase 2) and the follow-ups P1, P2 and P4.
+2. **ci-browser** (`co-001/ci-browser`, phase 2; its design is `designs/lane-b-ci.md` §3.3), then the follow-ups P1, P2 and P4.
 3. **The stopped branches:**
    - `co-001/ux-forms`: #50, #51 and #52 have merged, so all its slices can go ahead;
    - `co-001/contract-phi-check`;
@@ -904,3 +904,4 @@ HANDOFF.md; LANES.md rule 10).
   - **Continues:** ci-deps (#48) finishes tonight on the required stages only (~1% expected). If a step fails beyond a quick fix, it stops at a recorded step for the next session.
   - **Stays stopped for Lane A:** `co-001/ux-forms` (17bbb70). Every PR it waited on (#50, #51, #52) has merged. Its design, build notes and status file say what remains.
   - **This session:** no more half-hourly monitors. A check at 19:45 UTC, and ci-deps' message when it merges.
+- **2026-10-26 21:06 UTC: ci-deps merged as #48 (e908c21). Lane B's handoff is complete.** CI 2 of 4: every action and image pinned by SHA and digest, Dependabot's groups, cooldowns and trust rules, and `packageManager`'s pnpm held to its age. Head 7b6b10b, with all four required checks green and the fresh-clone verification passed (unit 6,265; db 9,222; e2e 54). The founder's three settings are now due. That makes 11 Lane B merges on 2026-10-26 and 14 since 2026-10-25. No Lane B PR is open, and every session is idle.
