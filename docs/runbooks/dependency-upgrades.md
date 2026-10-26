@@ -151,15 +151,20 @@ or renewed by a person, with a new reason, at least monthly. The list is empty.
 
 ## Transitive packages and overrides
 
-A transitive package moves by a lockfile refresh when its parent's range allows the fixed version
-(`pnpm update <name>`). When a parent pins the old version exactly, use an override in `pnpm-workspace.yaml`'s `overrides`, scoped to
-that parent (`"parent@major>child": "x.y.z"`), and add its entry to `tools/check-toolchain/overrides.json`: the selector,
-the version, the reason, the date added and `removeWhen`, the event that makes it unnecessary (the parent moving to a
-range that allows the fix). `check-toolchain` fails an override without its entry, or one whose target has left the
-lockfile; remove both then. It reads every place pnpm takes an override from: `pnpm-workspace.yaml`, `package.json`'s
+A transitive package moves by a lockfile refresh when its parent's range allows the fixed version (`pnpm update
+<name>`). When a parent pins the old version exactly, use an override in `pnpm-workspace.yaml`'s `overrides`, scoped to
+that parent (`"parent>child": "x.y.z"`), and add its entry to `tools/check-toolchain/overrides.json`: the selector, the
+version, the reason, the date added and `removeWhen`, the event that makes it unnecessary (the parent moving to a range
+that allows the fix). `check-toolchain` fails an override without its entry, or one whose target has left the lockfile;
+remove both then. It reads every place pnpm takes an override from: `pnpm-workspace.yaml`, `package.json`'s
 `pnpm.overrides` and its `resolutions` (Yarn's field, which pnpm applies as overrides), and holds `overrides.json` equal
-to the lockfile's own `overrides` map, which records what pnpm applied. Write an override in `pnpm-workspace.yaml` only. The qs override (`typed-rest-client@2>qs`, 6.16.1) goes when Stryker depends on
-typed-rest-client 3, or on a typed-rest-client whose qs range reaches 6.16.0.
+to the lockfile's own `overrides` map, which records what pnpm applied. Write an override in `pnpm-workspace.yaml` only.
+The qs override (`typed-rest-client>qs`, 6.16.1, with no version scope on the parent) goes when Stryker depends on
+typed-rest-client 3.1.1 or later, the first to declare `qs: ^6.16.0`. typed-rest-client 3.0.0 pins qs 6.15.1 and 3.1.0
+pins 6.15.3, both with moderate advisories that `--audit-level=high` passes, so a move to either keeps the override; a
+selector scoped to one parent major would silently stop applying on such a move. Scope a selector to a parent range only
+when every version outside it is known to allow the fix; read each version's own range with `npm view <parent>@<version>
+dependencies.<child>`.
 
 ## pnpm itself
 

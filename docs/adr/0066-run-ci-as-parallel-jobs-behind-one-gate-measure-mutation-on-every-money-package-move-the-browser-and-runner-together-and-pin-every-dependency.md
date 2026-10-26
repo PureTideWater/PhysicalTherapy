@@ -442,10 +442,14 @@ exclude:
 | fast-uri (through ajv), by refresh | 3.1.8 | 3.1.9 | 2026-10-19 |
 | qs (through typed-rest-client), by override | 6.15.1 | 6.16.1 | 2026-10-14 |
 
-typescript-eslint moves with eslint, in lockstep. qs needs an override, `"typed-rest-client@2>qs": "6.16.1"` in
+typescript-eslint moves with eslint, in lockstep. qs needs an override, `"typed-rest-client>qs": "6.16.1"` in
 `pnpm-workspace.yaml`, because Stryker 10.1.1's `typed-rest-client ~2.3.0` pins qs to exactly 6.15.1; it closes qs's
-three moderate advisories, and `check-toolchain` keeps it with its reason and its removal trigger (Stryker on
-typed-rest-client 3, or on qs 6.16.0 or later), failing an override whose target has left the lockfile. eslint and
+three moderate advisories, and `check-toolchain` keeps it with its reason and its removal trigger, failing an override
+whose target has left the lockfile. The selector carries no version scope: typed-rest-client 3.0.0 still pins qs
+6.15.1 exactly and 3.1.0 pins 6.15.3 (two of the three advisories, by npm's bulk endpoint), so a `@2` scope would stop
+applying on a move to either and bring them back under `--audit-level=high`, which passes moderates. Only
+typed-rest-client 3.1.1 (2026-09-08) and later declare `qs: ^6.16.0`, so the trigger is Stryker on typed-rest-client
+3.1.1 or later (registry, read 2026-10-26). eslint and
 typescript-eslint join the catalog, and every manifest names each package the catalog holds as `catalog:`, root's five
 literal copies (`@types/node`, fast-check, tsx, typescript, vitest) and `tools/`'s eslint and typescript-eslint among
 them, so a Dependabot catalog update moves one line; `no-duplicated-versions.test.ts` holds it.
