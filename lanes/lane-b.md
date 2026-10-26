@@ -204,9 +204,9 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
-- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~04:35 UTC:
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~09:27 UTC:
   - ADR **0078** (0065 is #42's, 0066 the CI series', and 0067 to 0077 are claimed; 0077 by ux-forms at ~04:35);
-  - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
+  - `packages/synth` MODULE_NUMBER **17** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 and FRM 16 are claimed; FRM at 09:27);
   - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', 900100 is the screening's scale release, and 900110 the release content checks' scale release, generated outside the repository);
   - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
@@ -868,3 +868,12 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - the six stopped sessions sent a resume message. ci-deps was idle with its own check-ins scheduled (merge at ~15:15, the lockfile re-resolve after 19:20), and the #135 session resumed on its own.
   - **materiality-cents merged as #54 (7ef421b, 08:56:17 UTC):** the third parallel item, after its fresh-clone verification. The main checkout is fast-forwarded to it.
   - **Lesson kept:** the limit now stops the account about every two to three hours of eight-session work. Two things keep that from losing work: every agent's progress file, and a resume message sent the moment the limit resets.
+- **2026-10-26 ~09:08 UTC: the checklist PR is up as draft #55 (eea716d).**
+  - **The file:** `.claude/agents/ux-brand-reviewer.md`, 99 lines. Every check cites its rule, or is marked "(recommendation)" or "(baseline)".
+  - **The template:** `.github/pull_request_template.md`'s reviewer comment now names the new reviewer. Open #48 edits lines 1-8 of the same file, so the two never touch the same lines.
+  - **Its design:** one adversarial review, 19 points, all applied.
+  - **The two improvements it took:**
+    - D1, a wider trigger: `packages/ui/src`, `packages/brand/src`, and any file whose strings reach a screen;
+    - D5, the template comment.
+  - **16 px fields stay a recommendation:** ADR 0056 sets dense controls at 14, and the PR that changes the fields amends ADR 0056.
+  - **Now:** its two adversarial reviews (brand and copy; consistency and fitness for use) and the fix round with the documentation-only suite (wf_2db9e9db-7fd). Then the push, the fresh-clone verification reading CI, and the merge.

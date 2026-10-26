@@ -34,6 +34,10 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-26 ~06:35 UTC: the fix round's three fixers done (every finding fixed with a before/after test; dispositions in the scratchpad's fix/*.md, archived at the end). Then the 5-hour limit stopped the suite integrator mid-suite (typecheck, lint, unit, golden, oracle and db shard 1 done); the worker restarted.
 - 2026-10-26 09:00 UTC: `setup-container.sh` re-run (clusters up); wf_441cf1ff-868 resumed (task w3x8gkoi6), the integrator continuing from its progress file.
 
+- 2026-10-26 ~09:20 UTC: **Fix round done** (wf_441cf1ff-868): every finding fixed or dispositioned (table in `lane-b-model-eval-gate-fix-suite.md`; fixers' notes in `lane-b-model-eval-gate-fix-round.md`). Full local suite once at 75954972: typecheck; lint, lint:logs, lint:copy; unit 5,211 passed / 3 skipped (one failure of this PR's, `env.test.ts` on a new message, fixed and rerun); golden 221; oracle 637; test:db 4 shards 9,071 passed / 1 skipped; build + e2e 51 passed; no mutation shard affected; synth idempotent; check:fixtures, verify-content, engine freeze pass. Commits 6b02d05e, bbc13e91, 0e2f7ed9, 75954972.
+- 2026-10-26 ~09:35 UTC: base moved (7ef421b, #54); merged with no conflict (rule 6); typecheck, unit 5,231 passed / 3 skipped, console/models/gateway db 54 passed. **Pushed once: head f8e0bb17.** PR description updated (findings table, checks, the new "Not stated" rows reported as wording).
+- Next: CI on f8e0bb17, then the fresh-clone verification that reads CI, then merge.
+
 ## Proposals outside this PR
 - `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).
 - A CLI option to run the twins twice and compare them, in place of the runbook's manual comparison.
