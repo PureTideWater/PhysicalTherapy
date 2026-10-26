@@ -6,7 +6,7 @@ Session: the parallel Lane B session started by the orchestrator (session_01Cntu
 None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize." Every choice takes the recommended option (security: the safer one), recorded with its reasons here and in the design and PR description. Founder-kept matters stay out of scope; Lane B still opens no migration PR (LANES rule 2).
 
 ## Stage
-**PR 1 (#84): merged as 88a0e4e9 on 2026-10-26 09:51 UTC. PR 2 (#120): starting.**
+**PR 1 (#84): merged as 88a0e4e9 on 2026-10-26 09:51 UTC. PR 2 (#120): stopped cleanly at Lane B's wind-down (the orchestrator, 10:09 UTC), built but not integrated; branch `co-001/contract-phi-check` at d7447adb, no PR. Handoff below.**
 
 - 2026-10-25 23:40 UTC: machine set up (`tools/setup-container.sh` printed OK; `gh api user` is PureTideWater).
 - 2026-10-25 23:55 UTC: read LANES.md, lane-b.md, CLAUDE.md, reconciliation-001's checks, audit #84 and #120. #42's files: none of this item's (only the shared test-matrix and synth registry, rule 6).
@@ -43,6 +43,44 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-26 09:51 UTC: **#53 merged as 88a0e4e9** (merge commit, expectedHeadSha f8e0bb17). Unsubscribed; worktree and local branch removed; main checkout fast-forwarded and installed.
 - Next: **the second PR, `co-001/contract-phi-check`** (#120, ADR 0070 Part 3, MOD-12), from 88a0e4e9.
 - 2026-10-26 ~10:00 UTC: worktree `/home/user/contract-phi-check` at 88a0e4e9; **builders** running (wf_f44416d7-444): the gateway screen and its synthetic twins, the web and worker call paths, the upload panel; then an integrator (docs, full suite once, commits). #42's overlap: only the shared docs (its e2e helpers are left alone).
+
+- 2026-10-26 10:09 UTC: wind-down (the orchestrator: weekly usage 90%, Lane B handed to Lane A). The three builders of wf_f44416d7-444 were let finish; the workflow was stopped at ~10:23 UTC as its integrator started (it had only listed files, and edited none). The tree typechecks (22 projects). Committed in three parts and pushed: **d7447adb**. No PR opened.
+
+## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
+- **Branch:** `co-001/contract-phi-check` at **d7447adb**, from `claude/build-platform` at 88a0e4e9 (#53 merged). Commits:
+  - 5196f92a: the screen;
+  - fc74ee16: the call paths;
+  - d7447adb: the upload panel.
+
+  The local worktree is removed; the branch lives on origin.
+- **Design:** `designs/lane-b-model-eval-gate.md`: section 5 (PR C), Appendix A.3, the review dispositions M7, M8, M9, M12, m3, m9, m14 and m15, and the "Session rulings" 1, 3, 4 and 8. Part 3 of ADR 0070 is reserved for it, and test-matrix row **MOD-12** with synth case MOD-12. The builders' notes, file by file, are in `approval-summaries/lane-b-model-eval-gate-phi-build.md`.
+- **Built** (each part narrowly tested by its builder; see the notes):
+  - **The screen** (`packages/model-gateway`, `packages/synth`):
+    - `src/patient-records.ts`: `PatientRecordsCheck`, `practiceRecordsCheck` (bound to the caller's scope, read through its own job scope as the screen actor, bounded by `SCREEN_MAX_IDENTIFIERS` = 50,000), `syntheticRecordsCheck`, and the issued-check WeakSet;
+    - `redact.ts`: `identifierRuns` and `SCREEN_FLOORS` (6, 6 and 8 characters, a digit required, calendar dates dropped);
+    - `contractTermsSpec.screen`, with `ContractPagesInput.patientRecords` required;
+    - `spec.ts`'s screen context, and `gateway.ts` logging a refusal with the code only (#53's serving order kept);
+    - the harness on the synthetic check;
+    - `packages/synth/src/screen/patient-twins.ts`: a large synthetic practice and the collision classes;
+    - MOD-12's case and fixtures;
+    - tests: redact, patient-records (unit and db), contract-terms, gateway (unit and db), lint, golden.
+  - **The call paths:**
+    - `contract-proposals.ts` builds the check after the role check and records the person's `contract_screen_requested` event;
+    - `path.ts` and `notices.ts` add `names_patient` and `screen_unavailable` (which also covers `screen_failed`), with wording to report in the PR: "This document names a patient of the practice, so it was not sent to the model. Enter its terms by hand. If it is a payer letter or an EOB, it was filed as the wrong kind." and "This document could not be checked for patient details, so it was not sent to the model. Enter its terms by hand.";
+    - the worker's permitted run builds one check per practice per run;
+    - tests: models-routes db, permitted db, and `path.test.ts`.
+  - **The upload panel:**
+    - `uploader.tsx` starts with no kind when it offers more than one, with a disabled placeholder "Choose the kind of document" and the refusal "Choose the kind of document first, then choose the files again.";
+    - the contracts and reconciliation pages take the union of the offered kinds' types, and the uploads page keeps its 835 default;
+    - tests: `uploader.test.tsx`, uploads db, and the contracts e2e.
+- **What remains, in order** (LANES rule 1's pipeline):
+  1. **The integration:** settle anything left between the parts (each builder's notes list its open items). Write the docs: ADR 0070 Part 3; the ADR 0054 amendment for the screen step; PRD 14 and 16; reconciliation-001 item 16 (PR 16's red team); test-matrix MOD-12, matched in synth `matrix.ts` and `registry.ts`. Run `pnpm synth --all` twice, check that the eval gate still passes, and regenerate `watched-paths.txt`.
+  2. **The full local suite once**, in lane-b.md's order.
+  3. **The draft PR** into `claude/build-platform`, its description from the template, reporting the wording above.
+  4. **Two adversarial reviews:** the security-reviewer (PHI, the gateway boundary, tenant isolation, logs) and an AI-safety and PHI-screen correctness review (false positives and negatives by collision class, the bound, the skip-proof enforcement).
+  5. **The fix round**, then **the fresh-clone verification that reads CI**.
+  6. **The merge** (rule 6: merge the latest base in first; #42's shared docs are kept on both sides; the #42 e2e helpers are left alone).
+- **Not part of it:** F3 (lookup-hash columns, the scalable form of this check) and F4 (correcting a document's kind) are Lane A's migrations ("Handed to Lane A").
 
 ## Proposals outside this PR
 - `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).
