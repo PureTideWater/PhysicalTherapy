@@ -262,5 +262,12 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **Advisory:** the per-content windows query takes 10 to 13 s cold at real size, against a 5 s budget (the stored-windows proposal with #8).
   - Status: `approval-summaries/lane-b-release-content-checks-status.md`.
 
+- **2026-10-26, from Lane B's PR 15b (#12, merged as #51, c355633): four ledger items for Lane A, outside #12's freeze exception, so not changed by #51.**
+  - **Interest credited twice:** a remittance's interest is credited twice when it comes as both an AMT I segment and a PLB L6 adjustment (the builders' finding). It is a money defect in the ledger's existing behaviour, so it needs a ledger change under its own exception.
+  - **N1, the interest "allocated" flag:** payment-engine review N1, pre-existing.
+  - **Ordering:** a sequence column for `ledger_match`'s order within one reconcile.
+  - **An index:** on `claim.superseded_by_claim_id`.
+  - Status and the reviews: `approval-summaries/lane-b-pr15b-status.md`. #46, the Verified seal, is queued, not started.
+
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.

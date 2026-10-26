@@ -39,6 +39,7 @@ Open questions: none. DONE: merged as c355633 on 2026-10-26 ~13:00 UTC. Standing
 | 2026-10-26 ~13:00 | Merged | Marked ready; approval-of-record re-ran green; merged with method merge and expectedHeadSha 8f35161 as **c355633**. Unsubscribed. Worktree /home/user/pr15b and the local branch removed (remote branch kept); main checkout fast-forwarded to c355633 and pnpm install run; my test databases dropped. Push runs on c355633 (ci, mutation, screening-capacity) in progress at 12:42. |
 
 - PR: #51 merged as c355633 (head 8f35161).
-- Next step: none for 15b, apart from reading the push runs on c355633. #46 (the Verified seal) is queued, not started.
+- Push runs on c355633 (13:07 UTC): ci, mutation and screening-capacity all success.
+- Next step: none for 15b. #46 (the Verified seal) is queued, not started.
 - Left on the machine, not mine to judge: databases tp_test_b53257f5…, tp_test_b8ed60ff… (test-harness names, origin unknown) and /tmp/tp-e2e-* directories; a broad sweep was refused, so they stay.
 - Follow-up proposals (for whoever takes them): the claim-level allocation sentence's "($X of $Y)" is approximate where lines kept their parts (display only); Lane A: the interest 'allocated' flag (N1), AMT I + PLB L6 interest credited twice, a sequence column for ledger_match order within one reconcile, an index on claim.superseded_by_claim_id (claimLines' recursive ancestor lookup scans).
