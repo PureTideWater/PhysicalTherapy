@@ -3,8 +3,9 @@ import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runt
 import type { IndexedRelease } from '@tp/pricing';
 
 import { lineResolver, priceClaims, runAsOf } from './execute';
+import { ReleaseReadOutsideFetch, claimsRequestedKeys } from './keyed-release';
 import { FIRST_CLAIM, type RunScope, claimPage } from './lines';
-import { loadRuleRelease } from './release';
+import { type ReleaseSource, memoryReleaseSource, storedReleaseSource } from './release';
 import { runSettings } from './settings';
 import type { PricedLineInsert } from './store';
 
@@ -19,6 +20,9 @@ import type { PricedLineInsert } from './store';
  * the same test as a re-run's diff (diff.ts, pricing_run_changed_lines()). So the count is the
  * release's own effect, whatever else changed since the run (a mapping, a sign-off), which a re-run's
  * diff shows with its causes. Claims are audited reads (purpose release_impact).
+ *
+ * Both releases are read per batch by the batch's keys (release.ts's ReleaseSource; audit #31, docs/adr/0071): a
+ * lookup outside them throws ReleaseReadOutsideFetch, loud, never a count made on a quiet "not found".
  */
 
 export interface ImpactRun {
@@ -86,10 +90,14 @@ export async function completeRuns(scope: PracticeScope<ScopeClient>, practiceId
   return rows.map((row) => ({ id: row.id, practiceId: row.practice_id, periodFrom: row.period_from, periodTo: row.period_to, releaseNo: row.release_no, createdAt: row.created_at, cutOff: row.cut_off }));
 }
 
-/** The run's lines priced under its own release and under `release`, and how many differ. */
-export async function runReleaseImpact(scope: PracticeScope<ScopeClient>, run: ImpactRun, release: IndexedRelease, requestId: string, options: ImpactOptions = {}): Promise<RunImpact> {
+/**
+ * The run's lines priced under its own release and under `release`, and how many differ. A release already in memory
+ * is read through memoryReleaseSource(), the same keyed contract.
+ */
+export async function runReleaseImpact(scope: PracticeScope<ScopeClient>, run: ImpactRun, release: ReleaseSource | IndexedRelease, requestId: string, options: ImpactOptions = {}): Promise<RunImpact> {
   const purpose = options.purpose ?? 'release_impact';
-  const own = run.releaseNo === release.releaseNo ? release : await loadRuleRelease(scope.client, run.releaseNo);
+  const candidate = 'view' in release ? release : memoryReleaseSource(release);
+  const own = run.releaseNo === candidate.releaseNo ? candidate : await storedReleaseSource(scope.client, run.releaseNo);
   const records = await loadAgreementRecords(scope, { practiceId: run.practiceId, requestId, purpose });
   const settings = await runSettings(scope.client, run.practiceId, run.id);
   const resolve = lineResolver(records);
@@ -104,8 +112,20 @@ export async function runReleaseImpact(scope: PracticeScope<ScopeClient>, run: I
     if (last === undefined) {
       break;
     }
-    const first = priceClaims(claims, resolve, own, settings, asOf);
-    const second = own === release ? first : priceClaims(claims, resolve, release, settings, asOf);
+    const keys = claimsRequestedKeys(claims, settings.zip);
+    const ownView = await own.view(keys);
+    const first = priceClaims(claims, resolve, ownView, settings, asOf);
+    if (ownView.violation !== null) {
+      throw new ReleaseReadOutsideFetch(ownView.violation);
+    }
+    let second = first;
+    if (own !== candidate) {
+      const candidateView = await candidate.view(keys);
+      second = priceClaims(claims, resolve, candidateView, settings, asOf);
+      if (candidateView.violation !== null) {
+        throw new ReleaseReadOutsideFetch(candidateView.violation);
+      }
+    }
     priced += first.length;
     changed += first.filter((row, index) => linePricesDiffer(row, second[index] as PricedLineInsert)).length;
     after = last.claimId;

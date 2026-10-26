@@ -1,13 +1,26 @@
 import { MA_NONCONTRACTED_TERMS } from '@tp/contracts';
 import { cents } from '@tp/money';
-import { price } from '@tp/pricing';
+import { type ClaimFacts, type LineFacts, indexRelease, price } from '@tp/pricing';
 import { SYNTHETIC_PLACES, readRuleRelease } from '@tp/pricing/testing';
 import { type RuleRecord, recordSha256 } from '@tp/rules';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { SCREENING_MAPPING } from '../screening/adapter';
-import { KEYED_RECORD_TYPES, type KeyedRecordType, ReleaseReadOutsideFetch, isKeyedRecordType, keyIdentity, keyedRelease, requestedKeys, screeningRequestedKeys } from './keyed-release';
-import { type StoredRecordRow, indexStoredRelease } from './release';
+import {
+  KEYED_RECORD_TYPES,
+  type KeyedRecordType,
+  ReleaseReadOutsideFetch,
+  type RequestedKeys,
+  claimsRequestedKeys,
+  isKeyedRecordType,
+  keyIdentity,
+  keyedRelease,
+  requestedKeys,
+  screeningRequestedKeys,
+  unionKeys,
+} from './keyed-release';
+import { type StoredRecordRow, indexStoredRelease, memoryReleaseSource } from './release';
 
 /**
  * The release read by key (audit #53 part 2; docs/adr/0062, "The release read"): shared types from the shared index,
@@ -196,5 +209,121 @@ describe('keyedRelease', () => {
     const [quiet] = price({ claim, release: without, settings, asOf: '2026-10-18' });
     expect(quiet?.outcome).toBe('unpriced');
     expect(without.violation).toEqual({ recordType: 'locality_map_plus_four', keyFields: ['zip'] });
+  });
+});
+
+/** A key set as sorted lists, for comparing. */
+function listed(keys: RequestedKeys): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(keys).map(([type, set]) => [type, [...set].sort()]));
+}
+
+describe('claimsRequestedKeys (audit #31; docs/adr/0071)', () => {
+  it('asks for each code’s relative values, edit and MPPR rate, the general rate once, every ordered pair of lines of a claim and date, and the ZIP in both ZIP files', () => {
+    const claims = [
+      {
+        lines: [
+          { lineNo: 1, procedureCode: '97110', serviceDate: '2026-02-02' },
+          { lineNo: 2, procedureCode: '97140', serviceDate: '2026-02-02' },
+          { lineNo: 3, procedureCode: '97530', serviceDate: '2026-02-03' },
+        ],
+      },
+      // Another claim's line on the same date pairs with nothing of the first claim.
+      { lines: [{ lineNo: 1, procedureCode: '97110', serviceDate: '2026-02-02' }] },
+    ];
+    expect(listed(claimsRequestedKeys(claims, '00011'))).toEqual(
+      listed(
+        requestedKeys({
+          pfs_rvu: ['97110', '97140', '97530'].map((hcpcs) => ({ hcpcs, modifier: '' })),
+          ncci_mue: ['97110', '97140', '97530'].map((hcpcs) => ({ hcpcs })),
+          mppr_rate: [...['97110', '97140', '97530'].map((hcpcs) => ({ hcpcs, modifier: '' })), { component: 'practice_expense' }],
+          ncci_ptp: [
+            { column1: '97140', column2: '97110' },
+            { column1: '97110', column2: '97140' },
+          ],
+          locality_map: [{ zip: '00011' }],
+          locality_map_plus_four: [{ zip: '00011' }],
+        }),
+      ),
+    );
+    // Two lines of one code on one date are the same-code pair; a practice with no ZIP asks for the empty one.
+    const same = claimsRequestedKeys([{ lines: [1, 2].map((lineNo) => ({ lineNo, procedureCode: '97110', serviceDate: '2026-02-02' })) }], '');
+    expect([...same.ncci_ptp]).toEqual([keyIdentity({ column1: '97110', column2: '97110' })]);
+    expect([...same.locality_map]).toEqual([keyIdentity({ zip: '' })]);
+    expect(listed(claimsRequestedKeys([], '00011')).mppr_rate).toEqual([keyIdentity({ component: 'practice_expense' })]);
+  });
+
+  it('unions two key sets per type, leaving both as they were', () => {
+    const a = requestedKeys({ pfs_rvu: [{ hcpcs: '97110', modifier: '' }], locality_map: [{ zip: '00011' }] });
+    const b = requestedKeys({ pfs_rvu: [{ hcpcs: '97140', modifier: '' }, { hcpcs: '97110', modifier: '' }], ncci_mue: [{ hcpcs: '97140' }] });
+    expect(listed(unionKeys(a, b))).toEqual(
+      listed(requestedKeys({ pfs_rvu: [{ hcpcs: '97110', modifier: '' }, { hcpcs: '97140', modifier: '' }], ncci_mue: [{ hcpcs: '97140' }], locality_map: [{ zip: '00011' }] })),
+    );
+    expect(a.pfs_rvu.size).toBe(1);
+    expect(b.locality_map.size).toBe(0);
+  });
+});
+
+describe('pricing through a keyed source by the claims’ own keys (audit #31; docs/adr/0071)', () => {
+  const release900001 = indexRelease(readRuleRelease('fixtures/synthetic/rules/release-synth-900001'));
+  // Codes the release holds (relative values, MPPR, MUE and pairs among them) and one it does not.
+  const CODES = ['97110', '97140', '97530', '97116', '97161', '97164', '97026', '97035', 'G0283', '99999'] as const;
+  const DATES = ['2026-02-02', '2026-02-03', '2026-11-30'] as const;
+  const MODIFIERS = [[], ['GP'], ['GP', '59'], ['GP', 'CQ']] as const;
+  const settings = { zip: '00011', defaultRounding: null, placeOfServiceSettings: SYNTHETIC_PLACES };
+
+  const lineArbitrary = fc.record({
+    procedureCode: fc.constantFrom(...CODES),
+    serviceDate: fc.constantFrom(...DATES),
+    units: fc.integer({ min: 1, max: 3 }),
+    modifiers: fc.constantFrom(...MODIFIERS),
+  });
+  const claimArbitrary = fc.array(lineArbitrary, { minLength: 1, maxLength: 8 }).map((drawn): ClaimFacts => ({
+    claimStatusCode: '1',
+    reversed: false,
+    corrected: false,
+    remittanceDate: null,
+    payerPlanKey: null,
+    lines: drawn.map(
+      (line, index): LineFacts => ({
+        lineNo: index + 1,
+        serviceLineId: null,
+        procedureCode: line.procedureCode,
+        modifiers: [...line.modifiers],
+        units: String(line.units),
+        serviceDate: line.serviceDate,
+        placeOfService: '11',
+        chargeCents: cents(10_000n),
+        observedAllowedCents: cents(0n),
+        observedAllowedBasis: 'paid_plus_pr',
+        patientShareAdjustments: [],
+        agreement: { outcome: 'MA_NONCONTRACTED', mapping: SCREENING_MAPPING, terms: MA_NONCONTRACTED_TERMS },
+      }),
+    ),
+  }));
+
+  it('never sets the violation, and prices every line exactly as the whole release does (the flags all on)', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(claimArbitrary, { minLength: 1, maxLength: 3 }), async (claims) => {
+        const source = memoryReleaseSource(release900001);
+        const view = await source.view(claimsRequestedKeys(claims, settings.zip));
+        for (const claim of claims) {
+          const keyed = price({ claim, release: view, settings, asOf: '2026-12-15' });
+          expect(view.violation).toBeNull();
+          expect(keyed).toEqual(price({ claim, release: release900001, settings, asOf: '2026-12-15' }));
+        }
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it('serves every key asked so far, and is just as loud on a key never asked', async () => {
+    const source = memoryReleaseSource(release900001);
+    expect([source.releaseNo, source.manifestSha256]).toEqual([release900001.releaseNo, release900001.manifestSha256]);
+    await source.view(requestedKeys({ pfs_rvu: [{ hcpcs: '97110', modifier: '' }] }));
+    const later = await source.view(requestedKeys({ ncci_mue: [{ hcpcs: '97110' }] }));
+    expect(later.inForce('pfs_rvu', { hcpcs: '97110', modifier: '' }, '2026-02-02')).not.toBeNull();
+    expect(later.inForce('ncci_mue', { hcpcs: '97110' }, '2026-02-02')).not.toBeNull();
+    expect(() => later.inForce('pfs_rvu', { hcpcs: '97140', modifier: '' }, '2026-02-02')).toThrow(ReleaseReadOutsideFetch);
+    expect(later.violation).toEqual({ recordType: 'pfs_rvu', keyFields: ['hcpcs', 'modifier'] });
   });
 });

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { OWNER_ROLE, type ScopeClient, type ScopePool, withJobScope } from '@tp/db';
 import { type RuleRelease, indexRelease } from '@tp/pricing';
-import { completeRuns, runReleaseImpact } from '@tp/worker/pricing';
+import { completeRuns, memoryReleaseSource, runReleaseImpact } from '@tp/worker/pricing';
 
 import type { AffectedRun, PricingRunSource, RunsImpact } from './impact';
 
@@ -44,7 +44,8 @@ export function databaseRuns<C extends ScopeClient>(pool: ScopePool<C>, options:
     dryRunId,
     description: `Pricing runs in the database (dry run ${dryRunId})`,
     async affectedRuns(release: RuleRelease): Promise<RunsImpact> {
-      const indexed = indexRelease(release);
+      // The candidate from files, read through the same keyed contract as a stored release: a missed key is just as loud.
+      const candidate = memoryReleaseSource(indexRelease(release));
       const client = await owner.connect();
       let practices: string[];
       try {
@@ -58,7 +59,7 @@ export function databaseRuns<C extends ScopeClient>(pool: ScopePool<C>, options:
         await withJobScope(owner, { jobId: dryRunId, practiceId }, async (scope) => {
           for (const run of await completeRuns(scope, practiceId, dryRunId)) {
             runsChecked += 1;
-            const impact = await runReleaseImpact(scope, run, indexed, dryRunId, { claimsPerBatch: options.claimsPerBatch });
+            const impact = await runReleaseImpact(scope, run, candidate, dryRunId, { claimsPerBatch: options.claimsPerBatch });
             if (impact.changedLines > 0) {
               affected.push({ runId: run.id, practiceId, releaseNo: run.releaseNo, lines: impact.lines, changedLines: impact.changedLines });
             }

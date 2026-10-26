@@ -302,18 +302,36 @@ export function sideChanges(before: DiffSide, after: DiffSide): DiffChange[] {
   return DIFF_CHANGES.filter((change) => differs[change]);
 }
 
+/**
+ * The stored records a trace names, each found by its identity (release, type, key and start: rule_record_identity's
+ * columns, an index probe) and held to the hash the trace names, so the row matched is exactly that one. A join on the
+ * hash alone has no index to use (audit #31; docs/adr/0071).
+ */
+const STORED_RECORDS = `rule_record r JOIN unnest($1::int[], $2::text[], $3::jsonb[], $4::date[], $5::text[]) AS w (release_no, record_type, key, effective_from, sha256)
+           ON w.release_no = r.release_no AND w.record_type = r.record_type AND w.key = r.key AND w.effective_from = r.effective_from AND w.sha256 = r.sha256`;
+
+function storedRecordParameters(wanted: readonly { readonly release: number; readonly ref: TraceRecordRef }[]): unknown[] {
+  return [
+    wanted.map((item) => item.release),
+    wanted.map((item) => item.ref.record_type),
+    wanted.map((item) => JSON.stringify(item.ref.key)),
+    wanted.map((item) => item.ref.effective_from),
+    wanted.map((item) => item.ref.sha256),
+  ];
+}
+
 /** Whether two stored records of a rule hold the same value and window, from rule_record. */
 async function sameRuleLookup(client: ScopeClient, pairs: readonly { readonly before: TraceRecordRef; readonly after: TraceRecordRef; readonly beforeRelease: number; readonly afterRelease: number }[]) {
   const wanted = pairs.flatMap((pair) => [
-    { release: pair.beforeRelease, sha256: pair.before.sha256 },
-    { release: pair.afterRelease, sha256: pair.after.sha256 },
+    { release: pair.beforeRelease, ref: pair.before },
+    { release: pair.afterRelease, ref: pair.after },
   ]);
   const stored = new Map<string, string>();
   if (wanted.length > 0) {
     const { rows } = await client.query<{ release_no: number; sha256: string; value: unknown; effective_from: string; effective_to: string | null }>(
       `SELECT r.release_no, r.sha256, r.value, r.effective_from::text AS effective_from, r.effective_to::text AS effective_to
-         FROM rule_record r JOIN unnest($1::int[], $2::text[]) AS w (release_no, sha256) ON w.release_no = r.release_no AND w.sha256 = r.sha256`,
-      [wanted.map((item) => item.release), wanted.map((item) => item.sha256)],
+         FROM ${STORED_RECORDS}`,
+      storedRecordParameters(wanted),
     );
     for (const row of rows) {
       stored.set(`${String(row.release_no)}:${row.sha256}`, canonicalJson([row.value, row.effective_from, row.effective_to]));
@@ -363,8 +381,8 @@ async function otherReleaseLookup(
   // The records as read, by release and hash, and every record of the same rules in the other release.
   const { rows: read } = await client.query<{ release_no: number; sha256: string; value: unknown; effective_from: string; effective_to: string | null }>(
     `SELECT r.release_no, r.sha256, r.value, r.effective_from::text AS effective_from, r.effective_to::text AS effective_to
-       FROM rule_record r JOIN unnest($1::int[], $2::text[]) AS w (release_no, sha256) ON w.release_no = r.release_no AND w.sha256 = r.sha256`,
-    [asks.map((ask) => ask.release), asks.map((ask) => ask.ref.sha256)],
+       FROM ${STORED_RECORDS}`,
+    storedRecordParameters(asks),
   );
   const { rows: held } = await client.query<{ release_no: number; record_type: string; key: Readonly<Record<string, string>>; sha256: string; value: unknown; effective_from: string; effective_to: string | null }>(
     `SELECT DISTINCT r.release_no, r.record_type, r.key, r.sha256, r.value, r.effective_from::text AS effective_from, r.effective_to::text AS effective_to

@@ -4,8 +4,20 @@ import type { Logger } from '@tp/observability';
 import { ENGINE_VERSION, type AgreementInput, type IndexedRelease, type LineFacts, type LinePricing, type PracticeSettings, type PricingInput, price } from '@tp/pricing';
 
 import { type RunCoverage, computeCoverage, operatorAlerts } from './coverage';
+import { type KeyedReleaseView, claimsRequestedKeys } from './keyed-release';
 import { FIRST_CLAIM, type RunScope, type StoredClaim, claimPage, runPlans } from './lines';
-import { loadRuleRelease } from './release';
+import {
+  type ContentFailureCode,
+  type ContentFamily,
+  LOUD_CONTENT_TYPES,
+  contentFailureCode,
+  contentGapsOf,
+  familyOf,
+  isLoudContentGap,
+  releaseContentSpans,
+  releaseContentWindows,
+  storedReleaseSource,
+} from './release';
 import { runSettings } from './settings';
 import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store';
 
@@ -38,9 +50,25 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  *   (or a content gap, locality_not_loaded) a stopped line stays ENGINE_ERROR for the operator. So does a
  *   line stopped as no_locality_plus_four at any status: the release has no ZIP+4 file of the ZIP in force
  *   on its date, a gap in PaidWhole's content that the customer cannot fix, so it never fails the run.
+ * - A run whose lines read Medicare content its release has not loaded for their dates (audit #7; docs/adr/0071): a
+ *   line that read the per-code MPPR list, the general MPPR rate or the MUE (from its trace, never from the flags
+ *   alone: release.ts contentReads()) on a day outside that content's span would be priced without the limit and look
+ *   right. The run then fails with no line kept, as waiting_on_content_mppr, _mue or _mppr_mue, naming exactly the
+ *   families its lines read; the month waits for a release that covers it (../monitor/plan.ts). A commercial
+ *   fixed-fee month reads none of them and prices. Such a run, and a complete run with lines stopped by other content
+ *   not loaded for their dates (a fee-schedule quarter, a GPCI, a locality: isLoudContentGap()), logs one content
+ *   alert (CONTENT_NOT_LOADED). The engine-error page is unchanged meanwhile: a content gap that pages as an engine
+ *   error keeps paging until the content alert has its own alarm (the later pull request, infra/lib/jobs.ts).
+ * - The release is read by key (audit #31): per batch, only the keys its claims can look up (storedReleaseSource());
+ *   a lookup outside them fails the run as release_read_outside_fetch before that batch is stored, and logs
+ *   RELEASE_READ_OUTSIDE_FETCH for the operator.
+ * - Precedence, over the whole run: a read outside the fetch (PaidWhole's defect, never hidden), then the location
+ *   (the customer's step), then content. No stop throws inside the batch loop: each line's stop is recorded, and after
+ *   the first location stop or content gap the run prices on to its end, storing nothing more, so every claim is seen
+ *   before any stop is raised. The transaction is rolled back either way.
  */
 
-export type FailureCode = 'engine_version_mismatch' | 'unmapped_plan' | 'job_failed' | 'location_not_ready';
+export type FailureCode = 'engine_version_mismatch' | 'unmapped_plan' | 'job_failed' | 'location_not_ready' | 'release_read_outside_fetch' | ContentFailureCode;
 
 export type ExecuteOutcome =
   | { readonly outcome: 'complete'; readonly coverage: RunCoverage }
@@ -66,6 +94,14 @@ export interface ExecuteOptions {
  * (infra/lib/jobs.ts, PRICING_ENGINE_ERRORS_MESSAGE).
  */
 export const ENGINE_ERRORS_MESSAGE = 'pricing run recorded engine errors for the operator';
+
+/**
+ * The line a run logs once when it met content PaidWhole has not loaded: refused waiting_on_content_*, or complete
+ * with lines stopped by such content (isLoudContentGap()), with the lines as record_count. Its alarm comes with the
+ * later pull request (infra/lib/jobs.ts, CONTENT_NOT_LOADED_MESSAGE, holds the same text). The log calls write it as
+ * fixed text, which lint:logs requires.
+ */
+export const CONTENT_NOT_LOADED_MESSAGE = 'pricing run found lines stopped by rule content not loaded for their dates';
 
 const CLAIMS_PER_BATCH = 500;
 
@@ -111,6 +147,24 @@ async function pricedLocationStatus(client: ScopeClient, run: { readonly release
 /** A line of the run stopped on the practice's location: the run fails as location_not_ready, its lines rolled back. */
 class LocationNotReady extends Error {
   override readonly name = 'LocationNotReady';
+}
+
+/** A line of the run read MPPR or MUE content on a date its release has not loaded it for: the run fails, its lines rolled back. */
+class ContentNotLoaded extends Error {
+  override readonly name = 'ContentNotLoaded';
+
+  constructor(
+    readonly code: ContentFailureCode,
+    /** The lines that read the content outside its spans, and the lines stopped by other content not loaded. */
+    readonly lines: number,
+  ) {
+    super('lines of the run read rule content not loaded for their dates');
+  }
+}
+
+/** A lookup outside the keys the run fetched: the run fails, nothing of it stored. */
+class ReadOutsideFetch extends Error {
+  override readonly name = 'ReadOutsideFetch';
 }
 
 interface RunRow {
@@ -248,6 +302,8 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     return started;
   }
 
+  /** The lines a complete run had stopped by content not loaded for their dates (the content alert's count). */
+  let loudLines = 0;
   const priceRun = (): Promise<ExecuteOutcome> => context.transaction(async (scope): Promise<ExecuteOutcome> => {
     // One run of the practice at a time, whatever the queue does.
     await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('pricing_run:' || $1::text, 0))", [practiceId]);
@@ -268,21 +324,38 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       await failRun(scope.client, practiceId, pricingRunId, 'unmapped_plan');
       return { outcome: 'failed', failureCode: 'unmapped_plan' };
     }
-    const release = await loadRuleRelease(scope.client, run.release_no);
+    const source = await storedReleaseSource(scope.client, run.release_no);
     const settings = await runSettings(scope.client, practiceId, pricingRunId);
     const stops = locationStops(await pricedLocationStatus(scope.client, run, settings));
+    const spans = await releaseContentSpans(scope.client, run.release_no);
+    const windows = await releaseContentWindows(scope.client, run.release_no, LOUD_CONTENT_TYPES);
     const resolve = lineResolver(records);
     const asOf = runAsOf(run.created_at);
     const batch = options.claimsPerBatch ?? CLAIMS_PER_BATCH;
-    // A line stopped on a location it cannot be priced at rolls the whole transaction back (LocationNotReady).
-    const onLocation =
-      stops === null
-        ? undefined
-        : (result: LinePricing) => {
-            if (result.outcome === 'unpriced' && result.reason === 'ENGINE_ERROR' && result.detail !== null && stops.has(result.detail)) {
-              throw new LocationNotReady('a line of the run stopped on the practice’s location');
-            }
-          };
+    // Each line's stops are recorded, never thrown here: the precedence is judged once the whole run is priced.
+    let violation = false;
+    let locationStopped = false;
+    const families = new Set<ContentFamily>();
+    let gapLines = 0;
+    let alertLines = 0;
+    let view: KeyedReleaseView | null = null;
+    const seen = (result: LinePricing): void => {
+      if (view !== null && view.violation !== null) {
+        violation = true;
+      }
+      if (stops !== null && result.outcome === 'unpriced' && result.reason === 'ENGINE_ERROR' && result.detail !== null && stops.has(result.detail)) {
+        locationStopped = true;
+      }
+      const gaps = contentGapsOf(result.trace, spans);
+      for (const read of gaps) {
+        families.add(familyOf(read.content));
+      }
+      if (gaps.length > 0) {
+        gapLines += 1;
+      } else if (isLoudContentGap(result, windows)) {
+        alertLines += 1;
+      }
+    };
     let after = FIRST_CLAIM;
     for (;;) {
       const claims = await claimPage(scope, lines, after, batch, context.jobId);
@@ -290,9 +363,25 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       if (last === undefined) {
         break;
       }
-      await insertPricedLines(scope.client, practiceId, pricingRunId, priceClaims(claims, resolve, release, settings, asOf, onLocation));
+      view = await source.view(claimsRequestedKeys(claims, settings.zip));
+      const rows = priceClaims(claims, resolve, view, settings, asOf, seen);
+      // A lookup outside the fetch is never stored and never waits for the run's end.
+      if (violation || view.violation !== null) {
+        throw new ReadOutsideFetch('a line of the run read rule content outside the keys it fetched');
+      }
+      // After the first location stop or content gap the run is refused: it prices on, so every claim is seen, and writes nothing more.
+      if (!locationStopped && families.size === 0) {
+        await insertPricedLines(scope.client, practiceId, pricingRunId, rows);
+      }
       after = last.claimId;
     }
+    if (locationStopped) {
+      throw new LocationNotReady('a line of the run stopped on the practice’s location');
+    }
+    if (families.size > 0) {
+      throw new ContentNotLoaded(contentFailureCode(families), gapLines + alertLines);
+    }
+    loudLines = alertLines;
     const coverage = await computeCoverage(scope.client, pricingRunId);
     await scope.client.query("UPDATE pricing_run SET status = 'complete', coverage = $2, completed_at = now() WHERE id = $1", [pricingRunId, JSON.stringify(coverage)]);
     return { outcome: 'complete', coverage };
@@ -301,17 +390,33 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
   try {
     outcome = await priceRun();
   } catch (error) {
-    if (!(error instanceof LocationNotReady)) {
-      throw error;
+    // Nothing of the pricing transaction was kept; the run fails in a transaction of its own.
+    if (error instanceof ReadOutsideFetch) {
+      await context.transaction((scope) => failRun(scope.client, practiceId, pricingRunId, 'release_read_outside_fetch'));
+      context.logger.error('pricing run read rule content outside the keys it fetched', { pricing_run_id: pricingRunId, error_code: 'RELEASE_READ_OUTSIDE_FETCH' });
+      return { outcome: 'failed', failureCode: 'release_read_outside_fetch' };
     }
-    // Nothing of the pricing transaction was kept; the run fails in a transaction of its own, the month waits.
-    await context.transaction((scope) => failRun(scope.client, practiceId, pricingRunId, 'location_not_ready'));
-    return { outcome: 'failed', failureCode: 'location_not_ready' };
+    if (error instanceof LocationNotReady) {
+      // The month waits for the location.
+      await context.transaction((scope) => failRun(scope.client, practiceId, pricingRunId, 'location_not_ready'));
+      return { outcome: 'failed', failureCode: 'location_not_ready' };
+    }
+    if (error instanceof ContentNotLoaded) {
+      // The month waits for the content; one alert per run, whoever created it (CONTENT_NOT_LOADED_MESSAGE).
+      await context.transaction((scope) => failRun(scope.client, practiceId, pricingRunId, error.code));
+      context.logger.warn('pricing run found lines stopped by rule content not loaded for their dates', { pricing_run_id: pricingRunId, error_code: 'CONTENT_NOT_LOADED', record_count: error.lines });
+      return { outcome: 'failed', failureCode: error.code };
+    }
+    throw error;
   }
 
   if (outcome.outcome === 'complete' && operatorAlerts(outcome.coverage) > 0) {
     // Fixed text for the log lint and the operator's alarm; the lines and their details are on the run.
     context.logger.error('pricing run recorded engine errors for the operator', { pricing_run_id: pricingRunId, error_code: 'PRICING_ENGINE_ERROR' });
+  }
+  if (outcome.outcome === 'complete' && loudLines > 0) {
+    // CONTENT_NOT_LOADED_MESSAGE: at most once a run, refused or complete.
+    context.logger.warn('pricing run found lines stopped by rule content not loaded for their dates', { pricing_run_id: pricingRunId, error_code: 'CONTENT_NOT_LOADED', record_count: loudLines });
   }
   return outcome;
 }
