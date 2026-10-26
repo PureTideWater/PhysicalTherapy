@@ -338,7 +338,8 @@ describe('on this repository', () => {
     expect(affects(['packages/pricing/src/testing.ts'])).toEqual(['pricing', 'packets']);
     expect(affects(['packages/pricing/src/engine.test.ts'])).toEqual(['pricing']);
     expect(affects(['tools/golden-worksheet/engine.golden.test.ts', 'fixtures/golden/claims/G001.json'])).toEqual(['pricing']);
-    expect(affects(['docs/product/unpriced-reasons.md'])).toEqual(['pricing']);
+    // The closed list is read by the engine's test and by the calculation words' (packets, explain/words.test.ts).
+    expect(affects(['docs/product/unpriced-reasons.md'])).toEqual(['pricing', 'packets']);
   });
 
   it('gives all four for the mutation tooling, its configuration and the workflow', () => {
@@ -360,8 +361,8 @@ describe('on this repository', () => {
 
   it('selects every shard of each affected package', () => {
     expect(shardsFor(['money'])).toEqual(['money-ledger']);
-    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-rest', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
-    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(6);
+    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
+    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(7);
     expect(shardsFor([] as MutationPackage[])).toEqual([]);
   });
 });

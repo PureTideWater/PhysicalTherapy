@@ -2,10 +2,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState }
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { ActionForm } from '../../../../components/action-form';
+import { ActionForm, RefusalFallback, RefusalTakeover } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
 import { ReleaseLoadedThrough } from '../../../../components/pricing/content';
-import { RunStateBadges } from '../../../../components/pricing/display';
+import { PendingRunsAlert, RunStateBadges } from '../../../../components/pricing/display';
 import { ReleaseChanges, ReleaseStatusText } from '../../../../components/releases/note';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
@@ -25,14 +25,18 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * pinned to another release. For the roles that price runs, each of those runs can be checked for how
  * many of its lines the release in force would change (worked out in memory, nothing written) and
  * re-run under it; the re-run's page shows exactly which lines change, and nothing is in effect until
- * a person accepts it. Beside the release in force, through what date it loads each content family (audit #59).
+ * a person accepts it. While a first run of a listed run's dates is queued or being priced, the run it
+ * waits for is named in place of its Re-run button (docs/adr/0037, amendment of 2026-10-26). A refused
+ * Re-run whose run leaves the list on the refresh is said after the list, which takes the focus
+ * (RefusalFallback; UX recheck of PR #50, N6). Beside the release in force, through what date it loads each content
+ * family (audit #59).
  */
 export default async function ReleasesPage(props: Props) {
   const page = await loadPage(releasesPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="pricing_runs" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, releases, runsByRelease, inForce, note, otherRuns, impact, canRerun, loadedThrough } = page.data;
+  const { practiceId, releases, runsByRelease, inForce, note, otherRuns, pendingByRun, impact, canRerun, loadedThrough } = page.data;
   const path = `/p/${practiceId}/releases`;
   return (
     <AppShell shell={page.shell} section="pricing_runs">
@@ -104,13 +108,28 @@ export default async function ReleasesPage(props: Props) {
                           <Link className="text-sm underline" href={`${path}?release=${String(note.releaseNo)}&check=${run.id}`}>
                             How many lines would change?
                           </Link>
-                          <ActionForm action={rerunPricingRunFormAction} submit={`Re-run under release ${String(note.releaseNo)}`} variant="outline" className="flex flex-col gap-2">
-                            <FormKeys />
-                            <input type="hidden" name="practiceId" value={practiceId} />
-                            <input type="hidden" name="runId" value={run.id} />
-                            <input type="hidden" name="releaseNo" value={note.releaseNo} />
-                          </ActionForm>
+                          {(pendingByRun[run.id] ?? []).length > 0 ? (
+                            <RefusalTakeover keys={[`rerun:${run.id}`]}>
+                              <PendingRunsAlert practiceId={practiceId} runs={pendingByRun[run.id] ?? []} inEffect={run} />
+                            </RefusalTakeover>
+                          ) : (
+                            <ActionForm
+                              action={rerunPricingRunFormAction}
+                              submit={`Re-run under release ${String(note.releaseNo)}`}
+                              variant="outline"
+                              className="flex flex-col gap-2"
+                              labels={{ runId: 'This run', releaseNo: 'Rule release' }}
+                              refreshOnError={`rerun:${run.id}`}
+                            >
+                              <FormKeys />
+                              <input type="hidden" name="practiceId" value={practiceId} />
+                              <input type="hidden" name="runId" value={run.id} />
+                              <input type="hidden" name="releaseNo" value={note.releaseNo} />
+                            </ActionForm>
+                          )}
                         </div>
+                      ) : note.inForce && (pendingByRun[run.id] ?? []).length > 0 ? (
+                        <PendingRunsAlert practiceId={practiceId} runs={pendingByRun[run.id] ?? []} inEffect={run} />
                       ) : note.inForce ? (
                         <p className="text-sm text-muted-foreground">A billing manager or firm principal can re-run it.</p>
                       ) : null}
@@ -118,6 +137,13 @@ export default async function ReleasesPage(props: Props) {
                   ))}
                 </ul>
               )}
+              {note.inForce && canRerun ? (
+                <RefusalFallback
+                  prefix="rerun:"
+                  present={otherRuns.map((run) => `rerun:${run.id}`)}
+                  lead="The run you asked to re-run is no longer listed: the list above now shows the runs in effect pinned to another release."
+                />
+              ) : null}
             </CardContent>
           </Card>
         </>

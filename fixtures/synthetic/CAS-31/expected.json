@@ -1,0 +1,22 @@
+{
+  "case": "CAS-31",
+  "module": "CAS",
+  "title": "The line trace for a role that does not read PHI",
+  "assertion": "The steps in words with no date; the stored trace not sent",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/web/src/lib/routes/pricing-routes.db.test.ts",
+    "apps/web/src/lib/routes/line-words-routes.db.test.ts",
+    "apps/web/src/components/pricing/line-words.test.tsx",
+    "apps/web/e2e/viewer-phi.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Opens any line’s trace as a viewer: a role, no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

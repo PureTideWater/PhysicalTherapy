@@ -73,23 +73,36 @@ export function standsAlone(text: string, start: number, end: number, options: {
   return true;
 }
 
+/** Where a figure or a token stands in a quote: [start, end) of the quote as `normalized` reads it. */
+export interface QuoteSpan {
+  readonly start: number;
+  readonly end: number;
+}
+
 /**
- * Whether a code, modifier or place of service appears in the quote as a whole token, without regard
- * to case: "11" is not a place of service of "11/1/2026", "59" not a modifier of "$59.00", "9711" not a
- * code of "97110".
+ * Where a code, modifier or place of service appears in the quote as a whole token, without regard to
+ * case: "11" is not a place of service of "11/1/2026", "59" not a modifier of "$59.00", "9711" not a
+ * code of "97110". Positions are in the quote as `normalized` reads it.
  */
-export function tokenInQuote(token: string, quote: string, field: 'codes' | 'modifiers' | 'places_of_service' = 'codes'): boolean {
+export function tokenSpans(token: string, quote: string, field: 'codes' | 'modifiers' | 'places_of_service' = 'codes'): QuoteSpan[] {
   if (token === '') {
-    return false;
+    return [];
   }
   const text = normalized(quote);
   const hyphenated = field === 'codes' ? 'code' : field === 'modifiers' ? 'modifier' : undefined;
+  const spans: QuoteSpan[] = [];
   for (const match of text.matchAll(new RegExp(escapeRegExp(token), 'gi'))) {
-    if (standsAlone(text, match.index, match.index + match[0].length, hyphenated === undefined ? {} : { hyphenated })) {
-      return true;
+    const span = { start: match.index, end: match.index + match[0].length };
+    if (standsAlone(text, span.start, span.end, hyphenated === undefined ? {} : { hyphenated })) {
+      spans.push(span);
     }
   }
-  return false;
+  return spans;
+}
+
+/** Whether a code, modifier or place of service appears in the quote as a whole token (tokenSpans finds one). */
+export function tokenInQuote(token: string, quote: string, field: 'codes' | 'modifiers' | 'places_of_service' = 'codes'): boolean {
+  return tokenSpans(token, quote, field).length > 0;
 }
 
 /** Whether a written reference (a claim's or the payer's) appears in the quote as a whole word, not as part of a longer figure. */
@@ -129,19 +142,64 @@ function readValue(kind: WrittenFigure, written: string): string | null {
 }
 
 /**
- * Whether the quote holds the written value as a whole figure (CLAUDE.md rule 1; PRD 14: "every amount
- * and date must appear in its quote"): the written text is in the quote, and the quote, read by the
- * packets verifier's own scanner, holds a figure of the field's kind whose value is what code reads
- * from the written text. "$3" is not in "$32.50" (an amount of 3250 cents), "10%" not in "110%",
- * "1/1/2026" not in "11/1/2026", and a fee-schedule year written inside a date is not a year.
+ * Where the quote holds the written value as a whole figure (CLAUDE.md rule 1; PRD 14: "every amount and
+ * date must appear in its quote"): none unless the written text is in the quote; otherwise every figure
+ * of the field's kind that the quote, read by the packets verifier's own scanner, holds with the value
+ * code reads from the written text. "$3" is not in "$32.50" (an amount of 3250 cents), "10%" not in
+ * "110%", "1/1/2026" not in "11/1/2026", and a fee-schedule year written inside a date is not a year.
+ * Positions are in the quote as `normalized` reads it (the scanner reads it with hidden characters left
+ * out, and each figure's span is mapped back).
  */
-export function figureInQuote(kind: WrittenFigure, written: string, quote: string): boolean {
+export function figureSpans(kind: WrittenFigure, written: string, quote: string): QuoteSpan[] {
   const value = readValue(kind, written);
   if (value === null || !inQuote(written, quote)) {
-    return false;
+    return [];
   }
   const wanted = SCANNED[kind];
-  return scanText(readableText(normalized(quote)).text).figures.some((figure) => figure.kind === wanted && figure.value === value);
+  const readable = readableText(normalized(quote));
+  return scanText(readable.text)
+    .figures.filter((figure) => figure.kind === wanted && figure.value === value)
+    .map((figure) => readable.original(figure.start, figure.end));
+}
+
+/** Whether the quote holds the written value as a whole figure (figureSpans finds one). */
+export function figureInQuote(kind: WrittenFigure, written: string, quote: string): boolean {
+  return figureSpans(kind, written, quote).length > 0;
+}
+
+/** A code token of a quote: its text as written and where it stands in the quote as `normalized` reads it. */
+export interface CodeToken extends QuoteSpan {
+  readonly token: string;
+}
+
+/** HCPCS shape: four digits then a digit or a capital letter (CPT, Category II and III), or a capital letter then four digits (Level II). */
+const CODE_SHAPE = /(?<![\p{L}\p{N}])(?:\d{4}[0-9A-Z]|[A-Z]\d{4})(?![\p{L}\p{N}])/gu;
+/** The scanner's kinds a code token can never stand inside: a figure of one of these is not a code. */
+const NOT_CODES: ReadonlySet<FigureKind> = new Set(['amount', 'percent', 'date', 'month', 'month_day']);
+
+/**
+ * Every code token of a quote, in order (docs/adr/0070, Part 1: the verifier's row check): a whole token
+ * of HCPCS shape, matched with its case as written (never upper-cased, so "Payer", "shall" and "TOTAL"
+ * are never codes, as a case-blind match of tokenInQuote would make them), standing alone by
+ * standsAlone's boundaries (a code may carry its modifiers, "97110-GP"), and not inside an amount, a
+ * percentage or a date the packets scanner reads. A five-digit ZIP code is a code token: the row check
+ * then rejects a figure whose nearest token is the ZIP, a visible rejection the specialist resolves.
+ */
+export function codeTokens(quote: string): CodeToken[] {
+  const text = normalized(quote);
+  const readable = readableText(text);
+  const figures = scanText(readable.text)
+    .figures.filter((figure) => NOT_CODES.has(figure.kind))
+    .map((figure) => readable.original(figure.start, figure.end));
+  const tokens: CodeToken[] = [];
+  for (const match of text.matchAll(CODE_SHAPE)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (standsAlone(text, start, end, { hyphenated: 'code' }) && !figures.some((figure) => figure.start < end && start < figure.end)) {
+      tokens.push({ token: match[0], start, end });
+    }
+  }
+  return tokens;
 }
 
 const AMOUNT = /^\$?\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?)$/;

@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C08",
   "layout": "table",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": null,
   "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Exhibit A: 97035 POS 19",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -50,6 +57,7 @@
     },
     {
       "label": "Exhibit A: 97168",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -87,6 +95,7 @@
     },
     {
       "label": "Exhibit A: 97163",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -124,6 +133,7 @@
     },
     {
       "label": "Exhibit A: 97110",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",

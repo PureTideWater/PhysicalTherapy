@@ -94,6 +94,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "Priced with the approved split's setting, read as `tp_app`. The run records the split, and the practice's own setting wins",
   },
+  {
+    id: 'PRC-25',
+    title: 'A late line priced by a newer run of the month, then the older re-run accepted',
+    assertion:
+      "Refused as `superseded`, in the worker and through the screens. The late line keeps its pricing in effect and the newer run stays in effect. The re-run's page says a newer run of these service dates is in effect, links to it and offers no Accept button. When that run was priced after the re-run and would price nothing differently now, the page says there is nothing more to accept and offers no re-run; otherwise it offers the re-run of that run",
+  },
+  {
+    id: 'PRC-26',
+    title: 'Two re-runs of one run, the second priced after the first, accepted in either order and at once',
+    assertion:
+      "Whichever acceptance commits first, the month ends on the second re-run. Accepting the first after the second is refused as `superseded`. Accepting the second after the first succeeds, and its page lists the changes against the first. An acceptance whose changes were shown against a run other than the one it would replace is refused as `diff_changed`. Of two acceptances made at once, the first re-run's is refused as `superseded` whatever the timestamps. The second re-run's, when its transaction began before the other acceptance's, is refused as `changed_meanwhile`, and made again it succeeds. An accepted re-run is the run in effect for its period, and nothing deadlocks",
+  },
+  {
+    id: 'PRC-27',
+    title: 'A re-run whose service dates overlap a run of another period, or a run still being priced',
+    assertion:
+      "A run of another period that took effect after the original and was priced after the re-run, or under a later release or a later place-of-service split, refuses it (`superseded`). Of two runs priced at once, the one that read its inputs last counts as priced last. No shared line goes back to older pricing, and re-running the original again is accepted. One priced before the re-run, under the same release and split, does not refuse it, and its own lines stay in effect. The re-run's page lists exactly the lines whose pricing in effect accepting changes, each against the run of whichever period holds it, and an acceptance whose changes were shown against other runs than hold those lines now is refused as `diff_changed`. A run pinned to a withdrawn release does not count as newer. A first run of overlapping dates being priced refuses acceptance (`newer_run_pending`). One queued refuses new re-runs but not acceptance, and when it completes it takes effect after the accepted re-run",
+  },
+  {
+    id: 'PRC-28',
+    title: 'Re-running a run that is not in effect',
+    assertion:
+      'A run that a later run or an accepted re-run replaced, and a re-run nobody accepted, are not re-run (`not_in_effect`). Their pages offer the run in effect for those service dates instead. A run in effect is re-run as before. A re-run of a re-run nobody accepted, left from before this rule, is not accepted (`superseded`)',
+  },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
   { id: 'CAS-03', title: 'Lines grouped by payer pattern from traces', assertion: 'One case per pattern' },
@@ -125,6 +149,35 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'CAS-29',
     title: 'Submission of an export whose pricing went stale after it was made',
     assertion: 'Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused',
+  },
+  {
+    id: 'CAS-30',
+    title: 'A line’s calculation in words',
+    assertion: 'Every figure in the words is in the line’s trace or its rate record; a flag that is off reads only as not applied; an unpriced line reads its reason’s meaning and remedy',
+  },
+  { id: 'CAS-31', title: 'The line trace for a role that does not read PHI', assertion: 'The steps in words with no date; the stored trace not sent' },
+  {
+    id: 'CAS-32',
+    title: 'A packet’s calculation on the review page and in the PDF',
+    assertion: 'The same words, from the traces its approval names, by one renderer whose version the approval, the export request and the export job agree on; a trace that differs, a line priced by another rate record or another words version is refused',
+  },
+  {
+    id: 'CAS-33',
+    title: 'The fee schedule worksheet',
+    assertion: 'One per distinct set of records, with the year, locality, setting, RVUs, GPCIs, conversion factor and the engine’s expression; never an amount at 100% for a contract that is not at 100%',
+  },
+  { id: 'CAS-34', title: 'A code the words have no words for', assertion: 'Refused on every screen and in the PDF; never shown as a code' },
+  {
+    id: 'CAS-38',
+    title: 'The materiality and pursuit settings show stored cents as dollars',
+    assertion:
+      'With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says "$5.00 per line and $250.00 per case" and "$45.00 an hour", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget is typed in dollars, as its hint says',
+  },
+  {
+    id: 'CAS-39',
+    title: 'Saving the defaults form unchanged changes nothing',
+    assertion:
+      'Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents',
   },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
@@ -278,6 +331,33 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'MOD-05', title: 'Budget exceeded', assertion: 'Calls refused; alert' },
   { id: 'MOD-06', title: 'Kill switch on', assertion: 'Product works on hand-entered records' },
   {
+    id: 'MOD-07',
+    title: 'Model change that turns rejected fields into verified wrong values, or leaves a scope field out of a rate record',
+    assertion:
+      'Gate fails: wrong-but-verified (a scope field left out of a rate record included) counted per field apart from rejected and missed, never above its baseline, zero on faithful-text cases and never above the local reference, nor off its misread records, on the others, on the synthetic set and on permitted examples; a run with a failed or refused call is never recorded; a real provider is never recorded with a recall or precision floor unset or unmet; a set change never lands with a model change; a scope field a proposed rate record leaves out is named to the specialist as not stated',
+  },
+  {
+    id: 'MOD-08',
+    title: 'Swapped-row, cross-row and value-only faults',
+    assertion: 'Swapped rows and cross-row quotes rejected as not in the row; merged rows (their codes rejected or verified), a scope field dropped, a flipped flag, a wrong method, a wrong date, an amended figure on the original record or a struck rate taken fails the gate',
+  },
+  {
+    id: 'MOD-09',
+    title: 'Contract evaluation set v2',
+    assertion:
+      '63 documents to 60 codes and 80 pages: multi-row tables, contract-plus-exhibit pairs, scans with OCR errors or their own OCR layer, struck-through rates, each marked faithful or not; its hash covers the pages as read, and a changed set refuses comparison',
+  },
+  {
+    id: 'MOD-10',
+    title: 'Injected-instruction twins and decoy amended rates',
+    assertion: "Each twin's full proposal and review equal its clean twin's and no output string, a label included, holds a word only the injection writes; both rows of every expected conflict proposed and each flagged against the other; any difference, failed twin call or miss fails the gate",
+  },
+  {
+    id: 'MOD-11',
+    title: 'Real provider in production with a purpose unevaluated',
+    assertion: 'That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met, and a contract variant only after a production permitted run of its own examples, compared with what was served',
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:
@@ -300,6 +380,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'A card is never refused, and a new bank account takes over',
     assertion:
       'Through the routes on the simulator, an organization with only a card on file chooses the annual plan and its invoice is paid by card, and an audit invoice issued to it is paid by card; once it adds a bank account, the next open invoice it pays is charged to the bank account; and on the simulator itself, a renewal of its plan is charged to the bank account, even when the subscription carried the card as its own default',
+  },
+  {
+    id: 'BIL-05',
+    title: 'One account standing from the record and billing',
+    assertion:
+      '`standingKind` and `accountStanding` give good only for an active record in good billing standing; a suspended record reads "Suspended by PaidWhole" whatever billing\'s standing, with no date, a support ticket (`/support?from=billing`) as its next step and the note that changing the plan or payment method does not reinstate it, in the word ("reinstates") the practice home uses; a closed record reads "Closed" whatever else, in the neutral tone and a status unless an invoice is still owed, takes no new plan (the plan route refuses it before Stripe is asked, and again in the claim\'s own statement), offers the ticket for a question about the closure and never promises a reopening, and names an unpaid invoice as still owed with no claim about runs; an active record suspended for nonpayment names billing\'s date and the invoice holding it (`billing_standing.invoice_id`, even past the newest 24), and says a card payment restarts runs at once and a bank (ACH) payment once the bank settles it, and with several invoices unpaid for 30 days (counted by the view\'s own predicate) asks for all of them paid and restarts runs only then, so paying the holding one leaves runs refused and names the next; past due names its date, the instant runs stop (UTC) and that a bank (ACH) payment counts once settled; beside a suspension, an unpaid invoice is named with what it holds (a past-due one stops runs at its stop even once reinstated) and paying it is a second step; a firm is never told runs have stopped or will, and its unpaid invoice reads past due; every non-good standing has a notice and a next step; the page draws one badge from the label, one alert or status and one `data-standing`, with no second date, shows the placeholder-price note only beside prices, offers a closed organization no plan in the invoices\' empty state, and keeps the Pay target clear of the sticky header; the console shows and orders by the same kind, in the same words ("Suspended by PaidWhole", a firm\'s billing hold as past due), with closed outlined',
+  },
+  {
+    id: 'BIL-06',
+    title: "A suspended organization's billing page",
+    assertion:
+      'With the organization suspended by PaidWhole and its billing in good standing, its administrator\'s billing page shows "Suspended by PaidWhole", never "In good standing", the notice that PaidWhole reinstates it, a link to open a support ticket (`/support?from=billing`) that opens the form on the Billing category, and the note that payment does not reinstate it; the page passes axe; the seed holds SYNTHETIC SUSPENDED GROUP suspended for this journey alone, so nothing suspends or reinstates an organization another journey shares',
   },
   { id: 'CI-01', title: 'One gate over every CI job', assertion: '`all green` needs every other ci.yml job and passes only when each succeeded; a failed, skipped or cancelled job fails it' },
   { id: 'CI-02', title: "Every route's tests in exactly one of twelve files", assertion: 'Each registered route is in one file; the twelve files exist and each runs its own index' },

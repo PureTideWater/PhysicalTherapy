@@ -20,7 +20,7 @@ describe('the shard partition', () => {
 
   it('lists each package’s shards', () => {
     for (const pkg of MUTATION_PACKAGES) expect(shardsOf(pkg).length, pkg).toBeGreaterThan(0);
-    expect(shards.map((shard) => shard.name)).toEqual(['money-ledger', 'packets-scan', 'packets-rest', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
+    expect(shards.map((shard) => shard.name)).toEqual(['money-ledger', 'packets-scan', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
     expect(new Set(shards.map((shard) => shard.name)).size).toBe(shards.length);
     for (const shard of shards) {
       expect(shard.name, 'a job, artifact and directory name').toMatch(/^[a-z]+(?:-[a-z]+)*$/);
@@ -66,7 +66,7 @@ describe('the shard partition', () => {
   it('names a shard’s packages and finds a shard by name', () => {
     expect(packagesOf(shardNamed('money-ledger'))).toEqual(['money', 'ledger']);
     expect(shardsOf('pricing').map((shard) => shard.name)).toEqual(['pricing-engine', 'pricing-recompute', 'pricing-rest']);
-    expect(() => shardNamed('nowhere')).toThrow('stryker/shards.json has no shard "nowhere": money-ledger, packets-scan, packets-rest, pricing-engine, pricing-recompute, pricing-rest');
+    expect(() => shardNamed('nowhere')).toThrow('stryker/shards.json has no shard "nowhere": money-ledger, packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest');
   });
 });
 
@@ -96,7 +96,7 @@ function statementsWithMutants(file: string, text: string = readFileSync(path.jo
 describe('the files a shard holds that Stryker finds no mutant in (stryker/shards.json, noMutants)', () => {
   it('lists only files a shard holds, sorted, each nothing but imports, re-exports, types and as-const values', () => {
     const noMutants = readNoMutants();
-    expect(noMutants).toEqual(['packages/ledger/src/index.ts', 'packages/money/src/index.ts', 'packages/pricing/src/index.ts', 'packages/pricing/src/types.ts']);
+    expect(noMutants).toEqual(['packages/ledger/src/index.ts', 'packages/money/src/index.ts', 'packages/packets/src/explain/index.ts', 'packages/pricing/src/index.ts', 'packages/pricing/src/types.ts']);
     const held = readShards().flatMap((shard) => Object.values(shard.mutate).flatMap((files) => [...(files ?? [])]));
     for (const file of noMutants) {
       expect(held, file).toContain(file);

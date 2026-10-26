@@ -1,6 +1,7 @@
 import type { Logger } from '@tp/observability';
 
 import { CALL_TIMEOUT_MS } from './config';
+import { type Serving, gatewayServing } from './evaluated';
 import { DuplicateModelCallError, GatewayError, ModelBudgetExceededError, ModelBusyError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
 import type { ContractPagesInput, ContractTermsProposal } from './functions/contract-terms';
 import type { DenialLetterInput, DenialLetterProposal } from './functions/denial-letter';
@@ -11,7 +12,7 @@ import type { CallLimiter } from './limiter';
 import { type ModelPrice, PRICES, callCost, priceOf } from './prices';
 import { modelFor } from './prompts';
 import { type ModelProvider, type ModelRequest, type ModelResponse, ProviderFailure } from './provider';
-import { FLAGGED_PURPOSES, MODEL_PURPOSES, type ModelPurpose } from './purposes';
+import { FLAGGED_PURPOSES, type ModelPurpose, type ServedSet, offeredPurposes, purposeServed, servedKey } from './purposes';
 import type { PreparedCall, PurposeSpec } from './spec';
 import { PURPOSE_SPECS } from './specs';
 import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store';
@@ -22,25 +23,32 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  *
  * 0. The process's cap on calls in flight, when it has one (limiter.ts): a call over it is refused at once,
  *    before anything else is read, so calls waiting on a model never hold all of a task's connections.
- * 1. The kill switch, and a v1.5 purpose's own flag (test matrix MOD-06): with either off, nothing is
+ * 1. Serving (./evaluated.ts; docs/adr/0070, Part 2): in production on a real provider, a purpose none of
+ *    whose variants has passed its evaluation for the pinned model is refused before anything else is
+ *    read, as `not_evaluated`, and the screens fall back to hand entry. A gateway built for the permitted
+ *    run (serving 'evaluable') refuses, before that, any call but the run's own (`serving_invalid`).
+ * 2. The kill switch, and a v1.5 purpose's own flag (test matrix MOD-06): with either off, nothing is
  *    sent and the caller falls back to hand entry.
- * 2. The PHI boundary: outside production only the local provider, or a synthetic evaluation call with
+ * 3. The PHI boundary: outside production only the local provider, or a synthetic evaluation call with
  *    no practice, may run.
- * 3. The purpose's preparation, which refuses an input that breaks a minimization rule (more than one
- *    patient, an identifier in a narrative's inputs) and frames the input as data, and its screen
- *    against records outside the input (a letter naming another patient of the practice).
- * 4. The idempotency key: the SHA-256 of the purpose, prompt version, practice, the caller's request key
+ * 4. The purpose's preparation, which refuses an input that breaks a minimization rule (more than one
+ *    patient, an identifier in a narrative's inputs), frames the input as data and names the model
+ *    variant (the larger model for a contract marked ambiguous); the variant served, or the call is
+ *    refused as `not_evaluated`; and only then the purpose's screen against records outside the input (a
+ *    letter naming another patient of the practice), so no audited read runs for a call that would be
+ *    refused anyway.
+ * 5. The idempotency key: the SHA-256 of the purpose, prompt version, practice, the caller's request key
  *    and the input hashes. A completed call under the key is never made again (a replay of a job).
- * 5. The practice's daily budget (test matrix MOD-05): a call is refused once the day's spend, with the
+ * 6. The practice's daily budget (test matrix MOD-05): a call is refused once the day's spend, with the
  *    holds of the calls in flight, reaches it, with an alert for the operator; crossing it raises
  *    another. A call that is made first holds the most it can cost (its token limit and an upper bound
  *    of its input), under the practice's lock, until its row is written: calls made at once are held to
  *    the budget as calls made in turn.
- * 6. The call: no tools, a pinned model and prompt version, 60 seconds per attempt, and one retry under
+ * 7. The call: no tools, a pinned model and prompt version, 60 seconds per attempt, and one retry under
  *    the same idempotency key when the failure is one a retry can cure.
- * 7. The answer must follow the prompt version's schema; then the purpose's verifier checks it against
+ * 8. The answer must follow the prompt version's schema; then the purpose's verifier checks it against
  *    the input. Whatever it finds, the result is a proposal a person approves (PRD 14, Untrusted input).
- * 8. One model_call row per call, in the product's own database, with hashes, counts and codes only.
+ * 9. One model_call row per call, in the product's own database, with hashes, counts and codes only.
  */
 
 export interface GatewayOptions {
@@ -54,6 +62,19 @@ export interface GatewayOptions {
   readonly now?: () => Date;
   /** The process's cap on calls in flight, shared by every gateway the process builds (the web app's: one per server). */
   readonly limiter?: CallLimiter;
+  /**
+   * Which set the gateway serves; never the set itself, which the gateway works out (./evaluated.ts
+   * gatewayServing), so no caller can widen it (the design review's B1). 'served' (the default) is what
+   * has passed. 'evaluable' adds the keys waiting only on the in-boundary permitted run, for that run's own
+   * gateway (apps/worker/src/models/permitted.ts): it is accepted only when the store acts for a job whose
+   * ID is a UUID (the run's ID), so no request path can ask for it, and such a gateway then makes the
+   * permitted run's calls and no other (the PR review's N1): a contract proposal whose request key is
+   * permittedRequestKey(the job's ID, an example's ID). Any other call through it, a narrative or a
+   * contract under another key (another job's work, or this job's under another name), is refused with
+   * `serving_invalid` before anything is read, so the wider set is held to the run in code, not by
+   * convention.
+   */
+  readonly serving?: Serving;
 }
 
 export interface CallContext {
@@ -77,6 +98,16 @@ export interface GatewayResult<P> {
 
 const REQUEST_KEY = /^[A-Za-z0-9._:-]{1,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID_TEXT = UUID.source.slice(1, -1);
+const PERMITTED_REQUEST_KEY = new RegExp(`^eval:(${UUID_TEXT}):${UUID_TEXT}$`);
+
+/**
+ * The request key of one permitted-run call: the run's ID (its job's) and the example's (eval_example row
+ * ID), so each example is called once per run. The only key an evaluable gateway accepts (the PR review's N1).
+ */
+export function permittedRequestKey(runId: string, exampleId: string): string {
+  return `eval:${runId}:${exampleId}`;
+}
 const MICRO = 1_000_000n;
 
 function utcDayStart(now: Date): Date {
@@ -97,17 +128,31 @@ export class ModelGateway {
   private readonly timeoutMs: number;
   private readonly prices: readonly ModelPrice[];
   private readonly now: () => Date;
+  /** What this gateway serves: worked out here from the provider and production, never taken from the caller. */
+  private readonly served: ServedSet;
+  /** The permitted run this gateway was built for (serving 'evaluable'), whose calls alone it makes; null for every other gateway. */
+  private readonly permittedRun: string | null;
 
   constructor(private readonly options: GatewayOptions) {
     this.timeoutMs = options.timeoutMs ?? CALL_TIMEOUT_MS;
     this.prices = options.prices ?? PRICES;
     this.now = options.now ?? (() => new Date());
+    const serving = options.serving ?? 'served';
+    const { actor } = options.store;
+    if (serving === 'evaluable' && (actor.kind !== 'job' || !UUID.test(actor.jobId))) {
+      throw new GatewayError('serving_invalid', 'the evaluable set is served only to the permitted run’s job');
+    }
+    this.permittedRun = serving === 'evaluable' && actor.kind === 'job' ? actor.jobId : null;
+    this.served = gatewayServing(options.production, options.provider.kind, serving);
   }
 
-  /** Which purposes may run for the practice now: none with the kill switch on. Screens offer hand entry for the rest. */
+  /**
+   * Which purposes may run for the practice now (./purposes.ts offeredPurposes): none with the kill switch
+   * on, none that this gateway does not serve, and the denial-letter reader only with its flag. Screens
+   * offer hand entry for the rest.
+   */
   async features(practiceId: string | null): Promise<Readonly<Record<ModelPurpose, boolean>>> {
-    const features = await this.options.store.features(practiceId);
-    return Object.fromEntries(MODEL_PURPOSES.map((purpose) => [purpose, !features.killSwitch && (!FLAGGED_PURPOSES.has(purpose) || features.readDenialLetter)])) as Record<ModelPurpose, boolean>;
+    return offeredPurposes(await this.options.store.features(practiceId), this.served);
   }
 
   proposeContractTerms(context: CallContext, input: ContractPagesInput): Promise<GatewayResult<ContractTermsProposal>> {
@@ -138,6 +183,9 @@ export class ModelGateway {
 
   private async run<I, O, P, C>(spec: PurposeSpec<I, O, P, C>, context: CallContext, input: I): Promise<GatewayResult<P>> {
     this.checkContext(context);
+    if (this.permittedRun !== null && (spec.purpose !== 'proposeContractTerms' || PERMITTED_REQUEST_KEY.exec(context.requestKey)?.[1] !== this.permittedRun)) {
+      throw new GatewayError('serving_invalid', 'a gateway built for the permitted run makes that run’s contract calls only');
+    }
     const release = this.options.limiter?.tryAcquire(context.practiceId);
     if (release === null) {
       this.options.logger.warn('a model call was refused: the server has as many calls in flight as it may', { error_code: 'MODEL_CALLS_BUSY' });
@@ -154,6 +202,9 @@ export class ModelGateway {
     const { provider, store, logger } = this.options;
     const { practiceId } = context;
 
+    if (!purposeServed(this.served, spec.purpose)) {
+      throw new ModelFeatureOffError('not_evaluated');
+    }
     const features = await store.features(practiceId);
     if (features.killSwitch) {
       throw new ModelFeatureOffError('kill_switch');
@@ -166,6 +217,9 @@ export class ModelGateway {
     }
 
     const prepared = spec.prepare(input);
+    if (!this.served.keys.has(servedKey(spec.purpose, prepared.variant))) {
+      throw new ModelFeatureOffError('not_evaluated');
+    }
     await spec.screen?.(input, prepared);
     const { prompt } = spec;
     const modelId = modelFor(prompt, provider.kind, prepared.variant);

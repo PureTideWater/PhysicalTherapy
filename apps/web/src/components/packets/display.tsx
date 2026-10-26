@@ -1,4 +1,5 @@
 import { type LineDeadline, type PacketContent, type VerifierReport, interestExclusionText, interestStated, lineInterestStated } from '@tp/packets';
+import { METHOD_TEXT } from '@tp/packets/explain';
 import { type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Badge } from '@tp/ui';
 import Link from 'next/link';
@@ -7,7 +8,6 @@ import { Fragment } from 'react';
 import { Money } from '../remittances/display';
 import { ScrollTable } from '../scroll-table';
 import { StatusChip, type StatusTone } from '../status';
-import { METHOD_NAMES, ROUNDING_NAMES } from '../../lib/contracts/display';
 import { labelOf } from '../../lib/copy/words';
 import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
 
@@ -18,7 +18,8 @@ import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_
  * numbered sources, and the stored verifier result with each mismatch marked in the narrative. Every
  * dollar figure carries its stage label. A tp-packet/2 version also shows each line's deadline with its
  * status as a label (never a color alone), the version's deadline with the evidence it rests on and,
- * when it is not verified, why in words and what to do; and each line's calculation summary.
+ * when it is not verified, why in words and what to do. Each line's calculation is in words (./calculation-words), and
+ * the contract's method too (@tp/packets/explain METHOD_TEXT, the PDF's own; combined audit #38).
  */
 
 /**
@@ -30,19 +31,6 @@ const DEADLINE_TONE: Readonly<Record<DeadlineStatus, StatusTone>> = { verified: 
 
 /** A code a trace or a cause names (FIXED_SCHEDULE, contract_adjustment, CONTRACT_WINDOW_UNCITED) as a label, never the code itself. */
 const codeLabel = (code: string): string => labelOf(code.toLowerCase());
-
-/** A calculation's method in words: the contract's method, or Medicare Advantage non-contracted. */
-function methodName(method: string): string {
-  if (method === 'MA_NONCONTRACTED') {
-    return 'Medicare Advantage, non-contracted';
-  }
-  return method in METHOD_NAMES ? METHOD_NAMES[method as keyof typeof METHOD_NAMES] : codeLabel(method);
-}
-
-/** A rounding rule in words. */
-function roundingName(rule: string): string {
-  return rule in ROUNDING_NAMES ? ROUNDING_NAMES[rule as keyof typeof ROUNDING_NAMES] : codeLabel(rule);
-}
 
 /** A deadline's status as a labelled chip (the label says it; the tint only repeats it). */
 export function DeadlineChip({ status }: { readonly status: DeadlineStatus }) {
@@ -102,7 +90,7 @@ export function Citation({ content }: { readonly content: PacketContent }) {
         {citation.effective_to === null ? ' onward' : ` to ${citation.effective_to}`})
       </dd>
       <dt className="text-muted-foreground">Method</dt>
-      <dd>{citation.method}</dd>
+      <dd data-method={citation.method}>{METHOD_TEXT[citation.method]}</dd>
       <dt className="text-muted-foreground">Document and page</dt>
       <dd>
         Document <span className="font-mono text-xs">{citation.document_id}</span>, page {citation.page}
@@ -142,9 +130,10 @@ function Placeholder({ value }: { readonly value: string }) {
  * each with its trace reference), in the app's table pattern: each cell's right padding, figures right-aligned under
  * their headers, dates kept whole, and a placeholder wrapping between its words, so at a desktop width the whole
  * schedule fits its card, its window and trace columns in view (the screen tour's L2); a narrower one scrolls
- * inside the card.
+ * inside the card. Each line links to its line trace page only for a role that opens it (`canOpenLines`: practice.open,
+ * which the reimbursement reviewer lacks; the review carries the calculation in words instead).
  */
-export function LineSchedule({ content, practiceId }: { readonly content: PacketContent; readonly practiceId: string }) {
+export function LineSchedule({ content, practiceId, canOpenLines }: { readonly content: PacketContent; readonly practiceId: string; readonly canOpenLines: boolean }) {
   return (
     <ScrollTable label="Line schedule">
       <table className="w-full text-sm" aria-label="Line schedule">
@@ -160,8 +149,8 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
             <th className="py-1 pr-3 text-right font-medium">Observed</th>
             <th className="py-1 pr-3 text-right font-medium">Variance (Actionable)</th>
             <th className="py-1 pr-3 font-medium">Paid, on</th>
-            <th className="py-1 pr-3 font-medium">{content.format === 'tp-packet/2' ? 'Deadline' : 'Window ends'}</th>
-            <th className="py-1 font-medium">Trace</th>
+            <th className={canOpenLines ? 'py-1 pr-3 font-medium' : 'py-1 font-medium'}>{content.format === 'tp-packet/2' ? 'Deadline' : 'Window ends'}</th>
+            {canOpenLines ? <th className="py-1 font-medium">Trace</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -189,14 +178,16 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
               <td className="py-1 pr-3">
                 <Money value={line.paid_cents} />, <span className="whitespace-nowrap">{line.paid_on}</span>
               </td>
-              <td className="py-1 pr-3">
+              <td className={canOpenLines ? 'py-1 pr-3' : 'py-1'}>
                 <LineDeadlineCell deadline={'deadline' in line ? line.deadline : undefined} windowEndsOn={line.window_ends_on} />
               </td>
-              <td className="py-1 whitespace-nowrap">
-                <Link className="underline" href={`/p/${practiceId}/lines/${line.service_line_id}?run=${line.pricing_run_id}`}>
-                  Line trace
-                </Link>
-              </td>
+              {canOpenLines ? (
+                <td className="py-1 whitespace-nowrap">
+                  <Link className="underline" href={`/p/${practiceId}/lines/${line.service_line_id}?run=${line.pricing_run_id}`}>
+                    Line trace
+                  </Link>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -272,62 +263,6 @@ export function DeadlineSummary({ content, now }: { readonly content: PacketCont
         </ul>
       )}
     </div>
-  );
-}
-
-/** Each line's calculation summary (tp-packet/2), as its trace recorded it: never computed again here. */
-export function CalculationTable({ content }: { readonly content: PacketContent }) {
-  if (content.format !== 'tp-packet/2') {
-    return null;
-  }
-  return (
-    <ScrollTable label="Calculations">
-      <table className="w-full text-sm" aria-label="Calculations">
-        <thead>
-          <tr className="border-b text-left align-bottom">
-            <th className="py-1 pr-3 font-medium">Row</th>
-            <th className="py-1 pr-3 font-medium">Method, release</th>
-            <th className="py-1 pr-3 font-medium">Steps</th>
-            <th className="py-1 pr-3 font-medium">Rounding</th>
-            <th className="py-1 pr-3 text-right font-medium">Patient share (shown, never counted)</th>
-            <th className="py-1 font-medium">Trace SHA-256</th>
-          </tr>
-        </thead>
-        <tbody>
-          {content.lines.map((line) => (
-            <tr key={line.row} className="border-b align-top last:border-0" data-calculation-row={line.row}>
-              <td className="py-1 pr-3 font-mono tabular-nums">{line.row}</td>
-              <td className="py-1 pr-3">
-                {methodName(line.calculation.method)}, release <span className="font-mono tabular-nums">{line.calculation.release_no}</span>
-              </td>
-              <td className="py-1 pr-3">
-                <ul aria-label={`Steps of row ${String(line.row)}`}>
-                  {line.calculation.steps.map((step, index) => (
-                    <li key={`${step.step}:${String(index)}`}>
-                      {codeLabel(step.step)} <span className="font-mono tabular-nums">{step.amount_cents}</span> cents
-                    </li>
-                  ))}
-                </ul>
-              </td>
-              <td className="py-1 pr-3">
-                {line.calculation.rounding === null ? (
-                  '—'
-                ) : (
-                  <>
-                    {roundingName(line.calculation.rounding.rule)}: <span className="font-mono tabular-nums">{line.calculation.rounding.unrounded_cents}</span> cents to{' '}
-                    <Money value={line.calculation.rounding.rounded_cents} />
-                  </>
-                )}
-              </td>
-              <td className="py-1 pr-3 text-right">{line.calculation.patient_share_cents === null ? '—' : <Money value={line.calculation.patient_share_cents} />}</td>
-              <td className="py-1">
-                <Hash value={line.calculation.trace_sha256} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </ScrollTable>
   );
 }
 

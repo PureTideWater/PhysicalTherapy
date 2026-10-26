@@ -64,10 +64,24 @@ const PROBLEM_NAMES: Readonly<Record<string, string>> = {
   page_missing: 'the cited page is not in the document',
   quote_not_on_page: 'the quote is not on the cited page',
   not_in_quote: 'the value is not in the quote',
+  not_in_row: "the value is not on its codes' row",
   unreadable: 'the value cannot be read as written',
   fields_rejected: 'a field did not check against its page',
   terms_invalid: 'the fields do not make valid rate terms',
 };
+
+/**
+ * What a scope field the candidate leaves out means for its record (the PR review's M2): the widest scope that
+ * field has, not a value checked on the page. Each is a row of its own, so the specialist sees that a record whose
+ * every row checked still prices every code, modifier, place or date the field would have narrowed.
+ */
+const UNSTATED_SCOPE: readonly (readonly [field: string, reads: string])[] = [
+  ['codes', 'applies to every procedure code'],
+  ['modifiers', 'applies with any modifier'],
+  ['places_of_service', 'applies at any place of service'],
+  ['effective_from', 'applies from the first date the version covers'],
+  ['effective_to', 'applies with no last date of its own'],
+];
 
 const writtenText = (written: StoredCandidate['fields'][number]['written']) => (written === null ? '' : Array.isArray(written) ? written.join(', ') : String(written));
 
@@ -109,6 +123,17 @@ function CandidateCard({ candidate, index }: { readonly candidate: StoredCandida
                   Page {field.page}: “{field.quote}”
                 </td>
                 <td className="py-1">{field.verified ? 'Found on the page' : field.problems.map((problem) => PROBLEM_NAMES[problem] ?? problem).join('; ')}</td>
+              </tr>
+            ))}
+            {UNSTATED_SCOPE.filter(([name]) => !candidate.fields.some((field) => field.field === name)).map(([name, reads]) => (
+              <tr key={name} className="border-t align-top" data-field={name} data-check="unstated">
+                <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
+                  {FIELD_NAMES[name] ?? name}
+                </th>
+                <td className="py-1 pr-3" colSpan={2}>
+                  Not stated: {reads}
+                </td>
+                <td className="py-1">Nothing to check; confirm the record should apply this widely</td>
               </tr>
             ))}
           </tbody>

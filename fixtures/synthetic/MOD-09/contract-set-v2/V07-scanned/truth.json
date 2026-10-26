@@ -1,0 +1,382 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V07",
+  "layout": "scanned",
+  "drawnAs": "prose",
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 4,
+  "tier": "small",
+  "pageText": "unfaithful",
+  "unfaithfulBecause": "ocr_layer_errors",
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Article 3: 97130",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97130"],
+          "written": ["97130"],
+          "page": 3,
+          "quote": "For CPT 97130, Payer shall pay $97.87 per unit.",
+          "asRead": {"written":["97130"],"quote":"For CPT 97130, Payer shall pay $9787 per unit."}
+        },
+        "amount": {
+          "value": "9787",
+          "written": "$97.87",
+          "page": 3,
+          "quote": "For CPT 97130, Payer shall pay $97.87 per unit.",
+          "asRead": {"written":"$9787","quote":"For CPT 97130, Payer shall pay $9787 per unit."}
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration applies; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "1 July 2025",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "30 June 2027",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97530 POS 11",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97530"],
+          "written": ["97530"],
+          "page": 3,
+          "quote": "For CPT 97530 in place of service 11, Payer shall pay $130.23 per unit.",
+          "asRead": {
+            "written": ["97530"],
+            "quote": "For CPT 97530 in place of service 11, Payer shall pay $l30.23 per unit."
+          }
+        },
+        "places_of_service": {
+          "value": ["11"],
+          "written": ["11"],
+          "page": 3,
+          "quote": "For CPT 97530 in place of service 11, Payer shall pay $130.23 per unit.",
+          "asRead": {
+            "written": ["11"],
+            "quote": "For CPT 97530 in place of service 11, Payer shall pay $l30.23 per unit."
+          }
+        },
+        "amount": {
+          "value": "13023",
+          "written": "$130.23",
+          "page": 3,
+          "quote": "For CPT 97530 in place of service 11, Payer shall pay $130.23 per unit.",
+          "asRead": {
+            "written": "$l30.23",
+            "quote": "For CPT 97530 in place of service 11, Payer shall pay $l30.23 per unit."
+          }
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration applies; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "1 July 2025",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "30 June 2027",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 92597",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["92597"],
+          "written": ["92597"],
+          "page": 3,
+          "quote": "For CPT 92597, Payer shall pay $139.71 per unit."
+        },
+        "amount": {
+          "value": "13971",
+          "written": "$139.71",
+          "page": 3,
+          "quote": "For CPT 92597, Payer shall pay $139.71 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration applies; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "1 July 2025",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "30 June 2027",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97168 CQ POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97168"],
+          "written": ["97168"],
+          "page": 3,
+          "quote": "For CPT 97168 billed with modifier CQ in place of service 22, Payer shall pay $80.72 per unit."
+        },
+        "modifiers": {
+          "value": ["CQ"],
+          "written": ["CQ"],
+          "page": 3,
+          "quote": "For CPT 97168 billed with modifier CQ in place of service 22, Payer shall pay $80.72 per unit."
+        },
+        "places_of_service": {
+          "value": ["22"],
+          "written": ["22"],
+          "page": 3,
+          "quote": "For CPT 97168 billed with modifier CQ in place of service 22, Payer shall pay $80.72 per unit."
+        },
+        "amount": {
+          "value": "8072",
+          "written": "$80.72",
+          "page": 3,
+          "quote": "For CPT 97168 billed with modifier CQ in place of service 22, Payer shall pay $80.72 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration applies; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "1 July 2025",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "30 June 2027",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97763",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97763"],
+          "written": ["97763"],
+          "page": 3,
+          "quote": "For CPT 97763, Payer shall pay $45.99 per unit."
+        },
+        "amount": {
+          "value": "4599",
+          "written": "$45.99",
+          "page": 3,
+          "quote": "For CPT 97763, Payer shall pay $45.99 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration applies; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "1 July 2025",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "30 June 2027",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97022 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97022"],
+          "written": ["97022"],
+          "page": 3,
+          "quote": "For CPT 97022 in place of service 19, Payer shall pay $150.40 per unit."
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 3,
+          "quote": "For CPT 97022 in place of service 19, Payer shall pay $150.40 per unit."
+        },
+        "amount": {
+          "value": "15040",
+          "written": "$150.40",
+          "page": 3,
+          "quote": "For CPT 97022 in place of service 19, Payer shall pay $150.40 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration applies; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "1 July 2025",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "30 June 2027",
+          "page": 1,
+          "quote": "This Agreement is effective 1 July 2025 and remains in effect through 30 June 2027."
+        }
+      }
+    }
+  ]
+}

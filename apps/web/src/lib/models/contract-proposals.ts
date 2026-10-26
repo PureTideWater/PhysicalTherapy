@@ -10,7 +10,7 @@ import {
   removeRateRecord,
 } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { CONTRACT_KINDS, CORRECTION_FORMAT, type CandidateReview, type ContractTermsProposal, type ProposedRateRecord, recordPermittedExampleIn, recordReviewerDecisionIn } from '@tp/model-gateway';
+import { CONTRACT_KINDS, CORRECTION_FORMAT, type CandidateReview, type Correction, type ContractTermsProposal, type ProposedRateRecord, recordPermittedExampleIn, recordReviewerDecisionIn } from '@tp/model-gateway';
 import type { DocumentStore } from '@tp/worker/documents';
 
 import { evidenceFor } from '../contracts/evidence';
@@ -33,14 +33,21 @@ import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from 
  * - review: when the version is approved, each proposal not yet reviewed is decided from what the
  *   specialist did: accepted when every proposed record stands as proposed, otherwise accepted with the
  *   changed fields named (candidates[i].<field> for a field entered by hand or changed, candidates[i]
- *   for a candidate dropped, missed[j] for a record the model did not propose). A proposal the
- *   specialist corrected or rejected becomes an evaluation example (eval_example, permitted) when the
- *   practice has a signed data-rights agreement, the corrected records as its expectation (PRD 14:
- *   "Reviewer corrections become evaluation examples under the data-rights terms"); without one, none.
+ *   for a candidate dropped, missed[j] for a record the model did not propose). A proposal is decided
+ *   against its own document's final records only (those whose citation names the document it read): a
+ *   version of a contract and its exhibit holds the exhibit's records too, which the contract's proposal
+ *   was never asked for, so a contract proposal whose own records stand is accepted (docs/adr/0070). A
+ *   proposal the specialist corrected or rejected becomes an evaluation example (eval_example,
+ *   permitted) when the practice has a signed data-rights agreement, its own document's corrected
+ *   records as its expectation (PRD 14: "Reviewer corrections become evaluation examples under the
+ *   data-rights terms"); without one, none. The expectation (tp-eval-correction/2) records the decision,
+ *   each record's citation with its document, and how many of the version's finals were entered with no
+ *   citation: those were entered with no evidence, belong to no document's expectation, and are counted,
+ *   not kept.
  */
 
 export const CONTRACT_PROPOSAL_FORMAT = 'tp-contract-proposal/1';
-/** The permitted example's expectation, as the evaluation inside the PHI boundary reads it (the gateway's permitted.ts). */
+/** The permitted example's expectation (tp-eval-correction/2), as the evaluation inside the PHI boundary reads it (the gateway's permitted.ts). */
 export { CORRECTION_FORMAT };
 
 /** A candidate as the proposal stores it: the verifier's review, and the rate record it was proposed as. */
@@ -293,13 +300,23 @@ const codesOf = (candidate: StoredCandidate): string[] => {
 };
 const sameCodes = (a: readonly string[], b: readonly string[] | undefined) => b !== undefined && a.length > 0 && a.join(' ') === [...b].sort().join(' ');
 
-/** What the specialist changed from the proposal, as field paths (see the module's comment). */
-export function changedFields(candidates: readonly StoredCandidate[], finals: readonly RateRecord[]): string[] {
+/** Whether a final record cites the document a proposal read: one of that document's own records. */
+const citedFrom = (documentId: string) => (record: RateRecord) => record.citation !== null && record.citation.document_id === documentId;
+
+/**
+ * What the specialist changed from the proposal of the document documentId, as field paths (see the
+ * module's comment). A record proposed as one of the candidates is found among all the version's finals
+ * (one whose citation the specialist moved to another document reads as candidates[i].citation); a record
+ * entered by hand counts as replacing a held candidate, or as missed, only when it cites this document: an
+ * exhibit's records, and records entered with no citation, are not this proposal's to have proposed.
+ */
+export function changedFields(candidates: readonly StoredCandidate[], allFinals: readonly RateRecord[], documentId: string): string[] {
+  const finals = allFinals.filter(citedFrom(documentId));
   const proposalIds = new Set(candidates.flatMap((candidate) => (candidate.rateRecordId === null ? [] : [candidate.rateRecordId])));
   const used = new Set<string>();
   const changed: string[] = [];
   candidates.forEach((candidate, index) => {
-    const own = candidate.rateRecordId === null ? undefined : finals.find((record) => record.id === candidate.rateRecordId);
+    const own = candidate.rateRecordId === null ? undefined : allFinals.find((record) => record.id === candidate.rateRecordId);
     if (own !== undefined && candidate.rateRecord !== null) {
       used.add(own.id);
       changed.push(...differing(candidate.rateRecord, own).map((field) => `candidates[${String(index)}].${field}`));
@@ -347,8 +364,8 @@ export interface ReviewedProposal {
 
 /**
  * Once the version is approved (in the same transaction): records each unreviewed proposal's decision
- * from the version's final records, and keeps each corrected or rejected proposal as an evaluation
- * example under the practice's data-rights agreement.
+ * from its own document's final records, and keeps each corrected or rejected proposal as an evaluation
+ * example under the practice's data-rights agreement, with those records as its expectation.
  */
 export async function reviewVersionProposals(scope: PracticeScope<ScopeClient>, input: { readonly practiceId: string; readonly versionId: string; readonly requestId: string }): Promise<ReviewedProposal[]> {
   const rows = await proposalRows(scope, input.practiceId, input.versionId);
@@ -362,7 +379,7 @@ export async function reviewVersionProposals(scope: PracticeScope<ScopeClient>, 
     let decision = row.reviewer_decision as ReviewedProposal['decision'] | null;
     let changed = row.reviewer_changed_fields ?? [];
     if (row.reviewed_at === null) {
-      changed = changedFields(row.proposal.candidates, finals);
+      changed = changedFields(row.proposal.candidates, finals, row.source_document_id);
       decision = changed.length === 0 ? 'accepted' : 'accepted_with_changes';
       await recordReviewerDecisionIn(scope, { practiceId: input.practiceId, modelCallId: row.model_call_id, decision, changedFields: changed, requestId: input.requestId });
       await scope.client.query('UPDATE model_proposal SET reviewed_at = now() WHERE id = $1 AND practice_id = $2', [row.id, input.practiceId]);
@@ -378,9 +395,15 @@ export async function reviewVersionProposals(scope: PracticeScope<ScopeClient>, 
           format: CORRECTION_FORMAT,
           document_id: row.source_document_id,
           contract_version_id: input.versionId,
+          decision,
           changed_fields: changed,
-          records: finals.map((record) => ({ ...rateTermsToJson(record.terms), citation: record.citation === null ? null : { page: record.citation.page, quote: record.citation.quote, hash: record.citation.hash } })),
-        },
+          uncited_finals: finals.filter((record) => record.citation === null).length,
+          // Only the records cited from the document the call read: another document's are not its expectation.
+          records: finals.flatMap((record) => {
+            const cited = record.citation;
+            return cited === null || cited.document_id !== row.source_document_id ? [] : [{ ...rateTermsToJson(record.terms), citation: { document_id: cited.document_id, page: cited.page, quote: cited.quote, hash: cited.hash } }];
+          }),
+        } satisfies Extract<Correction, { readonly format: typeof CORRECTION_FORMAT }>,
       });
       await scope.client.query('UPDATE model_proposal SET eval_example_id = $3 WHERE id = $1 AND practice_id = $2', [row.id, input.practiceId, exampleId]);
     }

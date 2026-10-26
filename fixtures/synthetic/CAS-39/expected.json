@@ -1,0 +1,22 @@
+{
+  "case": "CAS-39",
+  "module": "CAS",
+  "title": "Saving the defaults form unchanged changes nothing",
+  "assertion": "Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/web/src/lib/money-input.test.ts",
+    "apps/web/src/lib/routes/defaults-routes.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "apps/web/e2e/triage.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A practice setting read and saved: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

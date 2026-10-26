@@ -1,8 +1,9 @@
 {
-  "$comment": "The mutation workflow's shard jobs (stryker/base.mjs, TP_MUTATION_SHARD; docs/adr/0066, Part 4). Every file a package's config mutates is in exactly one shard, and a shard runs its files in full. The split balances the wall time and summed mutant time Stryker 10.1.1 measured at 49514e8 (the mutation scout's 10.1.1 reports, 4 shared CPUs): money (34 s) with ledger (2 min 28 s); packets' scan.ts (939 s of mutant time) against the rest of packets (997 s); pricing's engine.ts (1,232 s), recompute.ts (952 s) and the rest of pricing (804 s). noMutants lists the files a shard holds that Stryker 10.1.1 finds no mutant in (imports, re-exports, types and `as const` values, which its instrumenter reads as types; tools/stryker/shards.test.ts holds each to that), the only files a shard's report may leave out: the gate requires every other file of the shard in it.",
+  "$comment": "The mutation workflow's shard jobs (stryker/base.mjs, TP_MUTATION_SHARD; docs/adr/0066, Part 4). Every file a package's config mutates is in exactly one shard, and a shard runs its files in full. The split balances the wall time and summed mutant time Stryker 10.1.1 measured at 49514e8 (the mutation scout's 10.1.1 reports, 4 shared CPUs): money (34 s) with ledger (2 min 28 s); packets' scan.ts (939 s of mutant time) against the rest of packets (997 s), and the calculation words (packages/packets/src/explain*, docs/adr/0072) in a shard of their own, so packets-rest keeps its time; pricing's engine.ts (1,232 s), recompute.ts (952 s) and the rest of pricing (804 s). noMutants lists the files a shard holds that Stryker 10.1.1 finds no mutant in (imports, re-exports, types and `as const` values, which its instrumenter reads as types; tools/stryker/shards.test.ts holds each to that), the only files a shard's report may leave out: the gate requires every other file of the shard in it.",
   "noMutants": [
     "packages/ledger/src/index.ts",
     "packages/money/src/index.ts",
+    "packages/packets/src/explain/index.ts",
     "packages/pricing/src/index.ts",
     "packages/pricing/src/types.ts"
   ],
@@ -55,6 +56,22 @@
           "packages/packets/src/verifier/index.ts",
           "packages/packets/src/verifier/mismatches.ts",
           "packages/packets/src/windows.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-explain",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/explain.ts",
+          "packages/packets/src/explain/figures.ts",
+          "packages/packets/src/explain/index.ts",
+          "packages/packets/src/explain/line.ts",
+          "packages/packets/src/explain/slots.ts",
+          "packages/packets/src/explain/version.ts",
+          "packages/packets/src/explain/words.ts",
+          "packages/packets/src/explain/worksheet.ts",
+          "packages/packets/src/words-version.ts"
         ]
       }
     },

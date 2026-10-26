@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { SYNTHETIC_PRACTICES } from '../scripts/synthetic-personas';
+import { SYNTHETIC_PRACTICES, SYNTHETIC_SUSPENDED_GROUP } from '../scripts/synthetic-personas';
 import { expectAccessible } from './a11y';
 import { signInWithTotp, withDatabase } from './helpers';
 
@@ -11,8 +11,9 @@ import { signInWithTotp, withDatabase } from './helpers';
  * plan waits for a payment method, adds the simulator's test bank account, chooses the monthly plan, settles the
  * test ACH debit and sees the invoice paid. Stripe's events reach the application through the same verification
  * and processing the webhook route uses; the webhook route itself refuses a body without Stripe's signature.
- * Nothing here suspends an organization (the other journeys share the group); billing-routes.db.test.ts covers
- * suspension. Synthetic data only.
+ * A suspended organization's page (BIL-06) is read on SYNTHETIC SUSPENDED GROUP, which the seed holds suspended by
+ * PaidWhole and no other journey touches, so nothing here suspends or reinstates an organization another journey
+ * shares; billing-routes.db.test.ts covers suspending and reinstating. Synthetic data only.
  */
 
 async function seededGroup(): Promise<{ readonly id: string; readonly name: string }> {
@@ -84,6 +85,31 @@ test('an organization administrator pays by test ACH: the bank account, the mont
   }));
   expect(recorded).toEqual({ invoices: [{ status: 'paid', paid: true, method: 'us_bank_account', remaining: '0' }], subscription: [{ plan: 'monthly', status: 'active' }] });
   expect(foreign).toEqual([]);
+});
+
+test('a group suspended by PaidWhole reads "Suspended by PaidWhole", never "In good standing", with the notice, the support ticket’s link and the note that payment does not reinstate it (BIL-06)', async ({ page }) => {
+  const group = await withDatabase(async (client) => (await client.query<{ id: string; status: string }>('SELECT id, status FROM organization WHERE name = $1', [SYNTHETIC_SUSPENDED_GROUP])).rows);
+  expect(group.map((row) => row.status)).toEqual(['suspended']);
+  const organizationId = group[0]?.id ?? '';
+  await signInWithTotp(page, 'suspended-admin');
+  await page.goto(`/settings/billing/${organizationId}`);
+  await expect(page.getByRole('heading', { level: 1, name: `Billing: ${SYNTHETIC_SUSPENDED_GROUP}` })).toBeVisible();
+
+  await expect(page.locator('[data-standing]')).toHaveAttribute('data-standing', 'suspended_by_paidwhole');
+  await expect(page.locator('[data-standing]')).toContainText('Standing: Suspended by PaidWhole');
+  await expect(page.getByText('In good standing')).toHaveCount(0);
+  const notice = page.getByRole('alert').filter({ hasText: 'PaidWhole has suspended the organization' });
+  await expect(notice).toContainText('PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.');
+  await expect(notice).toContainText('Open a support ticket to find out why and what reinstates it.');
+  const ticket = notice.getByRole('link', { name: 'Open a support ticket' });
+  await expect(ticket).toHaveAttribute('href', '/support?from=billing');
+  await expect(page.locator('[data-notice="forms"]')).toHaveText('Changing the plan or payment method does not reinstate an organization suspended by PaidWhole.');
+  await expectAccessible(page, 'Organization billing, suspended by PaidWhole');
+
+  // The link opens the support form on the Billing category, from the billing screen.
+  await ticket.click();
+  await expect(page).toHaveURL(/\/support\?from=billing$/);
+  await expect(page.getByLabel('What is it about')).toHaveValue('billing');
 });
 
 test('the webhook route refuses a body without Stripe’s signature, and records nothing', async ({ request }) => {

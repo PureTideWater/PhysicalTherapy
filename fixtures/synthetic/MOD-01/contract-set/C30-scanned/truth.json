@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C30",
   "layout": "scanned",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": "textract.json",
   "pages": 1,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Exhibit: 97763 CQ",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -32,6 +39,7 @@
     },
     {
       "label": "Exhibit: 97165",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -51,6 +59,7 @@
     },
     {
       "label": "Exhibit: 97168 GO POS 19",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -72,6 +81,7 @@
     },
     {
       "label": "Exhibit: G0283",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",

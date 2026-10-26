@@ -6,28 +6,57 @@ import {
   type PacketContentV1,
   type PacketContentV2,
   type PayerIdentification,
+  ExplainBindingError,
+  ExplainWordsError,
   SYNTHETIC_CORRESPONDENCE_CONTACT,
   assemblePacket,
   correspondenceText,
   draftNarrative,
+  explainPacket,
   fillPlaceholders,
   insertIdentifiers,
+  plainText,
 } from '@tp/packets';
-import { IDS, REGULATION, assemblyInput, calculation, contractCitation, contractWindowSource, line, promptPayRecord } from '@tp/packets/testing';
+import { IDS, REGULATION, contractCitation, contractWindowSource, derivedFeeScheduleValues, lineSentences, promptPayRecord, worksheetSentences } from '@tp/packets/testing';
 import { cents } from '@tp/money';
+import type { PricingTrace } from '@tp/pricing';
+import { type TermsOptions, contractAgreement, fixedTerms, lesserOfTerms, maAgreement, perVisitTerms } from '@tp/pricing/testing';
 
 import { ChromiumPdfRenderer, chromiumInstalled } from '../report/pdf';
 import { amountsNotInMono } from '../report/test-support/figures';
 import { PACKET_CSV_COLUMNS, packetCsv } from './csv';
+import { PacketExportRenderError, exportWords } from './export';
 import { packetHtml } from './html';
-import { INTERNAL_RECORD, content, exported, identifiers, maximalContent, maximalExported, maximalIdentifiers, maximalNarrative, narrative, payerCopy } from './test-support/exported-packet';
+import {
+  INTERNAL_RECORD,
+  content,
+  exported,
+  identifiers,
+  maximalContent,
+  maximalExported,
+  maximalIdentifiers,
+  maximalNarrative,
+  maximalWords,
+  narrative,
+  payerCopy,
+  payerWords,
+  retracedLine,
+  steppedContent,
+  steppedExported,
+  tracedInput,
+  tracedLine,
+  tracesOf,
+  words,
+} from './test-support/exported-packet';
 import { QUALIFIED_IDENTIFIER, holdsLoosely, htmlText, narrativeBlock, outsideNarrative, payerCopyLeaks, printedPdfText } from './test-support/payer-copy';
 import { PayerCopyWordsError, releaseText } from './words';
 
 /**
  * The payer's copy of an export (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061; PRD 12,
  * The packet; CAS-11, CAS-12, CAS-15, CAS-26; CO-05): the HTML the worker prints to PDF and the CSV schedule, from
- * SYNTHETIC versions with their identifiers inserted. T1 to T9 of the design.
+ * SYNTHETIC versions with their identifiers inserted. T1 to T9 of the design. Every version's lines are priced by the
+ * engine (tracedLine()), so each line's calculation in words is explainPacket()'s over the real trace its SHA-256
+ * names, as the export words it (combined audit #38; docs/adr/0072; CAS-32 to CAS-34).
  */
 
 const PRACTICE = content.practice.name;
@@ -46,47 +75,63 @@ const scanOf = (packet: PacketContent, text: string, rows: typeof identifiers) =
 });
 /** The phrases the interest and timeliness rulings keep off the payer's copy (Q3 (a), Q4 (a)). */
 const FORBIDDEN = [/cannot be computed/i, /can be computed/i, /in all/i, /not claimed/i, /filed within/i, /No dispute window/i];
+/** A figure of the calculation's words as the copy sets it: in the report frame's mono figure span. */
+const F = (figure: string) => `<span class="figure-amount">${figure}</span>`;
+/** The summary of each SYNTHETIC fixed-schedule line (97110 x 2 at $50.00 a unit, allowed $70.00), in the payer's words. */
+const SUMMARY = `${F('2')} units × ${F('$50.00')} = ${F('$100.00')} under the contract’s clause on page ${F('2')}; rounded once to ${F('$100.00')}; observed allowed ${F('$70.00')}; short ${F('$30.00')}.`;
 
-const printedOf = (packet: PacketContent, text = draftNarrative(packet), rows = identifiers, copy = payerCopy) => packetHtml(insertIdentifiers(packet, text, rows), copy);
+const printedOf = (packet: PacketContent, text = draftNarrative(packet), rows = identifiers, copy = payerCopy) => packetHtml(insertIdentifiers(packet, text, rows), copy, payerWords(packet));
 /** Identifiers for every row of a SYNTHETIC version of up to three lines. */
 const rowsOf = (packet: PacketContent) => new Map([...maximalIdentifiers].filter(([row]) => row <= packet.lines.length));
 
-const received = [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
+const received = [tracedLine(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), tracedLine(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
+/** Medicare Advantage non-contracted lines, priced at Original Medicare's amount (the regulation's versions). */
+const ma = (n: number, overrides: Parameters<typeof tracedLine>[1] = {}) => tracedLine(n, overrides, { facts: { observedAllowedCents: cents(2000n), agreement: maAgreement() } });
+const maReceived = [ma(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), ma(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
+const maLines = [ma(1), ma(2), ma(3)];
 /** A version at dispute level 2, its window the level's own (a release record at L2, as Q34 would allow). */
-const level2 = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));
-/** Lines whose calculations take every step the engine writes: per unit, the schedule, the charge, the base and each adjustment. */
-const stepped = (method: 'PERCENT_OF_MEDICARE' | 'LESSER_OF' | 'PER_VISIT' | 'FIXED_SCHEDULE') =>
-  [1, 2].map((row) =>
-    line(row, {
-      calculation: calculation(cents(10000n), cents(7000n), cents(5600n), {
-        method,
-        steps: [
-          { step: method === 'PER_VISIT' ? 'visit' : 'unit', amount_cents: '5000' },
-          { step: 'schedule', amount_cents: '10000' },
-          { step: 'charge', amount_cents: '12000' },
-          { step: 'base', amount_cents: '10000' },
-          { step: 'mppr', amount_cents: '10000' },
-          { step: 'assistant_reduction', amount_cents: '10000' },
-          { step: 'contract_adjustment', amount_cents: '10000' },
-          { step: 'sequestration', amount_cents: '9999.5' },
-        ],
-        rounding: { rule: row === 1 ? 'HALF_EVEN_CENT' : 'TRUNCATE', unrounded_cents: '9999.5', rounded_cents: '10000' },
-      }),
+const level2 = assemblePacket(tracedInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));
+/** The SYNTHETIC contract's dispute window of 3650 days, for a line priced under terms of its own. */
+const WINDOWS = { timely_filing_days: null, dispute_window_days: 3650, appeal_levels: [] };
+/**
+ * Every Medicare flag but the multiple procedure payment reduction's on, and Medicare's pooled timed-units rule: the
+ * reduction ranks practice-expense parts, which only a percent-of-Medicare line reads (steppedContent takes it).
+ */
+const EVERY_FLAG = { apply_mppr: false, apply_assistant_reduction: true, apply_sequestration: true, apply_ncci: true, timed_units_rule: 'MEDICARE_POOLED' } as const;
+/**
+ * Two lines priced by the engine under the method's terms with those flags on and a therapy assistant's CQ, so they
+ * take every step the method takes (the assistant reduction, the contract's own 95% and sequestration on the payer's
+ * share), each line under its own rounding rule.
+ */
+const stepped = (terms: (options: TermsOptions) => ReturnType<typeof fixedTerms>) =>
+  (['HALF_EVEN_CENT', 'TRUNCATE'] as const).map((rounding, index) =>
+    tracedLine(index + 1, {}, {
+      facts: {
+        modifiers: ['GP', 'CQ'],
+        observedAllowedCents: cents(2000n),
+        agreement: contractAgreement({ terms: terms({ flags: EVERY_FLAG, adjustment: { kind: 'PERCENT', percent: '95' }, rounding }), rateRecordId: IDS.rateRecord, windows: WINDOWS }),
+      },
     }),
   );
 /** The methods of T9, each with every step, a release record of no program, a window of no stated days, an end date and a plan name. */
 const METHOD_VERSIONS: Readonly<Record<string, PacketContent>> = {
-  'percent of Medicare, every step': assemblePacket(assemblyInput({ lines: stepped('PERCENT_OF_MEDICARE'), citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '110' } }) })),
+  'percent of Medicare, every step': steppedContent,
   'lesser of a percent schedule, every step': assemblePacket(
-    assemblyInput({ lines: stepped('LESSER_OF'), citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100' } } }) }),
+    tracedInput({
+      lines: stepped((options) => lesserOfTerms({ percentage: '100' }, options)),
+      citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100' } } }),
+    }),
   ),
   'lesser of a fixed schedule, every step': assemblePacket(
-    assemblyInput({ lines: stepped('LESSER_OF'), citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '5000' } } }) }),
+    tracedInput({
+      lines: stepped((options) => lesserOfTerms({ fixedCents: 5000n }, options)),
+      citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '5000' } } }),
+    }),
   ),
-  'per visit, every step': assemblePacket(assemblyInput({ lines: stepped('PER_VISIT'), citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '9000' } }) })),
+  'per visit, every step': assemblePacket(tracedInput({ lines: stepped((options) => perVisitTerms(9000n, options)), citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '9000' } }) })),
   'a release record of no program, a window of no stated days, an end date and a plan name': assemblePacket(
-    assemblyInput({
-      lines: stepped('FIXED_SCHEDULE'),
+    tracedInput({
+      lines: stepped((options) => fixedTerms(5000n, options)),
       citation: contractCitation({ effective_to: '2026-12-31' }),
       payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: '2U:SYNPAYERQ', plan_id: IDS.plan, plan_key: 'CE:SYNPLAN-FIX-ONE', plan_name: 'SYNTHETIC PLAN NAME' },
       deadlineSources: [contractWindowSource({ days: null }), { kind: 'release_record', release_no: 900001, sha256: 'b'.repeat(64), program: null, level: 'L2' }],
@@ -118,23 +163,23 @@ const KEY_FORMS: Readonly<Record<string, { readonly payer: PayerIdentification; 
     printed: 'SYNTHETIC PAYER Q, plan SYNTHETIC PPO 01',
   },
 };
-const KEY_FORM_VERSIONS: Readonly<Record<string, PacketContent>> = Object.fromEntries(Object.entries(KEY_FORMS).map(([name, form]) => [name, assemblePacket(assemblyInput({ payer: form.payer }))]));
+const KEY_FORM_VERSIONS: Readonly<Record<string, PacketContent>> = Object.fromEntries(Object.entries(KEY_FORMS).map(([name, form]) => [name, assemblePacket(tracedInput({ payer: form.payer }))]));
 /** Paid on time and dated before the due date: every line computes $0.00, which is not stated (Q4 (a)). */
 const zeroInterest = assemblePacket(
-  assemblyInput({ asOf: '2026-03-10', lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-03-09' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-03-09' })], interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } }),
+  tracedInput({ asOf: '2026-03-10', lines: [tracedLine(1, { receivedOn: '2026-03-02', paidOn: '2026-03-09' }), tracedLine(2, { receivedOn: '2026-03-03', paidOn: '2026-03-09' })], interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } }),
 );
 /** Every route through the renderer: a contract and a regulation, interest computed, partly, not, with no rule on file, level 2, a practice with an NPI and tax ID. */
 const VERSIONS: Readonly<Record<string, PacketContent>> = {
-  'contract, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
+  'contract, computed': assemblePacket(tracedInput({ asOf: '2026-05-01', lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
   'contract, partly computed': content,
-  'contract, not computed': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } })),
-  'contract, no rule on file': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } })),
-  'contract, the real exclusion code': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ exclusions: ['self_funded_erisa_plans', 'self_funded_plans'] }) } })),
-  'regulation, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', citation: REGULATION, contractDocuments: [], lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
-  'regulation, no interest': assemblePacket(assemblyInput({ citation: REGULATION, contractDocuments: [] })),
+  'contract, not computed': assemblePacket(tracedInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } })),
+  'contract, no rule on file': assemblePacket(tracedInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } })),
+  'contract, the real exclusion code': assemblePacket(tracedInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ exclusions: ['self_funded_erisa_plans', 'self_funded_plans'] }) } })),
+  'regulation, computed': assemblePacket(tracedInput({ asOf: '2026-05-01', citation: REGULATION, contractDocuments: [], lines: maReceived, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
+  'regulation, no interest': assemblePacket(tracedInput({ citation: REGULATION, contractDocuments: [], lines: maLines })),
   'contract, every line $0.00': zeroInterest,
   'level 2': level2,
-  'a practice with an NPI and tax ID': assemblePacket(assemblyInput({ practice: { practice_id: IDS.practice, name: 'SYNTHETIC THERAPY GROUP 01', npi: '1234567893', tax_id_last4: '6789' } })),
+  'a practice with an NPI and tax ID': assemblePacket(tracedInput({ practice: { practice_id: IDS.practice, name: 'SYNTHETIC THERAPY GROUP 01', npi: '1234567893', tax_id_last4: '6789' } })),
   ...METHOD_VERSIONS,
   ...KEY_FORM_VERSIONS,
   maximal: maximalContent,
@@ -149,8 +194,8 @@ const CONTACTS: readonly CorrespondenceContact[] = [
 ];
 
 describe('packetHtml: the payer’s copy', () => {
-  const html = packetHtml(exported, payerCopy);
-  const maximal = packetHtml(maximalExported, payerCopy);
+  const html = packetHtml(exported, payerCopy, words);
+  const maximal = packetHtml(maximalExported, payerCopy, maximalWords);
 
   it('T1: holds no login, record ID, SHA-256, verification, audit flag, gap, specialist line, version number, footer, internal term or code, from a version with every internal field filled', () => {
     expect(payerCopyLeaks(htmlText(maximal), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
@@ -223,7 +268,7 @@ describe('packetHtml: the payer’s copy', () => {
       const text = name === 'maximal' ? maximalNarrative : draftNarrative(packet);
       const rows = name === 'maximal' ? maximalIdentifiers : rowsOf(packet);
       const inserted = insertIdentifiers(packet, text, rows);
-      for (const printed of [htmlText(packetHtml(inserted, payerCopy)), packetCsv(inserted, REFERENCE)]) {
+      for (const printed of [htmlText(packetHtml(inserted, payerCopy, payerWords(packet))), packetCsv(inserted, REFERENCE)]) {
         expect(printed.match(QUALIFIED_IDENTIFIER), name).toBeNull();
         expect(printed, name).not.toContain(packet.payer.payer_id_raw);
         expect(printed, name).not.toContain(packet.payer.plan_key);
@@ -301,6 +346,24 @@ describe('packetHtml: the payer’s copy', () => {
     60_000,
   );
 
+  it.skipIf(!chromiumInstalled())(
+    'T5: the printed PDF’s text holds every sentence of explainPacket(..., \'payer\') over the version’s traces, the words the review page shows (combined audit #38; CAS-32; skipped without Chromium)',
+    async () => {
+      for (const [exportedVersion, packet] of [
+        [steppedExported, steppedContent],
+        [maximalExported, maximalContent],
+      ] as const) {
+        const pdf = await new ChromiumPdfRenderer().render(packetHtml(exportedVersion, payerCopy, payerWords(packet)));
+        const { text } = await printedPdfText(pdf);
+        const expected = explainPacket(packet, tracesOf(packet), 'payer');
+        for (const sentence of [...expected.rows.flatMap((row) => lineSentences(row.words)), ...expected.worksheets.flatMap(worksheetSentences)]) {
+          expect(holdsLoosely(text, plainText(sentence)), plainText(sentence)).toBe(true);
+        }
+      }
+    },
+    60_000,
+  );
+
   it('T5: is checked wherever the tests run in CI: Chromium is installed there', () => {
     if (process.env.CI === 'true') {
       expect(chromiumInstalled()).toBe(true);
@@ -339,17 +402,24 @@ describe('packetHtml: the payer’s copy', () => {
 
   it.skipIf(!chromiumInstalled())('sets every dollar figure in IBM Plex Mono, the narrative’s and the interest total’s included (skipped without Chromium)', async () => {
     expect(await amountsNotInMono(html)).toEqual([]);
+    // The calculation's words and the fee schedule worksheet's figures too.
+    expect(await amountsNotInMono(packetHtml(steppedExported, payerCopy, payerWords(steppedContent)))).toEqual([]);
   }, 60_000);
 
   it('T7: states the dispute window’s dates only: the earliest line window at the first level, the level’s own window above it, its evidence, and never a timeliness claim', () => {
     expect(html).toContain('<h2>Dispute window</h2><p><strong>The earliest dispute window among the listed lines ends on 2036-04-05.</strong></p>');
-    expect(html).toContain('<li>The contract’s dispute window: 3650 days (page 1):<blockquote>Disputes are raised within 3650 days of the payment date.</blockquote></li>');
+    expect(html).toContain('<li>The contract’s dispute window: 3,650 days (page 1):<blockquote>Disputes are raised within 3650 days of the payment date.</blockquote></li>');
     expect(maximal).toContain('<li>The Medicare dispute window in effect for the service dates (release 900002).</li>');
     expect(html).toContain('<caption>Each line’s dispute window and how its expected amount is computed</caption>');
-    expect(html).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Window ends</th><th scope="col">Method</th><th scope="col">Steps</th><th scope="col">Rounding</th><th scope="col">Patient share</th></tr></thead>');
-    // The trace's codes in words: the method, each step and the rounding rule.
-    expect(html).toContain('<tr><td>1</td><td>2036-04-05</td><td>Fixed schedule</td><td>base $100.00</td><td>half up to the cent: $100.00 to $100.00</td><td>$14.00</td></tr>');
-    expect(html).not.toMatch(/FIXED_SCHEDULE|HALF_UP_CENT/);
+    expect(html).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Window ends</th><th scope="col">How the expected amount is computed</th></tr></thead>');
+    // Each line's calculation in the payer's words (combined audit #38): the summary, then each step, every figure in
+    // the mono face; the patient share in the words, never subtracted, and in no column of its own (UX review: it
+    // repeated the words).
+    expect(html).toContain(`<tr><td>1</td><td>2036-04-05</td><td><p>${SUMMARY}</p><p>Fixed schedule: ${F('$50.00')} per unit.</p>`);
+    expect(html).toContain(`<p>Patient share ${F('$14.00')}, reported beside the expected amount and never subtracted from it.</p>`);
+    expect(html).not.toContain('Patient share</th>');
+    expect(html).not.toContain('reported, never subtracted');
+    expect(html).not.toMatch(/FIXED_SCHEDULE|HALF_UP_CENT|paid_plus_pr/);
     // Above the first level the copy states the level's own window alone: no first-level clause or release record, no
     // line's first-level window (in the PDF or the CSV), and each line's calculation still.
     const second = printedOf(level2, draftNarrative(level2), rowsOf(level2));
@@ -357,8 +427,8 @@ describe('packetHtml: the payer’s copy', () => {
     expect(window).toContain('<h2>Dispute window</h2><p><strong>The window for dispute level 2 ends on 2026-12-01.</strong></p><table');
     expect(window).not.toMatch(/<ul>|The contract’s dispute window|dispute window in effect|Window ends|2036-04-05/);
     expect(window).toContain('<caption>How each line’s expected amount is computed</caption>');
-    expect(window).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Method</th><th scope="col">Steps</th><th scope="col">Rounding</th><th scope="col">Patient share</th></tr></thead>');
-    expect(window).toContain('<tr><td>1</td><td>Fixed schedule</td><td>base $100.00</td><td>half up to the cent: $100.00 to $100.00</td><td>$14.00</td></tr>');
+    expect(window).toContain('<thead><tr><th scope="col">Row</th><th scope="col">How the expected amount is computed</th></tr></thead>');
+    expect(window).toContain(`<tr><td>1</td><td><p>${SUMMARY}</p><p>Fixed schedule: ${F('$50.00')} per unit.</p>`);
     const secondCsv = packetCsv(insertIdentifiers(level2, draftNarrative(level2), rowsOf(level2)), REFERENCE).split('\r\n');
     expect(secondCsv[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('window_ends_on') + 1)).toBe('');
     expect(secondCsv.join('\n')).not.toContain('2036-04-05');
@@ -373,17 +443,60 @@ describe('packetHtml: the payer’s copy', () => {
   });
 
   it('T7: prints an unrounded amount in the rounded amount’s form, grouped and signed, its fraction of a cent kept', () => {
-    const large = calculation(cents(12345679n), cents(7000n), cents(5600n), {
-      steps: [{ step: 'base', amount_cents: '12345678.5' }],
-      rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '12345678.5', rounded_cents: '12345679' },
-    });
-    const packet = assemblePacket(assemblyInput({ lines: [line(1, { expectedCents: cents(12345679n), varianceCents: cents(12338679n), calculation: large })] }));
+    // 1 unit at $246,913.57, of which the contract pays 50%: $123,456.785 before the one rounding.
+    const terms = fixedTerms(24691357n, { adjustment: { kind: 'PERCENT', percent: '50' } });
+    const large = tracedLine(1, {}, { facts: { units: '1', chargeCents: cents(30000000n), agreement: contractAgreement({ terms, rateRecordId: IDS.rateRecord, windows: WINDOWS }) } });
+    const packet = assemblePacket(tracedInput({ lines: [large] }));
     const printed = printedOf(packet, draftNarrative(packet), rowsOf(packet));
-    expect(printed).toContain('<td>base $123,456.785</td><td>half up to the cent: $123,456.785 to $123,456.79</td>');
+    expect(printed).toContain(`after the contract’s adjustment ${F('$123,456.785')}; rounded once to ${F('$123,456.79')};`);
+    expect(printed).toContain(`Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: ${F('$123,456.785')} becomes ${F('$123,456.79')}.`);
     const window = printed.slice(printed.indexOf('<h2>Dispute window</h2>'), printed.indexOf('</table>', printed.indexOf('<h2>Dispute window</h2>')));
     expect(window).not.toContain('$123456');
     // The CSV keeps plain decimal dollars, the fraction of a cent with them.
     expect(packetCsv(insertIdentifiers(packet, draftNarrative(packet), rowsOf(packet)), REFERENCE).split('\r\n')[1]).toContain(',Fixed schedule,123456.785,123456.79,');
+  });
+
+  it('T7: words every line of every version exactly as explainPacket(..., \'payer\') does over the traces its calculations name, and prints its fee schedule worksheets (combined audit #38; CAS-32, CAS-33)', () => {
+    for (const [name, packet] of Object.entries(VERSIONS)) {
+      const text = name === 'maximal' ? maximalNarrative : draftNarrative(packet);
+      const rows = name === 'maximal' ? maximalIdentifiers : rowsOf(packet);
+      const printed = htmlText(printedOf(packet, text, rows));
+      // The words the review page shows the reviewer (explainPacket() with the payer audience), each sentence in the copy.
+      const expected = explainPacket(packet, tracesOf(packet), 'payer');
+      expect(expected.rows.map((row) => row.row), name).toEqual(packet.lines.map((line) => line.row));
+      for (const sentence of [...expected.rows.flatMap((row) => lineSentences(row.words)), ...expected.worksheets.flatMap(worksheetSentences)]) {
+        expect(holdsLoosely(printed, plainText(sentence)), `${name}: ${plainText(sentence)}`).toBe(true);
+      }
+      // A worksheet section exactly when a line read a fee schedule.
+      expect(printed.includes('Fee schedule worksheets'), name).toBe(expected.worksheets.length > 0);
+    }
+    // A percent-of-Medicare version: one worksheet for its two lines of one code, setting and locality, which each row's
+    // words point to; its parts, their amounts per unit at the contract's percentage, and how to check them at CMS.
+    const stepped = printedOf(steppedContent, draftNarrative(steppedContent), rowsOf(steppedContent));
+    const sheet = stepped.slice(stepped.indexOf('<h2>Fee schedule worksheets</h2>'));
+    expect(sheet.match(/<section class="worksheet">/g)).toHaveLength(1);
+    expect(stepped.match(/<p>See fee schedule worksheet 1\.<\/p>/g)).toHaveLength(2);
+    expect(sheet).toContain(`<h3>Fee schedule worksheet 1: code ${F('97110')}, ${F('2026')}, carrier ${F('99999')} locality ${F('01')}, non-facility</h3>`);
+    expect(sheet).toContain(`<p>Percentage: ${F('110%')} of the fee schedule, under the contract’s clause on page ${F('2')}.</p>`);
+    expect(sheet).toContain(`<tr><td>Work</td><td>${F('0.31')}</td><td>${F('1.000')}</td><td>${F('$6.82')}</td></tr>`);
+    expect(sheet).toContain(`<tr><td>Per unit</td><td></td><td></td><td>${F('$23.232')}</td></tr>`);
+    expect(htmlText(sheet)).toContain('Reductions, in order, then the one rounding: as the words of row 1 and row 2 say.');
+    expect(htmlText(sheet)).toMatch(/To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services \(CMS\) for 2026/);
+    // Never an amount at 100% for a contract at 110%, a geographically adjusted RVU or a total RVU: the trace holds none.
+    const figures = [...sheet.matchAll(/<span class="figure-amount">([^<]*)<\/span>/g)].map((match) => match[1]);
+    for (const trace of tracesOf(steppedContent).values()) {
+      for (const derived of derivedFeeScheduleValues(trace as Parameters<typeof derivedFeeScheduleValues>[0])) {
+        expect(figures.some((figure) => figure?.replace(/[$,%]/g, '').replace(/ per RVU$/, '') === derived)).toBe(false);
+      }
+    }
+    // A Medicare Advantage line's worksheet is Original Medicare's, at its 100% under the regulation.
+    const regulation = VERSIONS['regulation, no interest'];
+    if (regulation === undefined) {
+      throw new Error('the regulation version');
+    }
+    expect(htmlText(printedOf(regulation, draftNarrative(regulation), rowsOf(regulation)))).toContain('Percentage: 100% under 42 CFR 422.214');
+    // A fixed-schedule version reads no fee schedule: no worksheet.
+    expect(html).not.toContain('Fee schedule worksheet');
   });
 
   it('counts one line, one claim and one day in the singular', () => {
@@ -407,7 +520,7 @@ describe('packetHtml: the payer’s copy', () => {
     expect(interest).toMatch(/<tbody><tr><td>1<\/td><td>2026-03-02<\/td>[^]*?<\/tr><\/tbody>/);
     expect(interest.match(/<tr><td>\d+<\/td>/g)).toEqual(['<tr><td>1</td>']);
     expect(htmlText(interest)).toContain('Interest stated in this request: $0.57');
-    const none = assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } }));
+    const none = assemblePacket(tracedInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } }));
     const noneHtml = printedOf(none, draftNarrative(none), rowsOf(none));
     const noneSection = noneHtml.slice(noneHtml.indexOf('<h2>[4]'), noneHtml.indexOf('<h2>Evidence</h2>'));
     expect(noneSection).toBe(
@@ -419,7 +532,7 @@ describe('packetHtml: the payer’s copy', () => {
       throw new Error('the version with the real exclusion code');
     }
     expect(printedOf(real, draftNarrative(real), rowsOf(real))).toContain('<p>The rule does not apply to: self-funded ERISA plans, self-funded plans.</p>');
-    const noRule = assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } }));
+    const noRule = assemblePacket(tracedInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } }));
     const noRuleHtml = printedOf(noRule, draftNarrative(noRule), rowsOf(noRule));
     expect(noRuleHtml.slice(noRuleHtml.indexOf('<h2>[4]'), noRuleHtml.indexOf('<h2>Evidence</h2>'))).toBe(
       '<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2><p>Prompt-pay interest is not stated in this request.</p>\n',
@@ -438,9 +551,9 @@ describe('packetHtml: the payer’s copy', () => {
     expect(zeroRows[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest') + 1)).toBe('');
     // A version with a line above zero beside a line at $0.00 lists and totals the first alone.
     const mixed = assemblePacket(
-      assemblyInput({
+      tracedInput({
         asOf: '2026-05-01',
-        lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-04-20', paidOn: '2026-04-21', varianceCents: cents(3000n) })],
+        lines: [tracedLine(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), tracedLine(2, { receivedOn: '2026-04-20', paidOn: '2026-04-21' })],
         interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() },
       }),
     );
@@ -466,11 +579,11 @@ describe('packetHtml: the payer’s copy', () => {
   });
 
   it('T9: [2] names the Medicare fee schedule only when the release supplied one', () => {
-    const percent = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '110' } }) }));
-    const lesserOfPercent = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100' } } }) }));
-    const lesserOfFixed = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '5000' } } }) }));
-    const perVisit = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '9000' } }) }));
-    const regulation = assemblePacket(assemblyInput({ citation: REGULATION, contractDocuments: [] }));
+    const percent = assemblePacket(tracedInput({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '110' } }) }));
+    const lesserOfPercent = assemblePacket(tracedInput({ citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100' } } }) }));
+    const lesserOfFixed = assemblePacket(tracedInput({ citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '5000' } } }) }));
+    const perVisit = assemblePacket(tracedInput({ citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '9000' } }) }));
+    const regulation = assemblePacket(tracedInput({ citation: REGULATION, contractDocuments: [], lines: maLines }));
     const schedule = 'Payment rules and the Medicare fee schedule in effect for the service dates: release 900001';
     const rules = 'Payment rules in effect for the service dates: release 900001';
     for (const packet of [regulation, percent, lesserOfPercent]) {
@@ -486,22 +599,37 @@ describe('packetHtml: the payer’s copy', () => {
     }
   });
 
-  it('refuses a code of a closed list it has no words for, rather than print it (the export records a print failure)', () => {
+  it('refuses a code of a closed list it has no words for, rather than print it (the export records a print failure; CAS-34)', () => {
     const [first, ...rest] = content.lines;
     if (first === undefined) {
       throw new Error('a line expected');
     }
-    const unknown: PacketContentV2 = { ...content, lines: [{ ...first, calculation: { ...first.calculation, steps: [{ step: 'ncci_bundle', amount_cents: '10000' }] } }, ...rest] };
-    expect(() => printedOf(unknown, narrative, identifiers)).toThrow(PayerCopyWordsError);
+    // A trace whose method the words have none for (the engine writes its method as text): the copy is not printed.
+    const trace = tracesOf(content).get(first.priced_line_id) as PricingTrace;
+    const capitation = { ...trace, terms: { ...(trace.terms as NonNullable<PricingTrace['terms']>), method: 'CAPITATION' } };
+    const unknown = assemblePacket(tracedInput({ lines: [retracedLine(tracedLine(1), capitation), tracedLine(2)] }));
+    expect(() => printedOf(unknown, draftNarrative(unknown), rowsOf(unknown))).toThrow(new ExplainWordsError('method'));
+    expect(() => printedOf(unknown, draftNarrative(unknown), rowsOf(unknown))).toThrow(/the words have no entry for a method/);
     const method: PacketContentV2 = { ...content, lines: [{ ...first, calculation: { ...first.calculation, method: 'CAPITATION' } }, ...rest] };
     expect(() => packetCsv(insertIdentifiers(method, narrative, identifiers), REFERENCE)).toThrow(PayerCopyWordsError);
     // A plan known only by a claim filing indicator with no words (the founder's ruling of 2026-10-21): the copy is not
     // printed, rather than print the code as a plan identifier or drop the plan unnoticed.
     for (const plan_key of ['CLP06:Q9', 'CLP06:C1', 'CLP06:toString']) {
-      const unworded = assemblePacket(assemblyInput({ payer: { ...content.payer, plan_key, plan_name: null } }));
+      const unworded = assemblePacket(tracedInput({ payer: { ...content.payer, plan_key, plan_name: null } }));
       expect(() => printedOf(unworded, draftNarrative(unworded), rowsOf(unworded)), plan_key).toThrow(new PayerCopyWordsError('claim filing indicator'));
       expect(() => printedOf(unworded, draftNarrative(unworded), rowsOf(unworded)), plan_key).toThrow(/no words for a claim filing indicator/);
     }
+  });
+
+  it('prints a tp-packet/2 version’s calculation only in the words of its own rows, and none without them', () => {
+    expect(() => packetHtml(exported, payerCopy, null)).toThrow(TypeError);
+    const own = words;
+    if (own === null) {
+      throw new Error('the version’s words');
+    }
+    // The maximal version's words (three rows) are not the two-row version's.
+    expect(() => packetHtml(exported, payerCopy, maximalWords)).toThrow(/words of other rows are not printed/);
+    expect(() => packetHtml(exported, payerCopy, { ...own, rows: [...own.rows].reverse() })).toThrow(/words of other rows are not printed/);
   });
 
   it('prints an earlier tp-packet/1 version without a dispute window section', () => {
@@ -541,7 +669,7 @@ describe('packetCsv: the payer’s schedule', () => {
       'patient_share',
     ]);
     expect(rows[0]).toBe(PACKET_CSV_COLUMNS.join(','));
-    expect(rows[1]).toBe(`SK6CS-K6CSK,1,SYNCCN0001,"'=SYNTHETIC, PATIENT <ONE>",SYNMBR1,2026-03-05,97110,,2,100.00,70.00,30.00,56.00,2026-05-01,2026-03-02,0.57,2036-04-05,Fixed schedule,100.00,100.00,14.00`);
+    expect(rows[1]).toBe(`SK6CS-K6CSK,1,SYNCCN0001,"'=SYNTHETIC, PATIENT <ONE>",SYNMBR1,2026-03-05,97110,GP,2,100.00,70.00,30.00,56.00,2026-05-01,2026-03-02,0.57,2036-04-05,Fixed schedule,100.00,100.00,14.00`);
     expect(rows[2]).toContain(',not on the remittance,');
     expect(rows.at(-1)).toBe('');
     // The reference on every row is the one the PDF's approval line prints and the file names carry (the founder's
@@ -569,5 +697,33 @@ describe('packetCsv: the payer’s schedule', () => {
     for (const reference of ['', 'sk6cs-k6csk', 'SK6CSK6CSK', 'SK6CS-K6CSL', 'c'.repeat(64)]) {
       expect(() => packetCsv(exported, reference), reference).toThrow(TypeError);
     }
+  });
+});
+
+describe('exportWords: the export’s calculation in words', () => {
+  /** A transaction's client that reads `rows` as the version's stored traces. */
+  const reading = (rows: readonly { readonly id: string; readonly trace: unknown }[]) => ({ query: () => Promise.resolve({ rows }) }) as unknown as Parameters<typeof exportWords>[0];
+  const stored = (packet: PacketContent) => [...tracesOf(packet)].map(([id, trace]) => ({ id, trace }));
+
+  it('words the version from the traces its approval names, as explainPacket(..., \'payer\') does (CAS-32)', async () => {
+    expect(await exportWords(reading(stored(steppedContent)), IDS.practice, steppedContent)).toEqual(explainPacket(steppedContent, tracesOf(steppedContent), 'payer'));
+  });
+
+  it('refuses, as a print failure, a trace that is not the one its approval names, a trace missing, and a line priced by another rate record', async () => {
+    const failure = async (rows: readonly { readonly id: string; readonly trace: unknown }[], packet: PacketContent = content) => {
+      const error: unknown = await exportWords(reading(rows), IDS.practice, packet).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(PacketExportRenderError);
+      return (error as PacketExportRenderError).cause;
+    };
+    const [first, second] = stored(content);
+    if (first === undefined || second === undefined) {
+      throw new Error('two traces');
+    }
+    const trace = first.trace as PricingTrace;
+    const tampered = { ...first, trace: { ...trace, line: { ...trace.line, units: '3' } } };
+    expect(await failure([tampered, second])).toEqual(new ExplainBindingError('trace_differs', 1));
+    expect(await failure([second])).toEqual(new ExplainBindingError('trace_missing', 1));
+    const other = assemblePacket(tracedInput({ lines: [tracedLine(1), tracedLine(2)], citation: contractCitation({ rate_record_id: IDS.version }) }));
+    expect(await failure(stored(other), other)).toEqual(new ExplainBindingError('rate_record_differs', 1));
   });
 });

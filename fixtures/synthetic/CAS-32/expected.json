@@ -1,0 +1,23 @@
+{
+  "case": "CAS-32",
+  "module": "CAS",
+  "title": "A packet’s calculation on the review page and in the PDF",
+  "assertion": "The same words, from the traces its approval names, by one renderer whose version the approval, the export request and the export job agree on; a trace that differs, a line priced by another rate record or another words version is refused",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/explain.test.ts",
+    "apps/worker/src/packets/export.test.ts",
+    "apps/worker/src/packets/export-attempts.db.test.ts",
+    "apps/web/src/lib/routes/payer-copy-routes.db.test.ts",
+    "apps/web/e2e/packets.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Reviews and exports any approved packet from its stored traces: an output, not a fixture.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

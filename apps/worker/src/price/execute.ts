@@ -49,6 +49,11 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  *   whatever was loaded since the run was created (MAP-01). Neither retries: retrying changes nothing.
  * - One run of a practice executes at a time (a transaction-scoped advisory lock per practice), and
  *   a run already complete or failed is left as it is, so a replayed job has no effect (JOB-01).
+ * - A run's completed_at is its pricing transaction's now(), stamped when the transaction began, before
+ *   the lock was granted. When a run of the practice that began later has already completed under the
+ *   lock, the transaction starts again before it reads anything, so completed_at order is always the
+ *   order in which runs read their inputs, the order a re-run's acceptance judges newer pricing by
+ *   (in-effect.ts; docs/adr/0037, amendment of 2026-10-26).
  * - A run whose practice's location a line cannot be priced at (audit #33 and #7; docs/adr/0064): the
  *   location's status over the run's period is judged in the pricing transaction, from the very ZIP and ZIP+4
  *   the run's settings read there (a location saved between the job's transactions is the one priced, and the
@@ -203,6 +208,14 @@ class ReadOutsideFetch extends Error {
   override readonly name = 'ReadOutsideFetch';
 }
 
+/** A run of the practice that began pricing after this one completed first: this pricing transaction starts again. */
+class PricedOutOfOrder extends Error {
+  override readonly name = 'PricedOutOfOrder';
+}
+
+/** Pricing transactions a run begins before the attempt fails and the job retries it: each restart needs a run that began after it to finish first. */
+const PRICING_TRANSACTIONS = 5;
+
 interface RunRow {
   readonly id: string;
   readonly practice_id: string;
@@ -347,6 +360,15 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     if (run === undefined || run.status !== 'running') {
       return run === undefined ? { outcome: 'missing' } : { outcome: 'already_finished', status: run.status === 'complete' ? 'complete' : 'failed' };
     }
+    // Its completed_at will be this transaction's now(), from before the lock: a run that began later and completed
+    // while this one waited read its inputs first, so begin again, with a later now(), before reading any.
+    const { rows: later } = await scope.client.query<{ found: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM pricing_run WHERE practice_id = $1 AND status = 'complete' AND completed_at > now()) AS found",
+      [practiceId],
+    );
+    if (later[0]?.found === true) {
+      throw new PricedOutOfOrder('a run that began pricing later completed first');
+    }
     // A re-run prices the lines its original priced: the original's cut-off, not its own creation.
     const lines: RunScope = { practiceId, periodFrom: run.period_from, periodTo: run.period_to, loadedBy: run.cut_off };
     const request = { practiceId, requestId: context.jobId, purpose: 'pricing' };
@@ -428,9 +450,22 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     await scope.client.query("UPDATE pricing_run SET status = 'complete', coverage = $2, completed_at = now() WHERE id = $1", [pricingRunId, JSON.stringify(coverage)]);
     return { outcome: 'complete', coverage };
   });
+  // Each restart is a run that began later completing first; nothing of the transaction was read or kept. Its stops,
+  // content reads and counts live in the transaction, so a restart collects them from scratch; any other error is raised.
+  const pricedInOrder = async (): Promise<ExecuteOutcome> => {
+    for (let transactions = 1; ; transactions += 1) {
+      try {
+        return await priceRun();
+      } catch (error) {
+        if (!(error instanceof PricedOutOfOrder) || transactions >= PRICING_TRANSACTIONS) {
+          throw error;
+        }
+      }
+    }
+  };
   let outcome: ExecuteOutcome;
   try {
-    outcome = await priceRun();
+    outcome = await pricedInOrder();
   } catch (error) {
     // Nothing of the pricing transaction was kept; the run fails in a transaction of its own.
     if (error instanceof ReadOutsideFetch) {
