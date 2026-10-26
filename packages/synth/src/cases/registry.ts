@@ -240,6 +240,46 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/reconcile/chain.db.test.ts',
     'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
   ]),
+  // PR 15b (combined audit #12, docs/adr/0067): the payment-terms cases, each case line with a patient's share.
+  'LED-14': {
+    completesIn: 9,
+    build: workflow.led14,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'apps/web/e2e/ledger-patient-share.spec.ts',
+    ],
+  },
+  'LED-15': {
+    completesIn: 9,
+    build: workflow.led15,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'apps/web/e2e/ledger-patient-share.spec.ts',
+    ],
+  },
+  'LED-16': {
+    completesIn: 9,
+    build: workflow.led16,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+    ],
+  },
+  'LED-17': {
+    completesIn: 9,
+    build: workflow.led17,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+    ],
+  },
+  'LED-18': { completesIn: 9, build: workflow.led18, assertedBy: ['apps/worker/src/reconcile/payment-terms.db.test.ts', 'packages/ledger/src/payment.test.ts'] },
   'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
   'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts']),
   'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
