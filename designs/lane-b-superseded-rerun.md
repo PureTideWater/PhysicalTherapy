@@ -95,7 +95,8 @@ Let **R** be the re-run being accepted and **O** = `R.rerun_of_id` its original.
 
 **Run X's pricing is newer than R's** when either holds:
 
-- X was priced no earlier than R: `X.completed_at >= R.completed_at`. Both pricing transactions take the practice's execution lock before they read anything (`execute.ts:253-275`), so this is the order in which they read mappings, contract versions, settings, location and the live line facts. A tie counts as newer, to stay on the safe side.
+- X was priced no earlier than R: `X.completed_at >= R.completed_at`. Both pricing transactions take the practice's execution lock before they read anything (`execute.ts:253-275`), and (fix round, payment-engine review F1) a pricing transaction that a run which began later completed ahead of begins again under the lock before it reads anything, so this is the order in which they read mappings, contract versions, settings, location and the live line facts. A tie counts as newer, to stay on the safe side.
+- (Fix round, payment-engine review F2.) X pinned a place-of-service split approved later than R's (`(approved_at, id)`, read through `pricing_run_split()`; a run with no split is older than one with a split). The triage date, also fixed at creation, is not compared: it sets only the trace's window status as of that day, and triage judges every window on its own date.
 - X is pinned to a later rule release that has not been withdrawn: `X.release_no > R.release_no AND NOT withdrawn(X.release_no)`. A withdrawn release is never newer in intent: after a content rollback, a re-run under the reinstated release is the one wanted (`rerun.db.test.ts:351-408`).
 
 **R is superseded** when either holds:
@@ -334,10 +335,10 @@ The existing `data-state="superseded"` on "Not in effect" (`display.tsx:67`) is 
 
 - `packages/pricing` (engine freeze).
 - `packages/db/**`.
-- `apps/web/src/lib/http/next.ts`. Its generic "Check the fields marked below." (`next.ts:161-162`) is wrong for a form whose only field is hidden. But changing it touches every form, so it is a proposal (§10.2).
+- `apps/web/src/lib/http/next.ts`. Its generic "Check the fields marked below." (`next.ts:161-162`) is wrong for a form whose only field is hidden. But changing it touches every form, so it is a proposal (§10.2). *Fix round:* taken after all (UX-3, §14): `next.ts` marks the generic line (`invalid`), and `ActionForm` omits it when nothing visible is marked.
 - `apps/web/src/components/help.ts` (a #42 file). Its `pricing_runs` text (`help.ts:16`) does not describe acceptance, so it needs no change and no proposal.
 - `apps/worker/src/monitor/plan.ts` (§5.3).
-- `diff.ts` and `impact.ts`. The diff is right once chains are no longer created (§1.5), and once the page picks the right base (§3.3).
+- `diff.ts` and `impact.ts`. The diff is right once chains are no longer created (§1.5), and once the page picks the right base (§3.3). *Fix round:* `diff.ts` gains `compareAcceptance` (payment-engine F4, §14); `impact.ts` is unchanged.
 
 ---
 
@@ -383,6 +384,7 @@ Why this key and not `execute.ts`'s `pricing_run:<practice>` (`execute.ts:253`):
 
 ### 4.3 What remains
 
+- **Superseded by the fix round (payment-engine review F1):** the window below was wider than described (an R created *before* X, picked up with it, could read first and be stamped later), and it is now closed for first runs and re-runs alike: under the execution lock, before reading anything, the price job begins its pricing transaction again when a run that began later has already completed (`execute.ts`, `PricedOutOfOrder`). Only a worker of the previous version running during the deploy that ships it can still invert the order. The ADR amendment's "The execution order, closed" paragraph replaces the text below.
 - **One theoretical window, for an X that is a re-run, regression only, no line lost.**
   - The pricing order is read from `completed_at`, which is when X's pricing transaction began. X reads its inputs a few statements later, after the execution lock (`execute.ts:251-275`).
   - **For a first run X, the window is closed.** X's `running` status commits before X's pricing transaction begins. So any R created after that sees X running, and `createRerun` refuses it (`newer_run_pending`, §2.1; review finding 6). PRC-27(e) tests it.
@@ -597,66 +599,72 @@ The wording follows `.claude/rules/brand.md` and `docs/brand/BRAND.md` §1 (seri
 
 **Badges (`RunStateBadges`):**
 
-- "Can no longer be accepted": a superseded re-run.
+- "Can no longer be accepted": a superseded re-run, or one pinned to a withdrawn release (fix round, payment-engine F6: `RERUN_ACCEPTANCE`; `data-state="rerun-withdrawn"` beside "Release N withdrawn").
 - "Re-run waiting for a newer run": a first run of overlapping dates is being priced.
 - "Re-run awaiting acceptance", "In effect" and "Not in effect" are unchanged.
 
+**Re-run card description (fix round, UX-1):** "It prices the lines of [an earlier run] again, under rule release {n}; that run stays as it was." then "Nothing of it is in effect until a person accepts it." while it can be accepted or waits, "It was never accepted, and it is not in effect." when superseded or withdrawn, and nothing more once accepted.
+
 **Re-run card, an acceptable re-run whose original was replaced (above the diff):**
 
-- "Since this re-run was created, [Pricing run, {from} to {to}, rule release {n}] took effect for these service dates. Accepting this re-run replaces that run, so the lines below are compared with it."
+- "Since this re-run was created, [run name] took effect for these service dates. Accepting this re-run replaces that run, so the lines below are compared with it."
 
-**Re-run card, superseded by a run of the same service dates (an alert, title then body):**
+**Re-run card, an acceptable re-run (fix round, payment-engine F4):** the diff is exactly what accepting changes. Summary: "Accepting this re-run changes the pricing in effect of {k} lines: {c} of the {m} lines priced now and once accepted are priced differently[; {b} would no longer be priced][; {a} would be priced only once accepted]. Expected allowed over the lines priced both now and once accepted: $x now, $y once accepted." Columns "In effect now" and "Once accepted"; a side a run of other dates holds reads "From [run name]". When such runs exist: "Some of these lines are priced in effect by a run of other service dates, [run name]. Accepting this re-run replaces that pricing too, so those lines are compared with it: the lines below are exactly what accepting changes." When first runs are queued (UX-7): "A newer run of these service dates is waiting to be priced: [run name]. This re-run can be accepted now, and that run takes effect after it once priced."
+
+**Re-run card, superseded by a run of the same service dates (a note, `role="status"`, title then body):**
 
 - **Title:** "A newer run of these service dates is in effect"
-- **Body, when that run would price differently now:** "[Pricing run, {from} to {to}, rule release {n}] took effect after the run this re-run prices again, and it was priced after this re-run or holds lines loaded since. Accepting this re-run would replace newer pricing, so it can no longer be accepted. Re-run that run to price its lines under what is in force now."
-  - The re-run button for that run follows, for a person who may re-run.
-- **Body, when it would not:** "[Pricing run, {from} to {to}, rule release {n}] took effect after the run this re-run prices again. It already prices these lines under rule release {n} and the mappings and contract versions in force now. There is nothing more to accept."
-  - No button.
+- **Body:** "[run name] took effect after the run this re-run prices again{why}." with {why} the condition that holds (fix round, UX-8; `NEWER_BECAUSE`): ", and it was priced after this re-run", ", and it is pinned to rule release {n}, later than this re-run’s", ", and it is pinned to a place-of-service split approved after this re-run’s", ", and it takes in lines loaded later than this re-run does".
+  - **Nothing more**, only when that run was priced after the re-run and would price nothing differently now (fix round, payment-engine F5): "It already prices these lines under rule release {n} and the mappings and contract versions in force now. There is nothing more to accept." No button.
+  - **Otherwise:** "Accepting this re-run would replace newer pricing, so it can no longer be accepted. Re-run that run, the run in effect for these service dates, to price its lines under what is in force now." (or "Re-run [run name], the run in effect for these service dates, ..." when the run in effect is another), then the button "Re-run the run in effect under release {n}" (UX-4) with "A re-run of the run in effect, [run name], prices its lines again under rule release {n} and today's mappings and contract versions, and lists exactly the lines that would change. The run in effect stays as it is until a person accepts the new re-run." A refusal reads after "The run to re-run".
 
-**Re-run card, superseded by a run of other service dates:**
+**Re-run card, superseded by runs of other service dates:**
 
-- **Title:** "A run of some of these service dates was priced after this re-run"
-- **Body:** "[Pricing run, {from} to {to}] was priced after this re-run, so accepting this re-run would put older pricing back on the lines they share. This re-run can no longer be accepted. Re-run [the earlier run] again: the new re-run is priced after it, and can then be accepted."
-  - With more than one run, each is linked in a list after the first sentence's subject: "These runs were priced after this re-run:".
-  - The re-run button for the original follows, for a person who may re-run.
+- **Title:** "A run of some of these service dates was priced after this re-run" when every such run was, otherwise "... holds newer pricing than this re-run" (plural "Runs of some of these service dates were priced after / hold newer pricing than this re-run").
+- **Body, one run:** "[run name] {was priced after this re-run | is pinned to rule release {n}, later than this re-run’s | is pinned to a place-of-service split approved after this re-run’s}, so accepting this re-run would put older pricing back on the lines both runs price. This re-run can no longer be accepted. Re-run [run name of the run in effect], the run in effect for these service dates, again: the new re-run is priced after that run, and can then be accepted."
+- **Body, several:** "These runs of some of the same service dates hold newer pricing than this re-run:" then each "[run name], which {reason}", then "Accepting this re-run would put older pricing back on the lines it shares with them. This re-run can no longer be accepted. Re-run [...] again: the new re-run is priced after those runs, and can then be accepted."
+  - The re-run button for the run in effect follows, for a person who may re-run.
 
 **Re-run card, the original never in effect (a re-run left from before this rule):**
 
 - **Title:** "This re-run prices a run that was never in effect"
-- **Body:** "The run this re-run prices again was never accepted, so its changes are not listed against the pricing it would replace. This re-run can no longer be accepted. Re-run [Pricing run, {from} to {to}, rule release {n}], the run in effect for these service dates, instead."
+- **Body:** "The run this re-run prices again was never accepted, so this re-run’s changes are not listed against the pricing it would replace. This re-run can no longer be accepted. Re-run [run name], the run in effect for these service dates, instead."
 
 **Re-run card, pending:**
 
 - **Title:** "A newer run of these service dates is being priced"
-- **Body:** "[Pricing run, {from} to {to}] is being priced. Wait until it finishes: once it completes, re-run the run in effect; if it fails, this re-run can still be accepted."
+- **Body:** "[run name] is being priced. Wait until it finishes: once it completes, re-run the run in effect for these service dates; if it fails, this re-run can still be accepted."
 
-**Run card, a run not in effect:** "Only the run in effect for these service dates is priced again: [Pricing run, {from} to {to}, rule release {n}]."
+**Run card, a run not in effect:** "Only the run in effect for these service dates is priced again: [run name]."
 
-**Run card and release note, pending:** "A newer run of these service dates is {waiting to be priced | being priced}: [link]. Re-run once it finishes."
+**Run card and release note, pending (fix round, UX-7):** "A newer run of these service dates is {waiting to be priced | being priced}: [run name]. Once it finishes, re-run the run in effect for these service dates." (a run of the same dates takes this one's place once priced; one of other dates leaves it in effect, so the step names the run in effect, never this run).
 
 **Withdrawal alert, a run not in effect:** "...This run keeps every line as it was priced; re-run [the run in effect for these service dates] to price them under the release in force."
 
-**Re-runs list:** "can no longer be accepted", or "waiting for a newer run to finish", in place of "awaiting acceptance".
+**Re-runs list:** "can no longer be accepted", "can no longer be accepted, its rule release withdrawn", or "waiting for a newer run to finish", in place of "awaiting acceptance".
 
 **Compare page:**
 
-- When the re-run cannot be accepted: a card titled "This re-run can no longer be accepted" (or "Wait for the newer run"), with the same body as the run page, in place of "Accept the re-run".
-- When it can be accepted but the first run shown is not what it replaces: a card titled "Compare with the run in effect", with "Accepting this re-run replaces [Pricing run, {from} to {to}, rule release {n}], the run in effect for these service dates, not the first run here. [Compare it with that run] to see exactly what accepting changes, and to accept it."
+- When the re-run can be accepted against the first run shown: the diff is what accepting changes (as on the run page), with "On some lines the pricing in effect is not the first run's but [run name], a run of other service dates. Accepting the second run replaces that pricing too, so those lines are compared with it: the lines below are exactly what accepting changes." when such runs exist.
+- When the re-run cannot be accepted: a card (fix round, UX-9: a region like the Accept card it replaces) titled "This re-run can no longer be accepted" (or "Wait for the newer run"), its description the run page's title, with the run page's body; the run it prices again is "the first run" when it is the first run shown.
+- When it can be accepted but the first run shown is not what it replaces: a card titled "Compare with the run in effect", with "Accepting this re-run replaces [run name], the run in effect for these service dates, not the first run here. [Compare it with that run] to see exactly what accepting changes, and to accept it."
 
-**Form refusals.** The service's message is the text after "This re-run: " or "This run: "; the form adds the label. The messages are shown after the form's label: "This re-run" on the Accept forms, "This run" on the Re-run forms (review finding 3). The alert's first line stays the app's generic "Check the fields marked below." for now (§10.2).
+**Form refusals.** The service's message is the text after "This re-run: " or "This run: "; the form adds the label. The messages are shown after the form's label: "This re-run" on the Accept forms, "This run" on the Re-run forms (review finding 3). The refusal's first line, the app's generic "Check the fields marked below.", shows only when an issue marked a control the person can see (fix round, UX-3: `ActionState.invalid` and `ActionForm`); a refusal on these forms, whose issues name the hidden run field, reads "Not done" then its issue alone.
 
-- `superseded`, same service dates: "This re-run: can no longer be accepted, because a newer run of these service dates is in effect; the page now names it"
-- `superseded`, other service dates: "This re-run: can no longer be accepted, because a run of some of these service dates was priced after it; re-run the earlier run again"
+- `superseded`, same service dates: "This re-run: can no longer be accepted, because a newer run of these service dates is in effect; the page is updated to name it"
+- `superseded`, other service dates: "This re-run: can no longer be accepted, because a run of some of these service dates holds newer pricing; re-run the run in effect for these service dates"
 - `superseded`, original never in effect: "This re-run: can no longer be accepted, because the run it prices again was never in effect; re-run the run in effect for these service dates"
 - `newer_run_pending`, on acceptance: "This re-run: cannot be accepted yet, because a newer run of these service dates is being priced; wait until it finishes"
 - `changed_meanwhile`: "This re-run: was not accepted, because a run of these service dates took effect while it was being accepted; check the page again and accept it if it is still offered"
-- `newer_run_pending`, on a re-run: "This run: is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; re-run once it finishes"
-- `not_in_effect`: "This run: is no longer the run in effect for its service dates, so it is not priced again; re-run the run in effect instead"
+- `diff_changed` (fix round, security review F1 and payment-engine F4: the Accept forms post the run their diff was against and the runs of other dates it read, and `acceptRun` refuses when either differs now): "This re-run: was not accepted, because the pricing it would replace has changed since its changes were shown; check the changes again and accept it if it is still offered"
+- `newer_run_pending`, on a re-run: "This run: is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; once it finishes, re-run the run in effect"
+- `not_in_effect`: "This run: is not the run in effect for its service dates, so it is not priced again; re-run the run in effect instead"
+- The older refusals, reworded in the fix round to read after the same labels: `not_found` "is not one of the practice’s runs"; `not_rerun` "is a first run of its service dates, in effect once it completes; only a re-run is accepted"; `not_complete` on acceptance "has not completed yet; a re-run is accepted once it is complete and its changes can be read", on a re-run "has not completed, and only a complete run is priced again"; `release_withdrawn` "is pinned to a withdrawn rule release, so it is not accepted; re-run the run in effect under the release in force".
 - The release field on the Re-run forms is labelled "Rule release", so the existing mismatch refusal reads "Rule release: ... reload the page to price under the release in force".
 
-After a refusal, the form refreshes the page (§3.5). The explanation card, with its links, then replaces the Accept button, and it is announced as an alert.
+After a refusal, the form refreshes the page (§3.5). The explanation card, with its links, then replaces the Accept button and takes the focus the refused form held (fix round, UX-6: `RefusalTakeover`, keyed by the form's `refreshOnError`). The explanations are notes (`role="status"`), never alerts announced on load (UX-5); the refused form's own summary stays an alert.
 
-**Links.** Link text is the run's name ("Pricing run, 2026-02-01 to 2026-02-28, rule release 900004"), never "here", so it reads alone (WCAG 2.4.4). Dates render as the run page already renders them.
+**Links.** Link text is the run's name ("Pricing run, 2026-02-01 to 2026-02-28, rule release 900004, priced 2026-10-26 02:09:41 UTC"; "created ..." for a run not complete), never "here", so it reads alone and tells runs of the same dates apart (WCAG 2.4.4; fix round, UX-2).
 
 ### 8.3 For the screenshot step
 
@@ -710,7 +718,7 @@ None is open.
 | Lane A | The trigger mirror in `pricing_run_rules()` (§5.2): acceptance refused unless acceptable, through a `pricing_run_rerun_acceptable(run)` in the `completed_at` and release form of §2.2, and re-run insertion refused unless the original is in effect, through the existing `pricing_run_in_effect()`. Domain-model rule lines and database tests. Needs the founder's exception for a pricing table | The house pattern ("the database checks the same"), and it closes any future path that sets `accepted_at` or inserts a re-run without the service. **Take it**, not urgent |
 | Lane B, before the first real audit | A read-only detection of lines that an eligible run priced but that have no pricing in effect, as counts in the operator console (§5.3 f) | Finds damage from before this fix, or from any future path. There is no real data today |
 | Lane B, later | The operator console's count of first runs `queued` or `running` for more than an hour, and an audited operator action that fails a stuck run (`failRun`, `job_failed`), with a runbook line (Q1) | Makes a stuck run visible and clearable before a person meets the refusal |
-| Lane B, later (UX) | `runAction`'s generic "Check the fields marked below." (`apps/web/src/lib/http/next.ts:161-162`) should not be shown when every issue names a hidden field. For example: "Not done." with the issues only | Every form with only hidden fields shows a sentence that points at nothing. It touches every form, so not in this PR |
+| ~~Lane B, later (UX)~~ | ~~`runAction`'s generic "Check the fields marked below." should not be shown when every issue names a hidden field~~ | Taken in the fix round (UX-3): `ActionForm` shows it only when an issue marked a visible control |
 | Not proposed | The monitor planning lines with no pricing in effect (§5.3 e) | It needs a "should be priced" predicate that repeats `claimPage`'s filter, with a daily-loop risk. After this fix no path takes pricing out of effect |
 
 ---
@@ -747,3 +755,21 @@ The review (`/home/user/ops/designs/lane-b-superseded-rerun/review.md`) raised 1
 | 12 | Nit: the Lane A trigger mirror should cover re-run creation too | **Applied** | Verified: the INSERT branch (`20261105090000_...sql:551-563`) accepts a re-run of any complete run. The Lane A proposal now covers creation through `pricing_run_in_effect()`, carries the `completed_at` and release form of the predicate, and lists both domain-model rule lines (§5.2, §10.2) |
 | R1 | Revision's own: §3.4 said run summaries are not audited reads | **Corrected** | `queries.ts:7-10` and `readRuns` (`queries.ts:141-148`) make every run returned an audited read through `readWithAudit`. The new reads go through `readRuns`, so they are audited too (§3.4, §9) |
 | R2 | Revision's own: after finding 1, a re-run can replace a run other than its original, and its diff was against the original | **Applied** | Under the first design, acceptance always replaced the original, so the diff was right. Under the revised rule, acceptance may replace a later run of the same period. The page now diffs against `replaces`, and the compare page offers Accept only against that run (§3.3, §3.5). `diff.ts` is unchanged, because it already compares any two complete runs. Over other periods, the diff still lists changes against the original only, as it did under the first design's allowed case. That is recorded in the ADR |
+
+## 13. Fix round (PR #50 reviews), worker and service side
+
+- **Payment-engine F1 (stamp before the lock): fixed.** `executePricingRun` checks, after the execution lock and the run's row lock, whether a run of the practice with a later `completed_at` has completed; if so the pricing transaction rolls back and begins again (up to five times in one attempt, then the job retries). The model splits pricing into set running, begin (stamp), read under the lock, commit; the invariants judge newness by what a run read (`readAt`) and pinned, not by the stamp. A session-level lock before `BEGIN` was weighed and not taken (ADR alternatives).
+- **Payment-engine F2 (split fixed at creation): fixed.** `NEWER_PRICING` compares the pinned split as it compares the release. The triage date is recorded as safe (above). The model carries `FIXED_AT_CREATION` (release, split).
+- **Payment-engine F3 (untested clauses): fixed.** New db cases make the cut-off clause, the later-release clause and the split clause each decide alone (tie Sequences D and E, PRC-27 (g), the split case); every clause of the fragments was mutated in place and each non-equivalent mutant is killed (fix-worker progress file).
+- **Payment-engine F6: the service side fixed.** `RERUN_ACCEPTANCE(r)` (in-effect.ts) gives `release_withdrawn` first, then `superseded`, `newer_run_pending`, `awaiting`; the web's run columns read it.
+- **Security F1: the service side fixed.** `acceptRun` requires `replacesId`, the run the person's diff was against, and refuses `diff_changed` (after `changed_meanwhile`) when the run it would replace is another. An acceptance already recorded is unchanged by it.
+- **Messages.** Every refusal reads after the form's label (§8.2 updated).
+
+
+## 14. Fix round (PR #50 reviews), web side
+
+- **Security F1, routes and forms: fixed.** Both Accept forms post `replacesId` (the run the diff was against) and `heldByIds[]` (the runs of other dates the diff read); the route's Zod input takes them (`opaqueId`, a list of at most 200) and passes them to `acceptRun`. `refusal()` maps `diff_changed` to the run's field, after "This re-run".
+- **Payment-engine F4 (the diff under overlapping periods): fixed, exactly.** `compareAcceptance` (diff.ts) diffs each line's pricing in effect now (`PRICED_IN_EFFECT`) against its pricing once accepted, for every line the re-run or the run it replaces priced; `acceptanceHeldBy` names the runs of other dates it reads, which the page shows and the form posts, and `acceptRun` requires them (`heldByIds`) and refuses `diff_changed` when the runs it would read now differ. The run page and the compare page's Accept show it; the diff table reads "In effect now" and "Once accepted" and names the run a side comes from. A plain comparison stays `compareRuns`. `diff_changed`'s message now says "the pricing it would replace".
+- **Payment-engine F5: fixed by the condition.** "Nothing more to accept" (and no button) only when the newer run was priced after the re-run and would price nothing differently now; otherwise the re-run of the run in effect is offered.
+- **Payment-engine F6, web: fixed.** The run columns read `RERUN_ACCEPTANCE`; the badge and list text have a withdrawn variant.
+- **UX-1 to UX-9: fixed** as in §8.2: the card description, run names to the second, the refusal's first line (`next.ts` adds `invalid`, `ActionForm` decides), the in-effect Re-run button, the explanations as status notes, the focus hand-off, the pending wording, each condition named (`NEWER_BECAUSE`), and the compare page's card.
