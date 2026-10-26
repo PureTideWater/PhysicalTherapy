@@ -1,3 +1,5 @@
+import { formatUnroundedUsd } from '@tp/money';
+import { ExplainWordsError } from '@tp/packets/explain';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -5,9 +7,11 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { Fact, LineStatusChip, Money, basisName, claimStatusName, period } from '../../../../../components/remittances/display';
+import { AdjustmentWords, LineSummary, LineTrace, UnpricedWords } from '../../../../../components/pricing/line-words';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { notComputedWindowText } from '../../../../../lib/contracts/display';
 import { loadPage } from '../../../../../lib/http/next';
+import { type PricingWords, lineTraceSteps, pricingWords } from '../../../../../lib/pricing/view';
 import { linePage } from '../../../../../lib/routes/remittances';
 import { addLineNoteAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
@@ -18,10 +22,11 @@ export const metadata: Metadata = { title: 'Line trace' };
  * The line trace (PRD 7, Claims and lines: "open the line trace; add a note"; PRD 11 step 9): what the
  * 835 said about the line, its adjustments and how its observed allowed was derived, and how a
  * complete pricing run priced it: expected allowed with the unrounded amount beside it, the variance
- * or the unpriced reason, the dispute window, and every step of the run's trace in the engine's order
- * with the rule records and the release it read. `run` picks one of the runs that priced the line;
- * without it, the latest. The trace carries the line's dates, so it shows to roles that read PHI, as
- * notes do; roles that work cases add notes.
+ * or the unpriced reason, the dispute window, and every step of the run's trace in the engine's order,
+ * in words (@tp/packets/explain; docs/adr/0072), with the rule records and the release it read. `run`
+ * picks one of the runs that priced the line; without it, the latest. Every role reads the words; a
+ * viewer's hold no date. What the engine recorded carries the line's dates, so it shows, in a closed
+ * disclosure under the words, to roles that read PHI, as notes do; roles that work cases add notes.
  */
 export default async function LinePage(props: {
   readonly params: Promise<{ practiceId: string; lineId: string }>;
@@ -31,8 +36,21 @@ export default async function LinePage(props: {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="claims" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, detail, canNote, canReadPhi, pricing, steps, runs } = page.data;
+  const { practiceId, detail, canNote, canReadPhi, pricing, steps, words, worksheets, wordsRefusal, runs } = page.data;
   const { line, adjustments, notes } = detail;
+  // The method and adjustments in the words' own vocabulary; a code they have none for is refused, never shown (design 3.7).
+  let cardWords: PricingWords | null = null;
+  let refusal = wordsRefusal;
+  if (pricing !== null && pricing.unpricedReason === null) {
+    try {
+      cardWords = pricingWords(pricing);
+    } catch (error) {
+      if (!(error instanceof ExplainWordsError)) {
+        throw error;
+      }
+      refusal ??= `${error.list} has no words`;
+    }
+  }
   const modifiers = line.modifiers.filter((modifier) => modifier !== '');
   return (
     <AppShell shell={page.shell} section="claims">
@@ -62,19 +80,29 @@ export default async function LinePage(props: {
         </CardHeader>
         {pricing === null ? null : (
           <CardContent className="flex flex-col gap-3">
+            <LineSummary words={words} refusal={refusal} />
             <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
               {pricing.unpricedReason === null ? (
                 <>
                   <Fact label="Expected allowed">
-                    <Money value={pricing.expectedAllowedCents} /> <span className="text-xs text-muted-foreground">(unrounded {pricing.expectedUnrounded} cents)</span>
+                    <Money value={pricing.expectedAllowedCents} />{' '}
+                    {pricing.expectedUnrounded === null ? null : (
+                      <span className="text-xs text-muted-foreground">
+                        (unrounded <span className="font-mono tabular-nums">{formatUnroundedUsd(pricing.expectedUnrounded)}</span>)
+                      </span>
+                    )}
                   </Fact>
                   <Fact label="Variance">
                     <Money value={pricing.varianceCents} /> {BigInt(pricing.varianceCents ?? '0') < 0n ? <span className="text-xs text-muted-foreground">(overpaid: recorded, never pursued)</span> : null}
                   </Fact>
-                  <Fact label="Method">{pricing.method ?? '—'}</Fact>
-                  <Fact label="Adjustments">
-                    {pricing.adjustmentsApplied.length === 0 ? 'None' : pricing.adjustmentsApplied.map((item) => `${item.name} (${item.before_cents} to ${item.after_cents} cents)`).join('; ')}
-                  </Fact>
+                  {cardWords === null ? null : (
+                    <>
+                      <Fact label="Method">{cardWords.method ?? '—'}</Fact>
+                      <Fact label="Adjustments">
+                        <AdjustmentWords adjustments={cardWords.adjustments} />
+                      </Fact>
+                    </>
+                  )}
                   {canReadPhi ? (
                     <Fact label="Dispute window ends">
                       {pricing.windowRuleNotComputed === null ? (
@@ -87,7 +115,7 @@ export default async function LinePage(props: {
                 </>
               ) : (
                 <Fact label="Unpriced">
-                  <span className="font-mono text-xs">{pricing.unpricedReason}</span>
+                  <UnpricedWords reason={pricing.unpricedReason} words={words} />
                 </Fact>
               )}
               <Fact label="Mapping">
@@ -123,7 +151,7 @@ export default async function LinePage(props: {
                   .map((other) => (
                     <Link key={other.runId} className="underline" href={`/p/${practiceId}/lines/${line.lineId}?run=${other.runId}`}>
                       {other.periodFrom} to {other.periodTo} (release {other.releaseNo}
-                      {other.unpricedReason === null ? '' : `, ${other.unpricedReason}`})
+                      {other.unpricedReason === null ? null : <span data-reason={other.unpricedReason}>, not priced</span>})
                     </Link>
                   ))}
               </nav>
@@ -132,40 +160,9 @@ export default async function LinePage(props: {
         )}
       </Card>
       {pricing === null ? null : (
-        <section aria-label="Trace" className="flex flex-col gap-2">
+        <section aria-label="Trace" className="flex min-w-0 flex-col gap-2">
           <h2 className="text-xl font-bold tracking-display">Trace</h2>
-          {!canReadPhi ? (
-            <p className="text-sm text-muted-foreground">The trace records the line’s service and payment dates, so it shows to the roles that read PHI.</p>
-          ) : (
-            <ol className="flex flex-col gap-2" aria-label="Trace steps">
-              {steps.map((item) => (
-                <li key={item.key} className="rounded-md border p-3 text-sm" data-step={item.key}>
-                  <p className="font-medium">{item.title}</p>
-                  {item.recorded === null ? (
-                    <p className="text-xs text-muted-foreground">Not reached.</p>
-                  ) : (
-                    <>
-                      {item.records.length === 0 ? null : (
-                        <ul className="pt-1 text-xs" aria-label={`Rule records of ${item.title}`}>
-                          {item.records.map((record, index) => (
-                            <li key={`${record.sha256}:${String(index)}`} className="font-mono">
-                              {record.recordType} {record.key} {record.effectiveFrom} to {record.effectiveTo ?? 'open'}: {record.sha256}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs">{item.recorded}</pre>
-                      {item.note === null ? null : (
-                        <p className="pt-1 text-xs text-muted-foreground" data-trace-note={item.key}>
-                          {item.note}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
+          <LineTrace steps={lineTraceSteps(words, steps)} worksheets={worksheets} canReadPhi={canReadPhi} notApplied={words !== null && pricing.unpricedReason === null} />
         </section>
       )}
       <Card>

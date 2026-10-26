@@ -6,10 +6,13 @@ import { Readable } from 'node:stream';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool } from '@tp/db/testing';
+import { cents, formatUsd } from '@tp/money';
 import { createLogger } from '@tp/observability';
+import { plainText } from '@tp/packets/explain';
+import { parseTrace } from '@tp/pricing';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type JobContext, intakeHandler, intakeServices, parseHandler, priceHandler } from '@tp/worker/runtime';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, expectTypeOf, it } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
@@ -21,6 +24,7 @@ import { MemoryQueue } from '../uploads/queue';
 import { LocalUploadTargets } from '../uploads/targets';
 import { coveragePage } from './coverage';
 import { mapPlanAction } from './mapping';
+import { lineCitation, type pricedLineWords } from '../pricing/queries';
 import { createPricingRunAction, pricingRunPage, pricingRunsPage } from './pricing';
 import { claimsPage, linePage } from './remittances';
 import { loadRouteRelease } from './test-support/pricing-world';
@@ -299,6 +303,74 @@ describe('the screens after a run', () => {
     expect((await call(linePage, manager, { ...P(), lineId, run: randomUUID() })).status).toBe('not_found');
     const { rows: audited } = await owner.query("SELECT 1 FROM audit_event WHERE object_type = 'priced_line' AND purpose = 'line_trace' AND actor_id = $1", [manager]);
     expect(audited.length).toBeGreaterThan(0);
+  });
+
+  it('words the line’s calculation for every role: the internal words with dates, the viewer’s with none, and never the trace to a viewer (CAS-31; combined audit #38, m9)', async () => {
+    const { rows } = await owner.query<{ id: string; service_date: string }>(
+      "SELECT id, service_date::text AS service_date FROM service_line WHERE practice_id = $1 AND procedure_code = '97110' AND service_date = '2026-02-16'",
+      [practiceId],
+    );
+    const lineId = rows[0]?.id ?? '';
+    const serviceDate = rows[0]?.service_date ?? '';
+    const asManager = ok(await call(linePage, manager, { ...P(), lineId }));
+    expect(asManager.wordsRefusal).toBeNull();
+    // A Medicare Advantage non-contracted line: priced under the regulation, its worksheet beside it.
+    const summary = plainText(asManager.words?.summary ?? { segments: [] });
+    expect(summary).toMatch(/^\d+ units? × \$\d+\.\d+ = \$[\d.]+ under 42 CFR 422\.214; .*rounded once to \$\d+\.\d{2}; observed allowed \$\d+\.\d{2}; /);
+    expect(summary).toContain(`rounded once to ${formatUsd(cents(BigInt(asManager.pricing?.expectedAllowedCents ?? '')))}`);
+    expect(asManager.words?.steps.map((step) => step.step)).toEqual(expect.arrayContaining(['agreement', 'terms', 'fee_schedule', 'rounding', 'window', 'release', 'outcome']));
+    expect(asManager.worksheets).toHaveLength(1);
+    expect(asManager.pricing?.trace).not.toBeNull();
+    const internal = JSON.stringify(asManager.words);
+    expect(internal).toContain(serviceDate);
+
+    const asViewer = ok(await call(linePage, viewer, { ...P(), lineId }));
+    expect(asViewer.wordsRefusal).toBeNull();
+    expect(asViewer.words?.steps.map((step) => step.step)).toEqual(asManager.words?.steps.map((step) => step.step));
+    expect(plainText(asViewer.words?.summary ?? { segments: [] })).toBe(summary);
+    expect(asViewer.worksheets).toHaveLength(1);
+    // No date of any kind in the viewer's words or worksheet, and no stored trace anywhere in the page data (m9).
+    expect(JSON.stringify([asViewer.words, asViewer.worksheets])).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    const data = JSON.stringify(asViewer);
+    expect(data).not.toContain(serviceDate);
+    expect(data).not.toContain('"format":"tp-pricing-trace/');
+    const withValue = (value: unknown): boolean =>
+      Array.isArray(value) ? value.some(withValue) : typeof value === 'object' && value !== null ? Object.entries(value).some(([key, item]) => (key === 'trace' && item !== null) || withValue(item)) : false;
+    expect(withValue(asViewer)).toBe(false);
+    expect(asViewer.steps).toEqual([]);
+    // The words' own read is audited under the screen's purpose, for the viewer too.
+    const { rows: audited } = await owner.query("SELECT 1 FROM audit_event WHERE object_type = 'priced_line' AND object_id = $1 AND purpose = 'line_trace' AND actor_id = $2", [
+      asViewer.pricing?.pricedLineId,
+      viewer,
+    ]);
+    expect(audited.length).toBeGreaterThanOrEqual(2);
+    // The words' read returns no trace by its type, so no handler path can put one in a page's data.
+    expectTypeOf<Awaited<ReturnType<typeof pricedLineWords>>>().not.toHaveProperty('trace');
+    expectTypeOf<Awaited<ReturnType<typeof pricedLineWords>>>().toEqualTypeOf<{ readonly words: typeof asViewer.words; readonly worksheets: typeof asViewer.worksheets; readonly refusal: string | null }>();
+  });
+
+  it('words an unpriced line’s reason as its meaning and remedy, for the viewer too', async () => {
+    const { rows } = await owner.query<{ id: string }>("SELECT id FROM service_line WHERE practice_id = $1 AND procedure_code = '97140' AND service_date = '2026-03-12'", [practiceId]);
+    const asViewer = ok(await call(linePage, viewer, { ...P(), lineId: rows[0]?.id ?? '' }));
+    expect(asViewer.pricing?.unpricedReason).toBe('NO_MAPPING');
+    expect(plainText(asViewer.words?.summary ?? { segments: [] })).toBe('Not priced: The payer and plan have no mapping on the service date.');
+    expect(asViewer.words?.steps.find((step) => step.step === 'outcome')?.sentences.map(plainText)).toEqual([
+      'Not priced: The payer and plan have no mapping on the service date.',
+      'The line stopped at the agreement.',
+      'Remedy: Map the plan.',
+    ]);
+    expect(asViewer.worksheets).toEqual([]);
+  });
+
+  it('cites a contract page only from a signed-off rate record the trace names, and a Medicare Advantage line the regulation (m4)', async () => {
+    const { rows } = await owner.query<{ trace: unknown }>("SELECT p.trace FROM priced_line p WHERE p.practice_id = $1 AND p.unpriced_reason IS NULL LIMIT 1", [practiceId]);
+    const ma = parseTrace(rows[0]?.trace);
+    expect(lineCitation(ma, null)).toEqual({ kind: 'regulation', reference: '42 CFR 422.214' });
+    const contract = { ...ma, agreement: { ...(ma.agreement as NonNullable<typeof ma.agreement>), outcome: 'CONTRACT_RATE' as const, rate_record_id: '00000000-0000-4000-8000-000000000001' } };
+    expect(lineCitation(contract, { id: '00000000-0000-4000-8000-000000000001', page: 2 })).toEqual({ kind: 'contract', page: 2 });
+    // No signed-off record read (the query reads only a verified one), or another record than the trace's: no page.
+    expect(lineCitation(contract, null)).toBeNull();
+    expect(lineCitation(contract, { id: '00000000-0000-4000-8000-000000000002', page: 2 })).toBeNull();
   });
 
   it('fills Coverage’s priced shares and unpriced reasons by count from the latest complete run', async () => {

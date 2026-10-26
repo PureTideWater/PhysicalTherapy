@@ -1,3 +1,4 @@
+import { type LineWords, type Sentence, type StepKind, WORD_TABLES, wordsOf } from '@tp/packets/explain';
 import { pricingTraceSchema } from '@tp/pricing';
 
 import { labelOf } from '../copy/words';
@@ -6,7 +7,8 @@ import { labelOf } from '../copy/words';
  * How pricing results read on screen (PRD 7; PRD 8, The status machine; PRD 12, From validated to
  * actionable): a line's stage from the run that priced it, priced shares as percentages worked out in
  * integers (never a float on an amount), and a stored trace as the steps of PRD 11 in the engine's own
- * order, each with the rule records and the release it read. Pure: no database.
+ * order, each in words (@tp/packets/explain; docs/adr/0072) above the rule records and the release it
+ * read, as the engine recorded them. Pure: no database.
  */
 
 /** What a line's latest complete run says about it. */
@@ -177,4 +179,77 @@ export function traceSteps(trace: unknown): TraceStepView[] {
   }
   views.push(...Object.keys(stored).filter((key) => !known.has(key)).map((key) => step(key, stored[key])));
   return views;
+}
+
+/**
+ * The part of the trace each step's words are of, so the words sit under the step's own title: the four adjustments
+ * under "Step 4: adjustments", the observed allowed under "Step 7: variance".
+ */
+export const WORD_STEP_PART: Readonly<Record<StepKind, string>> = {
+  agreement: 'agreement',
+  terms: 'terms',
+  fee_schedule: 'fee_schedule',
+  units: 'units',
+  per_visit: 'per_visit',
+  ncci_ptp: 'ncci_ptp',
+  mppr: 'adjustments',
+  assistant_reduction: 'adjustments',
+  sequestration: 'adjustments',
+  contract_adjustment: 'adjustments',
+  patient_share: 'patient_share_cents',
+  rounding: 'rounding',
+  observed: 'variance_cents',
+  window: 'window',
+  release: 'release',
+  outcome: 'outcome',
+};
+
+/** One step of the line trace page: its title, its sentences, and, for roles that read PHI, what the engine recorded. */
+export interface LineTraceStep {
+  readonly key: string;
+  readonly title: string;
+  readonly sentences: readonly Sentence[];
+  /** The step as the engine recorded it (its rule records and JSON), for roles that read PHI; null for the others. */
+  readonly recorded: TraceStepView | null;
+}
+
+/**
+ * The line trace page's steps (design 3.9): each step's words under its title, in the engine's order. For roles that
+ * read PHI (`recorded`, from traceSteps) every part of the trace is a step, its words above what the engine recorded
+ * (a part with no words, such as the claim facts, shows its record only). For the others (no record) only the steps
+ * the words speak to, so a viewer reads the sentences and never the record.
+ */
+export function lineTraceSteps(words: LineWords | null, recorded: readonly TraceStepView[]): LineTraceStep[] {
+  const sentencesOf = (key: string) => (words?.steps ?? []).filter((step) => WORD_STEP_PART[step.step] === key).flatMap((step) => step.sentences);
+  if (recorded.length !== 0) {
+    return recorded.map((view) => ({ key: view.key, title: view.title, sentences: sentencesOf(view.key), recorded: view }));
+  }
+  const { parts, steps } = traceOrder();
+  return parts
+    .flatMap((key) => (key === 'steps' ? steps : [key]))
+    .map((key) => ({ key, title: titleOf(key), sentences: sentencesOf(key), recorded: null }))
+    .filter((step) => step.sentences.length !== 0);
+}
+
+/** The Pricing card's method and adjustments in words, never their codes (design 3.9). */
+export interface PricingWords {
+  readonly method: string | null;
+  readonly adjustments: readonly { readonly name: string; readonly words: string; readonly beforeCents: string; readonly afterCents: string }[];
+}
+
+/**
+ * A priced line's method ("Percent of Medicare") and adjustments ("The multiple procedure payment reduction") in the
+ * calculation's own words; a code they have none for throws ExplainWordsError, which the page shows as a refusal.
+ */
+export function pricingWords(pricing: {
+  readonly method: string | null;
+  readonly adjustmentsApplied: readonly { readonly name: string; readonly before_cents: string; readonly after_cents: string }[];
+}): PricingWords {
+  return {
+    method: pricing.method === null ? null : wordsOf(WORD_TABLES.METHOD_TEXT, pricing.method, 'method'),
+    adjustments: pricing.adjustmentsApplied.map((item) => {
+      const words = wordsOf(WORD_TABLES.ADJUSTMENT_TEXT, item.name, 'adjustment');
+      return { name: item.name, words: `${words.charAt(0).toUpperCase()}${words.slice(1)}`, beforeCents: item.before_cents, afterCents: item.after_cents };
+    }),
+  };
 }

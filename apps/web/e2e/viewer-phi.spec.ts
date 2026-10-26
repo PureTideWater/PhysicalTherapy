@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { type Page, type Response, expect, test } from '@playwright/test';
 
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { signInWithTotp, withDatabase } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule, untilLoaded, uploadedEarlier } from './journeys';
 import { startLocalWorker } from './worker';
@@ -137,6 +138,19 @@ test('a viewer’s case detail names each line by its number, and no screen the 
         expect(response.headers()['cache-control'], url).toMatch(/private.*no-store|no-store.*private/);
         expect([...PHI.serviceDates, ...PHI.identifiers].filter((value) => body.includes(value)), `PHI on ${url}`).toEqual([]);
       }
+    });
+
+    await test.step('the viewer’s line trace: the calculation in words, with no date, no record and no PHI in what the server sent (CAS-31)', async () => {
+      const { body } = await sent(viewer, `/p/${practiceId}/lines/${lineId}`);
+      expect([...PHI.serviceDates, ...PHI.identifiers].filter((value) => body.includes(value)), 'PHI on the viewer’s line trace').toEqual([]);
+      await expect(viewer.getByRole('region', { name: 'Pricing' }).locator('[data-summary]')).toContainText(/rounded once to \$[\d.,]+; observed allowed /);
+      const trace = viewer.getByRole('region', { name: 'Trace' });
+      await expect(trace.getByText('Dates are left out for your role.')).toBeVisible();
+      await expect(trace.getByRole('list', { name: 'Trace steps' }).getByText(/rounded once/i).first()).toBeVisible();
+      await expect(trace.getByText('As the engine recorded it')).toHaveCount(0);
+      await expect(trace).not.toContainText(/\d{4}-\d{2}-\d{2}/);
+      await expectAccessible(viewer, 'the viewer’s line trace');
+      await atPhoneWidth(viewer, 'the viewer’s line trace');
     });
 
     await test.step('the packet builder, whose schedule names claims and dates, is not the viewer’s to open', async () => {

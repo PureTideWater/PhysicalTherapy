@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { practiceId, registerKeyAndSignIn, signInWithTotp } from './helpers';
 import { startLocalWorker } from './worker';
 
@@ -112,13 +113,26 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     const pricing = page.getByRole('region', { name: 'Pricing' });
     await expect(pricing).toContainText('under rule release 900001');
     await expect(pricing).toContainText(expected);
-    await expect(pricing).toContainText('PERCENT_OF_MEDICARE');
+    // The method and the calculation in words, never a code (combined audit #38; CAS-30).
+    await expect(pricing).toContainText('Percent of Medicare');
+    await expect(pricing).not.toContainText('PERCENT_OF_MEDICARE');
+    await expect(pricing.locator('[data-summary]')).toContainText(/^\d+ units? × \$[\d.,]+ = \$[\d.,]+ under 42 CFR 422\.214; .*rounded once to \$[\d.,]+; observed allowed \$[\d.,]+; /);
+    await expect(pricing.locator('[data-summary]')).toContainText(`rounded once to ${expected}`);
     const steps = page.getByRole('list', { name: 'Trace steps' });
     const keys = await steps.locator(':scope > li').evaluateAll((items) => items.map((item) => item.getAttribute('data-step')));
     expect(keys.slice(0, 7)).toEqual(['release', 'as_of', 'settings', 'claim', 'line', 'agreement', 'terms']);
     expect(keys.at(-1)).toBe('outcome');
     expect(keys.indexOf('fee_schedule')).toBeLessThan(keys.indexOf('adjustments'));
+    const fee = steps.locator(':scope > li[data-step="fee_schedule"]');
+    await expect(fee).toContainText(/Fee schedule: the \d{4} records in force on \d{4}-\d{2}-\d{2}\./);
+    await expect(fee.getByRole('table', { name: 'Fee schedule worksheet 1' })).toBeVisible();
+    await expect(steps.locator(':scope > li[data-step="rounding"]')).toContainText(/Rounded once, half up to the cent/);
+    // What the engine recorded sits in a closed disclosure under the words: open it, then read its rule records.
+    await expect(page.getByRole('list', { name: 'Rule records of Step 2: the fee schedule' })).toBeHidden();
+    await fee.getByText('As the engine recorded it').click();
     await expect(page.getByRole('list', { name: 'Rule records of Step 2: the fee schedule' })).toContainText('pfs_rvu');
+    await expectAccessible(page, 'the line trace page, its fee schedule record open');
+    await atPhoneWidth(page, 'the line trace page, its fee schedule record open');
     expect(() => {
       assertNoPhi('url', page.url(), { known: KNOWN });
     }).not.toThrow();
