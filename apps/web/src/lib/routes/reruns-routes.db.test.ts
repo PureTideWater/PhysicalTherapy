@@ -267,6 +267,9 @@ describe('a re-run under release 2 through the screens (PRC-19)', () => {
     ]);
     expect(note.otherRuns.map((run) => run.id)).toEqual([first]);
     expect(note.impact).toMatchObject({ pricingRunId: first, lines: 4, changedLines: 2 });
+    // What the release in force covers lists every dated family, the one 900004 does not load (no ZIP+4 file) included (review S1).
+    expect(note.loadedThrough.find((family) => family.family === 'zip_locality')).toMatchObject({ through: null, open: false, loaded: false, partly: true, from: null });
+    expect(note.loadedThrough.find((family) => family.family === 'fee_schedule')).toMatchObject({ loaded: true });
     expect(note.releases.map((release) => [release.releaseNo, release.inForce])).toEqual([
       [900004, true],
       [900001, false],

@@ -63,8 +63,9 @@ export const COPY_ROOTS = [
 /**
  * The copy outside those directories: the ROI statement, which prints in the report frame; the notes a line's
  * stage keeps when the ledger moves it back; the dunning, support-notice and support-mail emails; the
- * contract calendar's labels; and the pricing location's status sentences (Pricing settings, Coverage, Getting
- * started, a run's refusal and the console read them).
+ * contract calendar's labels; the pricing location's status sentences (Pricing settings, Coverage, Getting
+ * started, a run's refusal and the console read them); the worker's release reader, so any sentence placed there is
+ * read; and the content calendar's family titles, which the Releases page and the console show (docs/adr/0071).
  */
 export const COPY_FILES = [
   'apps/worker/src/reconcile/statement-html.ts',
@@ -74,6 +75,8 @@ export const COPY_FILES = [
   'apps/worker/src/support/support-mail.ts',
   'packages/contracts/src/calendar.ts',
   'packages/contracts/src/location.ts',
+  'apps/worker/src/price/release.ts',
+  'packages/rules/src/calendar.ts',
 ] as const;
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);

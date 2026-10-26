@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { utc, utcSeconds } from '../../../../components/format';
-import { CoverageShares, FAILURE_TEXT, RERUN_TEXT, RunStateBadges, RunStatusBadge, runName } from '../../../../components/pricing/display';
+import { CoverageShares, RERUN_TEXT, RunFailureText, RunStateBadges, RunStatusBadge, runName } from '../../../../components/pricing/display';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
@@ -149,7 +149,7 @@ export default async function PricingRunsPage(props: Props) {
                   <Link className="font-medium underline" href={`${path}/${run.id}`}>
                     {runName(run, false)}
                   </Link>
-                  <RunStatusBadge status={run.status} />
+                  <RunStatusBadge status={run.status} failureCode={run.failureCode} />
                   <RunStateBadges run={run} />
                   {run.rerunOfId === null ? null : (
                     <Link className="text-xs underline" href={`${path}/${run.rerunOfId}`}>
@@ -160,7 +160,7 @@ export default async function PricingRunsPage(props: Props) {
                     Release {run.releaseNo}, engine {run.engineVersion}; created {utc(run.createdAt)} by {run.createdBy}
                   </span>
                 </div>
-                {run.failureCode === null ? null : <p className="pt-2 text-sm text-destructive">{FAILURE_TEXT[run.failureCode] ?? run.failureCode}</p>}
+                {run.failureCode === null ? null : <RunFailureText code={run.failureCode} />}
                 {run.coverage === null ? null : (
                   <div className="flex flex-col gap-1 pt-2 text-sm">
                     <CoverageShares coverage={run.coverage} />

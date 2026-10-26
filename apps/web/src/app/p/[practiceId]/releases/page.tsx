@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm, RefusalFallback, RefusalTakeover } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
+import { ReleaseLoadedThrough } from '../../../../components/pricing/content';
 import { PendingRunsAlert, RunStateBadges } from '../../../../components/pricing/display';
 import { ReleaseChanges, ReleaseStatusText } from '../../../../components/releases/note';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -27,14 +28,15 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * a person accepts it. While a first run of a listed run's dates is queued or being priced, the run it
  * waits for is named in place of its Re-run button (docs/adr/0037, amendment of 2026-10-26). A refused
  * Re-run whose run leaves the list on the refresh is said after the list, which takes the focus
- * (RefusalFallback; UX recheck of PR #50, N6).
+ * (RefusalFallback; UX recheck of PR #50, N6). Beside the release in force, through what date it loads each content
+ * family (audit #59).
  */
 export default async function ReleasesPage(props: Props) {
   const page = await loadPage(releasesPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="pricing_runs" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, releases, runsByRelease, inForce, note, otherRuns, pendingByRun, impact, canRerun } = page.data;
+  const { practiceId, releases, runsByRelease, inForce, note, otherRuns, pendingByRun, impact, canRerun, loadedThrough } = page.data;
   const path = `/p/${practiceId}/releases`;
   return (
     <AppShell shell={page.shell} section="pricing_runs">
@@ -62,6 +64,16 @@ export default async function ReleasesPage(props: Props) {
               <ReleaseChanges note={note} />
             </CardContent>
           </Card>
+          {note.releaseNo !== inForce || loadedThrough.length === 0 ? null : (
+            <Card role="region" aria-label="What this release covers">
+              <CardHeader>
+                <CardTitle>What this release covers</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ReleaseLoadedThrough families={loadedThrough} coverageHref={`/p/${practiceId}/coverage`} />
+              </CardContent>
+            </Card>
+          )}
           <Card role="region" aria-label="Runs it would change">
             <CardHeader>
               <CardTitle>Your runs</CardTitle>

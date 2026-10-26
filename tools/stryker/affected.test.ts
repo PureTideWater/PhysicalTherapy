@@ -285,6 +285,11 @@ describe('on a synthetic repository', () => {
     // Nothing read by a function a run calls: only when that function is named in no other closure file.
     expect(reads({ ...read, reads: [], onlyIn: 'claims' })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (claims is named in packages/pricing/src/test-helper.ts)']);
     expect(reads({ ...read, reads: [], onlyIn: 'golden' })).toEqual([]);
+    // Read by several such functions: each named in the reader and in no other closure file.
+    expect(reads({ ...read, reads: [], onlyIn: ['golden', 'G1.json'] })).toEqual([]);
+    expect(reads({ ...read, reads: [], onlyIn: ['golden', 'claims'] })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (claims is named in packages/pricing/src/test-helper.ts)']);
+    expect(reads({ ...read, reads: [], onlyIn: ['golden', 'missing'] })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (missing is named in no closure file but its own)']);
+    expect(reads({ ...read, reads: [], onlyIn: [] })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (no function is named in no closure file but its own)']);
   });
 });
 
@@ -304,6 +309,11 @@ describe('on this repository', () => {
     expect(closures.flatMap((closure) => closure.uncovered.map((literal) => `${closure.pkg}: ${literal}`))).toEqual([]);
     for (const closure of closures) expect(lockedPackages(parseLockfile(lock), closure.imports, TEST_TOOLING).filter((key) => key.startsWith('?')), closure.pkg).toEqual([]);
     for (const read of DIRECTORY_READS) expect(files, read.file).toContain(read.file);
+    // The rules content reader finds numbered releases only for the checker and the assembler, outside every closure.
+    expect(DIRECTORY_READS.filter((read) => read.file === 'packages/rules/src/content.ts' && read.directory.startsWith('content/')).map((read) => [read.directory, read.reads, read.onlyIn])).toEqual([
+      ['content/releases', [], ['previousReleaseNumber', 'releaseDirOf']],
+      ['content/outgoing', [], ['previousReleaseNumber', 'releaseDirOf']],
+    ]);
     for (const entries of Object.values(DATA_FILES)) for (const entry of entries) expect(files.some((file) => globToRegExp(entry.glob).test(file)), entry.glob).toBe(true);
   });
 

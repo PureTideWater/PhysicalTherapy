@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { isRecordFile, listContentFiles, readRecordFile, readRelease, readSecondPassFile } from './content';
+import { isRecordFile, listContentFiles, previousReleaseNumber, readRecordFile, readRelease, readSecondPassFile, releaseDirOf } from './content';
 import { buildManifest, compareManifest, manifestSchema, serializeManifest } from './manifest';
 import { serializeRecords, sha256 } from './records';
 import { exampleRecord } from './testing';
@@ -143,5 +143,46 @@ describe('readRelease', () => {
     expect(readRelease(dir).problems).toEqual([expect.stringContaining('MANIFEST.json: release'), expect.stringContaining('MANIFEST.json: files')]);
     write('MANIFEST.json', 'not json');
     expect(readRelease(dir).problems[0]).toBe('MANIFEST.json: is not valid JSON');
+  });
+});
+
+describe('the release before a release', () => {
+  it('is the highest number below it in content/releases or content/outgoing, and none when neither exists', () => {
+    expect(previousReleaseNumber(dir, 5)).toBeNull();
+    mkdirSync(path.join(dir, 'content/releases/1'), { recursive: true });
+    mkdirSync(path.join(dir, 'content/releases/3'), { recursive: true });
+    mkdirSync(path.join(dir, 'content/outgoing/4'), { recursive: true });
+    mkdirSync(path.join(dir, 'content/outgoing/7'), { recursive: true });
+    write('content/outgoing/6.md', 'not a release');
+    mkdirSync(path.join(dir, 'content/outgoing/05'), { recursive: true });
+    expect(previousReleaseNumber(dir, 7)).toBe(4);
+    expect(previousReleaseNumber(dir, 4)).toBe(3);
+    expect(previousReleaseNumber(dir, 1)).toBeNull();
+  });
+
+  it('finds the directory published first, then prepared, and null when neither holds it', () => {
+    mkdirSync(path.join(dir, 'content/releases/3'), { recursive: true });
+    mkdirSync(path.join(dir, 'content/outgoing/3'), { recursive: true });
+    mkdirSync(path.join(dir, 'content/outgoing/4'), { recursive: true });
+    expect(releaseDirOf(dir, 3)).toBe(path.join(dir, 'content/releases/3'));
+    expect(releaseDirOf(dir, 4)).toBe(path.join(dir, 'content/outgoing/4'));
+    expect(releaseDirOf(dir, 5)).toBeNull();
+  });
+
+  it('throws when a parent cannot be read for any reason but its absence (review m3)', () => {
+    mkdirSync(path.join(dir, 'content'), { recursive: true });
+    write('content/outgoing', 'a file where the directory should be');
+    expect(() => previousReleaseNumber(dir, 5)).toThrow(/ENOTDIR/);
+  });
+
+  // Root reads a mode-000 directory anyway, so this case runs only as another user.
+  it.skipIf(process.getuid?.() === 0)('throws when content/outgoing is unreadable (review m3)', () => {
+    mkdirSync(path.join(dir, 'content/outgoing/4'), { recursive: true });
+    chmodSync(path.join(dir, 'content/outgoing'), 0o000);
+    try {
+      expect(() => previousReleaseNumber(dir, 5)).toThrow(/EACCES/);
+    } finally {
+      chmodSync(path.join(dir, 'content/outgoing'), 0o755);
+    }
   });
 });

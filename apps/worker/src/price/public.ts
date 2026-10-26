@@ -9,7 +9,7 @@
 export { type CreatePricingRunInput, type CreatedPricingRun, PricingLocationWaiting, PricingRunInputError, createPricingRun } from './create';
 export { COVERAGE_FORMAT, type RunCoverage, operatorAlerts, parseCoverage, runCoverageSchema } from './coverage';
 export { CAUSE_KINDS, type CauseKind, type ContractPin, type LineCause, type MappingPin, type RecordVersion, SETTINGS_FIELDS, type SettingsField } from './causes';
-export type { FailureCode } from './execute';
+export { CONTENT_NOT_LOADED_MESSAGE, type FailureCode } from './execute';
 export {
   type CompareRunsInput,
   type AcceptanceDiff,
@@ -31,6 +31,7 @@ export {
   compareRuns,
 } from './diff';
 export { type ImpactOptions, type ImpactRun, type RunImpact, completeRuns, runReleaseImpact } from './impact';
+export { coversMore, termsUnchangedSince } from '../monitor/plan';
 export {
   ELIGIBLE_RUN,
   IN_EFFECT_SINCE,
@@ -59,14 +60,35 @@ export {
   packetPricingCheck,
 } from './pricing-check';
 export {
+  CONTENT_FAILURE_CODES,
+  type ContentFailureCode,
+  type ContentFamily,
+  type ContentSpans,
+  type ContentWindow,
+  type ContentWindows,
+  type HalfOpenRange,
+  type ReleaseSource,
+  ReleaseTypeNotRead,
   type ReleaseWithdrawal,
   RuleReleaseMismatchError,
+  SPAN_CONTENTS,
+  type SpanContent,
   type StoredRecordRow,
+  contentGapsOf,
+  contentsOf,
+  coveredDays,
   currentReleaseNo,
+  familiesOf,
   indexStoredRelease,
   loadRuleRelease,
+  memoryReleaseSource,
+  rangesCover,
+  releaseContentSpans,
+  releaseContentWindows,
   releaseHeader,
   releaseWithdrawals,
+  storedReleaseSource,
+  typedRelease,
 } from './release';
 export {
   type AcceptRunInput,

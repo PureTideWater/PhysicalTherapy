@@ -7,7 +7,7 @@ import { UNPRICED_REASONS } from '@tp/pricing';
 import { DEADLINE_UNVERIFIED_CAUSES, NOT_ACTIONABLE_REASONS, STAGE_LABELS } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
-import { type ReportLine, deadlineRemedy } from './content';
+import { CONTENT_NOT_LOADED_REASONS, type ReportLine, contentNotLoadedReason, deadlineRemedy } from './content';
 import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
 import { auditHtml, auditReconciliation, caseStateText, escapeHtml, reasonText } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
@@ -273,5 +273,30 @@ describe('the reasons a withdrawal or an amendment takes a line out of the total
     expect(reasonText('VERSION_NOT_IN_FORCE')).toBe('Contract version no longer covers the service date (amended since it was priced)');
     expect(reasonText('MAPPING_NOT_IN_FORCE')).toBe('Plan mapping corrected since it was priced (another agreement applies on the service date)');
     expect(reasonText('RELEASE_WITHDRAWN')).toBe('Rule release withdrawn since it was priced');
+  });
+
+  it('names a line priced before the Medicare content for its date was loaded, and which content when the trace knows, held until a re-run (audit #7; UX-10)', () => {
+    expect(reasonText('CONTENT_NOT_LOADED')).toBe(
+      'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) or unit limits (MUE) for its date; held until a re-run under a release that loads them',
+    );
+    expect(CONTENT_NOT_LOADED_REASONS.map(reasonText)).toEqual([
+      'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) for its date; held until a re-run under a release that loads it',
+      'Priced before PaidWhole loaded Medicare’s unit limits (MUE) for its date; held until a re-run under a release that loads them',
+      'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for its date; held until a re-run under a release that loads them',
+    ]);
+    // The trace's reads decide the reason: the per-code list and the general rate are both the MPPR.
+    expect(contentNotLoadedReason([{ content: 'mppr_code', date: '2027-01-04' }])).toBe('CONTENT_NOT_LOADED:mppr');
+    expect(contentNotLoadedReason([{ content: 'mppr_general', date: '2027-01-04' }])).toBe('CONTENT_NOT_LOADED:mppr');
+    expect(contentNotLoadedReason([{ content: 'ncci_mue', date: '2027-01-04' }])).toBe('CONTENT_NOT_LOADED:mue');
+    expect(
+      contentNotLoadedReason([
+        { content: 'ncci_mue', date: '2027-01-04' },
+        { content: 'mppr_code', date: '2027-01-04' },
+      ]),
+    ).toBe('CONTENT_NOT_LOADED:mppr_mue');
+    // Every reason a validated line waits on has its words; none falls back to its code.
+    for (const reason of NOT_ACTIONABLE_REASONS.filter((item) => item !== 'WRITTEN_OFF')) {
+      expect(reasonText(reason)).not.toBe(reason);
+    }
   });
 });

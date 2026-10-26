@@ -2,8 +2,9 @@ import type { IndexedRelease, IsoDate, RecordRef } from '@tp/pricing';
 import { type RuleRecord, type RuleRecordOf, type RuleRecordType, canonicalJson } from '@tp/rules';
 
 /**
- * A release read by key (audit #53 part 2; docs/adr/0062, "The release read"; built generic so the Release-operations
- * PR of audit #31 can reuse it for price jobs, triage and reports).
+ * A release read by key (audit #53 part 2; docs/adr/0062, "The release read"; built generic, and reused by the
+ * release content checks of audit #31 for price jobs, the release impact check and the dry run through release.ts's
+ * ReleaseSource, docs/adr/0071).
  *
  * A caller that prices a set of lines does not need the whole release in memory. The record types no line's own key
  * selects (the GPCIs, the conversion factors, the assistant and sequestration records, the code lists) are small and
@@ -101,6 +102,56 @@ export function screeningRequestedKeys(codes: Iterable<string>, zip: string): Re
     locality_map: [{ zip }],
     locality_map_plus_four: [{ zip }],
   });
+}
+
+/** The structural part of a priced claim the keys come from (StoredClaim satisfies it). */
+export interface KeyedClaim {
+  readonly lines: readonly { readonly lineNo: number; readonly procedureCode: string; readonly serviceDate: string }[];
+}
+
+/**
+ * Every key the engine can look up for these claims (the engine's lookups, packages/pricing/src/engine.ts; audit #31,
+ * docs/adr/0071): for each line's code, pfs_rvu {hcpcs, modifier: ''}, ncci_mue {hcpcs} and mppr_rate {hcpcs,
+ * modifier: ''}; mppr_rate {component: 'practice_expense'} once; for each claim, every ordered pair of lines with
+ * different lineNo and the same serviceDate as ncci_ptp {column1: other.procedureCode, column2: line.procedureCode};
+ * and locality_map {zip} and locality_map_plus_four {zip} for the run's five-digit ZIP, '' included. A superset of
+ * what the engine asks: the flags only narrow the reads.
+ */
+export function claimsRequestedKeys(claims: readonly KeyedClaim[], zip: string): RequestedKeys {
+  const codes = new Set<string>();
+  const pairs: { column1: string; column2: string }[] = [];
+  for (const claim of claims) {
+    for (const line of claim.lines) {
+      codes.add(line.procedureCode);
+      for (const other of claim.lines) {
+        if (other.lineNo !== line.lineNo && other.serviceDate === line.serviceDate) {
+          pairs.push({ column1: other.procedureCode, column2: line.procedureCode });
+        }
+      }
+    }
+  }
+  const list = [...codes];
+  return requestedKeys({
+    pfs_rvu: list.map((hcpcs) => ({ hcpcs, modifier: '' })),
+    ncci_mue: list.map((hcpcs) => ({ hcpcs })),
+    mppr_rate: [...list.map((hcpcs) => ({ hcpcs, modifier: '' })), { component: 'practice_expense' }],
+    ncci_ptp: pairs,
+    locality_map: [{ zip }],
+    locality_map_plus_four: [{ zip }],
+  });
+}
+
+/** The union of two key sets. */
+export function unionKeys(a: RequestedKeys, b: RequestedKeys): RequestedKeys {
+  const union = (type: KeyedRecordType) => new Set([...a[type], ...b[type]]);
+  return {
+    pfs_rvu: union('pfs_rvu'),
+    ncci_mue: union('ncci_mue'),
+    mppr_rate: union('mppr_rate'),
+    ncci_ptp: union('ncci_ptp'),
+    locality_map: union('locality_map'),
+    locality_map_plus_four: union('locality_map_plus_four'),
+  };
 }
 
 export interface KeyedReleaseParts {

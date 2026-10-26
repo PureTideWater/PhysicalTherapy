@@ -7,7 +7,7 @@ import { canonicalJson } from '@tp/rules';
 import { parseTrace, recompute } from '@tp/pricing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { RuleReleaseMismatchError, currentReleaseNo, loadRuleRelease, releaseWithdrawals } from './release';
+import { RuleReleaseMismatchError, currentReleaseNo, loadRuleRelease, memoryReleaseSource, releaseWithdrawals } from './release';
 import { RunComparisonError, acceptanceHeldBy, compareAcceptance, compareRuns } from './diff';
 import type { JobContext } from '../jobs/handlers';
 import { executePricingRun, failRun } from './execute';
@@ -1107,7 +1107,7 @@ describe('PRC-19: a re-run under release 2 with one changed RVU', () => {
     const release = await asJob(prc19, (scope) => loadRuleRelease(scope.client, RERUN_RELEASE));
     const [complete] = await asJob(prc19, (scope) => completeRuns(scope, prc19.practiceId, `test-${randomUUID()}`));
     expect(complete?.id).toBe(runA);
-    expect(await asJob(prc19, (scope) => runReleaseImpact(scope, complete as NonNullable<typeof complete>, release, `test-${randomUUID()}`))).toEqual({
+    expect(await asJob(prc19, (scope) => runReleaseImpact(scope, complete as NonNullable<typeof complete>, memoryReleaseSource(release), `test-${randomUUID()}`))).toEqual({
       pricingRunId: runA,
       practiceId: prc19.practiceId,
       releaseNo: RELEASE,

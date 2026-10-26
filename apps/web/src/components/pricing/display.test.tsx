@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RerunAcceptanceView, RunSummary } from '../../lib/pricing/queries';
 import {
+  FAILURE_TEXT,
   HeldByLimitNote,
   NotInEffectAlert,
   PatternTable,
@@ -12,12 +13,15 @@ import {
   QueuedRunsNote,
   RerunBlockedAlert,
   RerunBlockedBody,
+  RunFailureText,
   RunStateBadges,
+  RunStatusBadge,
   UnpricedReasons,
   nothingMoreToAccept,
   rerunBlockedTitle,
   runName,
   unacceptedRerunText,
+  waitingLabel,
 } from './display';
 
 /**
@@ -88,6 +92,47 @@ function pattern(): RunCoverage['patterns'][number] {
     overpaid_cents: '0',
   };
 }
+
+describe('a failed run’s words', () => {
+  it('never tell the customer the operator was alerted of a read outside the fetch, which no alarm reads yet, and say the month prices by itself', () => {
+    // The worker logs RELEASE_READ_OUTSIDE_FETCH; its alarm comes with the later pull request (docs/adr/0071).
+    const text = FAILURE_TEXT.release_read_outside_fetch ?? '';
+    expect(text).not.toMatch(/alerted/);
+    expect(text).toContain('logged for PaidWhole’s team');
+    expect(text).not.toContain('operator');
+    expect(text).not.toContain('create a new run');
+    expect(text).toContain('priced again by itself');
+  });
+
+  it('say what PaidWhole has not loaded the Medicare content for (UX-13)', () => {
+    expect(FAILURE_TEXT.waiting_on_content_mppr).toContain('Medicare’s multiple-procedure reduction list (MPPR) for dates PaidWhole has not loaded it for yet');
+    expect(FAILURE_TEXT.waiting_on_content_mue).toContain('Medicare’s unit limits (MUE) for dates PaidWhole has not loaded them for yet');
+    expect(FAILURE_TEXT.waiting_on_content_mppr_mue).toContain('(MPPR) and unit limits (MUE) for dates PaidWhole has not loaded them for yet');
+  });
+});
+
+describe('a run whose month waits (UX-9)', () => {
+  it('shows a month waiting on Medicare content or the billing ZIP neutrally, labelled, and a failure in the danger colour', () => {
+    for (const code of ['waiting_on_content_mppr', 'waiting_on_content_mue', 'waiting_on_content_mppr_mue'] as const) {
+      const html = renderToStaticMarkup(<RunFailureText code={code} />);
+      expect(html).toBe(`<p class="pt-2 text-sm" data-state="waiting" data-code="${code}"><span class="font-medium">Waiting on Medicare content:</span> ${FAILURE_TEXT[code] ?? ''}</p>`);
+      expect(html).not.toContain('destructive');
+      expect(waitingLabel(code)).toBe('Waiting on Medicare content');
+      const badge = renderToStaticMarkup(<RunStatusBadge status="failed" failureCode={code} />);
+      expect(badge).toContain('Waiting');
+      expect(badge).toContain('data-status="failed"');
+      expect(badge).not.toContain('destructive');
+    }
+    expect(renderToStaticMarkup(<RunFailureText code="location_not_ready" />)).toContain('<span class="font-medium">Waiting on the billing ZIP:</span>');
+    const failed = renderToStaticMarkup(<RunFailureText code="job_failed" />);
+    expect(failed).toContain('text-destructive');
+    expect(failed).not.toContain('Waiting');
+    expect(waitingLabel('job_failed')).toBeNull();
+    expect(waitingLabel(null)).toBeNull();
+    expect(renderToStaticMarkup(<RunStatusBadge status="failed" failureCode="job_failed" />)).toContain('Failed');
+    expect(renderToStaticMarkup(<RunStatusBadge status="failed" />)).toContain('Failed');
+  });
+});
 
 /**
  * Why a re-run can or cannot be accepted, and why a run is not re-run, in every variant the screens show (combined

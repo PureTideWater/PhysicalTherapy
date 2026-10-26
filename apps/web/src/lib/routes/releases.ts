@@ -1,10 +1,11 @@
 import { rolesPermit } from '@tp/db/runtime';
-import { type RunImpact, completeRuns, currentReleaseNo, loadRuleRelease, runReleaseImpact } from '@tp/worker/pricing';
+import { type RunImpact, completeRuns, currentReleaseNo, runReleaseImpact, storedReleaseSource } from '@tp/worker/pricing';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
 import { NotFoundError } from '../http/route';
 import { type RunSummary, pendingFirstRuns, runsInEffect } from '../pricing/queries';
+import { DATED_FAMILY_CONTENTS, type FamilyThrough, familiesLoadedThrough, windowsInForce } from '../releases/content-through';
 import { type PublishedRelease, type ReleaseNote, publishedReleases, releaseNote } from '../releases/queries';
 import { opaqueId } from './schemas';
 
@@ -16,10 +17,12 @@ import { opaqueId } from './schemas';
  * effect pinned to another release, which a re-run under the release in force would price again. For
  * the roles that price runs (mapping.edit), a run's "what would change" is worked out on request, in
  * memory: its lines priced under its own release and under this one, nothing written but the audited
- * reads (purpose release_impact). The re-run itself, and its diff, are the Pricing runs screens'. The
- * runs listed are runs in effect, the only ones re-run (docs/adr/0037, amendment of 2026-10-26); while a
- * first run of a listed run's overlapping dates is queued or being priced, that run's Re-run button gives
- * way to the run it waits for (createRerun would refuse it, newer_run_pending).
+ * reads (purpose release_impact), the release read by key (storedReleaseSource: only the keys of the run's
+ * claims). The re-run itself, and its diff, are the Pricing runs screens'. The runs listed are runs in effect, the
+ * only ones re-run (docs/adr/0037, amendment of 2026-10-26); while a first run of a listed run's overlapping dates is
+ * queued or being priced, that run's Re-run button gives way to the run it waits for (createRerun would refuse it,
+ * newer_run_pending). Beside the note, through what date the release in force loads each content family (audit #59;
+ * docs/adr/0071).
  */
 
 const releaseNumber = z.coerce.number().int().min(1).max(2_147_483_647);
@@ -40,6 +43,12 @@ export interface ReleasesPageData {
   /** What the note's release would change in the run asked about (`check`), when it is the release in force. */
   readonly impact: RunImpact | null;
   readonly canRerun: boolean;
+  /**
+   * Through what date the release in force loads each content family on today's date (audit #59; docs/adr/0071), in the
+   * content calendar's order, a family it does not load or loads only from a later day included; the families typed in
+   * when they change are left out. Empty when no release is in force.
+   */
+  readonly loadedThrough: readonly FamilyThrough[];
 }
 
 export const releasesPage = practiceRoute({
@@ -49,7 +58,7 @@ export const releasesPage = practiceRoute({
   phi: true,
   permission: 'practice.open',
   params: z.object({ practiceId: opaqueId, release: releaseNumber.optional().catch(undefined), check: opaqueId.optional().catch(undefined) }),
-  handle: async ({ scope, practiceId, params, request, access }): Promise<ReleasesPageData> => {
+  handle: async ({ scope, practiceId, params, request, access, services }): Promise<ReleasesPageData> => {
     const inForce = await currentReleaseNo(scope.client);
     const shown = params.release ?? inForce;
     const note = shown === null ? null : ((await releaseNote(scope.client, shown)) ?? null);
@@ -68,8 +77,9 @@ export const releasesPage = practiceRoute({
       if (run === undefined) {
         throw new NotFoundError();
       }
-      impact = await runReleaseImpact(scope, run, await loadRuleRelease(scope.client, note.releaseNo), request.requestId);
+      impact = await runReleaseImpact(scope, run, await storedReleaseSource(scope.client, note.releaseNo), request.requestId);
     }
+    const windows = await windowsInForce(scope.client, DATED_FAMILY_CONTENTS);
     const otherRuns = note === null ? [] : runs.filter((run) => run.releaseNo !== note.releaseNo);
     const pendingByRun: Record<string, readonly RunSummary[]> = {};
     // Only where a re-run would be offered: the note of the release in force.
@@ -88,6 +98,7 @@ export const releasesPage = practiceRoute({
       pendingByRun,
       impact,
       canRerun,
+      loadedThrough: windows === null ? [] : familiesLoadedThrough(windows.windows, services.now().toISOString().slice(0, 10)),
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, release: '900001', check: refs.pricingRunId }) },

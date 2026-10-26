@@ -4,6 +4,7 @@ import { type Cents, centsToString, cents, parseCents, sumCents } from '@tp/mone
 import { type UnpricedReason, parseTrace } from '@tp/pricing';
 import {
   type AdjustmentBehavior,
+  BEHAVIOR_RECORD_TYPES,
   BEHAVIOR_TEXT,
   type DeadlineUnverifiedCause,
   INVESTIGATORY,
@@ -22,7 +23,7 @@ import {
 
 import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
-import { loadRuleRelease } from '../price/release';
+import { type ContentRead, contentGapsOf, familyOf, releaseContentSpans, typedRelease } from '../price/release';
 import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
 import { casePatientBalance, lineCorrections } from '../reconcile/patient-share';
 import { lineDeadlines } from '../triage/deadline';
@@ -482,6 +483,19 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * The report's reasons for a validated line held because its trace read the MPPR or the MUE on a date its release does
+ * not load them for (CONTENT_NOT_LOADED, audit #7), one per content read, so the report names which (fix round 2 of PR
+ * #49, UX-10): `CONTENT_NOT_LOADED:mppr`, `:mue` or `:mppr_mue`.
+ */
+export const CONTENT_NOT_LOADED_REASONS = ['CONTENT_NOT_LOADED:mppr', 'CONTENT_NOT_LOADED:mue', 'CONTENT_NOT_LOADED:mppr_mue'] as const;
+
+/** The reason of a line from the content reads its release does not load: MPPR, MUE, or both. */
+export function contentNotLoadedReason(gaps: readonly ContentRead[]): (typeof CONTENT_NOT_LOADED_REASONS)[number] {
+  const families = new Set(gaps.map((gap) => familyOf(gap.content)));
+  return families.has('mppr') && families.has('mue') ? 'CONTENT_NOT_LOADED:mppr_mue' : families.has('mue') ? 'CONTENT_NOT_LOADED:mue' : 'CONTENT_NOT_LOADED:mppr';
+}
+
 /** Everything the report shows, and its lines, as of the report's triage date. */
 export async function gatherReport(scope: PracticeScope<ScopeClient>, input: GatherInput): Promise<{ readonly content: AuditReportContent; readonly lines: readonly ReportLine[] }> {
   const { client } = scope;
@@ -498,7 +512,9 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
   const practice = (await client.query<{ name: string; settings: unknown }>('SELECT name, settings FROM practice WHERE id = $1', [input.practiceId])).rows[0];
   const settings: TriageSettings = triageSettings(practice?.settings ?? {});
   const coverage = parseCoverage(run.coverage);
-  const references = releaseReferences(await loadRuleRelease(client, run.release_no));
+  // The run's release, for its MPPR rates and conversion factors alone (audit #31), and the spans of the contents it loads (audit #7).
+  const references = releaseReferences(await typedRelease(client, run.release_no, BEHAVIOR_RECORD_TYPES));
+  const spans = await releaseContentSpans(client, run.release_no);
 
   const anomalyRows = await runAnomalies(client, input);
   const anomalyOf = new Map<string, string>();
@@ -515,11 +531,18 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     rows.map((row) => row.priced_line_id),
   );
 
+  /** The content-not-loaded key of each line whose trace read MPPR or MUE content its release does not load for its date. */
+  const contentKeyOf = new Map<string, string>();
   const lines: ReportLine[] = rows.map((row) => {
     // A contract window cited in a rule the engine does not compute yet has no end the report can state or judge.
     const windowRuleComputed = deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED';
     const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
     const visit = row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents);
+    const trace = row.trace === null ? null : parseTrace(row.trace);
+    const gaps = trace === null ? [] : contentGapsOf(trace, spans);
+    if (gaps.length > 0) {
+      contentKeyOf.set(row.priced_line_id, contentNotLoadedReason(gaps));
+    }
     const judged = judgeLine(
       {
         varianceCents: variance,
@@ -533,6 +556,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
         contractVersionStatus: row.version_status,
         contractVersionCoversService: row.version_covers_service,
         releaseWithdrawn: row.release_withdrawn,
+        contentNotLoaded: gaps.length > 0,
         writtenOff: false,
         visitVarianceCents: visit,
         reviewFlags: row.review_flags.map((flag) => flag.flag),
@@ -541,7 +565,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       input.asOf,
     );
     const validatedCents = judged.validatedCents;
-    const behavior = row.trace === null || validatedCents === null ? null : detectBehavior(parseTrace(row.trace), references);
+    const behavior = trace === null || validatedCents === null ? null : detectBehavior(trace, references);
     // A per-visit line counts with its visit: on the line that carries it, at the visit's net.
     const counted = row.per_visit === null ? variance : row.per_visit.carrier_line_no === row.line_no ? visit : null;
     let status: string;
@@ -628,14 +652,21 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     patterns.set(key, entry);
   }
   const notActionableReasons = [
-    ...NOT_ACTIONABLE_REASONS.filter((reason) => reason !== 'WRITTEN_OFF'),
+    // CONTENT_NOT_LOADED by the content its lines' traces read (UX-10): the report names which.
+    ...NOT_ACTIONABLE_REASONS.filter((reason) => reason !== 'WRITTEN_OFF').flatMap((reason) => (reason === 'CONTENT_NOT_LOADED' ? CONTENT_NOT_LOADED_REASONS : [reason])),
     'BELOW_CASE_MATERIALITY',
     'CASE_LINE_FROM_OTHER_RUN',
     ...Object.keys(WRITE_OFF_TEXT).map((reason) => `written_off:${reason}`),
   ];
   const notActionable = notActionableReasons
     .map((reason) => {
-      const matching = validated.filter((line) => (reason.startsWith('written_off:') ? line.status === 'written_off' && line.reasons.includes(reason.slice('written_off:'.length)) : line.reasons.includes(reason)));
+      const matching = validated.filter((line) =>
+        reason.startsWith('written_off:')
+          ? line.status === 'written_off' && line.reasons.includes(reason.slice('written_off:'.length))
+          : reason.startsWith('CONTENT_NOT_LOADED:')
+            ? line.reasons.includes('CONTENT_NOT_LOADED') && contentKeyOf.get(line.priced_line_id) === reason
+            : line.reasons.includes(reason),
+      );
       return { reason, lines: matching.length, variance_cents: text(sum(matching.map((line) => line.validated_cents as string))) };
     })
     .filter((entry) => entry.lines > 0);
