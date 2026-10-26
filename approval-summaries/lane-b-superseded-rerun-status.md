@@ -31,6 +31,9 @@ Open questions: none.
   - NEW-A: ScrollTable does not contain its sr-only cells, so run pages scroll sideways.
   - NEW-B: the diff summary counts unpriced lines as priced at $0.00. This predates the PR, in `summaryOf`, and is fixed here because the PR changes that file and those screens.
 - **Next:** the third fix round wf_96f70b2e-d9a, with a screens confirm. |
+| 2026-10-26 10:13 | Third fix round, base merged | 2eb464b: ScrollTable contains its sr-only cells (`relative`) and shows a scroll cue while a table overflows; the run page's reasons and variance tables wrapped; the diff summary counts and totals only lines priced on both sides (NEW-B); the N2 and N3 nits. a8ace05: diff rows for priced-to-unpriced lines labelled as the summary words them. The screens confirm on 2eb464b passes: run pages 390 wide at 390 px. At 320 px they are 369 wide, because of the shell's mobile menu (a #42 file; a proposal). c637dfd: claude/build-platform 88a0e4e (#53) merged in, clean. |
+| 2026-10-26 10:23 | CI fix | Fresh-clone verification on c637dfd: every local check passes, and the records match. CI on c637dfd: unit failed on one test, the 6,000-sequence property timed out at the 5 s default under coverage (5.7 s locally). 7f17d62 gives each random-sequence property an explicit 60 s bound, keeping the run counts. Pushed. The PR description was rewritten with update_pull_request and read back identical. |
+| 2026-10-26 10:24 | Waiting on CI | CI on 7f17d62; then ready and merge. |
 
 **Proposal for Lane A:** the trigger mirror in `pricing_run_rules()` (design §5.2). Recommended, not urgent; it needs the founder's exception for a pricing table.
 
@@ -39,4 +42,4 @@ Open questions: none.
 - **Lane A** (above): the trigger mirror.
 - **Lane B later:** an operator console count of runs stuck queued or running, with an audited action to fail one; a read-only detection of lines with no pricing in effect; `runAction`'s generic "Check the fields marked below." when every issue names a hidden field.
 
-**Next step:** on a passing verification and green CI on ed85bcf: mark ready, then merge (method merge, expectedHeadSha), merging the base again first if it moved.
+**Next step:** on green CI on 7f17d62 (merging the base again first if it moved): mark ready, then merge with method merge and expectedHeadSha. Then unsubscribe, clean up, and send the orchestrator the merge commit.

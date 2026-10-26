@@ -1,0 +1,18 @@
+export const meta = {
+  name: 'lane-b-superseded-rerun-verify3',
+  description: 'PR #50: fresh-clone verification reading CI on the final head c637dfd',
+  phases: [{ title: 'Verify' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/81ccf0db-8a34-5ffa-8cb9-5886112da886/scratchpad'
+const HEAD = 'c637dfdc7a52b437eaf26895dce01515fcad45c8'
+phase('Verify')
+const r = await agent(`YOU ARE THE FRESH-CLONE VERIFICATION of Lane B PR #50 (PureTideWater/PhysicalTherapy, "A superseded re-run cannot be accepted (combined audit #10)") on its final head ${HEAD}: the third fix round 2eb464b, the diff-row label a8ace05 and a clean merge of claude/build-platform 88a0e4e (#53). An earlier fresh-clone verification passed on ed85bcf (notes: ${SP}/progress/verify-fresh2.md); the third round's notes are ${SP}/progress/fix3.md and fix3-confirm.md. Rules: every shell command starts with export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH; heavy commands one at a time under flock /tmp/laneb-heavy.lock; never a foreground sleep (a background loop or the Monitor tool); commit and push nothing; synthetic data only. Save as you go in ${SP}/progress/verify-fresh3.md; if it exists, continue from it.
+1. git clone -q https://github.com/PureTideWater/PhysicalTherapy ${SP}/verify-clone3 && checkout ${HEAD}. Under the lock: pnpm install --frozen-lockfile; pnpm typecheck; pnpm lint; pnpm lint:copy; pnpm lint:logs; pnpm check:fixtures; vitest packages/synth; vitest --project unit on apps/worker/src/price and apps/web/src/components; on a fresh database of your own on PG18 port 5433 (pnpm db:migrate; drop it after): apps/worker/src/price/rerun.db.test.ts, rerun-window.db.test.ts, diff-location.db.test.ts, apps/web/src/lib/routes/reruns-routes.db.test.ts, pricing-routes.db.test.ts. Engine freeze: git diff --stat 88a0e4e ${HEAD} -- packages/pricing/src ':!**/*.test.ts' empty. This PR's own files (git diff --name-only 88a0e4e ${HEAD}): nothing under packages/db/migrations; no PR #42 file (/tmp/claude-0/pr42-files.txt) except test-matrix.md, synth matrix.ts and registry.ts; no model identifier (grep -iE 'claude|opus|sonnet|haiku|anthropic' over git diff 88a0e4e ${HEAD}, judge each hit). Remove the clone at the end.
+2. Spot-check the third round's dispositions (fix3.md) and the diff-row label commit a8ace05 against the code; ADR 0037's amendment matches the code.
+3. CI on ${HEAD}: wait until every check run completes (gh api repos/PureTideWater/PhysicalTherapy/commits/${HEAD}/check-runs?per_page=100, every 2-3 minutes in a background loop or Monitor), report each conclusion, and read runner totals for unit, db (1/4..4/4), e2e (1/2, 2/2) with the GitHub MCP get_job_logs (ToolSearch "select:mcp__github__get_job_logs"; return_content true; large tail_lines). A failure: root-cause it from the log; the known screening e2e flake (/home/user/ops/LANES.md "Handed to Lane A") is named as such with evidence.
+Return verdict pass only when every local check passes, the records match and CI on ${HEAD} is all green — wait for CI to finish before returning; give the CI conclusions and totals.`, { label: 'verify-fresh-clone3', phase: 'Verify', schema: {
+  type: 'object',
+  properties: { verdict: { type: 'string', enum: ['pass', 'fail'] }, summary: { type: 'string' }, ci: { type: 'string' }, findings: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, severity: { type: 'string' }, title: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['id', 'severity', 'title', 'evidence', 'fix'] } } },
+  required: ['verdict', 'summary', 'ci', 'findings'],
+} })
+return r
