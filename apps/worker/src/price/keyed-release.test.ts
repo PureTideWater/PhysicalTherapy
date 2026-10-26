@@ -316,6 +316,60 @@ describe('pricing through a keyed source by the claims’ own keys (audit #31; d
     );
   });
 
+  it('never sets the violation, and prices as the whole release does, across releases, locations and year bases, one source serving several reads (review int-money)', async () => {
+    const releases = ['900001', '900006', '900007'].map((no) => indexRelease(readRuleRelease(`fixtures/synthetic/rules/release-synth-${no}`)));
+    const BASES = [MA_NONCONTRACTED_TERMS.parameters.year_basis, 'LOCKED:2025', 'LOCKED:2026', 'LOCKED:2027'] as const;
+    const WIDE_DATES = ['2025-12-31', '2026-02-02', '2026-09-30', '2026-10-01', '2026-11-30', '2027-01-04'] as const;
+    const wideClaim = fc
+      .array(fc.record({ line: lineArbitrary, serviceDate: fc.constantFrom(...WIDE_DATES), yearBasis: fc.constantFrom(...BASES) }), { minLength: 1, maxLength: 6 })
+      .map(
+        (drawn): ClaimFacts => ({
+          claimStatusCode: '1',
+          reversed: false,
+          corrected: false,
+          remittanceDate: null,
+          payerPlanKey: null,
+          lines: drawn.map(
+            ({ line, serviceDate, yearBasis }, index): LineFacts => ({
+              lineNo: index + 1,
+              serviceLineId: null,
+              procedureCode: line.procedureCode,
+              modifiers: [...line.modifiers],
+              units: String(line.units),
+              serviceDate,
+              placeOfService: '11',
+              chargeCents: cents(10_000n),
+              observedAllowedCents: cents(0n),
+              observedAllowedBasis: 'paid_plus_pr',
+              patientShareAdjustments: [],
+              agreement: { outcome: 'MA_NONCONTRACTED', mapping: SCREENING_MAPPING, terms: { ...MA_NONCONTRACTED_TERMS, parameters: { ...MA_NONCONTRACTED_TERMS.parameters, year_basis: yearBasis } } },
+            }),
+          ),
+        }),
+      );
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...releases),
+        fc.constantFrom('00011', '00012'),
+        fc.constantFrom(null, '0001', '5000', '9999'),
+        fc.array(fc.array(wideClaim, { minLength: 1, maxLength: 3 }), { minLength: 1, maxLength: 3 }),
+        async (whole, zip, zipPlusFour, reads) => {
+          const located = { zip, zipPlusFour, defaultRounding: null, placeOfServiceSettings: SYNTHETIC_PLACES };
+          const source = memoryReleaseSource(whole);
+          for (const claims of reads) {
+            const view = await source.view(claimsRequestedKeys(claims, zip));
+            for (const claim of claims) {
+              const keyed = price({ claim, release: view, settings: located, asOf: '2027-02-01' });
+              expect(view.violation).toBeNull();
+              expect(keyed).toEqual(price({ claim, release: whole, settings: located, asOf: '2027-02-01' }));
+            }
+          }
+        },
+      ),
+      { numRuns: 150 },
+    );
+  });
+
   it('serves every key asked so far, and is just as loud on a key never asked', async () => {
     const source = memoryReleaseSource(release900001);
     expect([source.releaseNo, source.manifestSha256]).toEqual([release900001.releaseNo, release900001.manifestSha256]);
