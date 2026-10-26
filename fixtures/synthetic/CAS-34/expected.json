@@ -1,0 +1,22 @@
+{
+  "case": "CAS-34",
+  "module": "CAS",
+  "title": "A code the words have no words for",
+  "assertion": "Refused on every screen and in the PDF; never shown as a code",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/explain/words.test.ts",
+    "apps/worker/src/packets/export.test.ts",
+    "apps/web/src/components/packets/calculation-words.test.tsx",
+    "apps/web/src/components/pricing/line-words.test.tsx"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A code outside a closed list, set in a test’s trace: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

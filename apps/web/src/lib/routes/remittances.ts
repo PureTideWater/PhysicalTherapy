@@ -1,4 +1,5 @@
 import { type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, rolesPermit } from '@tp/db/runtime';
+import type { LineWords, Worksheet } from '@tp/packets/explain';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -19,7 +20,7 @@ import {
   payerOptions,
   remittanceDetail,
 } from '../remittances/queries';
-import { type LineRunOption, type PricedLineView, lineRuns, pricedLineOf } from '../pricing/queries';
+import { type LineRunOption, type PricedLineView, lineRuns, pricedLineOf, pricedLineWords } from '../pricing/queries';
 import { type TraceStepView, traceSteps } from '../pricing/view';
 import type { Services } from '../server/services';
 import { opaqueId, optionalText, requiredText } from './schemas';
@@ -221,6 +222,16 @@ export interface LinePageData {
   readonly pricing: PricedLineView | null;
   /** The steps of that run's trace, in the engine's order (roles that read PHI; the trace carries the line's dates). */
   readonly steps: readonly TraceStepView[];
+  /**
+   * That run's calculation in words (combined audit #38; docs/adr/0072): the internal words, dates shown, for roles
+   * that read PHI; the viewer's, with no date of any kind, for the others. Built on the server from the trace, which a
+   * viewer's page data never holds. Null before any run priced the line, or when the words cannot be put (wordsRefusal).
+   */
+  readonly words: LineWords | null;
+  /** The line's fee-schedule worksheet, in the same audience's words (none for a fixed or per-visit line). */
+  readonly worksheets: readonly Worksheet[];
+  /** Why the calculation cannot be put in words yet ("timed-units rule has no words"), or null. */
+  readonly wordsRefusal: string | null;
   /** Every complete run that priced the line, newest first. */
   readonly runs: readonly LineRunOption[];
 }
@@ -228,9 +239,10 @@ export interface LinePageData {
 /**
  * The line trace page (PRD 7, Claims and lines: "Open the line trace"; PRD 11 step 9): the line's
  * facts, adjustments and notes, and how a complete pricing run priced it: the expected allowed, the
- * unrounded amount, the variance or the unpriced reason, and every step of its trace in order with the
- * rule records and the release it read. `run` picks one of the runs that priced the line; without it,
- * the latest. Every row is an audited read.
+ * unrounded amount, the variance or the unpriced reason, and every step of its trace in order, in words
+ * for every role (a viewer's hold no date), with the rule records and the release it read for roles that
+ * read PHI. `run` picks one of the runs that priced the line; without it, the latest. Every row is an
+ * audited read.
  */
 export const linePage = practiceRoute({
   id: 'practice.lines.line',
@@ -249,6 +261,10 @@ export const linePage = practiceRoute({
     if (params.run !== undefined && pricing === undefined) {
       throw new NotFoundError();
     }
+    const explained =
+      pricing === undefined
+        ? { words: null, worksheets: [], refusal: null }
+        : await pricedLineWords(scope, { practiceId, pricedLineId: pricing.pricedLineId, requestId: request.requestId }, cipher === null ? 'viewer' : 'internal');
     return {
       practiceId,
       detail,
@@ -256,6 +272,9 @@ export const linePage = practiceRoute({
       canNote: rolesPermit(access.roles, 'case.work'),
       pricing: pricing ?? null,
       steps: pricing === undefined || cipher === null ? [] : traceSteps(pricing.trace),
+      words: explained.words,
+      worksheets: explained.worksheets,
+      wordsRefusal: explained.refusal,
       runs: await lineRuns(scope, practiceId, params.lineId),
     };
   },

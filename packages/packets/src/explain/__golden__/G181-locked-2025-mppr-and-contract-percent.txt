@@ -1,0 +1,221 @@
+# fixtures/golden/claims/G181-locked-2025-mppr-and-contract-percent.json
+
+## Line 1, internal
+2 units × $22.134637903 = $44.269275806 under the contract’s clause on page 1; after the multiple procedure payment reduction $33.0752025596; after the contract’s adjustment $32.24832249561; rounded once to $32.25; observed allowed $41.00; variance -$8.75 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $22.134637903 = $44.269275806.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [mppr] Ranked by practice-expense part on the claim’s day (2026-02-10), the first unit is claim line 3’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.5970366232; unit 2 (rank 3) loses $5.5970366232. $44.269275806 becomes $33.0752025596.
+  [contract_adjustment] The rate record pays 97.5% of the amount: $33.0752025596 becomes $32.24832249561.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.24832249561 becomes $32.25. The unrounded amount is kept beside it.
+  [observed] Observed allowed $41.00, the allowed amount the payer states for the line (AMT B6). Expected $32.25, observed allowed $41.00: variance -$8.75 (overpaid: recorded, never pursued).
+  [window] Dispute window: 30 days from the payment date 2026-02-27, under the contract; it ends on 2026-03-29; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $32.25 expected, $32.24832249561 before the one rounding.
+
+## Line 1, viewer
+2 units × $22.134637903 = $44.269275806 under the contract’s clause on page 1; after the multiple procedure payment reduction $33.0752025596; after the contract’s adjustment $32.24832249561; rounded once to $32.25; observed allowed $41.00; variance -$8.75 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $22.134637903 = $44.269275806.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 3’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.5970366232; unit 2 (rank 3) loses $5.5970366232. $44.269275806 becomes $33.0752025596.
+  [contract_adjustment] The rate record pays 97.5% of the amount: $33.0752025596 becomes $32.24832249561.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.24832249561 becomes $32.25. The unrounded amount is kept beside it.
+  [observed] Observed allowed $41.00, the allowed amount the payer states for the line (AMT B6). Expected $32.25, observed allowed $41.00: variance -$8.75 (overpaid: recorded, never pursued).
+  [window] Dispute window: 30 days from the payment date, under the contract.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $32.25 expected, $32.24832249561 before the one rounding.
+
+## Line 1, payer
+2 units × $22.134637903 = $44.269275806 under the contract’s clause on page 1; after the multiple procedure payment reduction $33.0752025596; after the contract’s adjustment $32.24832249561; rounded once to $32.25; observed allowed $41.00; variance -$8.75 (overpaid: recorded, never pursued).
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the multiple procedure payment reduction.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the contract locks. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 3’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.5970366232; unit 2 (rank 3) loses $5.5970366232. $44.269275806 becomes $33.0752025596.
+  [contract_adjustment] The contract pays 97.5% of the amount: $33.0752025596 becomes $32.24832249561.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the contract’s rule: $32.24832249561 becomes $32.25. The unrounded amount is kept beside it.
+  [observed] Observed allowed $41.00, the allowed amount the remittance states.
+
+## Line 2, internal
+1 unit × $22.4977596375 = $22.4977596375 under the contract’s clause on page 1; after the multiple procedure payment reduction $16.9007230143; after the contract’s adjustment $16.4782049389425; rounded once to $16.48; observed allowed $21.50; variance -$5.02 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $22.4977596375 = $22.4977596375.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [mppr] Ranked by practice-expense part on the claim’s day (2026-02-10), the first unit is claim line 3’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 4) loses $5.5970366232. $22.4977596375 becomes $16.9007230143.
+  [contract_adjustment] The rate record pays 97.5% of the amount: $16.9007230143 becomes $16.4782049389425.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $16.4782049389425 becomes $16.48. The unrounded amount is kept beside it.
+  [observed] Observed allowed $21.50, the allowed amount the payer states for the line (AMT B6). Expected $16.48, observed allowed $21.50: variance -$5.02 (overpaid: recorded, never pursued).
+  [window] Dispute window: 30 days from the payment date 2026-02-27, under the contract; it ends on 2026-03-29; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $16.48 expected, $16.4782049389425 before the one rounding.
+
+## Line 2, viewer
+1 unit × $22.4977596375 = $22.4977596375 under the contract’s clause on page 1; after the multiple procedure payment reduction $16.9007230143; after the contract’s adjustment $16.4782049389425; rounded once to $16.48; observed allowed $21.50; variance -$5.02 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $22.4977596375 = $22.4977596375.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 3’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 4) loses $5.5970366232. $22.4977596375 becomes $16.9007230143.
+  [contract_adjustment] The rate record pays 97.5% of the amount: $16.9007230143 becomes $16.4782049389425.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $16.4782049389425 becomes $16.48. The unrounded amount is kept beside it.
+  [observed] Observed allowed $21.50, the allowed amount the payer states for the line (AMT B6). Expected $16.48, observed allowed $21.50: variance -$5.02 (overpaid: recorded, never pursued).
+  [window] Dispute window: 30 days from the payment date, under the contract.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $16.48 expected, $16.4782049389425 before the one rounding.
+
+## Line 2, payer
+1 unit × $22.4977596375 = $22.4977596375 under the contract’s clause on page 1; after the multiple procedure payment reduction $16.9007230143; after the contract’s adjustment $16.4782049389425; rounded once to $16.48; observed allowed $21.50; variance -$5.02 (overpaid: recorded, never pursued).
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the multiple procedure payment reduction.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the contract locks. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 3’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 4) loses $5.5970366232. $22.4977596375 becomes $16.9007230143.
+  [contract_adjustment] The contract pays 97.5% of the amount: $16.9007230143 becomes $16.4782049389425.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the contract’s rule: $16.4782049389425 becomes $16.48. The unrounded amount is kept beside it.
+  [observed] Observed allowed $21.50, the allowed amount the remittance states.
+
+## Line 3, internal
+1 unit × $26.1921285885 = $26.1921285885 under the contract’s clause on page 1; after the contract’s adjustment $25.5373253737875; rounded once to $25.54; observed allowed $26.00; variance -$0.46 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $26.1921285885 = $26.1921285885.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($16.96071704) and is kept whole; $26.1921285885 is unchanged.
+  [contract_adjustment] The rate record pays 97.5% of the amount: $26.1921285885 becomes $25.5373253737875.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $25.5373253737875 becomes $25.54. The unrounded amount is kept beside it.
+  [observed] Observed allowed $26.00, the allowed amount the payer states for the line (AMT B6). Expected $25.54, observed allowed $26.00: variance -$0.46 (overpaid: recorded, never pursued).
+  [window] Dispute window: 30 days from the payment date 2026-02-27, under the contract; it ends on 2026-03-29; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $25.54 expected, $25.5373253737875 before the one rounding.
+
+## Line 3, viewer
+1 unit × $26.1921285885 = $26.1921285885 under the contract’s clause on page 1; after the contract’s adjustment $25.5373253737875; rounded once to $25.54; observed allowed $26.00; variance -$0.46 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $26.1921285885 = $26.1921285885.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($16.96071704) and is kept whole; $26.1921285885 is unchanged.
+  [contract_adjustment] The rate record pays 97.5% of the amount: $26.1921285885 becomes $25.5373253737875.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $25.5373253737875 becomes $25.54. The unrounded amount is kept beside it.
+  [observed] Observed allowed $26.00, the allowed amount the payer states for the line (AMT B6). Expected $25.54, observed allowed $26.00: variance -$0.46 (overpaid: recorded, never pursued).
+  [window] Dispute window: 30 days from the payment date, under the contract.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $25.54 expected, $25.5373253737875 before the one rounding.
+
+## Line 3, payer
+1 unit × $26.1921285885 = $26.1921285885 under the contract’s clause on page 1; after the contract’s adjustment $25.5373253737875; rounded once to $25.54; observed allowed $26.00; variance -$0.46 (overpaid: recorded, never pursued).
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the multiple procedure payment reduction.
+  [fee_schedule] Fee schedule: the latest records in force during 2025, the year the contract locks. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($16.96071704) and is kept whole; $26.1921285885 is unchanged.
+  [contract_adjustment] The contract pays 97.5% of the amount: $26.1921285885 becomes $25.5373253737875.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the contract’s rule: $25.5373253737875 becomes $25.54. The unrounded amount is kept beside it.
+  [observed] Observed allowed $26.00, the allowed amount the remittance states.
+
+## Worksheets, internal
+Fee schedule worksheet 1: code 97110, 2025, carrier 99999 locality 01, non-facility
+  Year: the latest records in force during 2025, the year the rate record locks.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $19.6123 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 115% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 115% |
+  | Work | 0.30 | 1.000 | $6.7662435 |
+  | Practice expense (non-facility) | 0.66 | 0.940 | $13.992591558 |
+  | Malpractice | 0.10 | 0.610 | $1.375802845 |
+  | Per unit | | | $22.134637903 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $19.6123 per RVU × 115%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2025, choose carrier 99999 locality 01 and code 97110: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 115% and before any reduction.
+Fee schedule worksheet 2: code 97112, 2025, carrier 99999 locality 01, non-facility
+  Year: the latest records in force during 2025, the year the rate record locks.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $19.6123 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 115% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 115% |
+  | Work | 0.31 | 1.000 | $6.99178495 |
+  | Practice expense (non-facility) | 0.66 | 0.940 | $13.992591558 |
+  | Malpractice | 0.11 | 0.610 | $1.5133831295 |
+  | Per unit | | | $22.4977596375 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $19.6123 per RVU × 115%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2025, choose carrier 99999 locality 01 and code 97112: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 115% and before any reduction.
+Fee schedule worksheet 3: code 97140, 2025, carrier 99999 locality 01, non-facility
+  Year: the latest records in force during 2025, the year the rate record locks.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $19.6123 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 115% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 115% |
+  | Work | 0.33 | 1.000 | $7.44286785 |
+  | Practice expense (non-facility) | 0.80 | 0.940 | $16.96071704 |
+  | Malpractice | 0.13 | 0.610 | $1.7885436985 |
+  | Per unit | | | $26.1921285885 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $19.6123 per RVU × 115%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 3 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2025, choose carrier 99999 locality 01 and code 97140: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 115% and before any reduction.
+
+## Worksheets, payer
+Fee schedule worksheet 1: code 97110, 2025, carrier 99999 locality 01, non-facility
+  Year: the latest records in force during 2025, the year the contract locks.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $19.6123 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 115% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 115% |
+  | Work | 0.30 | 1.000 | $6.7662435 |
+  | Practice expense (non-facility) | 0.66 | 0.940 | $13.992591558 |
+  | Malpractice | 0.10 | 0.610 | $1.375802845 |
+  | Per unit | | | $22.134637903 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $19.6123 per RVU × 115%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2025, choose carrier 99999 locality 01 and code 97110: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 115% and before any reduction.
+Fee schedule worksheet 2: code 97112, 2025, carrier 99999 locality 01, non-facility
+  Year: the latest records in force during 2025, the year the contract locks.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $19.6123 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 115% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 115% |
+  | Work | 0.31 | 1.000 | $6.99178495 |
+  | Practice expense (non-facility) | 0.66 | 0.940 | $13.992591558 |
+  | Malpractice | 0.11 | 0.610 | $1.5133831295 |
+  | Per unit | | | $22.4977596375 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $19.6123 per RVU × 115%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2025, choose carrier 99999 locality 01 and code 97112: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 115% and before any reduction.
+Fee schedule worksheet 3: code 97140, 2025, carrier 99999 locality 01, non-facility
+  Year: the latest records in force during 2025, the year the contract locks.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $19.6123 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 115% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 115% |
+  | Work | 0.33 | 1.000 | $7.44286785 |
+  | Practice expense (non-facility) | 0.80 | 0.940 | $16.96071704 |
+  | Malpractice | 0.13 | 0.610 | $1.7885436985 |
+  | Per unit | | | $26.1921285885 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $19.6123 per RVU × 115%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 3 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2025, choose carrier 99999 locality 01 and code 97140: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 115% and before any reduction.

@@ -1,0 +1,85 @@
+# fixtures/golden/claims/G150-per-visit-patient-share-on-a-zero-line.json
+
+## Line 1, internal
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.96; rounded once to $85.96; observed allowed $66.00; short $19.96.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $20.00, which is $68.00; 3% of it, $2.04, is withheld. $88.00 becomes $85.96.
+  [patient_share] Patient share $20.00, reported beside the expected amount and never subtracted from it. It is the remittance’s patient responsibility adjustments (group PR): reason code 1, $20.00. The Adjustments table lists each.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $85.96 needed no rounding.
+  [observed] Observed allowed $66.00, paid plus patient responsibility. Expected $85.96, observed allowed $66.00: short $19.96.
+  [window] Dispute window: 45 days from the payment date 2026-05-27, under the contract; it ends on 2026-07-11; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $85.96 expected, $85.96 before the one rounding.
+
+## Line 1, viewer
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.96; rounded once to $85.96; observed allowed $66.00; short $19.96.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $20.00, which is $68.00; 3% of it, $2.04, is withheld. $88.00 becomes $85.96.
+  [patient_share] Patient share $20.00, reported beside the expected amount and never subtracted from it. It is the remittance’s patient responsibility adjustments (group PR): reason code 1, $20.00. The Adjustments table lists each.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $85.96 needed no rounding.
+  [observed] Observed allowed $66.00, paid plus patient responsibility. Expected $85.96, observed allowed $66.00: short $19.96.
+  [window] Dispute window: 45 days from the payment date, under the contract.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $85.96 expected, $85.96 before the one rounding.
+
+## Line 1, payer
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.96; rounded once to $85.96; observed allowed $66.00; short $19.96.
+  [terms] Per visit: $88.00 per visit. The contract applies these Medicare reductions: the assistant reduction and sequestration.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $20.00, which is $68.00; 3% of it, $2.04, is withheld. $88.00 becomes $85.96.
+  [patient_share] Patient share $20.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the contract’s rule: $85.96 needed no rounding.
+  [observed] Observed allowed $66.00, the amount paid plus the patient’s responsibility.
+
+## Line 2, internal
+The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; rounded once to $0.00; observed allowed $15.00; variance -$15.00 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97112 is 6; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] The visit’s $88.00 is carried by claim line 1; this line’s base is $0.00.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $0.00 is unchanged.
+  [sequestration] Sequestration: the patient share $15.00 leaves no payer’s share, so nothing is withheld; $0.00 is unchanged.
+  [patient_share] Patient share $15.00, reported beside the expected amount and never subtracted from it. It is the remittance’s patient responsibility adjustments (group PR): reason code 2, $15.00. The Adjustments table lists each.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $0.00 needed no rounding.
+  [observed] Observed allowed $15.00, paid plus patient responsibility. Expected $0.00, observed allowed $15.00: variance -$15.00 (overpaid: recorded, never pursued).
+  [window] Dispute window: 45 days from the payment date 2026-05-27, under the contract; it ends on 2026-07-11; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $0.00 expected, $0.00 before the one rounding.
+
+## Line 2, viewer
+The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; rounded once to $0.00; observed allowed $15.00; variance -$15.00 (overpaid: recorded, never pursued).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97112 is 6; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] The visit’s $88.00 is carried by claim line 1; this line’s base is $0.00.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $0.00 is unchanged.
+  [sequestration] Sequestration: the patient share $15.00 leaves no payer’s share, so nothing is withheld; $0.00 is unchanged.
+  [patient_share] Patient share $15.00, reported beside the expected amount and never subtracted from it. It is the remittance’s patient responsibility adjustments (group PR): reason code 2, $15.00. The Adjustments table lists each.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $0.00 needed no rounding.
+  [observed] Observed allowed $15.00, paid plus patient responsibility. Expected $0.00, observed allowed $15.00: variance -$15.00 (overpaid: recorded, never pursued).
+  [window] Dispute window: 45 days from the payment date, under the contract.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $0.00 expected, $0.00 before the one rounding.
+
+## Line 2, payer
+The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; rounded once to $0.00; observed allowed $15.00; variance -$15.00 (overpaid: recorded, never pursued).
+  [terms] Per visit: $88.00 per visit. The contract applies these Medicare reductions: the assistant reduction and sequestration.
+  [per_visit] The visit’s $88.00 is carried by claim line 1; this line’s base is $0.00.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $0.00 is unchanged.
+  [sequestration] Sequestration: the patient share $15.00 leaves no payer’s share, so nothing is withheld; $0.00 is unchanged.
+  [patient_share] Patient share $15.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the contract’s rule: $0.00 needed no rounding.
+  [observed] Observed allowed $15.00, the amount paid plus the patient’s responsibility.
