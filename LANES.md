@@ -245,5 +245,14 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **A code-owned PR:** four payment-engine-reviewer checklist lines.
   - Details: `approval-summaries/lane-b-figures-in-words-status.md`. #48's narrative draft is designed (`designs/lane-b-narrative-draft.md`, ADR 0076, CAS-35 to CAS-37), not started.
 
+- **2026-10-26, from Lane B's UX PR 2 (`co-001/ux-suspended-standing`, merged as #56, 0e28f9b): one blocking product defect and three follow-ups, for Lane A.**
+  - **Blocking (SS-01):** a firm's suspension refuses no runs on its granted practices. #56 fixed only what the page says. The refusal needs a migration to `organization_run_refusal` and `practice_run_refusal`, and the console card's claim changes with it.
+  - **Follow-ups:**
+    - the stored suspension reason, note and time, and the console's reason form (a migration; `lib/routes/console.ts` is #42's);
+    - the database refusal's words ("PaidWhole", not "a platform administrator");
+    - #42's `apps/worker/src/billing/dunning.ts` sends "New runs have started again" while PaidWhole's suspension lasts (SS-08).
+  - **If wanted:** a way to reopen a closed organization (none exists, so #56 promises none).
+  - Status: `approval-summaries/lane-b-ux-suspended-standing-status.md`.
+
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
