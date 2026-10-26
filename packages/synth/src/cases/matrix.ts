@@ -126,6 +126,23 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'Submission of an export whose pricing went stale after it was made',
     assertion: 'Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused',
   },
+  {
+    id: 'CAS-30',
+    title: 'A line’s calculation in words',
+    assertion: 'Every figure in the words is in the line’s trace or its rate record; a flag that is off reads only as not applied; an unpriced line reads its reason’s meaning and remedy',
+  },
+  { id: 'CAS-31', title: 'The line trace for a role that does not read PHI', assertion: 'The steps in words with no date; the stored trace not sent' },
+  {
+    id: 'CAS-32',
+    title: 'A packet’s calculation on the review page and in the PDF',
+    assertion: 'The same words, from the traces its approval names, by one renderer whose version the approval, the export request and the export job agree on; a trace that differs, a line priced by another rate record or another words version is refused',
+  },
+  {
+    id: 'CAS-33',
+    title: 'The fee schedule worksheet',
+    assertion: 'One per distinct set of records, with the year, locality, setting, RVUs, GPCIs, conversion factor and the engine’s expression; never an amount at 100% for a contract that is not at 100%',
+  },
+  { id: 'CAS-34', title: 'A code the words have no words for', assertion: 'Refused on every screen and in the PDF; never shown as a code' },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

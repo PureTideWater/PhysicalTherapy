@@ -116,6 +116,11 @@ PRC-23 and PRC-24 were added in its pull request 6b-2 (audit #33 and #16's minim
 | CAS-27 | Export with no correspondence contact | Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing; Postgres refuses the export without a name and phone |
 | CAS-28 | Packet found by its reference | Every version of the practice whose reference matches, none of another practice |
 | CAS-29 | Submission of an export whose pricing went stale after it was made | Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused |
+| CAS-30 | A line’s calculation in words | Every figure in the words is in the line’s trace or its rate record; a flag that is off reads only as not applied; an unpriced line reads its reason’s meaning and remedy |
+| CAS-31 | The line trace for a role that does not read PHI | The steps in words with no date; the stored trace not sent |
+| CAS-32 | A packet’s calculation on the review page and in the PDF | The same words, from the traces its approval names, by one renderer whose version the approval, the export request and the export job agree on; a trace that differs, a line priced by another rate record or another words version is refused |
+| CAS-33 | The fee schedule worksheet | One per distinct set of records, with the year, locality, setting, RVUs, GPCIs, conversion factor and the engine’s expression; never an amount at 100% for a contract that is not at 100% |
+| CAS-34 | A code the words have no words for | Refused on every screen and in the PDF; never shown as a code |
 
 ## Ledger (LED)
 
