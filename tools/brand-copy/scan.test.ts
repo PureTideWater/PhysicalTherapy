@@ -264,6 +264,7 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/mail/template.ts',
       'apps/worker/src/packets/export.ts',
       'apps/worker/src/platform/support-notices.ts',
+      'apps/worker/src/price/release.ts',
       'apps/worker/src/reconcile/stages.ts',
       'apps/worker/src/reconcile/statement-html.ts',
       'apps/worker/src/report/html.ts',
@@ -272,6 +273,7 @@ describe('the copy lint: what it reads', () => {
       'packages/contracts/src/calendar.ts',
       'packages/contracts/src/location.ts',
       'packages/packets/src/draft.ts',
+      'packages/rules/src/calendar.ts',
       'packages/triage/src/headline.ts',
       'packages/triage/src/stages.ts',
       'packages/ui/src/states/empty-state.tsx',
@@ -320,6 +322,9 @@ describe('the copy lint: what it reads', () => {
       'packages/packets/src/draft.ts',
       'packages/contracts/src/calendar.ts',
       'packages/contracts/src/location.ts',
+      // The worker's release reader and the content calendar's family titles (docs/adr/0071).
+      'apps/worker/src/price/release.ts',
+      'packages/rules/src/calendar.ts',
     ]) {
       expect(files, file).toContain(file);
     }
