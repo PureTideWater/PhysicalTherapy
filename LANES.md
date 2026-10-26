@@ -199,5 +199,11 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **For #42:** if #111 merges first, #42's next `--out` writes its function files too. Commit that before the founder signs #42's approval line, because a commit after his approval dismisses it. If #42 merges first, #111 regenerates on #42's schema before it merges.
   - Design: `designs/lane-b-db-function-diffs.md`. Status: `approval-summaries/lane-b-db-function-diffs-status.md`.
 
+- **2026-10-26, from Lane B's PR 15b design (#12): the case close "payer corrected; balance is the patient's" needs a stored value, so a migration, for Lane A.**
+  - **Proposed:** the reconcile job writes a case-line close when a correction's payment increase is zero because the patient's share took it (PR-1, PR-2, PR-3). The close leaves the actionable total, and a case state is derived from it; `deriveCaseState` mirrors it. It is not a write-off.
+  - **Where:** with PR 8's case schema, beside #11. It needs DDL on case and case_line (the CHECKs at migration 20261019160000 :166, :194, :213).
+  - **Until then,** 15b records the outcome as an "approved" match with no entry and no response, and shows the words from stored rows. The migration makes the case close.
+  - Design: `designs/lane-b-pr15b.md` §0.5. Status: `approval-summaries/lane-b-pr15b-status.md`.
+
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.

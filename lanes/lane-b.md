@@ -714,3 +714,9 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - **A9**, the inspection of the regenerated baselines, falls under the 00:20 ruling: an adversarial visual-inspection agent at full resolution, plus a private gallery the co-founder may look at. It does not block the merge.
     - **When ci-deps merges,** this session gives the co-founder the steps for F1 (a), F2 (a), then F3. Owner-admin settings are never changed by a session.
   - **Eight parallel sessions now**, plus this one (the UX capture, then its review and the checklist PR).
+- **2026-10-26 ~00:42 UTC: PR 15b's session: design written, in review. One part handed to Lane A.**
+  - All of #12's payment-terms amounts, and "billable to the patient", need no migration (checked against every CHECK and trigger they write through).
+  - The stored case close "payer corrected; balance is the patient's" needs DDL on case and case_line. Added to LANES.md "Handed to Lane A", for PR 8's case schema; 15b records the outcome without it.
+  - **Taken as recommended under the 00:20 ruling** (design §0.5):
+    - Q1: 15b records the outcome, with words from stored rows, and the stored close goes to Lane A;
+    - Q2: a reprocessing that raises or keeps the allowed amount but pays less is matched "decreased", and takes back the payment fall, capped.
