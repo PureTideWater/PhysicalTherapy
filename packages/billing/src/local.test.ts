@@ -44,6 +44,18 @@ async function customerWith(billing: LocalBillingProvider, details: Parameters<L
 
 const types = (events: readonly BillingEvent[]) => events.map((event) => event.type);
 
+/** Adds a payment method to a customer, which the webhook processing then makes the default. */
+async function addMethod(billing: LocalBillingProvider, customer: string, details: Parameters<LocalBillingProvider['confirmSetupIntent']>[0]['details'], key: string) {
+  const intent = await billing.createSetupIntent({ customerRef: customer, idempotencyKey: `setup:${key}` });
+  await billing.confirmSetupIntent({ setupIntentRef: intent.setupIntentRef, details, idempotencyKey: `confirm:${key}` });
+}
+
+/** The invoice most recently finalized. */
+function lastInvoiceRef(events: readonly BillingEvent[]): string {
+  const finalized = events.filter((event) => event.type === 'invoice.finalized').at(-1);
+  return finalized?.kind === 'invoice' ? finalized.invoice.invoiceRef : '';
+}
+
 describe('LocalBillingProvider (the Stripe test-mode simulator)', () => {
   const directories: string[] = [];
   afterEach(() => {
@@ -139,6 +151,50 @@ describe('LocalBillingProvider (the Stripe test-mode simulator)', () => {
     await expect(billing.cancelSubscription({ subscriptionRef: 'sub_missing', idempotencyKey: 'cancel:3' })).rejects.toThrow(BillingProviderError);
     await expect(billing.advance(0)).rejects.toMatchObject({ code: 'invalid_days' });
     expect((await billing.simulatedNow()).getTime()).toBeGreaterThan(Date.now() + 90 * 86_400_000);
+  });
+
+  it('charges a renewal to a bank account added after the plan was paid by card (BIL-04; docs/adr/0073)', async () => {
+    const { billing, events } = simulator();
+    const customer = await customerWith(billing, GOOD_CARD);
+    await billing.createSubscription({ customerRef: customer, organizationId: 'org-1', plan: 'monthly', idempotencyKey: 'subscribe:1' });
+    const first = lastInvoiceRef(events);
+    expect(await billing.invoicePayment(first)).toEqual({ methodKind: 'card', failureCode: null });
+    await addMethod(billing, customer, GOOD_ACH, 'bank');
+    expect(await billing.paymentMethodOnFile(customer)).toMatchObject({ kind: 'us_bank_account' });
+    await billing.advance(31);
+    const renewal = lastInvoiceRef(events);
+    expect(renewal).not.toBe(first);
+    // The renewal's debit has started from the bank account; the card was not charged.
+    expect(await billing.invoicePayment(renewal)).toEqual({ methodKind: 'us_bank_account', failureCode: null });
+    expect(await billing.settle()).toBe(1);
+    expect(events.find((event) => event.kind === 'invoice' && event.type === 'invoice.paid' && event.invoice.invoiceRef === renewal)).toMatchObject({ invoice: { status: 'paid', kind: 'subscription' } });
+  });
+
+  it('charges a subscription’s own default before the customer’s, and moves it to a new default (BIL-04; docs/adr/0073)', async () => {
+    const store = new MemorySimulatorStore();
+    const { billing, events } = simulator({ store });
+    const customer = await customerWith(billing, GOOD_CARD);
+    const subscription = await billing.createSubscription({ customerRef: customer, organizationId: 'org-1', plan: 'monthly', idempotencyKey: 'subscribe:1' });
+    // A subscription carrying the card as its own default, as one saved under 'on_subscription' before docs/adr/0073 does.
+    const card = (await billing.paymentMethodOnFile(customer))?.paymentMethodRef ?? null;
+    await store.update((state) => {
+      const pinned = state.subscriptions[subscription];
+      if (pinned !== undefined) {
+        pinned.defaultPaymentMethod = card;
+      }
+    });
+    await addMethod(billing, customer, GOOD_ACH, 'bank');
+    await billing.advance(31);
+    expect(await billing.invoicePayment(lastInvoiceRef(events))).toEqual({ methodKind: 'us_bank_account', failureCode: null });
+    // A subscription's own default outranks the customer's: one pinned to the card after the change still charges it.
+    await store.update((state) => {
+      const pinned = state.subscriptions[subscription];
+      if (pinned !== undefined) {
+        pinned.defaultPaymentMethod = card;
+      }
+    });
+    await billing.advance(31);
+    expect(await billing.invoicePayment(lastInvoiceRef(events))).toEqual({ methodKind: 'card', failureCode: null });
   });
 
   it('issues an audit invoice charged to the method on file, and fails one with none on file', async () => {
