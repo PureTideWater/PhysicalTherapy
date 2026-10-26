@@ -20,7 +20,7 @@ import { CalculationWords } from './calculation-words';
 /** The markup's text, as a reader meets it: a block's edge is a space, an inline span's is not. */
 const text = (markup: string) =>
   markup
-    .replace(/<\/?(?:section|div|p|ul|li|table|thead|tbody|tr|th|td)\b[^>]*>/g, ' ')
+    .replace(/<\/?(?:section|div|p|h[1-6]|ul|li|table|thead|tbody|tr|th|td)\b[^>]*>/g, ' ')
     .replace(/<[^>]+>/g, '')
     .replaceAll('&amp;', '&')
     .replaceAll('&#x27;', '’')
@@ -52,7 +52,7 @@ describe('CalculationWords', () => {
     const calculation = calculationWordsOf(content, traces);
     expect(calculation).toEqual({ state: 'worded', words: explainPacket(content, traces, 'payer') });
     if (calculation.state !== 'worded') throw new Error('worded');
-    const markup = renderToStaticMarkup(<CalculationWords calculation={calculation} />);
+    const markup = renderToStaticMarkup(<CalculationWords calculation={calculation} level={3} />);
     expect(markup).toMatch(/^<section role="region" aria-label="Calculations"/);
     expect([...markup.matchAll(/data-calculation-row="(\d+)"/g)].map((match) => match[1])).toEqual(['1', '2', '3']);
     for (const row of calculation.words.rows) {
@@ -63,6 +63,11 @@ describe('CalculationWords', () => {
     }
     expect(text(markup)).toContain('2 units × $50.00 = $100.00 under the contract’s clause on page 2; rounded once to $100.00; observed allowed $70.00; short $30.00.');
     expect(markup).not.toContain('data-worksheets');
+    // Each row is a heading at the level the page gives: h3 under the builder's card (h2), h4 under the review's own h3 (UX review).
+    expect([...markup.matchAll(/<h3 class="text-sm font-semibold">Row (\d+)<\/h3>/g)].map((match) => match[1])).toEqual(['1', '2', '3']);
+    const review = renderToStaticMarkup(<CalculationWords calculation={calculation} level={4} />);
+    expect([...review.matchAll(/<h4 class="text-sm font-semibold">Row (\d+)<\/h4>/g)].map((match) => match[1])).toEqual(['1', '2', '3']);
+    expect(review).not.toContain('<h3');
   });
 
   it('renders the fee-schedule worksheets as tables, every figure and code in mono with tabular numerals, and no code or brace in the text', () => {
@@ -74,8 +79,14 @@ describe('CalculationWords', () => {
     const calculation = calculationWordsOf(content, traces);
     if (calculation.state !== 'worded') throw new Error('worded');
     expect(calculation.words.worksheets).toHaveLength(2);
-    const markup = renderToStaticMarkup(<CalculationWords calculation={calculation} />);
+    const markup = renderToStaticMarkup(<CalculationWords calculation={calculation} level={3} />);
     expect(markup).toContain('data-worksheets="2"');
+    // The worksheets' heading at the rows' level, each worksheet's title one below it.
+    expect(markup).toContain('<h3 class="text-sm font-semibold">Fee schedule worksheets</h3>');
+    expect([...markup.matchAll(/<h4 class="text-sm font-semibold">Fee schedule worksheet (\d+): /g)].map((match) => match[1])).toEqual(['1', '2']);
+    const review = renderToStaticMarkup(<CalculationWords calculation={calculation} level={4} />);
+    expect(review).toContain('<h4 class="text-sm font-semibold">Fee schedule worksheets</h4>');
+    expect([...review.matchAll(/<h5 class="text-sm font-semibold">Fee schedule worksheet (\d+): /g)].map((match) => match[1])).toEqual(['1', '2']);
     for (const sheet of calculation.words.worksheets) {
       expect(markup).toContain(`<table class="w-full text-sm" aria-label="Fee schedule worksheet ${String(sheet.number)}">`);
       expect(text(markup)).toContain(plainText(sheet.title));
@@ -97,7 +108,7 @@ describe('CalculationWords', () => {
   it('shows only the refusal, with the list that has no words and the next step, when the renderer cannot word the calculation (CAS-34)', () => {
     const refusal = wordsRefusalOf(new ExplainWordsError('timed-units rule'));
     if (refusal === undefined) throw new Error('a refusal');
-    const markup = renderToStaticMarkup(<CalculationWords calculation={{ state: 'refused', refusal }} />);
+    const markup = renderToStaticMarkup(<CalculationWords calculation={{ state: 'refused', refusal }} level={3} />);
     expect(markup).toContain('data-calculation-words="refused"');
     expect(text(markup)).toBe('The calculation is not worded The payer’s copy cannot be printed: timed-units rule has no words. Ask PaidWhole support.');
     expect(markup).not.toContain('data-calculation-row');
@@ -123,6 +134,6 @@ describe('CalculationWords', () => {
     const [first] = content.lines;
     traces.set(first?.priced_line_id as string, { ...(traces.get(first?.priced_line_id as string) as object), engine_version: 'SYNTHETIC' });
     expect(calculationWordsOf(content, traces)).toEqual({ state: 'refused', refusal: wordsRefusalOf(new ExplainBindingError('trace_differs', 1)) });
-    expect(renderToStaticMarkup(<CalculationWords calculation={{ state: 'none' }} />)).toBe('');
+    expect(renderToStaticMarkup(<CalculationWords calculation={{ state: 'none' }} level={3} />)).toBe('');
   });
 });

@@ -299,12 +299,12 @@ export default async function PacketPage(props: Props) {
               <CardHeader>
                 <CardTitle>Calculation per line</CardTitle>
                 <CardDescription>
-                  Each line’s calculation in the words the payer’s copy prints, worded by code from the line’s stored trace: each step, the fee schedule worksheet, the one rounding with the unrounded amount kept beside it, and the
-                  patient share, reported and never subtracted.
+                  Each line’s calculation in the words the payer’s copy prints, worded by code from the line’s stored trace: each step, the fee schedule worksheet where a line used the fee schedule, the one rounding with the
+                  unrounded amount kept beside it, and the patient share, reported and never subtracted.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex min-w-0 flex-col gap-4">
-                <CalculationWords calculation={version.calculationWords} />
+                <CalculationWords calculation={version.calculationWords} level={3} />
                 <div className="flex flex-col gap-1 text-sm text-muted-foreground" data-internal="calculation">
                   <p>Not in the payer’s copy: each line’s trace SHA-256, and the words version that worded them.</p>
                   <ul className="flex flex-col gap-0.5" aria-label="Trace SHA-256 of each row">

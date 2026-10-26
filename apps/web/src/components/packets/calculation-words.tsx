@@ -12,8 +12,16 @@ import { type CalculationWords as Words, wordsRefusalText } from '../../lib/pack
  * what is approved and attested here is what the payer reads. This renders segments and computes nothing: a figure
  * and a code are set in the mono face with tabular numerals (the brand rule), a label (a row or worksheet number) and
  * a quoted meaning as plain text. A calculation the renderer cannot word shows why, with the next step, and nothing
- * else: never a code in place of its words.
+ * else: never a code in place of its words. Each row and the worksheets are headings at the level the surface gives
+ * (h3 under the builder's Calculation per line card, h4 under the review's Calculation per line heading), each
+ * worksheet's title one below them.
  */
+
+/** The heading levels the calculation's parts take, by the page's outline. */
+export type HeadingLevel = 3 | 4 | 5;
+
+const HEADING = { 3: 'h3', 4: 'h4', 5: 'h5' } as const satisfies Readonly<Record<HeadingLevel, string>>;
+const below = (level: HeadingLevel): HeadingLevel => (level === 3 ? 4 : 5);
 
 /** One segment as a reader meets it. */
 function SegmentView({ segment }: { readonly segment: Segment }) {
@@ -47,13 +55,17 @@ export function SentenceText({ sentence }: { readonly sentence: Sentence }) {
   );
 }
 
-/** A fee-schedule worksheet: its title, its rows, the table of parts in a sideways scroller, the expression, the reductions' pointer and the CMS check. */
-export function WorksheetView({ sheet }: { readonly sheet: Worksheet }) {
+/**
+ * A fee-schedule worksheet: its title (a heading at `level`), its rows, the table of parts in a sideways scroller, the
+ * expression, the reductions' pointer and the CMS check.
+ */
+export function WorksheetView({ sheet, level }: { readonly sheet: Worksheet; readonly level: HeadingLevel }) {
+  const Title = HEADING[level];
   return (
     <div className="flex min-w-0 flex-col gap-2" data-worksheet={sheet.number}>
-      <p className="font-medium">
+      <Title className="text-sm font-semibold">
         <SentenceText sentence={sheet.title} />
-      </p>
+      </Title>
       <ul className="flex flex-col gap-0.5" aria-label={`Fee schedule worksheet ${String(sheet.number)}, its records`}>
         {sheet.rows.map((row, index) => (
           <li key={String(index)}>
@@ -124,8 +136,11 @@ export function WorksheetView({ sheet }: { readonly sheet: Worksheet }) {
   );
 }
 
-/** The calculation per row and the worksheets (tp-packet/2); nothing for a tp-packet/1 version, which states none. */
-export function CalculationWords({ calculation }: { readonly calculation: Words }) {
+/**
+ * The calculation per row and the worksheets (tp-packet/2); nothing for a tp-packet/1 version, which states none. Each
+ * row's heading and the worksheets' heading are at `level`, each worksheet's title one below.
+ */
+export function CalculationWords({ calculation, level }: { readonly calculation: Words; readonly level: 3 | 4 }) {
   if (calculation.state === 'none') {
     return null;
   }
@@ -138,11 +153,12 @@ export function CalculationWords({ calculation }: { readonly calculation: Words 
     );
   }
   const { rows, worksheets } = calculation.words;
+  const Heading = HEADING[level];
   return (
     <section role="region" aria-label="Calculations" className="flex min-w-0 flex-col gap-4 text-sm" data-calculation-words="worded">
       {rows.map(({ row, words }) => (
         <div key={row} className="flex flex-col gap-1 border-b pb-3 last:border-0" data-calculation-row={row}>
-          <p className="font-medium">Row {row}</p>
+          <Heading className="text-sm font-semibold">Row {row}</Heading>
           <p data-summary>
             <SentenceText sentence={words.summary} />
           </p>
@@ -162,9 +178,9 @@ export function CalculationWords({ calculation }: { readonly calculation: Words 
       ))}
       {worksheets.length === 0 ? null : (
         <div className="flex min-w-0 flex-col gap-4" data-worksheets={worksheets.length}>
-          <p className="font-medium">Fee schedule worksheets</p>
+          <Heading className="text-sm font-semibold">Fee schedule worksheets</Heading>
           {worksheets.map((sheet) => (
-            <WorksheetView key={sheet.key} sheet={sheet} />
+            <WorksheetView key={sheet.key} sheet={sheet} level={below(level)} />
           ))}
         </div>
       )}

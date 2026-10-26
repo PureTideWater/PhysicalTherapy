@@ -54,7 +54,7 @@ describe('the trace’s steps', () => {
   it('name every rule record a step read, with its window and SHA-256, and the release with its manifest', () => {
     const views = traceSteps(trace);
     const fee = views.find((item) => item.key === 'fee_schedule');
-    expect(fee?.title).toBe('Step 2: the fee schedule');
+    expect(fee?.title).toBe('Step 2, continued: the fee schedule');
     expect(fee?.records.map((record) => record.recordType)).toEqual(expect.arrayContaining(['pfs_rvu', 'locality_map', 'pfs_gpci', 'conversion_factor']));
     expect(fee?.records.every((record) => /^[0-9a-f]{64}$/.test(record.sha256))).toBe(true);
     const release = views.find((item) => item.key === 'release');
@@ -84,11 +84,24 @@ describe('the trace’s steps', () => {
     expect(traceSteps(null)).toEqual([]);
   });
 
-  it('title a step they have no title for from its key, initialisms in capitals (the screen tour: "Ncci ptp" is NCCI PTP)', () => {
+  it('number the steps as one sequence, each part of a step recorded apart from it as that step continued, and title a part they do not know from its key, initialisms in capitals (UX review; the screen tour: "Ncci ptp")', () => {
     const views = traceSteps({ ...(trace as object), mue_values: { note: 'kept' } });
     const titles = new Map(views.map((item) => [item.key, item.title]));
-    expect(titles.get('ncci_ptp')).toBe('NCCI PTP');
-    expect(titles.get('per_visit')).toBe('Per visit');
+    expect(['agreement', 'terms', 'fee_schedule', 'units', 'per_visit', 'ncci_ptp', 'adjustments', 'patient_share_cents', 'rounding', 'variance_cents', 'window'].map((key) => titles.get(key))).toEqual([
+      'Step 1: the agreement',
+      'Step 2: the terms and method',
+      'Step 2, continued: the fee schedule',
+      'Step 3: units',
+      'Step 3, continued: the per-visit amount',
+      'Step 3, continued: National Correct Coding Initiative (NCCI) procedure-to-procedure edits',
+      'Step 4: adjustments',
+      'Step 5: patient share',
+      'Step 6: rounding',
+      'Step 7: variance',
+      'Step 8: the dispute window',
+    ]);
+    // Every step the engine records has a title of its own; only a part of a trace this screen does not know falls back.
+    for (const key of traceOrder().steps) expect(titles.get(key), key).toMatch(/^Step \d/);
     expect(titles.get('mue_values')).toBe('MUE values');
     // No title spells one of the engine's initialisms in anything but capitals.
     expect(views.map((item) => item.title).filter((title) => /\b(?:[Nn]cci|[Pp]tp|[Mm]ue|[Mm]ppr|[Pp]fs|[Rr]vu|[Gg]pci)\b/.test(title))).toEqual([]);
@@ -116,18 +129,23 @@ describe('the line trace page’s steps in words (design 3.9)', () => {
     // The release's words come first, as the engine records the release first.
     expect(views[0]).toMatchObject({ key: 'release', sentences: words.steps.find((step) => step.step === 'release')?.sentences });
     const fee = views.find((view) => view.key === 'fee_schedule');
-    expect(fee?.title).toBe('Step 2: the fee schedule');
+    expect(fee?.title).toBe('Step 2, continued: the fee schedule');
     expect(fee?.sentences.map(plainText).join(' ')).toMatch(/^Fee schedule: the \d{4} records in force on \d{4}-\d{2}-\d{2}\./);
     expect(fee?.recorded?.records.map((record) => record.recordType)).toEqual(expect.arrayContaining(['pfs_rvu', 'pfs_gpci', 'conversion_factor']));
     // The claim facts have no words of their own; they keep their record.
     expect(views.find((view) => view.key === 'claim')).toMatchObject({ sentences: [], recorded: { key: 'claim' } });
   });
 
-  it('give a role without the record only the steps the words speak to, and no record', () => {
+  it('give a role without the record every step the words are of, titled and numbered as the practice’s, and no record (UX review: the viewer skipped Step 4)', () => {
     const words = explainLine(trace, REGULATION, 'viewer');
     const views = lineTraceSteps(words, []);
-    expect(views.every((view) => view.recorded === null && view.sentences.length !== 0)).toBe(true);
-    expect(views.map((view) => view.key)).toEqual(lineTraceSteps(words, traceSteps(stored)).filter((view) => view.sentences.length !== 0).map((view) => view.key));
+    expect(views.every((view) => view.recorded === null)).toBe(true);
+    const internal = lineTraceSteps(words, traceSteps(stored));
+    // The same steps as the practice's page less the facts the engine read, with the same titles.
+    expect(views.map((view) => [view.key, view.title])).toEqual(internal.filter((view) => !['as_of', 'settings', 'claim', 'line'].includes(view.key)).map((view) => [view.key, view.title]));
+    expect(views.map((view) => view.key)).toContain('adjustments');
+    expect(views.find((view) => view.key === 'per_visit')?.sentences).toEqual([]);
+    expect(views.filter((view) => view.sentences.length !== 0).map((view) => view.key)).toEqual(internal.filter((view) => view.sentences.length !== 0).map((view) => view.key));
     expect(views.map((view) => view.key)).not.toContain('claim');
     expect(views.flatMap((view) => view.sentences).map(plainText).join(' ')).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(lineTraceSteps(null, [])).toEqual([]);

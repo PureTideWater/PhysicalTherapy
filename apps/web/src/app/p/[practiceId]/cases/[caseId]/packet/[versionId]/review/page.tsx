@@ -169,7 +169,12 @@ export default async function PacketReviewPage(props: Props) {
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           <LineSchedule content={content} practiceId={practiceId} canOpenLines={canOpenLines} />
-          <CalculationWords calculation={review.calculationWords} />
+          {review.calculationWords.state === 'none' ? null : (
+            <div className="flex min-w-0 flex-col gap-2">
+              <h3 className="text-base font-semibold">Calculation per line</h3>
+              <CalculationWords calculation={review.calculationWords} level={4} />
+            </div>
+          )}
         </CardContent>
       </Card>
       <Card role="region" aria-label="Payer’s copy">

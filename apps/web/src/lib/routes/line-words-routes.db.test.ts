@@ -50,7 +50,7 @@ describe('a contract line’s words', () => {
     expect(asManager.worksheets).toEqual([]);
     // The internal words state the dispute window's dates (a fixed line reads no fee schedule, so no service date).
     expect(plainText(asManager.words?.steps.find((step) => step.step === 'window')?.sentences[0] ?? { segments: [] })).toMatch(
-      /^Dispute window: 3650 days from the payment date 2026-04-06, under the contract; it ends on \d{4}-\d{2}-\d{2}; on \d{4}-\d{2}-\d{2} it is open\.$/,
+      /^Dispute window: 3,650 days from the payment date 2026-04-06, under the contract; it ends on \d{4}-\d{2}-\d{2}; on \d{4}-\d{2}-\d{2} it is open\.$/,
     );
 
     const asViewer = await lineAs(world, viewer);
@@ -59,7 +59,7 @@ describe('a contract line’s words', () => {
     expect(asViewer.steps).toEqual([]);
     expect(JSON.stringify(asViewer)).not.toContain('2026-03-15');
     expect(JSON.stringify(asViewer.words)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-    expect(plainText(asViewer.words?.steps.find((step) => step.step === 'window')?.sentences[0] ?? { segments: [] })).toBe('Dispute window: 3650 days from the payment date, under the contract.');
+    expect(plainText(asViewer.words?.steps.find((step) => step.step === 'window')?.sentences[0] ?? { segments: [] })).toBe('Dispute window: 3,650 days from the payment date, under the contract.');
 
     // The record that priced the line, no longer signed off (written past its triggers, as no workflow would): no page.
     const rateRecordId = asManager.pricing?.rateRecordId ?? '';

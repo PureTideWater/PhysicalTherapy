@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { lineTraceSteps, pricingWords, traceSteps } from '../../lib/pricing/view';
-import { AdjustmentWords, LineSummary, LineTrace, UnpricedWords, wordsRefusalText } from './line-words';
+import { AdjustmentWords, LineSummary, LineTrace, UnpricedWords, VIEWER_DATES_NOTE, wordsRefusalText } from './line-words';
 
 /**
  * A line's calculation in words on the line trace page (combined audit #38; design 4.4; CAS-30, CAS-31, CAS-34),
@@ -20,7 +20,7 @@ import { AdjustmentWords, LineSummary, LineTrace, UnpricedWords, wordsRefusalTex
 /** The markup's text, as a reader meets it: a block's edge is a space, an inline span's is not. */
 const text = (markup: string) =>
   markup
-    .replace(/<\/?(?:section|div|p|ul|ol|li|table|thead|tbody|tr|th|td|details|summary|pre)\b[^>]*>/g, ' ')
+    .replace(/<\/?(?:section|div|p|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|details|summary|pre)\b[^>]*>/g, ' ')
     .replace(/<[^>]+>/g, '')
     .replaceAll('&amp;', '&')
     .replaceAll('&quot;', '"')
@@ -98,23 +98,34 @@ describe('the trace section in words', () => {
       }
     }
     const fee = /<li class="[^"]*" data-step="fee_schedule">([\s\S]*?)<\/li><li class="[^"]*" data-step="units">/.exec(markup)?.[1] ?? '';
-    expect(fee).toContain('<p class="font-medium">Step 2: the fee schedule</p>');
+    // Each step's title is a heading under the page's Trace heading (h2), the worksheet's title one below it (UX review).
+    expect(fee).toContain('<h3 class="text-sm font-semibold">Step 2, continued: the fee schedule</h3>');
+    expect(fee).toMatch(/<div class="flex min-w-0 flex-col gap-2" data-worksheet="1"><h4 class="text-sm font-semibold">Fee schedule worksheet 1: /);
+    expect([...markup.matchAll(/<h3 class="text-sm font-semibold">/g)]).toHaveLength(steps.length);
     expect(fee).toContain('aria-label="Fee schedule worksheet 1"');
     expect(text(fee)).toContain(plainText((worksheets[0] as { check: Parameters<typeof plainText>[0] }).check));
     // The record sits under the words, closed, its JSON in a named scroller a keyboard reaches (m7).
-    expect(fee).toMatch(/<details class="pt-1" data-recorded="fee_schedule"><summary[^>]*>As the engine recorded it<\/summary><ul class="pt-1 text-xs" aria-label="Rule records of Step 2: the fee schedule">/);
+    // Its summary names the step for a screen reader and is at least 24 px tall (UX review: fourteen identical summaries).
+    expect(fee).toMatch(
+      /<details class="pt-1" data-recorded="fee_schedule"><summary class="min-h-6 cursor-pointer py-1 text-sm text-muted-foreground">As the engine recorded it<span class="sr-only">: Step 2, continued: the fee schedule<\/span><\/summary><ul class="pt-1 text-xs" aria-label="Rule records of Step 2, continued: the fee schedule">/,
+    );
     expect(fee).toContain('pfs_rvu');
-    expect(fee).toMatch(/<div role="region" aria-label="Step 2: the fee schedule, as the engine recorded it, scrolls sideways" tabindex="0"[^>]*><pre/);
+    expect(fee).toMatch(/<div role="region" aria-label="Step 2, continued: the fee schedule, as the engine recorded it, scrolls sideways" tabindex="0"[^>]*><pre/);
     expect(markup).not.toMatch(/<details[^>]* open/);
     // The claim facts have no words; their record stays, so the step shows its record only.
-    expect(markup).toMatch(/data-step="claim"><p class="font-medium">Claim facts<\/p><details/);
+    expect(markup).toMatch(/data-step="claim"><h3 class="text-sm font-semibold">Claim facts<\/h3><details/);
     // A step the priced line never used reads so, not as "not reached".
-    expect(text(/data-step="per_visit">([\s\S]*?)<\/li>/.exec(markup)?.[1] ?? '')).toBe('Per visit Does not apply to this line.');
+    expect(text(/data-step="per_visit">([\s\S]*?)<\/li>/.exec(markup)?.[1] ?? '')).toBe('Step 3, continued: the per-visit amount Does not apply to this line.');
   });
 
   it('gives a role that does not read PHI the sentences and the worksheet with no date, no record and no code (CAS-31)', () => {
     const { words, worksheets, markup } = page(trace, REGULATION, 'viewer');
-    expect(markup).toMatch(/^<p class="text-sm text-muted-foreground">Dates are left out for your role\.<\/p>/);
+    // The note says what it covers: the steps' dates (the page's other cards show the viewer a payment date; UX review).
+    expect(VIEWER_DATES_NOTE).toBe('These steps leave out the line’s dates for your role.');
+    expect(markup).toMatch(/^<p class="text-sm text-muted-foreground">These steps leave out the line’s dates for your role\.<\/p>/);
+    // The viewer's steps are titled and numbered as the practice's: a step that does not apply says so (UX review).
+    expect(text(/data-step="adjustments">([\s\S]*?)<\/li>/.exec(markup)?.[1] ?? '')).not.toBe('');
+    expect(text(/data-step="per_visit">([\s\S]*?)<\/li>/.exec(markup)?.[1] ?? '')).toBe('Step 3, continued: the per-visit amount Does not apply to this line.');
     expect(markup).not.toContain('<details');
     expect(markup).not.toContain('<pre');
     expect(markup).not.toContain('sha256');

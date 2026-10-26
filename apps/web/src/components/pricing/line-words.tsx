@@ -15,8 +15,13 @@ import { ScrollTable } from '../scroll-table';
  * trace: the internal words (dates shown) for the roles that read PHI, the viewer's (no date of any kind) for the
  * others. This renders segments and computes nothing: a figure and a code are set in the mono face with tabular
  * numerals (the brand rule). What the engine recorded, its rule records and JSON, sits in a closed disclosure under
- * the words, for the roles that read PHI only. A calculation the words cannot put shows why, never a code.
+ * the words, for the roles that read PHI only. A calculation the words cannot put shows why, never a code. Each step's
+ * title is a heading under the page's Trace heading (h3), and a worksheet's title one below it (h4), so heading
+ * navigation reaches every step.
  */
+
+/** What a viewer is told above the steps: the steps' own dates are left out (the page's other cards say what they show). */
+export const VIEWER_DATES_NOTE = 'These steps leave out the line’s dates for your role.';
 
 /** The notice when the words cannot be put, with what they lack (design 3.7). */
 export function wordsRefusalText(refusal: string): string {
@@ -95,7 +100,10 @@ function Recorded({ step }: { readonly step: LineTraceStep }) {
   }
   return (
     <details className="pt-1" data-recorded={step.key}>
-      <summary className="cursor-pointer text-xs text-muted-foreground">As the engine recorded it</summary>
+      {/* Named by its step, since each step has one (a screen reader tabbing through hears which), and at least 24 px tall to tap. */}
+      <summary className="min-h-6 cursor-pointer py-1 text-sm text-muted-foreground">
+        As the engine recorded it<span className="sr-only">: {step.title}</span>
+      </summary>
       {view.records.length === 0 ? null : (
         <ul className="pt-1 text-xs" aria-label={`Rule records of ${step.title}`}>
           {view.records.map((record, index) => (
@@ -120,9 +128,10 @@ function Recorded({ step }: { readonly step: LineTraceStep }) {
 }
 
 /**
- * The trace's steps in words, in the engine's order, each with what the engine recorded beneath (roles that read PHI).
- * A step with neither words nor a record reads "Does not apply to this line." on a priced line whose words are put (it
- * never used the step), else "Not reached.".
+ * The trace's steps in words, in the engine's order, each under its title as a heading, with what the engine recorded
+ * beneath (roles that read PHI). A step with no words and no record (a viewer has no record of any step) reads "Does
+ * not apply to this line." on a priced line whose words are put (it never used the step), else "Not reached.", for
+ * every role alike, so the viewer's steps are numbered as the practice's are.
  */
 export function LineTrace({
   steps,
@@ -137,22 +146,22 @@ export function LineTrace({
 }) {
   return (
     <>
-      {canReadPhi ? null : <p className="text-sm text-muted-foreground">Dates are left out for your role.</p>}
+      {canReadPhi ? null : <p className="text-sm text-muted-foreground">{VIEWER_DATES_NOTE}</p>}
       {steps.length === 0 ? null : (
         <ol className="flex min-w-0 flex-col gap-2" aria-label="Trace steps">
           {steps.map((step) => (
             <li key={step.key} className="flex min-w-0 flex-col gap-1 rounded-md border p-3 text-sm" data-step={step.key}>
-              <p className="font-medium">{step.title}</p>
+              <h3 className="text-sm font-semibold">{step.title}</h3>
               {step.sentences.length !== 0 ? (
                 step.sentences.map((sentence, index) => (
                   <p key={String(index)}>
                     <SentenceText sentence={sentence} />
                   </p>
                 ))
-              ) : step.recorded?.recorded === null ? (
+              ) : (step.recorded?.recorded ?? null) === null ? (
                 <p className="text-xs text-muted-foreground">{notApplied ? 'Does not apply to this line.' : 'Not reached.'}</p>
               ) : null}
-              {step.key === 'fee_schedule' ? worksheets.map((sheet) => <WorksheetView key={sheet.key} sheet={sheet} />) : null}
+              {step.key === 'fee_schedule' ? worksheets.map((sheet) => <WorksheetView key={sheet.key} sheet={sheet} level={4} />) : null}
               <Recorded step={step} />
             </li>
           ))}

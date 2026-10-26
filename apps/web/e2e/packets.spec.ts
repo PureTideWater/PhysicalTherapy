@@ -341,6 +341,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(record.getByLabel('Version SHA-256')).toHaveAttribute('data-sha256', /^[0-9a-f]{64}$/);
         await expect(record.getByRole('list', { name: 'Evidence list' })).toBeVisible();
         // The calculation in the words the PDF prints (combined audit #38), each trace's SHA-256 in the internal record, and no line-trace link the reviewer's role cannot open.
+        await expect(reviewer.getByRole('region', { name: 'Line table' }).getByRole('heading', { level: 3, name: 'Calculation per line' })).toBeVisible();
         const reviewed = reviewer.getByRole('region', { name: 'Calculations' }).locator('[data-calculation-row]');
         await expect(reviewed).toHaveCount(3);
         for (const block of await reviewed.all()) {

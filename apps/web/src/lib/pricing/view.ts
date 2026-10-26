@@ -75,6 +75,11 @@ export interface TraceStepView {
 export const TRACE_REMITTANCE_DATE_NOTE =
   'The engine’s record names this date remittance_date: it is the payment date (BPR16, the check’s issue date or the EFT’s effective date), not the remittance advice’s own date.';
 
+/**
+ * Each part's title, the steps of PRD 11 numbered as one sequence in the engine's order: a part of a step that the trace
+ * records apart from it is that step "continued" (the fee schedule of step 2's method; the per-visit amount and the
+ * procedure-to-procedure edits of step 3's units).
+ */
 const TITLES: Readonly<Record<string, string>> = {
   release: 'Rule release and engine',
   as_of: 'Triage date',
@@ -83,8 +88,10 @@ const TITLES: Readonly<Record<string, string>> = {
   line: 'Line facts',
   agreement: 'Step 1: the agreement',
   terms: 'Step 2: the terms and method',
-  fee_schedule: 'Step 2: the fee schedule',
+  fee_schedule: 'Step 2, continued: the fee schedule',
   units: 'Step 3: units',
+  per_visit: 'Step 3, continued: the per-visit amount',
+  ncci_ptp: 'Step 3, continued: National Correct Coding Initiative (NCCI) procedure-to-procedure edits',
   adjustments: 'Step 4: adjustments',
   patient_share_cents: 'Step 5: patient share',
   rounding: 'Step 6: rounding',
@@ -93,7 +100,7 @@ const TITLES: Readonly<Record<string, string>> = {
   outcome: 'Outcome',
 };
 
-/** A part's title: its own, else its key as a label, initialisms in capitals ("ncci_ptp" is "NCCI PTP"; lib/copy/words.ts). */
+/** A part's title: its own, else (a part of a trace format this screen does not know) its key as a label, initialisms in capitals (lib/copy/words.ts). */
 function titleOf(key: string): string {
   return TITLES[key] ?? labelOf(key);
 }
@@ -213,22 +220,30 @@ export interface LineTraceStep {
   readonly recorded: TraceStepView | null;
 }
 
+/** The parts the calculation's words are of: every numbered step, the release and the outcome (not the facts the engine read). */
+const WORDED_PARTS: ReadonlySet<string> = new Set(Object.values(WORD_STEP_PART));
+
 /**
  * The line trace page's steps (design 3.9): each step's words under its title, in the engine's order. For roles that
  * read PHI (`recorded`, from traceSteps) every part of the trace is a step, its words above what the engine recorded
- * (a part with no words, such as the claim facts, shows its record only). For the others (no record) only the steps
- * the words speak to, so a viewer reads the sentences and never the record.
+ * (a part with no words, such as the claim facts, shows its record only). For the others (no record) every part the
+ * words are of, with the same titles and numbering, a step with no words for this line included (the page says it
+ * does not apply, or was not reached), so a viewer reads the sentences and never the record; none when the words
+ * cannot be put (the page shows the refusal).
  */
 export function lineTraceSteps(words: LineWords | null, recorded: readonly TraceStepView[]): LineTraceStep[] {
   const sentencesOf = (key: string) => (words?.steps ?? []).filter((step) => WORD_STEP_PART[step.step] === key).flatMap((step) => step.sentences);
   if (recorded.length !== 0) {
     return recorded.map((view) => ({ key: view.key, title: view.title, sentences: sentencesOf(view.key), recorded: view }));
   }
+  if (words === null) {
+    return [];
+  }
   const { parts, steps } = traceOrder();
   return parts
     .flatMap((key) => (key === 'steps' ? steps : [key]))
-    .map((key) => ({ key, title: titleOf(key), sentences: sentencesOf(key), recorded: null }))
-    .filter((step) => step.sentences.length !== 0);
+    .filter((key) => WORDED_PARTS.has(key))
+    .map((key) => ({ key, title: titleOf(key), sentences: sentencesOf(key), recorded: null }));
 }
 
 /** The Pricing card's method and adjustments in words, never their codes (design 3.9). */

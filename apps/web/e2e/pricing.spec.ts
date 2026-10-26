@@ -128,9 +128,11 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     await expect(fee.getByRole('table', { name: 'Fee schedule worksheet 1' })).toBeVisible();
     await expect(steps.locator(':scope > li[data-step="rounding"]')).toContainText(/Rounded once, half up to the cent/);
     // What the engine recorded sits in a closed disclosure under the words: open it, then read its rule records.
-    await expect(page.getByRole('list', { name: 'Rule records of Step 2: the fee schedule' })).toBeHidden();
+    // Each step's title is a heading under Trace (h2), named in its record's summary for a screen reader.
+    await expect(fee.getByRole('heading', { level: 3, name: 'Step 2, continued: the fee schedule' })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Rule records of Step 2, continued: the fee schedule' })).toBeHidden();
     await fee.getByText('As the engine recorded it').click();
-    await expect(page.getByRole('list', { name: 'Rule records of Step 2: the fee schedule' })).toContainText('pfs_rvu');
+    await expect(page.getByRole('list', { name: 'Rule records of Step 2, continued: the fee schedule' })).toContainText('pfs_rvu');
     await expectAccessible(page, 'the line trace page, its fee schedule record open');
     await atPhoneWidth(page, 'the line trace page, its fee schedule record open');
     expect(() => {
