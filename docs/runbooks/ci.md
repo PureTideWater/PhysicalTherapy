@@ -233,8 +233,8 @@ image is then built from. To clear one:
 - A job that needs PostgreSQL runs `tools/ci/postgres.sh up` right after its checkout and `tools/ci/postgres.sh wait`
   before its first database step, with "The database's log" last (`workflows.test.ts` holds the order); no workflow
   declares `services:`.
-- A change to `release.yml` or the Dockerfiles runs `release-dry-run.yml` (advisory) on its pull request: read it,
-  since no tag runs the release before the founder's.
+- A change to `release.yml`, the Dockerfiles or their pnpm installer runs `release-dry-run.yml` (advisory) on its pull
+  request: read it, since no tag runs the release before the founder's.
 
 ## Mutation testing
 

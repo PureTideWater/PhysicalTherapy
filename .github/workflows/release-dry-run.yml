@@ -1,8 +1,8 @@
 name: release-dry-run
 
 # The release's chain without a release (docs/adr/0066, Part 2). Only a tag runs release.yml, and only the founder makes
-# tags, so a change to it, to the actions it pins or to the images' Dockerfiles would otherwise run first on the
-# founder's tag. On every pull request and push that changes one of those files, this runs release.yml's own build and
+# tags, so a change to it, to the actions it pins or to the images' Dockerfiles and their pnpm installer would otherwise
+# run first on the founder's tag. On every pull request and push that changes one of those files, this runs release.yml's own build and
 # hand-over steps on the web image: it builds the image as release.yml does, saves it with its identity, uploads it and
 # downloads it as release.yml's jobs do, checks that the image loaded is the image built, and logs in to the GitHub
 # container registry with the job's own token; it writes the image's bill of materials as release.yml does, and runs
@@ -20,6 +20,7 @@ on:
       - tools/screening-capacity/image-id.ts
       - apps/web/Dockerfile
       - apps/worker/Dockerfile
+      - tools/check-toolchain/install-pnpm.sh
   push:
     branches: [claude/build-platform]
     paths:
@@ -28,6 +29,7 @@ on:
       - tools/screening-capacity/image-id.ts
       - apps/web/Dockerfile
       - apps/worker/Dockerfile
+      - tools/check-toolchain/install-pnpm.sh
 
 permissions:
   contents: read

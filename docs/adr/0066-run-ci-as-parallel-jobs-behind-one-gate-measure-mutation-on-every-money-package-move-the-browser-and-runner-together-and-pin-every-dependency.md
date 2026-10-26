@@ -384,7 +384,8 @@ piped to `gzip` would pass its step. action-setup's `cache: false` is written ou
 later default cannot turn the cache back on.
 
 **`.github/workflows/release-dry-run.yml`** (new, advisory, outside the ruleset) runs on every pull request and push
-that changes release.yml, itself, `tools/screening-capacity/image-id.ts` or either Dockerfile. Its `build` job
+that changes release.yml, itself, `tools/screening-capacity/image-id.ts`, either Dockerfile or the images' pnpm
+installer (`tools/check-toolchain/install-pnpm.sh`). Its `build` job
 (`contents: read`) builds the web image as release.yml does, saves it with its identity and uploads it (v7,
 `overwrite: true`, kept a day); its `push` job (`contents: read`, `packages: read`) downloads it with
 `merge-multiple` (v8), runs release.yml's identity check, loads it and logs in to ghcr.io with the job's own token. It

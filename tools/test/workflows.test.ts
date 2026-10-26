@@ -1312,9 +1312,10 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
   type DryJob = Job & { permissions?: unknown };
   const dry = () => workflow('release-dry-run.yml') as Workflow & { permissions?: unknown; jobs: Record<string, DryJob> };
   const release = () => workflow('release.yml') as Workflow & { jobs: Record<string, DryJob> };
-  const PATHS = ['.github/workflows/release.yml', '.github/workflows/release-dry-run.yml', 'tools/screening-capacity/image-id.ts', 'apps/web/Dockerfile', 'apps/worker/Dockerfile'];
+  // The images' pnpm installer runs in both Dockerfiles' build stage, so a change to it is a change to the image build.
+  const PATHS = ['.github/workflows/release.yml', '.github/workflows/release-dry-run.yml', 'tools/screening-capacity/image-id.ts', 'apps/web/Dockerfile', 'apps/worker/Dockerfile', 'tools/check-toolchain/install-pnpm.sh'];
 
-  it('runs on every pull request and push that changes the release, its dry run or the images’ Dockerfiles, outside the required checks', () => {
+  it('runs on every pull request and push that changes the release, its dry run, the images’ Dockerfiles or their pnpm installer, outside the required checks', () => {
     expect(dry().on).toEqual({ pull_request: { paths: PATHS }, push: { branches: ['claude/build-platform'], paths: PATHS } });
     expect(Object.keys(dry().jobs)).toEqual(['build', 'push', 'capacity']);
     expect(dry().jobs.push?.needs).toBe('build');
