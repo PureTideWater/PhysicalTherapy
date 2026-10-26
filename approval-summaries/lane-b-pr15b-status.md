@@ -30,4 +30,4 @@ Open questions: none. Standing ruling (the co-founder, 2026-10-26 ~00:20 UTC, re
 - Findings: none yet.
 - Next step: the fix round (fixers, then the full local suite once, then one push), then the fresh-clone verification.
 - Proposals outside this PR (for Lane A, which owns frozen ledger behaviour): (1) remittances.ts recordInterest flags interest 'allocated' when several lines are named even if only one carries a weight; set it from the lines with a positive weight. (2) A claim with AMT I that is also paid by a PLB L6 naming it would have its interest credited twice (claimInterest and providerAdjustments); record it once, with a fixture. (3) ledger_match.matched_at is the transaction's now() and its id random, so matches made in one reconcile have no stored order; a sequence column would make the order explicit (a migration).
-- Queued after 15b merges: #46 the Verified seal (orchestrator, 00:24 UTC; records verified-seal).
+- #46 the Verified seal: queued, not started (orchestrator's wind-down, 2026-10-26 10:09 UTC: weekly usage at 90%; Lane B hands over to Lane A tomorrow morning).

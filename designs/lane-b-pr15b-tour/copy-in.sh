@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # After setup.sh: the head's LED e2e helpers and LED-14..18 fixtures into /home/user/screens (needed by the base build;
-# a no-op at the head), and this directory's runner and specs into $TOUR_DIR.
+# a no-op at the head; the local branch's head, not origin's, since the fix round's fixtures are newer), and this directory's runner and specs into $TOUR_DIR.
 set -euo pipefail
 S="${TOUR_DIR:?set TOUR_DIR}"
 here=$(cd "$(dirname "$0")" && pwd)
-head=origin/co-001/pr-15b-ledger-payment-terms
+# The PR's head: the local branch by default (its fix round is ahead of origin); PR_HEAD_REF overrides it.
+head="${PR_HEAD_REF:-co-001/pr-15b-ledger-payment-terms}"
 cd /home/user/screens
 git checkout "$head" -- apps/web/e2e/ledger.ts apps/web/e2e/ledger-patient-share.spec.ts fixtures/synthetic/LED-14 fixtures/synthetic/LED-15 fixtures/synthetic/LED-16 fixtures/synthetic/LED-17 fixtures/synthetic/LED-18
 git reset -q

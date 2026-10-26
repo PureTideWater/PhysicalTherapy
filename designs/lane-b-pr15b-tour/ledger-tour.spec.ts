@@ -19,6 +19,8 @@ import { startLocalWorker } from '/home/user/screens/apps/web/e2e/worker';
  *   exported by a second billing manager, attested by the reimbursement reviewer under a support grant, its submission
  *   logged, the payer's letter uploaded and an acceptance of 24.00 recorded; the reconcile; then the adjusted 835 and
  *   the 24.00 deposit.
+ * - LED-15's mixed variant (the UX re-check of UX-1), in the LED-15 test after its case: a practice of its own with
+ *   original.835 then mixed-adjusted.835 and the reconcile; its ids in led-15mixed.json (no statement or report).
  * - Then, for each: an ROI statement for 2026 generated on the ROI screen and an audit report from the Reports screen,
  *   both printed by the worker.
  * Each test signs in a billing manager of its own (LED-14 the ledger manager, LED-15 the triage manager, LED-18 the
@@ -101,8 +103,8 @@ test('LED-14: coinsurance correction, then its 24.00 deposit', async ({ page }) 
   save('14', { practiceId, caseId, ...(await statementAndReport(page, practiceId)) });
 });
 
-test('LED-15: a correction the deductible took whole', async ({ page }) => {
-  test.setTimeout(420_000);
+test('LED-15: a correction the deductible took whole, then its mixed variant', async ({ page }) => {
+  test.setTimeout(720_000);
   const practiceId = await patientSharePractice('LED-15');
   await signInWithTotp(page, 'triage-manager');
   const caseId = await withWorker(async () => {
@@ -118,6 +120,21 @@ test('LED-15: a correction the deductible took whole', async ({ page }) => {
     await page.waitForTimeout(5_000);
   });
   save('15', { practiceId, caseId, ...(await statementAndReport(page, practiceId)) });
+  // The UX re-check (UX-1): LED-15's mixed variant in a practice of its own, as the synth case says: original.835,
+  // then mixed-adjusted.835 (allowed +30.00, PR-1 +20.00, CO-253 10.00, paid nothing more). Same page and persona,
+  // after the case above, so no second TOTP sign-in. Its ids go to led-15mixed.json.
+  const mixedPractice = await patientSharePractice('LED-15');
+  const mixedCase = await withWorker(async () => {
+    await uploadLedger835(page, mixedPractice, 'LED-15', 'original.835');
+    return openLedgerCase(mixedPractice);
+  });
+  await withWorker(async () => {
+    await uploadLedger835(page, mixedPractice, 'LED-15', 'mixed-adjusted.835');
+    await reconcileNow(mixedPractice);
+    await poll('the mixed correction matched', async () => (await matches(mixedPractice)) > 0);
+    await page.waitForTimeout(5_000);
+  });
+  save('15mixed', { practiceId: mixedPractice, caseId: mixedCase });
 });
 
 /** The reimbursement reviewer who attests LED-18's export (one hardware key per database). */

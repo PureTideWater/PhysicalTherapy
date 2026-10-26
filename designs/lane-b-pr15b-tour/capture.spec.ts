@@ -12,7 +12,9 @@ import { registerKeyAndSignIn, signInWithTotp } from '/home/user/screens/apps/we
  * scale factor 1; the same file names in both runs so they pair. The ledger manager shoots the practice's pages; the
  * contract specialist (hardware key, under the journey's support grant) the specialist's ledger review. The audit
  * report's and the ROI statement's PDFs (route handlers, not pages) are rendered with pdftoppm, pages 1 and 2, 1280 px
- * wide, after every page shot (a download is recorded in the Reports screen's export history). Synthetic data only.
+ * wide, after every page shot (a download is recorded in the Reports screen's export history). The fix round's re-check adds
+ * LED-15's mixed variant (led-15mixed.json: reconciliation, reconciliation-case, case) and LED-18's "Log a payer response"
+ * region alone (case-submissions-form). Synthetic data only.
  */
 
 const OUT = process.env.TOUR_DIR ?? '';
@@ -98,6 +100,33 @@ async function shoot(who: Persona, caseKey: string, key: string, routePattern: s
   }
 }
 
+/** One region of a page, shot alone (an element screenshot) so its words read at full size: the UX re-check's form. */
+async function shootRegion(who: Persona, caseKey: string, key: string, routePattern: string, path: string | undefined, region: string, note = ''): Promise<void> {
+  for (const width of [1280, 390] as const) {
+    const name = `led${caseKey}.${key}.${String(width)}`;
+    if (path === undefined || path.includes('undefined')) {
+      skipped.push({ shot: name, route: routePattern, practice: `LED-${caseKey}`, reason: 'the record it opens was not made by the populate step' });
+      log(`SKIP ${name}`);
+      continue;
+    }
+    const page = await (width === 1280 ? who.desktop : who.phone).newPage();
+    try {
+      const response = await page.goto(path, { waitUntil: 'load' });
+      await settle(page);
+      const file = `${PNG}/${name}.png`;
+      await page.getByRole('region', { name: region }).screenshot({ path: file });
+      shots.push({ file, id: name, name, path, routePattern, practice: `LED-${caseKey}`, role: who.role, width, theme: 'light', note: `${note}${note === '' ? '' : ' '}The region "${region}" alone. HTTP ${String(response?.status() ?? 0)}` });
+      log(`SHOT ${name} ${path} ${String(response?.status() ?? 0)}`);
+    } catch (error) {
+      skipped.push({ shot: name, route: routePattern, practice: `LED-${caseKey}`, reason: reasonOf(error) });
+      log(`SKIP ${name}: ${reasonOf(error)}`);
+    } finally {
+      await page.close();
+    }
+    flush();
+  }
+}
+
 async function pdfPages(who: Persona, caseKey: string, key: string, routePattern: string, path: string | undefined, pages: number): Promise<void> {
   const names = Array.from({ length: pages }, (_, index) => `led${caseKey}.${key}.page${String(index + 1)}.1280`);
   if (path === undefined || path.includes('undefined')) {
@@ -157,6 +186,19 @@ test('PR 15b screens for LED-14, LED-15 and LED-18', async ({ browser }) => {
     } else {
       await shoot(specialist, caseKey, 'abstraction-ledger', '/p/[practiceId]/abstraction/ledger', at('/abstraction/ledger'));
     }
+  }
+  // The UX re-check's additions (the fix round): LED-15's mixed patient-balance line (UX-1) on Reconciliation and its
+  // case page, and LED-18's payer-response form on its own (UX-4's label).
+  {
+    const ids = idsOf('15mixed');
+    const P = ids.practiceId === undefined ? undefined : `/p/${ids.practiceId}`;
+    const at = (suffix: string, ...need: (string | undefined)[]) => (P === undefined || need.some((item) => item === undefined) ? undefined : `${P}${suffix}`);
+    const note = 'LED-15 mixed (original.835 then mixed-adjusted.835, a practice of its own): the fix round only.';
+    await shoot(manager, '15mixed', 'reconciliation', '/p/[practiceId]/reconciliation', at('/reconciliation'), note);
+    await shoot(manager, '15mixed', 'reconciliation-case', '/p/[practiceId]/reconciliation?case=[caseId]', at(`/reconciliation?case=${ids.caseId}`, ids.caseId), note);
+    await shoot(manager, '15mixed', 'case', '/p/[practiceId]/cases/[caseId]', at(`/cases/${ids.caseId}`, ids.caseId), note);
+    const led18 = idsOf('18');
+    await shootRegion(manager, '18', 'case-submissions-form', '/p/[practiceId]/cases/[caseId]/submissions', led18.practiceId === undefined || led18.caseId === undefined ? undefined : `/p/${led18.practiceId}/cases/${led18.caseId}/submissions`, 'Log a payer response', 'The fix round only.');
   }
   // The PDFs last: each download is recorded in the export history the Reports screen lists.
   for (const caseKey of CASES) {
