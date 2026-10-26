@@ -1,6 +1,7 @@
 import { X12_835_CODE_SETS } from '@tp/edi835';
 import { ROUNDING_RULES } from '@tp/money';
 import { CLAIM_FILING_INDICATOR_TEXT, type CitedMethod, type PayerIdentification, QUALIFIED_IDENTIFIER } from '@tp/packets';
+import { METHOD_TEXT as VOCABULARY_METHODS, ROUNDING_TEXT as VOCABULARY_ROUNDING, STEP_TEXT as VOCABULARY_STEPS } from '@tp/packets/explain';
 import { IDS } from '@tp/packets/testing';
 import { pricingTraceSchema } from '@tp/pricing';
 import { describe, expect, it } from 'vitest';
@@ -39,6 +40,12 @@ describe('the payer copy’s words', () => {
       // No words for a code the list does not hold.
       expect(Object.keys(table).sort(), list).toEqual([...new Set(codes)].sort());
     }
+  });
+
+  it('says a method, step and rounding rule in @tp/packets’ one vocabulary, which words each line’s calculation (combined audit #38)', () => {
+    expect(METHOD_TEXT).toBe(VOCABULARY_METHODS);
+    expect(STEP_TEXT).toBe(VOCABULARY_STEPS);
+    expect(ROUNDING_TEXT).toBe(VOCABULARY_ROUNDING);
   });
 
   it('refuses a code it has no words for, rather than print it or lower-case it into words no scan can tell from prose', () => {

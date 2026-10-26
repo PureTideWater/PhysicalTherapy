@@ -63,7 +63,7 @@ describe('s3KeyPhiFindings (SEC-08)', () => {
 });
 
 describe('jobPayloadPhiFindings (SEC-08)', () => {
-  it.each([{ practice_id: PRACTICE, document_id: CLAIM }, { practice_id: PRACTICE, period: '2026-10' }, { day: '2026-10-14' }, {}])('accepts %j', (payload) => {
+  it.each([{ practice_id: PRACTICE, document_id: CLAIM }, { practice_id: PRACTICE, period: '2026-10' }, { day: '2026-10-14' }, { practice_id: PRACTICE, words_version: 'a'.repeat(64) }, {}])('accepts %j', (payload) => {
     expect(jobPayloadPhiFindings(payload, { known: SYNTHETIC })).toEqual([]);
   });
 
@@ -74,6 +74,7 @@ describe('jobPayloadPhiFindings (SEC-08)', () => {
     [{ practice_id: PRACTICE, nested: { name: 'x' } }, /nested is not an ID field/],
     [{ period: '2026-13' }, /period is not in its fixed format/],
     [{ day: 20261014 }, /day is not in its fixed format/],
+    [{ words_version: 'SYNTHETIC TWIN' }, /words_version is not in its fixed format/],
     [{ day: '1950-01-01' }, /synthetic record/],
     [[PRACTICE], /an object of opaque IDs/],
     ['practice', /an object of opaque IDs/],

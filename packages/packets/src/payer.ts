@@ -1,4 +1,4 @@
-import type { PayerIdentification } from './format';
+import type { PayerIdentification, RegulationCitation } from './format';
 
 /**
  * The payer and the plan as the payer's copy names them (audit item #37 part 1, D2; the verification of 2026-10-21;
@@ -148,3 +148,16 @@ export function payerAndPlanText(payer: Pick<PayerIdentification, 'name' | 'paye
   const plan = planText(payer);
   return plan === null ? payerText(payer) : `${payerText(payer)}, ${plan}`;
 }
+
+/**
+ * The regulation the rules reference cites for a Medicare Advantage non-contracted line: the citation of every such
+ * packet (apps/worker/src/packets/records.ts re-exports it for assembly) and of such a line's words on its trace page
+ * (@tp/packets/explain; docs/adr/0072). One constant, so the packet and the line page cite the same reference.
+ */
+export const MA_NONCONTRACTED_CITATION: RegulationCitation = {
+  kind: 'regulation',
+  method: 'MA_NONCONTRACTED',
+  reference: '42 CFR 422.214',
+  statement:
+    'A provider with no contract with the Medicare Advantage plan must accept, as payment in full, the amount it could have collected under Original Medicare; the plan owes that amount.',
+};

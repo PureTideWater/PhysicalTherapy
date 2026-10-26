@@ -393,6 +393,14 @@ packages/packets/src/calculation.ts
 packages/packets/src/correspondence.ts
 packages/packets/src/dates.ts
 packages/packets/src/draft.ts
+packages/packets/src/explain.ts
+packages/packets/src/explain/figures.ts
+packages/packets/src/explain/index.ts
+packages/packets/src/explain/line.ts
+packages/packets/src/explain/slots.ts
+packages/packets/src/explain/version.ts
+packages/packets/src/explain/words.ts
+packages/packets/src/explain/worksheet.ts
 packages/packets/src/facts.ts
 packages/packets/src/format.ts
 packages/packets/src/hash.ts
@@ -406,6 +414,7 @@ packages/packets/src/scan.ts
 packages/packets/src/verifier/index.ts
 packages/packets/src/verifier/mismatches.ts
 packages/packets/src/windows.ts
+packages/packets/src/words-version.ts
 packages/pricing/src/dates.ts
 packages/pricing/src/engine.ts
 packages/pricing/src/index.ts

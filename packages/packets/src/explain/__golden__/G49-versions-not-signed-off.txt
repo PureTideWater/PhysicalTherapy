@@ -1,0 +1,49 @@
+# fixtures/golden/claims/G49-versions-not-signed-off.json
+
+## Line 1, internal
+Not priced: No signed-off version covers the service date.
+  [agreement] No signed-off version covers the service date.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $23.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: No signed-off version covers the service date. The line stopped at the agreement. Remedy: Obtain the amendment or confirm the window.
+
+## Line 1, viewer
+Not priced: No signed-off version covers the service date.
+  [agreement] No signed-off version covers the service date.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $23.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: No signed-off version covers the service date. The line stopped at the agreement. Remedy: Obtain the amendment or confirm the window.
+
+## Line 2, internal
+Not priced: No signed-off version covers the service date.
+  [agreement] No signed-off version covers the service date.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $23.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: No signed-off version covers the service date. The line stopped at the agreement. Remedy: Obtain the amendment or confirm the window.
+
+## Line 2, viewer
+Not priced: No signed-off version covers the service date.
+  [agreement] No signed-off version covers the service date.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $23.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: No signed-off version covers the service date. The line stopped at the agreement. Remedy: Obtain the amendment or confirm the window.

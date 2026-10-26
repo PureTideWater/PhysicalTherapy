@@ -54,8 +54,12 @@ export const JOB_PAYLOADS = {
   reconcile: z.union([z.strictObject({ practice_id: id, pricing_run_id: id }), z.strictObject({ practice_id: id, document_id: id }), z.strictObject({ practice_id: id, day })]),
   digest: z.strictObject({ practice_id: id, period: month }),
   export: z.strictObject({ practice_id: id, export_job_id: id }),
-  /** An approved packet version to print and store (the person who asked is in the audit log). */
-  packet_export: z.strictObject({ practice_id: id, packet_version_id: id }),
+  /**
+   * An approved packet version to print and store (the person who asked is in the audit log), with the words version
+   * (@tp/packets WORDS_VERSION) of the page the export was asked from, which the job requires to be its own (finding
+   * M1, docs/adr/0072). Optional, so a job queued before that deploy still parses; the job refuses it without one.
+   */
+  packet_export: z.strictObject({ practice_id: id, packet_version_id: id, words_version: z.string().regex(/^[0-9a-f]{64}$/).optional() }),
   /** A generated ROI statement to print and store (the statement records who generated it). */
   roi_statement: z.strictObject({ practice_id: id, roi_statement_id: id }),
   /** A generated coverage report or monthly summary to print and store (the document records who generated it). */

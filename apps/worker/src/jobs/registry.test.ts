@@ -72,6 +72,17 @@ describe('job registry', () => {
     expect(() => parsePayload('monitor', { practice_id: PRACTICE, request_id: 'x'.repeat(129) })).toThrow(ZodError);
   });
 
+  it('takes a packet export with the words version it was asked under, or without one from before that deploy, under one key (ADR 0072)', () => {
+    const asked = { practice_id: PRACTICE, packet_version_id: SUBJECT, words_version: 'a'.repeat(64) };
+    expect(parsePayload('packet_export', asked)).toEqual(asked);
+    expect(() => {
+      assertNoPhi('job_payload', asked);
+    }).not.toThrow();
+    expect(singletonKey('packet_export', asked)).toBe(singletonKey('packet_export', examples.packet_export));
+    expect(() => parsePayload('packet_export', { ...asked, words_version: 'A'.repeat(64) })).toThrow(ZodError);
+    expect(() => parsePayload('packet_export', { ...asked, words_version: 'a'.repeat(63) })).toThrow(ZodError);
+  });
+
   it('refuses identifiers that are not UUIDs and periods that are not months', () => {
     expect(() => parsePayload('parse_835', { practice_id: PRACTICE, document_id: 'SYNPCN0001' })).toThrow(ZodError);
     expect(() => parsePayload('digest', { practice_id: PRACTICE, period: '2026-13' })).toThrow(ZodError);

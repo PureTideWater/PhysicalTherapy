@@ -6,6 +6,7 @@ import path from 'node:path';
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
+import { WORDS_VERSION } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { EXPORT_REQUEST_REFUSALS, PacketRuleError, requestPacketExport } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
@@ -165,7 +166,7 @@ async function runJob(setup: Setup, versionId: string, options: { readonly lastA
   const jobId = randomUUID();
   try {
     await packetExportHandler({ documents, keys: w.keys, pdf: { render: options.render ?? (() => Promise.resolve(new TextEncoder().encode(`%PDF-1.7\n% SYNTHETIC ${randomUUID()}\n`))) } })(
-      { practice_id: setup.practice.practiceId, packet_version_id: versionId },
+      { practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION },
       {
         jobId,
         logger: createLogger({ sink: () => undefined }),
@@ -214,11 +215,11 @@ describe('the builder, through its routes', () => {
     const version = (await builder(setup)).version;
     const versionId = version?.id ?? '';
     const queued = queue.jobs.length;
-    expect(issues(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId }))).toEqual([{ field: 'not_approved', message: EXPORT_REFUSAL_TEXT.not_approved }]);
+    expect(issues(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION }))).toEqual([{ field: 'not_approved', message: EXPORT_REFUSAL_TEXT.not_approved }]);
     // A line written off since: the case changed too, and both are said.
     const lineId = (await asOwner(w.owner, [setup.practice.practiceId], () => w.owner.query<{ id: string }>('SELECT id FROM case_line WHERE case_id = $1 ORDER BY id LIMIT 1', [setup.caseId]))).rows[0]?.id ?? '';
     ok(await call(writeOffLineAction, setup.practice.manager, P(setup.practice), { caseLineId: lineId, reason: 'not_worth_pursuit', text: '', confirm: 'on' }));
-    expect(issues(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId }))).toEqual([
+    expect(issues(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION }))).toEqual([
       { field: 'not_approved', message: EXPORT_REFUSAL_TEXT.not_approved },
       { field: 'case_changed', message: EXPORT_REFUSAL_TEXT.case_changed },
     ]);
@@ -245,11 +246,11 @@ describe('the builder, through its routes', () => {
     ok(await call(writeVersionAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, basedOnVersionId: '', useDraft: 'on' }));
     const written = (await builder(setup)).version;
     const versionId = written?.id ?? '';
-    ok(await call(approvePacketVersionAction, setup.second, P(setup.practice), { caseId: setup.caseId, versionId, versionSha256: written?.contentSha256 ?? '' }));
+    ok(await call(approvePacketVersionAction, setup.second, P(setup.practice), { caseId: setup.caseId, versionId, versionSha256: written?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
     expect((await builder(setup)).version?.exportReadiness).toEqual({ outcome: 'ready' });
     const queued = queue.jobs.length;
-    expect(ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId })).redirect).toMatch(/notice=export_requested$/);
-    expect(queue.jobs.slice(queued)).toEqual([{ type: 'packet_export', payload: { practice_id: setup.practice.practiceId, packet_version_id: versionId } }]);
+    expect(ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION })).redirect).toMatch(/notice=export_requested$/);
+    expect(queue.jobs.slice(queued)).toEqual([{ type: 'packet_export', payload: { practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION } }]);
     const asked = (await builder(setup)).version?.exportAttempt;
     expect(asked?.state).toBe('in_progress');
     expect(exportAttemptWords(asked ?? { state: 'none' }, (iso) => iso)).toMatchObject({ state: 'in_progress', live: true });
@@ -258,7 +259,7 @@ describe('the builder, through its routes', () => {
     const lineId = (await asOwner(w.owner, [setup.practice.practiceId], () => w.owner.query<{ id: string }>('SELECT id FROM case_line WHERE case_id = $1 ORDER BY id LIMIT 1', [setup.caseId]))).rows[0]?.id ?? '';
     ok(await call(writeOffLineAction, setup.practice.manager, P(setup.practice), { caseLineId: lineId, reason: 'not_worth_pursuit', text: '', confirm: 'on' }));
     expect((await builder(setup)).version?.exportReadiness).toEqual({ outcome: 'refused', reasons: ['case_changed'] });
-    expect(issues(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId }))).toEqual([{ field: 'case_changed', message: EXPORT_REFUSAL_TEXT.case_changed }]);
+    expect(issues(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION }))).toEqual([{ field: 'case_changed', message: EXPORT_REFUSAL_TEXT.case_changed }]);
     expect(await runJob(setup, versionId)).toBeUndefined();
     const refused = (await builder(setup)).version?.exportAttempt ?? { state: 'none' };
     expect(stateOf(refused)).toEqual({ state: 'refused', code: 'case_changed' });
@@ -267,7 +268,7 @@ describe('the builder, through its routes', () => {
     // The line reopened, the export asked again: a failed try shows as retrying, the last as failed, the next export as exported.
     ok(await call(reopenLineAction, setup.practice.manager, P(setup.practice), { caseLineId: lineId, reason: 'SYNTHETIC: written off by mistake' }));
     expect((await builder(setup)).version?.exportReadiness).toEqual({ outcome: 'ready' });
-    ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId }));
+    ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION }));
     expect(stateOf((await builder(setup)).version?.exportAttempt ?? { state: 'none' })).toEqual({ state: 'in_progress', code: null });
     const crash = () => Promise.reject(new Error('SYNTHETIC renderer crash'));
     expect(await runJob(setup, versionId, { render: crash })).toBeInstanceOf(Error);
@@ -277,7 +278,7 @@ describe('the builder, through its routes', () => {
     expect(stateOf(failed)).toEqual({ state: 'failed', code: 'render_failed' });
     expect(exportAttemptWords(failed, (iso) => iso)?.text).toMatch(/the operator was alerted\.$/);
     // The billing manager asks again, and the export is made.
-    ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId }));
+    ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION }));
     expect(await runJob(setup, versionId)).toBeUndefined();
     const done = (await builder(setup)).version;
     expect(done?.exportAttempt.state).toBe('exported');
@@ -287,6 +288,6 @@ describe('the builder, through its routes', () => {
     const analyst = await createUser(w.owner);
     await addMembership(w.owner, setup.practice.world.organizationId, analyst, 'analyst');
     expect((await builder(setup, analyst)).version?.exportAttempt.state).toBe('exported');
-    expect(ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId })).redirect).toMatch(/notice=exported$/);
+    expect(ok(await call(exportPacketAction, setup.practice.manager, P(setup.practice), { caseId: setup.caseId, versionId, wordsVersion: WORDS_VERSION })).redirect).toMatch(/notice=exported$/);
   });
 });

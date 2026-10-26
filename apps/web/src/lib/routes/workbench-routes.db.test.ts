@@ -8,7 +8,7 @@ import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
-import { packetReference } from '@tp/packets';
+import { WORDS_VERSION, packetReference } from '@tp/packets';
 import { EXPORT_NOT_DOWNLOADED } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
@@ -193,7 +193,7 @@ async function cas08Case(label: string, settings: object = {}): Promise<{ practi
 async function runExport(target: Practice, versionId: string): Promise<void> {
   const jobId = randomUUID();
   await packetExportHandler({ documents, keys: w.keys, pdf: w.pdf })(
-    { practice_id: target.practiceId, packet_version_id: versionId },
+    { practice_id: target.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION },
     { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(w.app, { jobId, practiceId: target.practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
   );
 }
@@ -357,7 +357,7 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     const flagged = (failing.version?.verifier.mismatches ?? []).filter((item) => item.code === 'figure_not_in_input').map((item) => CAS08_NARRATIVE.slice(item.start, item.end));
     expect(flagged).toEqual(['1234.56']);
     expect(failing.approval).toEqual({ status: 'blocked', reason: 'verifier' });
-    expect(refused(await call(approvePacketVersionAction, second, P, { caseId, versionId: failing.version?.id ?? '', versionSha256: failing.version?.contentSha256 ?? '' }))).toBe('a packet version the verifier failed cannot be approved');
+    expect(refused(await call(approvePacketVersionAction, second, P, { caseId, versionId: failing.version?.id ?? '', versionSha256: failing.version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }))).toBe('a packet version the verifier failed cannot be approved');
     // A stale edit (based on version 1) is refused.
     expect(refused(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: first.version?.id ?? '', narrative: 'The payer paid 97110 short [1].' }))).toBe('another version of the packet was written since this one was opened');
 
@@ -366,16 +366,16 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     const third = (await builder(practice.manager)).builder;
     expect(third.version).toMatchObject({ versionNo: 3, verifier: { passed: true } });
     expect(third.approval).toEqual({ status: 'drafter' });
-    expect(refused(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '' }))).toBe('the person who drafted or last edited a packet cannot approve it');
-    expect((await call(approvePacketVersionAction, analyst, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '' })).status).toBe('forbidden');
+    expect(refused(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }))).toBe('the person who drafted or last edited a packet cannot approve it');
+    expect((await call(approvePacketVersionAction, analyst, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION })).status).toBe('forbidden');
 
     // A request for approval, then the second person approves (once; again does nothing).
     ok(await call(requestApprovalAction, analyst, P, { caseId, versionId: third.version?.id ?? '', message: 'SYNTHETIC: ready for you' }));
     ok(await call(requestApprovalAction, analyst, P, { caseId, versionId: third.version?.id ?? '', message: '' }));
     expect((await builder(second)).builder.approvalRequest).toMatchObject({ message: 'SYNTHETIC: ready for you' });
-    expect(refused(await call(approvePacketVersionAction, second, P, { caseId, versionId: third.version?.id ?? '', versionSha256: 'a'.repeat(64) }))).toBe('an approval names the hash of the version it approves');
-    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '' }));
-    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '' }));
+    expect(refused(await call(approvePacketVersionAction, second, P, { caseId, versionId: third.version?.id ?? '', versionSha256: 'a'.repeat(64), wordsVersion: WORDS_VERSION }))).toBe('an approval names the hash of the version it approves');
+    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
+    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: third.version?.id ?? '', versionSha256: third.version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
     const approved = (await builder(practice.manager)).builder;
     expect(approved.approval).toMatchObject({ status: 'approved', alone: false });
     expect(approved.versions.map((version) => [version.versionNo, version.verifierPassed, version.approvedAt !== null])).toEqual([
@@ -404,14 +404,14 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     }
     expect(version?.content.lines[0]?.claim_control_number).toBe('{{claim_control_number:1}}');
     // Refused at once, before anything is queued, with the reason and its fix (audit item #26).
-    expect(refused(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '' }))).toBe(EXPORT_REFUSAL_TEXT.not_approved);
-    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version?.id ?? '', versionSha256: version?.contentSha256 ?? '' }));
-    expect((await call(exportPacketAction, viewer, P, { caseId, versionId: version?.id ?? '' })).status).toBe('forbidden');
+    expect(refused(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '', wordsVersion: WORDS_VERSION }))).toBe(EXPORT_REFUSAL_TEXT.not_approved);
+    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version?.id ?? '', versionSha256: version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
+    expect((await call(exportPacketAction, viewer, P, { caseId, versionId: version?.id ?? '', wordsVersion: WORDS_VERSION })).status).toBe('forbidden');
     const queuedBefore = queue.jobs.length;
-    expect(ok(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '' })).redirect).toMatch(/notice=export_requested$/);
-    expect(queue.jobs.slice(queuedBefore)).toEqual([{ type: 'packet_export', payload: { practice_id: practice.practiceId, packet_version_id: version?.id } }]);
+    expect(ok(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '', wordsVersion: WORDS_VERSION })).redirect).toMatch(/notice=export_requested$/);
+    expect(queue.jobs.slice(queuedBefore)).toEqual([{ type: 'packet_export', payload: { practice_id: practice.practiceId, packet_version_id: version?.id, words_version: WORDS_VERSION } }]);
     await runExport(practice, version?.id ?? '');
-    expect(ok(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '' })).redirect).toMatch(/notice=exported$/);
+    expect(ok(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '', wordsVersion: WORDS_VERSION })).redirect).toMatch(/notice=exported$/);
     const exported = ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version;
     expect(exported?.exportSha256).toMatch(/^[0-9a-f]{64}$/);
 
@@ -580,13 +580,13 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     const remaining = waiting.approval?.status === 'waiting' ? waiting.approval.remainingMs : 0;
     expect(remaining).toBeGreaterThan(23 * 3_600_000);
     expect(remaining).toBeLessThanOrEqual(24 * 3_600_000);
-    expect(refused(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: waiting.version?.id ?? '', versionSha256: waiting.version?.contentSha256 ?? '' }))).toBe(
+    expect(refused(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: waiting.version?.id ?? '', versionSha256: waiting.version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }))).toBe(
       'with no one else to approve it, a packet is approved by its own writer only 24 hours after the version was written',
     );
     // A day later (the version's writing moved back, as only a superuser with triggers off can).
     await superuser('UPDATE packet_version SET created_at = created_at - interval \'25 hours\' WHERE id = $1', [waiting.version?.id]);
     expect(ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.approval).toEqual({ status: 'ready', alone: true });
-    ok(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: waiting.version?.id ?? '', versionSha256: waiting.version?.contentSha256 ?? '' }));
+    ok(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: waiting.version?.id ?? '', versionSha256: waiting.version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
     const approved = ok(await call(packetPage, practice.manager, { ...P, caseId })).builder;
     expect(approved.approval).toMatchObject({ status: 'approved', alone: true });
     expect(approved.versions[0]).toMatchObject({ approvedAlone: true });
@@ -602,7 +602,7 @@ describe('submissions and responses (CAS-14, J10)', () => {
     const P = { practiceId: practice.practiceId };
     ok(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: '', useDraft: 'on' }));
     const version = ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version;
-    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version?.id ?? '', versionSha256: version?.contentSha256 ?? '' }));
+    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version?.id ?? '', versionSha256: version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
     await runExport(practice, version?.id ?? '');
     await attestThroughRoutes(practice, await reviewerOf(practice), caseId, version?.id ?? '');
     const { rows } = await asOwner(w.owner, [practice.practiceId], () =>
