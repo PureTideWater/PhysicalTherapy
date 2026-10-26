@@ -19,9 +19,6 @@ export const metadata: Metadata = { title: 'Pricing settings' };
 /** Where "tell us" goes: the support form, opened from Settings. */
 const SUPPORT_HREF = '/support?from=settings';
 
-/** The fields a refusal names, by their labels (the confirm form's shown location among them). */
-const FORM_LABELS = { zip: 'Billing ZIP', confirm: 'Confirmation', shownZip: 'Billing ZIP', shownZipPlusFour: 'ZIP+4' } as const;
-
 /** What a save says, by the location it leaves: one that prices (or waits only on PaidWhole's content), or one that still asks for something. */
 const SAVED_SETTLED = 'Months waiting on the billing ZIP are being priced.';
 const SAVED_UNSETTLED = 'Months that need the location still wait: see the status below.';
@@ -94,7 +91,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
           </p>
           {canEdit ? (
             <div className="flex flex-col gap-4">
-              <ActionForm action={setPricingLocation} submit="Save the billing ZIP" className="grid max-w-md gap-3" labels={FORM_LABELS}>
+              <ActionForm action={setPricingLocation} submit="Save the billing ZIP" className="grid max-w-md gap-3">
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <Field
@@ -109,7 +106,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
                 />
               </ActionForm>
               {location !== null && settled && !confirmed ? (
-                <ActionForm action={confirmPricingLocation} submit="Confirm the billing ZIP" variant="outline" className="flex flex-col gap-2" labels={FORM_LABELS}>
+                <ActionForm action={confirmPricingLocation} submit="Confirm the billing ZIP" variant="outline" className="flex flex-col gap-2">
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="confirm" value="on" />

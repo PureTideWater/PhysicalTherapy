@@ -101,7 +101,7 @@ describe('Stripe’s payment form (BIL-01)', () => {
     expect(onFile).toContain('>Replace with a bank account (ACH) or card</button>');
     expect(loadStripe).not.toHaveBeenCalled();
     // Pressed, the button keeps its words and focus (aria-disabled, never disabled); its status line is there, empty, from the first render.
-    expect(none).not.toMatch(/<button[^>]*\sdisabled/);
+    expect(none).not.toMatch(/<button[^>]*\sdisabled(=|\s|\/?>)/);
     expect(none).toMatch(/<p (?=[^>]*role="status")(?=[^>]*data-slot="pending-status")[^>]*><\/p>/);
   });
 

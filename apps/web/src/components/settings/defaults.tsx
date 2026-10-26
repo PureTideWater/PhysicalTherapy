@@ -15,7 +15,8 @@ import { Counted, Money } from '../remittances/display';
  * materiality thresholds and the pursuit cost, which the route returns as stored, in cents. Each amount is shown
  * through <Money> and each count of minutes in the mono face (brand: every money figure and unit count in mono), and
  * each dollar field is a <MoneyField> pre-filled with dollarsForInput, which the save's dollars field reads back to
- * the same cents. A refusal names each field by its label (MATERIALITY_LABELS, PURSUIT_LABELS), never its key.
+ * the same cents. Each field takes its label from MATERIALITY_LABELS or PURSUIT_LABELS; a refusal names the field by
+ * that label as the page shows it, never by its key.
  * Plain components: the page passes its actions and a factory of its FormKeys, called once per form so each form has
  * its own request key (docs/adr/0017).
  */
@@ -54,7 +55,7 @@ export function MaterialityCard({
       </CardHeader>
       <CardContent>
         {canEdit ? (
-          <ActionForm action={action} submit="Save materiality" className="grid max-w-md gap-3" labels={MATERIALITY_LABELS}>
+          <ActionForm action={action} submit="Save materiality" className="grid max-w-md gap-3">
             {formKeys()}
             <input type="hidden" name="practiceId" value={practiceId} />
             <MoneyField label="Per line" name="lineMateriality" defaultValue={dollarsForInput(materiality.lineCents)} required />
@@ -99,7 +100,7 @@ export function PursuitCard({
       </CardHeader>
       <CardContent>
         {canEdit ? (
-          <ActionForm action={action} submit="Save pursuit cost" className="grid max-w-md gap-3" labels={PURSUIT_LABELS}>
+          <ActionForm action={action} submit="Save pursuit cost" className="grid max-w-md gap-3">
             {formKeys()}
             <input type="hidden" name="practiceId" value={practiceId} />
             <fieldset className="grid min-w-0 gap-3" aria-describedby="pursuit-rule">

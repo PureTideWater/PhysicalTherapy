@@ -7,6 +7,8 @@
 export function formInput(form: FormData): Record<string, string> {
   const input: Record<string, string> = {};
   for (const [name, value] of form.entries()) {
+    // Required, not tidiness: a form sent from the browser (useGuardedSubmit, docs/adr/0077) builds its FormData from
+    // the DOM, which holds the framework's $ACTION_* hidden fields, so they reach the action and stop here.
     if (typeof value !== 'string' || name.startsWith('$ACTION')) {
       continue;
     }

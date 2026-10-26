@@ -1,10 +1,12 @@
 'use client';
 
 import type { PacketContent } from '@tp/packets';
-import { Alert, AlertDescription, AlertTitle, Button, Label } from '@tp/ui';
-import { type ReactNode, useActionState, useState } from 'react';
+import { Button } from '@tp/ui';
+import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 
 import type { ActionState } from '../../lib/http/next';
+import { CheckboxGroup, SelectField } from '../field';
+import { FormIssues, PendingStatus, RefusalSummary, useGuardedSubmit } from '../form-issues';
 import { NarrativeEditor } from './narrative-editor';
 
 /**
@@ -16,6 +18,11 @@ import { NarrativeEditor } from './narrative-editor';
  * button. `save` and `code_draft` go to the form's write action, which their `intent` steers; `model_draft`
  * sends the same form to the model's draft action (its button's own formAction), since each server action runs
  * one route. The server writes, verifies and stores the version, and alone decides whether it may be approved.
+ *
+ * It submits as ActionForm does (docs/adr/0077): from onSubmit, so a refusal keeps the narrative, the prompt-pay
+ * state and the ticks, with one guard across both actions; the submitter chooses the action (its data-intent), and
+ * the buttons keep their formAction and intent, so the post without JavaScript still reaches the right one. A refusal
+ * shows the shared summary first in the form, naming each field by its label, and marks the fields.
  */
 
 export type VersionIntent = 'save' | 'code_draft' | 'model_draft';
@@ -42,26 +49,14 @@ export interface ModelDraftGroup {
 
 type FormAction = (form: FormData) => void;
 
-function Submit({
-  submit,
-  formAction,
-  pending,
-  clicked,
-  onClick,
-}: {
-  readonly submit: VersionSubmit;
-  /** The model's draft goes to an action of its own; the others to the form's. */
-  readonly formAction: FormAction | undefined;
-  readonly pending: boolean;
-  readonly clicked: boolean;
-  readonly onClick: () => void;
-}) {
+function Submit({ submit, formAction, pending }: { readonly submit: VersionSubmit; /** The model's draft goes to an action of its own; the others to the form's. */ readonly formAction: FormAction | undefined; readonly pending: boolean }) {
   // A button with a function formAction carries no name or value: React names the button for its action itself, and
-  // the model's draft action reads no intent. The others steer the form's write action by their intent.
+  // the model's draft action reads no intent. The others steer the form's write action by their intent. data-intent
+  // tells onSubmit which action the press is for; it is not sent.
   const steer = formAction === undefined ? { name: 'intent', value: submit.intent } : {};
   return (
-    <Button type="submit" {...steer} variant={submit.variant ?? 'default'} disabled={pending} onClick={onClick} formAction={formAction}>
-      {pending && clicked ? 'Working…' : submit.label}
+    <Button type="submit" {...steer} data-intent={submit.intent} variant={submit.variant ?? 'default'} aria-disabled={pending || undefined} formAction={formAction}>
+      {submit.label}
     </Button>
   );
 }
@@ -96,78 +91,72 @@ export function VersionForm({
   readonly submits: readonly VersionSubmit[];
   readonly model: ModelDraftGroup | null;
 }) {
-  const [written, writeDispatch, writing] = useActionState(writeAction, {});
-  const [drafted, modelDispatch, drafting] = useActionState(modelAction, {});
+  // One guard across both actions: a press for either sends nothing while the other is out.
+  const inFlight = useRef(false);
+  const write = useGuardedSubmit(writeAction, { inFlight });
+  const draft = useGuardedSubmit(modelAction, { inFlight });
+  const formRef = useRef<HTMLFormElement>(null);
   const [clicked, setClicked] = useState<VersionIntent | null>(null);
-  const pending = writing || drafting;
+  const pending = write.pending || draft.pending;
   // What the last button sent came back with.
-  const state = clicked === 'model_draft' ? drafted : written;
-  const button = (submit: VersionSubmit) => (
-    <Submit
-      key={submit.intent}
-      submit={submit}
-      formAction={submit.intent === 'model_draft' ? modelDispatch : undefined}
-      pending={pending}
-      clicked={clicked === submit.intent}
-      onClick={() => {
-        setClicked(submit.intent);
-      }}
-    />
-  );
+  const shown = clicked === 'model_draft' ? draft : write;
+  const pressed = [...submits, ...(model?.submit === null || model?.submit === undefined ? [] : [model.submit])].find((submit) => submit.intent === clicked);
+  function onSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (inFlight.current) {
+      return;
+    }
+    inFlight.current = true;
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const intent = (submitter?.dataset.intent ?? 'save') as VersionIntent;
+    setClicked(intent);
+    (intent === 'model_draft' ? draft : write).send(new FormData(event.currentTarget, submitter));
+  }
+  const button = (submit: VersionSubmit) => <Submit key={submit.intent} submit={submit} formAction={submit.intent === 'model_draft' ? draft.formAction : undefined} pending={pending} />;
   return (
-    <form action={writeDispatch} className="flex flex-col gap-4" aria-label="Write a version">
-      {keys}
-      <input type="hidden" name="practiceId" value={practiceId} />
-      <input type="hidden" name="caseId" value={caseId} />
-      <input type="hidden" name="basedOnVersionId" value={basedOnVersionId ?? ''} />
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="prompt-pay-state">Prompt-pay state (interest, its own line)</Label>
-        <select id="prompt-pay-state" name="promptPayState" defaultValue={promptPay.selected} className="h-9 max-w-xs rounded-md border bg-background px-2 text-sm">
-          <option value="">None: no interest line</option>
-          {promptPay.states.map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </select>
-      </div>
-      {attachable.length === 0 ? null : (
-        <fieldset className="flex flex-col gap-1 text-sm">
-          <legend className="font-medium">Attach to the evidence list</legend>
-          {attachable.map((document) => (
-            <div key={document.id} className="flex items-center gap-2">
-              <input type="checkbox" id={`attach-${document.id}`} name={`attach:${document.id}`} defaultChecked={document.checked} />
-              <label htmlFor={`attach-${document.id}`}>{document.label}</label>
-            </div>
-          ))}
-        </fieldset>
-      )}
-      {narrative === null ? null : <NarrativeEditor name="narrative" initial={narrative.initial} content={narrative.content} maxLength={narrative.maxLength} />}
-      {state.error === undefined ? null : (
-        <Alert variant="destructive" data-state="error">
-          <AlertTitle>Not done</AlertTitle>
-          <AlertDescription>
-            <p>{state.error}</p>
-            {state.issues === undefined || state.issues.length === 0 ? null : (
-              <ul className="mt-1 list-disc pl-5">
-                {state.issues.map((issue) => (
-                  <li key={`${issue.field}:${issue.message}`}>
-                    {issue.field}: {issue.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-      <div className="flex flex-wrap gap-3">{submits.map(button)}</div>
-      {model === null ? null : (
-        <div className="flex flex-col gap-2 border-t pt-4" role="group" aria-label="Draft with the model">
-          <p className="text-sm font-medium">{model.heading}</p>
-          <p className="text-sm text-muted-foreground">{model.description}</p>
-          {model.submit === null ? model.unavailable : <div>{button(model.submit)}</div>}
+    <FormIssues state={shown.state}>
+      <form ref={formRef} action={write.formAction} onSubmit={onSubmit} className="flex flex-col gap-4" aria-label="Write a version">
+        <RefusalSummary state={shown.state} fromBrowser={shown.fromBrowser} submit={pressed?.label ?? submits[0]?.label ?? ''} formRef={formRef} />
+        {keys}
+        <input type="hidden" name="practiceId" value={practiceId} />
+        <input type="hidden" name="caseId" value={caseId} />
+        <input type="hidden" name="basedOnVersionId" value={basedOnVersionId ?? ''} />
+        <div className="max-w-xs">
+          <SelectField
+            label="Prompt-pay state (interest, its own line)"
+            name="promptPayState"
+            id="prompt-pay-state"
+            defaultValue={promptPay.selected}
+            options={[{ value: '', label: 'None: no interest line' }, ...promptPay.states.map((code) => ({ value: code, label: code }))]}
+          />
         </div>
-      )}
-    </form>
+        {attachable.length === 0 ? null : (
+          <CheckboxGroup
+            legend="Attach to the evidence list"
+            issueKey="attachments"
+            options={attachable.map((document) => ({ name: `attach:${document.id}`, value: 'on', label: document.label, defaultChecked: document.checked }))}
+          />
+        )}
+        {narrative === null ? null : <NarrativeEditor name="narrative" initial={narrative.initial} content={narrative.content} maxLength={narrative.maxLength} />}
+        <div className="flex flex-wrap items-center gap-3">
+          {submits.map(button)}
+          <PendingStatus pending={pending && clicked !== 'model_draft'} />
+        </div>
+        {model === null ? null : (
+          <div className="flex flex-col gap-2 border-t pt-4" role="group" aria-label="Draft with the model">
+            <p className="text-sm font-medium">{model.heading}</p>
+            <p className="text-sm text-muted-foreground">{model.description}</p>
+            {model.submit === null ? (
+              model.unavailable
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                {button(model.submit)}
+                <PendingStatus pending={pending && clicked === 'model_draft'} />
+              </div>
+            )}
+          </div>
+        )}
+      </form>
+    </FormIssues>
   );
 }

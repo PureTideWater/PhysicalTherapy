@@ -15,6 +15,18 @@ describe('Button', () => {
     expect(html).toMatch(/^<button data-slot="button" class="[^"]*bg-primary[^"]*" type="button">Save<\/button>$/);
   });
 
+  it('looks inactive when aria-disabled, as when disabled, and stays focusable (a pending form’s button)', () => {
+    const html = renderToStaticMarkup(
+      <Button type="submit" aria-disabled>
+        Save
+      </Button>,
+    );
+    expect(html).toContain('aria-disabled:cursor-not-allowed');
+    expect(html).toContain('aria-disabled:opacity-50');
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).not.toMatch(/ disabled=""/);
+  });
+
   it('applies the outline variant and small size', () => {
     const html = renderToStaticMarkup(
       <Button variant="outline" size="sm">

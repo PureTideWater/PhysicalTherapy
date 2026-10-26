@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Forms harness</title>
+    <!-- The few layout utilities the tests measure, which the app gets from Tailwind (its preflight's border-box too).
+         The brand's tokens and the shared stylesheet come from forms-harness.tsx. -->
+    <style>
+      *, ::before, ::after { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 sans-serif; }
+      /* Layered as Tailwind's utilities are, so the stylesheet's unlayered rules outrank them, as in the app. */
+      @layer utilities {
+        .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+        .flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .flex-wrap { flex-wrap: wrap; }
+        .grid { display: grid; }
+        .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .col-span-full { grid-column: 1 / -1; }
+        .basis-full { flex-basis: 100%; }
+        .w-full { width: 100%; }
+        .gap-2 { gap: 0.5rem; }
+        .gap-4 { gap: 1rem; }
+        .text-sm { font-size: 0.875rem; }
+        input, select, textarea { border: 1px solid var(--pw-input-border); }
+      }
+      .spacer { height: 40rem; }
+      [data-slot='app-header'] { position: sticky; top: 0; height: 3.5rem; background: var(--pw-bg); z-index: 30; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./forms-harness.tsx"></script>
+  </body>
+</html>

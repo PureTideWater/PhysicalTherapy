@@ -6,6 +6,8 @@ import { Label } from '@tp/ui';
 import { type ChangeEvent, useMemo, useState } from 'react';
 
 import { FIELD_LABELS, OWN_TEMPLATE, columnField } from '../../lib/reconciliation/template';
+import { Field, SelectField } from '../field';
+import { FieldError, useFieldIssue } from '../form-issues';
 
 /**
  * The posting-template mapping, with its preview on a sample (PRD 20: "one per practice-management
@@ -15,6 +17,8 @@ import { FIELD_LABELS, OWN_TEMPLATE, columnField } from '../../lib/reconciliatio
  * @tp/ledger). The sample is never sent anywhere: its file input has no name, so the form carries the
  * mapping alone. A claim reference is shown only as present or not. A built-in template whose columns no
  * format description has confirmed yet (the vendor placeholders, docs/adr/0059) says so beside its name.
+ * Every control stays controlled, so the form's refusal keeps what was chosen; each reads its own refusal from the
+ * form (`template`, `system`, `date_format`, `column_*`) and shows it under itself (docs/adr/0077).
  */
 
 const PREVIEW_ROWS = 10;
@@ -78,18 +82,22 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
   }
 
   const options = headers ?? [];
+  // A refusal of the mapping as a whole (two fields on one column) is the template's: the group shows it.
+  const templateIssue = useFieldIssue('template');
+  const radioInvalid = templateIssue === undefined ? undefined : true;
   return (
     <div className="flex flex-col gap-4">
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex flex-col gap-2" data-invalid={radioInvalid} aria-describedby={templateIssue === undefined ? undefined : 'template-choice-error'}>
         <legend className="text-sm font-medium">Template</legend>
+        <FieldError id="template-choice" error={templateIssue} />
         {builtIn.map((item) => (
           <label key={item.id} className="flex items-center gap-2 text-sm">
-            <input type="radio" name="template" value={item.id} checked={choice === item.id} onChange={() => { setChoice(item.id); }} />
+            <input type="radio" name="template" value={item.id} checked={choice === item.id} aria-invalid={radioInvalid} onChange={() => { setChoice(item.id); }} />
             {item.system} {item.status === 'unconfirmed' ? '(built in, format unconfirmed)' : '(built in)'}
           </label>
         ))}
         <label className="flex items-center gap-2 text-sm">
-          <input type="radio" name="template" value={OWN_TEMPLATE} checked={choice === OWN_TEMPLATE} onChange={() => { setChoice(OWN_TEMPLATE); }} />
+          <input type="radio" name="template" value={OWN_TEMPLATE} checked={choice === OWN_TEMPLATE} aria-invalid={radioInvalid} onChange={() => { setChoice(OWN_TEMPLATE); }} />
           Our own practice-management system’s export
         </label>
       </fieldset>
@@ -106,48 +114,34 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
 
       {choice !== OWN_TEMPLATE ? null : (
         <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="Column mapping">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="template-system">Practice-management system</Label>
-            <input id="template-system" name="system" value={system} maxLength={100} required onChange={(event) => { setSystem(event.target.value); }} className="h-9 rounded-md border bg-background px-2 text-sm" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="template-date-format">Dates are written</Label>
-            <select id="template-date-format" name="date_format" value={dateFormat} onChange={(event) => { setDateFormat(event.target.value as DateFormat); }} className="h-9 rounded-md border bg-background px-2 text-sm">
-              {DATE_FORMATS.map((format) => (
-                <option key={format} value={format}>
-                  {format}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Field label="Practice-management system" name="system" id="template-system" value={system} maxLength={100} required onChange={(event) => { setSystem(event.target.value); }} />
+          <SelectField
+            label="Dates are written"
+            name="date_format"
+            id="template-date-format"
+            value={dateFormat}
+            options={DATE_FORMATS.map((format) => ({ value: format, label: format }))}
+            onChange={(event) => { setDateFormat(event.target.value as DateFormat); }}
+          />
           {POSTING_FIELDS.map((field) => {
-            const id = `template-${field}`;
             const value = columns[field] ?? '';
             const required = REQUIRED_POSTING_FIELDS.includes(field);
             return (
-              <div key={field} className="flex flex-col gap-1.5">
-                <Label htmlFor={id}>
-                  {FIELD_LABELS[field]}
-                  {required ? ' (required)' : ''}
-                </Label>
-                <select
-                  id={id}
-                  name={columnField(field)}
-                  value={value}
-                  required={required}
-                  onChange={(event) => {
-                    setColumns({ ...columns, [field]: event.target.value });
-                  }}
-                  className="h-9 rounded-md border bg-background px-2 text-sm"
-                >
-                  <option value="">{required ? 'Choose a column' : 'Not in the export'}</option>
-                  {[...new Set([...options, ...(value === '' ? [] : [value])])].map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SelectField
+                key={field}
+                label={`${FIELD_LABELS[field]}${required ? ' (required)' : ''}`}
+                name={columnField(field)}
+                id={`template-${field}`}
+                value={value}
+                required={required}
+                options={[
+                  { value: '', label: required ? 'Choose a column' : 'Not in the export' },
+                  ...[...new Set([...options, ...(value === '' ? [] : [value])])].map((name) => ({ value: name, label: name })),
+                ]}
+                onChange={(event) => {
+                  setColumns({ ...columns, [field]: event.target.value });
+                }}
+              />
             );
           })}
         </div>

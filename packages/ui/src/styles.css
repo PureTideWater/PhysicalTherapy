@@ -81,6 +81,54 @@
 }
 
 /*
+ * The rules below are unlayered on purpose: apps/web imports this file outside any layer, so each one outranks every
+ * Tailwind utility and reaches hand-written controls and pages that use no shared field (docs/adr/0077).
+ */
+
+/*
+ * A refused control: the danger color and a 2 px border, never alone: the field's own "Error:" line names the
+ * problem in words (WCAG 1.4.1, 3.3.1). Inputs are border-box, so the wider border keeps the field's height.
+ */
+:is(input, select, textarea)[aria-invalid='true']:not([type='checkbox'], [type='radio']) {
+  border-color: var(--destructive);
+  border-width: 2px;
+}
+/* A refused checkbox, radio group or checkbox group: a 2 px rule down its left edge, beside its "Error:" line. */
+:is(fieldset, [data-slot='checkbox-field'])[data-invalid] {
+  border-inline-start: 2px solid var(--destructive);
+  padding-inline-start: 0.75rem;
+}
+
+/*
+ * Below the md breakpoint, where the rail folds into the header's Menu (ADR 0056), form controls are 16 px, so iOS
+ * Safari does not zoom the page on focus (ADR 0077); from md up they keep the dense 14 px. The viewport's
+ * maximum-scale stays unset (WCAG 1.4.4).
+ */
+@media (width < 48rem) {
+  input:not([type='checkbox'], [type='radio'], [type='hidden'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='range'], [type='color'], [type='image']),
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
+/*
+ * What takes the focus, a summary link's field or a fragment's target, stops below the shell's sticky header (3.5rem)
+ * with a 16 px gap, never under it (WCAG 2.2 2.4.11).
+ */
+html {
+  scroll-padding-top: calc(3.5rem + 1rem);
+}
+
+/*
+ * A form laid out as a row wraps while it shows a refusal, so its summary takes a line of its own above the controls
+ * (the summary spans a grid's columns by its own classes). A column form has nothing to wrap.
+ */
+form:has(> [data-slot='refusal-summary']) {
+  flex-wrap: wrap;
+}
+
+/*
  * A plain progress bar for loading (LoadingState): the only motion the brand allows for progress. The mark
  * itself never moves. Under prefers-reduced-motion the bar stands still.
  */

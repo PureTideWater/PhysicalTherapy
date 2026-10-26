@@ -3,7 +3,7 @@ import type { ContractOption, DocumentSummary } from '../../lib/contracts/contra
 import { KIND_NAMES, formatBytes } from '../../lib/uploads/receipt-labels';
 import type { PayerOption } from '../../lib/remittances/queries';
 import { ActionForm } from '../action-form';
-import { Field, SelectField } from '../field';
+import { Field, SelectField, TextAreaField } from '../field';
 import { utc } from '../format';
 import { FormKeys } from '../form-keys';
 
@@ -78,10 +78,7 @@ export function AnswerForm({ action, practiceId, questionId }: { readonly action
       <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
       <input type="hidden" name="questionId" value={questionId} />
-      <label htmlFor={`answer-${questionId}`} className="text-sm font-medium">
-        Answer
-      </label>
-      <textarea id={`answer-${questionId}`} name="answer" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
+      <TextAreaField label="Answer" name="answer" id={`answer-${questionId}`} required maxLength={2000} rows={2} />
     </ActionForm>
   );
 }
