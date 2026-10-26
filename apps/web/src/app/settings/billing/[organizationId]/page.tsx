@@ -1,62 +1,56 @@
 import { formatUsd, parseCents } from '@tp/money';
-import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../../components/action-form';
+import { AccountStandingSummary, NextStepText } from '../../../../components/billing/account-standing';
 import { PAYMENT_METHOD_NAME, PaymentMethodCard } from '../../../../components/billing/payment-method-card';
 import { SelectField } from '../../../../components/field';
 import { utc, utcDate } from '../../../../components/format';
 import { Money } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
-import { organizationBillingPage } from '../../../../lib/routes/billing';
+import { CLOSURE_TICKET, organizationBillingPage } from '../../../../lib/routes/billing';
 import { addSimulatedPaymentMethod, choosePlan, payInvoice, settleSimulatedPayments } from '../actions';
 import { FormKeys } from '../../../../components/form-keys';
 import { pageCsrfToken } from '../../../../lib/http/csrf-page';
 
 export const metadata: Metadata = { title: 'Organization billing' };
 
-const STANDING: Readonly<Record<string, string>> = { good: 'In good standing', past_due: 'Past due', suspended: 'Suspended for nonpayment' };
 const INVOICE_STATUS: Readonly<Record<string, string>> = { open: 'Open', paid: 'Paid', void: 'Void', uncollectible: 'Uncollectible', draft: 'Draft' };
 const KIND: Readonly<Record<string, string>> = { subscription: 'Subscription', audit: 'Audit', other: 'Other' };
 
 /**
  * An organization's billing (PRD 5, J18; PRD 6, Billing; PRD 7, Settings; docs/adr/0050), for its
- * administrator: the standing and any suspension notice, the payment method (a bank account by ACH, preferred
+ * administrator: its one standing with what to do next (accountStanding; while PaidWhole's suspension lasts, a note
+ * that the forms below do not lift it), the payment method (a bank account by ACH, preferred
  * and shown first, or a card: Stripe Elements in production, the local simulator's test values in development;
  * components/billing/payment-method-card.tsx, docs/adr/0073), then the plan (monthly or annual), which needs a
- * method on file (with none, the plans' prices and a sentence asking for one stand in for the form), and the
- * invoices. What is chosen here happens at Stripe and shows once Stripe reports it.
+ * method on file (with none, the plans' prices and a sentence asking for one stand in for the form; for a closed
+ * organization, a sentence that it takes none and the ticket for a question about the closure; the note that the
+ * amounts are placeholders shows only beside amounts), and the invoices, with a Pay form for each unpaid one and for the
+ * invoice holding the standing even when it is older than the newest shown. What is chosen here happens at Stripe
+ * and shows once Stripe reports it.
  */
 export default async function OrganizationBillingPage(props: { readonly params: Promise<{ organizationId: string }> }) {
   const page = await loadPage(organizationBillingPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="billing" roles={page.roles} message={page.message} nextStep="Your organization's administrator manages its billing." />;
   }
-  const { billing, paymentMethod, catalog, provider, suspension, testRouting } = page.data;
+  const { billing, paymentMethod, catalog, provider, standing, testRouting } = page.data;
   const organizationId = billing.organizationId;
-  const open = billing.invoices.filter((invoice) => invoice.status === 'open' || invoice.status === 'uncollectible');
+  const holding = billing.holdingInvoice;
+  const unpaid = billing.invoices.filter((invoice) => invoice.status === 'open' || invoice.status === 'uncollectible');
+  const open = holding === null || unpaid.some((invoice) => invoice.id === holding.id) ? unpaid : [...unpaid, holding];
   return (
     <AppShell shell={page.shell} section="billing">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Billing: {billing.name}</h1>
-      <p className="text-base text-muted-foreground">
-        Standing: <Badge variant={billing.standing === 'good' ? 'outline' : 'destructive'}>{STANDING[billing.standing] ?? billing.standing}</Badge>
-        {billing.pastDueSince === null ? null : <span> since {utcDate(billing.pastDueSince)}</span>}
-      </p>
-      {suspension === null ? null : (
-        <Alert variant="destructive" data-notice="suspended" role="alert">
-          <AlertTitle>New runs have stopped</AlertTitle>
-          <AlertDescription>{suspension}</AlertDescription>
-        </Alert>
+      <AccountStandingSummary standing={standing} />
+      {standing.formsNote === null ? null : (
+        <p className="text-sm" data-notice="forms">
+          {standing.formsNote}
+        </p>
       )}
-      {billing.standing === 'past_due' && billing.pastDueSince !== null ? (
-        <Alert data-notice="past-due">
-          <AlertTitle>A payment failed</AlertTitle>
-          <AlertDescription>
-            Update the payment method or pay the open invoice. New runs stop 30 days after the failed payment ({utcDate(new Date(billing.pastDueSince.getTime() + 30 * 86_400_000))}) until it is paid; your data stays readable.
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       <PaymentMethodCard
         organizationId={organizationId}
@@ -75,7 +69,11 @@ export default async function OrganizationBillingPage(props: { readonly params: 
           <CardDescription>Monitoring, billed monthly or annually to the payment method on file.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">
-          {billing.subscription === null && paymentMethod === null ? (
+          {billing.subscription === null && standing.planRefusal !== null ? (
+            <p data-plan="closed">
+              {standing.planRefusal} <NextStepText step={CLOSURE_TICKET} />
+            </p>
+          ) : billing.subscription === null && paymentMethod === null ? (
             // A plan is refused until a method is on file, so the form waits for one; the prices still show.
             <div className="flex flex-col gap-2" data-plan="needs-method">
               <ul className="flex flex-col gap-1">
@@ -110,7 +108,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
               {billing.subscription.cancelAtPeriodEnd ? <> (ends then)</> : null}
             </p>
           )}
-          {catalog.confirmed ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until PaidWhole confirms its prices.</p>}
+          {catalog.confirmed || (billing.subscription === null && standing.planRefusal !== null) ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until PaidWhole confirms its prices.</p>}
         </CardContent>
       </Card>
 
@@ -121,7 +119,16 @@ export default async function OrganizationBillingPage(props: { readonly params: 
         </CardHeader>
         <CardContent>
           {billing.invoices.length === 0 ? (
-            <EmptyState title="No invoices yet" nextStep={billing.subscription === null ? 'Add a payment method, then choose a plan.' : 'The first invoice appears once Stripe issues it.'} />
+            <EmptyState
+              title="No invoices yet"
+              nextStep={
+                standing.planRefusal !== null
+                  ? 'Nothing is owed; a closed organization takes no new plan.'
+                  : billing.subscription === null
+                    ? 'Add a payment method, then choose a plan.'
+                    : 'The first invoice appears once Stripe issues it.'
+              }
+            />
           ) : (
             <table className="w-full text-left text-sm" aria-label="Invoices">
               <thead className="text-muted-foreground">
@@ -163,20 +170,22 @@ export default async function OrganizationBillingPage(props: { readonly params: 
           {open.length === 0 ? null : (
             <div className="mt-4 flex flex-col gap-2">
               {open.map((invoice) => (
-                <ActionForm
-                  key={invoice.id}
-                  action={payInvoice}
-                  submit={
-                    <>
-                      Pay {invoice.number ?? 'the open invoice'} now (<Money value={invoice.amountRemainingCents} />)
-                    </>
-                  }
-                  variant="outline"
-                >
-                  <FormKeys />
-                  <input type="hidden" name="organizationId" value={organizationId} />
-                  <input type="hidden" name="invoiceId" value={invoice.id} />
-                </ActionForm>
+                // The standing's next step links here (#pay-<invoice>); the margin keeps the Pay button clear of the sticky header.
+                <div key={invoice.id} id={`pay-${invoice.id}`} className="scroll-mt-20">
+                  <ActionForm
+                    action={payInvoice}
+                    submit={
+                      <>
+                        Pay {invoice.number ?? 'the open invoice'} now (<Money value={invoice.amountRemainingCents} />)
+                      </>
+                    }
+                    variant="outline"
+                  >
+                    <FormKeys />
+                    <input type="hidden" name="organizationId" value={organizationId} />
+                    <input type="hidden" name="invoiceId" value={invoice.id} />
+                  </ActionForm>
+                </div>
               ))}
             </div>
           )}

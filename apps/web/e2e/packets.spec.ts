@@ -103,7 +103,12 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await expect(deadline).toContainText('Deadline verified');
     await expect(deadline.getByRole('list', { name: 'Deadline evidence' })).toContainText('Disputes are raised within 3650 days of the payment date.');
     await expect(page.getByRole('table', { name: 'Line schedule' }).locator('[data-deadline="verified"]')).toHaveCount(3);
-    await expect(page.getByRole('table', { name: 'Calculations' }).locator('[data-calculation-row]')).toHaveCount(3);
+    // Each line's calculation in the payer's words (combined audit #38): one block per row, each with its summary sentence.
+    const calculations = page.getByRole('region', { name: 'Calculations' }).locator('[data-calculation-row]');
+    await expect(calculations).toHaveCount(3);
+    for (const block of await calculations.all()) {
+      await expect(block).toContainText('rounded once');
+    }
     // Identifiers are placeholders on screen; the export inserts them.
     await expectNoIdentifiers(page);
     // One form writes a version: its fields once, each with an ID of its own (item #61).
@@ -335,6 +340,15 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(record.locator('[data-internal="approved_by"]')).toContainText(personaEmail('packet-approver'));
         await expect(record.getByLabel('Version SHA-256')).toHaveAttribute('data-sha256', /^[0-9a-f]{64}$/);
         await expect(record.getByRole('list', { name: 'Evidence list' })).toBeVisible();
+        // The calculation in the words the PDF prints (combined audit #38), each trace's SHA-256 in the internal record, and no line-trace link the reviewer's role cannot open.
+        await expect(reviewer.getByRole('region', { name: 'Line table' }).getByRole('heading', { level: 3, name: 'Calculation per line' })).toBeVisible();
+        const reviewed = reviewer.getByRole('region', { name: 'Calculations' }).locator('[data-calculation-row]');
+        await expect(reviewed).toHaveCount(3);
+        for (const block of await reviewed.all()) {
+          await expect(block).toContainText('rounded once');
+        }
+        await expect(record.getByRole('list', { name: 'Trace SHA-256 of each row' }).getByRole('listitem')).toHaveCount(3);
+        await expect(reviewer.getByRole('table', { name: 'Line schedule' }).getByRole('link', { name: 'Line trace' })).toHaveCount(0);
         await expect(reviewer.getByRole('region', { name: 'Payer’s copy' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
         await expect(reviewer.getByRole('region', { name: 'Payer’s copy' }).locator('[data-contact="set"]')).toContainText(correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT));
         await expectAccessible(reviewer, 'Packet review, internal record and payer’s copy');

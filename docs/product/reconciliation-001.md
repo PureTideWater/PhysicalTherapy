@@ -206,6 +206,7 @@ PR 1 comes before PR 2 although CO-02 belongs to an earlier milestone (rule 6 of
       - The packet heading and requested action rewritten to "our review indicates a payment difference under the following terms".
       - The executive summary and the internal audit manifest as separate exports.
     - **Acceptance:** the stored hash of every part matches its file; an export that lacks a part is refused; an export under the payer scope carries only the identifiers that scope admits; the copy lint covers the packet templates.
+      - *Amended 2026-10-26 (combined audit #38):* a test exports one synthetic case under each scope (payer, practice_internal, auditor, executive) and requires each file to hold exactly the identifiers D26 admits: the executive export none (no claim control number, patient name, member ID or pseudonym), the auditor export only the pseudonym and claim control number; and the calculation manifest states each line's words as `explainPacket` of `@tp/packets` renders them.
     - **Effort:** 57 to 96 hours. **Decisions:** D26.
 
 13. **Case screen: numbers, six tabs and drill-down.**
@@ -217,6 +218,7 @@ PR 1 comes before PR 2 although CO-02 belongs to an earlier milestone (rule 6 of
       - Invoices carry no stage figure today (nothing in `packages/billing` or `apps/worker/src/billing` reads a stage), so CO-06's "on invoices" holds by construction; a test pins it.
       - An ADR records the model boundaries.
     - **Acceptance (CO-06):** "the six tabs render for a synthetic case". A loader test shows that the stage totals never sum. CAS-17 passes with two payers.
+      - *Amended 2026-10-26 (combined audit #38):* the Calculations tab renders each line through `explainLine` (the internal words for roles that read PHI, the viewer's without dates for the others); an e2e test follows one amount by clicks from the case total to the line, its trace words, its rate record and its evidence page, for a synthetic case.
     - **Effort:** 61 to 104 hours. **Decisions:** D31, D34.
 
 14. **Roles and independent sign-off.**
@@ -497,6 +499,7 @@ Every pull request above passes these checks. A pull request that cannot pass on
 Approved by the owner on October 17, 2026, in the build session. Every recommendation, D1 to D36, is accepted as written, with these answers to the questions put to the owner:
 
 - **Sequence (D5):** option (a). All of the change order, in its order: PR 1 to PR 17, then milestone 12 at its reduced scope, then milestone 13 and the final pass.
+  - *Amended 2026-10-26 (combined audit #38, adopted by the founder on 2026-10-20; confirmed by the co-founder under the delegation of 2026-10-25):* option (b) is closed: nothing of CO-06 is deferred past Gate 2. The executive summary, the internal audit manifest and the drill-down stay in PR 12 and PR 13. This agrees with option (a), "all of the change order, in its order".
 - **Delivery (D4):** option (a). One GitHub pull request per item above, opened against `claude/build-platform`. Each is merged once its acceptance check and the full CI are green, and each ends with a report of what changed, which check proves it and what the next pull request is.
   - *Amended 2026-10-20* (the founder's ruling on audit item #20, `docs/adr/0063`, "Amendment (2026-10-20)"): once the build agent works under its own GitHub account (`docs/runbooks/github-governance.md`, step 3i), each pull request into `claude/build-platform` or `main` also needs the founder's approval of its latest commit before it merges (the build waits for it from 3i, and GitHub requires it from step 5); the build still performs the merge, after that approval and green checks. Until the agent's account exists, option (a) stands as written. No pull request goes into `main` before launch unless the founder rules on it.
 - **Independent sign-off (D29):** the default threshold is $2,500 per case (`250000` cents), held in `practice.settings` and changeable per practice.

@@ -61,8 +61,14 @@ export const MUTATE = {
     'packages/packets/src/dates.ts',
     'packages/packets/src/windows.ts',
     'packages/packets/src/assemble.ts',
+    // Each figure explained in words (docs/adr/0072): the renderer, its word and slot tables, the words version and
+    // the binding of a packet's words to the traces its approval names. Its golden traces and pins are data.
+    'packages/packets/src/explain/**/*.ts',
+    'packages/packets/src/explain.ts',
+    'packages/packets/src/words-version.ts',
     '!packages/packets/src/**/*.test.ts',
     '!packages/packets/src/test-support.ts',
+    '!packages/packets/src/explain/__golden__/**',
   ],
 };
 

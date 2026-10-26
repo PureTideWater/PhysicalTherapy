@@ -19,7 +19,8 @@ import type { Services } from '../server/services';
 import { NotFoundError } from '../http/route';
 import { type ContactNow, contactNow } from './contact';
 import { PRICING_BLOCKED_TEXT, type PricingNowView, pricingNow } from './pricing';
-import { atCaseLevel, deadlineNow } from './queries';
+import type { CalculationWords } from './calculation-words';
+import { atCaseLevel, calculationWords, deadlineNow } from './queries';
 
 /**
  * The reimbursement reviewer's review of a packet's export (D16; docs/adr/0061), as the audit report's
@@ -41,6 +42,10 @@ import { atCaseLevel, deadlineNow } from './queries';
  * SHA-256 and its reference) beside what the payer's copy carries (the approval line with the reference, and the
  * correspondence contact the practice has set now). The checklist is the founder's seven items (Q5 (a)), and the
  * attest action's schema is built from it, so the two cannot drift.
+ *
+ * Combined audit #38 (docs/adr/0072): the review carries each line's calculation in the words the payer's PDF prints,
+ * from the same renderer with the same audience (@tp/packets explainPacket(), payer) over the stored traces the
+ * approval names, read under the review's own purpose; each trace's SHA-256 stays in the internal record.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -63,7 +68,7 @@ export const PACKET_CHECKLIST = [
   },
   {
     id: 'calculation',
-    text: 'Each line’s calculation in the PDF and the CSV is its trace’s: the method, the steps, the one rounding and the patient share, shown apart from expected; each trace’s SHA-256 is on this page.',
+    text: 'Each line’s calculation in the PDF is worded from its trace exactly as on this page: the method, each step, the fee schedule worksheet where the line used the fee schedule, the one rounding and the patient share, shown apart from expected; the CSV’s method, rounding and patient share match; each trace’s SHA-256 is on this page.',
   },
   { id: 'identifiers', text: 'The identifiers in the PDF and the CSV are the claim and patient records’ own, and the narrative holds none of them.' },
   {
@@ -139,6 +144,8 @@ export interface PacketReview {
   readonly viewerTookPart: boolean;
   /** The files of this export the viewer has downloaded since it was made, each checked against its SHA-256 as it was served: the attestation needs both. */
   readonly viewerDownloaded: Readonly<Record<PacketExportFile, boolean>>;
+  /** Each line's calculation in the payer's words, as the PDF prints them (combined audit #38). */
+  readonly calculationWords: CalculationWords;
 }
 
 /** A version of the case's packet for the reviewer; not found when it is not the case's. */
@@ -174,6 +181,7 @@ export async function packetReview(scope: Scope, services: Pick<Services, 'keys'
     contactNow: await contactNow(scope, input.practiceId),
     viewerTookPart: people.has(input.viewerId),
     viewerDownloaded: await viewerDownloads(scope, detail.versionId),
+    calculationWords: await calculationWords(scope, { practiceId: input.practiceId, content: detail.content, purpose: 'packet_review', requestId: input.requestId }),
   };
 }
 

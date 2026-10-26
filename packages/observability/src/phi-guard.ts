@@ -129,6 +129,8 @@ export function s3KeyPhiFindings(key: string, options: PhiGuardOptions = {}): st
 const PAYLOAD_FIELDS: Readonly<Record<string, RegExp>> = {
   period: /^\d{4}-(0[1-9]|1[0-2])$/,
   day: /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/,
+  /** The renderer a packet export was asked under (@tp/packets WORDS_VERSION; docs/adr/0072): a SHA-256 of code, never of a record. */
+  words_version: /^[0-9a-f]{64}$/,
 };
 
 /** Findings for a job payload. */

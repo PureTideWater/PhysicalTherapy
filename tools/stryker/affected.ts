@@ -96,6 +96,16 @@ export const DATA_FILES: Readonly<Record<MutationPackage, readonly DataEntry[]>>
   packets: [
     { glob: 'fixtures/synthetic/CAS-08/**', why: "verifier.test.ts reads CAS-08's narrative draft and expected verdict", readers: ['packages/packets/src/verifier.test.ts'] },
     { glob: 'fixtures/synthetic/rules/release-synth-*/**', why: "@tp/pricing/testing's SYNTHETIC releases, which the packets tests price under", readers: [RULES_CONTENT] },
+    {
+      glob: 'docs/product/unpriced-reasons.md',
+      why: "explain/words.test.ts holds the calculation words' copy of the closed list to it (it also reads @tp/contracts' and the engine's source for their closed lists)",
+      readers: ['packages/packets/src/explain/words.test.ts'],
+    },
+    {
+      glob: 'packages/packets/src/explain/__golden__/**',
+      why: "explain/golden.test.ts words the golden claims' traces and compares the words with their pins (docs/adr/0072)",
+      readers: ['packages/packets/src/explain/golden.test.ts'],
+    },
   ],
 };
 

@@ -1,6 +1,8 @@
 import type { DisputeWindowStart, DisputeWindowUnit } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
-import type { UnpricedReason } from '@tp/pricing';
+import { MA_NONCONTRACTED_CITATION } from '@tp/packets';
+import { type ExplainCitation, ExplainShapeError, ExplainWordsError, type LineWords, type Worksheet, explainLine, feeScheduleWorksheets } from '@tp/packets/explain';
+import { type PricingTrace, type UnpricedReason, parseTrace } from '@tp/pricing';
 import {
   ELIGIBLE_RUN,
   IN_EFFECT_SINCE,
@@ -573,6 +575,91 @@ export async function pricedLineOf(scope: Scope, practiceId: string, serviceLine
         : { length: row.window_rule_length, rule: { unit: row.window_rule_unit, measuredFrom: row.window_rule_measured_from } },
     trace: row.trace,
   };
+}
+
+/** A line's calculation in words, for the line trace page: never the trace itself (finding m9). */
+export interface PricedLineWords {
+  /** The summary and each step's sentences; null when the calculation cannot be put in words. */
+  readonly words: LineWords | null;
+  /** The line's fee-schedule worksheet (at most one), for a percent-of-Medicare or Medicare Advantage line. */
+  readonly worksheets: readonly Worksheet[];
+  /** Why the calculation cannot be put in words ("timed-units rule has no words"), never a value; null when it can. */
+  readonly refusal: string | null;
+}
+
+/**
+ * The audiences a line page words a trace for: internal, for the roles that read PHI (dates shown), or viewer (no date
+ * of any kind). The payer's words are a packet's, never a line page's (docs/adr/0072).
+ */
+export type LineAudience = 'internal' | 'viewer';
+
+/**
+ * What a line's words may cite beside its trace (combined audit #38, finding m4): a Medicare Advantage non-contracted
+ * line the regulation, as its packet does; a contract line the page of the rate record that priced it, but only a
+ * signed-off (verified) record, and only the one the trace names; any other line nothing, and its words leave the
+ * page clause out.
+ */
+export function lineCitation(trace: PricingTrace, record: { readonly id: string; readonly page: number } | null): ExplainCitation {
+  if (trace.agreement?.outcome === 'MA_NONCONTRACTED') {
+    return { kind: 'regulation', reference: MA_NONCONTRACTED_CITATION.reference };
+  }
+  return record !== null && trace.agreement?.rate_record_id === record.id ? { kind: 'contract', page: record.page } : null;
+}
+
+/**
+ * A priced line's calculation in words (combined audit #38; design 3.9; docs/adr/0072), as an audited read of its own
+ * (purpose line_trace): the stored trace and its rate record's contract page are read here, worded by
+ * @tp/packets/explain for the audience, and only the words and the worksheet are returned. The return type holds no
+ * trace, so a viewer's page data cannot carry one by any path, though the words are built from it on the server
+ * (pricedLineOf still withholds the trace itself from a role without phi.read). A code the words have none for, or a
+ * trace they cannot read, is a refusal by name, never a fallback to the code (design 3.7).
+ */
+export async function pricedLineWords(
+  scope: Scope,
+  read: { readonly practiceId: string; readonly pricedLineId: string; readonly requestId: string },
+  audience: LineAudience,
+): Promise<PricedLineWords> {
+  const [row] = await readWithAudit(
+    scope,
+    { objectType: 'priced_line', purpose: 'line_trace', requestId: read.requestId },
+    async (client) =>
+      (
+        await client.query<{ id: string; practice_id: string; trace: unknown; rate_record_id: string | null; page: number | null }>(
+          `SELECT p.id, p.practice_id, p.trace, rr.id AS rate_record_id, (rr.evidence->>'page')::int AS page
+             FROM priced_line p
+             LEFT JOIN rate_record rr ON rr.practice_id = p.practice_id AND rr.id = p.rate_record_id AND rr.verified_by IS NOT NULL
+            WHERE p.practice_id = $1 AND p.id = $2`,
+          [read.practiceId, read.pricedLineId],
+        )
+      ).rows,
+    (found) => ({ objectId: found.id, practiceId: found.practice_id }),
+  );
+  if (row === undefined) {
+    return { words: null, worksheets: [], refusal: null };
+  }
+  let trace: PricingTrace;
+  try {
+    trace = parseTrace(row.trace);
+  } catch {
+    // A trace of a format the words do not read (one stored before tp-pricing-trace/2); its record stays in the disclosure.
+    return { words: null, worksheets: [], refusal: 'its record is in a format the words do not read' };
+  }
+  const citation = lineCitation(trace, row.rate_record_id === null || row.page === null ? null : { id: row.rate_record_id, page: row.page });
+  try {
+    return {
+      words: explainLine(trace, citation, audience),
+      worksheets: feeScheduleWorksheets([{ row: trace.line.line_no, trace, citation }], audience, { of: 'line' }),
+      refusal: null,
+    };
+  } catch (error) {
+    if (error instanceof ExplainWordsError) {
+      return { words: null, worksheets: [], refusal: `${error.list} has no words` };
+    }
+    if (error instanceof ExplainShapeError) {
+      return { words: null, worksheets: [], refusal: error.what };
+    }
+    throw error;
+  }
 }
 
 /** The complete runs that priced the line, newest first. */

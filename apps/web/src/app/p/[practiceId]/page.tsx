@@ -166,7 +166,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           <AlertTitle>New runs have stopped</AlertTitle>
           <AlertDescription>
             {suspension[0]?.toUpperCase()}
-            {suspension.slice(1)}. Everything here stays readable; uploads, pricing runs, monitoring, packet exports and reports start again once it is resolved. The organization&apos;s administrator sees why in Settings, Billing.
+            {suspension.slice(1)}. Everything here stays readable; uploads, pricing runs, monitoring, packet exports and reports start again once it is resolved. The organization&apos;s administrator sees the standing and what to do next in Settings, Billing.
           </AlertDescription>
         </Alert>
       )}

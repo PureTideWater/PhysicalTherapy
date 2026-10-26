@@ -7,6 +7,7 @@ import { RATE_RECORD_FIELDS, amendVersion, approveRateRecordField, approveVersio
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
+import { WORDS_VERSION } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { SUBMISSION_LOGGED_UNATTESTED, approvePacketVersion, downloadPacketExport, writePacketVersion } from '@tp/worker/packets';
 import { acceptRun, createRerun } from '@tp/worker/pricing';
@@ -188,7 +189,7 @@ async function exportedCase(label: string): Promise<Exported> {
   await as(practice, second, (scope) => approvePacketVersion(scope, { practiceId: practice.practiceId, versionId: version.versionId, versionSha256: version.contentSha256, requestId: `test-${randomUUID()}` }));
   const jobId = randomUUID();
   await packetExportHandler({ documents, keys: w.keys, pdf: w.pdf })(
-    { practice_id: practice.practiceId, packet_version_id: version.versionId },
+    { practice_id: practice.practiceId, packet_version_id: version.versionId, words_version: WORDS_VERSION },
     { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(w.pricing.worker, { jobId, practiceId: practice.practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
   );
   const hashes = (await owner<{ export_sha256: string | null; export_csv_sha256: string | null }>(practice, 'SELECT export_sha256, export_csv_sha256 FROM packet_version WHERE id = $1', [version.versionId]))[0];
