@@ -95,7 +95,10 @@ leave it approved and never provable by the 24.00 deposit (probe E8, now LED-14'
   original); a PLB WO adds its amount, as before. On share-free lines every step equals the old additive walk.
   Adding a cash take-back to the allowed baseline instead would read LED-14 reversed as 76.00 where its allowed
   baseline is 70.00, and a reissue at 75.00 as "no change".
-- Within one reconcile pass both baselines are carried pass-locally, as the old baseline was.
+- Within one reconcile pass both baselines are carried pass-locally, as the old baseline was. The pass first finds a
+  line's candidates to a fixpoint (a correction of a candidate the line pairs with is one too; pairing alone extends
+  the search, never an outcome), then compares them in the stored chain's own claim order (payment date, load, id),
+  so what it writes is what every later walk of the chain reads (the engine review's S1).
 - **`remaining`** is the approved less the recouped, at least 0, read from entries; **`U = max(0, remaining − (P_b −
   p0))`** is what a payer response approved that no remittance has paid yet.
 

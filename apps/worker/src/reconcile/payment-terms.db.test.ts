@@ -209,6 +209,90 @@ describe('a line with coinsurance (LED-14)', () => {
     expect(correction?.matches).toMatchObject([{ reading: 'approved', entryCents: 2400n, change: { paymentIncreaseCents: 2400n, otherReductionCents: 0n, billableCents: 600n } }]);
   });
 
+  it('processes one reconcile’s candidates in the stored chain’s own order, so the pass writes what the chain later reads (probe F1)', async () => {
+    const led = await opened('LED-14');
+    // Paid 2026-06-08 and found by patient control number; paid 2026-07-07 and found by claim control number. Both loaded, then one reconcile.
+    await w.load(led.practice, 'LED-14/order-first.835');
+    await w.load(led.practice, 'LED-14/order-second.835');
+    const summary = await w.reconcile(led.practice);
+    expect(summary.remittances).toMatchObject({ approved: 1, decreased: 1, recoupments: 0 });
+    // 80.00 against the original's 56.00, then 70.00 against that 80.00: never +14.00 then +10.00 written in the other order.
+    expect(await w.stages(led.practice)).toEqual([
+      { stage: 'approved', amountCents: '2400' },
+      { stage: 'recouped', amountCents: '-1000' },
+    ]);
+    const correction = await correctionOf(led.practice, led.serviceLineId);
+    expect(correction?.matches.map((match) => [match.outcome, match.entryCents, match.change.paymentIncreaseCents])).toEqual([
+      ['approved', 2400n, 2400n],
+      ['decreased', -1000n, -1000n],
+    ]);
+    expect(await totals(led.practice)).toMatchObject({ approvedCents: 2400n, recoupedCents: -1000n, payerApprovedCents: 1400n });
+  });
+
+  it('takes a withholding’s cash off the paid baseline before a later reissue (probe E1; kills M7)', async () => {
+    const led = await scenario('LED-14');
+    await exported(led.practice, 'LED-14/posting-export.csv', 'posting_export');
+    await exported(led.practice, 'LED-14/eft-export.csv', 'eft_export');
+    await loaded(led.practice, 'LED-14/withheld.835');
+    expect(sharesOf(await w.stages(led.practice), 'recouped')).toEqual(['-1000']);
+    expect(await totals(led.practice)).toMatchObject({ recoveredCents: 1400n });
+    // 88.00 against the 70.00 the line holds after the 10.00 withheld: 18.00, never 8.00 against the 80.00 before it.
+    const summary = await loaded(led.practice, 'LED-14/withheld-reissued.835');
+    expect(summary.remittances).toMatchObject({ approved: 1, recoupments: 0 });
+    expect(sharesOf(await w.stages(led.practice), 'approved')).toEqual(['2400', '1800']);
+  });
+
+  it('walks a withholding of one reconcile after its claims, as the pass made them (kills M5)', async () => {
+    const led = await scenario('LED-14');
+    // A PLB WO paid 2026-08-03 and a reissue paid 2026-09-01, loaded, then one reconcile: the claim is matched first, then the withholding.
+    await w.load(led.practice, 'LED-14/withheld.835');
+    await w.load(led.practice, 'LED-14/withheld-reissued.835');
+    await w.reconcile(led.practice);
+    expect(await w.stages(led.practice)).toEqual([
+      { stage: 'approved', amountCents: '2400' },
+      { stage: 'approved', amountCents: '800' },
+      { stage: 'recouped', amountCents: '-1000' },
+    ]);
+    // The stored chain reads the reissue's 8.00 as the pass wrote it, never 18.00 against a baseline the withholding lowered first.
+    const correction = await correctionOf(led.practice, led.serviceLineId);
+    expect(correction?.matches.map((match) => [match.entryCents, match.change.paymentIncreaseCents])).toEqual([
+      [2400n, 2400n],
+      [800n, 800n],
+    ]);
+  });
+
+  it('carries a take-back of one reconcile into the next candidate’s paid baseline (probe M4P; kills M4)', async () => {
+    const led = await opened('LED-14');
+    await w.load(led.practice, 'LED-14/adjusted.835');
+    await w.load(led.practice, 'LED-14/lowered.835');
+    await w.load(led.practice, 'LED-14/raised-again.835');
+    const summary = await w.reconcile(led.practice);
+    // 80.00 again against the 70.00 the lower reprocessing left: 10.00 approved, never "no change" against 80.00.
+    expect(summary.remittances).toMatchObject({ approved: 2, decreased: 1, noChange: 0 });
+    expect(await w.stages(led.practice)).toEqual([
+      { stage: 'approved', amountCents: '2400' },
+      { stage: 'recouped', amountCents: '-1000' },
+      { stage: 'approved', amountCents: '1000' },
+    ]);
+    expect(await claimOutcomes(led.practice)).toEqual(['approved', 'approved', 'decreased']);
+    expect(await responses(led.practice)).toBe(0);
+  });
+
+  it('judges a reversal as of its own recoupment when a later claim is matched after it (kills M2)', async () => {
+    const led = await scenario('LED-14');
+    await loaded(led.practice, 'LED-14/reversal.835');
+    // A reissue at the original's 70.00 and 56.00: the same allowed amount against the baseline the reversal left, no change.
+    expect((await loaded(led.practice, 'LED-14/unchanged.835')).remittances).toMatchObject({ noChange: 1, decreased: 0, decreasedNoEntry: 0 });
+    // Then a lower allowed amount with nothing approved left: no change, never "decreased" against a baseline the later claim moved.
+    const summary = await loaded(led.practice, 'LED-14/lower-after.835');
+    expect(summary.remittances).toMatchObject({ noChange: 1, decreased: 0, decreasedNoEntry: 0, approved: 0 });
+    expect(await claimOutcomes(led.practice)).toEqual(['approved', 'no_change', 'no_change']);
+    expect(await w.stages(led.practice)).toEqual([
+      { stage: 'approved', amountCents: '2400' },
+      { stage: 'recouped', amountCents: '-2400' },
+    ]);
+  });
+
   it('splits the claim-level CAS no SVC03 holds by the parser’s own rule, the one the patient’s share is allocated by (property)', () => {
     const amount = fc.bigInt({ min: -200_000n, max: 200_000n });
     fc.assert(

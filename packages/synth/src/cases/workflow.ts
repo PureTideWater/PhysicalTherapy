@@ -519,7 +519,12 @@ function ledEntry(stage: string, amount: Cents, evidence?: string): Record<strin
  * the same coinsurance sent at the claim's level (the line SVC03 70.00 and 100.00, the claim's PR-2 14.00
  * and 20.00, CLP04 56.00 and 80.00): the line's cash is its share of CLP04, so the ledger approves and
  * deposits the 24.00 the payer paid, never the 30.00 of SVC03, and the claim's 6.00 more PR is billable
- * to the patient, never another reduction (docs/adr/0067).
+ * to the patient, never another reduction (docs/adr/0067). The chain's machinery, each in its own
+ * practice (the engine review's S1 and S2): a claim found by patient control number and paid before a
+ * correction found by claim control number, both matched in one reconcile (order-*); a PLB WO of 10.00 on the
+ * correction, then a reissue allowed 110.00 paying 88.00 (withheld*.835); a correction allowed 100.00 paying
+ * 80.00 after the lower reprocessing (raised-again.835); and after the reversal, a reissue at the original's
+ * 70.00 and 56.00, then one allowed 60.00 paying 48.00 (unchanged.835, lower-after.835).
  */
 export function led14(b: CaseBuilder): void {
   const base = ledBase(b);
@@ -562,6 +567,35 @@ export function led14(b: CaseBuilder): void {
     "Its adjusted remittance: the original reversed (the claim's PR-2 -14.00, CLP04 -56.00) and the correction allowed 100.00, CO-45 50.00 and SVC03 100.00 on the line, the claim's PR-2 coinsurance 20.00, CLP04 80.00: BPR02 24.00.",
   );
   b.addFile('claim-level-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: claimLevel.trace, amount: claimLevel.check }]), 'csv', 'The bank export of that check: one deposit of 24.00 matched by trace number and amount.');
+  // The chain's machinery (the engine review's S1 and S2).
+  const byPatient = therapyClaim(b.world, { caseId: b.info.id, n: 10, patient: original.patient, patientControlNumber: original.patientControlNumber, plan: LED_PLAN, lines: [shareLine(b, 10000n, 'coinsurance')] });
+  b.add835('order-first.835', ledRemittance(b, base, 10, adjustedOn, [byPatient]).file, "A claim under a new claim control number with no REF F8, found by patient control number, service date and code: allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00: BPR02 80.00.");
+  const byControl = correctionOf(b, 11, original, [shareLine(b, 8750n, 'coinsurance')]);
+  b.add835('order-second.835', ledRemittance(b, base, 11, calendarDate(2026, 7, 7), [reversalOf(original), byControl]).file, 'Paid later, the original reversed (paid -56.00) and its correction, found by claim control number, allowed 87.50, CO-45 62.50, PR-2 coinsurance 17.50, paid 70.00: BPR02 14.00.');
+  const withheldCents = dollars('10.00');
+  b.add835(
+    'withheld.835',
+    ledRemittance(b, base, 12, calendarDate(2026, 8, 3), [otherClaim(b, 12)], {
+      providerAdjustments: [{ providerId: base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code: 'WO', reference: corrected.payerClaimControlNumber, amount: withheldCents }] }],
+    }).file,
+    `A later remittance whose PLB WO takes back 10.00 against the correction (${corrected.payerClaimControlNumber}), beside another patient's claim paying 150.00: BPR02 140.00.`,
+  );
+  const afterWithheld = correctionOf(b, 13, corrected, [shareLine(b, 11000n, 'coinsurance')]);
+  b.add835('withheld-reissued.835', ledRemittance(b, base, 13, calendarDate(2026, 9, 1), [reversalOf(corrected), afterWithheld]).file, 'Then the correction reversed (paid -80.00) and reissued allowed 110.00, CO-45 40.00, PR-2 coinsurance 22.00, paid 88.00: BPR02 8.00.');
+  const raisedAgain = correctionOf(b, 14, lowered, [shareLine(b, 10000n, 'coinsurance')]);
+  b.add835(
+    'raised-again.835',
+    ledRemittance(b, base, 14, calendarDate(2026, 8, 3), [reversalOf(lowered), raisedAgain, otherClaim(b, 15)]).file,
+    "After the lower reprocessing, it reversed (paid -70.00) and paid again allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00, beside another patient's claim paying 150.00: BPR02 160.00.",
+  );
+  const unchanged = correctionOf(b, 16, corrected, [shareLine(b, 7000n, 'coinsurance')]);
+  b.add835('unchanged.835', ledRemittance(b, base, 15, calendarDate(2026, 9, 14), [unchanged]).file, "After the reversal, a reissue at the original's amounts: allowed 70.00, CO-45 80.00, PR-2 coinsurance 14.00, paid 56.00: BPR02 56.00.");
+  const lowerAfter = correctionOf(b, 17, unchanged, [shareLine(b, 6000n, 'coinsurance')]);
+  b.add835(
+    'lower-after.835',
+    ledRemittance(b, base, 16, calendarDate(2026, 10, 5), [reversalOf(unchanged), lowerAfter, otherClaim(b, 18)]).file,
+    "Then that reissue reversed (paid -56.00) and paid again allowed 60.00, CO-45 90.00, PR-2 coinsurance 12.00, paid 48.00, beside another patient's claim paying 150.00: BPR02 142.00.",
+  );
   recoveryScenario(b);
   b.scenario({
     shareKind: 'coinsurance',
@@ -570,6 +604,11 @@ export function led14(b: CaseBuilder): void {
       shared: ['shared-adjusted.835', 'shared-posting-export.csv'],
       onePass: ['adjusted.835 and lowered.835 loaded, then one reconcile'],
       claimLevel: ['claim-level-original.835', 'claim-level-adjusted.835', 'claim-level-eft-export.csv'],
+      order: ['order-first.835 and order-second.835 loaded, then one reconcile'],
+      withheld: ['adjusted.835, posting-export.csv and eft-export.csv, then withheld.835, then withheld-reissued.835'],
+      withheldOnePass: ['adjusted.835, then withheld.835 and withheld-reissued.835 loaded, then one reconcile'],
+      raisedAgain: ['adjusted.835, lowered.835 and raised-again.835 loaded, then one reconcile'],
+      afterReversal: ['adjusted.835, then reversal.835, then unchanged.835, then lower-after.835'],
     },
   });
   const caseLine = lineOf(original);
@@ -610,6 +649,15 @@ export function led14(b: CaseBuilder): void {
         allocatedFromClaim: true,
       },
     },
+    // Each amount as the stored chain reads it: the pass writes in the chain's own order.
+    order: {
+      entries: [ledEntry('approved', subtractCents(byPatient.paid, original.paid)), ledEntry('recouped', negateCents(subtractCents(byPatient.paid, byControl.paid)))],
+      outcomes: ['approved', 'decreased'],
+    },
+    withheld: { entries: [ledEntry('recouped', negateCents(withheldCents)), ledEntry('approved', subtractCents(afterWithheld.paid, subtractCents(corrected.paid, withheldCents)))] },
+    withheldOnePass: { entries: [ledEntry('approved', subtractCents(afterWithheld.paid, corrected.paid)), ledEntry('recouped', negateCents(withheldCents))] },
+    raisedAgain: { entries: [ledEntry('approved', approved), ledEntry('recouped', negateCents(subtractCents(corrected.paid, lowered.paid))), ledEntry('approved', subtractCents(raisedAgain.paid, lowered.paid))], outcomes: ['approved', 'decreased', 'approved'] },
+    afterReversal: { entries: [ledEntry('approved', approved), ledEntry('recouped', negateCents(approved))], outcomes: ['approved', 'no_change', 'no_change'] },
   });
 }
 

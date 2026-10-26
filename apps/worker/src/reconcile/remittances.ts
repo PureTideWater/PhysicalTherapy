@@ -566,9 +566,12 @@ interface ClaimPass {
 }
 
 /**
- * Step 1: each open case line's new claims, in the order they were paid. The line's baselines are walked
- * from its stored chain once, then carried through the pass as each candidate is matched; a correction of
- * a claim this pass matched is a candidate in it too, compared with the baselines that claim left.
+ * Step 1: each open case line's new claims. The candidates are found first, to a fixpoint: a correction
+ * of a candidate the line pairs with is a candidate too (whether a claim extends the search depends on its
+ * pairing only, never on its outcome). Then they are compared in the stored chain's own claim order (by
+ * payment date, then load, then id; CHAIN_ORDER), so what the pass writes is what every later walk of the
+ * chain reads. The line's baselines are walked from its stored chain once, then carried through the pass
+ * as each candidate is matched.
  */
 async function matchClaims(pass: ClaimPass, cipher: PracticeCipher, lines: readonly CaseLine[]): Promise<void> {
   const { scope, practiceId } = pass;
@@ -579,39 +582,63 @@ async function matchClaims(pass: ClaimPass, cipher: PracticeCipher, lines: reado
       continue;
     }
     const state = { original: paidLine(chain.original), baselines: chain.chain.current };
-    const known = new Set(chain.claims.map((claim) => claim.claimId));
-    const seen = new Set<string>();
-    for (;;) {
-      const candidates = (await candidatesFor(scope, cipher, practiceId, line, [...known])).filter((candidate) => !seen.has(candidate.claimId));
-      if (candidates.length === 0) {
-        break;
-      }
-      for (const candidate of candidates) {
-        seen.add(candidate.claimId);
-        if (await matchCandidate(pass, line, state, candidate)) {
-          known.add(candidate.claimId);
-        }
+    for (const candidate of await chainOrdered(scope, await candidateClosure(scope, cipher, practiceId, line, chain))) {
+      await matchCandidate(pass, line, state, candidate);
+    }
+  }
+}
+
+type Candidate = Awaited<ReturnType<typeof candidatesFor>>[number];
+
+/** A case line's candidates to a fixpoint: each one paired with the line extends the search by its own control numbers. */
+async function candidateClosure(scope: Scope, cipher: PracticeCipher, practiceId: string, line: CaseLine, chain: LineChain): Promise<Candidate[]> {
+  const known = new Set(chain.claims.map((claim) => claim.claimId));
+  const seen = new Set<string>();
+  const found: Candidate[] = [];
+  for (;;) {
+    const candidates = (await candidatesFor(scope, cipher, practiceId, line, [...known])).filter((candidate) => !seen.has(candidate.claimId));
+    if (candidates.length === 0) {
+      return found;
+    }
+    const lines = await claimLines(scope, [line.claimId, ...candidates.map((candidate) => candidate.claimId)]);
+    for (const candidate of candidates) {
+      seen.add(candidate.claimId);
+      if (caseLinePair(lines, line, candidate.claimId) !== undefined) {
+        known.add(candidate.claimId);
+        found.push(candidate);
       }
     }
   }
 }
 
-/** Compares one candidate with the line, records it, and carries the line's baselines past it; false when it was not matched. */
+/** The candidates in the chain's claim order: by payment date (BPR16), then when each was loaded, then id. */
+async function chainOrdered(scope: Scope, candidates: readonly Candidate[]): Promise<Candidate[]> {
+  if (candidates.length < 2) {
+    return [...candidates];
+  }
+  const { rows } = await scope.client.query<{ id: string }>(
+    'SELECT c.id FROM claim c JOIN remittance r ON r.id = c.remittance_id WHERE c.id = ANY ($1::uuid[]) ORDER BY r.bpr16_date, c.created_at, c.id',
+    [candidates.map((candidate) => candidate.claimId)],
+  );
+  return rows.map((row) => candidates.find((candidate) => candidate.claimId === row.id) as Candidate);
+}
+
+/** Compares one candidate with the line, records it, and carries the line's baselines past it. */
 async function matchCandidate(
   pass: ClaimPass,
   line: CaseLine,
   state: { readonly original: PaidLine; baselines: PaymentBaselines },
   candidate: { readonly claimId: string; readonly remittanceId: string; readonly paidOn: string },
-): Promise<boolean> {
+): Promise<void> {
   const { scope, practiceId, ledgers, counts } = pass;
   const ledger = ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
   const reprocessed = await reprocessingOf(scope, line, candidate.claimId, { original: state.original, baselines: state.baselines, ledger });
   if (reprocessed === null) {
-    return false;
+    return;
   }
   const written = await recordReprocessing(scope, practiceId, line, candidate, reprocessed, null);
   if (written === null) {
-    return false;
+    return;
   }
   state.baselines = afterReprocessing(state.baselines, written.matchId, reprocessed);
   const { outcome } = reprocessed;
@@ -635,7 +662,6 @@ async function matchCandidate(
     // Decreased with nothing to take back: no entry, no payer response, and neither baseline moves.
     counts.decreasedNoEntry += 1;
   }
-  return true;
 }
 
 /**
