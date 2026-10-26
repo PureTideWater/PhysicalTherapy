@@ -14,12 +14,22 @@ export class GatewayError extends Error {
   }
 }
 
-/** The kill switch is on, or the purpose's own flag is off: the product works on hand-entered records. */
+const FEATURE_OFF_MESSAGES = {
+  kill_switch: 'model features are switched off; enter the record by hand',
+  feature_off: 'this model feature is not turned on for the practice',
+  not_evaluated: 'this model feature has not passed its evaluation for the configured model; enter the record by hand',
+} as const;
+
+/**
+ * The kill switch is on, the purpose's own flag is off, or (`not_evaluated`) the feature, or the variant the
+ * call asks for, has not passed its evaluation for the configured provider and model (./evaluated.ts;
+ * docs/adr/0070, Part 2): the product works on hand-entered records.
+ */
 export class ModelFeatureOffError extends GatewayError {
   override readonly name = 'ModelFeatureOffError';
 
-  constructor(readonly reason: 'kill_switch' | 'feature_off') {
-    super(reason, reason === 'kill_switch' ? 'model features are switched off; enter the record by hand' : 'this model feature is not turned on for the practice');
+  constructor(readonly reason: keyof typeof FEATURE_OFF_MESSAGES) {
+    super(reason, FEATURE_OFF_MESSAGES[reason]);
   }
 }
 

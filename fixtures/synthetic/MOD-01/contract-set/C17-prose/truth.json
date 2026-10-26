@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C17",
   "layout": "prose",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": null,
   "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Article 3: 97763, 97110 GP",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",
@@ -59,6 +66,7 @@
     },
     {
       "label": "Article 3: G0283, 97150 KX",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",
@@ -106,6 +114,7 @@
     },
     {
       "label": "Article 3: 97760, 97033 GP",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",

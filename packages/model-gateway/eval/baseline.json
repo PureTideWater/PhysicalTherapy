@@ -1,7 +1,7 @@
 {
-  "format": "tp-model-eval-baseline/2",
+  "format": "tp-model-eval-baseline/4",
   "synthetic": true,
-  "note": "The scores the gate holds a prompt or model change to, on the synthetic sets (docs/adr/0051 and 0054). Recorded with pnpm --filter @tp/model-gateway eval --record and reviewed before commit; each entry names the prompt version's content hash. Entries for a real provider are recorded from a run where it can be called; production serves a real provider only once every current prompt version and pinned model has its entry.",
+  "note": "The entries the gate holds a prompt or model change to, on the synthetic sets (docs/adr/0051, 0054 and 0070). Recorded with pnpm --filter @tp/model-gateway eval --record, never by hand, and reviewed before commit: each entry names the prompt version's content hash, the set it was scored on and the report it was recorded from (eval/reports/<report_sha256>.json), from which a golden test recomputes it. A real provider serves each purpose and variant on its own (src/evaluated.ts): only once its entry is recorded, its floors in eval/floors.json are set and met, its model's price is confirmed and, for contract terms, its in-boundary permitted run is recorded with eval record-permitted; until then that feature alone is entered by hand.",
   "entries": [
     {
       "purpose": "proposeContractTerms",
@@ -9,76 +9,152 @@
       "prompt_sha256": "848b7c48d62170eda57ff417cf9129d54ae94347353b6b3f9611ddbf8451600d",
       "provider": "local",
       "model_id": "local-deterministic",
-      "set_sha256": "cf0d32d6c826b838da9db6ca14c3f0e723ef6ce5da180c243d1e90116918735a",
-      "cases": 40,
+      "variant": "default",
+      "set_sha256": "e619ea6f61787590c564970fc28ea6bd28ba89973402434927f833366507eecf",
+      "cases": 63,
       "fields": {
         "method": {
-          "tp": 123,
-          "fp": 0,
-          "fn": 0
+          "tp": 456,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "codes": {
-          "tp": 123,
-          "fp": 0,
-          "fn": 0
+          "tp": 454,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "modifiers": {
-          "tp": 45,
-          "fp": 0,
-          "fn": 0
+          "tp": 148,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "places_of_service": {
-          "tp": 31,
-          "fp": 0,
-          "fn": 0
+          "tp": 125,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "amount": {
-          "tp": 81,
-          "fp": 0,
-          "fn": 0
+          "tp": 333,
+          "wrong": 5,
+          "extra": 0,
+          "rejected": 3,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "percentage": {
-          "tp": 42,
-          "fp": 0,
-          "fn": 0
+          "tp": 113,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "fee_schedule_year": {
-          "tp": 13,
-          "fp": 0,
-          "fn": 0
+          "tp": 41,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "lesser_of_schedule": {
-          "tp": 24,
-          "fp": 0,
-          "fn": 0
+          "tp": 26,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "flags": {
-          "tp": 30,
-          "fp": 0,
-          "fn": 0
+          "tp": 144,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "rounding": {
-          "tp": 57,
-          "fp": 0,
-          "fn": 0
+          "tp": 149,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "effective_from": {
-          "tp": 123,
-          "fp": 0,
-          "fn": 0
+          "tp": 456,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         },
         "effective_to": {
-          "tp": 50,
-          "fp": 0,
-          "fn": 0
+          "tp": 162,
+          "wrong": 0,
+          "extra": 0,
+          "rejected": 0,
+          "rejected_right": 0,
+          "rejected_extra": 0,
+          "missed": 0,
+          "widened": 0
         }
       },
       "total": {
-        "tp": 742,
-        "fp": 0,
-        "fn": 0
+        "tp": 2607,
+        "wrong": 5,
+        "extra": 0,
+        "rejected": 3,
+        "rejected_right": 0,
+        "rejected_extra": 0,
+        "missed": 0,
+        "widened": 0
       },
-      "recorded_on": "2026-10-16"
+      "faithful_wrong_verified": 0,
+      "conflicts": {
+        "expected": 9,
+        "unflagged": 0
+      },
+      "twins": {
+        "pairs": 3,
+        "differing": 0
+      },
+      "report_sha256": "0b130094635a448d3c559b4736efd76929e6c95a8d4333fb2afe862b71961c2c",
+      "recorded_on": "2026-10-26"
     },
     {
       "purpose": "draftPacketNarrative",
@@ -89,7 +165,8 @@
       "set_sha256": "cf41b7c2b8584dc886271f9aa810c24b73bc52221a1e4be5d45f216d9e4101d1",
       "cases": 300,
       "failures": 0,
-      "recorded_on": "2026-10-20"
+      "report_sha256": "0b130094635a448d3c559b4736efd76929e6c95a8d4333fb2afe862b71961c2c",
+      "recorded_on": "2026-10-26"
     }
   ]
 }

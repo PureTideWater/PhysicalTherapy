@@ -1,0 +1,230 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V18",
+  "layout": "scanned",
+  "drawnAs": "prose",
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": "textract.json",
+  "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [[0,4]],
+  "records": [
+    {
+      "label": "Article 3: 92524 POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["92524"],
+          "written": ["92524"],
+          "page": 3,
+          "quote": "For CPT 92524 in place of service 12, Payer shall pay $130.90 per unit."
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 3,
+          "quote": "For CPT 92524 in place of service 12, Payer shall pay $130.90 per unit."
+        },
+        "amount": {
+          "value": "13090",
+          "written": "$130.90",
+          "page": 3,
+          "quote": "For CPT 92524 in place of service 12, Payer shall pay $130.90 per unit."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "Apr. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Apr. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 92605 GO KX",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["92605"],
+          "written": ["92605"],
+          "page": 3,
+          "quote": "For CPT 92605 billed with modifiers GO and KX, Payer shall pay $40.31 per unit."
+        },
+        "modifiers": {
+          "value": ["GO","KX"],
+          "written": ["GO","KX"],
+          "page": 3,
+          "quote": "For CPT 92605 billed with modifiers GO and KX, Payer shall pay $40.31 per unit."
+        },
+        "amount": {
+          "value": "4031",
+          "written": "$40.31",
+          "page": 3,
+          "quote": "For CPT 92605 billed with modifiers GO and KX, Payer shall pay $40.31 per unit."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "Apr. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Apr. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97755 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97755"],
+          "written": ["97755"],
+          "page": 3,
+          "quote": "For CPT 97755 in place of service 22, Payer shall pay $78.46 per unit."
+        },
+        "places_of_service": {
+          "value": ["22"],
+          "written": ["22"],
+          "page": 3,
+          "quote": "For CPT 97755 in place of service 22, Payer shall pay $78.46 per unit."
+        },
+        "amount": {
+          "value": "7846",
+          "written": "$78.46",
+          "page": 3,
+          "quote": "For CPT 97755 in place of service 22, Payer shall pay $78.46 per unit."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "Apr. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Apr. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97533 CQ 59",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97533"],
+          "written": ["97533"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifiers CQ and 59, Payer shall pay $26.09 per unit."
+        },
+        "modifiers": {
+          "value": ["CQ","59"],
+          "written": ["CQ","59"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifiers CQ and 59, Payer shall pay $26.09 per unit."
+        },
+        "amount": {
+          "value": "2609",
+          "written": "$26.09",
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifiers CQ and 59, Payer shall pay $26.09 per unit."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "Apr. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Apr. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Section 2.6: 92524 POS 12",
+      "role": "decoy",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["92524"],
+          "written": ["92524"],
+          "page": 2,
+          "quote": "Section 2.6. Effective Jul. 30th, 2026, CPT 92524 in place of service 12 is reimbursed at $20.70 per unit."
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 2,
+          "quote": "Section 2.6. Effective Jul. 30th, 2026, CPT 92524 in place of service 12 is reimbursed at $20.70 per unit."
+        },
+        "amount": {
+          "value": "2070",
+          "written": "$20.70",
+          "page": 2,
+          "quote": "Section 2.6. Effective Jul. 30th, 2026, CPT 92524 in place of service 12 is reimbursed at $20.70 per unit."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-07-30",
+          "written": "Jul. 30th, 2026",
+          "page": 2,
+          "quote": "Section 2.6. Effective Jul. 30th, 2026, CPT 92524 in place of service 12 is reimbursed at $20.70 per unit."
+        }
+      }
+    }
+  ]
+}

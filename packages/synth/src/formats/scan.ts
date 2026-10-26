@@ -7,10 +7,18 @@
  *
  * Deterministic: a fixed 5x7 bitmap font, a seeded speckle pattern, zlib at a fixed level and a fixed
  * document ID, so the same pages always give the same bytes. Every page carries the synthetic banner.
+ *
+ * The contract set v2 (docs/adr/0070 Part 1) adds three things, each an option whose absence writes
+ * exactly what v1's committed scans hold: a page image written with the PDF RunLengthDecode filter from
+ * this file's own encoder, so a pinned hash depends on no zlib build (formats/zip.ts avoids deflate for
+ * the same reason); an invisible text layer over the images (a scanner's own OCR text, which a text
+ * reader reads instead of the pictures, misread or not); and a recording whose reader misread some
+ * lines, with the low confidences a misread run carries, one LINE block per drawn line when compact.
  */
 import { deflateSync } from 'node:zlib';
 
 import { Random } from '../core/random';
+import { escapeText } from './pdf';
 
 /** The 5x7 glyphs for printable ASCII (0x20 to 0x7e), five columns each, bit 0 the top row. */
 const FONT: readonly (readonly number[])[] = [
@@ -102,36 +110,131 @@ function rasterize(lines: readonly string[], seed: string): Uint8Array {
 export const SCAN_PRODUCER = 'packages/synth SYNTHETIC scan writer';
 
 /**
- * A PDF with one image per page and no text: each page is the picture of its lines. Its pages hold no
- * text operator at all, so a text reader finds every page empty and a scan reader must read it.
+ * PDF RunLengthDecode (ISO 32000-1, 7.4.5) as an encoder: a length byte n of 0 to 127 is followed by
+ * n + 1 bytes copied as they are; 257 - n for n of 129 to 255 is how many times the one byte after it
+ * repeats; 128 ends the data. Runs of three or more equal bytes are repeated, everything else copied.
+ * A page image is mostly white rows, so this is about as small as deflate for it, and it is the same
+ * bytes on every machine.
  */
-export function scannedPdf(pages: readonly (readonly string[])[], title: string, seed: string): Uint8Array {
+export function runLengthEncode(bytes: Uint8Array): Uint8Array {
+  const out: number[] = [];
+  let index = 0;
+  const repeatAt = (at: number) => {
+    let end = at + 1;
+    while (end < bytes.length && end - at < 128 && bytes[end] === bytes[at]) {
+      end += 1;
+    }
+    return end - at;
+  };
+  while (index < bytes.length) {
+    const run = repeatAt(index);
+    if (run >= 3) {
+      out.push(257 - run, bytes[index] ?? 0);
+      index += run;
+      continue;
+    }
+    const start = index;
+    while (index < bytes.length && index - start < 128 && repeatAt(index) < 3) {
+      index += 1;
+    }
+    out.push(index - start - 1, ...bytes.subarray(start, index));
+  }
+  out.push(128);
+  return new Uint8Array(out);
+}
+
+/** The inverse of runLengthEncode, as a PDF reader applies the filter (for tests and checks). */
+export function runLengthDecode(bytes: Uint8Array): Uint8Array {
+  const out: number[] = [];
+  let index = 0;
+  while (index < bytes.length) {
+    const length = bytes[index] ?? 128;
+    if (length === 128) {
+      break;
+    }
+    if (length < 128) {
+      out.push(...bytes.subarray(index + 1, index + 2 + length));
+      index += length + 2;
+    } else {
+      const value = bytes[index + 1] ?? 0;
+      for (let count = 0; count < 257 - length; count += 1) {
+        out.push(value);
+      }
+      index += 2;
+    }
+  }
+  return new Uint8Array(out);
+}
+
+export interface ScannedPdfOptions {
+  /**
+   * The page's own OCR text, drawn invisibly (render mode 3, Helvetica 9 points) over each image where
+   * the picture's lines are, one line per text-showing operator: what a text reader reads instead of the
+   * picture. The same shape as the pages; it may differ from them (a misread layer). Absent, the pages
+   * hold no text operator at all.
+   */
+  readonly textLayer?: readonly (readonly string[])[];
+  /** How each page image is compressed: 'flate' (v1's committed scans) or 'run_length' (every new scan). */
+  readonly imageFilter?: 'flate' | 'run_length';
+}
+
+/** The text layer's lines on a page: each where scannedPdf drew it, its baseline seven pixels below the cell's top. */
+function textLayerContent(lines: readonly string[]): string {
+  const shown = lines.flatMap((line, row) => {
+    if (line.trim() === '') {
+      return [];
+    }
+    const y = 792 - (TOP + row * CELL_HEIGHT + 7 * SCALE) / 2;
+    return [`1 0 0 1 ${String(LEFT / 2)} ${String(y)} Tm (${escapeText(line)}) Tj`];
+  });
+  return ['BT', '/F1 9 Tf', '3 Tr', ...shown, 'ET'].join('\n');
+}
+
+/**
+ * A PDF with one image per page and, by default, no text: each page is the picture of its lines. Its
+ * pages hold no text operator at all, so a text reader finds every page empty and a scan reader must
+ * read it. With a text layer, a text reader reads the layer and no scan reader is asked.
+ */
+export function scannedPdf(pages: readonly (readonly string[])[], title: string, seed: string, options: ScannedPdfOptions = {}): Uint8Array {
   if (pages.length === 0) {
     throw new Error('a PDF has at least one page');
   }
   if (!/^[\x20-\x7e]*$/.test(title)) {
     throw new Error('PDF exhibit titles are printable ASCII');
   }
+  const layer = options.textLayer;
+  if (layer !== undefined && (layer.length !== pages.length || layer.some((lines, index) => lines.length > (pages[index]?.length ?? 0)))) {
+    throw new Error('a text layer has the pages and lines of the images it lies over');
+  }
+  const runLength = options.imageFilter === 'run_length';
   const objects: Buffer[] = [];
   const pageIds = pages.map((_, index) => 4 + index * 3);
+  // The layer's font follows every page's objects, so a scan without one numbers its objects as v1's do.
+  const fontId = 4 + pages.length * 3;
   objects[1] = Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1');
   objects[2] = Buffer.from(`<< /Type /Pages /Kids [${pageIds.map((id) => `${String(id)} 0 R`).join(' ')}] /Count ${String(pages.length)} >>`, 'latin1');
   objects[3] = Buffer.from(`<< /Producer (${SCAN_PRODUCER}) >>`, 'latin1');
   pages.forEach((lines, index) => {
     const pageId = pageIds[index] ?? 0;
-    const content = 'q 612 0 0 792 0 0 cm /Im0 Do Q';
-    const image = deflateSync(rasterize(lines, `${seed}/${String(index + 1)}`), { level: 9 });
-    objects[pageId] = Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 ${String(pageId + 2)} 0 R >> >> /Contents ${String(pageId + 1)} 0 R >>`, 'latin1');
-    objects[pageId + 1] = Buffer.from(`<< /Length ${String(content.length)} >>\nstream\n${content}\nendstream`, 'latin1');
+    const layerLines = layer?.[index];
+    const content = layerLines === undefined ? 'q 612 0 0 792 0 0 cm /Im0 Do Q' : `q 612 0 0 792 0 0 cm /Im0 Do Q\n${textLayerContent(layerLines)}`;
+    const bits = rasterize(lines, `${seed}/${String(index + 1)}`);
+    const image = runLength ? runLengthEncode(bits) : deflateSync(bits, { level: 9 });
+    const font = layer === undefined ? '' : ` /Font << /F1 ${String(fontId)} 0 R >>`;
+    objects[pageId] = Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 ${String(pageId + 2)} 0 R >>${font} >> /Contents ${String(pageId + 1)} 0 R >>`, 'latin1');
+    objects[pageId + 1] = Buffer.from(`<< /Length ${String(Buffer.byteLength(content, 'latin1'))} >>\nstream\n${content}\nendstream`, 'latin1');
     objects[pageId + 2] = Buffer.concat([
       Buffer.from(
-        `<< /Type /XObject /Subtype /Image /Width ${String(SCAN_WIDTH)} /Height ${String(SCAN_HEIGHT)} /ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /FlateDecode /Length ${String(image.length)} >>\nstream\n`,
+        `<< /Type /XObject /Subtype /Image /Width ${String(SCAN_WIDTH)} /Height ${String(SCAN_HEIGHT)} /ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /${runLength ? 'RunLengthDecode' : 'FlateDecode'} /Length ${String(image.length)} >>\nstream\n`,
         'latin1',
       ),
-      image,
+      Buffer.from(image),
       Buffer.from('\nendstream', 'latin1'),
     ]);
   });
+  if (layer !== undefined) {
+    objects[fontId] = Buffer.from('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>', 'latin1');
+  }
   const parts: Buffer[] = [Buffer.from('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n', 'latin1')];
   let length = parts[0]?.length ?? 0;
   const offsets: number[] = [];
@@ -185,28 +288,54 @@ export interface TextractRecording {
 /** A fraction of the page to four decimals, as text detection reports positions. */
 const fraction = (pixels: number, of: number) => Math.round((pixels * 10_000) / of) / 10_000;
 
+/** A line the scan reader misread: its page (from 1), its index among the page's lines (from 0), and the line as read. */
+export interface ReadingError {
+  readonly page: number;
+  readonly line: number;
+  readonly text: string;
+}
+
+export interface TextractRecordingOptions {
+  /** Lines the reader misread; each misread run is recorded with a confidence of 61 to 89. */
+  readonly errors?: readonly ReadingError[];
+  /** One LINE block per drawn line (its runs joined as drawn) rather than one per run: about a third of the size. */
+  readonly compact?: boolean;
+}
+
 /**
  * Text detection's blocks for the pages as scannedPdf() draws them: one PAGE block per page and one
  * LINE block per run of text, in reading order. Where a line holds a wide gap (a table's columns), the
  * reader returns each side as its own line, as text detection does with columns; read back in order and
- * joined by line breaks, the page's text normalizes to the drawn text.
+ * joined by line breaks, the page's text normalizes to the drawn text. Compact, each drawn line is one
+ * LINE block from its first character to its last, which normalizes to the same text. A misread line is
+ * recorded as read, with the low confidence text detection gives a run it was unsure of; every other
+ * line exactly as drawn, so a recording with no misread line and not compact is what v1's are.
  */
-export function textractRecording(pages: readonly (readonly string[])[], document: string): TextractRecording {
+export function textractRecording(pages: readonly (readonly string[])[], document: string, options: TextractRecordingOptions = {}): TextractRecording {
   const blocks: RecordedBlock[] = [];
   const random = new Random(`tp-synth/textract/${document}`);
+  const misread = new Map((options.errors ?? []).map((error) => [`${String(error.page)}/${String(error.line)}`, error.text]));
+  for (const error of options.errors ?? []) {
+    if (pages[error.page - 1]?.[error.line] === undefined) {
+      throw new Error('a misread line is a line of the pages');
+    }
+  }
   pages.forEach((lines, pageIndex) => {
     const page = pageIndex + 1;
     blocks.push({ BlockType: 'PAGE', Id: `page-${String(page)}`, Page: page, Geometry: { BoundingBox: { Width: 1, Height: 1, Left: 0, Top: 0 } } });
-    lines.forEach((line, row) => {
-      const runs = [...line.matchAll(/\S+(?: \S+)*/g)];
+    lines.forEach((drawn, row) => {
+      const read = misread.get(`${String(page)}/${String(row)}`);
+      const line = read ?? drawn;
+      const runs = options.compact === true ? [...line.matchAll(/\S(?:.*\S)?/g)] : [...line.matchAll(/\S+(?: \S+)*/g)];
       runs.forEach((run, runIndex) => {
         const column = run.index;
+        const confidence = read === undefined ? random.int(9_700, 9_990) : random.int(6_100, 8_900);
         blocks.push({
           BlockType: 'LINE',
-          Id: `line-${String(page)}-${String(row + 1)}-${String(runIndex + 1)}`,
+          Id: options.compact === true ? `line-${String(page)}-${String(row + 1)}` : `line-${String(page)}-${String(row + 1)}-${String(runIndex + 1)}`,
           Page: page,
           Text: run[0],
-          Confidence: random.int(9_700, 9_990) / 100,
+          Confidence: confidence / 100,
           Geometry: {
             BoundingBox: {
               Width: fraction(run[0].length * CELL_WIDTH, SCAN_WIDTH),

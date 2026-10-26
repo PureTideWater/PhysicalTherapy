@@ -1,0 +1,566 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V01",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 12,
+  "tier": "medium",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Exhibit A: 92522, 97535",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["92522","97535"],
+          "written": ["92522","97535"],
+          "page": 10,
+          "quote": "92522, 97535 - - Therapeutic services $158.93 per unit"
+        },
+        "amount": {
+          "value": "15893",
+          "written": "$158.93",
+          "page": 10,
+          "quote": "92522, 97535 - - Therapeutic services $158.93 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 96110, 97164 GO GP POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["96110","97164"],
+          "written": ["96110","97164"],
+          "page": 10,
+          "quote": "96110, 97164 GO GP 12 Neuromuscular services $142.91 per unit"
+        },
+        "modifiers": {
+          "value": ["GO","GP"],
+          "written": ["GO","GP"],
+          "page": 10,
+          "quote": "96110, 97164 GO GP 12 Neuromuscular services $142.91 per unit"
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 10,
+          "quote": "96110, 97164 GO GP 12 Neuromuscular services $142.91 per unit"
+        },
+        "amount": {
+          "value": "14291",
+          "written": "$142.91",
+          "page": 10,
+          "quote": "96110, 97164 GO GP 12 Neuromuscular services $142.91 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97014, 97545, 92508 POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97014","97545","92508"],
+          "written": ["97014","97545","92508"],
+          "page": 10,
+          "quote": "97014, 97545, 92508 - 12 Manual services $73.75 per unit"
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 10,
+          "quote": "97014, 97545, 92508 - 12 Manual services $73.75 per unit"
+        },
+        "amount": {
+          "value": "7375",
+          "written": "$73.75",
+          "page": 10,
+          "quote": "97014, 97545, 92508 - 12 Manual services $73.75 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97537, 97763, 95992, 92607 CO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97537","97763","95992","92607"],
+          "written": ["97537","97763","95992","92607"],
+          "page": 10,
+          "quote": "97537, 97763, 95992, 92607 CO - Group services $77.33 per unit"
+        },
+        "modifiers": {
+          "value": ["CO"],
+          "written": ["CO"],
+          "page": 10,
+          "quote": "97537, 97763, 95992, 92607 CO - Group services $77.33 per unit"
+        },
+        "amount": {
+          "value": "7733",
+          "written": "$77.33",
+          "page": 10,
+          "quote": "97537, 97763, 95992, 92607 CO - Group services $77.33 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97804, 97033 59",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97804","97033"],
+          "written": ["97804","97033"],
+          "page": 11,
+          "quote": "97804, 97033 59 - Evaluation services $158.19 per unit"
+        },
+        "modifiers": {
+          "value": ["59"],
+          "written": ["59"],
+          "page": 11,
+          "quote": "97804, 97033 59 - Evaluation services $158.19 per unit"
+        },
+        "amount": {
+          "value": "15819",
+          "written": "$158.19",
+          "page": 11,
+          "quote": "97804, 97033 59 - Evaluation services $158.19 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92597, 97150 POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["92597","97150"],
+          "written": ["92597","97150"],
+          "page": 11,
+          "quote": "92597, 97150 - 12 Speech services $69.64 per unit"
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 11,
+          "quote": "92597, 97150 - 12 Speech services $69.64 per unit"
+        },
+        "amount": {
+          "value": "6964",
+          "written": "$69.64",
+          "page": 11,
+          "quote": "92597, 97150 - 12 Speech services $69.64 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97163, 92526 GO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97163","92526"],
+          "written": ["97163","92526"],
+          "page": 11,
+          "quote": "97163, 92526 GO - Training services $95.39 per unit"
+        },
+        "modifiers": {
+          "value": ["GO"],
+          "written": ["GO"],
+          "page": 11,
+          "quote": "97163, 92526 GO - Training services $95.39 per unit"
+        },
+        "amount": {
+          "value": "9539",
+          "written": "$95.39",
+          "page": 11,
+          "quote": "97163, 92526 GO - Training services $95.39 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92523, 97116",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["92523","97116"],
+          "written": ["92523","97116"],
+          "page": 11,
+          "quote": "92523, 97116 - - Therapeutic services in one or more areas, each fifteen minutes $23.59 per unit"
+        },
+        "amount": {
+          "value": "2359",
+          "written": "$23.59",
+          "page": 11,
+          "quote": "92523, 97116 - - Therapeutic services in one or more areas, each fifteen minutes $23.59 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97022, 97166, G0151, 92507",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97022","97166","G0151","92507"],
+          "written": ["97022","97166","G0151","92507"],
+          "page": 12,
+          "quote": "97022, 97166, G0151, 92507 - - Therapeutic services in one or more areas, each fifteen minutes $98.97 per unit"
+        },
+        "amount": {
+          "value": "9897",
+          "written": "$98.97",
+          "page": 12,
+          "quote": "97022, 97166, G0151, 92507 - - Therapeutic services in one or more areas, each fifteen minutes $98.97 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97034, 92605",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97034","92605"],
+          "written": ["97034","92605"],
+          "page": 12,
+          "quote": "97034, 92605 - - Orthotic services $153.21 per unit"
+        },
+        "amount": {
+          "value": "15321",
+          "written": "$153.21",
+          "page": 12,
+          "quote": "97034, 92605 - - Orthotic services $153.21 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92524, 92609",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["92524","92609"],
+          "written": ["92524","92609"],
+          "page": 12,
+          "quote": "92524, 92609 - - Therapeutic services $134.97 per unit"
+        },
+        "amount": {
+          "value": "13497",
+          "written": "$134.97",
+          "page": 12,
+          "quote": "92524, 92609 - - Therapeutic services $134.97 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97026, 92606, 97530",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97026","92606","97530"],
+          "written": ["97026","92606","97530"],
+          "page": 12,
+          "quote": "97026, 92606, 97530 - - Neuromuscular services $56.43 per unit"
+        },
+        "amount": {
+          "value": "5643",
+          "written": "$56.43",
+          "page": 12,
+          "quote": "97026, 92606, 97530 - - Neuromuscular services $56.43 per unit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": true,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration applies; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "Jan. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

@@ -1,13 +1,22 @@
 /**
  * The model gateway's synthetic evaluation sets as files (PRD 14, Logging and evaluation; test matrix
- * MOD-01 and MOD-03; docs/adr/0051). packages/synth writes them under fixtures/synthetic; the
- * evaluation harness (packages/model-gateway/eval) reads them. Every value is invented and every file
- * says SYNTHETIC.
+ * MOD-01, MOD-03 and MOD-09; docs/adr/0051 and 0070). packages/synth writes them under
+ * fixtures/synthetic; the evaluation harness (packages/model-gateway/eval) reads them. Every value is
+ * invented and every file says SYNTHETIC.
  *
- * The contract set (MOD-01): 40 contracts and exhibits in three layouts. Each case is a directory with
+ * The contract set v1 (MOD-01): 40 contracts and exhibits in three layouts. Each case is a directory with
  * the document as intake receives it (a text PDF, a CSV, or a scanned PDF with no text layer and the
  * scan reader's recorded answer beside it) and truth.json: the rate records the document states, every
- * field with its value as code reads it, the text it is written as, the page and the quote.
+ * field with its value as code reads it, the text it is written as, the page and the quote. MOD-01's
+ * own manifest stays tp-eval-contract-set/1 and lists those 40; their truths are written in format /2.
+ *
+ * The contract set v2 (MOD-09; docs/adr/0070 Part 1): v1's 40 cases with their bytes unchanged, 18
+ * committed cases (V01-V18: medium documents, contract-plus-exhibit pairs, scans with seeded reading
+ * errors or their own text layer, struck-through rates, injected-instruction twins, decoy amended
+ * rates) and 5 large ones (L01-L05, to 60 codes and 80 pages) generated when a test needs them into an
+ * ignored directory and held to the hashes MOD-09's expected.json records. Its manifest
+ * (tp-eval-contract-set/2) names every case's directory relative to fixtures/synthetic, its tier, and
+ * whether its page text as read is faithful to the document as a person sees it.
  *
  * The narrative set (MOD-03): 300 pattern statements' inputs, each the approved records a packet is
  * assembled from (no identifier at all: the schedule's identifiers are placeholders), the case's
@@ -15,12 +24,46 @@
  * state, and a reference narrative written by this package from its own arithmetic.
  */
 
-export const CONTRACT_SET_FORMAT = 'tp-eval-contract-set/1';
-export const CONTRACT_TRUTH_FORMAT = 'tp-eval-contract/1';
+/** The set v2 manifest (MOD-09). */
+export const CONTRACT_SET_FORMAT = 'tp-eval-contract-set/2';
+/** MOD-01's own manifest, which keeps listing v1's 40 cases. */
+export const CONTRACT_SET_V1_FORMAT = 'tp-eval-contract-set/1';
+export const CONTRACT_TRUTH_FORMAT = 'tp-eval-contract/2';
 export const NARRATIVE_SET_FORMAT = 'tp-eval-narratives/1';
 
 export const CONTRACT_LAYOUTS = ['table', 'prose', 'scanned'] as const;
 export type ContractLayout = (typeof CONTRACT_LAYOUTS)[number];
+
+/** A case's size: v1's 1-4 page documents and the small new cases; 3-12 pages and 20-40 codes; 40-80 pages and 60 codes. */
+export const CONTRACT_TIERS = ['small', 'medium', 'large'] as const;
+export type ContractTier = (typeof CONTRACT_TIERS)[number];
+
+/**
+ * Whether the page text as read (pdf.js's text layer, or the scan reader's answer where a page has
+ * none) says what a person sees on the page. Unfaithful text is the reader's or the document's doing,
+ * never the model's: the gate holds a model to zero wrong-but-verified fields on faithful cases and, on
+ * the others, to no more than a faithful copier of the text as read (docs/adr/0070).
+ */
+export const PAGE_TEXT_FIDELITIES = ['faithful', 'unfaithful'] as const;
+export type PageTextFidelity = (typeof PAGE_TEXT_FIDELITIES)[number];
+
+/**
+ * Why a case's page text is unfaithful: the scan reader misread characters (ocr_errors); the PDF's own
+ * text layer over its page images was misread when it was made (ocr_layer_errors); a struck-through
+ * rate is read as ordinary text (struck_text); invisible or white text is read as ordinary text
+ * (hidden_text).
+ */
+export const UNFAITHFUL_BECAUSE = ['ocr_errors', 'ocr_layer_errors', 'struck_text', 'hidden_text'] as const;
+export type UnfaithfulBecause = (typeof UNFAITHFUL_BECAUSE)[number];
+
+/**
+ * What a true record is: a rate the document states (term), a rate an amendment states for a later
+ * window over the same scope (amendment), or a rate a decoy paragraph states over a row's scope without
+ * saying which governs (decoy). Amendments and decoys are records the document states, so the reference
+ * proposes them; each is paired with the record it overlaps in the case's `conflicts`.
+ */
+export const TRUTH_ROLES = ['term', 'amendment', 'decoy'] as const;
+export type TruthRole = (typeof TRUTH_ROLES)[number];
 
 /** A rate record's fields as the gateway's proposals name them (packages/model-gateway CITED_FIELDS, and the uncited schedule of a lesser-of rate). */
 export const TRUTH_FIELDS = [
@@ -48,19 +91,32 @@ export interface TruthFlags {
 }
 
 /**
+ * A field as a faithful copier of the page text as read would write it, on an unfaithful case where
+ * that text differs inside the field's quote: `quote` is the same passage as read (on the page as
+ * read), and `written` the same field copied from it (the misread figure, say "$4310" for "$43.10").
+ */
+export interface TruthFieldAsRead {
+  readonly written: string | readonly string[] | null;
+  readonly quote: string;
+}
+
+/**
  * One field of a true rate record. `value` is what code reads the field as: cents as integer text
  * (amount), a plain decimal (percentage), the year as text, an ISO date (the last day covered for
  * effective_to), the codes, modifiers or places in order, an enum, or the flags. `written` is the
  * text the document writes it as (null for method, lesser_of_schedule, flags and rounding, which a
- * proposal states as a value). `page` (from 1) and `quote` (a substring of the page's text as evidence
- * compares it) say where it is written; the lesser-of schedule is stated by the method's clause and
- * carries that clause's page and quote.
+ * proposal states as a value). `page` (from 1) and `quote` (a substring of the page's text as a person
+ * sees it, which is the text as evidence compares it on a faithful case) say where it is written; the
+ * lesser-of schedule is stated by the method's clause and carries that clause's page and quote.
+ * `asRead` is present only on an unfaithful case, and only where the text as read differs inside the
+ * quote.
  */
 export interface TruthFieldValue {
   readonly value: string | readonly string[] | TruthFlags;
   readonly written: string | readonly string[] | null;
   readonly page: number;
   readonly quote: string;
+  readonly asRead?: TruthFieldAsRead;
 }
 
 export interface TruthRecord {
@@ -68,9 +124,15 @@ export interface TruthRecord {
   readonly fields: Readonly<Partial<Record<TruthField, TruthFieldValue>>>;
 }
 
+/** A true record of a /2 truth: the record and what it is. */
+export interface ContractTruthRecord extends TruthRecord {
+  readonly role: TruthRole;
+}
+
 export interface ContractTruth {
   readonly format: typeof CONTRACT_TRUTH_FORMAT;
   readonly synthetic: true;
+  /** C01-C40 (v1), V01-V18 (committed), L01-L05 (generated). */
   readonly id: string;
   readonly layout: ContractLayout;
   /** How the scanned case was laid out before it was scanned. */
@@ -78,19 +140,50 @@ export interface ContractTruth {
   readonly kind: 'contract' | 'exhibit';
   readonly document: string;
   readonly contentType: 'application/pdf' | 'text/csv';
-  /** The scan reader's recorded answer for a scanned document (tp-textract-recording/1), or null. */
+  /** The scan reader's recorded answer for a scanned document whose pages carry no text (tp-textract-recording/1), or null. */
   readonly scan: string | null;
   readonly pages: number;
-  readonly records: readonly TruthRecord[];
+  readonly tier: ContractTier;
+  readonly pageText: PageTextFidelity;
+  /** Null exactly when the page text is faithful. */
+  readonly unfaithfulBecause: UnfaithfulBecause | null;
+  /** The other document of a contract-plus-exhibit pair (each is scored against its own truth only), or null. */
+  readonly pairOf: string | null;
+  /** On an injected twin, its clean twin's ID; null otherwise. */
+  readonly twinOf: string | null;
+  /** Pairs of record indices that overlap in scope: both must be proposed and each flagged against the other. */
+  readonly conflicts: readonly (readonly [number, number])[];
+  readonly records: readonly ContractTruthRecord[];
 }
 
-export interface ContractSetCase {
+/** A case of the v1 manifest (MOD-01's set.json): its directory relative to that file. */
+export interface ContractSetV1Case {
   readonly id: string;
   readonly dir: string;
   readonly layout: ContractLayout;
   readonly kind: 'contract' | 'exhibit';
   readonly records: number;
   readonly fields: number;
+}
+
+export interface ContractSetV1Manifest {
+  readonly format: typeof CONTRACT_SET_V1_FORMAT;
+  readonly synthetic: true;
+  readonly note: string;
+  readonly cases: readonly ContractSetV1Case[];
+}
+
+/** A case of the v2 manifest: its directory relative to fixtures/synthetic, and whether it is generated (and ignored by git) rather than committed. */
+export interface ContractSetCase {
+  readonly id: string;
+  readonly path: string;
+  readonly tier: ContractTier;
+  readonly layout: ContractLayout;
+  readonly kind: 'contract' | 'exhibit';
+  readonly pageText: PageTextFidelity;
+  readonly records: number;
+  readonly fields: number;
+  readonly generated: boolean;
 }
 
 export interface ContractSetManifest {
