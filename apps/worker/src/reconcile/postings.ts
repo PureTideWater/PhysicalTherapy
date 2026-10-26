@@ -2,8 +2,8 @@ import type { PracticeCipher } from '@tp/db/runtime';
 import { type PostedClaim, batchMatches, checkPosting, correctedEntry, countedStage, depositMatches, entriesById, linePosting, partialShare, postsLine } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, cents, parseCents } from '@tp/money';
 
-import { type Scope, type StoredMatch, insertEntry, insertMatch, ledgerEntries, ledgerMatches } from './ledger';
-import { type ClaimLine, caseLinePair, claimLines } from './remittances';
+import { type Scope, type StoredEntry, insertEntry, insertMatch, ledgerEntries, ledgerMatches } from './ledger';
+import { type ClaimLine, chainContext, lineChain } from './remittances';
 
 /**
  * Posting and EFT rows against remittances, and the posted and deposited entries their matches make
@@ -18,16 +18,18 @@ import { type ClaimLine, caseLinePair, claimLines } from './remittances';
  *   rows a bank batched into one deposit (one batch reference) match together, flagged at the batch
  *   level, when every row found its remittance and the totals agree. A remittance is deposited once.
  * - Each standing match then posts (or deposits) each case line's share of its remittance: the cash the
- *   remittance paid on the line's reprocessing (the line of each claim matched to the case line that is
- *   paired with it, @tp/ledger pairLines, less what its reversals of the line's claims took back on their
- *   paired lines; at the claim level, the claim's own paired line). A line-level row (one with a
- *   procedure code) posts only the case lines paired with the claim's lines it posts (postsLine: its code,
- *   its date when it has one, its amount exactly); a row with a claim reference and no code posts its
- *   claim whole. A partial check-level posting allocates the share pro rata: what the check's postings up
- *   to it allocate, less what those before it did, flagged allocated; the parts add up to the share. A
- *   line never posts (or deposits) more than the ledger approved for it, from a remittance or a payer
- *   response, so the original payment a reprocessing replaced is never counted; and a row never proves
- *   more than its own amount (the database holds both the line-level rule and the row's amount too).
+ *   remittance paid on the line's reprocessing, net of the payment it replaced (for each claim matched to
+ *   the case line, its paired line's payment, @tp/ledger pairLines, less what the remittances had paid the
+ *   line just before it, @tp/ledger paymentChain; at the claim level, that claim's alone; a remittance
+ *   holding no claim matched to the line, a reversal alone, gives it no share; docs/adr/0067). A
+ *   line-level row (one with a procedure code) posts only the case lines paired with the claim's lines it
+ *   posts (postsLine: its code, its date when it has one, its amount exactly); a row with a claim
+ *   reference and no code posts its claim whole. A partial check-level posting allocates the share pro
+ *   rata: what the check's postings up to it allocate, less what those before it did, flagged allocated;
+ *   the parts add up to the share. A line never posts (or deposits) more than the ledger approved for it,
+ *   from a remittance or a payer response, so the original payment a reprocessing replaced is never
+ *   counted; and a row never proves more than its own amount (the database holds both the line-level rule
+ *   and the row's amount too).
  *
  * A row matching nothing, more than one remittance, or more than the check is left for a person
  * (unmatched.ts), and so is a row whose match a person reversed. Nothing unmatched counts.
@@ -230,60 +232,46 @@ interface CaseLineRow {
 interface Shares {
   /** Each case line's share of each remittance. */
   readonly byRemittance: Map<string, Map<string, Cents>>;
-  /** Each case line's share of each claim matched to it: its paired line's payment. */
+  /** Each case line's share of each claim matched to it: its paired line's payment net of the payment it replaced. */
   readonly byClaim: Map<string, Map<string, Cents>>;
   /** The line of each claim matched to a case line that is paired with it, by claim and case line. */
   readonly paired: Map<string, Map<string, ClaimLine>>;
 }
 
 /**
- * Each case line's cash share of each remittance, and of each claim: what the claims matched to the line
- * paid on the line paired with it, plus what the remittance's reversals of the line's own claim or of a
- * claim matched to it took back on theirs. Only lines a claim was matched to have a share.
+ * Each case line's cash share of each remittance, and of each claim: what each claim matched to the line
+ * paid on the line paired with it, net of what the remittances had paid the line just before it (the
+ * chain's `net`), so a reversal is netted once, against the claim that replaced it. Only lines a claim
+ * was matched to have a share.
  */
-async function shares(scope: Scope, practiceId: string, matches: readonly StoredMatch[], lines: readonly CaseLineRow[]): Promise<Shares> {
-  const attached = matches.filter((match) => match.kind === 'claim' && match.standing);
+async function shares(scope: Scope, practiceId: string, entries: readonly StoredEntry[], lines: readonly CaseLineRow[]): Promise<Shares> {
   const byRemittance = new Map<string, Map<string, Cents>>();
   const byClaim = new Map<string, Map<string, Cents>>();
   const paired = new Map<string, Map<string, ClaimLine>>();
-  if (attached.length === 0) {
+  const context = await chainContext(scope, practiceId, lines.map((line) => line.claim_id), entries);
+  if (!context.matches.some((match) => match.kind === 'claim' && match.standing)) {
     return { byRemittance, byClaim, paired };
   }
-  const lineOf = new Map(lines.map((line) => [line.service_line_id, line]));
-  const known = [...new Set([...attached.map((match) => match.claimId as string), ...attached.map((match) => lineOf.get(match.serviceLineId as string)?.claim_id).filter((id): id is string => id !== undefined)])];
-  const { rows: reversals } = await scope.client.query<{ id: string; remittance_id: string; reversed: string }>(
-    "SELECT v.id, v.remittance_id, v.reversal_of_claim_id AS reversed FROM claim v WHERE v.practice_id = $1 AND v.claim_status_code = '22' AND v.reversal_of_claim_id = ANY ($2::uuid[])",
-    [practiceId, known],
-  );
-  const claimLinesById = await claimLines(scope, [...known, ...reversals.map((row) => row.id)]);
-  const paidOn = (claimId: string, line: CaseLineRow): Cents => {
-    const pair = caseLinePair(claimLinesById, { claimId: line.claim_id, serviceLineId: line.service_line_id }, claimId);
-    if (pair !== undefined) {
-      const inner = paired.get(claimId) ?? new Map<string, ClaimLine>();
-      inner.set(line.service_line_id, pair);
-      paired.set(claimId, inner);
-    }
-    return pair?.paidCents ?? ZERO_CENTS;
-  };
   const add = (map: Map<string, Map<string, Cents>>, key: string, lineId: string, amount: Cents) => {
     const inner = map.get(key) ?? new Map<string, Cents>();
     inner.set(lineId, cents((inner.get(lineId) ?? ZERO_CENTS) + amount));
     map.set(key, inner);
   };
-  for (const lineId of new Set(attached.map((match) => match.serviceLineId as string))) {
-    const line = lineOf.get(lineId);
-    if (line === undefined) {
+  for (const line of lines) {
+    const chain = lineChain(context, { serviceLineId: line.service_line_id, claimId: line.claim_id });
+    if (chain === undefined) {
       continue;
     }
-    const claims = attached.filter((match) => match.serviceLineId === lineId);
-    for (const match of claims) {
-      const paid = paidOn(match.claimId as string, line);
-      add(byRemittance, match.remittanceId, lineId, paid);
-      add(byClaim, match.claimId as string, lineId, paid);
-    }
-    const lineClaims = new Set([line.claim_id, ...claims.map((match) => match.claimId as string)]);
-    for (const reversal of reversals.filter((row) => lineClaims.has(row.reversed))) {
-      add(byRemittance, reversal.remittance_id, lineId, paidOn(reversal.id, line));
+    for (const claim of chain.claims) {
+      if (claim.match === null) {
+        continue;
+      }
+      const net = chain.chain.net.get(claim.match.id) ?? ZERO_CENTS;
+      add(byRemittance, claim.match.remittanceId, line.service_line_id, net);
+      add(byClaim, claim.claimId, line.service_line_id, net);
+      const inner = paired.get(claim.claimId) ?? new Map<string, ClaimLine>();
+      inner.set(line.service_line_id, claim.line);
+      paired.set(claim.claimId, inner);
     }
   }
   return { byRemittance, byClaim, paired };
@@ -308,7 +296,7 @@ export async function settleMatches(scope: Scope, practiceId: string, createdBy:
     `SELECT cl.service_line_id, cl.case_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1`,
     [practiceId],
   );
-  const { byRemittance, byClaim, paired } = await shares(scope, practiceId, matches, lines);
+  const { byRemittance, byClaim, paired } = await shares(scope, practiceId, entries, lines);
   const caseOf = new Map(lines.map((row) => [row.service_line_id, row.case_id]));
   const { rows: amounts } = await scope.client.query<MatchedRow>(
     `SELECT m.id AS match_id, coalesce(p.amount_cents, e.amount_cents)::text AS amount_cents, r.bpr02_cents::text AS payment_cents, p.procedure_code, p.service_date::text AS service_date
