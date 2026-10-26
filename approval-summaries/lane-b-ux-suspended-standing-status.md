@@ -1,5 +1,18 @@
 # Status: a suspended organization never reads "In good standing" (`co-001/ux-suspended-standing`)
 
+**MERGED** as PR #56, merge commit **0e28f9b** (12:12 UTC), with method merge and expectedHeadSha bffe291. The fresh-clone verification passed on dedd735, and every required check was green on bffe291. Nothing is running, and no check-in is scheduled.
+
+- **Fix round (wf_01c39982-072, ~10:45-11:15):** all 13 review findings fixed (5380543, eca5f05).
+  - Full local suite on a141023: unit 337 files 5,276 passed 3 skipped; db 120 files 9,077 passed 1 skipped; e2e 52/52 (BIL-06 included); golden 221; oracle 637; lint 1,520 files 0/0; no money package affected (`approval-summaries/lane-b-ux-suspended-standing-fix-suite.md`).
+- **Base merges, each without conflicts:** a1c4185 (#53), a141023 (#55), dedd735 (#50), bffe291 (#52). After the last one: typecheck, synth (0 written), 608 unit tests and the billing db test re-run and passed.
+- **Fresh-clone verification (wf_3df9abd9-3e0):** pass on dedd735; CI totals unit 5,325, db 9,115, e2e 52 (`approval-summaries/lane-b-ux-suspended-standing-verify.md`).
+- **CI on bffe291 (final):** every check green.
+- **After the merge:** unsubscribed; check-in deleted; main checkout at 0e28f9b; worktrees removed. PostgreSQL was down again from a machine restart, so tp_e2e_screens could not be dropped (harmless, synthetic).
+- **Proposals:**
+  - list every invoice the hold counts when one falls outside the newest 24;
+  - reopening a closed organization (Lane A: console + migration) if wanted, before any copy promises it.
+
+
 *Handoff, written 10:11 UTC (date -u) on the orchestrator's wind-down of 10:09 UTC (weekly usage at 90%; Lane B hands over
 to Lane A tomorrow morning). Nothing is running and no check-in is scheduled.*
 

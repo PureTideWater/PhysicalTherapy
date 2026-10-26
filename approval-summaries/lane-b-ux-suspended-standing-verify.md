@@ -1,0 +1,20 @@
+# ss-verify progress
+- step1 clone done
+- install ok
+- typecheck pass, lint:copy pass
+- unit 28 files 469 tests pass
+- db 4 files 43 tests pass
+- synth --all clean (214 cases, 0 written)
+- scope: 24 files; pr42 overlap only the 3 allowed; no migration/forbidden paths; no model ids beyond attribution
+- BIL-05/06 identical md vs ts; assertedBy files exist
+- next: CI check-runs, then PR body (read last)
+- ci run 40314252713 success (all green)
+- unit CI: 340 files, 5325 passed 1 skipped
+- db1 CI: 30 files, 3134 passed 1 skipped
+- db2 CI: 30 files, 2578 passed
+- db3 30f 2501; db4 30f 902; db total 120 files 9115 passed 1 skipped
+- e2e1: 26 passed (BIL-06 spec passed)
+- e2e2: 26 passed; all 22 check runs complete, all success except stryker skipped, notify skipped
+- next: PR body
+- PR body read (updated 11:21:20Z): claims match diff; no false claims
+- clone removed; verdict pass
