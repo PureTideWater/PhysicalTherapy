@@ -659,3 +659,9 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - Claimed with ADR 0071 if needed and RCC-01 to RCC-08 (a new series).
   - #30's content-pipeline exception is already granted (2026-10-20 adoption). #59's parts in #42's files (`monitoring.ts`, `fields.ts`) are split into a later PR after #42 merges.
   - Its `publish-content.yml` overlap with ci-deps (F4) is resolved under rule 6.
+- **2026-10-26 ~00:05 UTC: #111's session: design reviewed, no migration; a coordination step handed to Lane A.**
+  - Its design review took all 17 findings. There is no workflow change, and the domain model's text and hash are unchanged.
+  - After it merges, `db:domain-model --out` also writes one SQL file per database function, checked in CI. If #111 merges first, #42 commits those files before the founder signs its approval line. Added to LANES.md "Handed to Lane A".
+  - **The UX route map is done** (`designs/lane-b-ux-review/route-map.{json,md}`, committed with the review): all 83 pages are reachable on synthetic data, 35 from the seed and 48 after the populate journeys.
+    - Six extra entries name pages that do not exist. They came from this session's own scout file lists, which were partly retyped from a truncated listing instead of copied from the generated file. The checker caught all six and added the real pages that were missing; the six are removed before the map is committed.
+    - **Lesson:** pass a generated list to a workflow verbatim (read the whole file), never retyped.
