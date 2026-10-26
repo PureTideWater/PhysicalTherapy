@@ -64,6 +64,7 @@ const PROBLEM_NAMES: Readonly<Record<string, string>> = {
   page_missing: 'the cited page is not in the document',
   quote_not_on_page: 'the quote is not on the cited page',
   not_in_quote: 'the value is not in the quote',
+  not_in_row: "the value is not on its codes' row",
   unreadable: 'the value cannot be read as written',
   fields_rejected: 'a field did not check against its page',
   terms_invalid: 'the fields do not make valid rate terms',

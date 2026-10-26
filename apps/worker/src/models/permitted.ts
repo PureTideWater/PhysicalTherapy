@@ -4,18 +4,20 @@ import {
   CONTRACT_KINDS,
   type ContractTermsProposal,
   GatewayError,
-  PERMITTED_FIELDS,
   InputRefusedError,
   ModelCallFailedError,
+  ModelFeatureOffError,
   ModelGateway,
   type ModelProvider,
+  PERMITTED_REPORT_FORMAT,
   PhiBoundaryError,
   PostgresModelCallStore,
   type PermittedReport,
   type PermittedResult,
   correctionSchema,
+  earlierPermittedReportSchema,
   permittedReport,
-  scorePermitted,
+  permittedResult,
 } from '@tp/model-gateway';
 import type { Logger } from '@tp/observability';
 
@@ -34,12 +36,17 @@ import { type DocumentStore, collect } from '../storage/documents';
  * gateway with the current prompt and its pinned model (the larger one when the specialist had marked
  * the contract ambiguous), logged in model_call in the job's name and held to the practice's daily
  * budget like any call, and scored against the specialist's final records (@tp/model-gateway,
- * permitted.ts). Nothing the call proposes is written as a proposal or a rate record.
+ * permitted.ts, with the tally the synthetic gate uses: right, wrong but verified, rejected and missed,
+ * field by field, against the final records cited from the example's own document). Nothing the call
+ * proposes is written as a proposal or a rate record.
  *
- * What leaves the practice's scope is the report: counts, problem codes and example IDs, never a
- * document's text, a quote or a figure. A problem (the document unavailable, a refusal, a failed call,
- * an output that did not parse) scores the example as proposing nothing, so a run that could not read an
- * example shows as lower recall and fails the gate rather than passing it silently.
+ * What leaves the practice's scope is the report (tp-model-eval-permitted/2): tallies, problem codes and
+ * example IDs, never a document's text, a quote or a figure. A problem (the document unavailable, a failed
+ * call, an output that did not parse) scores the example as proposing nothing, so a run that could not
+ * read an example shows as lower recall and fails the gate rather than passing it silently. A call the
+ * gateway refused before it was made (refused:<code>: an input refused, or a feature or variant off or not
+ * evaluable, refused:not_evaluated) is counted apart, as refused, not as the model's miss, and the gate
+ * fails a run in which refusals rose.
  */
 
 export interface PermittedEvaluationServices {
@@ -76,9 +83,6 @@ interface DocumentRow {
 }
 
 const AUDIT = { purpose: 'model_evaluation' } as const;
-
-/** An example whose expectation does not parse scores nothing; its problem names it. */
-const NOTHING = Object.fromEntries(PERMITTED_FIELDS.map((field) => [field, { tp: 0, fp: 0, fn: 0 }])) as PermittedResult['counts'];
 
 /** The practice's permitted contract-proposal examples, oldest first, with whether the proposal they correct was of an ambiguous contract. */
 async function examples(scope: PracticeScope<ScopeClient>, practiceId: string, requestId: string): Promise<ExampleRow[]> {
@@ -129,7 +133,10 @@ function problemOf(error: unknown): string {
   if (error instanceof ModelCallFailedError) {
     return `call_failed:${error.code}`;
   }
-  if (error instanceof InputRefusedError || error instanceof PhiBoundaryError) {
+  // A feature (or the variant an example asks for) that is off or not yet evaluable for this provider is the
+  // gateway's refusal before any call, not the model's miss: refused:not_evaluated, counted apart, so a run in
+  // which more examples could not be called fails as refused_rose rather than reading as lower recall.
+  if (error instanceof InputRefusedError || error instanceof PhiBoundaryError || error instanceof ModelFeatureOffError) {
     return `refused:${error.code}`;
   }
   if (error instanceof GatewayError) {
@@ -160,25 +167,29 @@ export async function evaluatePracticeExamples(services: PermittedEvaluationServ
   const inScope = <T>(work: (scope: PracticeScope<ScopeClient>) => Promise<T>) => withJobScope(services.pool, { jobId: runId, practiceId }, work);
   const requestId = `evaluate-permitted:${runId}`;
   const rows = await inScope((scope) => examples(scope, practiceId, requestId));
+  // The run may call the model for a key waiting only on this run (docs/adr/0070, Part 2; F5 (a)): the gateway
+  // serves its evaluable set to this job's store, and to no other actor.
   const gateway = new ModelGateway({
     provider: services.provider,
     store: new PostgresModelCallStore(services.pool, { kind: 'job', jobId: runId }),
     logger: services.logger,
     production: services.production,
+    serving: 'evaluable',
     ...(services.now === undefined ? {} : { now: services.now }),
   });
   const results: PermittedResult[] = [];
   for (const row of rows) {
     const parsed = correctionSchema.safeParse(row.expected);
     if (!parsed.success) {
-      results.push({ exampleId: row.id, counts: NOTHING, problem: 'expected_invalid' });
+      // An expectation that does not parse scores nothing; its problem names it.
+      results.push(permittedResult(row.id, null, { proposal: null, problem: 'expected_invalid' }));
       continue;
     }
     const correction = parsed.data;
     // The page text is read in its own transaction, which ends before the call is made.
     const pages = await inScope((scope) => documentPages(scope, services, practiceId, correction.document_id, requestId));
     const outcome = pages.ok ? await propose(gateway, { practiceId, requestKey: `eval:${runId}:${row.id}` }, correction.document_id, pages, row.ambiguous) : { proposal: null, problem: 'document_unavailable' };
-    results.push({ exampleId: row.id, counts: scorePermitted(correction, outcome.proposal), problem: outcome.problem });
+    results.push(permittedResult(row.id, correction, outcome));
   }
   services.logger.info('permitted examples evaluated', { practice_id: practiceId, job_id: runId });
   return results;
@@ -238,4 +249,28 @@ export function parsePermittedArgs(argv: readonly string[]): PermittedArgs {
     throw new PermittedArgsError(`name at least one practice; ${PERMITTED_USAGE}`);
   }
   return { practiceIds, report, against };
+}
+
+/**
+ * The earlier run's report given with --against, read before anything is called: a /2 report, or a
+ * PermittedArgsError (exit 2). A /1 report is refused by its code, earlier_report_format: its counts
+ * cannot tell a value the verifier rejected from a wrong one it verified, so the earlier side is run
+ * again on the current code, rather than a whole run of model calls made only for the gate to refuse it
+ * after. The message names the problem, never the file's content.
+ */
+export function parseEarlierReport(text: string): PermittedReport {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new PermittedArgsError('--against is not a permitted-run report (not JSON)');
+  }
+  const parsed = earlierPermittedReportSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new PermittedArgsError(`--against is not a permitted-run report of format ${PERMITTED_REPORT_FORMAT}`);
+  }
+  if (parsed.data.format !== PERMITTED_REPORT_FORMAT) {
+    throw new PermittedArgsError(`--against: earlier_report_format: the earlier report is ${parsed.data.format}; run the earlier prompt and model again on the current code for a ${PERMITTED_REPORT_FORMAT} report`);
+  }
+  return parsed.data;
 }
