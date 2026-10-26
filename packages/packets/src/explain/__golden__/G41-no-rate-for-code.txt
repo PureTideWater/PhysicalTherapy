@@ -1,0 +1,73 @@
+# fixtures/golden/claims/G41-no-rate-for-code.json
+
+## Line 1, internal
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $29.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 1, viewer
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $29.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 2, internal
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $18.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 2, viewer
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $18.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 3, internal
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $27.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 3, viewer
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $27.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.

@@ -1,0 +1,71 @@
+# fixtures/golden/claims/G149-per-visit-reevaluation-timed-units-unknown.json
+
+## Line 1, internal
+Not priced: Timed-units rule unknown for the payer.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $51.50 per visit. Applied, as the rate record’s flags are on: NCCI edits. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and sequestration. The timed-units rule is not known for the payer.
+  [units] 1 unit billed, taken as billed. The MUE for code 97164 is 1; the units are within it. $51.50 per visit; units do not multiply it.
+  [per_visit] Not reached.
+  [ncci_ptp] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $51.50, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
+
+## Line 1, viewer
+Not priced: Timed-units rule unknown for the payer.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $51.50 per visit. Applied, as the rate record’s flags are on: NCCI edits. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and sequestration. The timed-units rule is not known for the payer.
+  [units] 1 unit billed, taken as billed. The MUE for code 97164 is 1; the units are within it. $51.50 per visit; units do not multiply it.
+  [per_visit] Not reached.
+  [ncci_ptp] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $51.50, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
+
+## Line 2, internal
+$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 2); the visit’s lines are claim line 2.
+  [ncci_ptp] Claim line 1’s code 97164 is the first-column code of an NCCI edit with this code: the edit stands. It is a review flag and does not change the amount.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $0.00, which is $88.00; 3% of it, $2.64, is withheld. $88.00 becomes $85.36.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $85.36 becomes $85.36. The unrounded amount is kept beside it.
+  [observed] Observed allowed $85.36, the payer’s allowed amount (AMT B6). Expected $85.36, observed allowed $85.36: no variance.
+  [window] Dispute window: 45 days from the payment date 2026-05-20, under the contract; it ends on 2026-07-04; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $85.36 expected, $85.36 before the one rounding. An NCCI edit stands: a review flag, which does not change the amount.
+
+## Line 2, viewer
+$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 2); the visit’s lines are claim line 2.
+  [ncci_ptp] Claim line 1’s code 97164 is the first-column code of an NCCI edit with this code: the edit stands. It is a review flag and does not change the amount.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $0.00, which is $88.00; 3% of it, $2.64, is withheld. $88.00 becomes $85.36.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $85.36 becomes $85.36. The unrounded amount is kept beside it.
+  [observed] Observed allowed $85.36, the payer’s allowed amount (AMT B6). Expected $85.36, observed allowed $85.36: no variance.
+  [window] Dispute window: 45 days from the payment date, under the contract.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $85.36 expected, $85.36 before the one rounding. An NCCI edit stands: a review flag, which does not change the amount.
+
+## Line 2, payer
+$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+  [terms] Per visit: $88.00 per visit.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 2); the visit’s lines are claim line 2.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $0.00, which is $88.00; 3% of it, $2.64, is withheld. $88.00 becomes $85.36.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the contract’s rule: $85.36 becomes $85.36. The unrounded amount is kept beside it.
+  [observed] Observed allowed $85.36, the allowed amount the remittance states. Expected $85.36, observed allowed $85.36: no variance.

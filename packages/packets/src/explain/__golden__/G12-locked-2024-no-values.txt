@@ -1,0 +1,29 @@
+# fixtures/golden/claims/G12-locked-2024-no-values.json
+
+## Line 1, internal
+Not priced: No RVU for the code in the basis year.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 105% of the Medicare physician fee schedule, locked to 2024, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2024, the year the rate record locks.
+  [units] Not reached.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $20.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Not priced: No RVU for the code in the basis year. No relative value for the code in the basis year. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.
+
+## Line 1, viewer
+Not priced: No RVU for the code in the basis year.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 105% of the Medicare physician fee schedule, locked to 2024, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the latest records in force during 2024, the year the rate record locks.
+  [units] Not reached.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $20.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Not priced: No RVU for the code in the basis year. No relative value for the code in the basis year. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.

@@ -1,0 +1,212 @@
+# fixtures/golden/claims/G137-lesser-of-facility-and-mue-limit.json
+
+## Line 1, internal
+Lesser of the schedule $57.3375 and the line charge $90.00: $57.3375 under the contract’s clause on page 1; after the assistant reduction $57.3375; rounded once to $57.33; observed allowed $47.00; short $10.33.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-06-11. Code 97161 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97161 is 1; the units are within it. Lesser of the schedule $57.3375 and the line charge $90.00: $57.3375.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $57.3375 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $57.3375 becomes $57.33. The unrounded amount is kept beside it.
+  [observed] Observed allowed $47.00, the payer’s allowed amount (AMT B6). Expected $57.33, observed allowed $47.00: short $10.33.
+  [window] Dispute window: 4 months from the service date 2026-06-11, under the release’s record; it ends on 2026-10-11; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $57.33 expected, $57.3375 before the one rounding.
+
+## Line 1, viewer
+Lesser of the schedule $57.3375 and the line charge $90.00: $57.3375 under the contract’s clause on page 1; after the assistant reduction $57.3375; rounded once to $57.33; observed allowed $47.00; short $10.33.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97161 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97161 is 1; the units are within it. Lesser of the schedule $57.3375 and the line charge $90.00: $57.3375.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $57.3375 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $57.3375 becomes $57.33. The unrounded amount is kept beside it.
+  [observed] Observed allowed $47.00, the payer’s allowed amount (AMT B6). Expected $57.33, observed allowed $47.00: short $10.33.
+  [window] Dispute window: 4 months from the service date, under the release’s record.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $57.33 expected, $57.3375 before the one rounding.
+
+## Line 1, payer
+Lesser of the schedule $57.3375 and the line charge $90.00: $57.3375 under the contract’s clause on page 1; after the assistant reduction $57.3375; rounded once to $57.33; observed allowed $47.00; short $10.33.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97161 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $57.3375 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the contract’s rule: $57.3375 becomes $57.33. The unrounded amount is kept beside it.
+  [observed] Observed allowed $47.00, the allowed amount the remittance states. Expected $57.33, observed allowed $47.00: short $10.33.
+
+## Line 2, internal
+Lesser of the schedule $17.125 and the line charge $50.00: $17.125 under the contract’s clause on page 1; after the assistant reduction $13.18625; rounded once to $13.18; observed allowed $13.00; short $0.18.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-06-11. Code 97530 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. Lesser of the schedule $17.125 and the line charge $50.00: $17.125.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] Modifier CQ (services by a therapy assistant): the release pays 77% of the amount. $17.125 becomes $13.18625.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $13.18625 becomes $13.18. The unrounded amount is kept beside it.
+  [observed] Observed allowed $13.00, the payer’s allowed amount (AMT B6). Expected $13.18, observed allowed $13.00: short $0.18.
+  [window] Dispute window: 4 months from the service date 2026-06-11, under the release’s record; it ends on 2026-10-11; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $13.18 expected, $13.18625 before the one rounding.
+
+## Line 2, viewer
+Lesser of the schedule $17.125 and the line charge $50.00: $17.125 under the contract’s clause on page 1; after the assistant reduction $13.18625; rounded once to $13.18; observed allowed $13.00; short $0.18.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. Lesser of the schedule $17.125 and the line charge $50.00: $17.125.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] Modifier CQ (services by a therapy assistant): the release pays 77% of the amount. $17.125 becomes $13.18625.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $13.18625 becomes $13.18. The unrounded amount is kept beside it.
+  [observed] Observed allowed $13.00, the payer’s allowed amount (AMT B6). Expected $13.18, observed allowed $13.00: short $0.18.
+  [window] Dispute window: 4 months from the service date, under the release’s record.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $13.18 expected, $13.18625 before the one rounding.
+
+## Line 2, payer
+Lesser of the schedule $17.125 and the line charge $50.00: $17.125 under the contract’s clause on page 1; after the assistant reduction $13.18625; rounded once to $13.18; observed allowed $13.00; short $0.18.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [assistant_reduction] Modifier CQ (services by a therapy assistant): Medicare’s assistant percentage is 77% of the amount. $17.125 becomes $13.18625.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the contract’s rule: $13.18625 becomes $13.18. The unrounded amount is kept beside it.
+  [observed] Observed allowed $13.00, the allowed amount the remittance states. Expected $13.18, observed allowed $13.00: short $0.18.
+
+## Line 3, internal
+Lesser of the schedule $38.625 and the line charge $60.00: $38.625 under the contract’s clause on page 1; after the assistant reduction $38.625; rounded once to $38.62; observed allowed $38.00; short $0.62.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-06-11. Code 97035 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 3 units billed, taken as billed. The MUE for code 97035 is 3; the units are within it. Lesser of the schedule $38.625 and the line charge $60.00: $38.625.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $38.625 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $38.625 becomes $38.62. The unrounded amount is kept beside it.
+  [observed] Observed allowed $38.00, the payer’s allowed amount (AMT B6). Expected $38.62, observed allowed $38.00: short $0.62.
+  [window] Dispute window: 4 months from the service date 2026-06-11, under the release’s record; it ends on 2026-10-11; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $38.62 expected, $38.625 before the one rounding.
+
+## Line 3, viewer
+Lesser of the schedule $38.625 and the line charge $60.00: $38.625 under the contract’s clause on page 1; after the assistant reduction $38.625; rounded once to $38.62; observed allowed $38.00; short $0.62.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97035 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 3 units billed, taken as billed. The MUE for code 97035 is 3; the units are within it. Lesser of the schedule $38.625 and the line charge $60.00: $38.625.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $38.625 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $38.625 becomes $38.62. The unrounded amount is kept beside it.
+  [observed] Observed allowed $38.00, the payer’s allowed amount (AMT B6). Expected $38.62, observed allowed $38.00: short $0.62.
+  [window] Dispute window: 4 months from the service date, under the release’s record.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $38.62 expected, $38.625 before the one rounding.
+
+## Line 3, payer
+Lesser of the schedule $38.625 and the line charge $60.00: $38.625 under the contract’s clause on page 1; after the assistant reduction $38.625; rounded once to $38.62; observed allowed $38.00; short $0.62.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97035 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $38.625 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, truncated to the cent, under the contract’s rule: $38.625 becomes $38.62. The unrounded amount is kept beside it.
+  [observed] Observed allowed $38.00, the allowed amount the remittance states. Expected $38.62, observed allowed $38.00: short $0.62.
+
+## Worksheets, internal
+Fee schedule worksheet 1: code 97161, 2026, carrier 99999 locality 01, facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: facility, the practice’s setting for place of service 22.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 125% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 125% |
+  | Work | 1.61 | 1.000 | $40.25 |
+  | Practice expense (facility) | 0.61 | 0.950 | $14.4875 |
+  | Malpractice | 0.16 | 0.650 | $2.60 |
+  | Per unit | | | $57.3375 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 125%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97161: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 125% and before any reduction.
+Fee schedule worksheet 2: code 97530, 2026, carrier 99999 locality 01, facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: facility, the practice’s setting for place of service 22.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 125% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 125% |
+  | Work | 0.35 | 1.000 | $8.75 |
+  | Practice expense (facility) | 0.25 | 0.950 | $5.9375 |
+  | Malpractice | 0.15 | 0.650 | $2.4375 |
+  | Per unit | | | $17.125 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 125%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97530: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 125% and before any reduction.
+Fee schedule worksheet 3: code 97035, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 125% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 125% |
+  | Work | 0.15 | 1.000 | $3.75 |
+  | Practice expense (non-facility) | 0.35 | 0.950 | $8.3125 |
+  | Malpractice | 0.05 | 0.650 | $0.8125 |
+  | Per unit | | | $12.875 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 125%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 3 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97035: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 125% and before any reduction.
+
+## Worksheets, payer
+Fee schedule worksheet 1: code 97161, 2026, carrier 99999 locality 01, facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: facility, the practice’s setting for place of service 22.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 125% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 125% |
+  | Work | 1.61 | 1.000 | $40.25 |
+  | Practice expense (facility) | 0.61 | 0.950 | $14.4875 |
+  | Malpractice | 0.16 | 0.650 | $2.60 |
+  | Per unit | | | $57.3375 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 125%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97161: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 125% and before any reduction.
+Fee schedule worksheet 2: code 97530, 2026, carrier 99999 locality 01, facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: facility, the practice’s setting for place of service 22.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 125% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 125% |
+  | Work | 0.35 | 1.000 | $8.75 |
+  | Practice expense (facility) | 0.25 | 0.950 | $5.9375 |
+  | Malpractice | 0.15 | 0.650 | $2.4375 |
+  | Per unit | | | $17.125 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 125%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97530: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 125% and before any reduction.
+Fee schedule worksheet 3: code 97035, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 125% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 125% |
+  | Work | 0.15 | 1.000 | $3.75 |
+  | Practice expense (non-facility) | 0.35 | 0.950 | $8.3125 |
+  | Malpractice | 0.05 | 0.650 | $0.8125 |
+  | Per unit | | | $12.875 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 125%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 3 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97035: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 125% and before any reduction.

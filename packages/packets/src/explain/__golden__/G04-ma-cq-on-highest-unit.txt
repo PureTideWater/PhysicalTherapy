@@ -1,0 +1,230 @@
+# fixtures/golden/claims/G04-ma-cq-on-highest-unit.json
+
+## Line 1, internal
+1 unit × $27.00 = $27.00 under 42 CFR 422.214; after the multiple procedure payment reduction $27.00; after the assistant reduction $20.79; after sequestration $20.1663; rounded once to $20.17; observed allowed $20.00; short $0.17.
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. 1 × $27.00 = $27.00.
+  [ncci_ptp] Claim line 3’s code 97140 is the first-column code of an NCCI edit with this code: the edit stands. It is a review flag and does not change the amount.
+  [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($18.05) and is kept whole; $27.00 is unchanged.
+  [assistant_reduction] Modifier CQ (services by a therapy assistant): the release pays 77% of the amount. $27.00 becomes $20.79.
+  [sequestration] Sequestration: the payer’s share is $20.79 less the patient share $0.00, which is $20.79; 3% of it, $0.6237, is withheld. $20.79 becomes $20.1663.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $20.1663 becomes $20.17. The unrounded amount is kept beside it.
+  [observed] Observed allowed $20.00, the payer’s allowed amount (AMT B6). Expected $20.17, observed allowed $20.00: short $0.17.
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $20.17 expected, $20.1663 before the one rounding. An NCCI edit stands: a review flag, which does not change the amount.
+
+## Line 1, viewer
+1 unit × $27.00 = $27.00 under 42 CFR 422.214; after the multiple procedure payment reduction $27.00; after the assistant reduction $20.79; after sequestration $20.1663; rounded once to $20.17; observed allowed $20.00; short $0.17.
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. 1 × $27.00 = $27.00.
+  [ncci_ptp] Claim line 3’s code 97140 is the first-column code of an NCCI edit with this code: the edit stands. It is a review flag and does not change the amount.
+  [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($18.05) and is kept whole; $27.00 is unchanged.
+  [assistant_reduction] Modifier CQ (services by a therapy assistant): the release pays 77% of the amount. $27.00 becomes $20.79.
+  [sequestration] Sequestration: the payer’s share is $20.79 less the patient share $0.00, which is $20.79; 3% of it, $0.6237, is withheld. $20.79 becomes $20.1663.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $20.1663 becomes $20.17. The unrounded amount is kept beside it.
+  [observed] Observed allowed $20.00, the payer’s allowed amount (AMT B6). Expected $20.17, observed allowed $20.00: short $0.17.
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $20.17 expected, $20.1663 before the one rounding. An NCCI edit stands: a review flag, which does not change the amount.
+
+## Line 1, payer
+1 unit × $27.00 = $27.00 under 42 CFR 422.214; after the multiple procedure payment reduction $27.00; after the assistant reduction $20.79; after sequestration $20.1663; rounded once to $20.17; observed allowed $20.00; short $0.17.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($18.05) and is kept whole; $27.00 is unchanged.
+  [assistant_reduction] Modifier CQ (services by a therapy assistant): Medicare’s assistant percentage is 77% of the amount. $27.00 becomes $20.79.
+  [sequestration] Sequestration: the payer’s share is $20.79 less the patient share $0.00, which is $20.79; 3% of it, $0.6237, is withheld. $20.79 becomes $20.1663.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $20.1663 becomes $20.17. The unrounded amount is kept beside it.
+  [observed] Observed allowed $20.00, the allowed amount the remittance states. Expected $20.17, observed allowed $20.00: short $0.17.
+
+## Line 2, internal
+2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $31.448; after the assistant reduction $31.448; after sequestration $30.75656; rounded once to $30.76; observed allowed $42.00; variance -$11.24 (overpaid: recorded, never pursued).
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 2 units billed, taken as billed. The MUE for code 97110 is 7; the units are within it. 2 × $21.12 = $42.24.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [mppr] Ranked by practice-expense part on the claim’s day (2026-03-10), the first unit is claim line 1’s ($18.05). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 3) loses $5.396; unit 2 (rank 4) loses $5.396. $42.24 becomes $31.448.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $31.448 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $31.448 less the patient share $8.40, which is $23.048; 3% of it, $0.69144, is withheld. $31.448 becomes $30.75656.
+  [patient_share] Patient share $8.40 (PR 2 $8.40), reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $30.75656 becomes $30.76. The unrounded amount is kept beside it.
+  [observed] Observed allowed $42.00, the payer’s allowed amount (AMT B6). Expected $30.76, observed allowed $42.00: variance -$11.24 (overpaid: recorded, never pursued).
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $30.76 expected, $30.75656 before the one rounding.
+
+## Line 2, viewer
+2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $31.448; after the assistant reduction $31.448; after sequestration $30.75656; rounded once to $30.76; observed allowed $42.00; variance -$11.24 (overpaid: recorded, never pursued).
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 2 units billed, taken as billed. The MUE for code 97110 is 7; the units are within it. 2 × $21.12 = $42.24.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 1’s ($18.05). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 3) loses $5.396; unit 2 (rank 4) loses $5.396. $42.24 becomes $31.448.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $31.448 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $31.448 less the patient share $8.40, which is $23.048; 3% of it, $0.69144, is withheld. $31.448 becomes $30.75656.
+  [patient_share] Patient share $8.40 (PR 2 $8.40), reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $30.75656 becomes $30.76. The unrounded amount is kept beside it.
+  [observed] Observed allowed $42.00, the payer’s allowed amount (AMT B6). Expected $30.76, observed allowed $42.00: variance -$11.24 (overpaid: recorded, never pursued).
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $30.76 expected, $30.75656 before the one rounding.
+
+## Line 2, payer
+2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $31.448; after the assistant reduction $31.448; after sequestration $30.75656; rounded once to $30.76; observed allowed $42.00; variance -$11.24 (overpaid: recorded, never pursued).
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 1’s ($18.05). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 3) loses $5.396; unit 2 (rank 4) loses $5.396. $42.24 becomes $31.448.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $31.448 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $31.448 less the patient share $8.40, which is $23.048; 3% of it, $0.69144, is withheld. $31.448 becomes $30.75656.
+  [patient_share] Patient share $8.40, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $30.75656 becomes $30.76. The unrounded amount is kept beside it.
+  [observed] Observed allowed $42.00, the allowed amount the remittance states. Expected $30.76, observed allowed $42.00: variance -$11.24 (overpaid: recorded, never pursued).
+
+## Line 3, internal
+1 unit × $24.58 = $24.58 under 42 CFR 422.214; after the multiple procedure payment reduction $18.196; after the assistant reduction $18.196; after sequestration $17.65012; rounded once to $17.65; observed allowed $24.00; variance -$6.35 (overpaid: recorded, never pursued).
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. 1 × $24.58 = $24.58.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [mppr] Ranked by practice-expense part on the claim’s day (2026-03-10), the first unit is claim line 1’s ($18.05). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $6.384. $24.58 becomes $18.196.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $18.196 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $18.196 less the patient share $0.00, which is $18.196; 3% of it, $0.54588, is withheld. $18.196 becomes $17.65012.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $17.65012 becomes $17.65. The unrounded amount is kept beside it.
+  [observed] Observed allowed $24.00, the payer’s allowed amount (AMT B6). Expected $17.65, observed allowed $24.00: variance -$6.35 (overpaid: recorded, never pursued).
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $17.65 expected, $17.65012 before the one rounding.
+
+## Line 3, viewer
+1 unit × $24.58 = $24.58 under 42 CFR 422.214; after the multiple procedure payment reduction $18.196; after the assistant reduction $18.196; after sequestration $17.65012; rounded once to $17.65; observed allowed $24.00; variance -$6.35 (overpaid: recorded, never pursued).
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. 1 × $24.58 = $24.58.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 1’s ($18.05). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $6.384. $24.58 becomes $18.196.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $18.196 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $18.196 less the patient share $0.00, which is $18.196; 3% of it, $0.54588, is withheld. $18.196 becomes $17.65012.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $17.65012 becomes $17.65. The unrounded amount is kept beside it.
+  [observed] Observed allowed $24.00, the payer’s allowed amount (AMT B6). Expected $17.65, observed allowed $24.00: variance -$6.35 (overpaid: recorded, never pursued).
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $17.65 expected, $17.65012 before the one rounding.
+
+## Line 3, payer
+1 unit × $24.58 = $24.58 under 42 CFR 422.214; after the multiple procedure payment reduction $18.196; after the assistant reduction $18.196; after sequestration $17.65012; rounded once to $17.65; observed allowed $24.00; variance -$6.35 (overpaid: recorded, never pursued).
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 1’s ($18.05). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $6.384. $24.58 becomes $18.196.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $18.196 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $18.196 less the patient share $0.00, which is $18.196; 3% of it, $0.54588, is withheld. $18.196 becomes $17.65012.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default rule: $17.65012 becomes $17.65. The unrounded amount is kept beside it.
+  [observed] Observed allowed $24.00, the allowed amount the remittance states. Expected $17.65, observed allowed $24.00: variance -$6.35 (overpaid: recorded, never pursued).
+
+## Worksheets, internal
+Fee schedule worksheet 1: code 97530, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 100% under 42 CFR 422.214.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.35 | 1.000 | $7.00 |
+  | Practice expense (non-facility) | 0.95 | 0.950 | $18.05 |
+  | Malpractice | 0.15 | 0.650 | $1.95 |
+  | Per unit | | | $27.00 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97530: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount before any reduction; at 100% under 42 CFR 422.214, the amount per unit above is Original Medicare’s own.
+Fee schedule worksheet 2: code 97110, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 100% under 42 CFR 422.214.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.31 | 1.000 | $6.20 |
+  | Practice expense (non-facility) | 0.71 | 0.950 | $13.49 |
+  | Malpractice | 0.11 | 0.650 | $1.43 |
+  | Per unit | | | $21.12 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97110: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount before any reduction; at 100% under 42 CFR 422.214, the amount per unit above is Original Medicare’s own.
+Fee schedule worksheet 3: code 97140, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 100% under 42 CFR 422.214.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.34 | 1.000 | $6.80 |
+  | Practice expense (non-facility) | 0.84 | 0.950 | $15.96 |
+  | Malpractice | 0.14 | 0.650 | $1.82 |
+  | Per unit | | | $24.58 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 3 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97140: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount before any reduction; at 100% under 42 CFR 422.214, the amount per unit above is Original Medicare’s own.
+
+## Worksheets, payer
+Fee schedule worksheet 1: code 97530, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 100% under 42 CFR 422.214.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.35 | 1.000 | $7.00 |
+  | Practice expense (non-facility) | 0.95 | 0.950 | $18.05 |
+  | Malpractice | 0.15 | 0.650 | $1.95 |
+  | Per unit | | | $27.00 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97530: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount before any reduction; at 100% under 42 CFR 422.214, the amount per unit above is Original Medicare’s own.
+Fee schedule worksheet 2: code 97110, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 100% under 42 CFR 422.214.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.31 | 1.000 | $6.20 |
+  | Practice expense (non-facility) | 0.71 | 0.950 | $13.49 |
+  | Malpractice | 0.11 | 0.650 | $1.43 |
+  | Per unit | | | $21.12 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97110: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount before any reduction; at 100% under 42 CFR 422.214, the amount per unit above is Original Medicare’s own.
+Fee schedule worksheet 3: code 97140, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.0000 per RVU (relative value unit), for clinicians who are not qualifying alternative payment model (APM) participants.
+  Percentage: 100% under 42 CFR 422.214.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.34 | 1.000 | $6.80 |
+  | Practice expense (non-facility) | 0.84 | 0.950 | $15.96 |
+  | Malpractice | 0.14 | 0.650 | $1.82 |
+  | Per unit | | | $24.58 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.0000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 3 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97140: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount before any reduction; at 100% under 42 CFR 422.214, the amount per unit above is Original Medicare’s own.

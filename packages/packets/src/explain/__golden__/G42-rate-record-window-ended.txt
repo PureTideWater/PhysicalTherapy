@@ -1,0 +1,25 @@
+# fixtures/golden/claims/G42-rate-record-window-ended.json
+
+## Line 1, internal
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $23.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 1, viewer
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $23.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.

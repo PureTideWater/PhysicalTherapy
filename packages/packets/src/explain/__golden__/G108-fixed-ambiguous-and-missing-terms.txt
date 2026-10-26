@@ -1,0 +1,85 @@
+# fixtures/golden/claims/G108-fixed-ambiguous-and-missing-terms.json
+
+## Line 1, internal
+Not priced: More than one rate record matches.
+  [agreement] More than one rate record matches. Rate records that match: 2.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $14.50, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: More than one rate record matches. The line stopped at the agreement. Remedy: Specialist resolves scope.
+
+## Line 1, viewer
+Not priced: More than one rate record matches.
+  [agreement] More than one rate record matches. Rate records that match: 2.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $14.50, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: More than one rate record matches. The line stopped at the agreement. Remedy: Specialist resolves scope.
+
+## Line 2, internal
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $9.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 2, viewer
+Not priced: The agreement has no term for the code.
+  [agreement] The agreement has no term for the code.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $9.00, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The agreement has no term for the code. The line stopped at the agreement. Remedy: Obtain the exhibit page or confirm exclusion.
+
+## Line 3, internal
+1 unit × $32.50 = $32.50 under the contract’s clause on page 1; after the assistant reduction $32.50; rounded once to $32.50; observed allowed $32.50; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Fixed schedule: $32.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. 1 × $32.50 = $32.50.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $32.50 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $32.50 becomes $32.50. The unrounded amount is kept beside it.
+  [observed] Observed allowed $32.50, the payer’s allowed amount (AMT B6). Expected $32.50, observed allowed $32.50: no variance.
+  [window] Dispute window: 90 days from the payment date 2026-06-16, under the contract; it ends on 2026-09-14; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $32.50 expected, $32.50 before the one rounding.
+
+## Line 3, viewer
+1 unit × $32.50 = $32.50 under the contract’s clause on page 1; after the assistant reduction $32.50; rounded once to $32.50; observed allowed $32.50; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Fixed schedule: $32.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. 1 × $32.50 = $32.50.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $32.50 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $32.50 becomes $32.50. The unrounded amount is kept beside it.
+  [observed] Observed allowed $32.50, the payer’s allowed amount (AMT B6). Expected $32.50, observed allowed $32.50: no variance.
+  [window] Dispute window: 90 days from the payment date, under the contract.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $32.50 expected, $32.50 before the one rounding.
+
+## Line 3, payer
+1 unit × $32.50 = $32.50 under the contract’s clause on page 1; after the assistant reduction $32.50; rounded once to $32.50; observed allowed $32.50; no variance.
+  [terms] Fixed schedule: $32.50 per unit.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $32.50 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the contract’s rule: $32.50 becomes $32.50. The unrounded amount is kept beside it.
+  [observed] Observed allowed $32.50, the allowed amount the remittance states. Expected $32.50, observed allowed $32.50: no variance.

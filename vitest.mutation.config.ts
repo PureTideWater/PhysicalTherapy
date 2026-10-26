@@ -53,6 +53,10 @@ export const EXCLUDED: readonly { readonly glob: string; readonly reason: string
     reason: "reads the engine's source text, which Stryker's instrumentation rewrites, so it fails on every run",
   },
   {
+    glob: 'packages/packets/src/explain/purity.test.ts',
+    reason: "reads the calculation words' source text for its imports and arithmetic, which Stryker's instrumentation rewrites, so it fails on every run",
+  },
+  {
     glob: 'tools/engine-freeze/differential.test.ts',
     reason: 'compares the engine with the base commit, so it kills every engine mutant by construction',
   },

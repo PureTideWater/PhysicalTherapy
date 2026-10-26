@@ -1,0 +1,31 @@
+# fixtures/golden/claims/G132-lesser-of-reversed-not-corrected.json
+
+## Line 1, internal
+Not priced: The claim was reversed and not corrected.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and NCCI edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. MUE not checked (flag off). Lesser of the schedule $34.00 and the line charge $40.00: $34.00.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
+  [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Not reached.
+  [observed] Observed allowed $32.32, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Not priced: The claim was reversed and not corrected. The line stopped at the claim’s status. Remedy: None.
+
+## Line 1, viewer
+Not priced: The claim was reversed and not corrected.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and NCCI edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. MUE not checked (flag off). Lesser of the schedule $34.00 and the line charge $40.00: $34.00.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
+  [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Not reached.
+  [observed] Observed allowed $32.32, the payer’s allowed amount (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Not priced: The claim was reversed and not corrected. The line stopped at the claim’s status. Remedy: None.

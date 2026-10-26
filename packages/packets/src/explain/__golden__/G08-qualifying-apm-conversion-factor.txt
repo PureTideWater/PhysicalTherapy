@@ -1,0 +1,137 @@
+# fixtures/golden/claims/G08-qualifying-apm-conversion-factor.json
+
+## Line 1, internal
+1 unit × $21.2256 = $21.2256 under the contract’s clause on page 1; rounded once to $21.23; observed allowed $21.00; short $0.23.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $21.2256 = $21.2256.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $21.2256 becomes $21.23. The unrounded amount is kept beside it.
+  [observed] Observed allowed $21.00, the payer’s allowed amount (AMT B6). Expected $21.23, observed allowed $21.00: short $0.23.
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $21.23 expected, $21.2256 before the one rounding.
+
+## Line 1, viewer
+1 unit × $21.2256 = $21.2256 under the contract’s clause on page 1; rounded once to $21.23; observed allowed $21.00; short $0.23.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $21.2256 = $21.2256.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $21.2256 becomes $21.23. The unrounded amount is kept beside it.
+  [observed] Observed allowed $21.00, the payer’s allowed amount (AMT B6). Expected $21.23, observed allowed $21.00: short $0.23.
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $21.23 expected, $21.2256 before the one rounding.
+
+## Line 1, payer
+1 unit × $21.2256 = $21.2256 under the contract’s clause on page 1; rounded once to $21.23; observed allowed $21.00; short $0.23.
+  [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $21.2256 becomes $21.23. The unrounded amount is kept beside it.
+  [observed] Observed allowed $21.00, the allowed amount the remittance states. Expected $21.23, observed allowed $21.00: short $0.23.
+
+## Line 2, internal
+2 units × $24.7029 = $49.4058 under the contract’s clause on page 1; rounded once to $49.41; observed allowed $49.00; short $0.41.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 2 units billed, taken as billed. MUE not checked (flag off). 2 × $24.7029 = $49.4058.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $49.4058 becomes $49.41. The unrounded amount is kept beside it.
+  [observed] Observed allowed $49.00, the payer’s allowed amount (AMT B6). Expected $49.41, observed allowed $49.00: short $0.41.
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $49.41 expected, $49.4058 before the one rounding.
+
+## Line 2, viewer
+2 units × $24.7029 = $49.4058 under the contract’s clause on page 1; rounded once to $49.41; observed allowed $49.00; short $0.41.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [units] 2 units billed, taken as billed. MUE not checked (flag off). 2 × $24.7029 = $49.4058.
+  [ncci_ptp] NCCI edits not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $49.4058 becomes $49.41. The unrounded amount is kept beside it.
+  [observed] Observed allowed $49.00, the payer’s allowed amount (AMT B6). Expected $49.41, observed allowed $49.00: short $0.41.
+  [window] No dispute window applies to this line.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Priced: $49.41 expected, $49.4058 before the one rounding.
+
+## Line 2, payer
+2 units × $24.7029 = $49.4058 under the contract’s clause on page 1; rounded once to $49.41; observed allowed $49.00; short $0.41.
+  [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $49.4058 becomes $49.41. The unrounded amount is kept beside it.
+  [observed] Observed allowed $49.00, the allowed amount the remittance states. Expected $49.41, observed allowed $49.00: short $0.41.
+
+## Worksheets, internal
+Fee schedule worksheet 1: code 97110, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.1000 per RVU (relative value unit), for qualifying alternative payment model (APM) participants.
+  Percentage: 100% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.31 | 1.000 | $6.231 |
+  | Practice expense (non-facility) | 0.71 | 0.950 | $13.55745 |
+  | Malpractice | 0.11 | 0.650 | $1.43715 |
+  | Per unit | | | $21.2256 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.1000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97110: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 100% and before any reduction.
+Fee schedule worksheet 2: code 97140, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.1000 per RVU (relative value unit), for qualifying alternative payment model (APM) participants.
+  Percentage: 100% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.34 | 1.000 | $6.834 |
+  | Practice expense (non-facility) | 0.84 | 0.950 | $16.0398 |
+  | Malpractice | 0.14 | 0.650 | $1.8291 |
+  | Per unit | | | $24.7029 |
+  The engine’s expression: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.1000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97140: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 100% and before any reduction.
+
+## Worksheets, payer
+Fee schedule worksheet 1: code 97110, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.1000 per RVU (relative value unit), for qualifying alternative payment model (APM) participants.
+  Percentage: 100% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.31 | 1.000 | $6.231 |
+  | Practice expense (non-facility) | 0.71 | 0.950 | $13.55745 |
+  | Malpractice | 0.11 | 0.650 | $1.43715 |
+  | Per unit | | | $21.2256 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.1000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 1 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97110: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 100% and before any reduction.
+Fee schedule worksheet 2: code 97140, 2026, carrier 99999 locality 01, non-facility
+  Year: the 2026 records in force on the service date.
+  Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
+  Setting: non-facility, the practice’s setting for place of service 11.
+  Conversion factor: $20.1000 per RVU (relative value unit), for qualifying alternative payment model (APM) participants.
+  Percentage: 100% of the fee schedule, under the contract’s clause on page 1.
+  | Part | RVU | GPCI (geographic practice cost index) | Per unit at 100% |
+  | Work | 0.34 | 1.000 | $6.834 |
+  | Practice expense (non-facility) | 0.84 | 0.950 | $16.0398 |
+  | Malpractice | 0.14 | 0.650 | $1.8291 |
+  | Per unit | | | $24.7029 |
+  The calculation: (work RVU × work GPCI + practice-expense RVU × practice-expense GPCI + malpractice RVU × malpractice GPCI) × conversion factor × percentage = amount per unit.
+  Each part above is its RVU × its GPCI × $20.1000 per RVU × 100%, kept to the fraction of a cent until the one rounding.
+  Reductions, in order, then the one rounding: as the words of row 2 say.
+  To check these values, open the Physician Fee Schedule Look-Up Tool of the Centers for Medicare & Medicaid Services (CMS) for 2026, choose carrier 99999 locality 01 and code 97140: its relative values, geographic indices and conversion factor should read as above. CMS shows the full fee-schedule amount, before this contract’s 100% and before any reduction.

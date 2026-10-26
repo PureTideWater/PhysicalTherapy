@@ -1,0 +1,67 @@
+# fixtures/golden/claims/G186-lesser-of-fixed-evaluations.json
+
+## Line 1, internal
+Lesser of the schedule $76.00 and the line charge $70.00: $70.00 under the contract’s clause on page 1; rounded once to $70.00; observed allowed $70.00; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $76.00 per unit. Applied, as the rate record’s flags are on: NCCI edits. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The MUE for code 97162 is 1; the units are within it. Lesser of the schedule $76.00 and the line charge $70.00: $70.00.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $70.00 becomes $70.00. The unrounded amount is kept beside it.
+  [observed] Observed allowed $70.00, the payer’s allowed amount (AMT B6). Expected $70.00, observed allowed $70.00: no variance.
+  [window] Dispute window: 180 days from the payment date 2026-07-14, under the contract; it ends on 2027-01-10; on 2026-10-15 it is open.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $70.00 expected, $70.00 before the one rounding.
+
+## Line 1, viewer
+Lesser of the schedule $76.00 and the line charge $70.00: $70.00 under the contract’s clause on page 1; rounded once to $70.00; observed allowed $70.00; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $76.00 per unit. Applied, as the rate record’s flags are on: NCCI edits. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The MUE for code 97162 is 1; the units are within it. Lesser of the schedule $76.00 and the line charge $70.00: $70.00.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $70.00 becomes $70.00. The unrounded amount is kept beside it.
+  [observed] Observed allowed $70.00, the payer’s allowed amount (AMT B6). Expected $70.00, observed allowed $70.00: no variance.
+  [window] Dispute window: 180 days from the payment date, under the contract.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $70.00 expected, $70.00 before the one rounding.
+
+## Line 1, payer
+Lesser of the schedule $76.00 and the line charge $70.00: $70.00 under the contract’s clause on page 1; rounded once to $70.00; observed allowed $70.00; no variance.
+  [terms] Lesser of the line charge and a fixed schedule of $76.00 per unit.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the contract’s rule: $70.00 becomes $70.00. The unrounded amount is kept beside it.
+  [observed] Observed allowed $70.00, the allowed amount the remittance states. Expected $70.00, observed allowed $70.00: no variance.
+
+## Line 2, internal
+Lesser of the schedule $76.00 and the line charge $90.00: $76.00 under the contract’s clause on page 1; rounded once to $76.00; observed allowed $76.00; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $76.00 per unit. Applied, as the rate record’s flags are on: NCCI edits. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The MUE for code 97164 is 1; the units are within it. Lesser of the schedule $76.00 and the line charge $90.00: $76.00.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $76.00 becomes $76.00. The unrounded amount is kept beside it.
+  [observed] Observed allowed $76.00, the payer’s allowed amount (AMT B6). Expected $76.00, observed allowed $76.00: no variance.
+  [window] Dispute window: 180 days from the payment date 2026-07-14, under the contract; it ends on 2027-01-10; on 2026-10-15 it is open.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $76.00 expected, $76.00 before the one rounding.
+
+## Line 2, viewer
+Lesser of the schedule $76.00 and the line charge $90.00: $76.00 under the contract’s clause on page 1; rounded once to $76.00; observed allowed $76.00; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $76.00 per unit. Applied, as the rate record’s flags are on: NCCI edits. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The MUE for code 97164 is 1; the units are within it. Lesser of the schedule $76.00 and the line charge $90.00: $76.00.
+  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $76.00 becomes $76.00. The unrounded amount is kept beside it.
+  [observed] Observed allowed $76.00, the payer’s allowed amount (AMT B6). Expected $76.00, observed allowed $76.00: no variance.
+  [window] Dispute window: 180 days from the payment date, under the contract.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $76.00 expected, $76.00 before the one rounding.
+
+## Line 2, payer
+Lesser of the schedule $76.00 and the line charge $90.00: $76.00 under the contract’s clause on page 1; rounded once to $76.00; observed allowed $76.00; no variance.
+  [terms] Lesser of the line charge and a fixed schedule of $76.00 per unit.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the contract’s rule: $76.00 becomes $76.00. The unrounded amount is kept beside it.
+  [observed] Observed allowed $76.00, the allowed amount the remittance states. Expected $76.00, observed allowed $76.00: no variance.
