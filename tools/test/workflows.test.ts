@@ -1898,20 +1898,47 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
     return { dir, pins, digests, originals };
   }
 
-  /** vitest on these assertions with CI_TREE set to the copy: a vitest of its own, as collection.test.ts runs one. */
-  function assertionsOn(dir: string, extra: readonly string[] = []) {
+  /** What these tests read of vitest's JSON report (--reporter=json): its counts and each test's outcome. */
+  interface Report {
+    readonly numTotalTests: number;
+    readonly numPassedTests: number;
+    readonly numFailedTests: number;
+    readonly numPendingTests: number;
+    readonly numTodoTests: number;
+    readonly testResults: readonly { readonly name: string; readonly assertionResults: readonly { readonly fullName: string; readonly status: string; readonly failureMessages: readonly string[] }[] }[];
+  }
+
+  /**
+   * vitest on these assertions with CI_TREE set to the copy: a vitest of its own, as collection.test.ts runs one. Its
+   * counts are read from its JSON report, written to a scratch file, never from its printed summary, whose colour codes
+   * depend on the environment (CI's runner sets FORCE_COLOR, which coloured the summary and hid the passed count:
+   * run 40255481181). NO_COLOR stays as belt and braces for what it prints.
+   */
+  function assertionsOn(dir: string, extra: readonly string[] = []): { status: number | null; output: string; report: Report } {
     const vitest = path.join(path.dirname(createRequire(import.meta.url).resolve('vitest/package.json')), 'vitest.mjs');
-    // Plain text: CI's runner sets FORCE_COLOR, whose colour codes would break the counts read from the output.
+    const outputFile = path.join(mkdtempSync(path.join(scratch, 'report-')), 'report.json');
     const env: NodeJS.ProcessEnv = { ...process.env, CI_TREE: dir, NO_COLOR: '1' };
     for (const name of Object.keys(env).filter((key) => key.startsWith('VITEST') || key === 'FORCE_COLOR')) Reflect.deleteProperty(env, name);
-    const ran = spawnSync(process.execPath, [vitest, 'run', '--project', 'unit', ...TESTS, ...extra], { cwd: repositoryRoot, env, encoding: 'utf8', timeout: 280_000 });
+    const ran = spawnSync(process.execPath, [vitest, 'run', '--project', 'unit', '--reporter=json', `--outputFile=${outputFile}`, ...TESTS, ...extra], {
+      cwd: repositoryRoot,
+      env,
+      encoding: 'utf8',
+      timeout: 280_000,
+    });
     expect(ran.error).toBeUndefined();
-    return { status: ran.status, output: stripVTControlCharacters(`${ran.stdout}${ran.stderr}`) };
+    const output = stripVTControlCharacters(`${ran.stdout}${ran.stderr}`);
+    expect(existsSync(outputFile), output).toBe(true);
+    return { status: ran.status, output, report: JSON.parse(readFileSync(outputFile, 'utf8')) as Report };
   }
+
+  /** Every test of a report by its full name and outcome. */
+  const outcomes = (report: Report) => report.testResults.flatMap((file) => file.assertionResults.map((result) => ({ file: path.relative(repositoryRoot, file.name), ...result })));
+
+  const SELF = 'passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy';
 
   // Skipped inside the run it starts, which sets CI_TREE, so it never recurses.
   it.skipIf(process.env.CI_TREE !== undefined)(
-    'passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy',
+    SELF,
     () => {
       const copy = rewrittenCopy();
       expect(copy.pins).toBeGreaterThan(50);
@@ -1925,15 +1952,21 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
       expect(copy.originals.filter((original) => texts.includes(original))).toEqual([]);
       const green = assertionsOn(copy.dir);
       expect(green.status, green.output).toBe(0);
-      // Every assertion of the three files ran on the copy (this test alone skipped there), none filtered out.
-      expect(Number(/Tests\s+(\d+) passed/.exec(green.output)?.[1] ?? 0)).toBeGreaterThan(80);
-      expect(green.output).not.toMatch(/\d+ failed/);
+      // Every test of the three files ran on the copy and passed, but this one, which skips itself there; none filtered out.
+      expect(green.report.testResults.map((file) => path.relative(repositoryRoot, file.name)).sort()).toEqual([...TESTS].sort());
+      expect(green.report.numFailedTests, green.output).toBe(0);
+      expect(green.report.numTotalTests).toBeGreaterThan(80);
+      expect(green.report.numPassedTests).toBe(green.report.numTotalTests - 1);
+      expect(outcomes(green.report).filter((result) => result.status !== 'passed').map((result) => [result.file, result.fullName.endsWith(SELF), result.status])).toEqual([['tools/test/workflows.test.ts', true, 'skipped']]);
 
       // One checkout's persist-credentials removed: the rule that holds it fails on the copy, so the run read the copy.
       const broken = rewrittenCopy((file, text) => (file.endsWith('large-zip.yml') ? text.replace('\n        with: { persist-credentials: false }', '') : text));
       const red = assertionsOn(broken.dir, ['-t', 'keeps no token in the checkout']);
       expect(red.status, red.output).toBe(1);
-      expect(red.output).toContain('large-zip.yml large-zip');
+      const failed = outcomes(red.report).filter((result) => result.status === 'failed');
+      expect(red.report.numFailedTests).toBe(1);
+      expect(failed.map((result) => result.fullName)).toEqual([expect.stringContaining('keeps no token in the checkout')]);
+      expect(failed[0]?.failureMessages.join('\n')).toContain('large-zip.yml large-zip');
     },
     300_000,
   );
