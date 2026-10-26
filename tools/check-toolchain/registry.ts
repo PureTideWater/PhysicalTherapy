@@ -64,7 +64,7 @@ export async function readJson(fetchImpl: Fetch, url: string, init: RequestInit,
     try {
       const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(options.timeoutMs ?? 60_000) });
       if (response.ok) {
-        return (await response.json()) as unknown;
+        return await response.json();
       }
       last = `HTTP ${String(response.status)}`;
       if (!transient(response.status)) {
