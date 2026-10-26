@@ -21,5 +21,12 @@ Open questions: none (the co-founder's standing ruling of 2026-10-26 ~00:20 UTC:
 - **Milestone 3:** the exception goes into ADR 0075 and reconciliation-001. |
 
 **For Lane A (the orchestrator to record):** the notice migration of design §3 (a notification kind, two figure codes and a billing-manager recipients function). MAP-10 is reserved for its Lane B follow-up after #42 merges.
+| 2026-10-26 10:14 | **Stopped: design done, reviewed and revised** | The orchestrator's wind-down of 2026-10-26 10:09 UTC: the weekly usage is at 90%, and Lane B is handed to Lane A on 2026-10-27. The build is not started; no branch and no worktree exist. |
 
-**Next step:** cut `co-001/unmapped-plan` from claude/build-platform once #50 merges, then the builders. the design `designs/lane-b-unmapped-plan.md`, confirming no migration.
+**State: design done, reviewed and revised. The build is not started.**
+- **Design:** `designs/lane-b-unmapped-plan.md` (its last section lists the review's dispositions). The review is `designs/lane-b-unmapped-plan/review.md`, and the workflow script `workflow-scripts/lane-b-unmapped-plan-design-wf_98ca48d8-64c.js`.
+- **Reserved:** ADR 0075; test-matrix MAP-06 to MAP-10 (MAP-10 is kept for the notice follow-up handed to Lane A) and PRC-29 to PRC-31; `packages/synth` cases with the same IDs.
+- **Needs no new number:** MAP-06's new synthetic 835 uses release 900001 and the existing MAP module.
+- **Handed to Lane A** (recorded by the orchestrator in LANES.md): the stored notice and email to billing managers. It needs a migration (a notification kind, two figure codes, a recipients function) and #42's mail files.
+
+**Next step (whoever takes it):** cut `co-001/unmapped-plan` from the latest claude/build-platform, which then holds #50. Then run the builders on the design's file list, the draft PR, and two adversarial reviews (payment-engine, plus UX and brand with before/after screenshots at 1280 and 390 px; security for the new route), then the fix round, verification and merge.
