@@ -807,3 +807,29 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - so the page reads "$500 per line and $25000 per case" for $5.00 and $250.00, and saving it unchanged sets $500 and $25,000. Triage would then stop pursuing every shortfall under $500.
   - The cases page does it right (`cases/page.tsx:22,177`: `formatCents(parseCents(...))` and `<Money>`). No #42 file is involved.
   - **Claimed** as `co-001/materiality-cents` (CAS-38 to CAS-39) and given to the idle #135 session, with the full pipeline: payment-engine review plus the UX review, and a sweep for the same class of bug across apps/web.
+- **2026-10-26 ~04:45 UTC: the UX review's reviewers are done but one; the retake is done; the synthesis is next.**
+  - **Ten of eleven reviewers handed back** (words-practice still running). Raw findings by lens, before deduplication:
+    - brand 18 (0 blocking);
+    - flows: practice 36 (3), other 30 (4);
+    - words: other 45 (1);
+    - accessibility: practice 1 28 (1), practice 2 24 (1), other 26 (2);
+    - 390 px and states: practice 1 26 (3), practice 2 23 (2), other 23 (2).
+  - **The same blocking defect, from six lenses:** every form built on `ActionForm` (about 112) empties or resets its fields when the server refuses it. The cause is `apps/web/src/components/action-form.tsx:65`: `<form action>` under React 19, with no values sent back. The screening upload form already avoids it (`onSubmit` plus `startTransition`). The file is not one of #42's.
+  - **Other blocking findings, to be verified by the synthesis:**
+    - there is no password, authenticator or hardware-key recovery (flows-other-02);
+    - the terms page shows no terms text. That is legal text, so it is the founder's (flows-other-13, words-other-18; combined audit #51);
+    - a suspended organization reads "In good standing". Storing the reason needs a migration, so that part goes to Lane A (flows-other-11);
+    - a payer's answer letter can only be uploaded through Contracts (flows-practice-02);
+    - nothing tells the second person a packet waits for their approval (flows-practice-03);
+    - enrolment expires in 3 to 5 minutes with no warning (a11y-other-23);
+    - a bad coverage-letter code shows raw JSON (narrow-practice-1-09);
+    - the screening result tables hide Allowed, Difference and Status at 390 px (narrow-other-05).
+  - **Dark mode:** the brand reviewer recommends a per-user Appearance setting: match the device by default, plus Light and Dark. That reverses D9 item 3 ("dark mode stays off", reconciliation-001.md:309), so it goes to the founder through the co-founder. Storing the setting needs a migration (Lane A). Meanwhile the dark tokens' three defects (sign-in on Paper, native controls, print) can be fixed with no visible change while dark stays off.
+  - **The retake** (wf_f5c2fa03-d95) retook all 22 capture faults and its checker passed all 22. tour.spec.ts gained a `toTop` step: the visual viewport, not only the layout scroll, goes back to 0 before a full-page shot. It also gained `filterToEmpty` and a zero-read grant chosen at shot time. The manifest carries the new verdicts.
+  - **Next:** the synthesis workflow (`lane-b-ux-synthesis`):
+    - a retake reviewer on the 22 new shots;
+    - a clusterer by root cause, with a script check that every finding id is placed;
+    - two writers who verify each canonical finding against c5195ee;
+    - a planner: ranks, groups into PRs in landing order, writes `designs/lane-b-ux-review.md`;
+    - one adversarial reviewer on the rules and one fact checker on the code;
+    - a reviser.
