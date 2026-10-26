@@ -356,8 +356,8 @@ one blob), not from raw.githubusercontent.com, whose unauthenticated per-address
 deadline for them all, well inside `static`'s fifteen; a moved or unreadable tag there is a warning, never a failure,
 and the tags the deadline leaves unread are one warning, so an upstream re-tag, a rate limit or a github.com that
 never answers cannot turn both lanes red (the ci-infra review's S1). A pin it reads whose action runs on a Node.js
-runtime GitHub has deprecated (node20 or older) is a warning naming it. No facts are committed per SHA: Dependabot's actions pull requests rewrite only `uses:` lines, and a
-committed file would make each of them red. Read at the pinned commits, every nested reference is already a SHA:
+runtime GitHub has deprecated (node20 or older) is a warning naming it. No facts are committed per SHA:
+Dependabot's actions pull requests rewrite only `uses:` lines, and a committed file would make each of them red. Read at the pinned commits, every nested reference is already a SHA:
 trivy-action pins setup-trivy and `actions/cache`, setup-trivy pins `actions/cache/restore`, `actions/checkout` and
 `actions/cache/save`, and attest-build-provenance pins `actions/attest`.
 
