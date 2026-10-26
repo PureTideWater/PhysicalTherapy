@@ -1,6 +1,7 @@
 import baselineFile from '../eval/baseline.json' with { type: 'json' };
 import floorsFile from '../eval/floors.json' with { type: 'json' };
 import { type Baseline, type BaselineEntry, parseBaseline } from './baseline-format';
+import { GatewayConfigError } from './errors';
 import { type Floors, belowFloors, parseFloors, unsetFloors } from './floors-format';
 import { type ModelPrice, PRICES } from './prices';
 import { PROMPTS, type PromptVersion } from './prompts';
@@ -74,8 +75,25 @@ export const SERVING_RULES: Readonly<Record<ModelPurpose, 'contract_gate' | 'nar
   readDenialLetter: 'no_set',
 };
 
+/**
+ * The committed baseline as production reads it: parsed as strictly as the gate writes it, or a
+ * GatewayConfigError that names the file (review m4). It is parsed once, when the module is imported, on
+ * purpose: eval/baseline.json is a file of the build, not input, and every CI run parses it the same way
+ * (the unit, golden and config tests), so a file that does not parse fails CI before it can merge, and a
+ * build that carries one anyway fails at startup, loudly and closed, rather than starting with every
+ * model feature quietly off (which would hide a broken build; production already refuses to start with
+ * nothing served, ./config.ts). Nothing is served from a file that does not parse.
+ */
+export function committedBaseline(value: unknown): Baseline {
+  try {
+    return parseBaseline(value);
+  } catch (error) {
+    throw new GatewayConfigError('eval/baseline.json does not parse as the gate writes it (src/baseline-format.ts): no model feature can be decided, and the gateway does not start; re-record it with eval --record', { cause: error });
+  }
+}
+
 /** The committed baseline, parsed as strictly as the gate writes it (the golden test holds the gate's reader to the same file). */
-export const COMMITTED_BASELINE: Baseline = parseBaseline(baselineFile);
+export const COMMITTED_BASELINE: Baseline = committedBaseline(baselineFile);
 /** The committed floors (eval/floors.json). */
 export const COMMITTED_FLOORS: Floors = parseFloors(floorsFile);
 /** The baseline, floors and prices production serves on. */

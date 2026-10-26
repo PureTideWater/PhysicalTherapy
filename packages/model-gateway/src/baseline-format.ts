@@ -4,7 +4,9 @@ import { PROVIDER_KINDS } from './provider';
 import { TALLY_KEYS } from './tally';
 
 /**
- * The committed baseline's format, `tp-model-eval-baseline/3` (docs/adr/0070, Part 1; eval/baseline.json).
+ * The committed baseline's format, `tp-model-eval-baseline/4` (docs/adr/0070, Part 1; eval/baseline.json;
+ * /4 adds the `widened` count to every tally, review M2, refuses two entries of one key, review m4, and
+ * keeps the permitted runs a real provider was served on, `served`, review B1).
  * It lives in src, not beside the gate in eval/, because two readers must parse an entry exactly as the
  * gate writes it: the gate (eval/baseline.ts), which holds a report to an entry, and production
  * (./evaluated.ts), which serves a real provider only on an entry. A loose reader would count an entry
@@ -21,7 +23,7 @@ import { TALLY_KEYS } from './tally';
  * or a figure of one.
  */
 
-export const BASELINE_FORMAT = 'tp-model-eval-baseline/3';
+export const BASELINE_FORMAT = 'tp-model-eval-baseline/4';
 
 /**
  * The fields a contract entry tallies: the synthetic set's truth fields (packages/synth TRUTH_FIELDS, which
@@ -101,11 +103,69 @@ export const narrativeEntrySchema = z.strictObject({
   recorded_on: z.iso.date(),
 });
 
+/**
+ * The permitted run a real provider's contract variant was last served on (written by `eval record-permitted`
+ * only; the PR review's B1): the prompt version and content, the model, and the run's record as its entry
+ * carried it. It is history, never a reason to serve: production reads entries only (./evaluated.ts
+ * entryFor), so a record here serves nothing. It outlives the entry it was written beside, which a prompt or
+ * model change deletes and `eval --record` of the same version replaces with a pending one, so that the next
+ * permitted run is compared with what was served (record-permitted requires `--against` whenever the
+ * provider has any) and with nothing else (`--against` must be a run of this prompt and model).
+ */
+export const servedRecordSchema = z.strictObject({
+  prompt_version: z.string().min(1),
+  prompt_sha256: sha256,
+  model_id: z.string().min(1),
+  examples: count,
+  report_sha256: sha256,
+  against_sha256: sha256.nullable(),
+  recorded_on: z.iso.date(),
+});
+export type ServedRecord = z.output<typeof servedRecordSchema>;
+
+/** The served history, by real provider and contract variant (the local provider is never recorded). */
+const servedHistory = z.partialRecord(z.enum(PROVIDER_KINDS).exclude(['local']), z.partialRecord(z.enum(CONTRACT_VARIANTS), servedRecordSchema));
+
+/** What an entry's identity is made of: its purpose, provider, prompt version, model and, for a contract entry, its variant. */
+interface EntryKey {
+  readonly purpose: string;
+  readonly provider: string;
+  readonly prompt_version: string;
+  readonly model_id: string;
+  readonly variant?: string;
+}
+
+/**
+ * Whether two entries are for the same key: the one definition of an entry's identity, which the writer
+ * (eval/baseline.ts recordBaseline, replacing an entry) and this reader (refusing a second) share, so the
+ * two can never disagree on what a duplicate is (review m4). A contract entry and a narrative entry are
+ * never the same; two contract entries of one model are the same only on the same variant.
+ */
+export function sameEntryKey(a: EntryKey, b: EntryKey): boolean {
+  return a.purpose === b.purpose && a.provider === b.provider && a.prompt_version === b.prompt_version && a.model_id === b.model_id && a.variant === b.variant;
+}
+
+/**
+ * Two entries for one key are refused (review m4): the gate never writes them (recordBaseline replaces
+ * the entry it supersedes), and a reader taking the first (./evaluated.ts entryFor, eval/baseline.ts
+ * contractBaselineFor) would serve on, or hold a change to, whichever a hand merge left first.
+ */
+function refuseDuplicateKeys(entries: readonly EntryKey[], context: z.core.$RefinementCtx<readonly EntryKey[]>): void {
+  entries.forEach((entry, index) => {
+    const first = entries.findIndex((other) => sameEntryKey(other, entry));
+    if (first !== index) {
+      context.addIssue({ code: 'custom', path: [index], message: `entry ${String(index)} has the key of entry ${String(first)} (purpose, provider, prompt version, model and variant): a baseline holds one entry per key` });
+    }
+  });
+}
+
 export const baselineSchema = z.strictObject({
   format: z.literal(BASELINE_FORMAT),
   synthetic: z.literal(true),
   note: z.string(),
-  entries: z.array(z.discriminatedUnion('purpose', [contractEntrySchema, narrativeEntrySchema])),
+  entries: z.array(z.discriminatedUnion('purpose', [contractEntrySchema, narrativeEntrySchema])).superRefine(refuseDuplicateKeys),
+  /** Absent until the first permitted run of a real provider is recorded. */
+  served: servedHistory.optional(),
 });
 
 export type Baseline = z.output<typeof baselineSchema>;

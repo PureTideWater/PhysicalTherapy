@@ -26,9 +26,12 @@ import {
   dropDecoy,
   dropFact,
   dropField,
+  dropScope,
   failTwin,
   flipFlag,
+  labelInjection,
   mergeRows,
+  mergeRowsSpanning,
   misquote,
   obeyInjection,
   quoteInjection,
@@ -42,7 +45,7 @@ import {
   wrongValue,
 } from './faults';
 import { parseFloors } from './floors';
-import { type EvaluationReport, contractReportFrom, runEvaluation, spliceReport } from './harness';
+import { type EvaluationReport, caseMismatches, contractReportFrom, runEvaluation, spliceReport } from './harness';
 import { referenceContractOutput, registerReferences } from './reference';
 import { type LoadedContractSet, type LoadedNarrativeSet, CONTRACT_SET_MANIFEST, FIXTURES, contractSetHash, loadContractSet, loadNarrativeSet, truthFields } from './sets';
 
@@ -253,6 +256,18 @@ describe('the gate on the local deterministic provider', () => {
     expect(scored?.results.filter((result) => result.pageText === 'unfaithful')).toEqual(recorded?.results.filter((result) => result.pageText === 'unfaithful'));
   });
 
+  it('names the reference’s wrong values on the unfaithful cases by their records: each a field the case reads otherwise than a person sees it (review n4)', () => {
+    const unfaithful = report.contracts?.results.filter((result) => result.pageText === 'unfaithful') ?? [];
+    const locations = unfaithful.flatMap((result) => result.wrongVerifiedAt.map((at) => ({ case: result.id, ...at })));
+    expect(locations).toHaveLength(5);
+    for (const at of locations) {
+      const value = caseOf(at.case).truth.records[at.record]?.fields[at.field];
+      expect(value?.asRead, `${at.case} ${at.field}@${String(at.record)}`).toBeDefined();
+    }
+    // Every faithful case names none.
+    expect(report.contracts?.results.filter((result) => result.pageText === 'faithful' && result.wrongVerifiedAt.length > 0)).toEqual([]);
+  });
+
   it('derives v1’s 742 fields’ tp, fp and fn unchanged: every v1 reference answer is all tp', () => {
     const v1 = report.contracts?.results.filter((result) => result.id.startsWith('C')) ?? [];
     expect(v1).toHaveLength(40);
@@ -291,6 +306,8 @@ describe('the gate on the local deterministic provider', () => {
         const part = recorded.contracts;
         expect(part?.caseIds).toEqual(contracts.caseIds);
         expect(part === null || part === undefined ? null : contractReportFrom(part, part.results)).toEqual(part);
+        // What the set decides of each case is the set's, and each count is its tallies' (review n1).
+        expect(part === null || part === undefined ? ['no contracts'] : caseMismatches(part, contracts)).toEqual([]);
         expect(entry.set_sha256).toBe(contracts.sha256);
         expect({ prompt: entry.prompt_version, sha: entry.prompt_sha256 }).toEqual({ prompt: PROMPTS.proposeContractTerms.id, sha: PROMPTS.proposeContractTerms.sha256 });
       } else {
@@ -303,6 +320,25 @@ describe('the gate on the local deterministic provider', () => {
     // The local entry is exactly this run's results.
     const entries = entriesFromReport(report, 'a'.repeat(64), '2026-10-26').map((entry) => ({ ...entry, report_sha256: '', recorded_on: '' }));
     expect(baseline.entries.filter((entry) => entry.provider === 'local').map((entry) => ({ ...entry, report_sha256: '', recorded_on: '' }))).toEqual(entries);
+  });
+
+  it('finds a report edited by hand: a faithful case marked unfaithful, a twin or pair renamed, a count apart from its tallies (review n1)', () => {
+    const part = report.contracts;
+    if (part === null) {
+      throw new Error('contracts');
+    }
+    expect(caseMismatches(part, contracts)).toEqual([]);
+    const edit = (id: string, change: Partial<(typeof part.results)[number]>) => ({ ...part, results: part.results.map((result) => (result.id === id ? { ...result, ...change } : result)) });
+    expect(caseMismatches(edit('C08', { pageText: 'unfaithful' }), contracts)).toEqual(['C08:pageText']);
+    expect(caseMismatches(edit('V11', { twinOf: null, layout: 'prose' }), contracts)).toEqual(['V11:layout', 'V11:twinOf']);
+    expect(caseMismatches(edit('V04', { pairOf: null, tier: 'large' }), contracts)).toEqual(['V04:tier', 'V04:pairOf']);
+    const v05 = part.results.find((result) => result.id === 'V05');
+    if (v05 === undefined) {
+      throw new Error('V05');
+    }
+    expect(caseMismatches(edit('V05', { wrongVerified: { ...v05.wrongVerified, amount: 9 } }), contracts)).toEqual(['V05:wrongVerified:amount']);
+    expect(caseMismatches(edit('V05', { wrongVerifiedAt: [...v05.wrongVerifiedAt, { field: 'amount', record: 99 }] }), contracts)).toEqual(['V05:wrongVerifiedAt:amount']);
+    expect(caseMismatches({ ...part, results: [...part.results, { ...v05, id: 'V99' }] }, contracts)).toEqual(['V99:not_in_set']);
   });
 
   it('logs every call as a synthetic evaluation call: no practice, hashes and counts only', () => {
@@ -353,15 +389,19 @@ describe('a prompt or model change and the real providers (PRD 14: "no regressio
     const key = (on: Baseline, withFloors = floors) => servingDecisions('bedrock', { baseline: on, floors: withFloors, prices }).find((decision) => decision.key === 'proposeContractTerms/default');
     // The deploy carrying the synthetic record serves nothing new: the key is evaluable only.
     expect(key(recorded)).toEqual({ key: 'proposeContractTerms/default', served: false, evaluable: true, reasons: ['permitted_pending'] });
-    // The permitted run, with no examples before the first practice, recorded: served.
-    const run = { text: `${JSON.stringify(permittedReport('bedrock', 0, []), null, 2)}\n` };
+    // The permitted run, made in production with no examples before the first practice, recorded: served.
+    const run = { text: `${JSON.stringify(permittedReport('bedrock', 1, [], { runId: '00000000-0000-4000-8000-0000000000c1', production: true }), null, 2)}\n` };
     const permitted = recordPermitted(recorded, run, null, '2026-10-27');
     expect(permitted.variants).toEqual(['default']);
     expect(key(permitted.baseline)).toEqual({ key: 'proposeContractTerms/default', served: true, evaluable: true, reasons: [] });
     // The committed floors, every one unset, still serve nothing: serving reads the floors at run time.
     expect(key(permitted.baseline, COMMITTED_FLOORS)).toMatchObject({ served: false, reasons: ['floor_unset'] });
-    // Re-recording the synthetic run puts the entry back to pending.
-    expect(key(recordBaseline(permitted.baseline, real, '2026-10-28', { ...held, floors }).baseline)).toMatchObject({ served: false, reasons: ['permitted_pending'] });
+    // Re-recording the synthetic run puts the entry back to pending, and its served history stays: the next
+    // permitted run is compared with the one served (review B1), and the history itself serves nothing.
+    const rerecorded = recordBaseline(permitted.baseline, real, '2026-10-28', { ...held, floors }).baseline;
+    expect(key(rerecorded)).toMatchObject({ served: false, reasons: ['permitted_pending'] });
+    expect(rerecorded.served).toEqual(permitted.baseline.served);
+    expect(() => recordPermitted(rerecorded, run, null, '2026-10-29')).toThrow(/give --against/);
     expect(JSON.parse(run.text)).toMatchObject({ format: PERMITTED_REPORT_FORMAT });
   });
 
@@ -444,6 +484,43 @@ describe('the gate fails on injected faults, each rerunning only the cases it sp
     expect(await faulted(crossRowQuote(reference, { cases: ['C08'] }), ['C08'])).toEqual(regressed('amount'));
   });
 
+  it('mergeRowsSpanning: the merge mergeRows makes, its codes quoted over both rows, verifies the merged codes, which are wrong but verified (review n3)', async () => {
+    // C01, as mergeRows: the same lost row, but the codes are wrong and verified rather than rejected.
+    expect(await faulted(mergeRowsSpanning(reference, { cases: ['C01'] }), ['C01'])).toEqual([
+      'precision_regressed:all',
+      'recall_regressed:all',
+      'recall_regressed:method',
+      'precision_regressed:codes',
+      'recall_regressed:codes',
+      'recall_regressed:percentage',
+      'recall_regressed:effective_from',
+      'recall_regressed:effective_to',
+      'wrong_verified_rose:all',
+      'wrong_verified_rose:codes',
+      'wrong_verified_on_faithful:codes',
+    ]);
+    const part = await spliced(mergeRowsSpanning(reference, { cases: ['C01'] }), ['C01']);
+    expect(part.contracts?.results.find((result) => result.id === 'C01')?.fields.codes).toEqual({ ...ZERO_TALLY, wrong: 1, missed: 1 });
+  });
+
+  it('dropScope: a scope field left out of every row widens every rate record with nothing marked, and fails as wrong but verified (review M2)', async () => {
+    expect(await faulted(dropScope(reference, 'modifiers', { cases: ['C05'] }), ['C05'])).toEqual([
+      'precision_regressed:all',
+      'recall_regressed:all',
+      'recall_regressed:modifiers',
+      'wrong_verified_rose:all',
+      'wrong_verified_rose:modifiers',
+      'wrong_verified_on_faithful:modifiers',
+    ]);
+    const part = await spliced(dropScope(reference, 'modifiers', { cases: ['C05'] }), ['C05']);
+    expect(part.contracts?.results.find((result) => result.id === 'C05')?.fields.modifiers).toEqual({ ...ZERO_TALLY, widened: 4 });
+    // Codes left out: a record for every code; the end date left out: a record with no end.
+    for (const field of ['codes', 'effective_to'] as const) {
+      const problems = await faulted(dropScope(reference, field, { cases: ['C08'] }), ['C08']);
+      expect(problems, field).toEqual(expect.arrayContaining([`wrong_verified_rose:${field}`, `wrong_verified_on_faithful:${field}`]));
+    }
+  });
+
   it('mergeRows: two rows merged into one lose the second row and reject the merged codes (C01: the codes’ quote holds one row’s code)', async () => {
     expect(await faulted(mergeRows(reference, { cases: ['C01'] }), ['C01'])).toEqual([
       'precision_regressed:all',
@@ -475,7 +552,8 @@ describe('the gate fails on injected faults, each rerunning only the cases it sp
 
   it('takeStruck: the struck rate on an unfaithful case rises above the reference there, and is not counted as faithful (review M6)', async () => {
     const problems = await faulted(takeStruck(reference, { cases: ['V08'] }), ['V08']);
-    expect(problems).toEqual([...regressed('amount'), 'wrong_verified_rose:all', 'wrong_verified_rose:amount', 'wrong_verified_above_reference:V08:amount']);
+    // As many wrong values as the reference or more, and on a record the reference reads right (review n4).
+    expect(problems).toEqual([...regressed('amount'), 'wrong_verified_rose:all', 'wrong_verified_rose:amount', 'wrong_verified_above_reference:V08:amount', 'wrong_verified_off_reference:V08:amount']);
     expect(problems.some((code) => code.startsWith('wrong_verified_on_faithful'))).toBe(false);
   });
 
@@ -491,10 +569,23 @@ describe('the gate fails on injected faults, each rerunning only the cases it sp
     expect(part.contracts?.results.find((result) => result.id === 'V11')?.fields).toEqual(report.contracts?.results.find((result) => result.id === 'V11')?.fields);
   });
 
-  it('failTwin: an injected twin whose call fails is incomplete, never equal', async () => {
+  it('labelInjection: every value and quote the clean twin’s, only the label obeying the injection: the injected-words rule catches it (review m2)', async () => {
+    const part = await spliced(labelInjection(reference, { cases: ['V11', 'V13', 'V15'] }), ['V11', 'V13', 'V15']);
+    expect(codes(gate(part, baseline, held))).toEqual(['twin_canary']);
+    expect(part.contracts?.twins).toEqual({ pairs: 3, differing: [], incomplete: [], canary: ['V11', 'V13', 'V15'] });
+  });
+
+  it('failTwin: an injected twin whose call fails is incomplete, never equal, and the run measured nothing there (review m1)', async () => {
     const problems = await faulted(failTwin(reference, { cases: ['V11'] }), ['V11']);
     expect(problems.at(-1)).toBe('twin_incomplete');
-    expect(problems.filter((code) => !code.startsWith('precision_regressed') && !code.startsWith('recall_regressed'))).toEqual(['twin_incomplete']);
+    expect(problems.filter((code) => !code.startsWith('precision_regressed') && !code.startsWith('recall_regressed'))).toEqual(['unmeasured_cases', 'twin_incomplete']);
+  });
+
+  it('a failed call on a case with no twin or conflict is refused at record, first record or not (review m1)', async () => {
+    const part = await spliced(failTwin(reference, { cases: ['C04'] }), ['C04']);
+    const whole = { ...part, spliced: false };
+    expect(gate(whole, baseline, held).problems).toEqual(expect.arrayContaining([{ code: 'unmeasured_cases', cases: ['C04'] }]));
+    expect(() => recordBaseline({ ...baseline, entries: [] }, whole, '2026-10-26', held)).toThrow('unmeasured_cases');
   });
 
   it('dropDecoy: a decoy left out leaves its conflict unflagged and regresses recall', async () => {

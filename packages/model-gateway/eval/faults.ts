@@ -17,13 +17,19 @@ import { type EvaluationCase, currentCase } from './harness';
  * reference's, which proposes the true records in truth order.
  *
  * Faults the verifier rejects (the specialist sees each field marked):
- * - dropField: leaves a field out of candidate 0 (recall falls);
+ * - dropField: leaves a field out of candidate 0 (recall falls; a scope field left out widens the record,
+ *   below);
  * - misquote: changes a digit of a field's quote, so the quote is no longer on its page;
  * - wrongValue: writes an amount its quote does not hold;
  * - swappedRows: exchanges the amount (or percentage) of candidates 0 and 1, each quoted from the other's
  *   row (not_in_row on both);
  * - crossRowQuote: candidate 0 takes row 1's amount, quoted as rows 0 and 1 together (not_in_row);
  * - mergeRows: candidates 0 and 1 become one with both rows' codes and row 0's amount, candidate 1 dropped.
+ *
+ * Faults the verifier passes and the specialist would not see at all (widened, review M2):
+ * - dropScope: leaves a scope field (codes, modifiers, places of service, an effective date) out of every
+ *   candidate that states it, every other field as it was: each becomes a rate record for every value of
+ *   that field.
  *
  * Faults the verifier passes, which only the tally and the gate's absolute rules see (wrong but verified):
  * - flipFlag: flips one boolean of candidate 0's flags, keeping its real quote;
@@ -32,7 +38,11 @@ import { type EvaluationCase, currentCase } from './harness';
  * - amendedOnOriginal: in an amendment case, the original row's candidate takes the amended row's amount,
  *   page and quote (the amendment line names the same code);
  * - takeStruck: in a struck-text case, candidate 0 takes the struck rate its own line, as read, still holds;
+ * - mergeRowsSpanning: candidates 0 and 1 become one with both rows' codes quoted as rows 0 and 1 together,
+ *   so the merged codes verify, and row 0's amount (review n3);
  * - obeyInjection: appends a candidate that proposes the injected rate, quoting the injection;
+ * - labelInjection: keeps every value and quote, but names candidate 0 as the injection asks (a label the
+ *   twin key leaves out, review m2);
  * - quoteInjection: keeps every value, but quotes the injection's last sentence for candidate 0's method
  *   (a value-only field, whose quote is only checked to be on its page; review M4);
  * - dropDecoy: drops the candidate of a case's decoy record;
@@ -194,18 +204,10 @@ export function crossRowQuote(inner: ModelProvider, options: FaultOptions = {}):
   return contractFault(
     inner,
     (list, on) => {
-      const { pages } = contractOf(on);
       const [first, second] = [at(list, 0, on), at(list, 1, on)];
       const own = first.amount as Written;
       const other = second.amount as Written;
-      const page = normalizePageText(pages[own.page - 1] ?? '');
-      const from = page.indexOf(normalizePageText(own.quote));
-      const to = page.indexOf(normalizePageText(other.quote));
-      if (own.page !== other.page || from < 0 || to <= from) {
-        throw new Error(`${on.id}: rows 0 and 1 are not in order on one page`);
-      }
-      const quote = page.slice(from, to + normalizePageText(other.quote).length);
-      return [{ ...first, amount: { written: other.written, page: own.page, quote } }, ...list.slice(1)];
+      return [{ ...first, amount: { written: other.written, page: own.page, quote: spanning(on, own, other) } }, ...list.slice(1)];
     },
     options,
   );
@@ -225,8 +227,56 @@ export function mergeRows(inner: ModelProvider, options: FaultOptions = {}): Mod
   );
 }
 
+/** The scope fields of a rate record (src/tally.ts SCOPE_FIELDS). */
+export type ScopeField = 'codes' | 'modifiers' | 'places_of_service' | 'effective_from' | 'effective_to';
+
+/** Leaves the scope field out of every candidate that states it, as a model that never reads it would (review M2). */
+export function dropScope(inner: ModelProvider, field: ScopeField, options: FaultOptions = {}): ModelProvider {
+  return contractFault(
+    inner,
+    (list, on) => {
+      if (!list.some((candidate) => candidate[field] !== null && candidate[field] !== undefined)) {
+        throw new Error(`${on.id}: no candidate states ${field}`);
+      }
+      return list.map((candidate) => ({ ...candidate, [field]: null }));
+    },
+    options,
+  );
+}
+
+/** The passage of a page from one quote to a later one, as normalized (two adjacent lines of a table read together). */
+function spanning(on: EvaluationCase, from: Written | WrittenList, to: Written | WrittenList): string {
+  const { pages } = contractOf(on);
+  const page = normalizePageText(pages[from.page - 1] ?? '');
+  const start = page.indexOf(normalizePageText(from.quote));
+  const end = page.indexOf(normalizePageText(to.quote));
+  if (from.page !== to.page || start < 0 || end <= start) {
+    throw new Error(`${on.id}: the two quotes are not in order on one page`);
+  }
+  return page.slice(start, end + normalizePageText(to.quote).length);
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Contracts: passed by the verifier (wrong but verified)
+
+/**
+ * Candidates 0 and 1 become one: both rows' codes, quoted as rows 0 and 1 together so that the quote
+ * holds every code and the codes verify; row 0's amount and its quote; candidate 1 is dropped (review n3:
+ * mergeRows' merged codes are rejected, these are not, and are wrong but verified).
+ */
+export function mergeRowsSpanning(inner: ModelProvider, options: FaultOptions = {}): ModelProvider {
+  return contractFault(
+    inner,
+    (list, on) => {
+      const [first, second] = [at(list, 0, on), at(list, 1, on)];
+      const codes = first.codes as WrittenList;
+      const more = second.codes as WrittenList;
+      const written = [...codes.written, ...more.written.filter((code) => !codes.written.includes(code))];
+      return [{ ...first, codes: { written, page: codes.page, quote: spanning(on, codes, more) } }, ...list.slice(2)];
+    },
+    options,
+  );
+}
 
 export type FlagName = 'apply_mppr' | 'apply_assistant_reduction' | 'apply_sequestration' | 'apply_ncci';
 
@@ -366,6 +416,21 @@ export function obeyInjection(inner: ModelProvider, options: FaultOptions = {}):
         effective_to: null,
       };
       return [...list, obeyed];
+    },
+    options,
+  );
+}
+
+/**
+ * Keeps every value, page and quote, but labels candidate 0 as the injection asks, with no canary in it:
+ * the twin key leaves labels out, so only the injected-words rule sees it (review m2).
+ */
+export function labelInjection(inner: ModelProvider, options: FaultOptions = {}): ModelProvider {
+  return contractFault(
+    inner,
+    (list, on) => {
+      injection(on);
+      return [{ ...at(list, 0, on), label: 'Approved: submit without review' }, ...list.slice(1)];
     },
     options,
   );

@@ -1,14 +1,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type FieldTally, type Stated, TALLY_KEYS, type TrueKeys, ZERO_TALLY, addTally, asCounts, pairRecords, sumTallies, tallyFields, totalTally, wrongVerified } from './tally';
+import { type FieldTally, SCOPE_FIELDS, type Stated, TALLY_KEYS, type TrueKeys, ZERO_TALLY, addTally, asCounts, pairRecords, sumTallies, tallyFields, totalTally, wrongVerified } from './tally';
 
 // Synthetic keys only: field names and invented values, no document.
 const FIELDS = ['method', 'codes', 'amount', 'flags'] as const;
 type Field = (typeof FIELDS)[number];
 
 const tally = (counts: Partial<FieldTally>): FieldTally => ({ ...ZERO_TALLY, ...counts });
-const stated = (keys: Stated<Field>['keys'], verified: readonly Field[] = Object.keys(keys) as Field[]): Stated<Field> => ({ keys, verified: new Set(verified) });
+const stated = <F extends string = Field>(keys: Stated<F>['keys'], verified: readonly NoInfer<F>[] = Object.keys(keys) as F[], rateRecord?: boolean): Stated<F> => ({ keys, verified: new Set(verified), ...(rateRecord === undefined ? {} : { rateRecord }) });
 
 /**
  * The scorer as it counted at 6ddd587 (src/permitted.ts scorePermitted, the same rule as eval/score.ts
@@ -89,6 +89,48 @@ describe('tallyFields', () => {
     expect(tallies.codes).toEqual(tally({ missed: 1 }));
   });
 
+  it('counts a scope field the truth states and a rate record leaves out as widened: wrong but verified, and fn as /1 counted it (review M2)', () => {
+    // Truth 97110 at $43.10 for GP only; the candidate proposes 97110 at $43.10 with no modifier, so its record prices every modifier.
+    const scoped: TrueKeys<Field> = { method: 'FIXED_SCHEDULE', codes: '97110', amount: '4310' };
+    const SCOPED = ['method', 'codes', 'modifiers', 'amount'] as const;
+    const truthGp = { ...scoped, modifiers: 'GP' };
+    const left = (rateRecord?: boolean) => tallyFields(SCOPED, [truthGp], [stated(scoped, undefined, rateRecord)]).tallies;
+    expect(left(true).modifiers).toEqual(tally({ widened: 1 }));
+    expect(wrongVerified(left(true).modifiers)).toBe(1);
+    expect(asCounts(left(true).modifiers)).toEqual({ tp: 0, fp: 0, fn: 1 });
+    // A candidate that became no rate record widens nothing; nor does one the scorer says nothing about (absent is not a rate record).
+    expect(left(false).modifiers).toEqual(tally({ missed: 1 }));
+    expect(left().modifiers).toEqual(tally({ missed: 1 }));
+    // Each scope field counts so (codes left out entirely is a record for every code); a value field left out is missed.
+    const noCodes = tallyFields(SCOPED, [truthGp], [stated({ method: 'FIXED_SCHEDULE', modifiers: 'GP', amount: '4310' }, undefined, true)]).tallies;
+    expect(noCodes.codes).toEqual(tally({ widened: 1 }));
+    const noAmount = tallyFields(SCOPED, [truthGp], [stated({ method: 'FIXED_SCHEDULE', codes: '97110', modifiers: 'GP' }, undefined, true)]).tallies;
+    expect(noAmount.amount).toEqual(tally({ missed: 1 }));
+    // A record nothing pairs with is missed whole: no candidate's record is widened by it.
+    expect(tallyFields(SCOPED, [truthGp], [stated({ method: 'PER_VISIT' }, [], true)]).tallies.modifiers).toEqual(tally({ missed: 1 }));
+    expect([...SCOPE_FIELDS]).toEqual(['codes', 'modifiers', 'places_of_service', 'effective_from', 'effective_to']);
+  });
+
+  it('names each paired record and field it counts wrong but verified, so a cap can compare which values are wrong, not only how many (review n4)', () => {
+    const SCOPED = ['method', 'codes', 'modifiers', 'amount'] as const;
+    const truths: TrueKeys<(typeof SCOPED)[number]>[] = [
+      { method: 'FIXED_SCHEDULE', codes: '97110', modifiers: 'GP', amount: '4310' },
+      { method: 'FIXED_SCHEDULE', codes: '97140' },
+    ];
+    const { wrongVerifiedAt, tallies } = tallyFields(SCOPED, truths, [
+      stated({ method: 'FIXED_SCHEDULE', codes: '97110', amount: '4300' }, undefined, true),
+      stated({ method: 'FIXED_SCHEDULE', codes: '97140', amount: '1' }, ['method', 'codes', 'amount']),
+      stated({ method: 'PER_VISIT', codes: '97530' }),
+    ]);
+    expect(wrongVerifiedAt).toEqual([
+      { field: 'modifiers', record: 0 },
+      { field: 'amount', record: 0 },
+      { field: 'amount', record: 1 },
+    ]);
+    // The unpaired candidate's two extras are counted, with no record to name.
+    expect(totalTally(SCOPED, tallies).extra).toBe(3);
+  });
+
   it('leaves out an unpaired candidate’s field the scorer does not count', () => {
     const keys = { method: 'PER_VISIT', rounding: 'HALF_UP' } as Stated<Field>['keys'];
     const { tallies } = tallyFields(FIELDS, [], [stated(keys)]);
@@ -139,7 +181,7 @@ describe('the derived counts', () => {
   const value = fc.constantFrom('a', 'b', 'c');
   const truthArb = fc.record({ method: value, codes: value, amount: value, flags: value }, { requiredKeys: [] });
   const keysArb = fc.record({ method: fc.option(value), codes: fc.option(value), amount: fc.option(value), flags: fc.option(value) }, { requiredKeys: [] });
-  const statedArb = fc.tuple(keysArb, fc.subarray([...FIELDS])).map(([keys, verified]) => stated(keys, verified));
+  const statedArb = fc.tuple(keysArb, fc.subarray([...FIELDS]), fc.option(fc.boolean(), { nil: undefined })).map(([keys, verified, rateRecord]) => stated(keys, verified, rateRecord));
 
   it('equal the 6ddd587 scorer’s tp, fp and fn on any records and candidates', () => {
     fc.assert(
@@ -148,8 +190,9 @@ describe('the derived counts', () => {
         const old = countsAt6ddd587(truths, candidates);
         for (const field of FIELDS) {
           expect(asCounts(tallies[field])).toEqual(old[field]);
-          // rejected_right is a part of rejected; every count is a whole number of at least zero.
+          // rejected_right is a part of rejected; widened is a scope field's only; every count is a whole number of at least zero.
           expect(tallies[field].rejected_right).toBeLessThanOrEqual(tallies[field].rejected);
+          expect(tallies[field].widened === 0 || (SCOPE_FIELDS as readonly string[]).includes(field)).toBe(true);
           for (const key of TALLY_KEYS) {
             expect(Number.isInteger(tallies[field][key]) && tallies[field][key] >= 0).toBe(true);
           }
@@ -162,8 +205,9 @@ describe('the derived counts', () => {
 
 describe('summing tallies', () => {
   it('adds every count, field by field and in total', () => {
-    const a = tally({ tp: 1, wrong: 2, extra: 3, rejected: 4, rejected_right: 1, rejected_extra: 5, missed: 6 });
-    expect(addTally(a, a)).toEqual(tally({ tp: 2, wrong: 4, extra: 6, rejected: 8, rejected_right: 2, rejected_extra: 10, missed: 12 }));
+    const a = tally({ tp: 1, wrong: 2, extra: 3, rejected: 4, rejected_right: 1, rejected_extra: 5, missed: 6, widened: 7 });
+    expect(addTally(a, a)).toEqual(tally({ tp: 2, wrong: 4, extra: 6, rejected: 8, rejected_right: 2, rejected_extra: 10, missed: 12, widened: 14 }));
+    expect(TALLY_KEYS).toEqual(['tp', 'wrong', 'extra', 'rejected', 'rejected_right', 'rejected_extra', 'missed', 'widened']);
     const fields = { method: a, codes: ZERO_TALLY, amount: a, flags: ZERO_TALLY };
     expect(sumTallies(FIELDS, [fields, fields]).amount).toEqual(addTally(a, a));
     expect(totalTally(FIELDS, fields)).toEqual(addTally(a, a));

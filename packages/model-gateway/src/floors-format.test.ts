@@ -39,14 +39,15 @@ describe('the floors production serves on', () => {
   it('meet a floor exactly, in BigInt, at its edges and on arbitrary tallies (property)', () => {
     const every = (value: string | null) => Object.fromEntries(BASELINE_FIELDS.map((field) => [field, value])) as Floors['proposeContractTerms']['recall'];
     const at = (text: string) => ({ format: FLOORS_FORMAT, note: 'SYNTHETIC', proposeContractTerms: { recall: every(text), precision: every(text) } }) as Floors;
-    const nineteenOfTwenty: FieldTally = { tp: 19, wrong: 0, extra: 0, rejected: 0, rejected_right: 0, rejected_extra: 0, missed: 1 };
+    const nineteenOfTwenty: FieldTally = { tp: 19, wrong: 0, extra: 0, rejected: 0, rejected_right: 0, rejected_extra: 0, missed: 1, widened: 0 };
     expect(meetsFloor(nineteenOfTwenty, 'recall', '0.95')).toBe(true);
     expect(meetsFloor(nineteenOfTwenty, 'recall', '0.950001')).toBe(false);
     expect(belowFloors(at('0.95'), Object.fromEntries(BASELINE_FIELDS.map((field) => [field, nineteenOfTwenty])) as Parameters<typeof belowFloors>[1])).toEqual([]);
     fc.assert(
       fc.property(tally, fc.constantFrom(...FLOOR_KINDS), floorText, (counts, kind, text) => {
-        const { tp, wrong, extra, rejected, rejected_extra: rejectedExtra, missed } = counts;
-        const denominator = BigInt(tp + (kind === 'recall' ? wrong + rejected + missed : wrong + extra + rejected + rejectedExtra));
+        const { tp, wrong, extra, rejected, rejected_extra: rejectedExtra, missed, widened } = counts;
+        // A widened scope field is a false negative, as the missed field /1 counted it (src/tally.ts asCounts, review M2).
+        const denominator = BigInt(tp + (kind === 'recall' ? wrong + rejected + missed + widened : wrong + extra + rejected + rejectedExtra));
         expect(meetsFloor(counts, kind, text)).toBe(denominator === 0n || BigInt(tp) * 1_000_000n >= floorPpm(text) * denominator);
       }),
       { numRuns: 500 },

@@ -12,7 +12,7 @@ import { BASELINE_PATH, gate, readBaseline, recordBaseline, recordPermitted, wri
 import { FLOORS, readFloors } from './floors';
 import { CONTRACT_VARIANTS, type ContractReport, type ContractVariant, type EvaluationReport, runEvaluation } from './harness';
 import { registerReferences } from './reference';
-import { asCounts, precision, ratioText, recall } from './score';
+import { asCounts, precision, ratioText, recall, tallyText } from './score';
 import { type LoadedContractSet, loadContractSet, loadNarrativeSet } from './sets';
 
 /**
@@ -37,7 +37,7 @@ import { type LoadedContractSet, loadContractSet, loadNarrativeSet } from './set
  * Before gating, the local reference is run over the set's unfaithful cases (a handful of local calls),
  * so every provider is held, case by case, to no more wrong-but-verified fields there than a faithful
  * copier of the text as read scores. Prints each contract count (tp, wrong, extra, rejected with
- * rejected_right, rejected_extra, missed), precision and recall overall and by layout, tier and page
+ * rejected_right, rejected_extra, missed, widened), precision and recall overall and by layout, tier and page
  * text, the faithful wrong-but-verified, the conflicts and the twins, and the gate's answer against
  * eval/baseline.json; writes the full report (counts, codes, hashes and case IDs only) with --report;
  * exits 1 when the gate fails.
@@ -52,10 +52,13 @@ import { type LoadedContractSet, loadContractSet, loadNarrativeSet } from './set
  * `pnpm --filter @tp/model-gateway eval record-permitted --report <file> [--against <file>]` records the
  * in-boundary permitted run (the worker's evaluate-permitted, report tp-model-eval-permitted/2, made in
  * production for the pending entries) on the contract entries of its provider, prompt version and
- * models (./baseline.ts recordPermitted): it refuses a report that is not /2, names another prompt or
- * other models, or regresses against --against (required once the provider serves contracts on an
- * earlier recorded run), and writes the reports' hashes and the example count into eval/baseline.json for
- * a person to review and commit. That commit serves the entries (docs/adr/0070, Part 2; F5 (a)).
+ * models, each variant on its own examples (./baseline.ts recordPermitted): it refuses a report that is
+ * not /2 as the run wrote it, does not add up, was not run in production, names another prompt or other
+ * models, did not measure the model for every example, or regresses against --against, variant by
+ * variant (required once anything of the provider was ever served, and then a run of what was served),
+ * and writes the reports' hashes and each variant's example count into the entries and the served
+ * history of eval/baseline.json for a person to review and commit. It prints each variant it left
+ * pending, and why. That commit serves the entries recorded (docs/adr/0070, Part 2; F5 (a)).
  */
 
 const { values, positionals } = parseArgs({
@@ -72,8 +75,7 @@ const { values, positionals } = parseArgs({
   },
 });
 
-const counts = (tally: FieldTally) =>
-  `tp ${String(tally.tp)}, wrong ${String(tally.wrong)}, extra ${String(tally.extra)}, rejected ${String(tally.rejected)} (right ${String(tally.rejected_right)}), rejected extra ${String(tally.rejected_extra)}, missed ${String(tally.missed)}`;
+const counts = tallyText;
 const fractions = (tally: FieldTally) => `precision ${ratioText(precision(asCounts(tally)))}, recall ${ratioText(recall(asCounts(tally)))}`;
 const ids = (list: readonly string[]) => (list.length === 0 ? 'none' : list.join(' '));
 
@@ -120,16 +122,29 @@ async function referenceRun(contracts: LoadedContractSet | null, variant: Contra
   return (await runEvaluation({ provider: local, contracts, narratives: null, variant, cases: new Set(unfaithful.map((item) => item.id)) })).contracts;
 }
 
+/** A report file's text, or an error naming the flag and the system's code (never the file's content). */
+function readReportFile(flag: string, file: string): string {
+  try {
+    return readFileSync(path.resolve(file), 'utf8');
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : 'unreadable';
+    throw new Error(`record-permitted: ${flag} could not be read (${code}); nothing is recorded`, { cause: error });
+  }
+}
+
 /** record-permitted: the permitted run's verdict written into the pending entries it covers. */
 function recordPermittedRun(): void {
   if (values.report === undefined) {
     throw new Error('record-permitted needs --report <the evaluate-permitted report>');
   }
-  const report = { text: readFileSync(path.resolve(values.report), 'utf8') };
-  const against = values.against === undefined ? null : { text: readFileSync(path.resolve(values.against), 'utf8') };
+  const report = { text: readReportFile('--report', values.report) };
+  const against = values.against === undefined ? null : { text: readReportFile('--against', values.against) };
   const recorded = recordPermitted(readBaseline(), report, against, new Date().toISOString().slice(0, 10));
   writeBaseline(recorded.baseline);
   process.stdout.write(`record-permitted: recorded on the ${recorded.variants.join(' and ')} contract entries in ${path.relative(process.cwd(), BASELINE_PATH)}; review it before committing it\n`);
+  for (const left of recorded.pending) {
+    process.stdout.write(`record-permitted: the ${left.variant} entry stays pending (${left.reason}): its model is served only on a run of its own examples\n`);
+  }
 }
 
 /** The evaluation over the synthetic sets, gated against the baseline, and recorded with --record. */

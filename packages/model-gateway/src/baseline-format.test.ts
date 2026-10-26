@@ -1,7 +1,7 @@
 import { TRUTH_FIELDS } from '@tp/synth';
 import { describe, expect, it } from 'vitest';
 
-import { BASELINE_FIELDS, BASELINE_FORMAT, CONTRACT_VARIANTS, type ContractBaseline, type NarrativeBaseline, parseBaseline } from './baseline-format';
+import { BASELINE_FIELDS, BASELINE_FORMAT, CONTRACT_VARIANTS, type ContractBaseline, type NarrativeBaseline, parseBaseline, sameEntryKey } from './baseline-format';
 import { PROMPTS } from './prompts';
 import { PROVIDER_KINDS } from './provider';
 import { ZERO_TALLY } from './tally';
@@ -93,5 +93,23 @@ describe('the baseline format', () => {
     expect(parses({ ...contract, provider: 'other' })).toBe(false);
     expect(() => parseBaseline({ ...baseline([contract]), format: 'tp-model-eval-baseline/2' })).toThrow();
     expect(() => parseBaseline({ ...baseline([contract]), synthetic: false })).toThrow();
+  });
+
+  it('refuses a tally of the format before /4: one with no widened count (review M2)', () => {
+    const { widened: _widened, ...before } = contract.fields.codes;
+    expect(parses({ ...contract, fields: { ...contract.fields, codes: before } })).toBe(false);
+    expect(() => parseBaseline({ ...baseline([contract]), format: 'tp-model-eval-baseline/3' })).toThrow();
+  });
+
+  it('refuses two entries of one key, whatever their counts, as a hand merge would leave them (review m4)', () => {
+    const weaker = { ...contract, fields: { ...contract.fields, amount: { ...ZERO_TALLY, missed: 1 } }, total: { ...ZERO_TALLY, tp: BASELINE_FIELDS.length - 1, missed: 1 } };
+    expect(() => parseBaseline(baseline([weaker, contract]))).toThrow(/entry 1 has the key of entry 0/);
+    expect(() => parseBaseline(baseline([contract, narrative, { ...narrative, recorded_on: '2026-10-27' }]))).toThrow(/entry 2 has the key of entry 1/);
+    // Another variant, model, prompt version or provider is another key; a narrative entry never shares a contract entry's.
+    expect(parseBaseline(baseline([contract, { ...contract, variant: 'ambiguous' }, { ...contract, model_id: 'local-other' }, { ...contract, prompt_version: 'propose-contract-terms/0' }, { ...contract, provider: 'bedrock', permitted: 'pending' }, narrative])).entries).toHaveLength(6);
+    expect(sameEntryKey(contract, { ...contract, variant: 'ambiguous' })).toBe(false);
+    expect(sameEntryKey(contract, weaker)).toBe(true);
+    const later: NarrativeBaseline = { ...narrative, cases: 1 };
+    expect(sameEntryKey(narrative, later)).toBe(true);
   });
 });

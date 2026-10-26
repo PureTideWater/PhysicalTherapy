@@ -4,14 +4,14 @@ import path from 'node:path';
 
 import { TRUTH_FIELDS, type TruthField } from '@tp/synth';
 
-import { type Baseline, type BaselineEntry, type ContractBaseline, type ContractVariant, type NarrativeBaseline, BASELINE_FORMAT, parseBaseline } from '../src/baseline-format';
-import { type PermittedReport, earlierPermittedReportSchema, permittedRegressions, permittedReportSchema } from '../src/permitted';
+import { type Baseline, type BaselineEntry, type ContractBaseline, type ContractVariant, type NarrativeBaseline, type ServedRecord, BASELINE_FORMAT, CONTRACT_VARIANTS, parseBaseline, sameEntryKey } from '../src/baseline-format';
+import { PERMITTED_REPORT_FORMAT, type PermittedReport, earlierPermittedReportSchema, permittedRegressions, permittedReportProblems, permittedReportSchema, unmeasuredProblems } from '../src/permitted';
 import { PROMPTS } from '../src/prompts';
 import type { ProviderKind } from '../src/provider';
 import { type FieldTally, asCounts, wrongVerified } from '../src/tally';
 import { FLOORS, type FloorKind, type Floors, belowFloors, unsetFloors } from './floors';
 import type { ContractReport, EvaluationReport } from './harness';
-import { below, precision, recall } from './score';
+import { below, precision, recall, wrongVerifiedByField } from './score';
 import { contractSetCaseIds, narrativeSetCaseIds } from './sets';
 
 /**
@@ -19,7 +19,7 @@ import { contractSetCaseIds, narrativeSetCaseIds } from './sets';
  * precision and recall on that set with no regression ... Narrative drafting has a zero-tolerance
  * gate: any verifier failure on the 300-case synthetic set blocks the change"; docs/adr/0051 and 0070).
  *
- * baseline.json (format tp-model-eval-baseline/3, src/baseline-format.ts) holds one entry per purpose,
+ * baseline.json (format tp-model-eval-baseline/4, src/baseline-format.ts) holds one entry per purpose,
  * prompt version, provider, model and (for contracts) variant, with the tallies it scored, the hash of
  * the set it scored them on, and the SHA-256 of the report it was recorded from (eval/reports/<sha256>.json,
  * committed beside it, from which a golden test recomputes every entry).
@@ -30,14 +30,18 @@ import { contractSetCaseIds, narrativeSetCaseIds } from './sets';
  * prompt it replaces; otherwise the variant's latest entry, so a model change is held to the model it
  * replaces. Counts recorded on another set are never compared (set_changed). Against a held entry on
  * the same set, neither overall nor any field's precision or recall may fall, and no field's wrong but
- * verified (src/tally.ts) may rise. Whatever the baseline, every report is also held to rules that do
- * not compare: zero wrong but verified on a case whose page text is faithful; on an unfaithful case, no
- * more wrong but verified per field than the local reference (a faithful copier of the text as read)
- * scores there in the same run; every expected conflict pair proposed and flagged both ways; every
- * injected twin's answer and review equal to its clean twin's, both calls answered, and no output string
- * holding the injection's canary; for a real provider, every recall and precision floor set
- * (eval/floors.json) and met; every quote on its page. A narrative report fails on any case with a
- * critical error.
+ * verified (src/tally.ts: a wrong value or one the truth does not state that verified, or a rate
+ * record's scope left wider than the truth's, review M2) may rise. Whatever the baseline, every report
+ * is also held to rules that do not compare: every case's call answered (unmeasured_cases, review m1: a
+ * call that failed or was refused measured nothing, and counting it as all missed would lower the bar
+ * every later change is held to; an answer off the schema is the model's own, and counts); zero wrong
+ * but verified on a case whose page text is faithful; on an unfaithful case, no more wrong but verified
+ * per field than the local reference (a faithful copier of the text as read) scores there in the same
+ * run, and none on a record and field the reference has right (review n4); every expected conflict pair
+ * proposed and flagged both ways; every injected twin's answer and review equal to its clean twin's,
+ * both calls answered, and no output string holding the injection's canary or a word only its injection
+ * writes; for a real provider, every recall and precision floor set (eval/floors.json) and met; every
+ * quote on its page. A narrative report fails on any case with a critical error.
  *
  * A report is gated only when it covers its set exactly (incomplete_report: the gate computes nothing
  * else). A spliced report (eval/harness.ts spliceReport) is gated in tests and never recorded.
@@ -60,6 +64,15 @@ import { contractSetCaseIds, narrativeSetCaseIds } from './sets';
 export { BASELINE_FORMAT, parseBaseline, type Baseline, type ContractBaseline, type NarrativeBaseline };
 
 export const BASELINE_PATH = path.resolve(import.meta.dirname, 'baseline.json');
+
+/**
+ * The note eval/baseline.json carries, written by code on every record (recordBaseline and recordPermitted)
+ * so it says what this code serves and no one types it: a note carried over from the file stayed true of
+ * the serving it was written for (by provider, every purpose at once) after serving moved to each purpose
+ * and variant on its own (src/evaluated.ts).
+ */
+export const BASELINE_NOTE =
+  'The entries the gate holds a prompt or model change to, on the synthetic sets (docs/adr/0051, 0054 and 0070). Recorded with pnpm --filter @tp/model-gateway eval --record, never by hand, and reviewed before commit: each entry names the prompt version\'s content hash, the set it was scored on and the report it was recorded from (eval/reports/<report_sha256>.json), from which a golden test recomputes it. A real provider serves each purpose and variant on its own (src/evaluated.ts): only once its entry is recorded, its floors in eval/floors.json are set and met, its model\'s price is confirmed and, for contract terms, its in-boundary permitted run is recorded with eval record-permitted; until then that feature alone is entered by hand.';
 /** Where each recorded report is kept, named by its SHA-256. */
 export const REPORTS_DIR = path.resolve(import.meta.dirname, 'reports');
 
@@ -79,6 +92,8 @@ export type GateProblem =
   | { readonly code: 'wrong_verified_on_faithful'; readonly field: TruthField; readonly count: number }
   | { readonly code: 'reference_missing'; readonly cases: readonly string[] }
   | { readonly code: 'wrong_verified_above_reference'; readonly case: string; readonly field: TruthField; readonly was: number; readonly now: number }
+  | { readonly code: 'wrong_verified_off_reference'; readonly case: string; readonly field: TruthField; readonly record: number }
+  | { readonly code: 'unmeasured_cases'; readonly cases: readonly string[] }
   | { readonly code: 'conflict_unflagged'; readonly count: number; readonly cases: readonly string[] }
   | { readonly code: 'pair_term_extra'; readonly case: string; readonly field: TruthField; readonly faithful: boolean }
   | { readonly code: 'twin_incomplete' | 'twin_differs' | 'twin_canary'; readonly cases: readonly string[] }
@@ -178,9 +193,23 @@ function changedFrom(entry: ContractBaseline, contracts: ContractReport): string
   return pairs.filter(([, held, now]) => held !== now).map(([name]) => name);
 }
 
+/**
+ * A case's problem that means the run did not measure the model there (review m1): its call failed
+ * (`call_failed:<code>`) or the gateway refused it (`refused:<code>`). On the synthetic set every
+ * document is one the gateway takes by construction, so a refusal of any kind is the run's (a feature or
+ * variant off, a budget, a limit), never the model's, and is wider than the in-boundary run's
+ * (recordPermitted below), where a practice's document can be refused on its own merits. `invalid_output`
+ * is the model's answer off the schema, a measurement of the model, and is not one.
+ */
+const unmeasured = (problem: string | null) => problem !== null && (problem.startsWith('call_failed:') || problem.startsWith('refused:'));
+
 /** The rules every contract report is held to whatever the baseline (see the module comment). */
 function absoluteProblems(provider: ProviderKind, contracts: ContractReport, options: GateOptions): GateProblem[] {
   const problems: GateProblem[] = [];
+  const failed = contracts.results.filter((result) => unmeasured(result.problem)).map((result) => result.id).sort();
+  if (failed.length > 0) {
+    problems.push({ code: 'unmeasured_cases', cases: failed });
+  }
   for (const field of TRUTH_FIELDS) {
     const count = contracts.faithfulWrongVerified[field];
     if (count > 0) {
@@ -198,11 +227,22 @@ function absoluteProblems(provider: ProviderKind, contracts: ContractReport, opt
   }
   for (const result of unfaithful) {
     const held = referenceOf.get(result.id);
-    for (const field of held === undefined ? [] : TRUTH_FIELDS) {
-      const was = held?.wrongVerified[field] ?? 0;
-      const now = result.wrongVerified[field];
-      if (now > was) {
-        problems.push({ code: 'wrong_verified_above_reference', case: result.id, field, was, now });
+    if (held === undefined) {
+      continue;
+    }
+    // Counted from the tallies themselves, never from a count a report carries beside them (review n1).
+    const was = wrongVerifiedByField(held.fields);
+    const now = wrongVerifiedByField(result.fields);
+    for (const field of TRUTH_FIELDS) {
+      if (now[field] > was[field]) {
+        problems.push({ code: 'wrong_verified_above_reference', case: result.id, field, was: was[field], now: now[field] });
+      }
+    }
+    // Within the count, each wrong value must be one the reference has wrong too: the misread record, not another (review n4).
+    const misread = new Set(held.wrongVerifiedAt.map((at) => `${at.field}@${String(at.record)}`));
+    for (const at of result.wrongVerifiedAt) {
+      if (!misread.has(`${at.field}@${String(at.record)}`)) {
+        problems.push({ code: 'wrong_verified_off_reference', case: result.id, field: at.field, record: at.record });
       }
     }
   }
@@ -402,8 +442,10 @@ export interface Recorded {
 
 /**
  * The baseline with this report's results recorded, and the report file that goes with it. Refuses a
- * spliced report, and any report the gate finds a blocking problem in (blockingProblems); replaces an
- * entry only of the same purpose, prompt version, provider, model and (for contracts) variant (review m1).
+ * spliced report, and any report the gate finds a blocking problem in (blockingProblems), among them a
+ * run with a case whose call failed or was refused (unmeasured_cases), on a first record and a --new-set
+ * record as on any other; replaces an entry only of the same purpose, prompt version, provider, model and
+ * (for contracts) variant (sameEntryKey; review m1).
  */
 export function recordBaseline(baseline: Baseline, report: EvaluationReport, recordedOn: string, options: RecordOptions = {}): Recorded {
   const newSet = options.newSet === true;
@@ -414,14 +456,9 @@ export function recordBaseline(baseline: Baseline, report: EvaluationReport, rec
   const text = reportText(report);
   const sha256 = reportSha256(text);
   const entries = entriesFromReport(report, sha256, recordedOn);
-  const same = (a: BaselineEntry, b: BaselineEntry) =>
-    a.purpose === b.purpose &&
-    a.prompt_version === b.prompt_version &&
-    a.provider === b.provider &&
-    a.model_id === b.model_id &&
-    (a.purpose !== 'proposeContractTerms' || b.purpose !== 'proposeContractTerms' || a.variant === b.variant);
   return {
-    baseline: parseBaseline({ ...baseline, entries: [...baseline.entries.filter((entry) => !entries.some((added) => same(entry, added))), ...entries] }),
+    // The one definition of an entry's identity the reader refuses duplicates of (src/baseline-format.ts, review m4).
+    baseline: parseBaseline({ ...baseline, note: BASELINE_NOTE, entries: [...baseline.entries.filter((entry) => !entries.some((added) => sameEntryKey(entry, added))), ...entries] }),
     report: { sha256, text },
   };
 }
@@ -437,86 +474,191 @@ export function writeRecorded(recorded: Recorded, files: { readonly baseline?: s
   return { baseline: baselineFile, report: reportFile };
 }
 
-/** A permitted run recorded on the contract entries it covers: the baseline with them updated, and which were. */
+/** Why a covered entry's variant was left pending by a recorded run: it had no example, or none the model answered. */
+export type PermittedPendingReason = 'no_examples' | 'nothing_measured';
+
+/** A permitted run recorded on the contract entries it covers: the baseline with them updated, which were, and which were left pending. */
 export interface PermittedRecorded {
   readonly baseline: Baseline;
   /** The entries' variants the run was recorded on. */
   readonly variants: readonly ContractVariant[];
+  /** The covered entries' variants left pending, and why (the PR review's M3): each is served only on a run of its own model. */
+  readonly pending: readonly { readonly variant: ContractVariant; readonly reason: PermittedPendingReason }[];
+}
+
+const refuse = (why: string, codes: readonly string[] = []): never => {
+  throw new Error(`${why}; nothing is recorded${codes.length === 0 ? '' : ` (${codes.join(', ')})`}`);
+};
+
+/**
+ * What ties an earlier report (`--against`) to what was served (the PR review's M1), as problem codes; empty
+ * when it is tied. The strictest rule that still works:
+ *
+ * - it is a production run of the run's own provider, and another run: not the report itself
+ *   (`against_is_report`, the same text) nor the same run written again (`against_same_run`, the same run ID);
+ * - when the provider has served history, the earlier run is of exactly what was served, variant by
+ *   variant: the served record's prompt version, content hash and model (`against_not_served:<variant>`),
+ *   for every variant with a record (a variant never served has nothing to be tied to).
+ *
+ * The rule does not require the earlier report to be the served report itself (its hash the served
+ * record's `report_sha256`): the examples grow as practices sign data-rights agreements and correct
+ * proposals, and the gate compares runs on the same examples, so the served side is run again on today's
+ * examples, and that rerun is a report of its own. Its identity is what can be checked here, and is; that
+ * it ran is checked by its run ID against model_call (actor_id) in the boundary, by the reviewer (the
+ * runbook, section 7). Its hash is recorded as the new record's `against_sha256`, so each served record
+ * names the run it was compared with, and the chain is in the history.
+ */
+function againstProblems(run: PermittedReport, earlier: PermittedReport, texts: { readonly report: string; readonly against: string }, served: Partial<Record<ContractVariant, ServedRecord>>): string[] {
+  const problems: string[] = [];
+  if (reportSha256(texts.against) === reportSha256(texts.report)) {
+    problems.push('against_is_report');
+  } else if (earlier.runId === run.runId) {
+    problems.push('against_same_run');
+  }
+  if (earlier.provider !== run.provider) {
+    problems.push('against_provider');
+  }
+  if (!earlier.production) {
+    problems.push('against_not_production');
+  }
+  for (const variant of CONTRACT_VARIANTS) {
+    const record = served[variant];
+    if (record !== undefined && (earlier.promptVersion !== record.prompt_version || earlier.promptSha256 !== record.prompt_sha256 || earlier.variants[variant].modelId !== record.model_id)) {
+      problems.push(`against_not_served:${variant}`);
+    }
+  }
+  return problems;
 }
 
 /**
  * Records an in-boundary permitted run (apps/worker evaluate-permitted, report tp-model-eval-permitted/2)
- * on the real provider's contract entries it covers (F5 (a); docs/adr/0070, Part 2): every entry of that
- * provider, the current contract prompt version and content, and a model the report names. Refuses, and
- * records nothing, unless:
+ * on the real provider's contract entries it covers (F5 (a); docs/adr/0070, Part 2): the entries of that
+ * provider, the current contract prompt version and content, each of the variant whose model the report
+ * names. Refuses, and records nothing, unless:
  *
  * - the report parses as /2, strictly (a /1 report, or one with any field the run does not write, such
- *   as a splice mark, is refused);
- * - it names a real provider, the current contract prompt version and its content hash, and exactly the
- *   models that prompt pins for the provider, and some entry is recorded for them;
- * - when any contract entry of the provider already rests on a recorded permitted run (a change from
- *   something served), an earlier report is given (`against`), and permittedRegressions finds nothing
- *   worse in this run than in that one: the same examples, no precision or recall lower, no more
- *   wrong-but-verified values, no more refusals. Before anything of the provider was served, `against` may
- *   be left out (the first run, with no examples before the first practice); when it is given it is
- *   always compared;
- * - no example's call failed (`call_failed:<code>`) and none was refused because the feature, or the
- *   variant the example asks for, was off for the run (`refused:kill_switch`, `refused:feature_off`,
- *   `refused:not_evaluated`): such a run did not measure the model the entries would serve, and a first
- *   run (no `against`) is compared with nothing, so a run in which nothing reached the model would
- *   otherwise serve it. An input the gateway refuses on its own merits (a document of another kind) and
- *   an example that could not be read stay what they were, counted, since a rerun would refuse them again.
+ *   as a splice mark, is refused), and its counts add up (permittedReportProblems: an edited or spliced
+ *   report is refused as `report_inconsistent`, the PR review's N3);
+ * - it was run in production (`production`: outside it a practice's material never reaches a real
+ *   provider, so the run measured nothing; the PR review's N4), and names a real provider, the current
+ *   contract prompt version and its content hash, and for each variant the model that prompt pins for it
+ *   on the provider (none for a variant it pins none for), and some entry is recorded for them;
+ * - every example's outcome is on the allowlist (permittedOutcome, the PR review's S1): the model answered,
+ *   or the example's own input kept it from the model (a document no longer readable, an expectation that
+ *   does not parse, a document of another kind). Any other code (a failed call; a refusal for the run's
+ *   setting, the PHI boundary of a run outside production among them; a code the list does not know) means
+ *   the run did not measure the model the entries would serve, and is refused; and a run with examples of
+ *   which none reached the model is refused, since it measured nothing;
+ * - when the provider was ever served on a recorded permitted run (its served history, or an entry that
+ *   rests on one), an earlier report is given (`against`), tied to what was served (againstProblems), whose
+ *   variants that were served or are recorded now measured their model, and permittedRegressions finds
+ *   nothing worse in this run than in that one, variant by variant: the same examples, no precision or
+ *   recall lower, no more wrong-but-verified values, no more refusals (the PR review's B1, M1 and M3). The
+ *   history outlives the entries, which a prompt or model change deletes and `eval --record` resets to
+ *   pending, so a run is compared with nothing only before anything of the provider was served (its first
+ *   run, with no examples before the first practice). When `against` is given it is always compared.
  *
- * Writes `permitted: { examples, report_sha256, against_sha256, recorded_on }`, the SHA-256 of each file's
- * text exactly as given. Nothing of the report but its example count is kept: the reports stay in the
- * PHI boundary's own storage, and they hold counts, codes and example IDs only.
+ * Each covered entry is recorded only on its own variant's examples (the PR review's M3): a variant with
+ * at least one example the model answered, or every variant when the run has no example at all (the first
+ * run, before the first practice; docs/adr/0070, Part 2). A variant with none stays pending, and is
+ * returned as such with its reason (`no_examples`, `nothing_measured`): a model is never served on a run
+ * that never called it. A run that would record no entry is refused.
+ *
+ * Writes `permitted: { examples, report_sha256, against_sha256, recorded_on }` on each recorded entry (its
+ * variant's example count; the SHA-256 of each file's text exactly as given), and the same, with the
+ * prompt version, content hash and model, as the provider's served history for that variant. Nothing of
+ * the report but its counts is kept: the reports stay in the PHI boundary's own storage, and they hold
+ * counts, codes and example IDs only.
  */
 export function recordPermitted(baseline: Baseline, report: { readonly text: string }, against: { readonly text: string } | null, recordedOn: string): PermittedRecorded {
   const parsed = permittedReportSchema.safeParse(parseJson(report.text));
   if (!parsed.success) {
-    throw new Error('record-permitted takes a tp-model-eval-permitted/2 report as evaluate-permitted wrote it; nothing is recorded');
+    return refuse('record-permitted takes a tp-model-eval-permitted/2 report as evaluate-permitted wrote it');
   }
   const run: PermittedReport = parsed.data;
+  refuseIf(permittedReportProblems(run), 'the permitted report’s counts do not add up: it was edited, or spliced from runs');
+  if (!run.production) {
+    refuse('the permitted run was not made in production, where alone a practice’s material reaches a real provider');
+  }
   const prompt = PROMPTS.proposeContractTerms;
   if (run.provider === 'local' || !Object.hasOwn(prompt.models, run.provider)) {
-    throw new Error('record-permitted records a run on a real provider only; nothing is recorded');
+    refuse('record-permitted records a run on a real provider only');
   }
-  const provider = run.provider as ProviderKind;
-  const pinned = [...new Set(Object.values(prompt.models[provider]))].sort();
-  if (run.promptVersion !== prompt.id || run.promptSha256 !== prompt.sha256 || JSON.stringify([...run.modelIds].sort()) !== JSON.stringify(pinned)) {
-    throw new Error('the permitted run is not of the current contract prompt version and the models it pins for the provider; nothing is recorded');
+  const provider = run.provider as Exclude<ProviderKind, 'local'>;
+  const pinned = (variant: ContractVariant) => prompt.models[provider][variant] ?? null;
+  if (run.promptVersion !== prompt.id || run.promptSha256 !== prompt.sha256 || CONTRACT_VARIANTS.some((variant) => run.variants[variant].modelId !== pinned(variant))) {
+    refuse('the permitted run is not of the current contract prompt version and the models it pins for the provider');
   }
   const covered = (entry: BaselineEntry): entry is ContractBaseline =>
-    entry.purpose === 'proposeContractTerms' && entry.provider === provider && entry.prompt_version === prompt.id && entry.prompt_sha256 === prompt.sha256 && pinned.includes(entry.model_id);
+    entry.purpose === 'proposeContractTerms' && entry.provider === provider && entry.prompt_version === prompt.id && entry.prompt_sha256 === prompt.sha256 && entry.model_id === pinned(entry.variant);
   const targets = baseline.entries.filter(covered);
   if (targets.length === 0) {
     throw new Error('no contract entry is recorded for the run’s provider, prompt version and models; record the synthetic run first (eval --record)');
   }
-  const unmeasured = [...new Set(run.problems.map((entry) => entry.problem).filter(isUnmeasured))].sort();
-  if (unmeasured.length > 0) {
-    throw new Error(`the permitted run did not reach the model for every example; run it again with the feature on and evaluable; nothing is recorded (${unmeasured.join(', ')})`);
+  refuseIf(unmeasuredProblems(run), 'the permitted run did not reach the model for every example; run it again in production with the feature on and evaluable');
+  if (run.examples > 0 && run.measured === 0) {
+    refuse('no example reached the model in the permitted run, so it measured nothing');
   }
-  const servedBefore = baseline.entries.some((entry) => entry.purpose === 'proposeContractTerms' && entry.provider === provider && typeof entry.permitted === 'object');
+  const pending: { variant: ContractVariant; reason: PermittedPendingReason }[] = [];
+  const recordable = targets
+    .map((entry) => entry.variant)
+    .filter((variant) => {
+      const part = run.variants[variant];
+      const reason = run.examples === 0 || part.measured > 0 ? null : part.examples === 0 ? 'no_examples' : 'nothing_measured';
+      if (reason !== null) {
+        pending.push({ variant, reason });
+      }
+      return reason === null;
+    });
+  if (recordable.length === 0) {
+    refuse('no covered entry’s variant has an example the model answered', pending.map((entry) => `${entry.variant}:${entry.reason}`));
+  }
+  const served = baseline.served?.[provider] ?? {};
+  const servedBefore = Object.keys(served).length > 0 || baseline.entries.some((entry) => entry.purpose === 'proposeContractTerms' && entry.provider === provider && typeof entry.permitted === 'object');
   if (against === null && servedBefore) {
-    throw new Error('the provider already serves contracts on a recorded permitted run: give --against, the run of what is served now on the same examples; nothing is recorded');
+    refuse('the provider was served contracts on a recorded permitted run: give --against, a run of what was served (its prompt version and models) on the same examples');
   }
   if (against !== null) {
     const earlier = earlierPermittedReportSchema.safeParse(parseJson(against.text));
-    const regressions = earlier.success ? permittedRegressions(run, earlier.data) : ['earlier_report_invalid'];
-    if (regressions.length > 0) {
-      throw new Error(`the permitted run regressed against the earlier one; nothing is recorded (${regressions.join(', ')})`);
+    if (!earlier.success) {
+      refuse('the permitted run regressed against the earlier one', ['earlier_report_invalid']);
+    } else if (earlier.data.format !== PERMITTED_REPORT_FORMAT) {
+      refuse('the permitted run regressed against the earlier one', ['earlier_report_format']);
+    } else {
+      const then = earlier.data as PermittedReport;
+      refuseIf(permittedReportProblems(then).map((code) => `earlier_${code}`), 'the earlier report’s counts do not add up');
+      refuseIf(againstProblems(run, then, { report: report.text, against: against.text }, served), 'the earlier report is not a run of what was served');
+      // Every variant served before is compared, recorded now or not; a variant never served is compared too,
+      // except where the earlier run could not call its model (it was not evaluable then): nothing of it was served.
+      const compared = CONTRACT_VARIANTS.filter((variant) => served[variant] !== undefined || recordable.includes(variant));
+      const regressions = permittedRegressions(run, then, compared).filter((code) => !code.startsWith('earlier_unmeasured:') || served[code.slice('earlier_unmeasured:'.length) as ContractVariant] !== undefined);
+      refuseIf(regressions, 'the permitted run regressed against the earlier one');
     }
   }
-  const permitted = { examples: run.examples, report_sha256: reportSha256(report.text), against_sha256: against === null ? null : reportSha256(against.text), recorded_on: recordedOn };
+  const reportHash = reportSha256(report.text);
+  const againstHash = against === null ? null : reportSha256(against.text);
+  const record = (variant: ContractVariant) => ({ examples: run.variants[variant].examples, report_sha256: reportHash, against_sha256: againstHash, recorded_on: recordedOn });
+  const history: Partial<Record<ContractVariant, ServedRecord>> = { ...served };
+  for (const variant of recordable) {
+    history[variant] = { prompt_version: prompt.id, prompt_sha256: prompt.sha256, model_id: pinned(variant) ?? '', ...record(variant) };
+  }
   return {
-    baseline: parseBaseline({ ...baseline, entries: baseline.entries.map((entry) => (covered(entry) ? { ...entry, permitted } : entry)) }),
-    variants: targets.map((entry) => entry.variant),
+    baseline: parseBaseline({
+      ...baseline,
+      note: BASELINE_NOTE,
+      entries: baseline.entries.map((entry) => (covered(entry) && recordable.includes(entry.variant) ? { ...entry, permitted: record(entry.variant) } : entry)),
+      served: { ...baseline.served, [provider]: history },
+    }),
+    variants: recordable,
+    pending,
   };
 }
 
-/** A permitted example's problem that means the run did not measure the model: a failed call, or the feature or variant off for the run. */
-const UNMEASURED_REFUSALS: readonly string[] = ['refused:kill_switch', 'refused:feature_off', 'refused:not_evaluated'];
-const isUnmeasured = (problem: string) => problem.startsWith('call_failed:') || UNMEASURED_REFUSALS.includes(problem);
+function refuseIf(codes: readonly string[], why: string): void {
+  if (codes.length > 0) {
+    refuse(why, codes);
+  }
+}
 
 function parseJson(text: string): unknown {
   try {

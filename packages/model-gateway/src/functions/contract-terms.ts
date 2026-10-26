@@ -39,7 +39,9 @@ import { framePages } from '../untrusted';
  *
  * A candidate becomes a proposed rate_record row (proposed_by "model", its evidence the pricing field's
  * page, quote and the page text's hash) only when every field it fills verified and its terms are
- * valid rate terms. The specialist approves each field before anything prices (PRD 9, proposed).
+ * valid rate terms. A scope field it leaves out leaves the record as wide as that field goes, so it is
+ * named among the candidate's defaults (SCOPE_UNSTATED, the PR review's M2) and shown as not stated. The
+ * specialist approves each field before anything prices (PRD 9, proposed).
  */
 
 /** Pages a call reads at most; a longer document is proposed in parts. */
@@ -125,8 +127,24 @@ export interface FieldReview {
   readonly problems: readonly FieldProblem[];
 }
 
-/** Values code chose because the contract states none a field could quote; the specialist confirms each. */
-export const CODE_DEFAULTS = ['flags', 'rounding', 'year_basis', 'locality_basis', 'conversion_factor', 'effective_to_as_last_day'] as const;
+/**
+ * The default each scope field a candidate leaves out stands for (the PR review's M2). A scope field left
+ * out is not a value code chose but the widest one: the record applies to every code, any modifier, any
+ * place of service, or from the first day or to no last day. Nothing on the page is rejected, so without
+ * its name here the specialist would see a record whose every field checked, and not that it prices more
+ * lines than the contract's row; each is named, and the screen gives it a row of its own ("Not stated").
+ * The evaluation counts the same omission as wrong but verified (`widened`, src/tally.ts).
+ */
+export const SCOPE_UNSTATED = {
+  codes: 'codes_unstated',
+  modifiers: 'modifiers_unstated',
+  places_of_service: 'places_of_service_unstated',
+  effective_from: 'effective_from_unstated',
+  effective_to: 'effective_to_unstated',
+} as const;
+
+/** Values code chose because the contract states none a field could quote, and scope it left as wide as it goes; the specialist confirms each. */
+export const CODE_DEFAULTS = ['flags', 'rounding', 'year_basis', 'locality_basis', 'conversion_factor', 'effective_to_as_last_day', ...Object.values(SCOPE_UNSTATED)] as const;
 export type CodeDefault = (typeof CODE_DEFAULTS)[number];
 
 export interface ProposedRateRecord {
@@ -312,19 +330,29 @@ function enteredTerms(candidate: ContractTermsCandidate): { readonly terms: Reco
   const defaults: CodeDefault[] = [];
   const scope = readScope(candidate);
   const scopeJson: Record<string, unknown> = {};
-  if (scope.codes !== null) {
+  if (scope.codes === null) {
+    defaults.push(SCOPE_UNSTATED.codes);
+  } else {
     scopeJson.codes = scope.codes;
   }
-  if (scope.modifiers !== null) {
+  if (scope.modifiers === null) {
+    defaults.push(SCOPE_UNSTATED.modifiers);
+  } else {
     scopeJson.modifier_sets = [scope.modifiers];
   }
-  if (scope.places !== null) {
+  if (scope.places === null) {
+    defaults.push(SCOPE_UNSTATED.places_of_service);
+  } else {
     scopeJson.places_of_service = scope.places;
   }
-  if (scope.from !== null) {
+  if (scope.from === null) {
+    defaults.push(SCOPE_UNSTATED.effective_from);
+  } else {
     scopeJson.effective_from = scope.from;
   }
-  if (scope.lastDay !== null) {
+  if (scope.lastDay === null) {
+    defaults.push(SCOPE_UNSTATED.effective_to);
+  } else {
     // A contract writes the last day it covers ("through December 31"); a scope's window ends the day after.
     scopeJson.effective_to = addDays(scope.lastDay, 1);
     defaults.push('effective_to_as_last_day');

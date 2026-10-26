@@ -19,7 +19,7 @@ export {
   purposeServed,
   servedKey,
 } from './purposes';
-export { type CallContext, type GatewayOptions, type GatewayResult, ModelGateway } from './gateway';
+export { type CallContext, type GatewayOptions, type GatewayResult, ModelGateway, permittedRequestKey } from './gateway';
 export { CallLimiter, type CallLimits, DEFAULT_CALL_LIMITS } from './limiter';
 export {
   DuplicateModelCallError,
@@ -62,14 +62,21 @@ export {
   PERMITTED_REPORT_FORMAT,
   PERMITTED_REPORT_FORMAT_V1,
   type PermittedField,
+  MEASURED_PROBLEMS,
+  OUTSIDE_MODEL_PROBLEMS,
+  type PermittedOutcome,
   type PermittedReport,
   type PermittedResult,
+  type PermittedRunIdentity,
+  type PermittedVariantReport,
   correctionSchema,
   earlierPermittedReportSchema,
   finalKeys,
   isLegacyCorrection,
+  permittedOutcome,
   permittedRegressions,
   permittedReport,
+  permittedReportProblems,
   permittedReportSchema,
   permittedResult,
   scorePermitted,
@@ -104,6 +111,7 @@ export {
   type ContractBaseline,
   type ContractVariant,
   type NarrativeBaseline,
+  type ServedRecord,
   baselineSchema,
   contractEntrySchema,
   narrativeEntrySchema,

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { referenceCandidate } from '../../eval/reference';
 import { sha256Hex } from '../hash';
 import { SYNTHETIC_CONTRACT_PAGES, syntheticContractInput, syntheticContractOutput } from '../testing';
-import { CITED_FIELDS, type ContractTermsCandidate, type FieldReview, MAX_PAGES, contractTermsOutput, contractTermsSpec, rowProblems, scopesOverlap, verifyContractTerms } from './contract-terms';
+import { CITED_FIELDS, type ContractTermsCandidate, type FieldReview, MAX_PAGES, SCOPE_UNSTATED, contractTermsOutput, contractTermsSpec, rowProblems, scopesOverlap, verifyContractTerms } from './contract-terms';
 
 /**
  * proposeContractTerms's verifier (test matrix MOD-01, MOD-02): every quote on its page, every amount,
@@ -47,7 +47,7 @@ describe('MOD-01: contract proposal quotes verify', () => {
     const { evidence, proposed_by: _proposer, ...terms } = record ?? { evidence: null, proposed_by: 'model' };
     expect(() => parseRateTerms(terms)).not.toThrow();
     expect(citationSchema.safeParse(evidence).success).toBe(true);
-    expect(proposal.candidates[0]?.defaults).toEqual(['effective_to_as_last_day', 'flags']);
+    expect(proposal.candidates[0]?.defaults).toEqual(['modifiers_unstated', 'places_of_service_unstated', 'effective_to_as_last_day', 'flags']);
     // Citations are references: field, page and the quote's hash, never the quoted text.
     expect(citations).toContainEqual({ field: 'candidates[0].amount', page: 2, quote_sha256: sha256Hex('CPT 97110 Therapeutic exercise, each 15 minutes $32.50 per unit') });
     expect(JSON.stringify(citations)).not.toContain('Therapeutic');
@@ -210,7 +210,7 @@ describe('the terms code builds from the verified text', () => {
     expect(reviewed?.rateRecord?.parameters).toEqual({ percentage: '110', year_basis: 'LOCKED:2025', locality_basis: { kind: 'PRACTICE' }, conversion_factor: 'non_qualifying_apm' });
     expect(reviewed?.rateRecord?.scope).toEqual({});
     expect(reviewed?.rateRecord?.evidence.quote).toBe(quote);
-    expect(reviewed?.defaults).toEqual(['locality_basis', 'conversion_factor', 'flags', 'rounding']);
+    expect(reviewed?.defaults).toEqual(['codes_unstated', 'modifiers_unstated', 'places_of_service_unstated', 'effective_from_unstated', 'effective_to_unstated', 'locality_basis', 'conversion_factor', 'flags', 'rounding']);
     // Without a year the schedule follows the current year, which the specialist confirms too.
     const current = verifyContractTerms({ ...input, pages }, { candidates: [{ ...candidate, fee_schedule_year: null }] }).proposal.candidates[0];
     expect(current?.rateRecord?.parameters).toMatchObject({ year_basis: 'CURRENT' });
@@ -260,6 +260,19 @@ describe('the terms code builds from the verified text', () => {
     expect(reviewed?.problems).toEqual(['terms_invalid']);
     expect(reviewed?.rateRecord).toBeNull();
     expect(review({ ...first(), method: { value: 'LESSER_OF', page: 2, quote: 'EXHIBIT A - FEE SCHEDULE' }, lesser_of_schedule: null })?.rateRecord).toBeNull();
+  });
+
+  it('names each scope field a candidate leaves out as a default the specialist confirms, since leaving it out widens the record (review M2)', () => {
+    // The synthetic row states its codes, amount and dates, and no modifier or place: the record applies to any.
+    const row = review(first());
+    expect(row?.rateRecord?.scope).toEqual({ codes: ['97110'], effective_from: '2026-01-01', effective_to: '2027-01-01' });
+    expect(row?.defaults).toEqual(['modifiers_unstated', 'places_of_service_unstated', 'effective_to_as_last_day', 'flags']);
+    // A general term ("all other services") states no scope at all: still a rate record, every widening named.
+    const quote = 'CPT 97110 Therapeutic exercise, each 15 minutes $32.50 per unit';
+    const general = review({ ...first(), codes: null, method: { value: 'FIXED_SCHEDULE', page: 2, quote }, effective_from: null, effective_to: null });
+    expect(general?.rateRecord?.scope).toEqual({});
+    expect(general?.defaults).toEqual(['codes_unstated', 'modifiers_unstated', 'places_of_service_unstated', 'effective_from_unstated', 'effective_to_unstated', 'flags']);
+    expect(SCOPE_UNSTATED).toEqual({ codes: 'codes_unstated', modifiers: 'modifiers_unstated', places_of_service: 'places_of_service_unstated', effective_from: 'effective_from_unstated', effective_to: 'effective_to_unstated' });
   });
 
   it('passes an empty proposal for pages that state no term', () => {
