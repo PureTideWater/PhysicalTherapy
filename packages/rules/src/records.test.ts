@@ -2,8 +2,15 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CONTENT_IDS,
+  ContentSummaryBuilder,
   canonicalJson,
   compareText,
+  contentOf,
+  contentSummaries,
+  coverageWithdrawnNoteSchema,
+  dayAfter,
+  dayBefore,
   decodeSourceText,
   diffTranscriptions,
   findOverlaps,
@@ -18,8 +25,8 @@ import {
   transcription,
   windowsOverlap,
 } from './records';
-import type { RuleRecord } from './schema';
-import { exampleRecord } from './testing';
+import { RULE_RECORD_TYPES, type RuleRecord } from './schema';
+import { EXAMPLE_SOURCE, exampleRecord, exampleRecords } from './testing';
 
 describe('canonicalJson', () => {
   it('sorts keys at every level and keeps array order', () => {
@@ -182,5 +189,102 @@ describe('source text', () => {
     expect(has('line\r\nsecond')).toBe(true);
     expect(has('nd, li')).toBe(true);
     expect(has('fourth')).toBe(false);
+  });
+});
+
+describe('days', () => {
+  it('steps one calendar day in UTC across months, years and leap days', () => {
+    expect(dayAfter('2026-12-31')).toBe('2027-01-01');
+    expect(dayAfter('2028-02-28')).toBe('2028-02-29');
+    expect(dayAfter('2026-02-28')).toBe('2026-03-01');
+    expect(dayBefore('2026-01-01')).toBe('2025-12-31');
+    expect(dayBefore('2028-03-01')).toBe('2028-02-29');
+    expect(dayBefore(dayAfter('2026-10-26'))).toBe('2026-10-26');
+  });
+});
+
+describe('contents', () => {
+  it('are the record types in their order, mppr_rate split in place into its two contents', () => {
+    expect([...CONTENT_IDS]).toEqual(RULE_RECORD_TYPES.flatMap((type) => (type === 'mppr_rate' ? ['mppr_code', 'mppr_general'] : [type])));
+  });
+
+  it('split mppr_rate by its key, as rule_release_content_span() does, and refuse a key with neither', () => {
+    expect(contentOf(exampleRecord('mppr_rate'))).toBe('mppr_general');
+    expect(contentOf({ record_type: 'mppr_rate', key: { hcpcs: '97110', modifier: '' } })).toBe('mppr_code');
+    expect(contentOf(exampleRecord('ncci_mue'))).toBe('ncci_mue');
+    expect(() => contentOf({ record_type: 'mppr_rate', key: { code: '97110' } })).toThrow('an mppr_rate key names neither hcpcs nor component: {"code":"97110"}');
+  });
+
+  it('summarise each content present, in content order, with merged windows and the newest start and retrieval', () => {
+    const records = [
+      exampleRecord('ncci_mue', { effective_from: '2026-04-01', effective_to: '2026-06-30', source: { ...EXAMPLE_SOURCE, retrieved: '2026-03-20' } }),
+      exampleRecord('ncci_mue', { effective_from: '2026-01-01', effective_to: '2026-03-31', source: { ...EXAMPLE_SOURCE, retrieved: '2025-12-20' } }),
+      exampleRecord('ncci_mue', { key: { hcpcs: '97112' }, effective_from: '2026-07-01', effective_to: '2026-09-30' }),
+      exampleRecord('mppr_rate', { effective_to: null }),
+      { ...exampleRecord('mppr_rate'), key: { hcpcs: '97110', modifier: '' }, value: { pe_reduction_percent: null } } as RuleRecord,
+    ];
+    expect(contentSummaries(records)).toEqual([
+      { content: 'mppr_code', records: 1, windows: [{ from: '2026-01-01', to: '2026-12-31' }], newest_from: '2026-01-01', newest_retrieved: '2026-10-15' },
+      { content: 'mppr_general', records: 1, windows: [{ from: '2026-01-01', to: null }], newest_from: '2026-01-01', newest_retrieved: '2026-10-15' },
+      { content: 'ncci_mue', records: 3, windows: [{ from: '2026-01-01', to: '2026-09-30' }], newest_from: '2026-07-01', newest_retrieved: '2026-10-15' },
+    ]);
+    expect(contentSummaries([])).toEqual([]);
+  });
+
+  it('are summarised the same a record at a time, through compaction, holding no record', () => {
+    const builder = new ContentSummaryBuilder();
+    const quarters = ['01-01', '04-01', '07-01', '10-01'];
+    const ends = ['03-31', '06-30', '09-30', '12-31'];
+    const many: RuleRecord[] = [];
+    for (let index = 0; index < 10_000; index += 1) {
+      const year = 2020 + (index % 7);
+      const quarter = index % 4;
+      many.push(exampleRecord('ncci_ptp', { effective_from: `${String(year)}-${quarters[quarter] ?? ''}`, effective_to: `${String(year)}-${ends[quarter] ?? ''}` }));
+    }
+    many.push(...exampleRecords());
+    for (const record of many) {
+      builder.add(record);
+    }
+    expect(builder.summaries()).toEqual(contentSummaries(many));
+    expect(builder.summaries().find((summary) => summary.content === 'ncci_ptp')).toEqual({
+      content: 'ncci_ptp',
+      records: 10_001,
+      windows: [{ from: '2020-01-01', to: '2026-12-31' }],
+      newest_from: '2026-10-01',
+      newest_retrieved: '2026-10-15',
+    });
+    expect(JSON.stringify(builder)).toBe('{}');
+  });
+});
+
+describe('the drafts\' coverage-withdrawn note', () => {
+  const entry = {
+    record_type: 'ncci_ptp',
+    key: { column1: '97140', column2: '97530' },
+    from: '2026-10-01',
+    to: null,
+    reason: 'SYNTHETIC pair withdrawn by CMS in error',
+    withdrawn_by: 'Pat Example',
+    confirmed_by: 'Sam Example',
+    withdrawn_on: '2026-10-20',
+  };
+  const note = (changes: Record<string, unknown>) => coverageWithdrawnNoteSchema.safeParse({ format: 'tp-coverage-withdrawn/1', previous_release: 3, withdrawn: [{ ...entry, ...changes }] });
+
+  it('takes an entry signed by two different named people, with a one-line reason', () => {
+    expect(note({}).success).toBe(true);
+    expect(note({ key: { group_code: null, carc: '45', rarc: null }, record_type: 'denial_category' }).success).toBe(true);
+  });
+
+  it('refuses one person twice, compared trimmed and case-folded, and a name or reason that is not one printable line', () => {
+    const issues = (changes: Record<string, unknown>) => note(changes).error?.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`);
+    expect(issues({ confirmed_by: 'pat example' })).toEqual(['withdrawn.0.confirmed_by: confirmed_by must be a person other than withdrawn_by']);
+    expect(issues({ confirmed_by: ' Pat Example' })).toEqual(['withdrawn.0.confirmed_by: must not start or end with a space', 'withdrawn.0.confirmed_by: confirmed_by must be a person other than withdrawn_by']);
+    expect(note({ withdrawn_by: 'P' }).success).toBe(false);
+    expect(note({ withdrawn_by: 'Pat\nExample' }).success).toBe(false);
+    expect(note({ reason: 'short' }).success).toBe(false);
+    expect(note({ reason: 'two lines\nof reason' }).success).toBe(false);
+    expect(note({ withdrawn_on: '2026-02-30' }).success).toBe(false);
+    expect(note({ sha256: 'a'.repeat(64) }).success).toBe(false);
+    expect(coverageWithdrawnNoteSchema.safeParse({ format: 'tp-coverage-withdrawn/1', previous_release: 3, withdrawn: [] }).success).toBe(false);
   });
 });

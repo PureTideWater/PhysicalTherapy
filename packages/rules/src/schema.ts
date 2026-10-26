@@ -62,12 +62,101 @@ export const DENIAL_CATEGORIES = [
 
 /** CMS quarterly releases of the physician fee schedule files: A January, B April, C July, D October. */
 export const CMS_QUARTERS = ['A', 'B', 'C', 'D'] as const;
-export type CmsQuarter = (typeof CMS_QUARTERS)[number];
+export type CmsQuarterLetter = (typeof CMS_QUARTERS)[number];
 
 /** The CMS quarter a date falls in (January to March is A). */
-export function cmsQuarterOf(isoDateText: string): CmsQuarter {
+export function cmsQuarterOf(isoDateText: string): CmsQuarterLetter {
   const month = Number.parseInt(isoDateText.slice(5, 7), 10);
   return CMS_QUARTERS[Math.floor((month - 1) / 3)] ?? 'A';
+}
+
+// ---------------------------------------------------------------------------------------------
+// Quarterly and undated files (audit #30, docs/adr/0071)
+
+/** Files with no dates of their own that change every CMS quarter: imported for a window inside one quarter (audit #30, ADR 0071). */
+export const QUARTERLY_RECORD_TYPES = ['pfs_rvu', 'pfs_gpci', 'ncci_mue', 'locality_map', 'locality_map_plus_four'] as const satisfies readonly RuleRecordType[];
+export type QuarterlyRecordType = (typeof QUARTERLY_RECORD_TYPES)[number];
+/** Files with no dates of their own: the quarterly ones and the annual MPPR list. A window read from one is never open. */
+export const UNDATED_RECORD_TYPES = [...QUARTERLY_RECORD_TYPES, 'mppr_rate'] as const satisfies readonly RuleRecordType[];
+
+/** A CMS quarter of a year: quarter 1 is January to March. */
+export interface CmsQuarter {
+  readonly year: number;
+  readonly quarter: 1 | 2 | 3 | 4;
+}
+
+function twoDigits(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** The quarter's first and last days. */
+export function cmsQuarterWindow(q: CmsQuarter): { readonly from: string; readonly to: string } {
+  const year = String(q.year).padStart(4, '0');
+  const lastMonth = q.quarter * 3;
+  // Day 0 of the month after the quarter is the quarter's last day.
+  const lastDay = new Date(Date.UTC(q.year, lastMonth, 0)).getUTCDate();
+  return { from: `${year}-${twoDigits(lastMonth - 2)}-01`, to: `${year}-${twoDigits(lastMonth)}-${twoDigits(lastDay)}` };
+}
+
+/** The quarter a date falls in. */
+export function cmsQuarterOfDate(date: string): CmsQuarter {
+  const month = Number.parseInt(date.slice(5, 7), 10);
+  return { year: Number.parseInt(date.slice(0, 4), 10), quarter: (Math.floor((month - 1) / 3) + 1) as CmsQuarter['quarter'] };
+}
+
+function sameQuarter(a: CmsQuarter, b: CmsQuarter): boolean {
+  return a.year === b.year && a.quarter === b.quarter;
+}
+
+/** The quarter holding both ends of [from, to] (a whole quarter, or a correction's part of one); null when open or across two quarters. */
+export function windowQuarter(from: string, to: string | null): CmsQuarter | null {
+  if (to === null || to < from) {
+    return null;
+  }
+  const quarter = cmsQuarterOfDate(from);
+  return sameQuarter(quarter, cmsQuarterOfDate(to)) ? quarter : null;
+}
+
+/** The quarter when [from, to] is exactly one CMS quarter; null otherwise (an open window included). */
+export function exactCmsQuarter(from: string, to: string | null): CmsQuarter | null {
+  const quarter = windowQuarter(from, to);
+  if (quarter === null) {
+    return null;
+  }
+  const whole = cmsQuarterWindow(quarter);
+  return whole.from === from && whole.to === to ? quarter : null;
+}
+
+/** Whether [from, to] has an end and lies inside from's calendar year (the per-code MPPR list's rule). */
+export function insideOneYear(from: string, to: string | null): boolean {
+  return to !== null && to >= from && to.slice(0, 4) === from.slice(0, 4);
+}
+
+/**
+ * The windows a quarterly import may take for a stated quarter: from on or after the quarter's first day (equal to
+ * `effective` when the file states a day), to on or before its last day, from <= to. `missing` when either end is not
+ * given; `outside` when the window leaves the quarter or is open; `not_effective_day` when it starts on a day other
+ * than the one the file states.
+ */
+export function quarterWindowProblem(
+  stated: CmsQuarter,
+  effective: string | null,
+  from: string | undefined,
+  to: string | null | undefined,
+): 'missing' | 'outside' | 'not_effective_day' | null {
+  if (from === undefined || to === undefined) {
+    return 'missing';
+  }
+  const whole = cmsQuarterWindow(stated);
+  if (to === null || from < whole.from || to > whole.to || from > to) {
+    return 'outside';
+  }
+  return effective !== null && from !== effective ? 'not_effective_day' : null;
+}
+
+/** "2026-Q4", the form the screening already shows (apps/worker/src/screening/format.ts). */
+export function quarterLabel(q: CmsQuarter): string {
+  return `${String(q.year)}-Q${String(q.quarter)}`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -456,7 +545,7 @@ export const ruleRecordSchema = envelope
       });
     }
     if (record.record_type === 'pfs_rvu' && body.success && isIsoDate(record.effective_from)) {
-      const { year, quarter } = record.value as { year: number; quarter: CmsQuarter };
+      const { year, quarter } = record.value as { year: number; quarter: CmsQuarterLetter };
       if (String(year) !== record.effective_from.slice(0, 4) || quarter !== cmsQuarterOf(record.effective_from)) {
         context.addIssue({
           code: 'custom',
