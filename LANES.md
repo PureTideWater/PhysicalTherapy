@@ -254,5 +254,13 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **If wanted:** a way to reopen a closed organization (none exists, so #56 promises none).
   - Status: `approval-summaries/lane-b-ux-suspended-standing-status.md`.
 
+- **2026-10-26, from Lane B's release content checks (#49), found by its real-size test (audit #31's point): SUITE-CAP-1, a capacity defect, for Lane A.**
+  - **What fails:** under the quarterly scale release 900110 (4.17 M records), a large practice's month (100,000 lines) prices within the worker task (peak 804 MiB of 1,024, no restarts). But its triage fails, and so does the audit report that triages inline: Postgres 53200 "out of shared memory".
+  - **Why:** `line_status_rules()` takes a `pg_advisory_xact_lock` per line inside one ~60,000-line triage transaction, exhausting `max_locks_per_transaction`. The trigger is in the applied migrations, so the defect predates #49.
+  - **The fix is Lane A's:** a migration (one lock per run or practice instead of per line, or a batched transaction), or an RDS parameter.
+  - **Until it is fixed,** the weekly release-capacity workflow #49 adds fails on its first scheduled run. Schedules fire only from the default branch, so this starts once the default branch moves to `claude/build-platform` (F1 (a), due when ci-deps merges).
+  - **Advisory:** the per-content windows query takes 10 to 13 s cold at real size, against a 5 s budget (the stored-windows proposal with #8).
+  - Status: `approval-summaries/lane-b-release-content-checks-status.md`.
+
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.

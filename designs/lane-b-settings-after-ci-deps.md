@@ -23,3 +23,7 @@ Request Desktop Website; Chrome: ⋮ → Desktop site).
   confirms it, and the next workflow run that starts after it shows it holds (an unpinned action would fail to start).
 
 Then the ci-deps session reads Dependabot's first runs after the switch (§3.2.5 step 12) and logs them.
+
+**Note for F1 (2026-10-26):** once the default branch moves, scheduled workflows fire from `claude/build-platform`.
+#49's weekly release-capacity workflow, if #49 has merged, fails on its first run until Lane A fixes SUITE-CAP-1
+(LANES.md "Handed to Lane A"). That failure is the known defect, not a new one. Do not delay F1 for it.
