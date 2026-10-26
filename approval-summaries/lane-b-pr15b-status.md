@@ -1,6 +1,6 @@
 # PR 15b status (ledger amounts in payment terms; audit #12)
 
-Open questions: none. Standing ruling (the co-founder, 2026-10-26 ~00:20 UTC, relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize": every choice takes the recommended option (security: the safer one), recorded with its reasons; founder-kept matters (domain model, release tags, owner-admin settings, legal text) stay out of scope, so a migration is still never Lane B's.
+Open questions: none. DONE: merged as c355633 on 2026-10-26 ~13:00 UTC. Standing ruling (the co-founder, 2026-10-26 ~00:20 UTC, relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize": every choice takes the recommended option (security: the safer one), recorded with its reasons; founder-kept matters (domain model, release tags, owner-admin settings, legal text) stay out of scope, so a migration is still never Lane B's.
 
 | UTC | Stage | Note |
 |---|---|---|
@@ -32,9 +32,13 @@ Open questions: none. Standing ruling (the co-founder, 2026-10-26 ~00:20 UTC, re
 | 2026-10-26 ~11:45 | Base merged | 1eb8415: claude/build-platform 9d3ab33 (PRs #50, #53, #54, #55) merged in, clean. pnpm install, watched-paths and synth unchanged; typecheck 22 projects, lint, lint:copy, unit 5,409 passed. Pushed 1eb8415. |
 | 2026-10-26 11:44 | Description and gallery | PR description rewritten (fix-round findings table, final words, checks) and verified identical. Private gallery of 77 shots (69 with their base pair), named by shot id: https://claude.ai/artifact/WkaU4douGEKQtiodMozYhP. 1280 px dark not captured (the review predates #55's template line; the app has no way to reach dark). |
 
-- PR: #51 (draft), head 1eb8415; CI running. CI: green on 0e086ed.
-- Findings: none yet.
-- Next step: CI green on 1eb8415, then the fresh-clone verification that reads CI, then mark ready and merge (merging the base again first if it moved).
-- Follow-up proposal (display only, outside the merge): the claim-level allocation sentence's "($X of $Y)" shows every taking line's weights, which is approximate where lines kept their parts; the amounts are right.
-- Proposals outside this PR (for Lane A, which owns frozen ledger behaviour): (1) remittances.ts recordInterest flags interest 'allocated' when several lines are named even if only one carries a weight; set it from the lines with a positive weight. (2) A claim with AMT I that is also paid by a PLB L6 naming it would have its interest credited twice (claimInterest and providerAdjustments); record it once, with a fixture. (3) ledger_match.matched_at is the transaction's now() and its id random, so matches made in one reconcile have no stored order; a sequence column would make the order explicit (a migration).
-- #46 the Verified seal: queued, not started (orchestrator's wind-down, 2026-10-26 10:09 UTC: weekly usage at 90%; Lane B hands over to Lane A tomorrow morning).
+| 2026-10-26 ~12:10 | CI | 1eb8415: 26 success, notify skipped. The base had moved to 0e28f9b (#52, #56). |
+| 2026-10-26 ~12:15 | Base merged again | 8f35161: 0e28f9b merged in, clean (rule 6). Typecheck, lint, lint:copy, unit 5,857 passed; watched-paths and synth unchanged. Pushed. |
+| 2026-10-26 ~12:37 | CI | 8f35161: 26 success, notify skipped; db 9,169 + 1 skipped, unit 5,859 + 1 skipped, e2e 54; mutation gate passed. |
+| 2026-10-26 ~12:50 | Verified | Fresh-clone verification of 8f35161 (wf_353c7ea1-be7): pass; findings three nits (description lacked the 0e28f9b merge: added and read back identical; LANES.md claim row stale: the orchestrator's; local PG restarted). approval-summaries/lane-b-pr15b-verify-summary.md. |
+| 2026-10-26 ~13:00 | Merged | Marked ready; approval-of-record re-ran green; merged with method merge and expectedHeadSha 8f35161 as **c355633**. Unsubscribed. Worktree /home/user/pr15b and the local branch removed (remote branch kept); main checkout fast-forwarded to c355633 and pnpm install run; my test databases dropped. Push runs on c355633 (ci, mutation, screening-capacity) in progress at 12:42. |
+
+- PR: #51 merged as c355633 (head 8f35161).
+- Next step: none for 15b, apart from reading the push runs on c355633. #46 (the Verified seal) is queued, not started.
+- Left on the machine, not mine to judge: databases tp_test_b53257f5…, tp_test_b8ed60ff… (test-harness names, origin unknown) and /tmp/tp-e2e-* directories; a broad sweep was refused, so they stay.
+- Follow-up proposals (for whoever takes them): the claim-level allocation sentence's "($X of $Y)" is approximate where lines kept their parts (display only); Lane A: the interest 'allocated' flag (N1), AMT I + PLB L6 interest credited twice, a sequence column for ledger_match order within one reconcile, an index on claim.superseded_by_claim_id (claimLines' recursive ancestor lookup scans).
