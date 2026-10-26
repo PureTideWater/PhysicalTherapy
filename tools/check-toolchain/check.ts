@@ -679,14 +679,15 @@ function overrideApplies(lockfile: Lockfile, selector: string, version: string):
 
 function overridesRule(head: Config): Finding[] {
   const rule = 'overrides';
-  const declared: Record<string, string> = { ...head.packageJson.pnpm?.overrides, ...head.workspace.overrides };
-  const findings = sameMembers(
-    rule,
-    Object.entries(declared).map(([selector, version]) => `${selector}: ${version}`),
-    `the pnpm overrides (${FILES.workspace}, ${FILES.packageJson})`,
-    head.overrides.map((entry) => `${entry.selector}: ${entry.version}`),
-    FILES.overrides,
-  );
+  // pnpm 10.34.8 applies package.json's resolutions (Yarn's field) and pnpm.overrides, and the workspace's overrides.
+  const declared: Record<string, string> = { ...head.packageJson.resolutions, ...head.packageJson.pnpm?.overrides, ...head.workspace.overrides };
+  const pairs = (map: Readonly<Record<string, string>>) => Object.entries(map).map(([selector, version]) => `${selector}: ${version}`);
+  const entries = head.overrides.map((entry) => `${entry.selector}: ${entry.version}`);
+  const findings = sameMembers(rule, pairs(declared), `the pnpm overrides (${FILES.workspace}, ${FILES.packageJson})`, entries, FILES.overrides);
+  // S3: the lockfile's own map is what pnpm applied, from any source; a frozen install refuses one that differs.
+  if (head.lockfile !== null) {
+    findings.push(...sameMembers(rule, pairs(head.lockfile.overrides ?? {}), `${FILES.lockfile}'s overrides (what pnpm applied)`, entries, FILES.overrides));
+  }
   for (const entry of head.overrides) {
     if (declared[entry.selector] === entry.version && head.lockfile !== null && !overrideApplies(head.lockfile, entry.selector, entry.version)) {
       findings.push({ level: 'error', rule, message: `the override ${entry.selector}: ${entry.version} no longer applies to anything ${FILES.lockfile} resolves (its target left); remove it and its entry (removal trigger: ${entry.removeWhen})` });

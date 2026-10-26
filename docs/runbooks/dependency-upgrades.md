@@ -156,7 +156,9 @@ A transitive package moves by a lockfile refresh when its parent's range allows 
 that parent (`"parent@major>child": "x.y.z"`), and add its entry to `tools/check-toolchain/overrides.json`: the selector,
 the version, the reason, the date added and `removeWhen`, the event that makes it unnecessary (the parent moving to a
 range that allows the fix). `check-toolchain` fails an override without its entry, or one whose target has left the
-lockfile; remove both then. The qs override (`typed-rest-client@2>qs`, 6.16.1) goes when Stryker depends on
+lockfile; remove both then. It reads every place pnpm takes an override from: `pnpm-workspace.yaml`, `package.json`'s
+`pnpm.overrides` and its `resolutions` (Yarn's field, which pnpm applies as overrides), and holds `overrides.json` equal
+to the lockfile's own `overrides` map, which records what pnpm applied. Write an override in `pnpm-workspace.yaml` only. The qs override (`typed-rest-client@2>qs`, 6.16.1) goes when Stryker depends on
 typed-rest-client 3, or on a typed-rest-client whose qs range reaches 6.16.0.
 
 ## pnpm itself

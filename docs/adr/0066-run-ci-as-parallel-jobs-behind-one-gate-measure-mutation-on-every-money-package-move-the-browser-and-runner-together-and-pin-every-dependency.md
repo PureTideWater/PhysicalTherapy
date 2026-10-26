@@ -502,7 +502,9 @@ in `static`, networked, against the range step's base reduced with `git merge-ba
   refuses `trustPolicyIgnoreAfter`, and any trust-policy or release-age key in `.npmrc`, so the two gates have one
   source and the check reads it;
 - `trust-exceptions.json` equals `trustPolicyExclude`, each entry still in the lockfile; `audit-exceptions.json` equals
-  `auditConfig.ignoreGhsas` (empty), an entry over 30 days old failing; each override has its entry;
+  `auditConfig.ignoreGhsas` (empty), an entry over 30 days old failing; each override has its entry, whether it comes
+  from `pnpm-workspace.yaml`, `package.json`'s `pnpm.overrides` or Yarn's `resolutions` (which pnpm applies too), and
+  `overrides.json` also equals the lockfile's own `overrides` map, which is what pnpm applied whatever the source;
 - every networked read fails closed after three tries, naming the host.
 
 `static` keeps `pnpm audit --prod` and adds `pnpm audit --audit-level=high`; both pass, qs and fast-uri being

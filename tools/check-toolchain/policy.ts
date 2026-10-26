@@ -2,8 +2,9 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 
 /**
- * What check-toolchain reads: package.json's packageManager and pnpm overrides, pnpm-workspace.yaml's gates, the
- * lockfile's resolved versions, and the four lists kept beside the checker, each entry with its reason and dates.
+ * What check-toolchain reads: package.json's packageManager and overrides (pnpm.overrides, resolutions),
+ * pnpm-workspace.yaml's gates, the lockfile's resolved versions and overrides, and the four lists kept beside the checker,
+ * each entry with its reason and dates.
  */
 
 /** F2 (b), the founder's ruling of 2026-10-25: three days, in minutes. The workspace may raise it, never lower it. */
@@ -63,6 +64,8 @@ const overridesSchema = z.record(z.string(), z.string());
 export const packageJsonSchema = z.looseObject({
   packageManager: z.string().optional(),
   pnpm: z.looseObject({ overrides: overridesSchema.optional() }).optional(),
+  /** Yarn's field, which pnpm applies as overrides beneath `pnpm.overrides`. */
+  resolutions: overridesSchema.optional(),
 });
 export type PackageJson = z.infer<typeof packageJsonSchema>;
 
@@ -85,6 +88,8 @@ const snapshotSchema = z
 
 export const lockfileSchema = z.looseObject({
   lockfileVersion: z.union([z.string(), z.number()]),
+  /** The overrides pnpm applied, selector to specifier, whatever their source; a frozen install refuses a lockfile whose map differs from the manifests'. */
+  overrides: overridesSchema.nullable().optional(),
   packages: z.record(z.string(), z.unknown()).nullable().optional(),
   snapshots: z.record(z.string(), snapshotSchema).nullable().optional(),
 });
@@ -112,7 +117,7 @@ export const trustExceptionsSchema = z.strictObject({
   entries: z.array(z.strictObject({ package: z.string(), reason, added: z.iso.date() })),
 });
 
-/** tools/check-toolchain/overrides.json: equal to the workspace's and package.json's pnpm overrides. */
+/** tools/check-toolchain/overrides.json: equal to the workspace's and package.json's overrides (pnpm.overrides and resolutions), and to the lockfile's own map. */
 export const overrideEntriesSchema = z.strictObject({
   $comment: z.string().optional(),
   entries: z.array(z.strictObject({ selector: z.string().min(1), version: z.string().min(1), reason, removeWhen: z.string().min(10), added: z.iso.date() })),

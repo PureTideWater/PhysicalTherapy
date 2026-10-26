@@ -305,18 +305,35 @@ describe('check-toolchain', () => {
     const old = { 'old-lib': { '1.0.0': '2024-01-01T00:00:00.000Z' }, 'typed-rest-client': { '2.3.1': '2025-01-01T00:00:00.000Z' }, qs: { '6.16.1': '2026-10-14T22:06:00.000Z' } };
     const registry = () => fakeRegistry({ times: old });
     const workspace = { overrides: { 'typed-rest-client@2>qs': '6.16.1' } };
-    expect(problems(await run(tree({ workspace, locked, snapshots: snapshots(applied), overrides: [entry] }), tree(), { registry: registry() }))).toEqual([]);
-    expect(problems(await run(tree({ workspace, locked, snapshots: snapshots(applied) }), tree(), { registry: registry() }))).toEqual([
+    const lockOverrides = workspace.overrides;
+    expect(problems(await run(tree({ workspace, lockOverrides, locked, snapshots: snapshots(applied), overrides: [entry] }), tree(), { registry: registry() }))).toEqual([]);
+    expect(problems(await run(tree({ workspace, lockOverrides, locked, snapshots: snapshots(applied) }), tree(), { registry: registry() }))).toEqual([
       'overrides: the pnpm overrides (pnpm-workspace.yaml, package.json) lists typed-rest-client@2>qs: 6.16.1, which tools/check-toolchain/overrides.json does not; the two lists are kept equal',
+      "overrides: pnpm-lock.yaml's overrides (what pnpm applied) lists typed-rest-client@2>qs: 6.16.1, which tools/check-toolchain/overrides.json does not; the two lists are kept equal",
     ]);
     expect(problems(await run(tree({ locked, snapshots: snapshots(applied), overrides: [entry] }), tree(), { registry: registry() }))).toEqual([
       'overrides: tools/check-toolchain/overrides.json lists typed-rest-client@2>qs: 6.16.1, which the pnpm overrides (pnpm-workspace.yaml, package.json) does not; the two lists are kept equal',
+      "overrides: tools/check-toolchain/overrides.json lists typed-rest-client@2>qs: 6.16.1, which pnpm-lock.yaml's overrides (what pnpm applied) does not; the two lists are kept equal",
     ]);
     // typed-rest-client 3 no longer depends on qs 6.16.1 through this selector: the override applies to nothing.
     const moved = { 'typed-rest-client@3.1.2': { qs: '6.16.1' }, 'qs@6.16.1': {}, 'semver@6.3.1': {} };
-    const findings = await run(tree({ workspace, locked: Object.keys(moved), snapshots: snapshots(moved), overrides: [entry] }), tree(), { registry: fakeRegistry({ times: { ...old, 'typed-rest-client': { '3.1.2': '2025-06-01T00:00:00.000Z' } } }) });
+    const findings = await run(tree({ workspace, lockOverrides, locked: Object.keys(moved), snapshots: snapshots(moved), overrides: [entry] }), tree(), { registry: fakeRegistry({ times: { ...old, 'typed-rest-client': { '3.1.2': '2025-06-01T00:00:00.000Z' } } }) });
     expect(problems(findings)).toEqual([
       'overrides: the override typed-rest-client@2>qs: 6.16.1 no longer applies to anything pnpm-lock.yaml resolves (its target left); remove it and its entry (removal trigger: the parent moves to a fixed range)',
+    ]);
+  });
+
+  it("reads package.json's resolutions as overrides, and holds overrides.json to the lockfile's own overrides map (S3)", async () => {
+    // pnpm applies Yarn's resolutions as overrides: one entering there needs its entry like any other.
+    expect(problems(await run(tree({ packageJson: { resolutions: { 'old-lib': '1.0.0' } }, lockOverrides: { 'old-lib': '1.0.0' } })))).toEqual([
+      'overrides: the pnpm overrides (pnpm-workspace.yaml, package.json) lists old-lib: 1.0.0, which tools/check-toolchain/overrides.json does not; the two lists are kept equal',
+      "overrides: pnpm-lock.yaml's overrides (what pnpm applied) lists old-lib: 1.0.0, which tools/check-toolchain/overrides.json does not; the two lists are kept equal",
+    ]);
+    const entry = { selector: 'old-lib', version: '1.0.0', reason: 'synthetic: the parent pins a version with advisories', removeWhen: 'the parent moves to a fixed range', added: '2026-10-27' };
+    expect(problems(await run(tree({ packageJson: { resolutions: { 'old-lib': '1.0.0' } }, lockOverrides: { 'old-lib': '1.0.0' }, overrides: [entry] })))).toEqual([]);
+    // The lockfile's map is what pnpm applied, whatever its source: one there and in no manifest is refused.
+    expect(problems(await run(tree({ lockOverrides: { 'old-lib': '1.0.0' } })))).toEqual([
+      "overrides: pnpm-lock.yaml's overrides (what pnpm applied) lists old-lib: 1.0.0, which tools/check-toolchain/overrides.json does not; the two lists are kept equal",
     ]);
   });
 
