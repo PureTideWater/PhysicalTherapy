@@ -1,0 +1,134 @@
+{
+ "findings": {
+  "dispositions": [
+   {
+    "finding": "E1 (engine, minor): mutation score and survivors not obtained for packets-explain",
+    "disposition": "deferred",
+    "how": "Mutation survivors are the later agent's job, as the task says. The source changes in this round add new mutants to kill: the integer form, the payer's flag sentence, the patient-share wording, the 'needed no rounding' branch and the MA rate_record refusal."
+   },
+   {
+    "finding": "E2 (engine, minor): words-version mismatch in the export job showed 'The PDF could not be printed.', was retried twice and held the singleton",
+    "disposition": "fixed",
+    "how": "c5eb6ddd. The failure code IS constrained by the database: trigger audit_event_packet_export_attempt checks purpose against packet_export_failure_codes() (migration 20261103090000, lines 1512-1535). So the code stays render_failed. packetExportHandler now records packet_export_failed at once (the last try), logs PACKET_EXPORT_WORDS_CHANGED and returns without throwing, so there is no retry and the singleton is freed. EXPORT_FAILURE_TEXT.render_failed now names the cause, and the page's 'Ask for the export again' gives the remedy. PacketExportWordsVersionError was removed. Tests: export-attempts.db.test.ts and approval.test.ts. ADR 0072 updated. LANE A PROPOSAL: add 'words_changed' to packet_export_failure_codes() (a migration plus a domain-model regeneration) with its own web text. Note: job_run records 'succeeded' for this path, as it already does for refusals; marking it 'refused' would need a worker.ts/worker.test.ts change, and worker.test.ts is a #42 file."
+   },
+   {
+    "finding": "E3 (engine, minor): WORDS_VERSION could be bypassed by a sentence edit without a RENDERER_REVISION bump",
+    "disposition": "fixed",
+    "how": "3428aefa. New test packages/packets/src/explain/sentence-forms.test.ts pins the SHA-256 of explain/line.ts, worksheet.ts and figures.ts beside the revision. Any edit fails until RENDERER_REVISION is raised (which moves WORDS_VERSION) and the pin is rewritten. It is excluded from mutation runs in vitest.mutation.config.ts, as purity.test.ts is, because Stryker rewrites the source. RENDERER_REVISION is 3, WORDS_VERSION is 4e9fac65..., and the golden pins were rewritten with vitest -u."
+   },
+   {
+    "finding": "E4 (engine, nit): MEDICARE_ROUNDING_ORIGIN_TEXT.rate_record said 'the rate record's rule'",
+    "disposition": "fixed",
+    "how": "3428aefa. The entry is removed (the table type now excludes rate_record). roundingStep throws ExplainShapeError for a Medicare Advantage line whose origin is rate_record. A line.test covers all three audiences."
+   },
+   {
+    "finding": "E5 (engine, nit): the payer copy printed Medicare reductions on a commercial line without saying the contract applies them",
+    "disposition": "fixed",
+    "how": "3428aefa. termsStep for the payer adds 'The contract applies these Medicare reductions: ...' for the mppr, assistant and sequestration flags that are on (never NCCI, never a flag that is off, not on MA lines). Covered by line.test and the golden pins."
+   },
+   {
+    "finding": "E6 (engine, nit): the figures.ts doc said exact_dollars keeps every fraction digit",
+    "disposition": "fixed",
+    "how": "3428aefa. The comment now says trailing zeros of the fraction of a cent are dropped and the value is unchanged."
+   },
+   {
+    "finding": "U1 (UX, blocker) / CI e2e (2/2): the line trace page was 509 px wide at 390 px; pricing.spec:25 and viewer-phi.spec:70 failed",
+    "disposition": "fixed",
+    "how": "5da8e366. I verified and committed the uncommitted break-all fix on the nine font-mono IDs/hashes in lines/[lineId]/page.tsx (the manifest SHA-256 was the overflow). Locally I ran pricing.spec, viewer-phi.spec, layout-1280.spec and packets.spec with apps/web built by the playwright config: 5 passed, phone-width checks included."
+   },
+   {
+    "finding": "U2 (UX, major): step, row and worksheet titles were not headings; the review's calculation had no heading",
+    "disposition": "fixed",
+    "how": "bad4c48f. Line trace step titles are h3 under the Trace h2, and the worksheet title is h4. CalculationWords and WorksheetView take a heading level: the builder uses h3 rows and an h3 'Fee schedule worksheets' with h4 sheets; the review uses its own h3 'Calculation per line' with h4 rows and h5 sheets. The region names 'Calculations', 'Trace' and 'Trace steps' are kept. Component tests and e2e (pricing, packets, layout-1280) assert the headings."
+   },
+   {
+    "finding": "U3 (UX, major): step numbering had two 'Step 2's, NCCI PTP and Per visit fell back to labels, and the viewer skipped Step 4",
+    "disposition": "fixed",
+    "how": "bad4c48f. TITLES now read 'Step 2, continued: the fee schedule', 'Step 3, continued: the per-visit amount' and 'Step 3, continued: National Correct Coding Initiative (NCCI) procedure-to-procedure edits'. I used 'Step 3, continued' rather than the reviewer's 'Step 2, continued' for per-visit because the trace orders it after units. The viewer gets every worded part with the same titles and 'Does not apply to this line.' or 'Not reached.'. Covered by view.test, line-words.test and viewer-phi.spec."
+   },
+   {
+    "finding": "U4 (UX, minor): 'Dates are left out for your role.' claimed more than the page does",
+    "disposition": "fixed",
+    "how": "bad4c48f. The note now reads 'These steps leave out the line\u2019s dates for your role.' (VIEWER_DATES_NOTE). The tests and viewer-phi.spec are updated. Whether a viewer should see the payment date is a separate finding outside this PR."
+   },
+   {
+    "finding": "U5 (UX, minor): the builder card and the checklist promised a fee schedule worksheet most lines lack",
+    "disposition": "fixed",
+    "how": "bad4c48f (card text) and 0f6a910b (checklist item text: '...the fee schedule worksheet where the line used the fee schedule...'). The id is unchanged, and review.test is updated."
+   },
+   {
+    "finding": "U6 (UX, minor): the payer's words repeated figures (patient share twice, observed allowed three times, '$100.00 becomes $100.00')",
+    "disposition": "fixed",
+    "how": "3428aefa: the payer's observed step states the basis only; rounding reads 'X needed no rounding.' when the unrounded and rounded texts are equal. b0bf52fd: the PDF's Patient share column is dropped, because the words carry it on all three surfaces and builder/review have no such column. Golden pins and export.test are updated."
+   },
+   {
+    "finding": "U7 (UX, minor): bare codes in the internal and viewer words",
+    "disposition": "fixed",
+    "how": "3428aefa. MUE and NCCI are written out at use ('medically unlikely edit (MUE)', 'National Correct Coding Initiative (NCCI) edits'). The patient share now reads 'the remittance\u2019s patient responsibility adjustments (group PR): reason code 2, $14.00 ... The Adjustments table lists each.', and an adjustment of another group is refused. AMT B6 reads 'the allowed amount the payer states for the line (AMT B6)'. The NCCI PTP title is fixed in bad4c48f."
+   },
+   {
+    "finding": "U8 (UX, minor): fourteen identical 'As the engine recorded it' summaries with small hit areas",
+    "disposition": "fixed",
+    "how": "bad4c48f. Each summary has a visually hidden ': {step title}' and is min-h-6 with py-1 and text-sm (at least 24 px). Covered by line-words.test."
+   },
+   {
+    "finding": "U9 (UX, minor): the Other runs list dropped the unpriced reason",
+    "disposition": "fixed",
+    "how": "5da8e366. New otherRunReasonText() in lib/contracts/remedies.ts gives the reason's meaning word for word, with SECONDARY_PAYER worded as the engine stops it. It is shown as ', not priced: ...', data-reason is kept, and remedies.test covers it."
+   },
+   {
+    "finding": "U10 (UX, nit): the PDF calculation table's caption and header row were cut at the foot of page 2",
+    "disposition": "fixed",
+    "how": "b0bf52fd. CSS break rules in apps/worker/src/packets/html.ts: h2, h3 and caption break-after avoid; thead is table-header-group with break-after avoid; the first row has break-before avoid; rows have break-inside avoid. The rules are scoped to table:not(.pages). I reproduced the cut by padding the narrative (2 to 4 filler lines) before the fix; it is gone after. A new print-layout.test checks that the caption, header and row 1 share a page for 0 to 8 filler lines. No packet print baseline exists in the repo to regenerate."
+   },
+   {
+    "finding": "U11 (UX, nit): counts printed without a thousands separator",
+    "disposition": "fixed",
+    "how": "3428aefa: new 'integer' figure form (grouped by regex, no arithmetic) used for window.length, and count is grouped too; test-support's independent formatter and number tokenizer accept grouped integers. b0bf52fd: the worker's counted() is grouped ('3,650 days'). Covered by figures.test, line.test, line-words-routes.db.test and export.test."
+   },
+   {
+    "finding": "CI: e2e retry failure at helpers.ts:87 (hardware key already registered)",
+    "disposition": "not a defect",
+    "how": "This is the known #42 retry limit, already handed to Lane A in LANES.md; it is not this PR's code."
+   },
+   {
+    "finding": "CI: mutation gate (packets-explain shard survivors)",
+    "disposition": "deferred",
+    "how": "The later mutation agent handles it, per the task."
+   }
+  ],
+  "commits": [
+   "3428aefa Word the calculation more plainly and make any sentence edit move the words version",
+   "c5eb6ddd Fail an export asked for under another words version at once, without a retry",
+   "b0bf52fd Keep the PDF's calculation table with its first row, and drop its repeated patient share column",
+   "5da8e366 Let the line trace page's IDs and hashes break at 390 px, and say why an earlier run left the line unpriced",
+   "bad4c48f Make the calculation's titles real headings and number the trace's steps as one sequence",
+   "0f6a910b Ask the reviewer to confirm the fee schedule worksheet only where a line used the fee schedule"
+  ],
+  "checks": "All run under flock /tmp/laneb-heavy.lock with Node 24. Nothing was pushed.\n\nPassed:\n- packages/packets plus tools/golden-worksheet plus tools/stryker unit tests: 43 files, 958 tests.\n- tsc --noEmit for packages/packets, apps/worker and apps/web: clean.\n- eslint on the changed files: clean.\n- pnpm lint:copy: 503 files, no findings.\n- Worker unit tests (export, words, print-layout with Chromium, registry): 122 tests.\n- Web unit tests (components/pricing, components/packets, lib/pricing, lib/packets, lib/contracts, lib/copy): 88 tests.\n- Changed db tests: web line-words, payer-copy, pricing, workbench, export-attempts, unattested-submission, pricing-current and models routes, plus worker packets.db and export-attempts.db. 10 files, 105 tests.\n- e2e, apps/web built by the playwright config (not E2E_PREBUILT): pricing.spec, viewer-phi.spec, layout-1280.spec and packets.spec, 5 passed in 3.1 min.\n\nOther checks:\n- tools/screening-capacity/watched.ts --write left watched-paths.txt unchanged.\n- No package.json or lockfile change, no migration, nothing under packages/pricing, the ledger, content/releases or fixtures/golden.\n- Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-fix/progress/findings.md\n\nNot run: the full suites, Stryker and the mutation gate (left to the later agent), and the mutation shard for the new mutants.\n\nLane A proposal: a 'words_changed' failure code in packet_export_failure_codes(), which is a migration."
+ },
+ "mutation": {
+  "scores": "packets-explain shard, local run on the committed code (Node 24, under flock): 100.00%, 2006 of 2006 killed, 0 survived, 0 NoCoverage, 0 errors. By file: explain.ts 78/78, explain/figures.ts 223/223, explain/line.ts 1301/1301, explain/slots.ts 39/39, explain/version.ts 1/1, explain/words.ts 157/157, explain/worksheet.ts 203/203, words-version.ts 4/4. packets-rest shard, run again because payer.ts:158-162 survived in CI: 97.40% (1307 killed + 2 timeout; 33 survived + 2 NoCoverage). All of those are equivalents already recorded and reviewed in tools/stryker/equivalent/packets.json, with no unexplained mutant. readable.ts:59 has the same 2 load failures as before (Intl.Segmenter locale and granularity), which the gate allows. Stryker's local report (`gate.ts --shard`) shows no unexplained mutant in either shard; that view scores but does not judge the package. The full gate can't be run locally because it needs a canary.json from each shard run, which only CI produces. I did not run packets-scan: scan.ts and its tests are unchanged, and those tests don't use the changed test-support.ts. Before the commit: packets vitest 26 files / 567 tests pass (golden pins unchanged, so no words changed); tsc --noEmit is clean for packages/packets, apps/worker and apps/web; eslint is clean on the changed files; `tools/screening-capacity/watched.ts --write` left watched-paths.txt unchanged. Nothing was pushed, there is no package.json, lockfile or migration change, and no file from #42 was touched. The progress file is /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-fix/progress/mutation.md.",
+  "killed": 146,
+  "equivalents": [],
+  "commits": [
+   "7748abd3 Kill every mutant of the calculation words and the words version, with tests and without equivalents"
+  ]
+ },
+ "reviewer": {
+  "equivalentsReview": [
+   "I was given no equivalents to review (the list was []). The packets-explain re-run on the merged head confirms none are needed: 100.00% (2006/2006), 0 survived, 0 no coverage, 0 recorded equivalents.",
+   "The 35 packets-rest and 64 packets-scan recorded equivalents were already in place and already reviewed. They were not in my list, so I did not judge them. They are listed here only because the gate counts them.",
+   "Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-fix/progress/equivalents-review.md"
+  ],
+  "merge": "Merge commit 3fafa4e2 (git merge --no-ff origin/claude/build-platform at 7ef421be). What came in: PR #46 (readable database-function diffs), PR #47 (billing: bank account first) and PR #54 (settings amounts in dollars). There were 4 conflicts. (1) docs/product/test-matrix.md, (2) packages/synth/src/cases/matrix.ts and (3) packages/synth/src/cases/registry.ts: kept both lanes' rows (CAS-30 to CAS-34, then CAS-38 and CAS-39). (4) apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx: kept this branch's renderer words for Method and Adjustments, and the otherRunReasonText import. Those words already show each adjustment by name and in dollars in the mono face, which was PR #54's UX-3 goal. Its labelOf fallback would have printed a code with no words, which CAS-34 refuses. No base test pins that text. I removed the duplicate formatUnroundedUsd import the merge added. Lockfile unchanged (the frozen install was up to date). watched-paths.txt was regenerated with watched.ts --write and did not change. affected.ts against the previous head (7748abd3) says the merge affects no mutation shard.",
+  "suite": "Everything ran on 3fafa4e2, one command at a time under flock /tmp/laneb-heavy.lock. Every command exited 0.\n\n- install --frozen-lockfile: up to date.\n- typecheck: 22 projects pass.\n- lint: 1,530 files, 0 errors, 0 warnings.\n- lint:copy: 507 files pass.\n- lint:logs: 1,016 files pass.\n- verify-content: every content set passes.\n- check:fixtures: 248 files guarded, 3,518 searched.\n- synth --all: 208 cases, nothing changed.\n- engine freeze (tools/engine-freeze/check.ts against merge base 7ef421be, PR_NUMBER=52): no problems.\n- unit (pnpm test, ENGINE_FREEZE_BASE set): 340 files, 5,502 passed.\n- test:golden: 5 files, 343 passed.\n- oracle (synth --large, then test:oracle): pyx12 agrees on all 637 synthetic 835s (626 valid, 11 rejected as expected).\n- test:db in 4 shards, as CI does for this public repo, each on a fresh PG18 database: 1/4 31 files, 3,102 passed and 1 skipped; 2/4 30 files, 2,573; 3/4 30 files, 2,501; 4/4 30 files, 901. Total 121 files, 9,077 passed, 1 skipped.\n- db:domain-model --check --strict: matches (90 tables).\n- build: passes, stamped BUILD_COMMIT 3fafa4e2.\n- e2e with E2E_PREBUILT=1 --workers=2: build-stamp accepted 3fafa4e2; 51 passed (7.8 min).\n- Mutation, canary 5 of 5 in each shard:\n  - packets-explain: 100.00% (2006/2006) on all 8 files.\n  - packets-rest: only recorded equivalents undetected (35).\n  - packets-scan: scan.ts 93.95% (995/1059), 64 recorded equivalents.\n- Mutation gate (--expected the 3 packets shards): passed. packets 97.75% (4310/4409); all 99 undetected are recorded equivalents; 2 load failures (readable.ts) left out, as before.\n\nNot run locally: the money-ledger and the three pricing mutation shards. affected.ts run against the base selects all 7 shards for this PR, because the PR changes stryker/base.mjs, stryker/shards.json and tools/stryker/affected.ts. CI will run those four. The PR changes none of their source.",
+  "head": "3fafa4e22034c2472f267bef0040652672efbd1f (not pushed)",
+  "fixes": [
+   "No failures, so no fix commits.",
+   "Adversarial re-read of the diff against the base found no defect. Checked: none of the excluded paths changed (packages/pricing, ledger, content/releases, fixtures/golden, fixtures/synthetic/rules, migrations); the only #42 files touched are the shared docs, the synth matrix and registry, and watched-paths.txt; the PDF's HTML cells are escaped; the words version is checked on approve, on export request and in the job; the renderer does no arithmetic.",
+   "Note: one package.json does change: packages/packets/package.json gains the ./explain subpath export, added in 7fce82ed. The design (designs/lane-b-figures-in-words.md, sections 145 and 906) calls for it, and it adds no dependency and no lockfile change. I left it as it is.",
+   "Lane A proposal still open from the earlier round: add 'words_changed' to packet_export_failure_codes(). Until then the job records a words-version mismatch as render_failed."
+  ]
+ }
+}
