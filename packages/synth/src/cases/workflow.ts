@@ -9,7 +9,7 @@ import { type CalendarDate, addDays, calendarDate } from '../core/dates';
 import { prettyJson } from '../core/json';
 import { eftExport, postingExport } from '../formats/csv';
 import { dollars, reversalOf } from '../x12/factory';
-import { type Claim } from '../x12/model';
+import { type CasSegment, type Claim, type ServiceLine } from '../x12/model';
 import { type CaseBuilder } from './builder';
 import { therapyClaim, therapyLine, traceNumber } from './common';
 import { addExhibit } from './contracts';
@@ -416,6 +416,679 @@ export function led12(b: CaseBuilder): void {
     alone: 'loaded while the approval stands, adjustments-alone.835 and forward-balance-withheld.835 write no entry and no match',
     aloneCash: "adjustments-alone.835's 200.00 deposit and its 200.00 posting, loaded before the line is proved, match their remittance and prove nothing for the case line",
     case: 'reopened with a note; the owner is notified',
+  });
+}
+
+/**
+ * LED-14 to LED-18 (PR 15b, combined audit #12; docs/adr/0067): the payment-terms scenarios. Every case
+ * line is 97110 x 2 charged 150.00 on 2026-03-09 under SYNPLAN-FIX-LED with a patient's share, so the
+ * payer pays the allowed amount less that share and a line's ledger amounts differ from its allowed
+ * ones. Each line balances as charge = CO-45 + PR + paid.
+ */
+const LED_PLAN = 'SYNPLAN-FIX-LED';
+const LED_SERVICE_DATE = calendarDate(2026, 3, 9);
+/** Another patient's claims beside a case line's in a check: their service date, outside the case's priced month. */
+const OTHER_SERVICE_DATE = calendarDate(2026, 5, 11);
+
+/** The patient's share of a payment-terms line: 20% coinsurance (PR-2), the 20.00 copay (PR-3), or a deductible (PR-1) of the amount given. */
+type PaymentShare = 'coinsurance' | 'copay' | { readonly deductible: bigint };
+
+/** A 97110 x 2 line charged 150.00 and allowed `allowed` (AMT B6), CO-45 the rest of the charge, the patient's share as `share` says. */
+function shareLine(b: CaseBuilder, allowed: bigint, share: PaymentShare, modifiers?: readonly string[]): ServiceLine {
+  const spec = { code: '97110', units: 2, modifiers, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed, b6: true } as const;
+  return typeof share === 'string'
+    ? therapyLine(b.world, { ...spec, share })
+    : therapyLine(b.world, { ...spec, share: 'none', overrides: { patientShare: [{ reason: '1', amount: cents(share.deductible) }] } });
+}
+
+function ledBase(b: CaseBuilder): Basics {
+  return { ...basics(b, 'L'), date: LED_SERVICE_DATE, paid: calendarDate(2026, 4, 6) };
+}
+
+/** A case line's claim as first paid, its own control numbers. */
+function ledOriginal(b: CaseBuilder, n: number, lines: readonly ServiceLine[]): Claim {
+  return therapyClaim(b.world, { caseId: b.info.id, n, plan: LED_PLAN, lines });
+}
+
+/** A correction of `previous` (CLP frequency 7, REF F8 naming it) under the same patient and patient control number, with claim-level CAS when given. */
+function correctionOf(b: CaseBuilder, n: number, previous: Claim, lines: readonly ServiceLine[], adjustments?: readonly CasSegment[]): Claim {
+  return therapyClaim(b.world, {
+    caseId: b.info.id,
+    n,
+    patient: previous.patient,
+    patientControlNumber: previous.patientControlNumber,
+    plan: LED_PLAN,
+    frequencyCode: '7',
+    refs: [{ qualifier: 'F8', value: previous.payerClaimControlNumber }],
+    lines,
+    ...(adjustments === undefined ? {} : { adjustments }),
+  });
+}
+
+/** A 97110 x 2 line (with `modifiers`) charged 150.00 and allowed `allowed` (AMT B6) carrying only its CO-45: its patient's share sits at its claim's level. */
+function claimShareLine(b: CaseBuilder, allowed: bigint, modifiers?: readonly string[]): ServiceLine {
+  return therapyLine(b.world, { code: '97110', ...(modifiers === undefined ? {} : { modifiers }), units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed, b6: true, share: 'none' });
+}
+
+/** A 97110-59 x 2 line paid at its charge, 150.00, carrying no CAS of its own and no AMT B6. */
+function bareLine(b: CaseBuilder): ServiceLine {
+  return therapyLine(b.world, { code: '97110', modifiers: ['59'], units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed: 15000n, share: 'none' });
+}
+
+/** 20% coinsurance of `allowed` as a claim-level CAS (PR-2), so the claim pays CLP04 = SVC03 less it. */
+function coinsuranceAtClaim(allowed: bigint): CasSegment[] {
+  return [{ group: 'PR', items: [{ reason: '2', amount: cents(allowed / 5n) }] }];
+}
+
+/** A deductible (PR-1) and a coinsurance (PR-2) as claim-level CAS, each left out when zero. */
+function shareAtClaim(deductible: bigint, coinsurance: bigint): CasSegment[] {
+  const items = [
+    { reason: '1', amount: cents(deductible) },
+    { reason: '2', amount: cents(coinsurance) },
+  ].filter((item) => item.amount !== 0n);
+  return [{ group: 'PR', items }];
+}
+
+/** Another patient's claim paying 150.00 (97110 x 3), beside a reversal so the check's BPR02 is not negative. */
+function otherClaim(b: CaseBuilder, n: number): Claim {
+  return therapyClaim(b.world, { caseId: b.info.id, n, plan: LED_PLAN, lines: [allowedLine(b, OTHER_SERVICE_DATE, 3, 15000n, 'none')] });
+}
+
+function ledRemittance(b: CaseBuilder, base: Basics, n: number, paid: CalendarDate, claims: readonly Claim[], extra: NonNullable<Parameters<typeof oneRemittance>[4]> = {}) {
+  const remittance835 = oneRemittance(b, { ...base, paid }, claims, n, extra);
+  return { file: file(b, remittance835, n, paid), check: sumCents(claims.map((item) => item.paid)), trace: traceNumber(b.info.id, n, extra.method ?? 'ACH') };
+}
+
+function lineOf(claim: Claim, index = 0): ServiceLine {
+  const found = claim.lines[index];
+  if (found === undefined) {
+    throw new Error(`claim ${claim.payerClaimControlNumber} has no line ${index}`);
+  }
+  return found;
+}
+
+function allowedOf(serviceLine: ServiceLine): Cents {
+  return serviceLine.amounts?.find((amount) => amount.qualifier === 'B6')?.amount ?? cents(0n);
+}
+
+/** The line's PR adjustment of one reason (1 deductible, 2 coinsurance, 3 copay), 0 when it has none. */
+function shareOf(serviceLine: ServiceLine, reason: '1' | '2' | '3'): Cents {
+  return sumCents(serviceLine.adjustments.filter((segment) => segment.group === 'PR').flatMap((segment) => segment.items.filter((item) => item.reason === reason).map((item) => item.amount)));
+}
+
+function ledEntry(stage: string, amount: Cents, evidence?: string): Record<string, string> {
+  return { stage, amountCents: centsToString(amount), ...(evidence === undefined ? {} : { evidence }) };
+}
+
+/**
+ * LED-14: a correction on a line with 20% coinsurance. The original pays 56.00 of an allowed 70.00 (PR-2
+ * 14.00); the correction 80.00 of an allowed 100.00 (PR-2 20.00). The ledger approves the payer's 24.00,
+ * not the allowed 30.00; the line-level row of 80.00, the check-level row of 24.00 and the 24.00 deposit
+ * each prove 24.00, and the line is recovered; the patient's 6.00 is billable to the patient, counted in
+ * no total. A later reversal of the correction alone takes back the 24.00 paid, and a reissue after it
+ * (allowed 75.00, PR-2 15.00, paid 60.00) is approved for 4.00, its payment over the original's. The same
+ * correction in a check beside another patient's claim (174.00) posted in part (87.00) proves 12.00, the
+ * line's net share pro rata; and a lower reprocessing (allowed 87.50, PR-2 17.50, paid 70.00) loaded
+ * before the same reconcile takes back the payment decrease, 10.00. In its own practice (claim-level-*),
+ * the same coinsurance sent at the claim's level (the line SVC03 70.00 and 100.00, the claim's PR-2 14.00
+ * and 20.00, CLP04 56.00 and 80.00): the line's cash is its share of CLP04, so the ledger approves and
+ * deposits the 24.00 the payer paid, never the 30.00 of SVC03, and the claim's 6.00 more PR is billable
+ * to the patient, never another reduction (docs/adr/0067). The chain's machinery, each in its own
+ * practice (the engine review's S1 and S2): a claim found by patient control number and paid before a
+ * correction found by claim control number, both matched in one reconcile (order-*); a PLB WO of 10.00 on the
+ * correction, then a reissue allowed 110.00 paying 88.00 (withheld*.835); a correction allowed 100.00 paying
+ * 80.00 after the lower reprocessing (raised-again.835); and after the reversal, a reissue at the original's
+ * 70.00 and 56.00, then one allowed 60.00 paying 48.00 (unchanged.835, lower-after.835). The claim's level split
+ * by allowed amount (the engine re-check's R1 and R2), each in its own practice: three lines allowed 70.00 under a
+ * claim-level PR-2 of 42.00, the first raised to 100.00 and the PR-2 to 48.00, approve and deposit 24.00 on the first
+ * line and nothing on the others (claim-level-lines-*); and a case line beside a line paid at its charge with no CAS
+ * of its own takes the claim's whole PR-2 in its cash and its share, the 6.00 more billable, never another reduction
+ * (claim-level-bare-*). A claim-level change with one line stays on it (the engine re-check's RR1), each in its own
+ * practice: a met deductible beside a coinsurance rising 6.00 approves 24.00 (claim-level-met-*), a deductible and a
+ * coinsurance each rising 1.00 over three lines approve 28.00 (claim-level-both-*), and a deductible newly applied
+ * taking the whole rise approves nothing (claim-level-absorbed-*); and a 10.00 check short of two lines' 40.00
+ * proves line 1 first (RR2, claim-level-short-*).
+ */
+export function led14(b: CaseBuilder): void {
+  const base = ledBase(b);
+  const original = ledOriginal(b, 1, [shareLine(b, 7000n, 'coinsurance')]);
+  b.add835('original.835', ledRemittance(b, base, 1, base.paid, [original]).file, 'The original payment: 97110 x 2 allowed 70.00 against an expected 100.00 (a case line), CO-45 80.00, PR-2 coinsurance 14.00, paid 56.00.');
+  const adjustedOn = calendarDate(2026, 6, 8);
+  const corrected = correctionOf(b, 2, original, [shareLine(b, 10000n, 'coinsurance')]);
+  const adjusted = ledRemittance(b, base, 2, adjustedOn, [reversalOf(original), corrected]);
+  b.add835('adjusted.835', adjusted.file, 'The adjusted remittance: the original reversed (PR-2 -14.00, paid -56.00) and the correction allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00: BPR02 24.00.');
+  b.addFile(
+    'lines-posting-export.csv',
+    postingExport([{ postedOn: addDays(adjustedOn, 3), checkOrTrace: adjusted.trace, payerName: base.payer.name, claimReference: corrected.patientControlNumber, procedureCode: '97110', serviceDate: base.date, amount: corrected.paid, batch: 'SYNBATCH-1401' }]),
+    'csv',
+    'A posting export with line detail: one row posting the correction’s 80.00 on its 2026-03-09 line, the gross payment.',
+  );
+  b.addFile('posting-export.csv', postingExport([{ postedOn: addDays(adjustedOn, 3), checkOrTrace: adjusted.trace, payerName: base.payer.name, amount: adjusted.check, batch: 'SYNBATCH-1402' }]), 'csv', 'A posting export with one check-level row posting the adjusted check, 24.00.');
+  b.addFile('eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: adjusted.trace, amount: adjusted.check }]), 'csv', 'The bank export: one deposit of 24.00 matched by trace number and amount.');
+  const reversedOn = calendarDate(2026, 8, 3);
+  const reversal = ledRemittance(b, base, 3, reversedOn, [reversalOf(corrected), otherClaim(b, 3)]);
+  b.add835('reversal.835', reversal.file, "The correction reversed alone (PR-2 -20.00, paid -80.00) beside another patient's claim paying 150.00: BPR02 70.00.");
+  const reissue = correctionOf(b, 4, corrected, [shareLine(b, 7500n, 'coinsurance')]);
+  b.add835('reissued.835', ledRemittance(b, base, 4, calendarDate(2026, 9, 7), [reissue]).file, 'After the reversal, a reissue allowed 75.00, CO-45 75.00, PR-2 coinsurance 15.00, paid 60.00: BPR02 60.00.');
+  const shared = ledRemittance(b, base, 5, adjustedOn, [reversalOf(original), corrected, otherClaim(b, 5)]);
+  b.add835('shared-adjusted.835', shared.file, "The adjusted remittance's reversal and correction beside another patient's claim paying 150.00: BPR02 174.00 (loaded in place of adjusted.835).");
+  const sharedPosted = cents(shared.check / 2n);
+  b.addFile('shared-posting-export.csv', postingExport([{ postedOn: addDays(adjustedOn, 3), checkOrTrace: shared.trace, payerName: base.payer.name, amount: sharedPosted, batch: 'SYNBATCH-1403' }]), 'csv', 'A posting export with one check-level row posting part of the shared check, 87.00 of 174.00, no line detail.');
+  const lowered = correctionOf(b, 6, corrected, [shareLine(b, 8750n, 'coinsurance')]);
+  b.add835('lowered.835', ledRemittance(b, base, 6, calendarDate(2026, 7, 6), [reversalOf(corrected), lowered, otherClaim(b, 7)]).file, "A lower reprocessing: the correction reversed and paid again allowed 87.50, CO-45 62.50, PR-2 coinsurance 17.50, paid 70.00, beside another patient's claim paying 150.00: BPR02 140.00.");
+  const claimLevelOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 8, plan: LED_PLAN, lines: [claimShareLine(b, 7000n)], adjustments: coinsuranceAtClaim(7000n) });
+  b.add835(
+    'claim-level-original.835',
+    ledRemittance(b, base, 8, base.paid, [claimLevelOriginal]).file,
+    "Another patient's original payment (its own case line), the coinsurance at the claim's level: 97110 x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00 on the line, the claim's PR-2 coinsurance 14.00, CLP04 56.00.",
+  );
+  const claimLevelCorrected = correctionOf(b, 9, claimLevelOriginal, [claimShareLine(b, 10000n)], coinsuranceAtClaim(10000n));
+  const claimLevel = ledRemittance(b, base, 9, adjustedOn, [reversalOf(claimLevelOriginal), claimLevelCorrected]);
+  b.add835(
+    'claim-level-adjusted.835',
+    claimLevel.file,
+    "Its adjusted remittance: the original reversed (the claim's PR-2 -14.00, CLP04 -56.00) and the correction allowed 100.00, CO-45 50.00 and SVC03 100.00 on the line, the claim's PR-2 coinsurance 20.00, CLP04 80.00: BPR02 24.00.",
+  );
+  b.addFile('claim-level-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: claimLevel.trace, amount: claimLevel.check }]), 'csv', 'The bank export of that check: one deposit of 24.00 matched by trace number and amount.');
+  // The chain's machinery (the engine review's S1 and S2).
+  const byPatient = therapyClaim(b.world, { caseId: b.info.id, n: 10, patient: original.patient, patientControlNumber: original.patientControlNumber, plan: LED_PLAN, lines: [shareLine(b, 10000n, 'coinsurance')] });
+  b.add835('order-first.835', ledRemittance(b, base, 10, adjustedOn, [byPatient]).file, "A claim under a new claim control number with no REF F8, found by patient control number, service date and code: allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00: BPR02 80.00.");
+  const byControl = correctionOf(b, 11, original, [shareLine(b, 8750n, 'coinsurance')]);
+  b.add835('order-second.835', ledRemittance(b, base, 11, calendarDate(2026, 7, 7), [reversalOf(original), byControl]).file, 'Paid later, the original reversed (paid -56.00) and its correction, found by claim control number, allowed 87.50, CO-45 62.50, PR-2 coinsurance 17.50, paid 70.00: BPR02 14.00.');
+  const withheldCents = dollars('10.00');
+  b.add835(
+    'withheld.835',
+    ledRemittance(b, base, 12, calendarDate(2026, 8, 3), [otherClaim(b, 12)], {
+      providerAdjustments: [{ providerId: base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code: 'WO', reference: corrected.payerClaimControlNumber, amount: withheldCents }] }],
+    }).file,
+    `A later remittance whose PLB WO takes back 10.00 against the correction (${corrected.payerClaimControlNumber}), beside another patient's claim paying 150.00: BPR02 140.00.`,
+  );
+  const afterWithheld = correctionOf(b, 13, corrected, [shareLine(b, 11000n, 'coinsurance')]);
+  b.add835('withheld-reissued.835', ledRemittance(b, base, 13, calendarDate(2026, 9, 1), [reversalOf(corrected), afterWithheld]).file, 'Then the correction reversed (paid -80.00) and reissued allowed 110.00, CO-45 40.00, PR-2 coinsurance 22.00, paid 88.00: BPR02 8.00.');
+  const raisedAgain = correctionOf(b, 14, lowered, [shareLine(b, 10000n, 'coinsurance')]);
+  b.add835(
+    'raised-again.835',
+    ledRemittance(b, base, 14, calendarDate(2026, 8, 3), [reversalOf(lowered), raisedAgain, otherClaim(b, 15)]).file,
+    "After the lower reprocessing, it reversed (paid -70.00) and paid again allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00, beside another patient's claim paying 150.00: BPR02 160.00.",
+  );
+  const unchanged = correctionOf(b, 16, corrected, [shareLine(b, 7000n, 'coinsurance')]);
+  b.add835('unchanged.835', ledRemittance(b, base, 15, calendarDate(2026, 9, 14), [unchanged]).file, "After the reversal, a reissue at the original's amounts: allowed 70.00, CO-45 80.00, PR-2 coinsurance 14.00, paid 56.00: BPR02 56.00.");
+  const lowerAfter = correctionOf(b, 17, unchanged, [shareLine(b, 6000n, 'coinsurance')]);
+  b.add835(
+    'lower-after.835',
+    ledRemittance(b, base, 16, calendarDate(2026, 10, 5), [reversalOf(unchanged), lowerAfter, otherClaim(b, 18)]).file,
+    "Then that reissue reversed (paid -56.00) and paid again allowed 60.00, CO-45 90.00, PR-2 coinsurance 12.00, paid 48.00, beside another patient's claim paying 150.00: BPR02 142.00.",
+  );
+  // The claim-level split by allowed amount (the engine re-check's R1 and R2), each in its own practice.
+  const threeLines = (first: bigint) => [claimShareLine(b, first), claimShareLine(b, 7000n, ['59']), claimShareLine(b, 7000n, ['GP'])];
+  const linesOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 19, plan: LED_PLAN, lines: threeLines(7000n), adjustments: coinsuranceAtClaim(21000n) });
+  b.add835(
+    'claim-level-lines-original.835',
+    ledRemittance(b, base, 17, base.paid, [linesOriginal]).file,
+    "Another patient's original payment of three case lines, the coinsurance at the claim's level: 97110, 97110-59 and 97110-GP, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-2 coinsurance 42.00 (20% of 210.00), CLP04 168.00.",
+  );
+  const linesCorrected = correctionOf(b, 20, linesOriginal, threeLines(10000n), coinsuranceAtClaim(24000n));
+  const linesAdjusted = ledRemittance(b, base, 18, adjustedOn, [reversalOf(linesOriginal), linesCorrected]);
+  b.add835(
+    'claim-level-lines-adjusted.835',
+    linesAdjusted.file,
+    "Its adjusted remittance: the original reversed (CLP04 -168.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, the claim's PR-2 coinsurance 48.00 (20% of 240.00), CLP04 192.00: BPR02 24.00.",
+  );
+  b.addFile('claim-level-lines-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: linesAdjusted.trace, amount: linesAdjusted.check }]), 'csv', 'The bank export of that check: one deposit of 24.00 matched by trace number and amount.');
+  const bareOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 21, plan: LED_PLAN, lines: [claimShareLine(b, 7000n), bareLine(b)], adjustments: coinsuranceAtClaim(7000n) });
+  b.add835(
+    'claim-level-bare-original.835',
+    ledRemittance(b, base, 19, base.paid, [bareOriginal]).file,
+    "Another patient's original payment: the 97110 x 2 case line allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, a 97110-59 x 2 line paid at its charge, 150.00, with no CAS of its own, and the claim's PR-2 coinsurance 14.00, CLP04 206.00.",
+  );
+  const bareCorrected = correctionOf(b, 22, bareOriginal, [claimShareLine(b, 10000n), bareLine(b)], coinsuranceAtClaim(10000n));
+  b.add835(
+    'claim-level-bare-adjusted.835',
+    ledRemittance(b, base, 20, adjustedOn, [reversalOf(bareOriginal), bareCorrected]).file,
+    "Its adjusted remittance: the original reversed (CLP04 -206.00) and the correction raising the 97110 line to allowed 100.00, CO-45 50.00 and SVC03 100.00, the 97110-59 line still 150.00, the claim's PR-2 coinsurance 20.00, CLP04 230.00: BPR02 24.00.",
+  );
+  // A claim-level change with one line stays on that line (the engine re-check's RR1), and a short check proves the
+  // lines in line order (RR2), each in its own practice.
+  const twoLines = (first: bigint, second = 7000n) => [claimShareLine(b, first), claimShareLine(b, second, ['59'])];
+  const metOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 23, plan: LED_PLAN, lines: twoLines(7000n), adjustments: shareAtClaim(4000n, 2000n) });
+  b.add835(
+    'claim-level-met-original.835',
+    ledRemittance(b, base, 21, base.paid, [metOriginal]).file,
+    "Another patient's original payment of two case lines, the patient's share at the claim's level: 97110 and 97110-59, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-1 deductible 40.00 and PR-2 coinsurance 20.00, CLP04 80.00.",
+  );
+  const metCorrected = correctionOf(b, 24, metOriginal, twoLines(10000n), shareAtClaim(4000n, 2600n));
+  const met = ledRemittance(b, base, 22, adjustedOn, [reversalOf(metOriginal), metCorrected]);
+  b.add835(
+    'claim-level-met-adjusted.835',
+    met.file,
+    "Its adjusted remittance: the original reversed (CLP04 -80.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, the deductible still 40.00 and the coinsurance 26.00, CLP04 104.00: BPR02 24.00.",
+  );
+  b.addFile('claim-level-met-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: met.trace, amount: met.check }]), 'csv', 'The bank export of that check: one deposit of 24.00 matched by trace number and amount.');
+  const bothOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 25, plan: LED_PLAN, lines: threeLines(7000n), adjustments: shareAtClaim(100n, 100n) });
+  b.add835(
+    'claim-level-both-original.835',
+    ledRemittance(b, base, 23, base.paid, [bothOriginal]).file,
+    "Another patient's original payment of three case lines, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-1 deductible 1.00 and PR-2 coinsurance 1.00, CLP04 208.00.",
+  );
+  const bothCorrected = correctionOf(b, 26, bothOriginal, threeLines(10000n), shareAtClaim(200n, 200n));
+  const both = ledRemittance(b, base, 24, adjustedOn, [reversalOf(bothOriginal), bothCorrected]);
+  b.add835(
+    'claim-level-both-adjusted.835',
+    both.file,
+    "Its adjusted remittance: the original reversed (CLP04 -208.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, the claim's deductible and coinsurance 2.00 each, CLP04 236.00: BPR02 28.00.",
+  );
+  b.addFile('claim-level-both-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: both.trace, amount: both.check }]), 'csv', 'The bank export of that check: one deposit of 28.00 matched by trace number and amount.');
+  const absorbedOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 27, plan: LED_PLAN, lines: twoLines(7000n), adjustments: shareAtClaim(0n, 2800n) });
+  b.add835(
+    'claim-level-absorbed-original.835',
+    ledRemittance(b, base, 25, base.paid, [absorbedOriginal]).file,
+    "Another patient's original payment of two case lines, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-2 coinsurance 28.00, CLP04 112.00.",
+  );
+  const absorbedCorrected = correctionOf(b, 28, absorbedOriginal, twoLines(10000n), shareAtClaim(3000n, 2800n));
+  b.add835(
+    'claim-level-absorbed-adjusted.835',
+    ledRemittance(b, base, 26, adjustedOn, [reversalOf(absorbedOriginal), absorbedCorrected]).file,
+    "Its adjusted remittance: the original reversed (CLP04 -112.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, a claim-level PR-1 deductible of 30.00 newly applied beside the coinsurance's 28.00, CLP04 112.00: BPR02 0.00.",
+  );
+  const shortOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 29, plan: LED_PLAN, lines: twoLines(7000n), adjustments: coinsuranceAtClaim(14000n) });
+  b.add835(
+    'claim-level-short-original.835',
+    ledRemittance(b, base, 27, base.paid, [shortOriginal]).file,
+    "Another patient's original payment of two case lines, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-2 coinsurance 28.00, CLP04 112.00.",
+  );
+  const shortCorrected = correctionOf(b, 30, shortOriginal, twoLines(10000n, 9000n), coinsuranceAtClaim(19000n));
+  const otherReversed = therapyClaim(b.world, { caseId: b.info.id, n: 31, plan: LED_PLAN, lines: [allowedLine(b, OTHER_SERVICE_DATE, 1, 3000n, 'none')] });
+  const short = ledRemittance(b, base, 28, adjustedOn, [reversalOf(shortOriginal), shortCorrected, reversalOf(otherReversed)]);
+  b.add835(
+    'claim-level-short-adjusted.835',
+    short.file,
+    "Its adjusted remittance: the original reversed (CLP04 -112.00), the correction raising the lines to allowed 100.00 and 90.00 (SVC03 100.00 and 90.00), the claim's PR-2 coinsurance 38.00, CLP04 152.00, and another patient's claim of 30.00 reversed: BPR02 10.00.",
+  );
+  b.addFile('claim-level-short-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: short.trace, amount: short.check }]), 'csv', 'The bank export of that check: one deposit of 10.00, less than the 40.00 the two lines were approved.');
+  recoveryScenario(b);
+  b.scenario({
+    shareKind: 'coinsurance',
+    variants: {
+      reissued: ['reversal.835', 'reissued.835'],
+      shared: ['shared-adjusted.835', 'shared-posting-export.csv'],
+      onePass: ['adjusted.835 and lowered.835 loaded, then one reconcile'],
+      claimLevel: ['claim-level-original.835', 'claim-level-adjusted.835', 'claim-level-eft-export.csv'],
+      claimLevelLines: ['claim-level-lines-original.835', 'claim-level-lines-adjusted.835', 'claim-level-lines-eft-export.csv'],
+      claimLevelBare: ['claim-level-bare-original.835', 'claim-level-bare-adjusted.835'],
+      claimLevelMet: ['claim-level-met-original.835', 'claim-level-met-adjusted.835', 'claim-level-met-eft-export.csv'],
+      claimLevelBoth: ['claim-level-both-original.835', 'claim-level-both-adjusted.835', 'claim-level-both-eft-export.csv'],
+      claimLevelAbsorbed: ['claim-level-absorbed-original.835', 'claim-level-absorbed-adjusted.835'],
+      claimLevelShort: ['claim-level-short-original.835', 'claim-level-short-adjusted.835', 'claim-level-short-eft-export.csv'],
+      order: ['order-first.835 and order-second.835 loaded, then one reconcile'],
+      withheld: ['adjusted.835, posting-export.csv and eft-export.csv, then withheld.835, then withheld-reissued.835'],
+      withheldOnePass: ['adjusted.835, then withheld.835 and withheld-reissued.835 loaded, then one reconcile'],
+      raisedAgain: ['adjusted.835, lowered.835 and raised-again.835 loaded, then one reconcile'],
+      afterReversal: ['adjusted.835, then reversal.835, then unchanged.835, then lower-after.835'],
+    },
+  });
+  const caseLine = lineOf(original);
+  const correctedLine = lineOf(corrected);
+  const approved = subtractCents(corrected.paid, original.paid);
+  b.outcome({
+    entries: [
+      ledEntry('approved', approved, 'adjusted.835 transaction 0 claim 1'),
+      ledEntry('posted', approved, 'lines-posting-export.csv row 1'),
+      ledEntry('deposited', approved, 'eft-export.csv row 1'),
+      ledEntry('recouped', negateCents(approved), 'reversal.835 transaction 0 claim 0'),
+    ],
+    recoveredCents: '0',
+    recoveredBeforeReversalCents: centsToString(approved),
+    postedEntries: 1,
+    posted: 'either export proves 24.00: the line-level row of 80.00 net of the 56.00 it replaced, or the check-level row of 24.00',
+    billableToPatient: {
+      allowedIncreaseCents: centsToString(subtractCents(allowedOf(correctedLine), allowedOf(caseLine))),
+      paymentIncreaseCents: centsToString(approved),
+      coinsuranceCents: centsToString(subtractCents(shareOf(correctedLine, '2'), shareOf(caseLine, '2'))),
+    },
+    countedIn: 'no total, statement, link or headline',
+    reissued: { approvedCents: centsToString(subtractCents(reissue.paid, original.paid)), coinsuranceCents: centsToString(subtractCents(shareOf(lineOf(reissue), '2'), shareOf(caseLine, '2'))), payerResponses: 0 },
+    shared: { checkCents: centsToString(shared.check), postedRowCents: centsToString(sharedPosted), postedCents: centsToString(cents((approved * sharedPosted) / shared.check)), allocated: true },
+    onePass: { entries: [ledEntry('approved', approved), ledEntry('recouped', negateCents(subtractCents(corrected.paid, lowered.paid)))], outcomes: ['approved', 'decreased'] },
+    claimLevel: {
+      // CLP04 less CLP04: each claim's one line takes all of its claim-level PR, so its cash is CLP04.
+      entries: [
+        ledEntry('approved', subtractCents(claimLevelCorrected.paid, claimLevelOriginal.paid), 'claim-level-adjusted.835 transaction 0 claim 1'),
+        ledEntry('deposited', claimLevel.check, 'claim-level-eft-export.csv row 1'),
+      ],
+      payerApprovedCents: centsToString(subtractCents(claimLevelCorrected.paid, claimLevelOriginal.paid)),
+      billableToPatient: {
+        allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(claimLevelCorrected)), allowedOf(lineOf(claimLevelOriginal)))),
+        paymentIncreaseCents: centsToString(subtractCents(claimLevelCorrected.paid, claimLevelOriginal.paid)),
+        coinsuranceCents: centsToString(cents((10000n - 7000n) / 5n)),
+        otherReductionCents: '0',
+        allocatedFromClaim: true,
+      },
+    },
+    // The claim's PR-2 split by each line's allowed amount before it: the 97110 line takes 20.00 of the 48.00 (14.00 of
+    // the 42.00 before), the others 14.00 each both times, so the 97110 line is approved the claim's 24.00 more and the
+    // others nothing; the deposit proves it all.
+    claimLevelLines: {
+      entries: [
+        ledEntry('approved', subtractCents(linesCorrected.paid, linesOriginal.paid), 'claim-level-lines-adjusted.835 transaction 0 claim 1'),
+        ledEntry('deposited', linesAdjusted.check, 'claim-level-lines-eft-export.csv row 1'),
+      ],
+      payerApprovedCents: centsToString(subtractCents(linesCorrected.paid, linesOriginal.paid)),
+      otherLines: 'no change, no entry',
+    },
+    // The bare line carries no CAS of its own, so the case line alone takes the claim's PR-2, in its cash and its share alike.
+    claimLevelBare: {
+      entries: [ledEntry('approved', subtractCents(bareCorrected.paid, bareOriginal.paid), 'claim-level-bare-adjusted.835 transaction 0 claim 1')],
+      billableToPatient: {
+        allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(bareCorrected)), allowedOf(lineOf(bareOriginal)))),
+        paymentIncreaseCents: centsToString(subtractCents(bareCorrected.paid, bareOriginal.paid)),
+        coinsuranceCents: centsToString(cents((10000n - 7000n) / 5n)),
+        otherReductionCents: '0',
+        allocatedFromClaim: true,
+      },
+    },
+    // A line whose allowed amount, CAS and SVC03 are as they were keeps its part of the claim-level CAS, so the claim's
+    // whole change is the raised line's: 24.00 (the deductible met), 28.00 (both reasons rising) and nothing (a
+    // deductible newly applied taking the rise), never more than the claim paid more.
+    claimLevelMet: {
+      entries: [ledEntry('approved', subtractCents(metCorrected.paid, metOriginal.paid), 'claim-level-met-adjusted.835 transaction 0 claim 1'), ledEntry('deposited', met.check, 'claim-level-met-eft-export.csv row 1')],
+      otherLines: 'no change, no entry',
+    },
+    claimLevelBoth: {
+      entries: [ledEntry('approved', subtractCents(bothCorrected.paid, bothOriginal.paid), 'claim-level-both-adjusted.835 transaction 0 claim 1'), ledEntry('deposited', both.check, 'claim-level-both-eft-export.csv row 1')],
+      otherLines: 'no change, no entry',
+    },
+    claimLevelAbsorbed: { entries: [], payerApprovedCents: centsToString(subtractCents(absorbedCorrected.paid, absorbedOriginal.paid)) },
+    // Both lines raised: the 38.00 split by allowed, 20.00 and 18.00, so 24.00 and 16.00 approved; the 10.00 check proves line 1 first.
+    claimLevelShort: { entries: [ledEntry('approved', cents(2400n)), ledEntry('approved', cents(1600n)), ledEntry('deposited', short.check, 'claim-level-short-eft-export.csv row 1')], depositedLine: 1 },
+    // Each amount as the stored chain reads it: the pass writes in the chain's own order.
+    order: {
+      entries: [ledEntry('approved', subtractCents(byPatient.paid, original.paid)), ledEntry('recouped', negateCents(subtractCents(byPatient.paid, byControl.paid)))],
+      outcomes: ['approved', 'decreased'],
+    },
+    withheld: { entries: [ledEntry('recouped', negateCents(withheldCents)), ledEntry('approved', subtractCents(afterWithheld.paid, subtractCents(corrected.paid, withheldCents)))] },
+    withheldOnePass: { entries: [ledEntry('approved', subtractCents(afterWithheld.paid, corrected.paid)), ledEntry('recouped', negateCents(withheldCents))] },
+    raisedAgain: { entries: [ledEntry('approved', approved), ledEntry('recouped', negateCents(subtractCents(corrected.paid, lowered.paid))), ledEntry('approved', subtractCents(raisedAgain.paid, lowered.paid))], outcomes: ['approved', 'decreased', 'approved'] },
+    afterReversal: { entries: [ledEntry('approved', approved), ledEntry('recouped', negateCents(approved))], outcomes: ['approved', 'no_change', 'no_change'] },
+  });
+}
+
+/**
+ * LED-15: a correction a deductible absorbed. The original pays 40.00 of an allowed 70.00 (PR-1 30.00);
+ * the correction raises the allowed amount to 100.00 and the deductible to 60.00 and still pays 40.00, so
+ * it writes no entry and no payer response: payer corrected, the balance the patient's, never recovered
+ * and never no change; its line-level 40.00 row and a later reversal of it prove and take back nothing.
+ * In part, on its own line (partial-*): PR-1 50.00, paid 20.00, then allowed 100.00, PR-1 70.00, paid
+ * 30.00, approved and deposited 10.00, and a second reprocessing at the same allowed amount paying 20.00
+ * takes the 10.00 back (Q2). In its own practice (raised-*): from the original, a correction allowed
+ * 100.00 with PR-1 66.00 paying 34.00, less than the 40.00 before it, with nothing approved, is decreased
+ * with no entry; a later one paying 50.00 is approved for 10.00, against the 40.00 before it. In its own
+ * practice (mixed-*, the UX review's UX-1): from the original, a correction allowed 100.00 with PR-1 50.00
+ * and CO-253 10.00 still paying 40.00 writes no entry and leaves the patient 20.00 of the 30.00 increase,
+ * the other 10.00 the payer's own reduction, never billable.
+ */
+export function led15(b: CaseBuilder): void {
+  const base = ledBase(b);
+  const original = ledOriginal(b, 1, [shareLine(b, 7000n, { deductible: 3000n })]);
+  b.add835('original.835', ledRemittance(b, base, 1, base.paid, [original]).file, 'The original payment: 97110 x 2 allowed 70.00 against an expected 100.00 (a case line), CO-45 80.00, PR-1 deductible 30.00, paid 40.00.');
+  const adjustedOn = calendarDate(2026, 6, 8);
+  const corrected = correctionOf(b, 2, original, [shareLine(b, 10000n, { deductible: 6000n })]);
+  const adjusted = ledRemittance(b, base, 2, adjustedOn, [reversalOf(original), corrected], { method: 'NON' });
+  b.add835('adjusted.835', adjusted.file, 'The adjusted remittance: the original reversed (PR-1 -30.00, paid -40.00) and the correction allowed 100.00, CO-45 50.00, PR-1 deductible 60.00, paid 40.00: BPR02 0.00, no payment (H, NON).');
+  b.addFile(
+    'lines-posting-export.csv',
+    postingExport([{ postedOn: addDays(adjustedOn, 3), checkOrTrace: adjusted.trace, payerName: base.payer.name, claimReference: corrected.patientControlNumber, procedureCode: '97110', serviceDate: base.date, amount: corrected.paid, batch: 'SYNBATCH-1501' }]),
+    'csv',
+    'A posting export with line detail: one row posting the correction’s 40.00 on its 2026-03-09 line, the payment it replaced.',
+  );
+  b.add835('reversal.835', ledRemittance(b, base, 3, calendarDate(2026, 8, 3), [reversalOf(corrected), otherClaim(b, 3)]).file, "The correction reversed alone (PR-1 -60.00, paid -40.00) beside another patient's claim paying 150.00: BPR02 110.00.");
+  const partialOriginal = ledOriginal(b, 4, [shareLine(b, 7000n, { deductible: 5000n })]);
+  b.add835('partial-original.835', ledRemittance(b, base, 4, base.paid, [partialOriginal]).file, "Another patient's original payment (its own case line): allowed 70.00, CO-45 80.00, PR-1 deductible 50.00, paid 20.00.");
+  const partialCorrected = correctionOf(b, 5, partialOriginal, [shareLine(b, 10000n, { deductible: 7000n })]);
+  const partialAdjusted = ledRemittance(b, base, 5, adjustedOn, [reversalOf(partialOriginal), partialCorrected]);
+  b.add835('partial-adjusted.835', partialAdjusted.file, 'Its adjusted remittance: the original reversed (paid -20.00) and the correction allowed 100.00, CO-45 50.00, PR-1 deductible 70.00, paid 30.00: BPR02 10.00.');
+  b.addFile('partial-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: partialAdjusted.trace, amount: partialAdjusted.check }]), 'csv', 'The bank export of that check: one deposit of 10.00.');
+  const partialLowered = correctionOf(b, 6, partialCorrected, [shareLine(b, 10000n, { deductible: 8000n })]);
+  b.add835(
+    'partial-lowered.835',
+    ledRemittance(b, base, 6, calendarDate(2026, 7, 6), [reversalOf(partialCorrected), partialLowered, otherClaim(b, 7)]).file,
+    "A second reprocessing at the same allowed amount: the correction reversed (paid -30.00) and paid again allowed 100.00, CO-45 50.00, PR-1 deductible 80.00, paid 20.00, beside another patient's claim paying 150.00: BPR02 140.00.",
+  );
+  const raisedLower = correctionOf(b, 8, original, [shareLine(b, 10000n, { deductible: 6600n })]);
+  b.add835(
+    'raised-lower.835',
+    ledRemittance(b, base, 8, adjustedOn, [reversalOf(original), raisedLower, otherClaim(b, 9)]).file,
+    "From original.835, in a practice of its own: the original reversed (paid -40.00) and a correction allowed 100.00, CO-45 50.00, PR-1 deductible 66.00, paid 34.00, beside another patient's claim paying 150.00: BPR02 144.00.",
+  );
+  const raisedAfter = correctionOf(b, 10, raisedLower, [shareLine(b, 10000n, { deductible: 5000n })]);
+  b.add835('raised-after.835', ledRemittance(b, base, 10, calendarDate(2026, 7, 6), [reversalOf(raisedLower), raisedAfter]).file, 'That correction reversed (paid -34.00) and a later one allowed 100.00, CO-45 50.00, PR-1 deductible 50.00, paid 50.00: BPR02 16.00.');
+  recoveryScenario(b);
+  b.scenario({
+    shareKind: 'deductible',
+    variants: {
+      partial: { caseLine: { file: 'partial-original.835', transaction: 0, claim: 0, line: 0 }, files: ['partial-adjusted.835', 'partial-eft-export.csv', 'partial-lowered.835'] },
+      raisedLower: { caseLine: { file: 'original.835', transaction: 0, claim: 0, line: 0 }, files: ['raised-lower.835', 'raised-after.835'] },
+      mixed: { caseLine: { file: 'original.835', transaction: 0, claim: 0, line: 0 }, files: ['mixed-adjusted.835'] },
+    },
+  });
+  // Built after every other file of the case, so none of theirs moves.
+  const otherReduction = dollars('10.00');
+  const mixed = correctionOf(b, 11, original, [
+    therapyLine(b.world, {
+      code: '97110',
+      units: 2,
+      date: LED_SERVICE_DATE,
+      unitCharge: 7500n,
+      allowed: 10000n,
+      b6: true,
+      share: 'none',
+      overrides: { patientShare: [{ reason: '1', amount: cents(5000n) }], extraAdjustments: [{ group: 'CO', items: [{ reason: '253', amount: otherReduction }] }] },
+    }),
+  ]);
+  b.add835(
+    'mixed-adjusted.835',
+    ledRemittance(b, base, 11, adjustedOn, [reversalOf(original), mixed], { method: 'NON' }).file,
+    'From original.835, in a practice of its own: the original reversed (PR-1 -30.00, paid -40.00) and a correction allowed 100.00, CO-45 50.00 with CO-253 10.00, PR-1 deductible 50.00, paid 40.00: BPR02 0.00, no payment (H, NON).',
+  );
+  const caseLine = lineOf(original);
+  const correctedLine = lineOf(corrected);
+  const partialApproved = subtractCents(partialCorrected.paid, partialOriginal.paid);
+  b.outcome({
+    entries: [],
+    claimMatches: [{ kind: 'claim', outcome: 'approved' }],
+    payerResponses: 0,
+    correction: 'patient_balance',
+    words: "Payer corrected; balance is the patient's",
+    billableToPatient: {
+      allowedIncreaseCents: centsToString(subtractCents(allowedOf(correctedLine), allowedOf(caseLine))),
+      paymentIncreaseCents: centsToString(subtractCents(corrected.paid, original.paid)),
+      deductibleCents: centsToString(subtractCents(shareOf(correctedLine, '1'), shareOf(caseLine, '1'))),
+    },
+    lineStage: 'actionable',
+    caseState: 'as case_rules derives it (the stored close is Lane A’s)',
+    posted: 'lines-posting-export.csv proves nothing (the correction pays nothing more)',
+    reversal: 'reversal.835 takes nothing back',
+    partial: {
+      entries: [ledEntry('approved', partialApproved, 'partial-adjusted.835 transaction 0 claim 1'), ledEntry('deposited', partialApproved, 'partial-eft-export.csv row 1')],
+      billableToPatient: { deductibleCents: centsToString(subtractCents(shareOf(lineOf(partialCorrected), '1'), shareOf(lineOf(partialOriginal), '1'))) },
+      lowered: {
+        entries: [ledEntry('approved', partialApproved), ledEntry('deposited', partialApproved), ledEntry('recouped', negateCents(subtractCents(partialCorrected.paid, partialLowered.paid)), 'partial-lowered.835 transaction 0 claim 1')],
+        claimMatches: [{ kind: 'claim', outcome: 'approved' }, { kind: 'claim', outcome: 'decreased' }],
+      },
+    },
+    mixed: {
+      entries: [],
+      claimMatches: [{ kind: 'claim', outcome: 'approved' }],
+      correction: 'patient_balance',
+      billableToPatient: {
+        allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(mixed)), allowedOf(caseLine))),
+        paymentIncreaseCents: centsToString(subtractCents(mixed.paid, original.paid)),
+        deductibleCents: centsToString(subtractCents(shareOf(lineOf(mixed), '1'), shareOf(caseLine, '1'))),
+        otherReductionCents: centsToString(otherReduction),
+      },
+    },
+    raisedLower: {
+      claimMatches: [{ kind: 'claim', outcome: 'decreased' }],
+      entries: [],
+      payerResponses: 0,
+      words: 'higher allowed, lower payment: nothing approved to take back',
+      after: { entries: [ledEntry('approved', subtractCents(raisedAfter.paid, original.paid), 'raised-after.835 transaction 0 claim 1')] },
+    },
+  });
+}
+
+/**
+ * LED-16: a correction on a line with a 20.00 copay. The original pays 50.00 of an allowed 70.00 (PR-3
+ * 20.00); the correction 80.00 of an allowed 100.00, the copay unchanged, so the payer's 30.00 increase is
+ * the allowed increase and nothing is billable to the patient. Two lines of one claim (two-lines-*), its
+ * own case: 97110 x 2 with coinsurance and 97110-59 x 2 with the copay, each allowed 70.00 and then 100.00
+ * (paying 56.00 then 80.00, and 50.00 then 80.00); the correction's interest (AMT I 5.40) is split by what
+ * the payer pays on each line (24.00 and 30.00), 2.40 and 3.00, and a later PLB WO of 30.00 naming the
+ * corrected claim is taken in line order from those amounts, 24.00 and 6.00.
+ */
+export function led16(b: CaseBuilder): void {
+  const base = ledBase(b);
+  const original = ledOriginal(b, 1, [shareLine(b, 7000n, 'copay')]);
+  b.add835('original.835', ledRemittance(b, base, 1, base.paid, [original]).file, 'The original payment: 97110 x 2 allowed 70.00 against an expected 100.00 (a case line), CO-45 80.00, PR-3 copay 20.00, paid 50.00.');
+  const adjustedOn = calendarDate(2026, 6, 8);
+  const corrected = correctionOf(b, 2, original, [shareLine(b, 10000n, 'copay')]);
+  const adjusted = ledRemittance(b, base, 2, adjustedOn, [reversalOf(original), corrected]);
+  b.add835('adjusted.835', adjusted.file, 'The adjusted remittance: the original reversed (PR-3 -20.00, paid -50.00) and the correction allowed 100.00, CO-45 50.00, PR-3 copay 20.00, paid 80.00: BPR02 30.00.');
+  b.addFile('posting-export.csv', postingExport([{ postedOn: addDays(adjustedOn, 3), checkOrTrace: adjusted.trace, payerName: base.payer.name, amount: adjusted.check, batch: 'SYNBATCH-1601' }]), 'csv', 'A posting export with one check-level row posting the adjusted check, 30.00.');
+  b.addFile('eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: adjusted.trace, amount: adjusted.check }]), 'csv', 'The bank export: one deposit of 30.00 matched by trace number and amount.');
+  const twoOriginal = ledOriginal(b, 3, [shareLine(b, 7000n, 'coinsurance'), shareLine(b, 7000n, 'copay', ['59'])]);
+  b.add835(
+    'two-lines-original.835',
+    ledRemittance(b, base, 3, base.paid, [twoOriginal]).file,
+    "Another patient's original payment of two case lines on one day: 97110 x 2 allowed 70.00, CO-45 80.00, PR-2 coinsurance 14.00, paid 56.00, and 97110-59 x 2 allowed 70.00, CO-45 80.00, PR-3 copay 20.00, paid 50.00: BPR02 106.00.",
+  );
+  const interest = dollars('5.40');
+  const twoCorrectedLines = correctionOf(b, 4, twoOriginal, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]);
+  // The claim's own interest (AMT I); under the sign convention its CLP04 is the charge less every CAS (docs/adr/0021).
+  const twoCorrected: Claim = { ...twoCorrectedLines, amounts: [...(twoCorrectedLines.amounts ?? []), { qualifier: 'I', amount: interest }] };
+  const twoAdjusted = ledRemittance(b, base, 4, adjustedOn, [reversalOf(twoOriginal), twoCorrected]);
+  b.add835(
+    'two-lines-adjusted.835',
+    twoAdjusted.file,
+    'Its adjusted remittance: the original reversed (paid -106.00) and the correction, 97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, and 97110-59 allowed 100.00, PR-3 copay 20.00, paid 80.00, with claim interest AMT I 5.40: BPR02 54.00.',
+  );
+  const withheld = dollars('30.00');
+  const wo = ledRemittance(b, base, 5, calendarDate(2026, 8, 3), [otherClaim(b, 5)], {
+    providerAdjustments: [{ providerId: base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code: 'WO', reference: twoCorrected.payerClaimControlNumber, amount: withheld }] }],
+  });
+  b.add835('two-lines-wo.835', wo.file, `A later remittance whose PLB WO takes back 30.00 against the corrected claim (${twoCorrected.payerClaimControlNumber}), beside another patient's claim paying 150.00: BPR02 120.00.`);
+  recoveryScenario(b);
+  b.scenario({ shareKind: 'copay', variants: { twoLines: { caseLines: [{ file: 'two-lines-original.835', transaction: 0, claim: 0, line: 0 }, { file: 'two-lines-original.835', transaction: 0, claim: 0, line: 1 }], files: ['two-lines-adjusted.835', 'two-lines-wo.835'] } } });
+  const approved = subtractCents(corrected.paid, original.paid);
+  const [first, second] = [0, 1].map((index) => subtractCents(lineOf(twoCorrected, index).paid, lineOf(twoOriginal, index).paid)) as [Cents, Cents];
+  const firstInterest = cents((interest * first) / (first + second));
+  const firstTaken = withheld < first ? withheld : first;
+  b.outcome({
+    entries: [ledEntry('approved', approved, 'adjusted.835 transaction 0 claim 1'), ledEntry('posted', approved, 'posting-export.csv row 1'), ledEntry('deposited', approved, 'eft-export.csv row 1')],
+    recoveredCents: centsToString(approved),
+    billableToPatient: {
+      allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(corrected)), allowedOf(lineOf(original)))),
+      paymentIncreaseCents: centsToString(approved),
+      copayCents: centsToString(subtractCents(shareOf(lineOf(corrected), '3'), shareOf(lineOf(original), '3'))),
+    },
+    twoLines: {
+      L1: [ledEntry('approved', first), ledEntry('interest', firstInterest), ledEntry('recouped', negateCents(firstTaken))],
+      L2: [ledEntry('approved', second), ledEntry('interest', subtractCents(interest, firstInterest)), ledEntry('recouped', negateCents(subtractCents(withheld, firstTaken)))],
+      interestAllocated: true,
+      note: 'interest split and the withholding taken in line order by what the payer pays on each line; by allowed they would be 2.70 and 2.70, and 30.00 and 0',
+    },
+  });
+}
+
+/**
+ * LED-17: a line holding two approvals. The original pays 56.00 of an allowed 70.00 (PR-2 14.00); R2
+ * reverses it and pays A, allowed 80.00, 64.00 (8.00 more); R3 reverses A and pays B, allowed 100.00,
+ * 80.00 (16.00 more). The line-level rows (64.00 on R2, 80.00 on R3) and the deposits (8.00 and 16.00)
+ * each prove their own claim's net. Then, (a) B reversed alone with nothing standing takes back every
+ * approval, 24.00; (b) where B' corrects A with no reversal of A (second-alone.835), B' reversed alone
+ * takes back only its own 16.00 while A stands; (c) A's reversal arriving late and alone, while B'
+ * stands, takes back nothing.
+ */
+export function led17(b: CaseBuilder): void {
+  const base = ledBase(b);
+  const original = ledOriginal(b, 1, [shareLine(b, 7000n, 'coinsurance')]);
+  b.add835('original.835', ledRemittance(b, base, 1, base.paid, [original]).file, 'The original payment: 97110 x 2 allowed 70.00 against an expected 100.00 (a case line), CO-45 80.00, PR-2 coinsurance 14.00, paid 56.00.');
+  const firstOn = calendarDate(2026, 6, 8);
+  const a = correctionOf(b, 2, original, [shareLine(b, 8000n, 'coinsurance')]);
+  const r2 = ledRemittance(b, base, 2, firstOn, [reversalOf(original), a]);
+  b.add835('adjusted.835', r2.file, 'R2: the original reversed (paid -56.00) and A, allowed 80.00, CO-45 70.00, PR-2 coinsurance 16.00, paid 64.00: BPR02 8.00.');
+  const secondOn = calendarDate(2026, 7, 6);
+  const bClaim = correctionOf(b, 3, a, [shareLine(b, 10000n, 'coinsurance')]);
+  const r3 = ledRemittance(b, base, 3, secondOn, [reversalOf(a), bClaim]);
+  b.add835('second.835', r3.file, 'R3: A reversed (paid -64.00) and B, allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00: BPR02 16.00.');
+  const lineRow = (claim: Claim, trace: string, on: CalendarDate, batch: string) => ({ postedOn: addDays(on, 3), checkOrTrace: trace, payerName: base.payer.name, claimReference: claim.patientControlNumber, procedureCode: '97110', serviceDate: base.date, amount: claim.paid, batch });
+  b.addFile('lines-posting-export.csv', postingExport([lineRow(a, r2.trace, firstOn, 'SYNBATCH-1701'), lineRow(bClaim, r3.trace, secondOn, 'SYNBATCH-1702')]), 'csv', 'A posting export with line detail: A’s 64.00 under R2’s trace and B’s 80.00 under R3’s, each the gross payment of its line.');
+  const deposit = (remit: { trace: string; check: Cents }, on: CalendarDate) => ({ depositedOn: addDays(on, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: remit.trace, amount: remit.check });
+  b.addFile('eft-export.csv', eftExport([deposit(r2, firstOn), deposit(r3, secondOn)]), 'csv', 'The bank export: 8.00 on R2 and 16.00 on R3.');
+  const laterOn = calendarDate(2026, 8, 3);
+  b.add835('reversal.835', ledRemittance(b, base, 4, laterOn, [reversalOf(bClaim), otherClaim(b, 4)]).file, "R4: B reversed alone (paid -80.00) beside another patient's claim paying 150.00: BPR02 70.00.");
+  const bAlone = correctionOf(b, 5, a, [shareLine(b, 10000n, 'coinsurance')]);
+  const r3Alone = ledRemittance(b, base, 5, secondOn, [bAlone]);
+  b.add835('second-alone.835', r3Alone.file, "R3': B' corrects A with no reversal of A, allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00: BPR02 80.00 (loaded in place of second.835).");
+  b.addFile('second-alone-eft-export.csv', eftExport([deposit(r2, firstOn), deposit(r3Alone, secondOn)]), 'csv', "The bank export of that path: 8.00 on R2 and 80.00 on R3'.");
+  b.add835('retracted.835', ledRemittance(b, base, 6, laterOn, [reversalOf(bAlone), otherClaim(b, 6)]).file, "R4': B' reversed alone (paid -80.00) beside another patient's claim paying 150.00: BPR02 70.00.");
+  b.add835('late-reversal.835', ledRemittance(b, base, 7, laterOn, [reversalOf(a), otherClaim(b, 7)]).file, "R4'': A reversed alone and late (paid -64.00), while B' stands, beside another patient's claim paying 150.00: BPR02 86.00.");
+  recoveryScenario(b);
+  b.scenario({
+    shareKind: 'coinsurance',
+    variants: {
+      nothingStands: ['second.835', 'lines-posting-export.csv', 'eft-export.csv', 'reversal.835'],
+      standing: ['second-alone.835', 'second-alone-eft-export.csv', 'retracted.835'],
+      late: ['second-alone.835', 'second-alone-eft-export.csv', 'late-reversal.835'],
+    },
+  });
+  const first = subtractCents(a.paid, original.paid);
+  const second = subtractCents(bClaim.paid, a.paid);
+  b.outcome({
+    entries: [
+      ledEntry('approved', first, 'adjusted.835 transaction 0 claim 1'),
+      ledEntry('approved', second, 'second.835 transaction 0 claim 1'),
+      ledEntry('posted', first, 'lines-posting-export.csv row 1'),
+      ledEntry('posted', second, 'lines-posting-export.csv row 2'),
+      ledEntry('deposited', first, 'eft-export.csv row 1'),
+      ledEntry('deposited', second, 'eft-export.csv row 2'),
+      ledEntry('recouped', negateCents(sumCents([first, second])), 'reversal.835 transaction 0 claim 0'),
+    ],
+    recoveredCents: '0',
+    postedEntries: 2,
+    standing: { recoupedCents: centsToString(negateCents(second)), recoveredCents: centsToString(first) },
+    late: { recoveredCents: centsToString(sumCents([first, second])), recoupments: 0, note: "the 80.00 deposit of R3' proves 16.00, net of the late reversal; no recoupment, and the line is not reopened" },
+    onePass: { entries: [ledEntry('approved', first), ledEntry('approved', second)], note: 'adjusted.835 and second.835 loaded, then one reconcile' },
+  });
+}
+
+/**
+ * LED-18: a payer response accepted before the remittance pays it, on a line with 20% coinsurance:
+ * LED-14's original and correction under this case's own control numbers. The test records the response
+ * (accepted 24.00, the payer's payment, on 2026-05-20); the correction then confirms it with no
+ * shortfall, and the deposit proves it. Typed as the allowed 30.00, the acceptance would leave a 6.00
+ * shortfall, the patient's share of the correction, named beside it.
+ */
+export function led18(b: CaseBuilder): void {
+  const base = ledBase(b);
+  const original = ledOriginal(b, 1, [shareLine(b, 7000n, 'coinsurance')]);
+  b.add835('original.835', ledRemittance(b, base, 1, base.paid, [original]).file, 'The original payment: 97110 x 2 allowed 70.00 against an expected 100.00 (a case line), CO-45 80.00, PR-2 coinsurance 14.00, paid 56.00.');
+  const adjustedOn = calendarDate(2026, 6, 8);
+  const corrected = correctionOf(b, 2, original, [shareLine(b, 10000n, 'coinsurance')]);
+  const adjusted = ledRemittance(b, base, 2, adjustedOn, [reversalOf(original), corrected]);
+  b.add835('adjusted.835', adjusted.file, 'The adjusted remittance: the original reversed (paid -56.00) and the correction allowed 100.00, CO-45 50.00, PR-2 coinsurance 20.00, paid 80.00: BPR02 24.00.');
+  b.addFile('eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: adjusted.trace, amount: adjusted.check }]), 'csv', 'The bank export: one deposit of 24.00 matched by trace number and amount.');
+  const accepted = subtractCents(corrected.paid, original.paid);
+  const allowedIncrease = subtractCents(allowedOf(lineOf(corrected)), allowedOf(lineOf(original)));
+  recoveryScenario(b);
+  b.scenario({ shareKind: 'coinsurance', response: { kind: 'accepted', amountCents: centsToString(accepted), receivedOn: '2026-05-20', recordedBy: 'the test (LedgerWorld.respond), before adjusted.835 is loaded' } });
+  b.outcome({
+    entries: [ledEntry('approved', accepted, 'payer_response accepted 2026-05-20'), ledEntry('deposited', accepted, 'eft-export.csv row 1')],
+    confirmedBy: 'adjusted.835 transaction 0 claim 1',
+    shortfallCents: null,
+    roi: { approvedUnpostedCents: '0', recoveredCents: centsToString(accepted) },
+    billableToPatient: { coinsuranceCents: centsToString(subtractCents(shareOf(lineOf(corrected), '2'), shareOf(lineOf(original), '2'))) },
+    countedIn: 'no figure, statement, link or CSV',
+    typedAllowed: { acceptedCents: centsToString(allowedIncrease), shortfallCents: centsToString(subtractCents(allowedIncrease, accepted)), coinsuranceCents: centsToString(subtractCents(allowedIncrease, accepted)) },
   });
 }
 

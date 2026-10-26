@@ -21,6 +21,8 @@ describe('the headline (PRD 12)', () => {
       ['payer_approved', 'Payer approved', 0n],
       ['recovered', 'Recovered (posted or deposited)', 0n],
     ]);
+    // Payer approved is what payers have agreed to pay, never the patient's share (PRD 12; docs/adr/0067).
+    expect(shown.figures[1]?.note).toBe('what payers have agreed to pay on the lines they corrected');
     expect(shown.flagged).toMatchObject({ label: 'Flagged (investigatory)', lines: 4, rangeLowCents: 4000n, rangeHighCents: 8000n });
     expect(shown.validated).toMatchObject({ label: 'Validated', lines: 19, cents: 61000n });
     // "Recovered" names stage five only, and never without the cash that proves it (docs/brand/BRAND.md, section 7).

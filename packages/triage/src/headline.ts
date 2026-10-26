@@ -51,7 +51,7 @@ export function headline(input: HeadlineInput): Headline {
   return {
     figures: [
       { stage: 'actionable', label: STAGE_LABELS.actionable, cents: input.actionableCents, note: `${String(input.actionableLines)} lines in cases, inside their dispute windows and above materiality` },
-      { stage: 'payer_approved', label: STAGE_LABELS.payer_approved, cents: input.payerApprovedCents, note: 'accepted by the payer' },
+      { stage: 'payer_approved', label: STAGE_LABELS.payer_approved, cents: input.payerApprovedCents, note: 'what payers have agreed to pay on the lines they corrected' },
       { stage: 'recovered', label: STAGE_LABELS.recovered, cents: input.recoveredCents, note: 'posted, net of recoupments and reversals' },
     ],
     flagged: {

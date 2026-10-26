@@ -75,9 +75,14 @@ export function unattestedSubmissionsOf(content: { readonly cases: readonly { re
   return content.cases.reduce((total, item) => total + (item.unattested_submissions ?? 0), 0);
 }
 
-/** A case's state in the report's words, with its submissions sent without sign-off when it has any. */
-export function caseStateText(item: { readonly state: string; readonly unattested_submissions?: number }): string {
-  const state = CASE_STATE_WORDS[item.state] ?? item.state;
+/**
+ * A case's state in the report's words: the stored state, then "payer corrected, balance is the patient's" when the
+ * case's corrections paid nothing more because the patient's share took them (docs/adr/0067; the state itself is
+ * unchanged), then its submissions sent without sign-off when it has any.
+ */
+export function caseStateText(item: { readonly state: string; readonly patient_balance?: true; readonly unattested_submissions?: number }): string {
+  const stored = CASE_STATE_WORDS[item.state] ?? item.state;
+  const state = item.patient_balance === true ? `${stored}; payer corrected, balance is the patient’s` : stored;
   return item.unattested_submissions === undefined || item.unattested_submissions === 0 ? state : `${state}; ${unattestedSubmissionsText(item.unattested_submissions)}`;
 }
 
@@ -142,7 +147,13 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
   const recoveredNone = parseCents(headline.recovered_cents) === 0n;
   const figures = [
     { label: labels.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in cases still actionable, inside their dispute windows and above materiality` },
-    { label: labels.payer_approved, amount: headline.payer_approved_cents, note: approvedNone ? 'accepted by the payer; no payer approval is recorded yet' : 'accepted by the payer, from the ledger’s entries; not cash until it posts' },
+    {
+      label: labels.payer_approved,
+      amount: headline.payer_approved_cents,
+      note: approvedNone
+        ? 'what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet'
+        : 'what payers have agreed to pay on the lines they corrected, from the ledger’s entries; not cash until it posts',
+    },
     {
       label: recovered,
       amount: headline.recovered_cents,
