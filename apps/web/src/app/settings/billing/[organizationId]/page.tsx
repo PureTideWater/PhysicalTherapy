@@ -3,8 +3,8 @@ import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDesc
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../../components/action-form';
-import { StripePaymentMethod } from '../../../../components/billing/stripe-payment-method';
-import { Field, SelectField } from '../../../../components/field';
+import { PAYMENT_METHOD_NAME, PaymentMethodCard } from '../../../../components/billing/payment-method-card';
+import { SelectField } from '../../../../components/field';
 import { utc, utcDate } from '../../../../components/format';
 import { Money } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -18,13 +18,14 @@ export const metadata: Metadata = { title: 'Organization billing' };
 
 const STANDING: Readonly<Record<string, string>> = { good: 'In good standing', past_due: 'Past due', suspended: 'Suspended for nonpayment' };
 const INVOICE_STATUS: Readonly<Record<string, string>> = { open: 'Open', paid: 'Paid', void: 'Void', uncollectible: 'Uncollectible', draft: 'Draft' };
-const METHOD: Readonly<Record<string, string>> = { us_bank_account: 'ACH bank account', card: 'Card' };
 const KIND: Readonly<Record<string, string>> = { subscription: 'Subscription', audit: 'Audit', other: 'Other' };
 
 /**
  * An organization's billing (PRD 5, J18; PRD 6, Billing; PRD 7, Settings; docs/adr/0050), for its
- * administrator: the standing and any suspension notice, the plan (monthly or annual), the payment method
- * (ACH or card: Stripe Elements in production, the local simulator's test values in development) and the
+ * administrator: the standing and any suspension notice, the payment method (a bank account by ACH, preferred
+ * and shown first, or a card: Stripe Elements in production, the local simulator's test values in development;
+ * components/billing/payment-method-card.tsx, docs/adr/0073), then the plan (monthly or annual), which needs a
+ * method on file (with none, the plans' prices and a sentence asking for one stand in for the form), and the
  * invoices. What is chosen here happens at Stripe and shows once Stripe reports it.
  */
 export default async function OrganizationBillingPage(props: { readonly params: Promise<{ organizationId: string }> }) {
@@ -57,13 +58,37 @@ export default async function OrganizationBillingPage(props: { readonly params: 
         </Alert>
       ) : null}
 
+      <PaymentMethodCard
+        organizationId={organizationId}
+        paymentMethod={paymentMethod}
+        provider={provider}
+        testRouting={testRouting}
+        formKeys={() => <FormKeys />}
+        csrfToken={await pageCsrfToken()}
+        addSimulatedPaymentMethod={addSimulatedPaymentMethod}
+        settleSimulatedPayments={settleSimulatedPayments}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>Plan</CardTitle>
           <CardDescription>Monitoring, billed monthly or annually to the payment method on file.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">
-          {billing.subscription === null ? (
+          {billing.subscription === null && paymentMethod === null ? (
+            // A plan is refused until a method is on file, so the form waits for one; the prices still show.
+            <div className="flex flex-col gap-2" data-plan="needs-method">
+              <ul className="flex flex-col gap-1">
+                <li>
+                  {catalog.plans.monthly.name}: <Money value={catalog.plans.monthly.amountCents} /> a month
+                </li>
+                <li>
+                  {catalog.plans.annual.name}: <Money value={catalog.plans.annual.amountCents} /> a year
+                </li>
+              </ul>
+              <p>Add a payment method above, then choose a plan here.</p>
+            </div>
+          ) : billing.subscription === null ? (
             <ActionForm action={choosePlan} submit="Choose plan" className="grid max-w-md gap-4">
               <FormKeys />
               <input type="hidden" name="organizationId" value={organizationId} />
@@ -86,45 +111,6 @@ export default async function OrganizationBillingPage(props: { readonly params: 
             </p>
           )}
           {catalog.confirmed ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until PaidWhole confirms its prices.</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Payment method</CardTitle>
-          <CardDescription>ACH debit from a bank account, or a card. The account or card number never reaches this application.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 text-sm">
-          <p data-payment-method={paymentMethod?.kind ?? 'none'}>
-            {paymentMethod === null ? 'No payment method on file.' : `${METHOD[paymentMethod.kind] ?? paymentMethod.kind} ending ${paymentMethod.last4}${paymentMethod.label === null ? '' : ` (${paymentMethod.label})`}`}
-          </p>
-          {provider === 'stripe' ? (
-            <StripePaymentMethod organizationId={organizationId} csrfToken={await pageCsrfToken()} />
-          ) : (
-            <div className="flex flex-col gap-4" aria-label="Test mode">
-              <p className="text-xs text-muted-foreground">
-                Test mode: the local billing simulator stands in for Stripe. It accepts only its own test values: routing number {testRouting}, account 000123456789 (settles) or
-                000222222227 (fails, insufficient funds); card 4242424242424242 (succeeds) or 4000000000000341 (declined).
-              </p>
-              <ActionForm action={addSimulatedPaymentMethod} submit="Add test bank account (ACH)" className="grid max-w-md gap-3">
-                <FormKeys />
-                <input type="hidden" name="organizationId" value={organizationId} />
-                <input type="hidden" name="method" value="us_bank_account" />
-                <Field label="Routing number" name="routingNumber" id="field-routing" inputMode="numeric" defaultValue={testRouting} required />
-                <Field label="Account number" name="accountNumber" id="field-account" inputMode="numeric" defaultValue="000123456789" required />
-              </ActionForm>
-              <ActionForm action={addSimulatedPaymentMethod} submit="Add test card" className="grid max-w-md gap-3">
-                <FormKeys />
-                <input type="hidden" name="organizationId" value={organizationId} />
-                <input type="hidden" name="method" value="card" />
-                <Field label="Card number" name="cardNumber" id="field-card" inputMode="numeric" defaultValue="4242424242424242" required />
-              </ActionForm>
-              <ActionForm action={settleSimulatedPayments} submit="Settle pending test ACH payments" variant="outline">
-                <FormKeys />
-                <input type="hidden" name="organizationId" value={organizationId} />
-              </ActionForm>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -157,6 +143,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                       ) : (
                         <a className="underline" href={invoice.hostedInvoiceUrl} rel="noreferrer noopener" target="_blank">
                           {invoice.number ?? 'View'}
+                          <span className="sr-only"> (opens in a new tab)</span>
                         </a>
                       )}
                     </td>
@@ -167,7 +154,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                       <Badge variant={invoice.status === 'paid' ? 'outline' : invoice.firstFailedAt === null ? 'secondary' : 'destructive'}>{INVOICE_STATUS[invoice.status] ?? invoice.status}</Badge>
                       {invoice.firstFailedAt === null || invoice.status === 'paid' ? null : <span className="ml-2 text-xs">payment failed {utcDate(invoice.firstFailedAt)}</span>}
                     </td>
-                    <td className="py-1">{invoice.paidAt === null ? '—' : `${utc(invoice.paidAt)}${invoice.paymentMethodKind === null ? '' : `, ${METHOD[invoice.paymentMethodKind] ?? invoice.paymentMethodKind}`}`}</td>
+                    <td className="py-1">{invoice.paidAt === null ? '—' : `${utc(invoice.paidAt)}${invoice.paymentMethodKind === null ? '' : `, ${PAYMENT_METHOD_NAME[invoice.paymentMethodKind] ?? invoice.paymentMethodKind}`}`}</td>
                   </tr>
                 ))}
               </tbody>

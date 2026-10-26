@@ -9,6 +9,20 @@ export const REPO_ROOT = path.resolve(import.meta.dirname, '../../../..');
 /** The document CO-02 asks for, and what `--out` and `--check` default to. */
 export const DOMAIN_MODEL_DOCUMENT = path.join(REPO_ROOT, 'docs/product/domain-model.md');
 
+/**
+ * The function files (functions.ts, docs/adr/0068), and what `--out` writes them to and `--check` compares by
+ * default: an output of the generator, beside the migrations.
+ */
+export const FUNCTIONS_DIRECTORY = path.join(REPO_ROOT, 'packages/db/functions');
+
+/**
+ * The generator's inputs as git pathspecs, for the provenance line's "with uncommitted changes to its inputs":
+ * its code, the migrations, the Drizzle schema, its data files and the Data dictionary. The function files are
+ * under packages/db but are an output, not an input, so they are excluded: regenerating them must not mark the
+ * document as generated from uncommitted inputs.
+ */
+export const GENERATOR_INPUTS = ['packages/db', 'docs/product/data-dictionary.md', ':(exclude)packages/db/functions'] as const;
+
 /** Who may sign the approval line (approvers.json); `--require-approval` reads it. */
 export const APPROVERS_FILE = path.join(REPO_ROOT, APPROVERS_LIST);
 export const APPROVERS_FORMAT = 'tp-domain-model-approvers/2';

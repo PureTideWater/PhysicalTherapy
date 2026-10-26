@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 
 import { type PlanCatalog, planCatalog } from './catalog';
 import { BillingEventError, INVOICE_KIND_METADATA, ORGANIZATION_METADATA, readStripeEvent } from './events';
+import { PAYMENT_METHOD_ORDER } from './types';
 import {
   type BillingEvent,
   type BillingProvider,
@@ -21,9 +22,11 @@ import {
  * - Customers carry the organization's name and its opaque ID in metadata, nothing else.
  * - Products and prices for the monthly and annual plans and the audit invoice are found by their lookup
  *   keys (config/plans.json) and created once if missing.
- * - Subscriptions charge the customer's default payment method automatically; payment methods are ACH
- *   debit (us_bank_account) or card, collected in the browser by Stripe Elements against a SetupIntent,
- *   so no account or card number ever reaches the product.
+ * - Subscriptions and audit invoices charge the customer's default payment method automatically: a
+ *   subscription saves no default of its own, and a new customer default becomes each live subscription's
+ *   default too, so the method on file is the one every invoice charges (docs/adr/0073). Payment
+ *   methods are ACH debit (us_bank_account) or card, in PAYMENT_METHOD_ORDER (bank first), collected in the
+ *   browser by Stripe Elements against a SetupIntent, so no account or card number ever reaches the product.
  * - Every call that creates or changes something sends an idempotency key, so a retried request creates
  *   nothing twice.
  * - Webhooks are verified by their signature with the SDK (constructEvent, Stripe's default tolerance)
@@ -148,7 +151,7 @@ export class StripeBillingProvider implements BillingProvider {
       this.client.setupIntents.create(
         {
           customer: input.customerRef,
-          allowed_payment_method_types: ['us_bank_account', 'card'],
+          allowed_payment_method_types: [...PAYMENT_METHOD_ORDER],
           usage: 'off_session',
           payment_method_options: { us_bank_account: { verification_method: 'automatic' } },
         },
@@ -161,10 +164,43 @@ export class StripeBillingProvider implements BillingProvider {
     return { setupIntentRef: intent.id, clientSecret: intent.client_secret };
   }
 
+  /**
+   * Makes a confirmed method the customer's default, and each of the customer's live subscriptions' own default
+   * as well (a subscription may carry one, saved before docs/adr/0073 or set in Stripe's dashboard, and it
+   * outranks the customer's: otherwise a card customer who adds a bank account would see the bank account on file
+   * while renewals kept charging the card). The customer's default and every subscription's then agree, and the
+   * customer's is the one the page shows. A subscription whose default is already the method is left alone, and
+   * each update runs under a key derived from the caller's, so a retried event changes nothing twice.
+   */
   async setDefaultPaymentMethod(input: { readonly customerRef: string; readonly paymentMethodRef: string; readonly idempotencyKey: string }): Promise<void> {
     await call('set the default payment method', () =>
       this.client.customers.update(input.customerRef, { invoice_settings: { default_payment_method: input.paymentMethodRef } }, { idempotencyKey: input.idempotencyKey }),
     );
+    let startingAfter: string | undefined;
+    for (;;) {
+      const page = await call('read the customer’s subscriptions', () =>
+        this.client.subscriptions.list({ customer: input.customerRef, limit: 100, ...(startingAfter === undefined ? {} : { starting_after: startingAfter }) }),
+      );
+      for (const subscription of page.data) {
+        const current = subscription.default_payment_method;
+        const currentRef = current === null || typeof current === 'string' ? current : current.id;
+        if (currentRef === input.paymentMethodRef || subscription.status === 'canceled' || subscription.status === 'incomplete_expired') {
+          continue;
+        }
+        await call('set a subscription’s payment method', () =>
+          this.client.subscriptions.update(
+            subscription.id,
+            { default_payment_method: input.paymentMethodRef },
+            { idempotencyKey: `${input.idempotencyKey}:subscription:${subscription.id}` },
+          ),
+        );
+      }
+      const last = page.data.at(-1);
+      if (!page.has_more || last === undefined) {
+        return;
+      }
+      startingAfter = last.id;
+    }
   }
 
   async paymentMethodOnFile(customerRef: string): Promise<PaymentMethodSummary | null> {
@@ -191,7 +227,9 @@ export class StripeBillingProvider implements BillingProvider {
           customer: input.customerRef,
           items: [{ price: prices[input.plan] }],
           collection_method: 'charge_automatically',
-          payment_settings: { payment_method_types: ['us_bank_account', 'card'], save_default_payment_method: 'on_subscription' },
+          // The customer's default pays every invoice: a default saved here from the first payment would outrank
+          // it, and setDefaultPaymentMethod keeps the two equal from then on.
+          payment_settings: { payment_method_types: [...PAYMENT_METHOD_ORDER], save_default_payment_method: 'off' },
           metadata: { [ORGANIZATION_METADATA]: input.organizationId },
         },
         { idempotencyKey: input.idempotencyKey },
@@ -209,7 +247,15 @@ export class StripeBillingProvider implements BillingProvider {
     const metadata = { [ORGANIZATION_METADATA]: input.organizationId, [INVOICE_KIND_METADATA]: 'audit' };
     const invoice = await call('create the audit invoice', () =>
       this.client.invoices.create(
-        { customer: input.customerRef, collection_method: 'charge_automatically', auto_advance: true, pending_invoice_items_behavior: 'exclude', metadata },
+        {
+          customer: input.customerRef,
+          collection_method: 'charge_automatically',
+          auto_advance: true,
+          pending_invoice_items_behavior: 'exclude',
+          // ACH or card, as the subscription offers, never whatever else the dashboard happens to enable.
+          payment_settings: { payment_method_types: [...PAYMENT_METHOD_ORDER] },
+          metadata,
+        },
         { idempotencyKey: `${input.idempotencyKey}:invoice` },
       ),
     );

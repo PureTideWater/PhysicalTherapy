@@ -32,6 +32,7 @@ const config: NextConfig = {
   // Workspace packages export TypeScript source; Next compiles them with the app.
   transpilePackages: [
     '@paidwhole/brand',
+    '@tp/billing',
     '@tp/compliance',
     '@tp/contracts',
     '@tp/db',

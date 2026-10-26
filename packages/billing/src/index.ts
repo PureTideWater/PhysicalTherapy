@@ -2,8 +2,9 @@
  * @tp/billing (PRD 4 Monitoring v1: "Stripe billing: annual and monthly plans, invoices, ACH"; PRD 5, J18;
  * PRD 6, Billing; PRD 15, Billing: "Stripe (no PHI: organization names and invoices only)"; docs/adr/0050):
  * the provider interface, the event reader both implementations share, the plan catalog and the dunning
- * schedule. The Stripe implementation is `@tp/billing/stripe`, the local Stripe test-mode simulator
- * `@tp/billing/local`.
+ * schedule, and the order the payment methods are offered in (also `@tp/billing/types`, which the browser
+ * imports; docs/adr/0073). The Stripe implementation is `@tp/billing/stripe`, the local Stripe test-mode
+ * simulator `@tp/billing/local`.
  */
 export * from './types';
 export { BillingEventError, INVOICE_KIND_METADATA, ORGANIZATION_METADATA, readStripeEvent } from './events';

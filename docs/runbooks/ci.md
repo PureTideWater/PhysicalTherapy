@@ -68,10 +68,19 @@ test alone, which prices the base's engine and this commit's.
    - **`db (k/N)`:** the failing file and test are in the suite step's output. "Files this shard ran" lists the files
      the shard ran, with the ten slowest. Run the file locally on its own (below); every db file makes its own
      database, so a shard's failure is a file's, never the shard's order.
-   - **`domain model`:** "documents differ" means a migration without the regenerated document
-     (`pnpm db:domain-model --out`, through `/new-migration`); an approval refusal on a schema pull request means the
-     founder has not signed yet, and the job prints the SHA-256 to sign (governance runbook, "A pull request that asks
-     you to approve the domain model"). Nothing else is waiting on it: the database suite reports on its own.
+   - **`domain model`:** "documents differ", or a function file named missing, extra, differing or "ignored by git"
+     (exit 1), means a migration without the regenerated document and `packages/db/functions`
+     (`pnpm db:domain-model --out`, through `/new-migration`, then commit both; docs/adr/0068); a function file with
+     an executable bit fails it too (`chmod 644` it), and so does a stray entry (named extra) or a symlink or
+     directory (named refused). Exit 2 is a refusal, not a difference: a function file name no function could have
+     (in the summary step), a symlinked functions directory, a function in a schema other than `public`, or a git
+     failure in the summary step, printed with git's own message (a blob missing means a shallow
+     clone: the job checks out with `fetch-depth: 0`, so locally run `git fetch --unshallow`). An approval refusal on a schema pull request means the founder has not
+     signed yet, and the job prints the SHA-256 to sign (governance runbook, "A pull request that asks you to approve
+     the domain model"). The summary step writes the full "Function definitions changed since" section, diffs
+     included up to a 900,000-byte budget, to the job summary; a pull request's description carries its
+     `--function-diffs list` form, whose list must match. Nothing else is waiting on it: the database suite reports on
+     its own.
    - **`e2e (k/M)`:** the failing journey is in the step's output and annotated on the pull request. A screenshot
      comparison prints each diff and actual picture under 300 KB in the log as base64 (docs/adr/0058). A "flaky" test,
      one that passed only on its retry, fails the run by design: fix it, never re-run it to green. A refusal of the
