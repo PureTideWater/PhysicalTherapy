@@ -2,8 +2,8 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC.*
 
-- **Stage:** fix round done and pushed (head 4a2ee32, ~06:05): every finding fixed (755122e, c23441f), base 4d99df8 merged (no conflicts), the full local suite passed once; CI on 4a2ee32, then the fresh-clone verification.
-- **Branch / PR:** `co-001/materiality-cents`, worktree /home/user/materiality-cents / #54 (draft), head 4a2ee32.
+- **Stage:** MERGED. PR #54 merged as 7ef421b (2026-10-26 ~09:00 UTC) with method merge and expectedHeadSha 4a2ee32, after its fresh-clone verification passed and every required check was green on that head; the branch already held the base (4d99df8).
+- **Branch / PR:** `co-001/materiality-cents` (remote kept; worktree and local branch removed) / #54, merged.
 - **Migration:** none. No #42 file: the route (`apps/web/src/lib/routes/settings.ts`, a #42 file) already returns what
   the page needs and is not touched. `packages/money` unchanged (`formatCents(parseCents(…))` already exists).
 - **Reserved numbers:** test-matrix CAS-38 and CAS-39; `packages/synth` CAS-38 and CAS-39. No ADR.
@@ -22,7 +22,10 @@
 - **Base moved:** PR #46 (db-function-diffs) merged as 4d99df8 at ~05:00; merges cleanly; taken in the fix round.
 - **Machine:** restarted again ~04:21 (PG18 restarted by the builder); the first before-capture failed on it and was retaken.
 - **Safety net:** send_later 08:50 UTC (trig_012MWfJwXCJEX4TNFjtwos9i).
-- **CI:** c74d304 green on every check. 4a2ee32 running.
+- **CI on 4a2ee32 (final):** every check green; unit 327 files, 5,098 passed, 1 skipped; db 120 files, 9,069 passed, 1 skipped; e2e 51 passed (no flake). Push runs on 7ef421b (ci, mutation, screening-capacity) started at merge.
 - **Full local suite on 4a2ee32:** typecheck 22; lint 1,502 files 0/0; lint:copy, lint:logs, verify-content, engine freeze, check:fixtures; synth clean (203 cases); unit 327 files 5,096 passed 3 skipped; golden 188; oracle 637; test:db six shards 120 files 9,069 passed 1 skipped; build + stamp + e2e 51/51 (triage.spec's CAS-38 step included); no money package affected (`approval-summaries/lane-b-materiality-cents-fix-suite.md`).
 - **After shots retaken at 4a2ee32;** gallery version 2.
-- **Next:** CI on 4a2ee32; the fresh-clone verification; ready; merge.
+- **Fresh-clone verification (wf_4b2d6b9c-0c3; cut off by the 5-hour limit ~06:35, resumed ~08:55 after the machine restart and setup-container.sh):** pass (`approval-summaries/lane-b-materiality-cents-verify.md`); its wording note (the defaults page's save still in settings.ts) fixed in the description before merge.
+- **After the merge:** unsubscribed from #54; the 08:50 check-in deleted; main checkout fast-forwarded to 7ef421b and installed; worktrees `/home/user/materiality-cents` and `/home/user/screens` removed with the local branch; tp_e2e_screens dropped; nothing running.
+- **For the orchestrator:** done (merged 7ef421b). Used test-matrix and synth CAS-38, CAS-39; no ADR. Hand-overs to Lane A and proposals are above.
+- **Next:** none for this item.
