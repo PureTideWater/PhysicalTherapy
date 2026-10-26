@@ -25,6 +25,11 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-26 05:05 UTC: **Draft PR #53** (https://github.com/PureTideWater/PhysicalTherapy/pull/53), head 388f213c; description from the template, written with update_pull_request and proved byte for byte; subscribed.
 - 2026-10-26 05:08 UTC: **Two adversarial reviews** running (wf_f15d6416-cdd): AI safety and evaluation correctness; security (security-reviewer.md); each finding verified by a skeptic.
 
+- 2026-10-26 05:05 UTC: #53 conflicted with the base (4d99df8: #46, #47). Merged with a merge commit in a separate worktree (rule 6: both lanes' entries kept in matrix.ts, registry.ts, codeowners.test.ts; watched-paths and fixtures regenerated, no change); a3e08b37.
+- 2026-10-26 05:10 UTC: CI on a3e08b37: only `unit` red (a new set-v2 test timed out at 5 s on the runner; every db and e2e shard, build, lint, static, images, domain model, mutation, approval-of-record green). Fixed by rendering the set once per describe (3791fec2), pushed.
+- 2026-10-26 05:20 UTC: **Reviews done** (wf_f15d6416-cdd; `lane-b-model-eval-gate-review-{ai-safety,security}.md`, findings and verdicts `lane-b-model-eval-gate-review-findings.json`). AI safety: B1 (verified major: the permitted check is skipped after a version change), M1 (--against not tied to the served record), M2 (an omitted scope field silently widens a rate record), M3 (the permitted run mixes the two contract models), m1, m2, m4 confirmed minor, m3 refuted, n1-n4 nits. Security: S1 (unmeasured permitted runs, verified minor), S2 (set v2's NPI/TIN rule, minor), S3 refuted (nit), N1-N4 nits.
+- 2026-10-26 05:25 UTC: **Fix round** running (wf_441cf1ff-868): every finding, then the full local suite once, then one push.
+
 ## Proposals outside this PR
 - `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).
 - A CLI option to run the twins twice and compare them, in place of the runbook's manual comparison.
