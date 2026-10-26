@@ -791,3 +791,12 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - all eight sessions were sent a resume message (their own 03:50 send_laters are a backup).
   - **Usage:** this session's rate-limit record now shows the seven-day limit at "allowed_warning", resetting at 1793386800 (Friday 2026-10-30 19:00 UTC, as recorded). The weekly figure is near the line, so new starts stop at ~85% as planned.
   - **Fixed:** the ops push retry loop. `cmd | tail -1 && break` read tail's exit status, so a rejected push looked like success and was never retried. The pushes were checked: the branch is level with origin. `scratchpad/push-ops.sh` now checks git's own exit status.
+- **2026-10-26 ~04:00 UTC: #135 merged; the UX baseline's checks done; 11 reviewers running; the retake running.**
+  - **#135, the bank account shown first: merged as PR #47 (c5195ee, ~03:58 UTC).** The first of the parallel items, after its fresh-clone verification with every required check green. Its micro-deposit proposal is queued.
+  - **The checks are complete: 857 verdicts.** 683 ok; 152 product findings (other 114, cropped 43, dark-not-applied 6, state-not-shown 7 and error-page 2, not fixable); 22 capture faults for the retake. Committed:
+    - `designs/lane-b-ux-review/manifest.json` (every shot, with its verdict and the checker's note; file basenames only);
+    - `coverage.md` (every route by width, theme and state, and the 78 skipped shots with reasons).
+  - **The review, 11 reviewers at once** as background agents: the workflow's two-agent limit on this container would have run them in six rounds.
+    - The lenses: brand (96 images); flows, practice and other (124 and 85); words, practice and other (127 and 76); accessibility, practice 1 and 2 and other (107, 107 and 152); 390 px and states, practice 1 and 2 and other (115, 115 and 142). 1,246 image reads.
+    - Each has the checkers' notes as leads, and a shared brief (`scratchpad/ux/reviewer-common.md`): the rules, the in-flight Lane B PRs to fold into, #42's files, the finding format and a progress file.
+  - **The retake** (wf_f5c2fa03-d95): the 22 capture faults (sticky headers at 390, the empty-filter and zero-read states), under the lock, then their check. The retaken shots join the review afterwards.
