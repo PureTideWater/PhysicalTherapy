@@ -332,8 +332,14 @@ export function LineCorrectionWords({ correction, className = '' }: { readonly c
     const fell = billable.shareChangeCents.startsWith('-') ? billable.shareChangeCents.slice(1) : null;
     return (
       <p className={box} data-correction="other_reductions">
-        Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and reduced its payment by{' '}
-        <Money value={billable.otherReductionCents} /> for other reasons, not billable to the patient
+        Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} />
+        {billable.paymentIncreaseCents === '0' ? null : (
+          // An earlier correction paid part (RX-2): name it, so the allowed increase adds up.
+          <>
+            , <Pays billable={billable} />,
+          </>
+        )}{' '}
+        and reduced its payment by <Money value={billable.otherReductionCents} /> for other reasons, not billable to the patient
         {fell === null ? null : (
           <>
             ; the patient’s share fell by <Money value={fell} />

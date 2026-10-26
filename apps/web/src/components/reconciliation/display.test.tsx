@@ -149,6 +149,11 @@ describe('a case line’s corrections beside the ledger', () => {
       'Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by $30.00 and reduced its payment by $40.00 for other reasons, not billable to the patient; the patient’s share fell by $10.00. No ledger entry is written; counted in no total.',
     );
     expect(text(<LineCorrectionWords correction={fell} />)).not.toContain('the same');
+    // An earlier correction paid 10.00 of the allowed 30.00 (RX-2): the words name it, so 10.00 + 20.00 adds up to 30.00.
+    const part: CorrectionView = { kind: 'other_reductions', billable: { ...(other.billable as Billable), paymentIncreaseCents: '1000', otherReductionCents: '2000' } };
+    expect(text(<LineCorrectionWords correction={part} />)).toBe(
+      'Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by $30.00, pays $10.00 of it, and reduced its payment by $20.00 for other reasons, not billable to the patient. No ledger entry is written; counted in no total.',
+    );
   });
 
   it('puts each signed amount’s sign inside its mono figure, a non-breaking space before it (UX-6)', () => {

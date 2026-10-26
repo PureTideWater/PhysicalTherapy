@@ -132,6 +132,14 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
 }
 
 function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string; readonly empty?: string }) {
+  // An empty line says so in a sentence that wraps, outside the table's horizontal scroll (RX-1: clipped at 390 px).
+  if (entries.length === 0 && empty !== undefined) {
+    return (
+      <p data-entries="none" className="text-sm text-muted-foreground">
+        {empty}
+      </p>
+    );
+  }
   return (
     <div className="overflow-x-auto">
       <table aria-label={label} className="w-full text-sm">
@@ -148,15 +156,7 @@ function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entri
           </tr>
         </thead>
         <tbody>
-          {entries.length === 0 && empty !== undefined ? (
-            <tr data-entries="none">
-              <td colSpan={8} className="py-1 text-muted-foreground">
-                {empty}
-              </td>
-            </tr>
-          ) : (
-            <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
-          )}
+          <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
         </tbody>
       </table>
     </div>
