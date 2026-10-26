@@ -225,6 +225,17 @@ lockfile entry against the release age and the trust policy on every install (`t
   Dependabot's `container-images` pull request moves the digest within major 24; check the images job's scan and the
   capacity measurement. To read a digest by hand, take the field `digest` (the index digest) of
   `curl -sS https://hub.docker.com/v2/repositories/library/node/tags/24-trixie-slim`.
+- **The BuildKit builder, by hand.** Every `docker/setup-buildx-action` step (ci.yml's images job, release.yml,
+  release-dry-run.yml and screening-capacity.yml) sets
+  `driver-opts: image=moby/buildkit:vX.Y.Z@sha256:<index digest>`, one value on all four, and neither Dockerfile has a
+  `# syntax` line, so the builder and its frontend run by digest (docs/adr/0066, Part 2). Dependabot cannot update a
+  step's `driver-opts`, so `pnpm actions:check` reads Docker Hub on every networked run and warns when a newer
+  `vX.Y.Z` release was pushed three days ago or more, the release age the workspace holds every dependency to. On that
+  warning: read the release notes at github.com/moby/buildkit/releases; take the field `digest` (the index digest) of
+  `curl -sS https://hub.docker.com/v2/repositories/moby/buildkit/tags/vX.Y.Z`; and set the new string on all four
+  steps in one pull request. workflows.test.ts holds the four equal, check-action-pins fails a new builder whose tag is
+  not that digest, and the images job and the release's dry run prove the build. Never take a `nightly`, `master` or
+  `-rc` tag, which the check does not offer.
 - **Node 24 to 26, on a plan, before Gate 1.** Node 26 is LTS from 2026-10-28. One pull request moves the Dockerfiles'
   `FROM`, `.nvmrc`, `engines`, `@types/node` (major ignored until then) and the workflows' `node-version` together,
   and `mutation.yml`'s exact Node with `tools/stryker/unicode.json` after the Unicode-bound equivalents are checked
