@@ -68,7 +68,7 @@ export const PACKET_CHECKLIST = [
   },
   {
     id: 'calculation',
-    text: 'Each line’s calculation in the PDF is worded from its trace exactly as on this page: the method, each step, the fee schedule worksheet, the one rounding and the patient share, shown apart from expected; the CSV’s method, rounding and patient share match; each trace’s SHA-256 is on this page.',
+    text: 'Each line’s calculation in the PDF is worded from its trace exactly as on this page: the method, each step, the fee schedule worksheet where the line used the fee schedule, the one rounding and the patient share, shown apart from expected; the CSV’s method, rounding and patient share match; each trace’s SHA-256 is on this page.',
   },
   { id: 'identifiers', text: 'The identifiers in the PDF and the CSV are the claim and patient records’ own, and the narrative holds none of them.' },
   {
