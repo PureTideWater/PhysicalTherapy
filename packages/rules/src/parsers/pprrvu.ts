@@ -152,7 +152,7 @@ export const pprrvuParser: RuleFileParser = {
   reviewQuestions: [
     'Do the columns the parser checked (HCPCS, MOD, status, work RVU, non-facility and facility PE RVU with their NA indicators, MP RVU, PC/TC, global days, multiple procedure) match the RVUPUF record layout shipped with this file?',
     'Spot-check at least five codes, including 97110, 97140 and 97530, against the stored file and the CMS physician fee schedule look-up.',
-    "Is the effective window right for this file's release (January, April, July or October), so the year and quarter (A to D) recorded on every record match the file's name (RVU26A, RVU26B, ...), and is the earlier quarter's window closed the day before?",
+    "Is the effective window the quarter of this file's release (January, April, July or October), or, for a correction CMS made inside the quarter, the part of that quarter the file is in force for, so the year and quarter (A to D) on every record match the file's name (RVU26A, RVU26B, ...), with every earlier quarter's draft kept as it is?",
   ],
   parse,
 };

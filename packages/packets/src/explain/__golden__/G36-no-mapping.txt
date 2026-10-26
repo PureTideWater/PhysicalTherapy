@@ -1,0 +1,25 @@
+# fixtures/golden/claims/G36-no-mapping.json
+
+## Line 1, internal
+Not priced: The payer and plan have no mapping on the service date.
+  [agreement] The payer and plan have no mapping on the service date.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $20.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The payer and plan have no mapping on the service date. The line stopped at the agreement. Remedy: Map the plan.
+
+## Line 1, viewer
+Not priced: The payer and plan have no mapping on the service date.
+  [agreement] The payer and plan have no mapping on the service date.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $20.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: The payer and plan have no mapping on the service date. The line stopped at the agreement. Remedy: Map the plan.

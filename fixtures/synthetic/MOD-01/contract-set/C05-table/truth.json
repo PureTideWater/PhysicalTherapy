@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C05",
   "layout": "table",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": null,
   "pages": 4,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [[0,2],[1,3]],
   "records": [
     {
       "label": "Exhibit A: 97760 KX GP",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -44,6 +51,7 @@
     },
     {
       "label": "Exhibit A: 97032 GO 59",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -76,6 +84,7 @@
     },
     {
       "label": "Amendment 1: 97760 KX GP",
+      "role": "amendment",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -108,6 +117,7 @@
     },
     {
       "label": "Amendment 1: 97032 GO 59",
+      "role": "amendment",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",

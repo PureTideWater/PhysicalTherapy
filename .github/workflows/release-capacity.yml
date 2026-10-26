@@ -1,0 +1,137 @@
+name: release-capacity
+
+# The weekly real-size test (audit #31; docs/adr/0071; tools/release-capacity/run.ts): the production worker image at
+# the worker task's limits (half a vCPU and 1,024 MiB, no swap; infra/lib/environments.ts) with production's command and
+# the explicit heap limit (infra/lib/heap.ts, heapFlag('worker')), every job type's loop at once as one production
+# worker runs them, against Postgres at db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms delay each
+# way, under the SYNTHETIC quarterly scale release 900110 (seven years of CMS quarters, about 4.17 million records),
+# built outside the repository. A 100,000-line period prices while another practice's audit report prints and four 835s
+# parse, then triages and reports; it fails on any job not complete, the run not complete, a count other than the
+# period's lines or the 835s' claims, an OOM kill or a restart, memory.peak above 90% of the task, or a read outside the
+# keyed fetch or a job's last failed attempt in the worker's log. Times are recorded and advisory (the founder's ruling
+# of 2026-10-23 for the screening's test). The five 50,000-row screenings are screening-capacity's weekly S1 to S5.
+# Synthetic data only, no credentials. Not a required check.
+on:
+  schedule:
+    # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (F1 (a)).
+    - cron: "29 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Every run is measured, grouped by its commit and never cancelled.
+concurrency:
+  group: release-capacity-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  capacity:
+    # GitHub's free 4-CPU runner for a public repository, as screening-capacity's: Postgres keeps db.t4g.medium's 2 vCPU
+    # on 0-1, shared with the harness, and the worker its half vCPU on a CPU of its own (tools/screening-capacity/limits.ts,
+    # cpuLayout). Once the repository is private its standard runner has 2 CPUs, which run.ts refuses as RUNNER_TOO_SMALL
+    # before measuring: this label then becomes the same 4-core larger runner as screening-capacity's, which needs an
+    # organization on GitHub Team and is billed beyond the included minutes (docs/runbooks/screening-capacity.md, "The
+    # 8-core runner"; docs/adr/0071); until then a private run fails every week without measuring (fix round S5).
+    runs-on: ubuntu-24.04
+    # The larger release takes longer to build and load than the screening's: a run takes 60 to 120 minutes, and a hung
+    # one stops at 180 instead of GitHub's 360 (docs/adr/0063).
+    timeout-minutes: 180
+    # The advisory lines (the windows query's time above its budget), base64, for the notify job (fix round S3).
+    outputs:
+      advisories: ${{ steps.measure.outputs.advisories }}
+    steps:
+      # The harness calls no GitHub API and pushes nothing, so the token is not left in the checkout.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      # The production worker image, from its Dockerfile, as screening-capacity's workflow builds it; it reads that
+      # workflow's layer cache and writes none, so the weekly run never churns the repository's Actions cache.
+      - name: Build the worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          load: true
+          push: false
+          tags: tp-worker:capacity
+          cache-from: type=gha,scope=screening-capacity-worker
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+
+      # The SYNTHETIC quarterly scale release, built outside the repository on every run and never cached: at about
+      # twice the screening's release it would crowd that workflow's cache out of the repository's 10 GB.
+      - name: Build the quarterly scale release
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm exec tsx tools/release/scale.ts --shape quarterly --out "$RUNNER_TEMP/quarterly-release"
+
+      # The harness and its child processes on Postgres's CPUs (0-1 on the free 4-CPU runner), never the worker's: the
+      # screening layout's own answer (limits.ts, harnessCpus). Every failing check fails this step (checks.ts).
+      - name: Measure under the worker task's limits
+        id: measure
+        run: |
+          cpus=$(pnpm -s exec tsx tools/release-capacity/run.ts --print-harness-cpus)
+          echo "harness on CPUs $cpus"
+          taskset -c "$cpus" pnpm exec tsx tools/release-capacity/run.ts \
+            --out "$RUNNER_TEMP/release-capacity" \
+            --release-dir "$RUNNER_TEMP/quarterly-release" \
+            --worker-image tp-worker:capacity
+
+      # The report and the worker's log (IDs, codes and counts by the logger's allowlist, synthetic data).
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: release-capacity
+          path: |
+            ${{ runner.temp }}/release-capacity/release-capacity.json
+            ${{ runner.temp }}/release-capacity/summary.md
+            ${{ runner.temp }}/release-capacity/logs/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # A failure, a cancel (the 180-minute timeout among them) or an advisory opens one issue, or comments on the one already
+  # open under its title (fix round S3, SB-7). This job holds the workflow's only write permission and runs no
+  # repository code: it checks nothing out, and every value reaches its shell through env.
+  notify:
+    needs: capacity
+    if: always() && github.event_name != 'pull_request' && (needs.capacity.result == 'failure' || needs.capacity.result == 'cancelled' || needs.capacity.outputs.advisories != '')
+    runs-on: ubuntu-24.04
+    # One call to the issues API; a hung call stops at 5 minutes instead of GitHub's 360 (docs/adr/0063).
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the release-capacity issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CAPACITY_RESULT: ${{ needs.capacity.result }}
+          ADVISORIES_B64: ${{ needs.capacity.outputs.advisories }}
+        run: |
+          set -euo pipefail
+          if [ "$CAPACITY_RESULT" = "success" ]; then
+            title="Release capacity advisory"
+            printf 'The release capacity test passed on %s at %s with an advisory: %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+          else
+            title="Release capacity test failing"
+            printf 'The release capacity test ended %s on %s at %s: %s. The artifact of the run holds release-capacity.json and summary.md with each failing check.\n' "$CAPACITY_RESULT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+          fi
+          if [ -n "$ADVISORIES_B64" ]; then
+            { printf '\nAdvisory:\n\n'; printf '%s' "$ADVISORIES_B64" | base64 -d | sed 's/^/- /'; printf '\n'; } >> body.md
+          fi
+          gh issue list --label release-capacity --state open --json number,title > open.json
+          number=$(jq -r --arg title "$title" 'first(.[] | select(.title == $title) | .number) // empty' open.json)
+          if [ -z "$number" ]; then
+            gh label create release-capacity --description "The weekly real-size test (audit #31)" --color B60205 2>/dev/null || true
+            gh issue create --title "$title" --label release-capacity --body-file body.md
+          else
+            gh issue comment "$number" --body-file body.md
+          fi

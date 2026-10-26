@@ -1,0 +1,182 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V09",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "tier": "small",
+  "pageText": "unfaithful",
+  "unfaithfulBecause": "struck_text",
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Article 3: 92508 CO CQ POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["92508"],
+          "written": ["92508"],
+          "page": 3,
+          "quote": "For CPT 92508 billed with modifiers CO and CQ in place of service 19, Payer shall pay $82.87 per unit."
+        },
+        "modifiers": {
+          "value": ["CO","CQ"],
+          "written": ["CO","CQ"],
+          "page": 3,
+          "quote": "For CPT 92508 billed with modifiers CO and CQ in place of service 19, Payer shall pay $82.87 per unit."
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 3,
+          "quote": "For CPT 92508 billed with modifiers CO and CQ in place of service 19, Payer shall pay $82.87 per unit."
+        },
+        "amount": {
+          "value": "8287",
+          "written": "$82.87",
+          "page": 3,
+          "quote": "For CPT 92508 billed with modifiers CO and CQ in place of service 19, Payer shall pay $82.87 per unit."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "Jul. 1st, 2025",
+          "page": 1,
+          "quote": "This Agreement is effective Jul. 1st, 2025 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97533 59 CQ POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97533"],
+          "written": ["97533"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifiers 59 and CQ in place of service 19, Payer shall pay $105.87 per unit."
+        },
+        "modifiers": {
+          "value": ["59","CQ"],
+          "written": ["59","CQ"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifiers 59 and CQ in place of service 19, Payer shall pay $105.87 per unit."
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifiers 59 and CQ in place of service 19, Payer shall pay $105.87 per unit."
+        },
+        "amount": {
+          "value": "10587",
+          "written": "$105.87",
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifiers 59 and CQ in place of service 19, Payer shall pay $105.87 per unit."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "Jul. 1st, 2025",
+          "page": 1,
+          "quote": "This Agreement is effective Jul. 1st, 2025 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97168 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97168"],
+          "written": ["97168"],
+          "page": 3,
+          "quote": "For CPT 97168 in place of service 22, Payer shall pay $91.66 per unit."
+        },
+        "places_of_service": {
+          "value": ["22"],
+          "written": ["22"],
+          "page": 3,
+          "quote": "For CPT 97168 in place of service 22, Payer shall pay $91.66 per unit."
+        },
+        "amount": {
+          "value": "9166",
+          "written": "$91.66",
+          "page": 3,
+          "quote": "For CPT 97168 in place of service 22, Payer shall pay $91.66 per unit."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "Jul. 1st, 2025",
+          "page": 1,
+          "quote": "This Agreement is effective Jul. 1st, 2025 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97130 GO CO POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97130"],
+          "written": ["97130"],
+          "page": 3,
+          "quote": "For CPT 97130 billed with modifiers GO and CO in place of service 22, Payer shall pay $68.58 per unit."
+        },
+        "modifiers": {
+          "value": ["GO","CO"],
+          "written": ["GO","CO"],
+          "page": 3,
+          "quote": "For CPT 97130 billed with modifiers GO and CO in place of service 22, Payer shall pay $68.58 per unit."
+        },
+        "places_of_service": {
+          "value": ["22"],
+          "written": ["22"],
+          "page": 3,
+          "quote": "For CPT 97130 billed with modifiers GO and CO in place of service 22, Payer shall pay $68.58 per unit."
+        },
+        "amount": {
+          "value": "6858",
+          "written": "$68.58",
+          "page": 3,
+          "quote": "For CPT 97130 billed with modifiers GO and CO in place of service 22, Payer shall pay $68.58 per unit."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "Jul. 1st, 2025",
+          "page": 1,
+          "quote": "This Agreement is effective Jul. 1st, 2025 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

@@ -285,6 +285,11 @@ describe('on a synthetic repository', () => {
     // Nothing read by a function a run calls: only when that function is named in no other closure file.
     expect(reads({ ...read, reads: [], onlyIn: 'claims' })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (claims is named in packages/pricing/src/test-helper.ts)']);
     expect(reads({ ...read, reads: [], onlyIn: 'golden' })).toEqual([]);
+    // Read by several such functions: each named in the reader and in no other closure file.
+    expect(reads({ ...read, reads: [], onlyIn: ['golden', 'G1.json'] })).toEqual([]);
+    expect(reads({ ...read, reads: [], onlyIn: ['golden', 'claims'] })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (claims is named in packages/pricing/src/test-helper.ts)']);
+    expect(reads({ ...read, reads: [], onlyIn: ['golden', 'missing'] })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (missing is named in no closure file but its own)']);
+    expect(reads({ ...read, reads: [], onlyIn: [] })).toEqual(['packages/pricing/src/engine.test.ts: fixtures/golden/claims (no function is named in no closure file but its own)']);
   });
 });
 
@@ -304,6 +309,11 @@ describe('on this repository', () => {
     expect(closures.flatMap((closure) => closure.uncovered.map((literal) => `${closure.pkg}: ${literal}`))).toEqual([]);
     for (const closure of closures) expect(lockedPackages(parseLockfile(lock), closure.imports, TEST_TOOLING).filter((key) => key.startsWith('?')), closure.pkg).toEqual([]);
     for (const read of DIRECTORY_READS) expect(files, read.file).toContain(read.file);
+    // The rules content reader finds numbered releases only for the checker and the assembler, outside every closure.
+    expect(DIRECTORY_READS.filter((read) => read.file === 'packages/rules/src/content.ts' && read.directory.startsWith('content/')).map((read) => [read.directory, read.reads, read.onlyIn])).toEqual([
+      ['content/releases', [], ['previousReleaseNumber', 'releaseDirOf']],
+      ['content/outgoing', [], ['previousReleaseNumber', 'releaseDirOf']],
+    ]);
     for (const entries of Object.values(DATA_FILES)) for (const entry of entries) expect(files.some((file) => globToRegExp(entry.glob).test(file)), entry.glob).toBe(true);
   });
 
@@ -328,7 +338,8 @@ describe('on this repository', () => {
     expect(affects(['packages/pricing/src/testing.ts'])).toEqual(['pricing', 'packets']);
     expect(affects(['packages/pricing/src/engine.test.ts'])).toEqual(['pricing']);
     expect(affects(['tools/golden-worksheet/engine.golden.test.ts', 'fixtures/golden/claims/G001.json'])).toEqual(['pricing']);
-    expect(affects(['docs/product/unpriced-reasons.md'])).toEqual(['pricing']);
+    // The closed list is read by the engine's test and by the calculation words' (packets, explain/words.test.ts).
+    expect(affects(['docs/product/unpriced-reasons.md'])).toEqual(['pricing', 'packets']);
   });
 
   it('gives all four for the mutation tooling, its configuration and the workflow', () => {
@@ -350,8 +361,8 @@ describe('on this repository', () => {
 
   it('selects every shard of each affected package', () => {
     expect(shardsFor(['money'])).toEqual(['money-ledger']);
-    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-rest', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
-    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(6);
+    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
+    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(7);
     expect(shardsFor([] as MutationPackage[])).toEqual([]);
   });
 });

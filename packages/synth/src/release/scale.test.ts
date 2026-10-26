@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  QUARTERLY_SCALE_RELEASE_NUMBER,
+  QUARTERLY_SCALE_RELEASE_SHAPE,
   SCALE_RELEASE_NUMBER,
   SCALE_RELEASE_SHAPE,
   SCALE_THERAPY_CODES,
@@ -8,6 +10,8 @@ import {
   SMALL_SCALE_RELEASE_SHAPE,
   type ScaleSourceFile,
   correctionDate,
+  correctionQuarter,
+  rvuValues,
   scaleCodes,
   scaleCorrectedCodes,
   scaleLocalities,
@@ -221,5 +225,132 @@ describe('the scale release’s source files (small shape)', () => {
     expect(first.charAt(20)).toBe('0');
     const flagged = zip5?.text.split('\n').filter((line) => line.charAt(20) === '1') ?? [];
     expect(flagged.length).toBe(scaleZips(SMALL).filter((zip) => zip.plusFour).length);
+  });
+});
+
+/** The quarterly shape (release 900110; audit #30 and #31, docs/adr/0071) at the small shape's size. */
+const QUARTERLY_SMALL = { ...SMALL, windows: 'quarter' } as const;
+const quarterlyFiles = (): ScaleSourceFile[] => [...scaleSourceFiles(QUARTERLY_SMALL)];
+const QUARTERS = [
+  ['01-01', '03-31'],
+  ['04-01', '06-30'],
+  ['07-01', '09-30'],
+  ['10-01', '12-31'],
+] as const;
+
+describe('the quarterly scale release (release 900110)', () => {
+  it('is release 900110, the production counts over seven years of quarters', () => {
+    expect(QUARTERLY_SCALE_RELEASE_NUMBER).toBe(900_110);
+    expect(QUARTERLY_SCALE_RELEASE_SHAPE).toEqual({ ...SCALE_RELEASE_SHAPE, years: [2020, 2021, 2022, 2023, 2024, 2025, 2026], windows: 'quarter' });
+    const counts = scaleRecordCounts(QUARTERLY_SCALE_RELEASE_SHAPE);
+    expect(counts).toEqual({
+      pfs_rvu: 28 * 19_000 + 7 * 380,
+      pfs_gpci: 28 * 109,
+      locality_map: 28 * 42_000,
+      locality_map_plus_four: 28 * 1_273,
+      conversion_factor: 14,
+      mppr_rate: 1_050,
+      ncci_mue: 28 * 15_000,
+      ncci_ptp: 2_000_000,
+      carc: 400,
+      rarc: 1_200,
+      claim_status_code: 300,
+    });
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    expect(total).toBeGreaterThan(4_170_000);
+    expect(total).toBeLessThan(4_180_000);
+    expect(scaleZip9Size(QUARTERLY_SCALE_RELEASE_SHAPE)).toMatchObject({ records: 35_644, rangesPerRecord: 40 });
+  });
+
+  it('leaves every shape without windows as it was (the year windows of release 900100)', () => {
+    expect(SCALE_RELEASE_SHAPE.windows).toBeUndefined();
+    expect(SMALL.windows).toBeUndefined();
+    expect([...scaleSourceFiles({ ...SMALL, windows: 'year' })].map((file) => [file.name, file.text])).toEqual(files().map((file) => [file.name, file.text]));
+    expect(files().filter((file) => file.type === 'pfs_rvu').map((file) => [file.effectiveFrom, file.effectiveTo])).toEqual([
+      ['2025-01-01', '2025-12-31'],
+      ['2025-01-01', '2025-05-15'],
+      ['2025-05-16', '2025-12-31'],
+      ['2026-01-01', '2026-12-31'],
+      ['2026-01-01', '2026-05-15'],
+      ['2026-05-16', '2026-12-31'],
+    ]);
+  });
+
+  it('windows each undated file to one CMS quarter, four a year, and keeps the MPPR list and conversion factors per year', () => {
+    const all = quarterlyFiles();
+    for (const type of ['pfs_gpci', 'locality_map', 'locality_map_plus_four', 'ncci_mue'] as const) {
+      expect(
+        all.filter((file) => file.type === type).map((file) => [file.effectiveFrom, file.effectiveTo]),
+        type,
+      ).toEqual(SMALL.years.flatMap((year) => QUARTERS.map(([from, to]) => [`${String(year)}-${from}`, `${String(year)}-${to}`])));
+    }
+    for (const type of ['mppr_rate', 'conversion_factor'] as const) {
+      expect(
+        all.filter((file) => file.type === type).map((file) => [file.effectiveFrom, file.effectiveTo]),
+        type,
+      ).toEqual(SMALL.years.map((year) => [`${String(year)}-01-01`, `${String(year)}-12-31`]));
+    }
+    // The same rows as the year shape's, four times over.
+    const rows = (type: ScaleSourceFile['type']) => all.filter((file) => file.type === type).reduce((total, file) => total + dataLines(file).length, 0);
+    const counts = scaleRecordCounts(QUARTERLY_SMALL);
+    for (const type of ['pfs_rvu', 'pfs_gpci', 'locality_map', 'conversion_factor', 'mppr_rate', 'ncci_mue', 'ncci_ptp', 'carc', 'rarc', 'claim_status_code'] as const) {
+      expect(rows(type), type).toBe(counts[type]);
+    }
+    expect(rows('locality_map_plus_four')).toBe(QUARTERLY_SMALL.years.length * scaleZip9Size(QUARTERLY_SMALL).linesPerYear);
+    expect(counts.locality_map_plus_four).toBe(scaleZip9Size(QUARTERLY_SMALL).records);
+    // Every file's bytes are its own (one file, one window: the checker's C16), and each names its quarter.
+    expect(new Set(all.map((file) => file.text)).size).toBe(all.length);
+    for (const file of all.filter((entry) => ['pfs_rvu', 'pfs_gpci', 'ncci_mue', 'locality_map', 'locality_map_plus_four'].includes(entry.type))) {
+      const quarter = Math.floor((Number.parseInt(file.effectiveFrom.slice(5, 7), 10) - 1) / 3) + 1;
+      expect(file.name, file.name).toContain(`${String(file.year)}Q${String(quarter)}`);
+    }
+  });
+
+  it('states each quarter’s YYYYQ on every ZIP5 and ZIP9 line, the quarter its window starts in', () => {
+    for (const file of quarterlyFiles().filter((entry) => entry.type === 'locality_map' || entry.type === 'locality_map_plus_four')) {
+      const quarter = Math.floor((Number.parseInt(file.effectiveFrom.slice(5, 7), 10) - 1) / 3) + 1;
+      const lines = dataLines(file);
+      expect(lines.length, file.name).toBeGreaterThan(0);
+      expect(
+        lines.every((line) => line.length === 80 && line.slice(75) === `${String(file.year)}${String(quarter)}`),
+        file.name,
+      ).toBe(true);
+    }
+  });
+
+  it('splits the corrected codes inside the correction day’s quarter, and prices them corrected after it and original before', () => {
+    expect(correctionQuarter(SMALL)).toBe(2);
+    const all = quarterlyFiles();
+    expect(all.filter((file) => file.type === 'pfs_rvu').map((file) => [file.name, file.effectiveFrom, file.effectiveTo])).toEqual(
+      SMALL.years.flatMap((year) => {
+        const y = String(year);
+        return [
+          [`PPRRVU${y}Q1_SYNTHETIC_SCALE.csv`, `${y}-01-01`, `${y}-03-31`],
+          [`PPRRVU${y}Q2_SYNTHETIC_SCALE.csv`, `${y}-04-01`, `${y}-06-30`],
+          [`PPRRVU${y}Q2_SYNTHETIC_SCALE_BEFORE_CORRECTION.csv`, `${y}-04-01`, `${y}-05-15`],
+          [`PPRRVU${y}Q2_SYNTHETIC_SCALE_CORRECTION.csv`, `${y}-05-16`, `${y}-06-30`],
+          [`PPRRVU${y}Q3_SYNTHETIC_SCALE.csv`, `${y}-07-01`, `${y}-09-30`],
+          [`PPRRVU${y}Q4_SYNTHETIC_SCALE.csv`, `${y}-10-01`, `${y}-12-31`],
+        ];
+      }),
+    );
+    const corrected = scaleCorrectedCodes(SMALL);
+    const index = scaleCodes(SMALL).indexOf(corrected[0] ?? '');
+    // A row holds the code's values as `,work,pe non-facility,,pe facility,` (the description between holds a comma).
+    const values = (isCorrected: boolean) => {
+      const value = rvuValues(index, 2026, isCorrected);
+      return `,${value.work},${value.peNonFacility},,${value.peFacility},`;
+    };
+    const row = (name: string) => dataLines(all.find((file) => file.name === name) as ScaleSourceFile).find((line) => line.startsWith(`${corrected[0] ?? ''},`)) ?? '';
+    expect(values(false)).not.toBe(values(true));
+    expect(row('PPRRVU2026Q1_SYNTHETIC_SCALE.csv')).toContain(values(false));
+    expect(row('PPRRVU2026Q2_SYNTHETIC_SCALE_BEFORE_CORRECTION.csv')).toContain(values(false));
+    expect(row('PPRRVU2026Q2_SYNTHETIC_SCALE_CORRECTION.csv')).toContain(values(true));
+    expect(row('PPRRVU2026Q3_SYNTHETIC_SCALE.csv')).toContain(values(true));
+    expect(row('PPRRVU2026Q4_SYNTHETIC_SCALE.csv')).toContain(values(true));
+    // The split quarter's whole-quarter file lists the uncorrected codes only.
+    const q2 = dataLines(all.find((file) => file.name === 'PPRRVU2026Q2_SYNTHETIC_SCALE.csv') as ScaleSourceFile).map((line) => line.split(',')[0]);
+    expect(q2.some((code) => corrected.includes(code ?? ''))).toBe(false);
+    expect(q2).toHaveLength(SMALL.rvuCodes - corrected.length);
   });
 });

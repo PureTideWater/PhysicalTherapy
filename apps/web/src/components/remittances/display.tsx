@@ -3,6 +3,7 @@ import { STAGE_LABELS } from '@tp/triage';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { counted } from '../../lib/copy/words';
 import type { LineStatus } from '../../lib/remittances/queries';
 import { StatusChip, type StatusTone } from '../status';
 
@@ -16,6 +17,17 @@ import { StatusChip, type StatusTone } from '../status';
 /** Integer cents as text, as US dollars, in the mono face with tabular numerals; a dash when there is none. */
 export function Money({ value }: { readonly value: string | null }) {
   return <span className="font-mono tabular-nums">{value === null ? '—' : formatUsd(cents(BigInt(value)))}</span>;
+}
+
+/** A count and its noun, singular for one (counted's rule), the count in the mono face as <Money> sets an amount: "1 minute". */
+export function Counted({ value, one, many }: { readonly value: number; readonly one: string; readonly many?: string }) {
+  const count = String(value);
+  return (
+    <>
+      <span className="font-mono tabular-nums">{count}</span>
+      {counted(value, one, many).slice(count.length)}
+    </>
+  );
 }
 
 /** CLP02 in words, for the statuses the plan names (PRD 10; the parser's types); any other shows its code. */

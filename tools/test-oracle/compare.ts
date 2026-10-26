@@ -118,9 +118,13 @@ export function collectChecks(root: string): { checks: OracleCheck[]; declared: 
       continue;
     }
     const caseDir = path.dirname(file).split(path.sep).join('/');
-    const expected = JSON.parse(readFileSync(path.join(root, file), 'utf8')) as { files?: readonly ExpectedFile[]; generated?: readonly { path: string; oracle: OracleExpectation }[] };
+    const expected = JSON.parse(readFileSync(path.join(root, file), 'utf8')) as { files?: readonly ExpectedFile[]; generated?: readonly { path: string; oracle?: OracleExpectation }[] };
+    // A generated file without an oracle is not an 835 (MOD-09's large contracts: PDFs and Textract recordings, pinned
+    // by hash in packages/synth's ensureLargeContractTier), so pyx12 has nothing to say about it.
     for (const generated of expected.generated ?? []) {
-      checks.push({ spec: generated.path, expectation: generated.oracle, generated: true });
+      if (generated.oracle !== undefined) {
+        checks.push({ spec: generated.path, expectation: generated.oracle, generated: true });
+      }
     }
     for (const entry of expected.files ?? []) {
       const relative = `${caseDir}/${entry.path}`;

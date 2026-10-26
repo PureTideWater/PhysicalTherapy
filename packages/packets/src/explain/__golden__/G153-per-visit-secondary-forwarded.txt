@@ -1,0 +1,65 @@
+# fixtures/golden/claims/G153-per-visit-secondary-forwarded.json
+
+## Line 1, internal
+Not priced: claim status 20 (processed as secondary and forwarded to another payer).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $0.00, which is $88.00; 3% of it, $2.64, is withheld. $88.00 becomes $85.36.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Not reached.
+  [observed] Observed allowed $10.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: claim status 20 (processed as secondary and forwarded to another payer), which this release does not price. Remedy: Deferred release.
+
+## Line 1, viewer
+Not priced: claim status 20 (processed as secondary and forwarded to another payer).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] $88.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
+  [sequestration] Sequestration: the payer’s share is $88.00 less the patient share $0.00, which is $88.00; 3% of it, $2.64, is withheld. $88.00 becomes $85.36.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Not reached.
+  [observed] Observed allowed $10.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: claim status 20 (processed as secondary and forwarded to another payer), which this release does not price. Remedy: Deferred release.
+
+## Line 2, internal
+Not priced: claim status 20 (processed as secondary and forwarded to another payer).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97140 is 6; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] The visit’s $88.00 is carried by claim line 1; this line’s base is $0.00.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $0.00 is unchanged.
+  [sequestration] Sequestration: the patient share $0.00 leaves no payer’s share, so nothing is withheld; $0.00 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Not reached.
+  [observed] Observed allowed $0.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: claim status 20 (processed as secondary and forwarded to another payer), which this release does not price. Remedy: Deferred release.
+
+## Line 2, viewer
+Not priced: claim status 20 (processed as secondary and forwarded to another payer).
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97140 is 6; the units are within it. $88.00 per visit; units do not multiply it.
+  [per_visit] The visit’s $88.00 is carried by claim line 1; this line’s base is $0.00.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
+  [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $0.00 is unchanged.
+  [sequestration] Sequestration: the patient share $0.00 leaves no payer’s share, so nothing is withheld; $0.00 is unchanged.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Not reached.
+  [observed] Observed allowed $0.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: claim status 20 (processed as secondary and forwarded to another payer), which this release does not price. Remedy: Deferred release.

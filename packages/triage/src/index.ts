@@ -43,7 +43,7 @@ export {
   quarterOf,
   screenAnomalies,
 } from './anomaly';
-export { ADJUSTMENT_BEHAVIORS, type AdjustmentBehavior, BEHAVIOR_TEXT, BEHAVIOR_TOLERANCE_CENTS, type BehaviorReferences, detectBehavior, releaseReferences } from './behavior';
+export { ADJUSTMENT_BEHAVIORS, type AdjustmentBehavior, BEHAVIOR_RECORD_TYPES, BEHAVIOR_TEXT, BEHAVIOR_TOLERANCE_CENTS, type BehaviorReferences, detectBehavior, releaseReferences } from './behavior';
 export {
   type CaseLineState,
   type CaseTotals,

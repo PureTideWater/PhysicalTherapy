@@ -298,9 +298,10 @@ describe('the tabular marker rule (D14 option a)', () => {
   });
 
   it('lets a pinned reference table through only at its path with its exact bytes', () => {
-    // The twenty-one CSV reference tables (release 900006's GPCI table among them, docs/adr/0064), and the
-    // tab-separated NCCI PTP table the guard reads as a table by its lines.
-    expect(PINNED_TABLES).toHaveLength(22);
+    // The twenty-two CSV reference tables (release 900006's GPCI table among them, docs/adr/0064; the
+    // contract set v2's 40-row exhibit, docs/adr/0070), and the tab-separated NCCI PTP table the guard
+    // reads as a table by its lines.
+    expect(PINNED_TABLES).toHaveLength(23);
     expect(PINNED_TABLES.filter((table) => !table.path.endsWith('.csv')).map((table) => table.path)).toEqual(['fixtures/synthetic/cms/NCCI_PTP_SYNTHETIC.txt']);
     for (const table of PINNED_TABLES) {
       expect(table.reason.length, table.path).toBeGreaterThan(40);

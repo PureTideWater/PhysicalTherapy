@@ -1,8 +1,21 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { type RuleRecord, buildManifest, serializeManifest, serializeRecords, sha256 } from '@tp/rules';
+import {
+  type ReleaseCoverage,
+  type RuleRecord,
+  type RuleRecordOf,
+  buildManifest,
+  contentSummaries,
+  lookBackCutoff,
+  renderCoverageFile,
+  serializeManifest,
+  serializeRecords,
+  sha256,
+} from '@tp/rules';
+import { previousReleaseNumber } from '@tp/rules/content';
+import { importRuleFile } from '@tp/rules/import';
 import { exampleRecord } from '@tp/rules/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -58,6 +71,11 @@ function drafts(records: readonly RuleRecord[], second: readonly RuleRecord[] | 
   if (second !== null) {
     write(`content/drafts/${file}.second-pass.json`, secondPass(second));
   }
+}
+
+/** Overrides for `exampleRecord`: one record type's key and value, checked as that type's, then the other fields. */
+function withBody<T extends RuleRecord['record_type']>(_type: T, body: Pick<RuleRecordOf<T>, 'key' | 'value'>, ...rest: readonly Partial<RuleRecord>[]): Partial<RuleRecord> {
+  return Object.assign({}, body, ...rest) as Partial<RuleRecord>;
 }
 
 function problems(dirs: readonly string[] = []): readonly string[] {
@@ -221,6 +239,8 @@ describe('checkContent on drafts', () => {
       expect.stringContaining('key.zip 00011 is a reserved SYNTHETIC ZIP code (00000 to 00099); synthetic reference data never enters content'),
       expect.stringContaining('value.state ZZ is the reserved SYNTHETIC state'),
       expect.stringContaining('value.carrier 99999 is the reserved SYNTHETIC carrier'),
+      expect.stringContaining('locality_map is imported for one CMS quarter: its window must lie inside one quarter'),
+      expect.stringContaining('locality_map comes from a CMS file and is imported with pnpm rules:import, never typed by hand'),
     ]);
   });
 
@@ -261,14 +281,292 @@ describe('checkContent on drafts', () => {
   });
 });
 
+describe('checkContent on files with no dates of their own (audit #30)', () => {
+  /** An 80-character ZIP5 line stating `yearQuarter` at 76-80. */
+  const zipLine = (zip: string, yearQuarter: string) => `CA${zip}0111205`.padEnd(75, ' ') + yearQuarter;
+  const MUE_QUOTE = 'HCPCS 97110 has an MUE of 7 units, adjudication 3';
+  const MPPR_QUOTE = 'HCPCS 97110 is on the multiple procedure list';
+  const GENERAL_QUOTE = 'practice expense is reduced 40% for later units';
+  const CMS_TEXT = [MUE_QUOTE, MPPR_QUOTE, GENERAL_QUOTE, zipLine('12345', '20264'), zipLine('12346', '20263'), ''].join('\n');
+  /** Named for the quarter it states, as the importer stores a file (C17 reads it). */
+  const CMS_PATH = 'content/sources/cms/MUE_2026Q4.txt';
+  const TYPED_PATH = 'content/sources/cms/typed.txt';
+  const TYPED_TEXT = `${CMS_TEXT}typed copy\n`;
+  const Q4 = { effective_from: '2026-10-01', effective_to: '2026-12-31' };
+
+  beforeEach(() => {
+    write(CMS_PATH, CMS_TEXT);
+    write(TYPED_PATH, TYPED_TEXT);
+  });
+
+  /** A real record parsed from the CMS file above (no second pass), or hand-typed from its copy. */
+  function cms(type: RuleRecord['record_type'], overrides: Partial<RuleRecord> = {}, method: 'parser' | 'hand_typed' = 'parser'): RuleRecord {
+    const common = { title: 'CMS file', url: null, retrieved: '2026-10-15', locator: 'line 1', synthetic: false };
+    return exampleRecord(type, {
+      source:
+        method === 'parser'
+          ? { ...common, path: CMS_PATH, sha256: sha256(CMS_TEXT), method, parser: 'cms_file' }
+          : { ...common, path: TYPED_PATH, sha256: sha256(TYPED_TEXT), method, transcribed_by: 'first', transcribed_on: '2026-10-15' },
+      ...overrides,
+    });
+  }
+
+  const mue = (overrides: Partial<RuleRecord> = {}, method: 'parser' | 'hand_typed' = 'parser') => cms('ncci_mue', { quotes: [MUE_QUOTE], ...Q4, ...overrides }, method);
+  const perCode = (overrides: Partial<RuleRecord> = {}, method: 'parser' | 'hand_typed' = 'parser') =>
+    cms('mppr_rate', withBody('mppr_rate', { key: { hcpcs: '97110', modifier: '' }, value: { pe_reduction_percent: null } }, { quotes: [MPPR_QUOTE] }, overrides), method);
+  const zip = (zipCode: string, quote: string, overrides: Partial<RuleRecord> = {}) =>
+    cms(
+      'locality_map',
+      withBody(
+        'locality_map',
+        { key: { zip: zipCode }, value: { state: 'CA', carrier: '01112', locality: '05', rural_indicator: null, plus_four_required: null } },
+        { quotes: [quote], ...Q4 },
+        overrides,
+      ),
+    );
+
+  /** Writes parsed records with no second pass. */
+  function parsed(records: readonly RuleRecord[], file: string): void {
+    drafts(records, null, file);
+  }
+
+  it('passes a quarterly record windowed to its quarter, or to a correction’s part of one', () => {
+    parsed([mue()], 'ncci_mue/2026/q4');
+    expect(problems()).toEqual([]);
+    parsed([mue({ effective_from: '2026-11-15' })], 'ncci_mue/2026/q4');
+    expect(problems()).toEqual([]);
+  });
+
+  it('refuses a quarterly window that leaves one CMS quarter or is open (C1)', () => {
+    for (const [from, to] of [
+      ['2026-01-01', '2026-12-31'],
+      ['2026-09-30', '2026-12-31'],
+      ['2026-10-01', null],
+    ] as const) {
+      parsed([mue({ effective_from: from, effective_to: to })], 'ncci_mue/2026/records');
+      expect(problems()).toEqual([
+        `content/drafts/ncci_mue/2026/records.json record 1 (ncci_mue {"hcpcs":"97110"} from ${from}): ncci_mue is imported for one CMS quarter: its window must lie inside one quarter, usually all of it (it is ${from} to ${to ?? 'open'})`,
+      ]);
+    }
+  });
+
+  it('refuses a per-code MPPR window that is open or leaves its calendar year (C2)', () => {
+    parsed([perCode({ effective_from: '2026-01-01', effective_to: '2026-12-31' })], 'mppr_rate/2026/records');
+    expect(problems()).toEqual([]);
+    for (const to of [null, '2027-01-31'] as const) {
+      parsed([perCode({ effective_from: '2026-01-01', effective_to: to })], 'mppr_rate/2026/records');
+      expect(problems()).toEqual([
+        `content/drafts/mppr_rate/2026/records.json record 1 (mppr_rate {"hcpcs":"97110","modifier":""} from 2026-01-01): mppr_rate is read from a calendar year's file with no dates of its own: its window must end inside 2026 (it is 2026-01-01 to ${to ?? 'open'})`,
+      ]);
+    }
+  });
+
+  it("refuses a ZIP record whose quoted line states another quarter than its window's (C3)", () => {
+    parsed([zip('12345', zipLine('12345', '20264'))], 'locality_map/2026/records');
+    expect(problems()).toEqual([]);
+    parsed([zip('12346', zipLine('12346', '20263'))], 'locality_map/2026/records');
+    expect(problems()).toEqual([
+      'content/drafts/locality_map/2026/records.json record 1 (locality_map {"zip":"12346"} from 2026-10-01): quotes.0 states year and quarter 20263 at 76-80, but the record\'s window is 2026-Q4',
+    ]);
+    parsed([zip('12345', MUE_QUOTE)], 'locality_map/2026/records');
+    expect(problems()).toEqual([expect.stringContaining('quotes.0 states year and quarter none at 76-80')]);
+  });
+
+  it('refuses the bypass of review M2: hand-typed quarterly or per-code MPPR records, and a parsed record whose window was edited (C1, C2, C15, C16)', () => {
+    parsed([mue(), mue({ key: { hcpcs: '97140' } })], 'ncci_mue/2026/q4');
+    const typedYear = mue({ key: { hcpcs: '97150' }, effective_from: '2026-01-01', effective_to: '2026-12-31' }, 'hand_typed');
+    drafts([typedYear], [typedYear], 'ncci_mue/2026/typed');
+    const where = 'content/drafts/ncci_mue/2026/typed.json record 1 (ncci_mue {"hcpcs":"97150"} from 2026-01-01)';
+    expect(problems()).toEqual([
+      `${where}: ncci_mue is imported for one CMS quarter: its window must lie inside one quarter, usually all of it (it is 2026-01-01 to 2026-12-31)`,
+      `${where}: ncci_mue comes from a CMS file and is imported with pnpm rules:import, never typed by hand: a hand-typed record would carry a window no file states (content/sources/README.md)`,
+    ]);
+
+    rmSync(path.join(root, 'content/drafts/ncci_mue/2026/typed.json'));
+    rmSync(path.join(root, 'content/drafts/ncci_mue/2026/typed.second-pass.json'));
+    const typedOpen = perCode({ effective_from: '2026-01-01', effective_to: null }, 'hand_typed');
+    drafts([typedOpen], [typedOpen], 'mppr_rate/2026/records');
+    const at = 'content/drafts/mppr_rate/2026/records.json record 1 (mppr_rate {"hcpcs":"97110","modifier":""} from 2026-01-01)';
+    expect(problems()).toEqual([
+      `${at}: mppr_rate is read from a calendar year's file with no dates of its own: its window must end inside 2026 (it is 2026-01-01 to open)`,
+      `${at}: mppr_rate comes from a CMS file and is imported with pnpm rules:import, never typed by hand: a hand-typed record would carry a window no file states (content/sources/README.md)`,
+    ]);
+
+    rmSync(path.join(root, 'content/drafts/mppr_rate'), { recursive: true });
+    parsed([mue(), mue({ key: { hcpcs: '97140' }, effective_to: '2026-11-30' })], 'ncci_mue/2026/q4');
+    expect(problems()).toEqual([
+      "content/drafts: ncci_mue records from one file (content/sources/cms/MUE_2026Q4.txt) carry different windows (2026-10-01 to 2026-12-31 and 2026-10-01 to 2026-11-30): a file is imported for one window, so import it again rather than editing a record's dates",
+    ]);
+  });
+
+  describe('one CMS file shipped unchanged in two quarters (INT-PIPE-1)', () => {
+    let downloads = '';
+    beforeEach(() => {
+      downloads = mkdtempSync(path.join(tmpdir(), 'verify-content-downloads-'));
+    });
+    afterEach(() => {
+      rmSync(downloads, { recursive: true, force: true });
+    });
+
+    /** The synthetic GPCI file as if downloaded: without its banner, its reserved carrier and state swapped (import.test.ts's download). */
+    function downloadedGpci(name: string): string {
+      const text = readFileSync(path.join(repositoryRoot, 'fixtures/synthetic/cms/GPCI_SYNTHETIC.csv'), 'utf8');
+      const file = path.join(downloads, name);
+      writeFileSync(file, text.slice(text.indexOf('\n') + 1).replaceAll('99999', '99998').replaceAll(',ZZ,', ',YY,'));
+      return file;
+    }
+
+    it('passes two quarters of identical GPCI bytes, each stored under a name stating its quarter (C16 keys on the stored file)', () => {
+      const common = { root, type: 'pfs_gpci' as const, year: 2026, retrieved: '2026-10-15', today: '2026-10-16' };
+      const q1 = importRuleFile({ ...common, file: downloadedGpci('GPCI2026_Q1.csv'), url: 'https://example.invalid/rvu26a.zip', effectiveFrom: '2026-01-01', effectiveTo: '2026-03-31' });
+      const q2 = importRuleFile({ ...common, file: downloadedGpci('GPCI2026_Q2.csv'), url: 'https://example.invalid/rvu26b.zip', effectiveFrom: '2026-04-01', effectiveTo: '2026-06-30' });
+      expect(q2.sha256).toBe(q1.sha256);
+      expect([q1.draft, q2.draft]).toEqual(['content/drafts/pfs_gpci/2026/GPCI2026_Q1.json', 'content/drafts/pfs_gpci/2026/GPCI2026_Q2.json']);
+      expect(problems()).toEqual([]);
+    });
+  });
+
+  describe('the quarter a stored file states (C17, INT-PIPE-3)', () => {
+    const GPCI_QUOTE = '01112,CA,05,LOCALITY FIVE,1.000,1.100,0.700';
+    const gpciAt = (sourcePath: string, url: string | null, overrides: Partial<RuleRecord> = {}): RuleRecord => {
+      const text = `MAC,State,Locality,Name,PW GPCI,PE GPCI,MP GPCI\n${GPCI_QUOTE}\n`;
+      write(sourcePath, text);
+      return exampleRecord(
+        'pfs_gpci',
+        withBody(
+          'pfs_gpci',
+          { key: { carrier: '01112', locality: '05' }, value: { state: 'CA', locality_name: 'LOCALITY FIVE', work_gpci: '1.000', pe_gpci: '1.100', mp_gpci: '0.700' } },
+          {
+            source: { title: 'CMS GPCI file', url, path: sourcePath, retrieved: '2026-10-15', sha256: sha256(text), method: 'parser', parser: 'cms_gpci', locator: 'line 2', synthetic: false },
+            quotes: [GPCI_QUOTE],
+            ...Q4,
+          },
+          overrides,
+        ),
+      );
+    };
+
+    it('refuses an MUE draft re-dated by hand to a quarter its file does not state', () => {
+      write('content/sources/cms/MUE_2026Q3.txt', CMS_TEXT);
+      const redated = mue({ source: { ...mue().source, path: 'content/sources/cms/MUE_2026Q3.txt' } });
+      parsed([redated, mue({ key: { hcpcs: '97140' }, source: redated.source })], 'ncci_mue/2026/q3');
+      expect(problems()).toEqual([
+        "content/drafts: ncci_mue records of content/sources/cms/MUE_2026Q3.txt (2026-10-01 to 2026-12-31): the stored file states 2026-Q3, and the window is in 2026-Q4: a file is imported for the quarter it states, so import it again rather than editing a record's dates",
+      ]);
+    });
+
+    it('reads a GPCI file’s quarter from source.url, as the importer did, and refuses a window of another quarter', () => {
+      parsed([gpciAt('content/sources/pfs_gpci/GPCI2026.csv', 'https://example.invalid/rvu26d.zip')], 'pfs_gpci/2026/GPCI2026');
+      expect(problems()).toEqual([]);
+      parsed([gpciAt('content/sources/pfs_gpci/GPCI2026.csv', 'https://example.invalid/rvu26c.zip')], 'pfs_gpci/2026/GPCI2026');
+      expect(problems()).toEqual([
+        "content/drafts: pfs_gpci records of content/sources/pfs_gpci/GPCI2026.csv (2026-10-01 to 2026-12-31): the stored file states 2026-Q3, and the window is in 2026-Q4: a file is imported for the quarter it states, so import it again rather than editing a record's dates",
+      ]);
+    });
+
+    it('refuses a file that states no quarter, two quarters, or a day it takes effect that the window does not start on', () => {
+      parsed([gpciAt('content/sources/pfs_gpci/GPCI2026.csv', null)], 'pfs_gpci/2026/GPCI2026');
+      expect(problems()).toEqual([
+        "content/drafts: pfs_gpci records of content/sources/pfs_gpci/GPCI2026.csv (2026-10-01 to 2026-12-31): the stored file states no quarter that can be read in its first lines, its name or source.url, so its window cannot be checked: import it again with pnpm rules:import, keeping CMS's quarter token in its name (content/sources/README.md)",
+      ]);
+      parsed([gpciAt('content/sources/pfs_gpci/GPCI2026_Q4.csv', 'https://example.invalid/rvu26c.zip')], 'pfs_gpci/2026/GPCI2026');
+      expect(problems()).toEqual([
+        "content/drafts: pfs_gpci records of content/sources/pfs_gpci/GPCI2026_Q4.csv (2026-10-01 to 2026-12-31): GPCI2026_Q4.csv states two quarters (2026-Q4 and 2026-Q3); import each quarter's file on its own",
+      ]);
+      parsed([gpciAt('content/sources/pfs_gpci/GPCI2026_Eff_11-15-2026.csv', null)], 'pfs_gpci/2026/GPCI2026');
+      expect(problems()).toEqual([
+        "content/drafts: pfs_gpci records of content/sources/pfs_gpci/GPCI2026_Eff_11-15-2026.csv (2026-10-01 to 2026-12-31): the stored file takes effect on 2026-11-15, so the window starts that day: import it again rather than editing a record's dates",
+      ]);
+      parsed([gpciAt('content/sources/pfs_gpci/GPCI2026_Eff_11-15-2026.csv', null, { effective_from: '2026-11-15' })], 'pfs_gpci/2026/GPCI2026');
+      expect(problems()).toEqual([]);
+    });
+  });
+
+  it('passes the hand-typed general MPPR rate with an open window, as the real drafts hold it', () => {
+    const general = cms('mppr_rate', { quotes: [GENERAL_QUOTE], effective_from: '2026-01-01', effective_to: null }, 'hand_typed');
+    drafts([general], [general], 'mppr_rate/2026/records');
+    expect(problems()).toEqual([]);
+  });
+
+  it('exempts fixtures: a synthetic set keeps its whole-year windows', () => {
+    write('fixtures/synthetic/cms/mue.md', `${MUE_QUOTE}\n`);
+    const synthetic = exampleRecord('ncci_mue', {
+      source: { ...handTyped().source, path: 'fixtures/synthetic/cms/mue.md', sha256: sha256(`${MUE_QUOTE}\n`), synthetic: true, title: 'SYNTHETIC rules' },
+      quotes: [MUE_QUOTE],
+    });
+    write('fixtures/synthetic/set/ncci_mue/2026/records.json', serializeRecords([synthetic]));
+    write('fixtures/synthetic/set/ncci_mue/2026/records.second-pass.json', secondPass([synthetic]));
+    expect(problems(['fixtures/synthetic/set'])).toEqual([]);
+  });
+});
+
+describe('checkContent on gaps inside a content (audit #30 R4)', () => {
+  it('refuses a content with no record in force on dates inside the ones it is loaded for (C4), in every set', () => {
+    drafts([handTyped({ effective_to: '2026-06-30' }), handTyped({ key: { discipline: 'OT' }, effective_from: '2026-08-01', effective_to: null })]);
+    expect(problems()).toEqual([
+      'content/drafts: therapy_threshold has no record in force from 2026-07-01 to 2026-07-31, inside the dates it is loaded for: import that content for those dates (a content may have no gap inside it)',
+    ]);
+  });
+
+  it("never refuses a hole in one key's dates that another key of the content covers", () => {
+    drafts([
+      handTyped({ effective_to: '2026-06-30' }),
+      handTyped({ effective_from: '2026-08-01', effective_to: null }),
+      handTyped({ key: { discipline: 'OT' }, effective_to: null }),
+    ]);
+    expect(problems()).toEqual([]);
+  });
+
+  it('lists at most 20 gaps, then how many more', () => {
+    const records = Array.from({ length: 27 }, (_, index) => {
+      const year = String(2000 + index);
+      return handTyped({ effective_from: `${year}-01-01`, effective_to: `${year}-06-30` });
+    });
+    drafts(records);
+    const found = problems();
+    expect(found).toHaveLength(21);
+    expect(found[20]).toBe('content/drafts: and 6 more of the same kind');
+  });
+});
+
 describe('checkContent on releases', () => {
-  /** Writes a release directory with its manifest, from the given files. */
-  function release(dir: string, files: Record<string, string>, number: number): void {
-    for (const [file, text] of Object.entries(files)) {
+  /**
+   * Writes a release directory with its manifest, from the given files. A numbered one (content/outgoing/<n>,
+   * content/releases/<n>) also gets the COVERAGE.md the assembler would write for a release losing nothing, with
+   * `coverage`'s fields in place of the computed ones, or `coverage` itself as the file's text; null writes none.
+   */
+  function release(dir: string, files: Record<string, string>, number: number, coverage: Partial<ReleaseCoverage> | string | null = {}): void {
+    const name = path.posix.basename(dir);
+    const all = { ...files };
+    if (coverage !== null && /^content\/(outgoing|releases)\/[1-9]\d*$/.test(dir)) {
+      all['COVERAGE.md'] = typeof coverage === 'string' ? coverage : coverageFile(Number.parseInt(name, 10), files, coverage);
+    }
+    for (const [file, text] of Object.entries(all)) {
       write(`${dir}/${file}`, text);
     }
-    const hashes = new Map(Object.entries(files).map(([file, text]) => [file, sha256(text)]));
+    const hashes = new Map(Object.entries(all).map(([file, text]) => [file, sha256(text)]));
     write(`${dir}/MANIFEST.json`, serializeManifest(buildManifest(number, hashes)));
+  }
+
+  /** COVERAGE.md for release `n` from its record files, prepared 2026-10-20 against the release before it, losing nothing. */
+  function coverageFile(n: number, files: Record<string, string>, overrides: Partial<ReleaseCoverage> = {}): string {
+    const records = Object.entries(files)
+      .filter(([file]) => file.endsWith('.json') && !file.endsWith('.second-pass.json'))
+      .flatMap(([, text]) => JSON.parse(text) as RuleRecord[]);
+    const prepared = overrides.prepared_on ?? '2026-10-20';
+    return renderCoverageFile({
+      format: 'tp-release-coverage/1',
+      release: n,
+      previous_release: previousReleaseNumber(root, n),
+      prepared_on: prepared,
+      look_back_years: 6,
+      cutoff: lookBackCutoff(prepared),
+      contents: contentSummaries(records).map((summary) => ({ ...summary, windows: [...summary.windows] })),
+      before_cutoff: [],
+      closed_by_source: [],
+      withdrawn: [],
+      ...overrides,
+    });
   }
 
   const verified = (overrides: Partial<RuleRecord> = {}) =>
@@ -360,6 +658,281 @@ describe('checkContent on releases', () => {
     expect(contentSetAt(root, path.join(root, 'fixtures/x'))).toEqual({ dir: 'fixtures/x', kind: 'drafts', published: false, numbered: false, synthetic: true });
     expect(checkContentSet(root, contentSetAt(root, 'content/drafts')).problems).toEqual([]);
   });
+
+  describe('coverage against the previous release (COVERAGE.md)', () => {
+    const OT = { key: { discipline: 'OT' as const } };
+
+    /** A release of verified therapy thresholds, its COVERAGE.md computed (and overridden) as `release` does. */
+    function thresholds(dir: string, records: readonly RuleRecord[], coverage: Partial<ReleaseCoverage> | string | null = {}): void {
+      release(dir, releaseFiles(records), Number.parseInt(path.posix.basename(dir), 10), coverage);
+    }
+
+    it('passes a first release and a second that covers everything the first did', () => {
+      thresholds('content/releases/1', [verified(), verified(OT)]);
+      thresholds('content/outgoing/2', [verified(), verified({ ...OT, effective_to: null })]);
+      expect(problems()).toEqual([]);
+    });
+
+    it('refuses a numbered release without COVERAGE.md, or one that cannot be read', () => {
+      thresholds('content/outgoing/1', [verified()], null);
+      expect(problems()).toEqual(['content/outgoing/1: COVERAGE.md is missing: a prepared release records its coverage (pnpm release:assemble writes it)']);
+      thresholds('content/outgoing/1', [verified()], '# Coverage\n\nno block\n');
+      expect(problems()).toEqual(['content/outgoing/1: COVERAGE.md: holds 0 ```json blocks: it must hold exactly one']);
+      thresholds('content/outgoing/1', [verified()], '```json\n{"format": "tp-release-coverage/1"}\n```\n');
+      expect(problems()).toEqual(expect.arrayContaining([expect.stringMatching(/^content\/outgoing\/1: COVERAGE\.md: release: /)]));
+    });
+
+    it('refuses a COVERAGE.md naming another release, previous release or cutoff', () => {
+      thresholds('content/releases/1', [verified()]);
+      thresholds('content/outgoing/2', [verified()], { release: 3, previous_release: null, cutoff: '2021-01-01' });
+      expect(problems()).toEqual([
+        'content/outgoing/2: COVERAGE.md names release 3, but the directory is 2',
+        'content/outgoing/2: COVERAGE.md names previous release none, but the release before 2 is 1',
+        "content/outgoing/2: COVERAGE.md's cutoff is 2021-01-01; six years before 2026-10-20 it is 2020-01-01",
+        // Release 2 compared with no release, as if assembled before 1 (INT-PIPE-2): release 1 is named too.
+        'content/releases/1: release 2 already exists and was compared with no release, the release before 1, so release 1 is numbered below the newest: a new release takes a number above the newest (3), so remove it and assemble it again under that number',
+      ]);
+    });
+
+    it('refuses a COVERAGE.md prepared after today, or before its previous release', () => {
+      thresholds('content/releases/1', [verified()]);
+      expect(checkContent(root, [], { today: '2026-10-19' }).problems).toEqual(['content/releases/1: COVERAGE.md is prepared on 2026-10-20, after today (2026-10-19)']);
+      thresholds('content/outgoing/2', [verified()], { prepared_on: '2026-10-01' });
+      expect(problems()).toEqual(['content/outgoing/2: COVERAGE.md is prepared on 2026-10-01, before release 1 (2026-10-20)']);
+    });
+
+    it("refuses contents that are not exactly the release's records, naming the first difference per content", () => {
+      const files = releaseFiles([verified(), verified(OT)]);
+      const [summary] = contentSummaries([verified(), verified(OT)]);
+      if (summary === undefined) {
+        throw new Error('no summary');
+      }
+      thresholds('content/outgoing/1', [verified(), verified(OT)], { contents: [{ ...summary, windows: [...summary.windows], records: 1 }] });
+      expect(problems()).toEqual([
+        'content/outgoing/1: COVERAGE.md\'s contents do not match the release\'s records (therapy_threshold: records is 1, but the records give 2)',
+      ]);
+      release('content/outgoing/1', files, 1, {
+        contents: [
+          { ...summary, windows: [...summary.windows] },
+          { content: 'carc', records: 1, windows: [{ from: '2026-01-01', to: null }], newest_from: '2026-01-01', newest_retrieved: '2026-10-15' },
+        ],
+      });
+      expect(problems()).toEqual(["content/outgoing/1: COVERAGE.md's contents do not match the release's records (carc: listed, but the release holds no record of it)"]);
+      release('content/outgoing/1', files, 1, { contents: [] });
+      expect(problems()).toEqual([
+        "content/outgoing/1: COVERAGE.md's contents do not match the release's records (therapy_threshold: not listed, but the release holds 2 record(s) of it)",
+      ]);
+    });
+
+    it('refuses a release that stops covering what the previous one covered, unless a signed withdrawal lists it', () => {
+      thresholds('content/releases/1', [verified(), verified(OT)]);
+      thresholds('content/outgoing/2', [verified()]);
+      expect(problems()).toEqual([
+        'content/outgoing/2: release 2 stops covering therapy_threshold {"discipline":"OT"} from 2026-01-01 to 2026-12-31, which release 1 covered: keep those records, or withdraw that coverage with a signed note (content/sources/README.md, "Coverage")',
+      ]);
+      const entry = {
+        record_type: 'therapy_threshold' as const,
+        key: { discipline: 'OT' },
+        from: '2026-01-01',
+        to: '2026-12-31',
+        reason: 'OT thresholds are no longer priced by this release',
+        withdrawn_by: 'First Person',
+        confirmed_by: 'Second Person',
+        withdrawn_on: '2026-10-19',
+      };
+      thresholds('content/outgoing/2', [verified()], { withdrawn: [entry] });
+      expect(problems()).toEqual([]);
+      thresholds('content/outgoing/2', [verified()], { withdrawn: [{ ...entry, withdrawn_on: '2026-10-21' }] });
+      expect(problems()).toEqual(['content/outgoing/2: COVERAGE.md withdrawn 0: withdrawn_on 2026-10-21 is after the release was prepared (2026-10-20)']);
+      thresholds('content/outgoing/2', [verified(), verified(OT)], { withdrawn: [entry] });
+      expect(problems()).toEqual([
+        'content/outgoing/2: COVERAGE.md lists withdrawn therapy_threshold {"discipline":"OT"} 2026-01-01 to 2026-12-31, which is not a coverage loss of that kind',
+      ]);
+    });
+
+    it('lists the losses before the look-back and those the source closed, and nothing else', () => {
+      const old = verified({ effective_from: '2019-01-01', effective_to: '2025-12-31' });
+      const typedCarc = (overrides: Partial<RuleRecord>) =>
+        exampleRecord(
+          'carc',
+          withBody(
+            'carc',
+            { key: { code: '45' }, value: { description: 'Charge exceeds the fee schedule', start_date: '2001-01-01', last_modified: null, stop_date: null, notes: '' } },
+            {
+              source: { ...handTyped().source, url: 'https://example.invalid/rules' },
+              verification: { level: 'L2', by: 'reviewer', on: '2026-10-20', questions: [] },
+              quotes: [QUOTE],
+              effective_from: '2001-01-01',
+              effective_to: null,
+            },
+            overrides,
+          ),
+        );
+      const filesOf = (thresholdRecords: readonly RuleRecord[], carc: RuleRecord) => ({
+        ...releaseFiles(thresholdRecords),
+        'carc/2026/records.json': serializeRecords([carc]),
+        'carc/2026/records.second-pass.json': secondPass([carc]),
+      });
+      release('content/releases/1', filesOf([old, verified({ effective_from: '2026-01-01' })], typedCarc({})), 1);
+      const closed = typedCarc({ effective_to: '2026-06-30' });
+      const before = { record_type: 'therapy_threshold' as const, key: { discipline: 'PT_SLP' }, from: '2019-01-01', to: '2019-12-31' };
+      const byClose = { record_type: 'carc' as const, key: { code: '45' }, from: '2026-07-01', to: null };
+      release('content/outgoing/2', filesOf([verified()], closed), 2, { before_cutoff: [before], closed_by_source: [byClose] });
+      expect(problems()).toEqual([
+        'content/outgoing/2: release 2 stops covering therapy_threshold {"discipline":"PT_SLP"} from 2020-01-01 to 2025-12-31, which release 1 covered: keep those records, or withdraw that coverage with a signed note (content/sources/README.md, "Coverage")',
+      ]);
+      const kept = verified({ effective_from: '2020-01-01', effective_to: '2025-12-31' });
+      release('content/outgoing/2', filesOf([kept, verified()], closed), 2, { before_cutoff: [before], closed_by_source: [byClose] });
+      expect(problems()).toEqual([]);
+      release('content/outgoing/2', filesOf([kept, verified()], closed), 2, { before_cutoff: [], closed_by_source: [byClose, byClose] });
+      expect(problems()).toEqual([
+        'content/outgoing/2: COVERAGE.md does not list before_cutoff therapy_threshold {"discipline":"PT_SLP"} 2019-01-01 to 2019-12-31',
+        'content/outgoing/2: COVERAGE.md lists closed_by_source carc {"code":"45"} 2026-07-01 to open, which is not a coverage loss of that kind',
+      ]);
+    });
+
+    it('fails closed when the previous release cannot be read', () => {
+      thresholds('content/releases/1', [verified()]);
+      write('content/releases/1/therapy_threshold/2026/records.json', '[');
+      thresholds('content/outgoing/2', [verified()]);
+      expect(problems()).toContain(
+        'content/outgoing/2: the previous release 1 cannot be read (content/releases/1/therapy_threshold/2026/records.json: is not valid JSON), so this release\'s coverage cannot be compared',
+      );
+    });
+
+    it('refuses a previous release whose files are not the ones its manifest seals, though they read', () => {
+      thresholds('content/releases/1', [verified(), verified(OT)]);
+      // An edit after sealing that drops the OT record would hide release 2's loss of it.
+      write('content/releases/1/therapy_threshold/2026/records.json', serializeRecords([verified()]));
+      thresholds('content/outgoing/2', [verified()]);
+      expect(problems()).toContain(
+        "content/outgoing/2: the previous release 1 cannot be read (content/releases/1: therapy_threshold/2026/records.json does not match its SHA-256 in MANIFEST.json), so this release's coverage cannot be compared",
+      );
+    });
+
+    it('refuses a release numbered below one already assembled against the release before it (INT-PIPE-2)', () => {
+      thresholds('content/releases/1', [verified()]);
+      // Release 3 was assembled against 1, then release 2 under a lower number: 3 may drop what 2 covers.
+      thresholds('content/outgoing/3', [verified()]);
+      thresholds('content/outgoing/2', [verified()]);
+      expect(problems()).toEqual([
+        'content/outgoing/2: release 3 already exists and was compared with release 1, the release before 2, so release 2 is numbered below the newest: a new release takes a number above the newest (4), so remove it and assemble it again under that number',
+        'content/outgoing/3: COVERAGE.md names previous release 1, but the release before 3 is 2',
+      ]);
+    });
+
+    it('refuses a COVERAGE.md that is not exactly what the assembler writes for its block (INT-PIPE-4)', () => {
+      thresholds('content/releases/1', [verified(), verified(OT)]);
+      const entry = {
+        record_type: 'therapy_threshold' as const,
+        key: { discipline: 'OT' },
+        from: '2026-01-01',
+        to: '2026-12-31',
+        reason: 'OT thresholds are no longer priced by this release',
+        withdrawn_by: 'First Person',
+        confirmed_by: 'Second Person',
+        withdrawn_on: '2026-10-19',
+      };
+      const files = releaseFiles([verified()]);
+      const exact = coverageFile(2, files, { withdrawn: [entry] });
+      thresholds('content/outgoing/2', [verified()], exact);
+      expect(problems()).toEqual([]);
+      const edited = 'content/outgoing/2: COVERAGE.md is not exactly what pnpm release:assemble writes for the block it holds: assemble the release again, never edit the file by hand';
+      // The prose a reviewer reads says nothing is withdrawn.
+      thresholds('content/outgoing/2', [verified()], exact.replace('  1 withdrawn by a signed note.', '  0 withdrawn by a signed note.'));
+      expect(problems()).toEqual([edited]);
+      // A leading empty list a reviewer sees first, which JSON.parse replaces with the later one.
+      thresholds('content/outgoing/2', [verified()], exact.replace('  "format": "tp-release-coverage/1",', '  "withdrawn": [],\n  "format": "tp-release-coverage/1",'));
+      expect(problems()).toEqual([
+        'content/outgoing/2: COVERAGE.md: its ```json block names "withdrawn" twice in one object: JSON keeps only the last, so a reader and the checker would read different values',
+      ]);
+    });
+
+    it("refuses a parsed record closing coverage by the source's own dates when its quoted row states no such end", () => {
+      const CARC_TEXT = 'Code,Description,Start,Last Modified,Stop\n45,Charge exceeds the fee schedule,01/01/2001,,\n45,Charge exceeds the fee schedule,01/01/2001,,07/01/2026\n';
+      write('content/sources/carc/CARC.csv', CARC_TEXT);
+      const parsedCarc = (quote: string, stop: string | null) =>
+        exampleRecord(
+          'carc',
+          withBody(
+            'carc',
+            { key: { code: '45' }, value: { description: 'Charge exceeds the fee schedule', start_date: '2001-01-01', last_modified: null, stop_date: stop, notes: '' } },
+            {
+              source: { title: 'X12 CARC list', url: 'https://example.invalid/carc', path: 'content/sources/carc/CARC.csv', retrieved: '2026-10-15', sha256: sha256(CARC_TEXT), method: 'parser', parser: 'x12_code_list', locator: 'line 2', synthetic: false },
+              verification: { level: 'L2', by: 'reviewer', on: '2026-10-20', questions: [] },
+              quotes: [quote],
+              effective_from: '2001-01-01',
+              effective_to: stop,
+            },
+          ),
+        );
+      const filesOf = (carc: RuleRecord) => ({ ...releaseFiles([verified()]), 'carc/2026/records.json': serializeRecords([carc]) });
+      release('content/releases/1', filesOf(parsedCarc('45,Charge exceeds the fee schedule,01/01/2001,,', null)), 1);
+      const byClose = [{ record_type: 'carc' as const, key: { code: '45' }, from: '2026-07-02', to: null }];
+      release('content/outgoing/2', filesOf(parsedCarc('45,Charge exceeds the fee schedule,01/01/2001,,07/01/2026', '2026-07-01')), 2, { closed_by_source: byClose });
+      expect(problems()).toEqual([]);
+      // The draft's end edited by hand: its row (still in the stored file) states no stop date.
+      release('content/outgoing/2', filesOf(parsedCarc('45,Charge exceeds the fee schedule,01/01/2001,,', '2026-07-01')), 2, { closed_by_source: byClose });
+      expect(problems()).toEqual([
+        'content/outgoing/2: carc {"code":"45"} from 2001-01-01 closes coverage the release before covered from 2026-07-02 (closed_by_source), but quotes no row stating 2026-07-01, the end its window gives: the source\'s own dates close a coverage, so import the source again rather than editing a record\'s dates',
+      ]);
+    });
+
+    it('keeps at most two coverage maps while checking releases in order', () => {
+      thresholds('content/releases/1', [verified()]);
+      thresholds('content/releases/2', [verified()]);
+      thresholds('content/releases/3', [verified(), verified(OT)]);
+      thresholds('content/releases/4', [verified()]);
+      expect(problems()).toEqual([expect.stringContaining('content/releases/4: release 4 stops covering therapy_threshold {"discipline":"OT"}')]);
+    });
+  });
+
+  describe('the drafts note (COVERAGE-WITHDRAWN.md)', () => {
+    const note = (fields: Record<string, unknown>) =>
+      `# Withdrawn\n\nOne entry.\n\n\`\`\`json\n${JSON.stringify({
+        format: 'tp-coverage-withdrawn/1',
+        previous_release: 1,
+        withdrawn: [
+          {
+            record_type: 'therapy_threshold',
+            key: { discipline: 'OT' },
+            from: '2026-01-01',
+            to: '2026-12-31',
+            reason: 'OT thresholds are no longer priced',
+            withdrawn_by: 'First Person',
+            confirmed_by: 'Second Person',
+            withdrawn_on: '2026-10-19',
+            ...fields,
+          },
+        ],
+      })}\n\`\`\`\n`;
+
+    it('passes a note for the release assembled next, signed by two people', () => {
+      release('content/releases/1', releaseFiles([verified()]), 1);
+      write('content/drafts/COVERAGE-WITHDRAWN.md', note({}));
+      expect(problems()).toEqual([]);
+    });
+
+    it('refuses a note that is malformed or signed twice by one person', () => {
+      release('content/releases/1', releaseFiles([verified()]), 1);
+      write('content/drafts/COVERAGE-WITHDRAWN.md', '# Withdrawn\n');
+      expect(problems()).toEqual(['content/drafts/COVERAGE-WITHDRAWN.md: holds 0 ```json blocks: it must hold exactly one']);
+      write('content/drafts/COVERAGE-WITHDRAWN.md', note({ confirmed_by: 'first person' }));
+      expect(problems()).toEqual(['content/drafts/COVERAGE-WITHDRAWN.md: withdrawn.0.confirmed_by: confirmed_by must be a person other than withdrawn_by']);
+    });
+
+    it('refuses a stale note, written against a release that is not the newest', () => {
+      write('content/drafts/COVERAGE-WITHDRAWN.md', note({}));
+      expect(problems()).toEqual([
+        'content/drafts/COVERAGE-WITHDRAWN.md: names previous release 1, but the newest release is none: it belongs to a release already assembled, so remove it',
+      ]);
+      release('content/releases/1', releaseFiles([verified()]), 1);
+      release('content/outgoing/2', releaseFiles([verified()]), 2);
+      expect(problems()).toEqual([
+        'content/drafts/COVERAGE-WITHDRAWN.md: names previous release 1, but the newest release is 2: it belongs to a release already assembled, so remove it',
+      ]);
+    });
+  });
 });
 
 describe('this repository', () => {
@@ -370,5 +943,13 @@ describe('this repository', () => {
 
   it('passes the synthetic fixture release', () => {
     expect(checkContent(repositoryRoot, ['fixtures/synthetic/rules/release-synth-900001']).problems).toEqual([]);
+  });
+
+  it('passes every synthetic fixture release (the quarter rules exempt fixtures; none has a gap)', () => {
+    const releases = readdirSync(path.join(repositoryRoot, 'fixtures/synthetic/rules')).filter((name) => name.startsWith('release-synth-'));
+    expect(releases.length).toBeGreaterThanOrEqual(6);
+    for (const name of releases) {
+      expect(checkContent(repositoryRoot, [`fixtures/synthetic/rules/${name}`]).problems, name).toEqual([]);
+    }
   });
 });

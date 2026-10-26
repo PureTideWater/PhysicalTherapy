@@ -9,6 +9,7 @@ export {
   type BillingServices,
   BillingRefusedError,
   type ConsoleBillingRow,
+  type HoldingInvoice,
   type InvoiceView,
   type OrganizationBilling,
   type SubscriptionView,

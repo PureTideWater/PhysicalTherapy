@@ -14,7 +14,7 @@ import { Sealer } from '../src/lib/auth/seal';
 import { SignInFlow } from '../src/lib/auth/sign-in';
 import { developmentMasterKey } from '../src/lib/server/config';
 import { SYNTHETIC_TERMS_VERSION, seed } from './seed';
-import { SYNTHETIC_PERSONAS, personaEmail, personaPassword, personaTotpCode } from './synthetic-personas';
+import { SYNTHETIC_PERSONAS, SYNTHETIC_SUSPENDED_GROUP, personaEmail, personaPassword, personaTotpCode } from './synthetic-personas';
 
 /** `pnpm db:seed`: every synthetic persona can sign in with its derived credentials. */
 
@@ -73,6 +73,14 @@ describe('pnpm db:seed', () => {
       );
       expect(contacts.map((row) => row.contact)).toEqual([SYNTHETIC_CORRESPONDENCE_CONTACT, SYNTHETIC_CORRESPONDENCE_CONTACT]);
       expect(contacts).toHaveLength(2);
+      // SYNTHETIC SUSPENDED GROUP is held suspended by PaidWhole, owns no practice, and its administrator reaches none (BIL-06).
+      const suspendedAdmin = result.users['suspended-admin'] ?? '';
+      const held = await withActor(pool, suspendedAdmin, async (scope) => ({
+        practices: await scope.allowedPracticeIds(),
+        organizations: (await scope.client.query<{ name: string; status: string; role: string }>('SELECT o.name, o.status, m.role FROM app_actor_memberships() m JOIN organization o ON o.id = m.organization_id')).rows,
+      }));
+      expect(held).toEqual({ practices: [], organizations: [{ name: SYNTHETIC_SUSPENDED_GROUP, status: 'suspended', role: 'practice_admin' }] });
+      expect(result.organizations.suspended_group).toEqual(expect.any(String));
     } finally {
       await endPool(pool);
     }

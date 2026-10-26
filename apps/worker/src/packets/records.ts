@@ -8,11 +8,12 @@ import {
   type DeadlineSource,
   type LineCalculation,
   type LineDeadline,
+  MA_NONCONTRACTED_CITATION,
   type PacketCitation,
+  type PacketContent,
   type PacketContentV2,
   type PacketDeadline,
   type PromptPayRecord,
-  type RegulationCitation,
   canonicalJson,
   lineCalculation,
   lineDeadline,
@@ -76,14 +77,8 @@ export class PacketRefusedError extends Error {
   }
 }
 
-/** The regulation the rules reference cites for a Medicare Advantage non-contracted line. */
-export const MA_NONCONTRACTED_CITATION: RegulationCitation = {
-  kind: 'regulation',
-  method: 'MA_NONCONTRACTED',
-  reference: '42 CFR 422.214',
-  statement:
-    'A provider with no contract with the Medicare Advantage plan must accept, as payment in full, the amount it could have collected under Original Medicare; the plan owes that amount.',
-};
+/** The regulation the rules reference cites for a Medicare Advantage non-contracted line (@tp/packets' one constant). */
+export { MA_NONCONTRACTED_CITATION };
 
 export interface AssemblyRequest {
   readonly practiceId: string;
@@ -471,6 +466,20 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
   };
 }
 
+/**
+ * The stored traces of a version's lines, as read (priced_line.trace, unparsed), by priced line ID: what
+ * restatedDeadlines() states the calculations from again, and what @tp/packets explainPacket() words them from after
+ * checking each against the SHA-256 its calculation carries (combined audit #38; docs/adr/0072). A line not read is
+ * absent from the map, which both treat as a version that cannot be stated or worded.
+ */
+export async function packetTraces(client: ScopeClient, practiceId: string, content: Pick<PacketContent, 'lines'>): Promise<ReadonlyMap<string, unknown>> {
+  const { rows } = await client.query<{ id: string; trace: unknown }>('SELECT id::text AS id, trace FROM priced_line WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [
+    practiceId,
+    content.lines.map((line) => line.priced_line_id),
+  ]);
+  return new Map(rows.map((row) => [row.id, row.trace]));
+}
+
 /** What a tp-packet/2 version states of its lines' deadlines and calculations and of its own deadline. */
 export interface StatedDeadlines {
   readonly lines: readonly { readonly deadline: LineDeadline; readonly calculation: LineCalculation }[];
@@ -485,8 +494,7 @@ export interface StatedDeadlines {
  */
 export async function restatedDeadlines(client: ScopeClient, practiceId: string, caseId: string, content: PacketContentV2): Promise<StatedDeadlines | null> {
   const pricedLineIds = content.lines.map((line) => line.priced_line_id);
-  const { rows } = await client.query<{ id: string; trace: unknown }>('SELECT id::text AS id, trace FROM priced_line WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [practiceId, pricedLineIds]);
-  const stored = new Map(rows.map((row) => [row.id, row.trace]));
+  const stored = await packetTraces(client, practiceId, content);
   let traces: PricingTrace[];
   let calculations: LineCalculation[];
   try {

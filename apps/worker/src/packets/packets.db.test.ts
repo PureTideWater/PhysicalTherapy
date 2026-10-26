@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { JobActorIsPersonError, type PracticeScope, type ScopeClient, readDatabaseUrl, withJobScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { cents } from '@tp/money';
-import { SYNTHETIC_CORRESPONDENCE_CONTACT, addDays, nextDisputeWindow } from '@tp/packets';
+import { ExplainBindingError, SYNTHETIC_CORRESPONDENCE_CONTACT, addDays, nextDisputeWindow } from '@tp/packets';
 import { type CaseDispute, deriveCaseState } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -15,7 +15,7 @@ import { DocumentStore, type WrittenDocument } from '../storage/documents';
 import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
 import { PacketExportFileIntegrityError, downloadPacketExport, packetExportDownloads } from './downloads';
 import { setCorrespondenceContact } from './correspondence';
-import { PacketExportIntegrityError, exportPacketVersion } from './export';
+import { PacketExportIntegrityError, PacketExportRenderError, exportPacketVersion } from './export';
 import { exportReadiness } from './readiness';
 import { PacketRefusedError } from './records';
 import {
@@ -1088,6 +1088,16 @@ describe('a Medicare Advantage non-contracted case', () => {
     await w.as(practice, w.specialist, (scope) => confirmRegulation(scope, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' }));
     expect(await w.as(practice, w.specialist, (scope) => regulationsAwaiting(scope, { practiceId: practice.practiceId }))).toEqual([]);
     await expect(approve(setup, setup.second, version.versionId, version.contentSha256)).resolves.toMatchObject({ approvedAlone: false });
+    // Approved, it is still not printed: its lines stand in, priced by the contract, so the regulation it cites words none of them
+    // (combined audit #38, finding m4). A print failure, and nothing is stored.
+    const unworded: unknown = await w.export(practice, version.versionId).catch((error: unknown) => error);
+    expect(unworded).toBeInstanceOf(PacketExportRenderError);
+    expect((unworded as PacketExportRenderError).cause).toBeInstanceOf(ExplainBindingError);
+    expect((unworded as PacketExportRenderError).cause).toMatchObject({ reason: 'not_medicare_advantage', row: 1 });
+    expect(await w.as(practice, practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' }))).toMatchObject({
+      exportSha256: null,
+      exportedAt: null,
+    });
     // A contract citation takes no confirmation.
     const contract = await cas08('MA-contract');
     const cited = await write(contract, contract.practice.manager);
@@ -1248,15 +1258,17 @@ describe('a Medicare Advantage case’s next dispute level (the regulation’s r
   it('is verified only from a reconsideration record at L2 or above that gives the stored end, and not before the specialist confirms the Medicare Advantage route (Q34), so no such packet is exported, in SQL and in TypeScript alike', async () => {
     const setup = await cas08('MA-next-level');
     const { practice } = setup;
-    await w.superuser(`UPDATE "case" SET rate_record_id = NULL, pattern_key = pattern_key || '{"mapping_kind": "ma_noncontracted", "contract_version_id": null, "rate_record_id": null}' WHERE id = $1`, [setup.caseId]);
     const confirm = (versionId: string) => w.as(practice, w.specialist, (scope) => confirmRegulation(scope, { practiceId: practice.practiceId, versionId, requestId: 'r' }));
+    // The first level is the contract's, exported and submitted; the case is then the Medicare Advantage plan's (set as a migration
+    // would). Its lines stay priced by the contract, so a version citing the regulation is worded for no line (combined audit #38,
+    // finding m4) and only the contract's version is printed.
     const first = await write(setup, practice.manager);
-    await confirm(first.versionId);
     await approve(setup, setup.second, first.versionId, first.contentSha256);
     const exportedFirst = await w.export(practice, first.versionId);
     expect(exportedFirst).toMatchObject({ outcome: 'exported' });
     await w.attest(practice, first.versionId);
     const logged = await submit(setup, first.versionId);
+    await w.superuser(`UPDATE "case" SET rate_record_id = NULL, pattern_key = pattern_key || '{"mapping_kind": "ma_noncontracted", "contract_version_id": null, "rate_record_id": null}' WHERE id = $1`, [setup.caseId]);
     // The denial is recorded under 900001: the reconsideration window's end comes from its L1 record.
     const reopened = await respond(setup, logged.submissionId, { kind: 'denied', denialCategory: 'bundling', reopensCase: true, documentId: await documentOf(practice) });
     expect(reopened.nextWindowEndsOn).toBe(addDays(w.today(), 171));

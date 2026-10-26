@@ -1,0 +1,22 @@
+{
+  "case": "BIL-06",
+  "module": "BIL",
+  "title": "A suspended organization's billing page",
+  "assertion": "With the organization suspended by PaidWhole and its billing in good standing, its administrator's billing page shows \"Suspended by PaidWhole\", never \"In good standing\", the notice that PaidWhole reinstates it, a link to open a support ticket (`/support?from=billing`) that opens the form on the Billing category, and the note that payment does not reinstate it; the page passes axe; the seed holds SYNTHETIC SUSPENDED GROUP suspended for this journey alone, so nothing suspends or reinstates an organization another journey shares",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": [
+    "apps/web/e2e/billing.spec.ts",
+    "apps/web/src/lib/routes/billing-routes.db.test.ts",
+    "apps/web/src/lib/routes/onboarding-routes.db.test.ts",
+    "apps/web/scripts/seed.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A synthetic organization held suspended by the seed; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

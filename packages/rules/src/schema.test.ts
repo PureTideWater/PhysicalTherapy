@@ -1,16 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  type CmsQuarter,
   DENIAL_CATEGORIES,
   MIN_QUOTE_LENGTH,
+  QUARTERLY_RECORD_TYPES,
+  RECORD_DATING,
   RULE_RECORD_TYPES,
+  UNDATED_RECORD_TYPES,
   VERIFICATION_LEVELS,
   cmsQuarterOf,
+  cmsQuarterOfDate,
+  cmsQuarterWindow,
+  exactCmsQuarter,
+  insideOneYear,
   isIsoDate,
   isRepositoryPath,
   isRuleRecordType,
   parseRuleRecord,
+  quarterLabel,
+  quarterName,
+  quarterNameOf,
+  quarterWindowProblem,
+  recordTypesDated,
   secondPassSchema,
+  windowQuarter,
 } from './schema';
 import { EXAMPLE_SOURCE, exampleRecord, exampleRecords } from './testing';
 
@@ -290,5 +304,110 @@ describe('secondPassSchema', () => {
     expect(secondPassSchema.safeParse({ transcribed_on: '2026-10-15', records: [transcribed] }).success).toBe(false);
     expect(secondPassSchema.safeParse({ transcribed_by: 'x', transcribed_on: '2026-10-15', records: [] }).success).toBe(false);
     expect(secondPassSchema.safeParse({ transcribed_by: 'x', transcribed_on: '2026-10-15', records: [{ ...transcribed, notes: '' }] }).success).toBe(false);
+  });
+});
+
+describe('CMS quarters of a year (audit #30)', () => {
+  const q = (year: number, quarter: CmsQuarter['quarter']): CmsQuarter => ({ year, quarter });
+
+  it('lists the quarterly types and the undated ones, all real record types', () => {
+    expect(QUARTERLY_RECORD_TYPES).toEqual(['pfs_rvu', 'pfs_gpci', 'ncci_mue', 'locality_map', 'locality_map_plus_four']);
+    expect(UNDATED_RECORD_TYPES).toEqual([...QUARTERLY_RECORD_TYPES, 'mppr_rate']);
+    expect(UNDATED_RECORD_TYPES.every((type) => isRuleRecordType(type))).toBe(true);
+  });
+
+  it('classifies every record type once, and every list of types follows the table', () => {
+    expect(Object.keys(RECORD_DATING).sort()).toEqual([...RULE_RECORD_TYPES].sort());
+    expect(recordTypesDated('quarterly')).toEqual(QUARTERLY_RECORD_TYPES);
+    expect(recordTypesDated('annual')).toEqual(['mppr_rate']);
+    expect(recordTypesDated('source_dated')).toEqual(['conversion_factor', 'ncci_ptp', 'carc', 'rarc', 'claim_status_code']);
+    expect(recordTypesDated('hand_typed')).toEqual(['therapy_threshold', 'assistant_modifier', 'sequestration', 'state_prompt_pay', 'dispute_window', 'denial_category']);
+  });
+
+  it.each([
+    [q(2026, 1), '2026-01-01', '2026-03-31'],
+    [q(2026, 2), '2026-04-01', '2026-06-30'],
+    [q(2026, 3), '2026-07-01', '2026-09-30'],
+    [q(2026, 4), '2026-10-01', '2026-12-31'],
+    [q(2024, 1), '2024-01-01', '2024-03-31'],
+  ])('%j runs from %s to %s, and is that exact window', (quarter, from, to) => {
+    expect(cmsQuarterWindow(quarter)).toEqual({ from, to });
+    expect(exactCmsQuarter(from, to)).toEqual(quarter);
+    expect(windowQuarter(from, to)).toEqual(quarter);
+    expect(cmsQuarterOfDate(from)).toEqual(quarter);
+    expect(cmsQuarterOfDate(to)).toEqual(quarter);
+  });
+
+  it('puts every boundary day in its quarter, a leap day included', () => {
+    expect(cmsQuarterOfDate('2026-03-31')).toEqual(q(2026, 1));
+    expect(cmsQuarterOfDate('2026-04-01')).toEqual(q(2026, 2));
+    expect(cmsQuarterOfDate('2026-06-30')).toEqual(q(2026, 2));
+    expect(cmsQuarterOfDate('2026-07-01')).toEqual(q(2026, 3));
+    expect(cmsQuarterOfDate('2026-09-30')).toEqual(q(2026, 3));
+    expect(cmsQuarterOfDate('2026-10-01')).toEqual(q(2026, 4));
+    expect(cmsQuarterOfDate('2026-12-31')).toEqual(q(2026, 4));
+    expect(cmsQuarterOfDate('2027-01-01')).toEqual(q(2027, 1));
+    expect(cmsQuarterOfDate('2028-02-29')).toEqual(q(2028, 1));
+  });
+
+  it('is no exact quarter for a window off by one day, open, or across two quarters', () => {
+    expect(exactCmsQuarter('2026-10-02', '2026-12-31')).toBeNull();
+    expect(exactCmsQuarter('2026-10-01', '2026-12-30')).toBeNull();
+    expect(exactCmsQuarter('2026-09-30', '2026-12-31')).toBeNull();
+    expect(exactCmsQuarter('2026-10-01', '2027-01-01')).toBeNull();
+    expect(exactCmsQuarter('2024-01-01', '2024-02-29')).toBeNull();
+    expect(exactCmsQuarter('2026-10-01', null)).toBeNull();
+    expect(exactCmsQuarter('2026-01-01', '2026-12-31')).toBeNull();
+  });
+
+  it('holds a correction\'s two parts of a quarter in it, and no window across two quarters, open or reversed', () => {
+    expect(windowQuarter('2026-04-01', '2026-05-15')).toEqual(q(2026, 2));
+    expect(windowQuarter('2026-05-16', '2026-06-30')).toEqual(q(2026, 2));
+    expect(windowQuarter('2026-05-16', '2026-05-16')).toEqual(q(2026, 2));
+    expect(windowQuarter('2026-06-30', '2026-07-01')).toBeNull();
+    expect(windowQuarter('2026-03-31', '2026-04-01')).toBeNull();
+    expect(windowQuarter('2026-10-01', '2027-03-31')).toBeNull();
+    expect(windowQuarter('2026-01-01', '2026-12-31')).toBeNull();
+    expect(windowQuarter('2026-10-01', null)).toBeNull();
+    expect(windowQuarter('2026-05-16', '2026-05-15')).toBeNull();
+  });
+
+  it('labels a quarter as the screening does', () => {
+    expect(quarterLabel(q(2026, 4))).toBe('2026-Q4');
+    expect(quarterLabel(cmsQuarterOfDate('2025-02-14'))).toBe('2025-Q1');
+  });
+
+  it('names a quarter for a person as the UX baseline writes it (UX-167), and turns a label into that name', () => {
+    expect(quarterName(q(2026, 4))).toBe('Q4 2026 (Oct–Dec)');
+    expect(quarterName(cmsQuarterOfDate('2025-02-14'))).toBe('Q1 2025 (Jan–Mar)');
+    expect([1, 2, 3, 4].map((n) => quarterNameOf(`2027-Q${String(n)}`))).toEqual(['Q1 2027 (Jan–Mar)', 'Q2 2027 (Apr–Jun)', 'Q3 2027 (Jul–Sep)', 'Q4 2027 (Oct–Dec)']);
+    expect(quarterNameOf('2027')).toBe('2027');
+    expect(quarterNameOf('2027-Q5')).toBe('2027-Q5');
+  });
+
+  it('keeps the per-code MPPR list inside one calendar year, with an end', () => {
+    expect(insideOneYear('2026-01-01', '2026-12-31')).toBe(true);
+    expect(insideOneYear('2026-04-01', '2026-04-01')).toBe(true);
+    expect(insideOneYear('2026-01-01', '2027-01-01')).toBe(false);
+    expect(insideOneYear('2025-12-31', '2026-01-01')).toBe(false);
+    expect(insideOneYear('2026-01-01', null)).toBe(false);
+    expect(insideOneYear('2026-06-01', '2026-05-31')).toBe(false);
+  });
+
+  it('answers each of its four answers for a quarterly import\'s window', () => {
+    const stated = q(2026, 4);
+    expect(quarterWindowProblem(stated, null, '2026-10-01', '2026-12-31')).toBeNull();
+    expect(quarterWindowProblem(stated, null, '2026-11-01', '2026-11-30')).toBeNull();
+    expect(quarterWindowProblem(stated, '2026-11-16', '2026-11-16', '2026-12-31')).toBeNull();
+    expect(quarterWindowProblem(stated, null, undefined, '2026-12-31')).toBe('missing');
+    expect(quarterWindowProblem(stated, null, '2026-10-01', undefined)).toBe('missing');
+    expect(quarterWindowProblem(stated, null, '2026-09-30', '2026-12-31')).toBe('outside');
+    expect(quarterWindowProblem(stated, null, '2026-10-01', '2027-01-01')).toBe('outside');
+    expect(quarterWindowProblem(stated, null, '2026-10-01', null)).toBe('outside');
+    expect(quarterWindowProblem(stated, null, '2026-12-01', '2026-11-30')).toBe('outside');
+    expect(quarterWindowProblem(stated, null, '2025-10-01', '2025-12-31')).toBe('outside');
+    expect(quarterWindowProblem(stated, '2026-11-16', '2026-10-01', '2026-12-31')).toBe('not_effective_day');
+    // Leaving the quarter is named before a start other than the stated day.
+    expect(quarterWindowProblem(stated, '2026-11-16', '2026-09-01', '2026-12-31')).toBe('outside');
   });
 });

@@ -1,0 +1,1460 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V02",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "exhibit",
+  "document": "exhibit.csv",
+  "contentType": "text/csv",
+  "scan": null,
+  "pages": 1,
+  "tier": "medium",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "CSV row: 92523",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92523"],
+          "written": ["92523"],
+          "page": 1,
+          "quote": "92523 95% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "95",
+          "written": "95%",
+          "page": 1,
+          "quote": "92523 95% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "92523 95% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97761 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97761"],
+          "written": ["97761"],
+          "page": 1,
+          "quote": "97761 19 105% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 1,
+          "quote": "97761 19 105% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 1,
+          "quote": "97761 19 105% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97014 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97014"],
+          "written": ["97014"],
+          "page": 1,
+          "quote": "97014 19 100% of the 2025 Medicare fee schedule"
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 1,
+          "quote": "97014 19 100% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "100",
+          "written": "100%",
+          "page": 1,
+          "quote": "97014 19 100% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97014 19 100% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92507",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92507"],
+          "written": ["92507"],
+          "page": 1,
+          "quote": "92507 125% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "125",
+          "written": "125%",
+          "page": 1,
+          "quote": "92507 125% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97010",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97010"],
+          "written": ["97010"],
+          "page": 1,
+          "quote": "97010 112.5% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "112.5",
+          "written": "112.5%",
+          "page": 1,
+          "quote": "97010 112.5% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97760 59 GO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97760"],
+          "written": ["97760"],
+          "page": 1,
+          "quote": "97760 59 GO 115% of the 2025 Medicare fee schedule"
+        },
+        "modifiers": {
+          "value": ["59","GO"],
+          "written": ["59","GO"],
+          "page": 1,
+          "quote": "97760 59 GO 115% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "115",
+          "written": "115%",
+          "page": 1,
+          "quote": "97760 59 GO 115% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97760 59 GO 115% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: G0151 POS 11",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["G0151"],
+          "written": ["G0151"],
+          "page": 1,
+          "quote": "G0151 11 87.5% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["11"],
+          "written": ["11"],
+          "page": 1,
+          "quote": "G0151 11 87.5% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "87.5",
+          "written": "87.5%",
+          "page": 1,
+          "quote": "G0151 11 87.5% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97018 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97018"],
+          "written": ["97018"],
+          "page": 1,
+          "quote": "97018 22 105% of the 2025 Medicare fee schedule"
+        },
+        "places_of_service": {
+          "value": ["22"],
+          "written": ["22"],
+          "page": 1,
+          "quote": "97018 22 105% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 1,
+          "quote": "97018 22 105% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97018 22 105% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97802",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97802"],
+          "written": ["97802"],
+          "page": 1,
+          "quote": "97802 125% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "125",
+          "written": "125%",
+          "page": 1,
+          "quote": "97802 125% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97022 59",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97022"],
+          "written": ["97022"],
+          "page": 1,
+          "quote": "97022 59 125% of the 2025 Medicare fee schedule"
+        },
+        "modifiers": {
+          "value": ["59"],
+          "written": ["59"],
+          "page": 1,
+          "quote": "97022 59 125% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "125",
+          "written": "125%",
+          "page": 1,
+          "quote": "97022 59 125% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97022 59 125% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97016",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97016"],
+          "written": ["97016"],
+          "page": 1,
+          "quote": "97016 130% of the 2024 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "130",
+          "written": "130%",
+          "page": 1,
+          "quote": "97016 130% of the 2024 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2024",
+          "written": "2024",
+          "page": 1,
+          "quote": "97016 130% of the 2024 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97140 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97140"],
+          "written": ["97140"],
+          "page": 1,
+          "quote": "97140 19 120% of the 2025 Medicare fee schedule"
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 1,
+          "quote": "97140 19 120% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "97140 19 120% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97140 19 120% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92526 GO CO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92526"],
+          "written": ["92526"],
+          "page": 1,
+          "quote": "92526 GO CO 112.5% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["GO","CO"],
+          "written": ["GO","CO"],
+          "page": 1,
+          "quote": "92526 GO CO 112.5% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "112.5",
+          "written": "112.5%",
+          "page": 1,
+          "quote": "92526 GO CO 112.5% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97034 CQ",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97034"],
+          "written": ["97034"],
+          "page": 1,
+          "quote": "97034 CQ 120% of the 2024 Medicare fee schedule"
+        },
+        "modifiers": {
+          "value": ["CQ"],
+          "written": ["CQ"],
+          "page": 1,
+          "quote": "97034 CQ 120% of the 2024 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "97034 CQ 120% of the 2024 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2024",
+          "written": "2024",
+          "page": 1,
+          "quote": "97034 CQ 120% of the 2024 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92612",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92612"],
+          "written": ["92612"],
+          "page": 1,
+          "quote": "92612 120% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "92612 120% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "92612 120% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97167",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97167"],
+          "written": ["97167"],
+          "page": 1,
+          "quote": "97167 130% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "130",
+          "written": "130%",
+          "page": 1,
+          "quote": "97167 130% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97032",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97032"],
+          "written": ["97032"],
+          "page": 1,
+          "quote": "97032 105% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 1,
+          "quote": "97032 105% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92607",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92607"],
+          "written": ["92607"],
+          "page": 1,
+          "quote": "92607 100% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "100",
+          "written": "100%",
+          "page": 1,
+          "quote": "92607 100% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92610",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92610"],
+          "written": ["92610"],
+          "page": 1,
+          "quote": "92610 120% of the 2024 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "92610 120% of the 2024 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2024",
+          "written": "2024",
+          "page": 1,
+          "quote": "92610 120% of the 2024 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97164 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97164"],
+          "written": ["97164"],
+          "page": 1,
+          "quote": "97164 19 95% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 1,
+          "quote": "97164 19 95% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "95",
+          "written": "95%",
+          "page": 1,
+          "quote": "97164 19 95% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92521 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92521"],
+          "written": ["92521"],
+          "page": 1,
+          "quote": "92521 22 105% of the 2024 Medicare fee schedule"
+        },
+        "places_of_service": {
+          "value": ["22"],
+          "written": ["22"],
+          "page": 1,
+          "quote": "92521 22 105% of the 2024 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 1,
+          "quote": "92521 22 105% of the 2024 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2024",
+          "written": "2024",
+          "page": 1,
+          "quote": "92521 22 105% of the 2024 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92597",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92597"],
+          "written": ["92597"],
+          "page": 1,
+          "quote": "92597 95% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "95",
+          "written": "95%",
+          "page": 1,
+          "quote": "92597 95% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97028",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97028"],
+          "written": ["97028"],
+          "page": 1,
+          "quote": "97028 105% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 1,
+          "quote": "97028 105% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97028 105% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97530",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97530"],
+          "written": ["97530"],
+          "page": 1,
+          "quote": "97530 100% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "100",
+          "written": "100%",
+          "page": 1,
+          "quote": "97530 100% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97530 100% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92508 CQ GO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92508"],
+          "written": ["92508"],
+          "page": 1,
+          "quote": "92508 CQ GO 115% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["CQ","GO"],
+          "written": ["CQ","GO"],
+          "page": 1,
+          "quote": "92508 CQ GO 115% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "115",
+          "written": "115%",
+          "page": 1,
+          "quote": "92508 CQ GO 115% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97035 GO CQ",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97035"],
+          "written": ["97035"],
+          "page": 1,
+          "quote": "97035 GO CQ 110% of the 2024 Medicare fee schedule"
+        },
+        "modifiers": {
+          "value": ["GO","CQ"],
+          "written": ["GO","CQ"],
+          "page": 1,
+          "quote": "97035 GO CQ 110% of the 2024 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "110",
+          "written": "110%",
+          "page": 1,
+          "quote": "97035 GO CQ 110% of the 2024 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2024",
+          "written": "2024",
+          "page": 1,
+          "quote": "97035 GO CQ 110% of the 2024 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97537",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97537"],
+          "written": ["97537"],
+          "page": 1,
+          "quote": "97537 120% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "97537 120% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97537 120% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97533",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97533"],
+          "written": ["97533"],
+          "page": 1,
+          "quote": "97533 100% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "100",
+          "written": "100%",
+          "page": 1,
+          "quote": "97533 100% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 96125 GO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["96125"],
+          "written": ["96125"],
+          "page": 1,
+          "quote": "96125 GO 120% of the 2025 Medicare fee schedule"
+        },
+        "modifiers": {
+          "value": ["GO"],
+          "written": ["GO"],
+          "page": 1,
+          "quote": "96125 GO 120% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "96125 GO 120% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "96125 GO 120% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97542",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97542"],
+          "written": ["97542"],
+          "page": 1,
+          "quote": "97542 120% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "97542 120% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97161",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97161"],
+          "written": ["97161"],
+          "page": 1,
+          "quote": "97161 115% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "115",
+          "written": "115%",
+          "page": 1,
+          "quote": "97161 115% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97130",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97130"],
+          "written": ["97130"],
+          "page": 1,
+          "quote": "97130 125% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "125",
+          "written": "125%",
+          "page": 1,
+          "quote": "97130 125% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97110 CQ KX",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97110"],
+          "written": ["97110"],
+          "page": 1,
+          "quote": "97110 CQ KX 110% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["CQ","KX"],
+          "written": ["CQ","KX"],
+          "page": 1,
+          "quote": "97110 CQ KX 110% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "110",
+          "written": "110%",
+          "page": 1,
+          "quote": "97110 CQ KX 110% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 92609",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["92609"],
+          "written": ["92609"],
+          "page": 1,
+          "quote": "92609 100% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "100",
+          "written": "100%",
+          "page": 1,
+          "quote": "92609 100% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "92609 100% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97545 POS 11",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97545"],
+          "written": ["97545"],
+          "page": 1,
+          "quote": "97545 11 110% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["11"],
+          "written": ["11"],
+          "page": 1,
+          "quote": "97545 11 110% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "110",
+          "written": "110%",
+          "page": 1,
+          "quote": "97545 11 110% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97168 GO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97168"],
+          "written": ["97168"],
+          "page": 1,
+          "quote": "97168 GO 100% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["GO"],
+          "written": ["GO"],
+          "page": 1,
+          "quote": "97168 GO 100% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "100",
+          "written": "100%",
+          "page": 1,
+          "quote": "97168 GO 100% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 95851 CQ GO POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["95851"],
+          "written": ["95851"],
+          "page": 1,
+          "quote": "95851 CQ GO 12 120% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["CQ","GO"],
+          "written": ["CQ","GO"],
+          "page": 1,
+          "quote": "95851 CQ GO 12 120% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 1,
+          "quote": "95851 CQ GO 12 120% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "120",
+          "written": "120%",
+          "page": 1,
+          "quote": "95851 CQ GO 12 120% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97036 59",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97036"],
+          "written": ["97036"],
+          "page": 1,
+          "quote": "97036 59 105% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["59"],
+          "written": ["59"],
+          "page": 1,
+          "quote": "97036 59 105% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 1,
+          "quote": "97036 59 105% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97033 CO POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97033"],
+          "written": ["97033"],
+          "page": 1,
+          "quote": "97033 CO 19 95% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["CO"],
+          "written": ["CO"],
+          "page": 1,
+          "quote": "97033 CO 19 95% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 1,
+          "quote": "97033 CO 19 95% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "95",
+          "written": "95%",
+          "page": 1,
+          "quote": "97033 CO 19 95% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97166",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97166"],
+          "written": ["97166"],
+          "page": 1,
+          "quote": "97166 130% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "130",
+          "written": "130%",
+          "page": 1,
+          "quote": "97166 130% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97166 130% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1 March 2026"
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
+import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
 import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
@@ -17,10 +18,10 @@ import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
 /**
  * The workflows: ci.yml's parallel jobs behind its one gate (docs/adr/0066, Part 1), with the image and licence gates
  * among them (docs/adr/0010), the release and capacity workflows (docs/adr/0062), the release's dry run, the action pin
- * policy and Postgres from the compose file (docs/adr/0066, Part 2) and the approval of record (docs/adr/0063). No
- * Docker daemon or GitHub runner exists here, so these tests read the workflow files and check that each gate is wired
- * where the plan needs it, in the right order, and run under bash, on fixture input, the scripts whose logic decides
- * what a run checks.
+ * policy and Postgres from the compose file (docs/adr/0066, Part 2), the approval of record (docs/adr/0063), and the
+ * content calendar and the weekly real-size test (docs/adr/0071). No Docker daemon or GitHub runner exists here, so
+ * these tests read the workflow files and check that each gate is wired where the plan needs it, in the right order,
+ * and run under bash, on fixture input, the scripts whose logic decides what a run checks.
  *
  * Every read of .github/, the Dockerfiles and docker-compose.yml goes through one root, CI_ROOT: the directory CI_TREE
  * names when it is set, the repository otherwise. The simulated Dependabot rewrite below runs these tests on a copy
@@ -781,6 +782,205 @@ describe('workflows', () => {
   });
 });
 
+describe('the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08)', () => {
+  type ContentJob = Job & { permissions?: unknown; outputs?: Record<string, string> };
+  const read = (name: string) => parse(readFileSync(path.join(WORKFLOWS, name), 'utf8')) as Workflow & { jobs: Record<string, ContentJob> };
+  const runs = (job: ContentJob | undefined) => (job?.steps ?? []).map((step) => step.run ?? '');
+
+  /** A notify job writes issues alone, with the job's own token: it checks nothing out, runs no action and puts no expression in its shell. */
+  function expectQuietNotify(name: string, needs: string, condition: string) {
+    const notify = read(name).jobs.notify;
+    expect(notify?.needs, name).toBe(needs);
+    expect(notify?.if, name).toBe(condition);
+    expect(notify?.permissions, name).toEqual({ issues: 'write' });
+    expect(notify?.steps.filter((step) => step.uses !== undefined), name).toEqual([]);
+    expect(runs(notify).filter((run) => run.includes('${{')), name).toEqual([]);
+    for (const step of notify?.steps ?? []) expect(Object.keys(step.env ?? {}).filter((key) => /SECRET|PASSWORD|KEY/.test(key)), name).toEqual([]);
+    expect(JSON.stringify(notify?.steps ?? []), name).not.toContain('secrets.');
+  }
+
+  it('content-calendar: runs daily, on request, and on a push to the build branch or a pull request touching the calendar or the content, with a read-only token', () => {
+    const calendar = read('content-calendar.yml');
+    const on = calendar.on as Record<string, { branches?: string[]; paths?: string[] } | { cron: string }[] | null>;
+    expect(Object.keys(on)).toEqual(['schedule', 'workflow_dispatch', 'push', 'pull_request']);
+    expect(on.schedule).toEqual([{ cron: '17 7 * * *' }]);
+    const push = on.push as { branches?: string[]; paths?: string[] };
+    const pull = on.pull_request as { paths?: string[] };
+    expect(push.branches).toEqual(['claude/build-platform']);
+    expect(push.paths).toEqual(['packages/rules/src/calendar.ts', 'packages/rules/src/records.ts', 'tools/content-calendar/**', 'content/**', '.github/workflows/content-calendar.yml']);
+    expect(pull.paths).toEqual(push.paths);
+    expect(calendar.permissions).toEqual({ contents: 'read' });
+    expect(calendar.concurrency).toEqual({ group: '${{ github.workflow }}-${{ github.ref }}', 'cancel-in-progress': "${{ github.event_name == 'pull_request' }}" });
+    expect(Object.keys(calendar.jobs)).toEqual(['check', 'notify']);
+  });
+
+  it('content-calendar: its check job only reads, with no permissions of its own and no secret, and hands the findings on as an output', () => {
+    const check = read('content-calendar.yml').jobs.check;
+    expect(check?.permissions).toBeUndefined();
+    expect(check?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false } });
+    expect(runs(check).filter((run) => run.startsWith('pnpm install'))).toEqual(['pnpm install --frozen-lockfile']);
+    expect(JSON.stringify(check?.steps ?? [])).not.toContain('secrets.');
+    expect(runs(check).filter((run) => run.includes('${{'))).toEqual([]);
+    const script = runs(check).find((run) => run.includes('tools/content-calendar/index.ts')) ?? '';
+    expect(script).toContain('--today "$(date -u +%F)" --out "$RUNNER_TEMP/findings.json" --summary "$RUNNER_TEMP/summary.md"');
+    expect(script).toContain('>> "$GITHUB_STEP_SUMMARY"');
+    expect(check?.outputs).toEqual({ findings: '${{ steps.calendar.outputs.findings }}' });
+  });
+
+  /**
+   * A fake gh on PATH for a notify script: `gh api` answers with the open issues (as its --jq would print them, one
+   * object a line), `gh issue list` with them as one JSON array, and every call is logged one line each.
+   */
+  function fakeGh(open: readonly { number: number; title: string }[]): { dir: string; log: () => string[]; bodies: () => string[] } {
+    const dir = mkdtempSync(path.join(scratch, 'notify-'));
+    mkdirSync(path.join(dir, 'bin'));
+    mkdirSync(path.join(dir, 'fake'));
+    writeFileSync(path.join(dir, 'fake/open.jsonl'), open.map((issue) => JSON.stringify(issue)).join('\n') + (open.length > 0 ? '\n' : ''));
+    writeFileSync(path.join(dir, 'fake/open.json'), JSON.stringify(open));
+    writeFileSync(
+      path.join(dir, 'bin/gh'),
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "%s\\n" "$*" >> "$FAKE_DIR/log"',
+        'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
+        'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
+        'for arg in "$@"; do if [ "${previous:-}" = --body-file ]; then { cat "$arg"; printf "\\n---\\n"; } >> "$FAKE_DIR/bodies"; fi; previous=$arg; done',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    const lines = (name: string) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), 'utf8') : '');
+    return { dir, log: () => lines('log').split('\n').filter((line) => line !== ''), bodies: () => lines('bodies').split('\n---\n').filter((body) => body !== '') };
+  }
+
+  const notifyStep = (name: string) => read(name).jobs.notify?.steps[0];
+
+  /** Runs a notify step as GitHub runs it, with its env's literals and these values for its expressions. */
+  function runNotify(name: string, values: Record<string, string>, open: readonly { number: number; title: string }[]) {
+    const step = notifyStep(name);
+    const gh = fakeGh(open);
+    const literals = Object.fromEntries(Object.entries(step?.env ?? {}).filter(([, value]) => !value.includes('${{')));
+    const result = runScript(step?.run ?? '', { ...literals, GH_REPO: 'owner/repo', GH_TOKEN: 'token', RUN_URL: 'https://github.com/owner/repo/actions/runs/1', GITHUB_REF_NAME: 'claude/build-platform', GITHUB_SHA: 'abc123', FAKE_DIR: gh.dir, PATH: `${path.join(gh.dir, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`, ...values }, gh.dir);
+    return { ...result, log: gh.log(), bodies: gh.bodies() };
+  }
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64');
+  const finding = (index: number) => ({ title: `Finding ${String(index)}`, body: `Body ${String(index)}` });
+
+  it('content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run', () => {
+    expectQuietNotify('content-calendar.yml', 'check', "always() && github.event_name != 'pull_request'");
+    const step = notifyStep('content-calendar.yml');
+    expect(step?.env?.MAX_OPENED).toBe(String(MAX_OPENED_PER_RUN));
+    const script = step?.run ?? '';
+    expect(script.startsWith('set -euo pipefail\n')).toBe(true);
+    // Every page of the open issues, not the first 200 (sec-boundary improvement 3).
+    expect(script).toContain('gh api --paginate "repos/$GH_REPO/issues?labels=content-due&state=open&per_page=100"');
+    expect(script).not.toContain('--limit 200');
+  });
+
+  it('content-calendar: notify files the findings not open, at most 20 a run, and lists the rest in one issue it closes once every finding is filed (fix round SB-5)', () => {
+    const all = Array.from({ length: 25 }, (_, index) => finding(index));
+    const open = [0, 1, 2].map((index) => ({ number: 100 + index, title: `Finding ${String(index)}` }));
+    const first = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, open);
+    expect(first.status, first.output).toBe(0);
+    const creates = first.log.filter((line) => line.startsWith('issue create'));
+    expect(creates).toEqual([
+      ...Array.from({ length: 20 }, (_, index) => `issue create --title Finding ${String(index + 3)} --label content-due --body-file body.md`),
+      'issue create --title Content calendar: findings not filed --label content-due --body-file body.md',
+    ]);
+    expect(first.bodies[0]).toBe('Body 3\n\n\nOpened by the content-calendar workflow: https://github.com/owner/repo/actions/runs/1\n');
+    expect(first.bodies.at(-1)).toBe('A run opens at most 20 new issues. These 2 findings were not filed by https://github.com/owner/repo/actions/runs/1; a later run files them:\n\n- Finding 23\n- Finding 24\n');
+    // The next day, with those open: findings 23 and 24 are filed, and the list of findings not filed is closed.
+    const nowOpen = [...open, ...Array.from({ length: 20 }, (_, index) => ({ number: 200 + index, title: `Finding ${String(index + 3)}` })), { number: 300, title: 'Content calendar: findings not filed' }];
+    const second = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, nowOpen);
+    expect(second.status, second.output).toBe(0);
+    expect(second.log.filter((line) => line.startsWith('issue '))).toEqual([
+      'issue create --title Finding 23 --label content-due --body-file body.md',
+      'issue create --title Finding 24 --label content-due --body-file body.md',
+      'issue close 300 --comment Every finding is filed: https://github.com/owner/repo/actions/runs/1',
+    ]);
+    // Twenty-five more the day after, while the list is open: it is commented on, not opened twice.
+    const third = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(Array.from({ length: 21 }, (_, index) => finding(index + 50))) }, [{ number: 300, title: 'Content calendar: findings not filed' }]);
+    expect(third.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue comment 300 --body-file body.md');
+    expect(third.log.filter((line) => line.startsWith('issue create'))).toHaveLength(20);
+  });
+
+  it('content-calendar: notify opens, or comments on, the one "check failing" issue when the check did not finish or handed on no findings list (fix round S8; sec-boundary improvement 2)', () => {
+    const failing = 'issue create --title Content calendar check failing --label content-due --body-file body.md';
+    for (const values of [
+      { CHECK_RESULT: 'failure', FINDINGS_B64: '' },
+      { CHECK_RESULT: 'cancelled', FINDINGS_B64: b64([finding(1)]) },
+      { CHECK_RESULT: 'success', FINDINGS_B64: '' },
+      { CHECK_RESULT: 'success', FINDINGS_B64: '!!not base64!!' },
+      { CHECK_RESULT: 'success', FINDINGS_B64: b64({ title: 'x' }) },
+      { CHECK_RESULT: 'success', FINDINGS_B64: b64([{ title: 'x' }]) },
+    ]) {
+      const result = runNotify('content-calendar.yml', values, []);
+      expect(result.status, `${JSON.stringify(values)} ${result.output}`).toBe(0);
+      expect(result.log.filter((line) => line.startsWith('issue ')), JSON.stringify(values)).toEqual([failing]);
+      expect(result.bodies[0], JSON.stringify(values)).toBe(`The content calendar check did not hand on its findings (the check: ${values.CHECK_RESULT}) on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1\n`);
+    }
+    // Each later failing run comments on the open issue, so a long failure shows in its history.
+    const again = runNotify('content-calendar.yml', { CHECK_RESULT: 'failure', FINDINGS_B64: '' }, [{ number: 7, title: 'Content calendar check failing' }]);
+    expect(again.log.filter((line) => line.startsWith('issue '))).toEqual(['issue comment 7 --body-file body.md']);
+    // An empty list on a passing check files nothing.
+    expect(runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64([]) }, []).log.filter((line) => line.startsWith('issue '))).toEqual([]);
+  });
+
+  it('release-capacity: runs weekly and on request with a read-only token, builds release 900110 outside the repository and measures the production worker image under the worker task’s limits', () => {
+    const capacity = read('release-capacity.yml');
+    expect(capacity.on).toEqual({ schedule: [{ cron: '29 3 * * 2' }], workflow_dispatch: null });
+    expect(capacity.permissions).toEqual({ contents: 'read' });
+    expect(capacity.concurrency).toEqual({ group: 'release-capacity-${{ github.sha }}', 'cancel-in-progress': false });
+    expect(Object.keys(capacity.jobs)).toEqual(['capacity', 'notify']);
+    const job = capacity.jobs.capacity;
+    expect(job?.permissions).toBeUndefined();
+    expect(job?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false } });
+    const build = job?.steps.find((step) => usesAction(step, 'docker/build-push-action'));
+    expect(build?.with).toMatchObject({ file: 'apps/worker/Dockerfile', load: true, push: false, tags: 'tp-worker:capacity' });
+    expect(build?.with?.['cache-to']).toBeUndefined();
+    const steps = runs(job);
+    const release = steps.findIndex((run) => run === 'pnpm exec tsx tools/release/scale.ts --shape quarterly --out "$RUNNER_TEMP/quarterly-release"');
+    const measure = steps.findIndex((run) => run.includes('tools/release-capacity/run.ts \\'));
+    expect(release).toBeGreaterThan(-1);
+    expect(measure).toBeGreaterThan(release);
+    expect(steps[measure]).toContain('--release-dir "$RUNNER_TEMP/quarterly-release"');
+    expect(steps[measure]).toContain('--worker-image tp-worker:capacity');
+    expect(steps.filter((run) => run.startsWith('pnpm install'))).toEqual(['pnpm install --frozen-lockfile']);
+    expect(JSON.stringify(job?.steps ?? [])).not.toContain('secrets.');
+  });
+
+  it('release-capacity: its notify job alone writes issues, on a failure, a cancel or an advisory that is not a pull request’s (fix round S3, SB-7)', () => {
+    expectQuietNotify(
+      'release-capacity.yml',
+      'capacity',
+      "always() && github.event_name != 'pull_request' && (needs.capacity.result == 'failure' || needs.capacity.result == 'cancelled' || needs.capacity.outputs.advisories != '')",
+    );
+    const capacity = read('release-capacity.yml').jobs.capacity;
+    expect(capacity?.outputs).toEqual({ advisories: '${{ steps.measure.outputs.advisories }}' });
+    expect(capacity?.steps.find((step) => step.id === 'measure')?.run).toContain('tools/release-capacity/run.ts \\');
+    expect(notifyStep('release-capacity.yml')?.env).toMatchObject({ CAPACITY_RESULT: '${{ needs.capacity.result }}', ADVISORIES_B64: '${{ needs.capacity.outputs.advisories }}' });
+    const advisory = Buffer.from('the windows query took 7000 ms cold, above its 5000 ms budget (advisory)').toString('base64');
+
+    const failed = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'failure', ADVISORIES_B64: advisory }, []);
+    expect(failed.status, failed.output).toBe(0);
+    expect(failed.log.filter((line) => line.startsWith('issue '))).toEqual(['issue list --label release-capacity --state open --json number,title', 'issue create --title Release capacity test failing --label release-capacity --body-file body.md']);
+    expect(failed.bodies[0]).toBe(
+      'The release capacity test ended failure on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1. The artifact of the run holds release-capacity.json and summary.md with each failing check.\n\nAdvisory:\n\n- the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\n',
+    );
+    const cancelled = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'cancelled', ADVISORIES_B64: '' }, [{ number: 4, title: 'Release capacity test failing' }]);
+    expect(cancelled.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue comment 4 --body-file body.md');
+    expect(cancelled.bodies[0]).toContain('ended cancelled');
+    // A pass with an advisory: its own issue, so the failing one's title never misleads.
+    const passed = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'success', ADVISORIES_B64: advisory }, [{ number: 4, title: 'Release capacity test failing' }]);
+    expect(passed.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue create --title Release capacity advisory --label release-capacity --body-file body.md');
+    expect(passed.bodies[0]).toBe('The release capacity test passed on claude/build-platform at abc123 with an advisory: https://github.com/owner/repo/actions/runs/1\n\nAdvisory:\n\n- the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\n');
+  });
+
+  it('are neither of them a required check', () => {
+    expect(REQUIRED_CHECKS.filter((check) => check.workflow === 'content-calendar.yml' || check.workflow === 'release-capacity.yml')).toEqual([]);
+  });
+});
+
 describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/adr/0066, Part 1)', () => {
   const ci = workflow('ci.yml');
   const JOBS = ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images', 'all-green'];
@@ -1283,6 +1483,11 @@ describe('the action pin rules (CI-11; docs/adr/0066, Part 2)', () => {
   it('(a) pin every action of every workflow to a full commit SHA with its release version beside it, so no moved tag runs anywhere', () => {
     expect(texts().length).toBeGreaterThanOrEqual(8);
     expect(formProblems(texts())).toEqual([]);
+    // The workflows that push images, write the report or decide a required check, and the content-calendar and
+    // release-capacity workflows (docs/adr/0071), are among the files read, each naming at least one action.
+    for (const name of ['release.yml', 'screening-capacity.yml', 'ci.yml', 'content-calendar.yml', 'release-capacity.yml']) {
+      expect(texts().find((entry) => entry.file === name)?.text.match(/^\s*(?:-\s+)?uses:/gm)?.length ?? 0, name).toBeGreaterThan(0);
+    }
     // Every action the YAML names is one of the lines read.
     const uses = workflowFiles().flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => job.steps.flatMap((step) => (step.uses === undefined ? [] : [step.uses]))));
     expect(uses.length).toBeGreaterThan(0);
@@ -1668,6 +1873,8 @@ describe('job timeouts (CI-10)', () => {
       'approval-of-record.yml': { 'approval-of-record': 5 },
       // Each about three times its expected time (docs/adr/0066, Part 1); the gate's 5 for a job that only reads results.
       'ci.yml': { static: 15, lint: 15, unit: 20, db: 20, 'domain-model': 10, build: 15, e2e: 25, images: 20, 'all-green': 5 },
+      // The daily calendar check and its one issues call (docs/adr/0071).
+      'content-calendar.yml': { check: 15, notify: 5 },
       // The 2 GiB intake run, weekly and on request.
       'large-zip.yml': { 'large-zip': 45 },
       'mutation.yml': { changes: 5, stryker: 30, mutation: 10 },
@@ -1677,6 +1884,8 @@ describe('job timeouts (CI-10)', () => {
       'release-dry-run.yml': { build: 20, push: 10, capacity: 15 },
       // The release's own table is held in its describe block above; S4 three times in the capacity job.
       'release.yml': { build: 60, capacity: 100, push: 30, report: 10 },
+      // The weekly real-size test builds and loads the quarterly scale release 900110 before it measures (docs/adr/0071).
+      'release-capacity.yml': { capacity: 180, notify: 5 },
       // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8), S4 three
       // times since the founder's ruling of 2026-10-23.
       'screening-capacity.yml': { changes: 5, capacity: 100, gate: 5, notify: 5 },

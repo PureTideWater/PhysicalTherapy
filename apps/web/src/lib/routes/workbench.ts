@@ -1,4 +1,4 @@
-import { centsToString, formatCents, parseAmount } from '@tp/money';
+import { centsToString, formatUsd } from '@tp/money';
 import { ADJUSTMENT_BEHAVIORS, type PatternKey } from '@tp/triage';
 import { openCaseOnPattern, todayUtc } from '@tp/worker/triage';
 import { z } from 'zod';
@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { addNote, assignOwner } from '../cases/workbench';
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
-import { underPacketRules } from '../cases/refusals';
+import { REFUSED_FIELD, underPacketRules } from '../cases/refusals';
+import { dollarsField } from '../money-input';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
 /**
@@ -71,10 +72,11 @@ export const openCaseAction = practiceRoute({
       throw new InputError([{ field: 'pattern', message: PATTERN_NOT_WAITING }]);
     }
     if (opened.outcome === 'below_materiality') {
+      // Said as the form's refusal, not under the pattern's hidden fields, which mark nothing a person sees.
       throw new InputError([
         {
-          field: 'pattern',
-          message: `its actionable lines total ${formatCents(opened.actionableCents)}, below the case materiality of ${formatCents(opened.materialityCents)}, so it keeps accumulating; lower the case materiality to open it`,
+          field: REFUSED_FIELD,
+          message: `its actionable lines total ${formatUsd(opened.actionableCents)}, below the case materiality of ${formatUsd(opened.materialityCents)}, so it keeps accumulating; lower the case materiality to open it`,
         },
       ]);
     }
@@ -133,12 +135,6 @@ export const addNoteAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.caseId, text: 'SYNTHETIC note: called provider relations' }) },
 });
 
-const dollars = z
-  .string()
-  .trim()
-  .regex(/^\d{1,9}(\.\d{1,2})?$/, 'dollars and cents, such as 5.00')
-  .transform((text) => parseAmount(text));
-
 /** What setting the materiality does, stated before it is saved (PRD 7: an action's consequence is stated). */
 export const MATERIALITY_CONSEQUENCE =
   'Triage judges lines and opens cases with these thresholds from its next run, and a waiting pattern that reaches the case materiality can be opened now; cases already open keep the materiality they opened with.';
@@ -154,7 +150,7 @@ export const setMaterialityAction = practiceRoute({
   phi: true,
   permission: 'case.work',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ lineMateriality: dollars, caseMateriality: dollars }),
+  input: z.object({ lineMateriality: dollarsField, caseMateriality: dollarsField }),
   audit: { action: 'materiality_set', objectType: 'practice' },
   handle: async ({ scope, practiceId, input }): Promise<MutationResult> => {
     await underPacketRules(() => scope.client.query('SELECT practice_set_materiality($1, $2, $3)', [practiceId, centsToString(input.lineMateriality), centsToString(input.caseMateriality)]));

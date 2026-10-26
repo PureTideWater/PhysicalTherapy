@@ -75,7 +75,7 @@ async function exported(label: string, attested: boolean, releaseNo = RELEASE): 
 async function staleAfterExport(setup: Exported): Promise<void> {
   const { pricingRunId } = await w.as(setup.practice, setup.practice.manager, (scope) => createRerun(scope, { practiceId: setup.practice.practiceId, pricingRunId: setup.runId, releaseNo: RELEASE, requestId: 'test-rerun' }));
   await w.triage.pricing.execute(setup.practice, pricingRunId);
-  await w.as(setup.practice, setup.practice.manager, (scope) => acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId }));
+  await w.as(setup.practice, setup.practice.manager, (scope) => acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId, replacesId: setup.runId , heldByIds: [] }));
 }
 
 interface Logged {
@@ -411,7 +411,7 @@ describe('a re-price and a withdrawal held open together while a submission of t
     };
     const acceptance = hold((gate, made) =>
       w.as(setup.practice, setup.practice.manager, async (scope) => {
-        await acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId });
+        await acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId, replacesId: setup.runId , heldByIds: [] });
         made();
         await gate;
       }),

@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  type ImportWindow,
   type ImportableType,
   MANIFEST_FILE,
   PARSERS,
@@ -47,11 +48,20 @@ const PARSED_SOURCES: readonly { readonly type: ImportableType; readonly file: s
   { type: 'claim_status_code', file: 'CLAIM_STATUS_SYNTHETIC.csv' },
 ];
 
-function parsedRecordFile(root: string, type: ImportableType, file: string, builtOn: string = BUILT_ON): { path: string; records: RuleRecord[] } {
+/** The window every synthetic source is parsed for unless a release says otherwise: the year 2026. */
+const FULL_YEAR: ImportWindow = { year: 2026, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' };
+
+function parsedRecordFile(
+  root: string,
+  type: ImportableType,
+  file: string,
+  builtOn: string = BUILT_ON,
+  window: ImportWindow = FULL_YEAR,
+): { path: string; records: RuleRecord[] } {
   const parser = PARSERS[type];
   const sourcePath = `${SYNTHETIC_SOURCES_DIR}/${file}`;
   const bytes = readFileSync(path.join(root, sourcePath));
-  const outcome = parser.parse(decodeSourceText(bytes), { year: 2026, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31' });
+  const outcome = parser.parse(decodeSourceText(bytes), window);
   const records = buildParsedRecords({
     parser,
     rows: outcome.rows,
@@ -288,6 +298,62 @@ export function renderPlusFourRelease(root: string = repositoryRoot): Map<string
   return generated;
 }
 
+/**
+ * The SYNTHETIC release of the content tests (audit #7; docs/adr/0071): every file of release 900001 unchanged but its
+ * per-code MPPR list and its MUE, re-parsed by the same parsers from the same files for 2026-01-01 to 2026-09-30, so a
+ * Medicare line after the third quarter reads content the release has not loaded. Its records keep their values,
+ * source and quotes; only their windows end earlier. The hand-typed general practice-expense reduction stays open.
+ * Only the tests that need it load it, since current_rule_release() picks the highest release loaded.
+ */
+export const CONTENT_GAP_RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900007';
+export const CONTENT_GAP_RELEASE_NUMBER = 900_007;
+const CONTENT_GAP_BUILT_ON = '2026-10-26';
+const CONTENT_GAP_WINDOW: ImportWindow = { year: 2026, effectiveFrom: '2026-01-01', effectiveTo: '2026-09-30' };
+const CONTENT_GAP_SOURCES = [
+  { type: 'mppr_rate' as const, file: 'MPPR_SYNTHETIC.csv', replaces: 'mppr_rate/2026/MPPR_SYNTHETIC.json' },
+  { type: 'ncci_mue' as const, file: 'NCCI_MUE_SYNTHETIC.csv', replaces: 'ncci_mue/2026/NCCI_MUE_SYNTHETIC.json' },
+];
+
+/** Every file of release 900007, from release 900001 on disk and its MPPR and MUE files parsed for the shorter window. */
+export function renderContentGapRelease(root: string = repositoryRoot): Map<string, string> {
+  const first = path.join(root, SYNTHETIC_RELEASE_DIR);
+  const generated = new Map<string, string>();
+  const records: RuleRecord[] = [];
+  const replaced = new Set(CONTENT_GAP_SOURCES.map((source) => source.replaces));
+  const carried = listContentFiles(first)
+    .map((file) => file.path)
+    .filter((file) => file !== MANIFEST_FILE && file !== RELEASE_NOTES_FILE && !replaced.has(file));
+  for (const file of carried) {
+    generated.set(file, readFileSync(path.join(first, file), 'utf8'));
+    if (isRecordFile(file)) {
+      records.push(...readRecordFile(path.join(first, file), file).records.map((located) => located.record));
+    }
+  }
+  for (const source of CONTENT_GAP_SOURCES) {
+    // Built on 900001's day, so each record differs from 900001's in its end date alone.
+    const parsed = parsedRecordFile(root, source.type, source.file, BUILT_ON, CONTENT_GAP_WINDOW);
+    generated.set(parsed.path, serializeRecords(parsed.records));
+    records.push(...parsed.records);
+  }
+  generated.set(
+    RELEASE_NOTES_FILE,
+    releaseNotes({
+      title: `SYNTHETIC content-gap release ${String(CONTENT_GAP_RELEASE_NUMBER)}`,
+      summary: [
+        `Built ${CONTENT_GAP_BUILT_ON} by \`tsx tools/release/synthetic.ts\`: every file of release 900001 unchanged but its per-code MPPR list and its MUE,`,
+        're-parsed from fixtures/synthetic/cms/MPPR_SYNTHETIC.csv and NCCI_MUE_SYNTHETIC.csv for 2026-01-01 to 2026-09-30, so a Medicare line',
+        'after 2026-09-30 reads content this release has not loaded. The release of the content tests (audit #7; docs/adr/0071). Invented',
+        'values for tests: never published, never loaded outside a scratch test database, never used to price a real line.',
+      ].join('\n'),
+      records,
+      impact: ['SYNTHETIC fixture: loaded only into scratch test databases, by the tests of months waiting on Medicare content.'],
+    }),
+  );
+  const hashes = new Map<string, string>([...generated.entries()].map(([file, text]): [string, string] => [file, sha256(text)]));
+  generated.set(MANIFEST_FILE, serializeManifest(buildManifest(CONTENT_GAP_RELEASE_NUMBER, hashes)));
+  return generated;
+}
+
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
   // The ZIP9 source first: release 900006 is parsed from it.
   writeFileSync(path.join(repositoryRoot, ZIP9_SYNTHETIC_FILE), renderZip9Synthetic());
@@ -297,6 +363,7 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
     [RERUN_RELEASE_DIR, renderRerunRelease()],
     [DEADLINE_RELEASE_DIR, renderDeadlineRelease()],
     [PLUS_FOUR_RELEASE_DIR, renderPlusFourRelease()],
+    [CONTENT_GAP_RELEASE_DIR, renderContentGapRelease()],
   ] as const) {
     for (const [file, text] of files) {
       const target = path.join(repositoryRoot, dir, file);

@@ -1,0 +1,306 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V08",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "tier": "small",
+  "pageText": "unfaithful",
+  "unfaithfulBecause": "struck_text",
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Exhibit A: 92609 GP 59 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["92609"],
+          "written": ["92609"],
+          "page": 3,
+          "quote": "92609 GP 59 19 50.33 per unit",
+          "asRead": {"written":["92609"],"quote":"92609 GP 59 19 47.20 50.33 per unit"}
+        },
+        "modifiers": {
+          "value": ["GP","59"],
+          "written": ["GP","59"],
+          "page": 3,
+          "quote": "92609 GP 59 19 50.33 per unit",
+          "asRead": {"written":["GP","59"],"quote":"92609 GP 59 19 47.20 50.33 per unit"}
+        },
+        "places_of_service": {
+          "value": ["19"],
+          "written": ["19"],
+          "page": 3,
+          "quote": "92609 GP 59 19 50.33 per unit",
+          "asRead": {"written":["19"],"quote":"92609 GP 59 19 47.20 50.33 per unit"}
+        },
+        "amount": {
+          "value": "5033",
+          "written": "50.33",
+          "page": 3,
+          "quote": "92609 GP 59 19 50.33 per unit",
+          "asRead": {"written":"50.33","quote":"92609 GP 59 19 47.20 50.33 per unit"}
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97161",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97161"],
+          "written": ["97161"],
+          "page": 3,
+          "quote": "97161 - - 131.12 per unit",
+          "asRead": {"written":["97161"],"quote":"97161 - - 129.41 131.12 per unit"}
+        },
+        "amount": {
+          "value": "13112",
+          "written": "131.12",
+          "page": 3,
+          "quote": "97161 - - 131.12 per unit",
+          "asRead": {"written":"131.12","quote":"97161 - - 129.41 131.12 per unit"}
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97533 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97533"],"written":["97533"],"page":3,"quote":"97533 - 19 74.35 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":3,"quote":"97533 - 19 74.35 per unit"},
+        "amount": {"value":"7435","written":"74.35","page":3,"quote":"97533 - 19 74.35 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92526 CO CQ",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["92526"],
+          "written": ["92526"],
+          "page": 3,
+          "quote": "92526 CO CQ - 138.90 per unit",
+          "asRead": {"written":["92526"],"quote":"92526 CO CQ - 134.16 138.90 per unit"}
+        },
+        "modifiers": {
+          "value": ["CO","CQ"],
+          "written": ["CO","CQ"],
+          "page": 3,
+          "quote": "92526 CO CQ - 138.90 per unit",
+          "asRead": {"written":["CO","CQ"],"quote":"92526 CO CQ - 134.16 138.90 per unit"}
+        },
+        "amount": {
+          "value": "13890",
+          "written": "138.90",
+          "page": 3,
+          "quote": "92526 CO CQ - 138.90 per unit",
+          "asRead": {"written":"138.90","quote":"92526 CO CQ - 134.16 138.90 per unit"}
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97166",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97166"],"written":["97166"],"page":3,"quote":"97166 - - 21.97 per unit"},
+        "amount": {"value":"2197","written":"21.97","page":3,"quote":"97166 - - 21.97 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97026 KX CQ POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97026"],"written":["97026"],"page":3,"quote":"97026 KX CQ 12 159.49 per unit"},
+        "modifiers": {
+          "value": ["KX","CQ"],
+          "written": ["KX","CQ"],
+          "page": 3,
+          "quote": "97026 KX CQ 12 159.49 per unit"
+        },
+        "places_of_service": {"value":["12"],"written":["12"],"page":3,"quote":"97026 KX CQ 12 159.49 per unit"},
+        "amount": {"value":"15949","written":"159.49","page":3,"quote":"97026 KX CQ 12 159.49 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 96112 GP",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["96112"],"written":["96112"],"page":3,"quote":"96112 GP - 130.66 per unit"},
+        "modifiers": {"value":["GP"],"written":["GP"],"page":3,"quote":"96112 GP - 130.66 per unit"},
+        "amount": {"value":"13066","written":"130.66","page":3,"quote":"96112 GP - 130.66 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92521",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["92521"],
+          "written": ["92521"],
+          "page": 3,
+          "quote": "92521 - - 97.51 per unit",
+          "asRead": {"written":["92521"],"quote":"92521 - - 93.65 97.51 per unit"}
+        },
+        "amount": {
+          "value": "9751",
+          "written": "97.51",
+          "page": 3,
+          "quote": "92521 - - 97.51 per unit",
+          "asRead": {"written":"97.51","quote":"92521 - - 93.65 97.51 per unit"}
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    }
+  ]
+}

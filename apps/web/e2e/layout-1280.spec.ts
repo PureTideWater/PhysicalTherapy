@@ -19,7 +19,7 @@ import { startLocalWorker } from './worker';
  * fields, the packet's line schedule and the claims table (the billing manager's, with its PHI columns) each fit their
  * card with their last column inside it; the pricing runs' compare form fits its card; each table's headers stand apart
  * (the uploads, an upload, a contract and the coverage report's too); Settings, Correspondence and a packet found by
- * its reference fit the window too; a trace's step reads NCCI PTP; and a run that
+ * its reference fit the window too; a trace's code-pair step names NCCI in capitals; and a run that
  * priced every line shows its unpriced reasons as an empty state. Each check is soft, so one run reports every
  * screen that fails. Synthetic data only.
  */
@@ -267,11 +267,11 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expectNoSidewaysScroll(page, 'a packet by its reference');
   });
 
-  await test.step('a line’s trace names its code-pair step NCCI PTP, never “Ncci ptp” (C1)', async () => {
+  await test.step('a line’s trace names its code-pair step in words with NCCI in capitals, never “Ncci ptp” (C1)', async () => {
     await page.goto(at(`/pricing-runs/${marchRun}`));
     await page.getByRole('table', { name: 'Run lines' }).getByRole('link', { name: 'Line trace' }).first().click();
     const steps = page.getByRole('list', { name: 'Trace steps' });
-    await expect.soft(steps.locator('[data-step="ncci_ptp"] p').first()).toHaveText('NCCI PTP');
+    await expect.soft(steps.locator('[data-step="ncci_ptp"] h3')).toHaveText('Step 3, continued: National Correct Coding Initiative (NCCI) procedure-to-procedure edits');
     await expect.soft(steps).not.toContainText('Ncci');
     await expectNoSidewaysScroll(page, 'the line’s trace');
   });

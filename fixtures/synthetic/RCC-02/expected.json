@@ -1,0 +1,21 @@
+{
+  "case": "RCC-02",
+  "module": "RCC",
+  "title": "A release's windows and contents",
+  "assertion": "In real content, whatever the record's source method, a quarterly record's window lies inside one CMS quarter, a ZIP record's quoted lines state that quarter, a per-code MPPR window ends inside its year, no quarterly or per-code MPPR record is hand-typed and one stored file's records share one window, inside the quarter the file states and from its stated effective day; no content has a gap inside its loaded dates; every prepared release holds a COVERAGE.md byte for byte as the assembler writes it, with no repeated key; a release numbered below one prepared or published is refused; fixtures 900001 to 900007 pass",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/verify-content/check.test.ts",
+    "packages/rules/src/coverage.test.ts",
+    "tools/release/release.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The content sets are written to temporary roots, and the fixture releases are read; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

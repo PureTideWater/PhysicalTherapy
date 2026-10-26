@@ -1,0 +1,79 @@
+# fixtures/golden/claims/G121-lesser-of-charge-lower.json
+
+## Line 1, internal
+Lesser of the schedule $68.00 and the line charge $60.00: $60.00 under the contract’s clause on page 1; after sequestration $58.56; after the contract’s adjustment $57.3888; rounded once to $57.39; observed allowed $57.00; short $0.39.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $68.00 and the line charge $60.00: $60.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [sequestration] Sequestration: the payer’s share is $60.00 less the patient share $12.00, which is $48.00; 3% of it, $1.44, is withheld. $60.00 becomes $58.56.
+  [contract_adjustment] The rate record pays 98% of the amount: $58.56 becomes $57.3888.
+  [patient_share] Patient share $12.00, reported beside the expected amount and never subtracted from it. It is the remittance’s patient responsibility adjustments (group PR): reason code 2, $12.00. The Adjustments table lists each.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $57.3888 becomes $57.39. The unrounded amount is kept beside it.
+  [observed] Observed allowed $57.00, the allowed amount the payer states for the line (AMT B6). Expected $57.39, observed allowed $57.00: short $0.39.
+  [window] Dispute window: 4 months from the service date 2026-03-05, under the release’s record; it ends on 2026-07-05; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $57.39 expected, $57.3888 before the one rounding.
+
+## Line 1, viewer
+Lesser of the schedule $68.00 and the line charge $60.00: $60.00 under the contract’s clause on page 1; after sequestration $58.56; after the contract’s adjustment $57.3888; rounded once to $57.39; observed allowed $57.00; short $0.39.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $68.00 and the line charge $60.00: $60.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [sequestration] Sequestration: the payer’s share is $60.00 less the patient share $12.00, which is $48.00; 3% of it, $1.44, is withheld. $60.00 becomes $58.56.
+  [contract_adjustment] The rate record pays 98% of the amount: $58.56 becomes $57.3888.
+  [patient_share] Patient share $12.00, reported beside the expected amount and never subtracted from it. It is the remittance’s patient responsibility adjustments (group PR): reason code 2, $12.00. The Adjustments table lists each.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $57.3888 becomes $57.39. The unrounded amount is kept beside it.
+  [observed] Observed allowed $57.00, the allowed amount the payer states for the line (AMT B6). Expected $57.39, observed allowed $57.00: short $0.39.
+  [window] Dispute window: 4 months from the service date, under the release’s record.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $57.39 expected, $57.3888 before the one rounding.
+
+## Line 1, payer
+Lesser of the schedule $68.00 and the line charge $60.00: $60.00 under the contract’s clause on page 1; after sequestration $58.56; after the contract’s adjustment $57.3888; rounded once to $57.39; observed allowed $57.00; short $0.39.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The contract applies these Medicare reductions: sequestration.
+  [sequestration] Sequestration: the payer’s share is $60.00 less the patient share $12.00, which is $48.00; 3% of it, $1.44, is withheld. $60.00 becomes $58.56.
+  [contract_adjustment] The contract pays 98% of the amount: $58.56 becomes $57.3888.
+  [patient_share] Patient share $12.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the contract’s rule: $57.3888 becomes $57.39. The unrounded amount is kept beside it.
+  [observed] Observed allowed $57.00, the allowed amount the remittance states.
+
+## Line 2, internal
+Lesser of the schedule $34.00 and the line charge $40.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.00; short $0.32.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $34.00 and the line charge $40.00: $34.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
+  [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
+  [observed] Observed allowed $32.00, the allowed amount the payer states for the line (AMT B6). Expected $32.32, observed allowed $32.00: short $0.32.
+  [window] Dispute window: 4 months from the service date 2026-03-05, under the release’s record; it ends on 2026-07-05; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $32.32 expected, $32.3204 before the one rounding.
+
+## Line 2, viewer
+Lesser of the schedule $34.00 and the line charge $40.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.00; short $0.32.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $34.00 and the line charge $40.00: $34.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
+  [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
+  [observed] Observed allowed $32.00, the allowed amount the payer states for the line (AMT B6). Expected $32.32, observed allowed $32.00: short $0.32.
+  [window] Dispute window: 4 months from the service date, under the release’s record.
+  [release] Priced under rule release 900003 by engine phase-two/2.
+  [outcome] Priced: $32.32 expected, $32.3204 before the one rounding.
+
+## Line 2, payer
+Lesser of the schedule $34.00 and the line charge $40.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.00; short $0.32.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The contract applies these Medicare reductions: sequestration.
+  [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
+  [contract_adjustment] The contract pays 98% of the amount: $32.98 becomes $32.3204.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half even to the cent, under the contract’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
+  [observed] Observed allowed $32.00, the allowed amount the remittance states.
