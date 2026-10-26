@@ -380,7 +380,9 @@ action-setup's, setup-buildx's binary cache) is code, not steps, and the check c
 assertions of release.yml's explicit inputs are the guard for JavaScript actions. Its three uploads set
 `overwrite: true`, as ci.yml's per-run uploads do (Part 1, "Artifacts"), so a re-run of a tag's failed job replaces
 what the first attempt left. Every upload of every workflow overwrites, screening-capacity's per-run report
-included, which had the same re-run conflict. release.yml and the dry run run their scripts under
+included, which had the same re-run conflict. The weekly real-size test (`release-capacity.yml`, ADR 0071) keeps its
+read-only `cache-from` of screening-capacity's worker layers: its report is advisory, never attested, and no launch
+check, deploy or required check reads it, so no layer another run built can reach a binding measurement. release.yml and the dry run run their scripts under
 `defaults: run: shell: bash`, GitHub's bash with `pipefail`: the default `bash -e` has none, so a failed `docker save`
 piped to `gzip` would pass its step. action-setup's `cache: false` is written out rather than left to its default, so a
 later default cannot turn the cache back on.
@@ -423,7 +425,7 @@ the founder's tag.
 - **The builder and the frontend by digest too** (the security review's S4). Neither Dockerfile has a
   `# syntax=docker/dockerfile:1` line, which pulled the frontend from Docker Hub by tag on every build: neither uses a
   feature the frontend built into BuildKit lacks, so the pinned builder's own frontend parses them. Every
-  setup-buildx step (ci.yml's images, release.yml, the dry run, screening-capacity) sets
+  setup-buildx step (ci.yml's images, release.yml, the dry run, screening-capacity, release-capacity) sets
   `driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c`
   (pushed 2026-10-20T21:37Z, the latest release at least three days old), where the driver ran
   `moby/buildkit:buildx-stable-1` by tag. CI-13's test holds both, that the copies are one value, that every job that

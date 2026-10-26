@@ -2062,7 +2062,7 @@ describe('images by digest (CI-13)', () => {
     // The builder: setup-buildx's docker-container driver runs moby/buildkit, by default by the mutable buildx-stable-1.
     const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (job.steps ?? []).map((step, index) => ({ where: `${file} ${id} step ${String(index + 1)}`, file, id, index, step }))));
     const buildx = steps.filter(({ step }) => usesAction(step, 'docker/setup-buildx-action'));
-    expect(buildx.map(({ file }) => file).sort()).toEqual(['ci.yml', 'release-dry-run.yml', 'release.yml', 'screening-capacity.yml']);
+    expect(buildx.map(({ file }) => file).sort()).toEqual(['ci.yml', 'release-capacity.yml', 'release-dry-run.yml', 'release.yml', 'screening-capacity.yml']);
     const images = buildx.map(({ where, step }) => {
       const opts = step.with?.['driver-opts'];
       expect(opts, where).toMatch(/^image=moby\/buildkit:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
