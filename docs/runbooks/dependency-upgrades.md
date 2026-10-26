@@ -129,6 +129,14 @@ and date; `check-toolchain` holds the two equal and fails an entry the lockfile 
 `semver@6.3.1` (2023, no provenance, after 7.5.1 with it), reached through `@babel/core` (the co-founder's CQ2 (a)). A
 new trust failure on a recent version is a security question for the founder, not an exclude.
 
+pnpm 10 applies the policy only when it resolves, never in a frozen install, so `pnpm toolchain:check` applies it again
+to every version a pull request adds to the lockfile, from the registry's own documents, the same way pnpm does: a
+version fails when any version of its package published before it had stronger evidence, unless `trustPolicyExclude`
+names that exact version. A version that fails there was resolved with the policy off (a `--config.trust-policy=off`, a
+hand edit, a resolver that does not pass it): resolve it again under the workspace's settings, and treat a recent one
+as above. `trustPolicyIgnoreAfter` is refused, since it would pass a future downgrade of any old version, and so is any
+`trust-policy*` or `minimum-release-age*` key in `.npmrc`: both gates are set in `pnpm-workspace.yaml` alone.
+
 ## Audit exceptions
 
 `static` runs `pnpm audit --prod` and `pnpm audit --audit-level=high`. When an advisory has no fixed version yet, or

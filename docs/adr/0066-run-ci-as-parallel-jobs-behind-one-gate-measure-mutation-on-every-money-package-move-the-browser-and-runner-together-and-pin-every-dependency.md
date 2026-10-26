@@ -490,6 +490,17 @@ in `static`, networked, against the range step's base reduced with `git merge-ba
   registry's `dist.integrity` for that version; `.npmrc` and `pnpm-workspace.yaml` name no other registry, default or
   scoped, and the repository has no pnpmfile and no config dependency, either of which could rewrite a resolution out
   of the check's sight;
+- every version the change adds holds the trust policy where it lands, from the registry documents the release-age rule
+  already read, exactly as pnpm 10.34.8's `failIfTrustDowngraded` reads them: it fails when any version of its package
+  published before it (prereleases left out unless it is one) had stronger evidence, a trusted publisher
+  (`_npmUser.trustedPublisher`) over provenance (`dist.attestations`) over none, unless `trustPolicyExclude` names that
+  exact version. pnpm 10 applies `trustPolicy` only when it resolves: a frozen install never checks it and pnpm 10 has
+  no `trustLockfile`, so without the rule a downgraded version could land by a hand-edited hunk, a local
+  `--config.trust-policy=off` or a resolver that does not pass the policy, and nothing on CI would see it. The rule
+  covers what a change adds against its base; a version already locked was checked when it was added (the 614 of
+  this pull request's base once, semver 6.3.1 alone failing), and its bytes are held by its integrity. The gates rule
+  refuses `trustPolicyIgnoreAfter`, and any trust-policy or release-age key in `.npmrc`, so the two gates have one
+  source and the check reads it;
 - `trust-exceptions.json` equals `trustPolicyExclude`, each entry still in the lockfile; `audit-exceptions.json` equals
   `auditConfig.ignoreGhsas` (empty), an entry over 30 days old failing; each override has its entry;
 - every networked read fails closed after three tries, naming the host.

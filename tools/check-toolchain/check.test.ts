@@ -142,7 +142,7 @@ describe('check-toolchain', () => {
     const findings = await run(tree());
     expect(problems(findings)).toEqual([]);
     expect(problems(findings, 'warning')).toEqual([]);
-    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'Dockerfiles', 'audit exceptions', 'release-age excludes', 'lockfile resolutions', 'lockfile release age', 'lockfile integrity', 'trust excludes', 'overrides']);
+    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'Dockerfiles', 'audit exceptions', 'release-age excludes', 'lockfile resolutions', 'lockfile release age', 'lockfile integrity', 'lockfile trust', 'trust excludes', 'overrides']);
   });
 
   it('fails on a moderate or worse advisory against packageManager’s pnpm, and warns on a low one', async () => {
@@ -387,6 +387,48 @@ describe('check-toolchain', () => {
     ];
     for (const [shape, message] of refusals) {
       expect(problems(await run(tree(shape))), message).toEqual([message]);
+    }
+  });
+
+  it('fails an added version with weaker trust evidence than a version published before it, unless trustPolicyExclude names it (S2)', async () => {
+    const times = {
+      trusty: { '1.0.0': '2025-01-01T00:00:00.000Z', '1.1.0': '2025-06-01T00:00:00.000Z', '1.1.1': '2026-10-02T00:00:00.000Z', '1.2.0': '2026-10-01T00:00:00.000Z', '0.9.9': '2026-10-03T00:00:00.000Z' },
+      pre: { '2.0.0-rc.1': '2025-01-01T00:00:00.000Z', '2.0.0': '2025-02-01T00:00:00.000Z' },
+      semver: { '7.5.1': '2023-05-12T00:00:00.000Z', '6.3.1': '2023-07-10T22:57:32.000Z' },
+    };
+    const facts: Facts = {
+      trusty: { '1.0.0': { evidence: 'provenance' }, '1.1.0': { evidence: 'trustedPublisher' }, '1.1.1': { evidence: 'provenance' }, '1.2.0': { evidence: null }, '0.9.9': { evidence: 'trustedPublisher' } },
+      pre: { '2.0.0-rc.1': { evidence: 'trustedPublisher' } },
+      semver: { '7.5.1': { evidence: 'provenance' } },
+    };
+    const registry = () => fakeRegistry({ times, facts });
+    const adds = (keys: readonly string[], extra: Shape = {}) => tree({ locked: ['old-lib@1.0.0', ...keys], trust: [], workspace: { trustPolicyExclude: [] }, ...extra });
+    const downgrade = (key: string, has: string, had: string) =>
+      `lockfile trust: ${key} has ${has}, but a version published before it had ${had}: a trust downgrade, the sign a maintainer's account may have published it outside the project's pipeline. pnpm's trustPolicy no-downgrade holds only where pnpm resolves, never in a frozen install, so it is held here where the version lands; a recent one is a security question for the founder, an old fixed one an exact trustPolicyExclude with its entry (docs/runbooks/dependency-upgrades.md, "The trust policy")`;
+    expect(problems(await run(adds(['trusty@1.2.0', 'trusty@1.1.1']), tree({ locked: ['old-lib@1.0.0'], trust: [], workspace: { trustPolicyExclude: [] } }), { registry: registry() }))).toEqual([
+      downgrade('trusty@1.1.1', 'a provenance attestation', 'a trusted publisher'),
+      downgrade('trusty@1.2.0', 'no trust evidence', 'a trusted publisher'),
+    ]);
+    // By publish date, not semver: 0.9.9 was published after 1.1.0 and has a trusted publisher itself; 1.0.0 had nothing before it.
+    const base = tree({ locked: ['old-lib@1.0.0'], trust: [], workspace: { trustPolicyExclude: [] } });
+    expect(problems(await run(adds(['trusty@0.9.9', 'trusty@1.0.0']), base, { registry: registry() }))).toEqual([]);
+    // A prerelease's evidence does not bind a release.
+    expect(problems(await run(adds(['pre@2.0.0']), base, { registry: registry() }))).toEqual([]);
+    // An exact exclude in both lists passes the version (semver 6.3.1, CQ2 (a)).
+    const excluded = tree({ locked: ['old-lib@1.0.0', 'semver@6.3.1'] });
+    expect(problems(await run(excluded, base, { registry: registry() }))).toEqual([]);
+    expect(problems(await run(adds(['semver@6.3.1']), base, { registry: registry() }))).toEqual([downgrade('semver@6.3.1', 'no trust evidence', 'a provenance attestation')]);
+  });
+
+  it('refuses trustPolicyIgnoreAfter, and any release-age or trust-policy setting in .npmrc (S2)', async () => {
+    expect(problems(await run(tree({ workspace: { trustPolicyIgnoreAfter: 1 } })))).toEqual([
+      'gates: pnpm-workspace.yaml: trustPolicyIgnoreAfter is set; it waives the trust policy for every version published longer ago than that many minutes, so a future downgrade of any old version would pass (CQ2 (a))',
+    ]);
+    for (const line of ['trust-policy=off', 'trust-policy-ignore-after=1', 'trust-policy-exclude[]=evil@1.0.0', 'minimum-release-age=0', 'minimum-release-age-exclude[]=evil@1.0.0', 'trustPolicy=off']) {
+      const key = line.slice(0, line.indexOf('='));
+      expect(problems(await run(tree({ npmrc: line }))), line).toEqual([
+        `gates: .npmrc: ${key} is set; the release age and the trust policy are set in pnpm-workspace.yaml alone, where check-toolchain reads and holds them`,
+      ]);
     }
   });
 

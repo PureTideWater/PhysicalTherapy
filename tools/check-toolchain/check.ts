@@ -27,7 +27,7 @@ import {
   trustExceptionsSchema,
   workspaceSchema,
 } from './policy';
-import { NetworkReadError, type Packument, type Registry } from './registry';
+import { NetworkReadError, type Packument, type Registry, type TrustEvidence } from './registry';
 
 /**
  * `pnpm toolchain:check` (designs/lane-b-ci.md §3.2.1, "Audit and toolchain"; test matrix CI-14; ADR 0066 Part 2): the
@@ -191,8 +191,9 @@ function liveExcludes(head: Config, now: Date): ReadonlySet<string> {
 const REMEDY =
   'wait until then, or, for a security fix, add it to pnpm-workspace.yaml’s minimumReleaseAgeExclude and to tools/check-toolchain/release-age-exceptions.json with its advisory, the date added and an expiry (docs/runbooks/dependency-upgrades.md, "The release age")';
 
-function gatesRule(workspace: Workspace): Finding[] {
+function gatesRule(head: Config): Finding[] {
   const rule = 'gates';
+  const { workspace } = head;
   const findings: Finding[] = [];
   const minutes = workspace.minimumReleaseAge;
   if (minutes === undefined || minutes < MINIMUM_RELEASE_AGE_MINUTES) {
@@ -201,7 +202,22 @@ function gatesRule(workspace: Workspace): Finding[] {
   if (workspace.trustPolicy !== 'no-downgrade') {
     findings.push({ level: 'error', rule, message: `${FILES.workspace}: trustPolicy is ${String(workspace.trustPolicy ?? 'unset')}, not no-downgrade (CQ2 (a))` });
   }
-  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `minimumReleaseAge ${String(minutes)} minutes, trustPolicy no-downgrade` }];
+  // S2: pnpm 10.34.8 honours trustPolicyIgnoreAfter (minutes since publish), which would pass a downgrade of any older version.
+  if ('trustPolicyIgnoreAfter' in workspace) {
+    findings.push({
+      level: 'error',
+      rule,
+      message: `${FILES.workspace}: trustPolicyIgnoreAfter is set; it waives the trust policy for every version published longer ago than that many minutes, so a future downgrade of any old version would pass (CQ2 (a))`,
+    });
+  }
+  // The gates live in one file: an .npmrc setting would override or loosen them where this check does not read.
+  for (const [key] of head.npmrc) {
+    const plain = key.toLowerCase().replace(/[-_]/g, '').replace(/\[\]$/, '');
+    if (plain.startsWith('trustpolicy') || plain.startsWith('minimumreleaseage')) {
+      findings.push({ level: 'error', rule, message: `${FILES.npmrc}: ${key} is set; the release age and the trust policy are set in ${FILES.workspace} alone, where check-toolchain reads and holds them` });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `minimumReleaseAge ${String(minutes)} minutes, trustPolicy no-downgrade, neither loosened elsewhere` }];
 }
 
 /** Whether a registry setting names registry.npmjs.org itself (with or without its trailing slash). */
@@ -569,6 +585,56 @@ function lockfileIntegrityRule(head: Config, added: Added): Finding[] {
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: checked === 0 ? 'no added version to compare' : `${String(checked)} added version(s), each with the registry's dist.integrity` }];
 }
 
+const TRUST_RANK: Readonly<Record<TrustEvidence, number>> = { trustedPublisher: 2, provenance: 1 };
+const TRUST_WORDS: Readonly<Record<TrustEvidence | 'none', string>> = { trustedPublisher: 'a trusted publisher', provenance: 'a provenance attestation', none: 'no trust evidence' };
+
+/**
+ * S2: pnpm's `trustPolicy: no-downgrade`, held where a version lands. pnpm applies it only when it resolves (never in a
+ * frozen install, and pnpm 10 has no trustLockfile), so a downgraded version could arrive by a hand-edited hunk, a
+ * local `--config.trust-policy=off` or a resolver that does not apply it. Over every version the lockfile adds, from the
+ * documents already fetched, exactly as pnpm 10.34.8's failIfTrustDowngraded reads them: the strongest evidence of any
+ * version published before this one (prereleases left out unless this is one), a trusted publisher over provenance over
+ * none, fails when this version's is weaker. An exact trustPolicyExclude entry passes its version.
+ */
+function lockfileTrustRule(head: Config, added: Added): Finding[] {
+  const rule = 'lockfile trust';
+  const excluded = new Set(head.workspace.trustPolicyExclude ?? []);
+  const findings: Finding[] = [];
+  let checked = 0;
+  for (const { key, version, document } of addedDocuments(added)) {
+    if (excluded.has(key)) {
+      continue;
+    }
+    checked += 1;
+    const published = document.time[version];
+    if (published === undefined) {
+      continue; // the release-age rule reports a version with no publish time
+    }
+    const at = Date.parse(published);
+    const prerelease = SEMVER.exec(version)?.[4] !== undefined;
+    let strongest: TrustEvidence | null = null;
+    for (const other of document.versions) {
+      const time = document.time[other];
+      const evidence = document.facts[other]?.evidence ?? null;
+      if (time === undefined || evidence === null || !(Date.parse(time) < at) || (!prerelease && SEMVER.exec(other)?.[4] !== undefined)) {
+        continue;
+      }
+      if (strongest === null || TRUST_RANK[evidence] > TRUST_RANK[strongest]) {
+        strongest = evidence;
+      }
+    }
+    const current = document.facts[version]?.evidence ?? null;
+    if (strongest !== null && (current === null || TRUST_RANK[strongest] > TRUST_RANK[current])) {
+      findings.push({
+        level: 'error',
+        rule,
+        message: `${key} has ${TRUST_WORDS[current ?? 'none']}, but a version published before it had ${TRUST_WORDS[strongest]}: a trust downgrade, the sign a maintainer's account may have published it outside the project's pipeline. pnpm's trustPolicy no-downgrade holds only where pnpm resolves, never in a frozen install, so it is held here where the version lands; a recent one is a security question for the founder, an old fixed one an exact trustPolicyExclude with its entry (docs/runbooks/dependency-upgrades.md, "The trust policy")`,
+      });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: checked === 0 ? 'no added version to compare' : `${String(checked)} added version(s), none with weaker trust evidence than a version published before it` }];
+}
+
 function trustRule(head: Config): Finding[] {
   const rule = 'trust excludes';
   const listed = head.workspace.trustPolicyExclude ?? [];
@@ -637,7 +703,7 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
     return head.problems.map((message) => ({ level: 'error', rule: 'files', message }));
   }
   const findings: Finding[] = base.problems.map((message) => ({ level: 'warning', rule: 'files', message: `the base's ${message}; its lists are read as empty` }));
-  findings.push(...gatesRule(head.workspace));
+  findings.push(...gatesRule(head));
   findings.push(...settingsRule(head));
   const minutes = Math.max(head.workspace.minimumReleaseAge ?? 0, MINIMUM_RELEASE_AGE_MINUTES);
   const live = liveExcludes(head, input.now);
@@ -658,6 +724,7 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
   const added = await readAdded(head, base, registry);
   findings.push(...lockfileRule(head, added, live, minutes, input.now));
   findings.push(...lockfileIntegrityRule(head, added));
+  findings.push(...lockfileTrustRule(head, added));
   findings.push(...trustRule(head));
   findings.push(...overridesRule(head));
   return findings;
