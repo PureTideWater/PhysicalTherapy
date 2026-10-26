@@ -800,3 +800,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - The lenses: brand (96 images); flows, practice and other (124 and 85); words, practice and other (127 and 76); accessibility, practice 1 and 2 and other (107, 107 and 152); 390 px and states, practice 1 and 2 and other (115, 115 and 142). 1,246 image reads.
     - Each has the checkers' notes as leads, and a shared brief (`scratchpad/ux/reviewer-common.md`): the rules, the in-flight Lane B PRs to fold into, #42's files, the finding format and a progress file.
   - **The retake** (wf_f5c2fa03-d95): the 22 capture faults (sticky headers at 390, the empty-filter and zero-read states), under the lock, then their check. The retaken shots join the review afterwards.
+- **2026-10-26 ~04:20 UTC: a money bug found by the UX review, fixed ahead of the rest.**
+  - The 390 px practice reviewer's finding narrow-practice-2-02 (blocking), confirmed in the code at 6ddd587:
+    - `apps/web/src/app/p/[practiceId]/settings/defaults/page.tsx:40,48-49` shows `materiality.lineCents` and `caseCents`, which are raw cents strings (`lib/routes/settings.ts:295`), as dollars, and pre-fills the "(dollars)" fields with them;
+    - the save parses dollars (`settings.ts:269-272`, `parseAmount`);
+    - so the page reads "$500 per line and $25000 per case" for $5.00 and $250.00, and saving it unchanged sets $500 and $25,000. Triage would then stop pursuing every shortfall under $500.
+  - The cases page does it right (`cases/page.tsx:22,177`: `formatCents(parseCents(...))` and `<Money>`). No #42 file is involved.
+  - **Claimed** as `co-001/materiality-cents` (CAS-38 to CAS-39) and given to the idle #135 session, with the full pipeline: payment-engine review plus the UX review, and a sweep for the same class of bug across apps/web.
