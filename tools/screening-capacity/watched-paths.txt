@@ -190,6 +190,7 @@ apps/worker/src/reconcile/exports.ts
 apps/worker/src/reconcile/job.ts
 apps/worker/src/reconcile/ledger.ts
 apps/worker/src/reconcile/pass.ts
+apps/worker/src/reconcile/patient-share.ts
 apps/worker/src/reconcile/postings.ts
 apps/worker/src/reconcile/print.ts
 apps/worker/src/reconcile/remittances.ts
@@ -330,6 +331,7 @@ packages/ledger/src/csv.ts
 packages/ledger/src/index.ts
 packages/ledger/src/matching.ts
 packages/ledger/src/pairing.ts
+packages/ledger/src/payment.ts
 packages/ledger/src/reconciliation.ts
 packages/ledger/src/roi.ts
 packages/ledger/src/settings.ts
