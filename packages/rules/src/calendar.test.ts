@@ -92,6 +92,10 @@ describe('the calendar', () => {
     expect(refused([{ ...entryOf('code_lists'), cadence: { kind: 'dates', effective: ['03-01', '03-01'] } }])).toBe(false);
     expect(refused([{ ...fee, source: { ...fee.source, page: 'http://www.cms.gov/' } }])).toBe(false);
     expect(refused([{ ...fee, importCommands: ['pnpm release:load 1'] }])).toBe(false);
+    // An import command loads one of its entry's contents, mppr_rate as the entry's MPPR content.
+    expect(refused([{ ...fee, importCommands: ['pnpm rules:import --type ncci_mue --year {year} --file <x>'] }])).toBe(false);
+    expect(refused([{ ...fee, importCommands: ['pnpm rules:import --year {year} --file <x>'] }])).toBe(false);
+    expect(refused([entryOf('mppr')])).toBe(true);
     expect(refused([fee])).toBe(true);
   });
 });
@@ -318,6 +322,50 @@ describe('contentDue', () => {
       }),
       { numRuns: 60 },
     );
+  });
+
+  it('fills an ended family’s commands for every period it lacks up to today, each only for the contents it lacks then (int-surfaces improvement 1)', () => {
+    const rvu = (quarter: string, from: string, to: string) =>
+      `pnpm rules:import --type pfs_rvu --year 2026 --effective-from ${from} --effective-to ${to} --url <download address> --file <the PPRRVU file of RVU26${quarter}>`;
+    const gpci = (quarter: string, from: string, to: string) =>
+      `pnpm rules:import --type pfs_gpci --year 2026 --effective-from ${from} --effective-to ${to} --url <download address> --file <the GPCI file of RVU26${quarter}>`;
+    const tail = ['pnpm verify-content', 'pnpm release:assemble 5'];
+    // The GPCI ended with Q3, the RVUs are loaded for Q4: only Q4's GPCI is lacking.
+    const gpciEnded = { releaseNo: 4, inForce: allLoaded(undefined, { pfs_rvu: window('2026-01-01', '2026-12-31'), pfs_gpci: window('2026-01-01', '2026-09-30') }) };
+    const [ended] = contentDue(REVIEWED, gpciEnded, '2026-12-01');
+    expect(ended).toMatchObject({ stage: 'ended', loadedThrough: '2026-09-30', period: { label: '2026-Q4' } });
+    expect(ended?.commands).toEqual([gpci('D', '2026-10-01', '2026-12-31'), ...tail]);
+    // Both ended with Q1: Q2, Q3 and Q4, both contents each.
+    const bothEnded = { releaseNo: 4, inForce: allLoaded(undefined, { pfs_rvu: window('2026-01-01', '2026-03-31'), pfs_gpci: window('2026-01-01', '2026-03-31') }) };
+    expect(contentDue(REVIEWED, bothEnded, '2026-12-01')[0]?.commands).toEqual([
+      rvu('B', '2026-04-01', '2026-06-30'),
+      gpci('B', '2026-04-01', '2026-06-30'),
+      rvu('C', '2026-07-01', '2026-09-30'),
+      gpci('C', '2026-07-01', '2026-09-30'),
+      rvu('D', '2026-10-01', '2026-12-31'),
+      gpci('D', '2026-10-01', '2026-12-31'),
+      ...tail,
+    ]);
+    // Not loaded: the RVUs missing, the GPCI ended with Q2; from Q3 on, both are lacking.
+    const notLoaded = { releaseNo: 4, inForce: without(allLoaded(undefined, { pfs_gpci: window('2026-01-01', '2026-06-30') }), ['pfs_rvu']) };
+    const [missing] = contentDue(REVIEWED, notLoaded, '2026-12-01');
+    expect(missing?.stage).toBe('not_loaded');
+    expect(missing?.commands).toEqual([rvu('C', '2026-07-01', '2026-09-30'), gpci('C', '2026-07-01', '2026-09-30'), rvu('D', '2026-10-01', '2026-12-31'), gpci('D', '2026-10-01', '2026-12-31'), ...tail]);
+    // With no RVUs at all and the GPCI loaded through today, the period holding today alone.
+    const rvuOnly = { releaseNo: 4, inForce: without(allLoaded(), ['pfs_rvu']) };
+    expect(contentDue(REVIEWED, rvuOnly, '2026-12-01')[0]?.commands).toEqual([rvu('D', '2026-10-01', '2026-12-31'), ...tail]);
+    // Still loaded, the next period only for the content not yet loaded for it.
+    const rvuAhead = { releaseNo: 4, inForce: allLoaded(undefined, { pfs_rvu: window('2026-01-01', '2027-03-31'), pfs_gpci: window('2026-01-01', '2026-12-31') }) };
+    expect(contentDue(REVIEWED, rvuAhead, '2026-12-01')[0]?.commands).toEqual([
+      'pnpm rules:import --type pfs_gpci --year 2027 --effective-from 2027-01-01 --effective-to 2027-03-31 --url <download address> --file <the GPCI file of RVU27A>',
+      ...tail,
+    ]);
+    // An open family overdue: only its stale contents.
+    const codes = { releaseNo: 4, inForce: allLoaded('2027-03-10', { rarc: window('2020-01-01', null, '2026-12-01') }) };
+    expect(contentDue(REVIEWED, codes, '2027-02-06')[0]?.commands).toEqual([
+      'pnpm rules:import --type rarc --year 2027 --url <download address> --file <the remittance advice remark code list exported for the 2027-03-01 update>',
+      ...tail,
+    ]);
   });
 
   it('orders items by stage', () => {

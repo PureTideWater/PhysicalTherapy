@@ -63,6 +63,16 @@ export const calendarEntrySchema = z.strictObject({
 });
 export type CalendarEntry = z.infer<typeof calendarEntrySchema>;
 
+/**
+ * The content an import command loads: its `--type`, with mppr_rate read as whichever of mppr_code and mppr_general
+ * the entry holds; null when that is none of `contents`.
+ */
+function templateContent(contents: readonly ContentId[], template: string): ContentId | null {
+  const type = /--type (\S+)/.exec(template)?.[1];
+  const content = type === 'mppr_rate' ? contents.find((one) => one === 'mppr_code' || one === 'mppr_general') : contents.find((one) => one === type);
+  return content ?? null;
+}
+
 /** A MM-DD every year has (no 02-29, no 04-31). */
 function isYearlyDay(text: string): boolean {
   return isIsoDate(`2025-${text}`);
@@ -90,6 +100,11 @@ export const contentCalendarSchema = z.array(calendarEntrySchema).superRefine((e
     const days = entry.cadence.kind === 'annual' ? [entry.cadence.effective] : entry.cadence.kind === 'dates' ? entry.cadence.effective : [];
     if (days.some((day) => !isYearlyDay(day)) || new Set(days).size !== days.length) {
       issue('every effective day is a day each year has, named once');
+    }
+    for (const template of entry.importCommands) {
+      if (templateContent(entry.contents, template) === null) {
+        issue(`an import command loads none of the entry's contents: ${template}`);
+      }
     }
     if (entry.filePattern !== null) {
       try {
@@ -446,9 +461,13 @@ function periodHolding(cadence: Exclude<CalendarEntry['cadence'], { kind: 'on_ch
   return { label, from, to, year: Number.parseInt(from.slice(0, 4), 10) };
 }
 
-/** The entry's templates filled for `period`, then the check and the assembly. */
-function fillCommands(entry: CalendarEntry, period: Period, nextReleaseNo: number): string[] {
-  const fill = (template: string) =>
+function holds(state: ContentState | undefined, date: string): boolean {
+  return state?.windows.some((window) => window.from <= date && (window.to === null || window.to >= date)) === true;
+}
+
+/** The entry's templates filled for each period, each only for a content `missing` names for it, then the check and the assembly. */
+function fillCommands(entry: CalendarEntry, periods: readonly Period[], missing: (content: ContentId, period: Period) => boolean, nextReleaseNo: number): string[] {
+  const fill = (template: string, period: Period) =>
     template
       .replaceAll('{year}', String(period.year))
       .replaceAll('{from}', period.from)
@@ -457,11 +476,34 @@ function fillCommands(entry: CalendarEntry, period: Period, nextReleaseNo: numbe
       .replaceAll('{yy}', String(period.year % 100).padStart(2, '0'))
       .replaceAll('{Q}', cmsQuarterOf(period.from))
       .replaceAll('{period}', period.label);
-  return [...entry.importCommands.map(fill), 'pnpm verify-content', `pnpm release:assemble ${String(nextReleaseNo)}`];
+  const imports = periods.flatMap((period) =>
+    entry.importCommands.flatMap((template) => {
+      const content = templateContent(entry.contents, template);
+      return content !== null && missing(content, period) ? [fill(template, period)] : [];
+    }),
+  );
+  return [...imports, 'pnpm verify-content', `pnpm release:assemble ${String(nextReleaseNo)}`];
 }
 
-function holds(state: ContentState | undefined, date: string): boolean {
-  return state?.windows.some((window) => window.from <= date && (window.to === null || window.to >= date)) === true;
+/**
+ * The periods a family lacks up to today, in order (int-surfaces improvement 1): from the first day one of its contents
+ * is missing (the day after the end it has before today, or today when it holds nothing so far) through the period
+ * holding today.
+ */
+function missingPeriods(entry: CalendarEntry, cadence: Exclude<CalendarEntry['cadence'], { kind: 'on_change' }>, judged: ContentStates, today: string): Period[] {
+  const starts = entry.contents.flatMap((content) => {
+    const state = judged[content];
+    if (holds(state, today)) {
+      return [];
+    }
+    const through = loadedThrough(state, today).through;
+    return [through !== null && through < today ? dayAfter(through) : today];
+  });
+  const periods: Period[] = [];
+  for (let period = periodHolding(cadence, starts.sort()[0] ?? today); period.from <= today; period = periodHolding(cadence, dayAfter(period.to))) {
+    periods.push(period);
+  }
+  return periods;
 }
 
 /**
@@ -570,7 +612,7 @@ function familyDue(
       stage: 'not_loaded',
       title: onDrafts ? `Content not in the drafts: ${entry.title}` : `Content not loaded: ${entry.title}`,
       period: { label: period.label, from: period.from, to: period.to },
-      commands: fillCommands(entry, period, nextReleaseNo),
+      commands: fillCommands(entry, missingPeriods(entry, cadence, judged, today), (content, one) => !holds(judged[content], one.from), nextReleaseNo),
       lines: [onDrafts ? `The drafts hold no ${entry.title} for ${today}.` : `No ${entry.title} is loaded for ${today}.`],
     };
   }
@@ -588,12 +630,14 @@ function familyDue(
     const draftReady = drafts !== undefined && entry.contents.every((content) => holds(drafts[content], period.from));
     const noDraft = drafts !== undefined && today >= dueOn && !draftReady;
     const where = onDrafts ? `The drafts hold ${entry.title}` : `${entry.title} is loaded`;
+    // An ended family lacks every period up to today; one still loaded lacks the next. Each only for its contents not loaded then.
+    const periods = days < 0 ? missingPeriods(entry, cadence, judged, today) : [period];
     const shared = {
       ...base,
       loadedThrough: through,
       period: { label: period.label, from: period.from, to: period.to },
       dueOn,
-      commands: fillCommands(entry, period, nextReleaseNo),
+      commands: fillCommands(entry, periods, (content, one) => !holds(judged[content], one.from), nextReleaseNo),
     };
     if (days < 0) {
       return {
@@ -649,7 +693,7 @@ function familyDue(
     title: `Content overdue: ${entry.title}, ${period.label} files ${onDrafts ? 'not in the drafts' : 'not loaded'}`,
     period: { label: period.label, from: period.from, to: period.to },
     dueOn: addDays(period.from, -entry.loadLeadDays),
-    commands: fillCommands(entry, period, nextReleaseNo),
+    commands: fillCommands(entry, [period], (content) => stale.includes(content) && !coming(content), nextReleaseNo),
     lines: [
       `${entry.source.title} usually publishes the ${period.label} files by ${expected}, and ${period.label} starts on ${period.from}. ${onDrafts ? 'The drafts hold' : 'The loaded content holds'} ${oldest === null ? 'no files retrieved yet' : `files retrieved on ${oldest} at the latest`} for ${stale.join(', ')}.`,
     ],
