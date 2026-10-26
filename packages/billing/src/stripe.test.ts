@@ -102,7 +102,7 @@ describe('StripeBillingProvider', () => {
     expect(PAYMENT_METHOD_ORDER).toEqual(['us_bank_account', 'card']);
   });
 
-  it('lets the customer’s default pay every invoice: a new default clears a live subscription’s own (BIL-02)', async () => {
+  it('lets the customer’s default pay every invoice: a new default becomes each live subscription’s own (BIL-02)', async () => {
     const { client, billing } = provider();
     client.subscriptions.list
       .mockResolvedValueOnce({
@@ -110,6 +110,8 @@ describe('StripeBillingProvider', () => {
           { id: 'sub_card', status: 'active', default_payment_method: 'pm_card' },
           { id: 'sub_plain', status: 'active', default_payment_method: null },
           { id: 'sub_overdue', status: 'past_due', default_payment_method: { id: 'pm_card2' } },
+          { id: 'sub_done', status: 'active', default_payment_method: 'pm_ach' },
+          { id: 'sub_done_expanded', status: 'past_due', default_payment_method: { id: 'pm_ach' } },
         ],
         has_more: true,
       })
@@ -123,11 +125,14 @@ describe('StripeBillingProvider', () => {
       });
     await billing.setDefaultPaymentMethod({ customerRef: 'cus_test1', paymentMethodRef: 'pm_ach', idempotencyKey: 'evt_2' });
     expect(client.customers.update).toHaveBeenCalledWith('cus_test1', { invoice_settings: { default_payment_method: 'pm_ach' } }, { idempotencyKey: 'evt_2' });
-    expect(client.subscriptions.list.mock.calls).toEqual([[{ customer: 'cus_test1', limit: 100 }], [{ customer: 'cus_test1', limit: 100, starting_after: 'sub_overdue' }]]);
+    expect(client.subscriptions.list.mock.calls).toEqual([[{ customer: 'cus_test1', limit: 100 }], [{ customer: 'cus_test1', limit: 100, starting_after: 'sub_done_expanded' }]]);
+    // Each live subscription's default becomes the new method, one that has none included; one already on it (as an
+    // ID or expanded) is left alone, and a canceled or expired one is not touched. Nothing is ever cleared.
     expect(client.subscriptions.update.mock.calls).toEqual([
-      ['sub_card', { default_payment_method: '' }, { idempotencyKey: 'evt_2:subscription:sub_card' }],
-      ['sub_overdue', { default_payment_method: '' }, { idempotencyKey: 'evt_2:subscription:sub_overdue' }],
-      ['sub_trial', { default_payment_method: '' }, { idempotencyKey: 'evt_2:subscription:sub_trial' }],
+      ['sub_card', { default_payment_method: 'pm_ach' }, { idempotencyKey: 'evt_2:subscription:sub_card' }],
+      ['sub_plain', { default_payment_method: 'pm_ach' }, { idempotencyKey: 'evt_2:subscription:sub_plain' }],
+      ['sub_overdue', { default_payment_method: 'pm_ach' }, { idempotencyKey: 'evt_2:subscription:sub_overdue' }],
+      ['sub_trial', { default_payment_method: 'pm_ach' }, { idempotencyKey: 'evt_2:subscription:sub_trial' }],
     ]);
     // A page that says there is more yet carries nothing ends the walk instead of asking again.
     client.subscriptions.list.mockResolvedValueOnce({ data: [], has_more: true });

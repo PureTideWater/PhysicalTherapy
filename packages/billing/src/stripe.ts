@@ -22,9 +22,9 @@ import {
  * - Customers carry the organization's name and its opaque ID in metadata, nothing else.
  * - Products and prices for the monthly and annual plans and the audit invoice are found by their lookup
  *   keys (config/plans.json) and created once if missing.
- * - Subscriptions and audit invoices charge the customer's default payment method automatically, and
- *   nothing else pins one: a subscription saves no default of its own, and a new customer default clears any
- *   a subscription carries, so the method on file is the one every invoice charges (docs/adr/0073). Payment
+ * - Subscriptions and audit invoices charge the customer's default payment method automatically: a
+ *   subscription saves no default of its own, and a new customer default becomes each live subscription's
+ *   default too, so the method on file is the one every invoice charges (docs/adr/0073). Payment
  *   methods are ACH debit (us_bank_account) or card, in PAYMENT_METHOD_ORDER (bank first), collected in the
  *   browser by Stripe Elements against a SetupIntent, so no account or card number ever reaches the product.
  * - Every call that creates or changes something sends an idempotency key, so a retried request creates
@@ -165,11 +165,12 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   /**
-   * Makes a confirmed method the customer's default, and clears the default any of the customer's live
-   * subscriptions carries of its own (one saved before docs/adr/0073, or set in Stripe's dashboard), since a
-   * subscription's default outranks the customer's: otherwise a card customer who adds a bank account would see
-   * the bank account on file while renewals kept charging the card. Each update runs under a key derived from
-   * the caller's, so a retried event changes nothing twice.
+   * Makes a confirmed method the customer's default, and each of the customer's live subscriptions' own default
+   * as well (a subscription may carry one, saved before docs/adr/0073 or set in Stripe's dashboard, and it
+   * outranks the customer's: otherwise a card customer who adds a bank account would see the bank account on file
+   * while renewals kept charging the card). The customer's default and every subscription's then agree, and the
+   * customer's is the one the page shows. A subscription whose default is already the method is left alone, and
+   * each update runs under a key derived from the caller's, so a retried event changes nothing twice.
    */
   async setDefaultPaymentMethod(input: { readonly customerRef: string; readonly paymentMethodRef: string; readonly idempotencyKey: string }): Promise<void> {
     await call('set the default payment method', () =>
@@ -181,11 +182,17 @@ export class StripeBillingProvider implements BillingProvider {
         this.client.subscriptions.list({ customer: input.customerRef, limit: 100, ...(startingAfter === undefined ? {} : { starting_after: startingAfter }) }),
       );
       for (const subscription of page.data) {
-        if (subscription.default_payment_method === null || subscription.status === 'canceled' || subscription.status === 'incomplete_expired') {
+        const current = subscription.default_payment_method;
+        const currentRef = current === null || typeof current === 'string' ? current : current.id;
+        if (currentRef === input.paymentMethodRef || subscription.status === 'canceled' || subscription.status === 'incomplete_expired') {
           continue;
         }
-        await call('clear a subscription’s own payment method', () =>
-          this.client.subscriptions.update(subscription.id, { default_payment_method: '' }, { idempotencyKey: `${input.idempotencyKey}:subscription:${subscription.id}` }),
+        await call('set a subscription’s payment method', () =>
+          this.client.subscriptions.update(
+            subscription.id,
+            { default_payment_method: input.paymentMethodRef },
+            { idempotencyKey: `${input.idempotencyKey}:subscription:${subscription.id}` },
+          ),
         );
       }
       const last = page.data.at(-1);
@@ -220,7 +227,8 @@ export class StripeBillingProvider implements BillingProvider {
           customer: input.customerRef,
           items: [{ price: prices[input.plan] }],
           collection_method: 'charge_automatically',
-          // The customer's default pays every invoice; a default saved on the subscription would outrank it.
+          // The customer's default pays every invoice: a default saved here from the first payment would outrank
+          // it, and setDefaultPaymentMethod keeps the two equal from then on.
           payment_settings: { payment_method_types: [...PAYMENT_METHOD_ORDER], save_default_payment_method: 'off' },
           metadata: { [ORGANIZATION_METADATA]: input.organizationId },
         },

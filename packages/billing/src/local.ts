@@ -37,6 +37,10 @@ import {
  * - `advance(days)` moves the simulated clock: a failed invoice is retried on days 3, 7 and 14 after its
  *   first failure with the payment method then on file (the subscription is unpaid after the last), and a
  *   subscription past its period renews with a new invoice, or ends if it was canceled at period end.
+ * - A subscription may carry its own default payment method, which its invoices charge in preference to the
+ *   customer's, as Stripe ranks them. Like the Stripe adapter, the simulator saves none when it creates a
+ *   subscription (`save_default_payment_method: 'off'`), and a new customer default becomes every live
+ *   subscription's own as well (docs/adr/0073).
  * - Every call that creates something honors its idempotency key, as Stripe does.
  *
  * Subscription statuses follow Stripe's closely but not exactly (incomplete while a first ACH payment is
@@ -100,6 +104,11 @@ interface SimSubscription {
   periodEnd: number;
   cancelAtPeriodEnd: boolean;
   canceledAt: number | null;
+  /**
+   * The subscription's own default payment method, as Stripe's subscription carries one: when set, its invoices
+   * charge it rather than the customer's. Absent in a state saved before docs/adr/0073.
+   */
+  defaultPaymentMethod?: string | null;
 }
 
 interface SimInvoice {
@@ -305,6 +314,7 @@ export class LocalBillingProvider implements BillingProvider {
       customer: subscription.customer,
       status: subscription.status,
       cancel_at_period_end: subscription.cancelAtPeriodEnd,
+      default_payment_method: subscription.defaultPaymentMethod ?? null,
       canceled_at: subscription.canceledAt === null ? null : seconds(subscription.canceledAt),
       metadata: { [ORGANIZATION_METADATA]: subscription.organizationId },
       items: {
@@ -383,7 +393,13 @@ export class LocalBillingProvider implements BillingProvider {
     this.setSubscriptionStatus(state, invoice.subscription, invoice.retriesDone >= SIMULATOR_RETRY_DAYS.length ? 'unpaid' : 'past_due');
   }
 
-  /** Charges an open invoice to the customer's default payment method. */
+  /** The method an invoice charges: its subscription's own default when it has one, else the customer's, as Stripe ranks them. */
+  private methodFor(state: SimulatorState, invoice: SimInvoice): string | null {
+    const subscription = invoice.subscription === null ? undefined : state.subscriptions[invoice.subscription];
+    return subscription?.defaultPaymentMethod ?? this.customer(state, invoice.customer).defaultPaymentMethod;
+  }
+
+  /** Charges an open invoice to its payment method (methodFor). */
   private attempt(state: SimulatorState, invoice: SimInvoice): void {
     if (invoice.status !== 'open' && invoice.status !== 'uncollectible') {
       return;
@@ -391,7 +407,7 @@ export class LocalBillingProvider implements BillingProvider {
     if (invoice.pending !== null) {
       return;
     }
-    const methodRef = this.customer(state, invoice.customer).defaultPaymentMethod;
+    const methodRef = this.methodFor(state, invoice);
     const method = methodRef === null ? undefined : state.paymentMethods[methodRef];
     invoice.attemptCount += 1;
     if (method === undefined) {
@@ -577,6 +593,12 @@ export class LocalBillingProvider implements BillingProvider {
         throw new BillingProviderError('resource_missing', 'the payment method is not the customer’s');
       }
       customer.defaultPaymentMethod = input.paymentMethodRef;
+      // Every live subscription's own default follows, so none keeps charging the method replaced (as stripe.ts does).
+      for (const subscription of Object.values(state.subscriptions)) {
+        if (subscription.customer === customer.id && subscription.status !== 'canceled' && subscription.status !== 'incomplete_expired') {
+          subscription.defaultPaymentMethod = input.paymentMethodRef;
+        }
+      }
       return null;
     });
   }
@@ -608,6 +630,8 @@ export class LocalBillingProvider implements BillingProvider {
         periodEnd: addMonths(start, input.plan === 'monthly' ? 1 : 12),
         cancelAtPeriodEnd: false,
         canceledAt: null,
+        // Saves no default of its own (Stripe's save_default_payment_method 'off'): the customer's pays.
+        defaultPaymentMethod: null,
       };
       state.subscriptions[subscription.id] = subscription;
       this.emit(state, 'customer.subscription.created', this.subscriptionObject(subscription));
