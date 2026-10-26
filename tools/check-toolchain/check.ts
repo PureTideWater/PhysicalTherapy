@@ -268,6 +268,11 @@ function settingsRule(head: Config): Finding[] {
       findings.push({ level: 'error', rule, message: `${FILES.workspace}: ${key} is set; a config dependency loads a pnpmfile, which can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none` });
     }
   }
+  // pnpm 10 also reads configDependencies from package.json's pnpm field.
+  const fromManifest = head.packageJson.pnpm?.configDependencies;
+  if (fromManifest !== undefined && fromManifest !== null && !(typeof fromManifest === 'object' && Object.keys(fromManifest).length === 0)) {
+    findings.push({ level: 'error', rule, message: `${FILES.packageJson}: pnpm.configDependencies is set; a config dependency loads a pnpmfile, which can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none` });
+  }
   if (head.pnpmfile) {
     findings.push({ level: 'error', rule, message: `${FILES.pnpmfile} exists; ${PNPMFILE}` });
   }

@@ -110,8 +110,8 @@ evidence `pnpm toolchain:check` reads. It refuses:
 - an entry the pull request adds whose integrity is not the registry's `dist.integrity` for that version: resolve it
   again (`pnpm install --lockfile-only`) rather than editing the lockfile by hand;
 - a `registry` or `@scope:registry` setting in `.npmrc` or `pnpm-workspace.yaml` other than registry.npmjs.org;
-- a `.pnpmfile.cjs`, a `pnpmfile` or `global-pnpmfile` setting, or `configDependencies`: each can rewrite a manifest or
-  a resolution where the check cannot see it.
+- a `.pnpmfile.cjs`, a `pnpmfile` or `global-pnpmfile` setting, or `configDependencies` (in either file or in
+  `package.json`'s `pnpm` field): each can rewrite a manifest or a resolution where the check cannot see it.
 
 A package that is not on the public registry (a fork, a private package) is a decision for the founder, not a
 setting.

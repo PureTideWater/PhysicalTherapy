@@ -467,6 +467,7 @@ describe('check-toolchain', () => {
       [{ workspace: { pnpmfile: 'hooks.cjs' } }, 'settings: pnpm-workspace.yaml: pnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
       [{ workspace: { globalPnpmfile: '/tmp/hooks.cjs' } }, 'settings: pnpm-workspace.yaml: globalPnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
       [{ workspace: { configDependencies: { hooks: '1.0.0+sha512-synthetic' } } }, 'settings: pnpm-workspace.yaml: configDependencies is set; a config dependency loads a pnpmfile, which can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
+      [{ packageJson: { pnpm: { configDependencies: { hooks: '1.0.0+sha512-synthetic' } } } }, 'settings: package.json: pnpm.configDependencies is set; a config dependency loads a pnpmfile, which can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
       [{ npmrc: 'pnpmfile=hooks.cjs' }, 'settings: .npmrc: pnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
       [{ npmrc: 'global-pnpmfile=/tmp/hooks.cjs' }, 'settings: .npmrc: global-pnpmfile is set; a pnpmfile can rewrite any manifest or resolution where check-toolchain cannot see it, so the repository has none'],
     ];

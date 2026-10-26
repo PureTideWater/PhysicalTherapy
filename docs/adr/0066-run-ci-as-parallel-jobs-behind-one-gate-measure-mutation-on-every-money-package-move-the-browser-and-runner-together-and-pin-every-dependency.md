@@ -504,8 +504,8 @@ in `static`, networked, against the range step's base reduced with `git merge-ba
   under `https://registry.npmjs.org/`; a git, directory or other host's resolution fails, since a frozen install fetches
   whatever `tarball` names and checks only the lockfile's own integrity), and each entry the change adds carries the
   registry's `dist.integrity` for that version; `.npmrc` and `pnpm-workspace.yaml` name no other registry, default or
-  scoped, and the repository has no pnpmfile and no config dependency, either of which could rewrite a resolution out
-  of the check's sight;
+  scoped, and the repository has no pnpmfile and no config dependency (in `pnpm-workspace.yaml` or `package.json`),
+  either of which could rewrite a resolution out of the check's sight;
 - every version the change adds holds the trust policy where it lands, from the registry documents the release-age rule
   already read, exactly as pnpm 10.34.8's `failIfTrustDowngraded` reads them: it fails when any version of its package
   published before it (prereleases left out unless it is one) had stronger evidence, a trusted publisher
