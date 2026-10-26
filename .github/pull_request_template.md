@@ -39,11 +39,12 @@ The required checks report on this page by themselves: <!-- required-checks -->`
 ## Reviewer agents' findings
 
 <!-- The payment-engine, security and EDI reviewer agents run before anything that touches money, tenancy or parsing
-merges (PRD 17), and the UX and brand reviewer (`.claude/agents/ux-brand-reviewer.md`) before anything that
-changes what a person sees, with before and after screenshots at 1280 and 390 px (the founder's ruling of 2026-10-25,
-through the co-founder). Name the agents that ran, one row per finding, and how each was resolved: fixed (with the
-commit), not a defect (with why), or deferred (with where it is tracked). "Not run" with the reason when the change
-touches none of those. -->
+merges (PRD 17). The UX and brand reviewer (`.claude/agents/ux-brand-reviewer.md`) is one of the two adversarial
+reviews of anything that changes what a person sees, with before and after screenshots at 1280 and 390 px light and
+1280 px dark from `tools/lane-b-screen-tour` (on `claude/build-ops`), kept in a private gallery and named here by shot
+id (the co-founder, acting for the founder, 2026-10-25 ~21:10 UTC). Name the agents that ran, one row per finding, and
+how each was resolved: fixed (with the commit), not a defect (with why), or deferred (with where it is tracked). "Not
+run" with the reason when the change touches none of those. -->
 
 | Reviewer | Finding | Resolution |
 | --- | --- | --- |
