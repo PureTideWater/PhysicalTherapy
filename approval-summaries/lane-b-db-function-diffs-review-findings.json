@@ -1,0 +1,300 @@
+{
+ "security": {
+  "summary": "I reviewed PR #46 at 2abcf83 in a fresh clone (/tmp/claude-0/-home-user-PhysicalTherapy/71c3757b-dd57-53da-b49e-a3419fdb3377/scratchpad/review-security). Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/71c3757b-dd57-53da-b49e-a3419fdb3377/scratchpad/progress/review-security.md. My experiment scripts are in /tmp/claude-0/-home-user-PhysicalTherapy/71c3757b-dd57-53da-b49e-a3419fdb3377/scratchpad/revsec/.\n\n**What holds:**\n- **Generated files match a real database.** I migrated a fresh tp_rev_security_exp database. It regenerates all 337 committed files byte for byte (directory difference 0).\n- **Privileges render correctly.** I confirmed each of these against the catalog as a one-line diff: a GRANT to PUBLIC replaces the REVOKE ALL FROM PUBLIC line, an owner revoking its own EXECUTE, LEAKPROOF, `SET \"app.practice_ids\"` and COMMENT.\n- **The catalog read is safe.** It still runs in `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` and ends in ROLLBACK.\n- **The git calls are safe.** Every call is execFileSync with an argument array. The ref is validated: `--summary-since --` and `--output=` are refused. The commit must be hex, `--` comes before every path, and file names reach git through stdin.\n- **Temporary directories** come from mkdtemp and are removed in `finally`.\n- **Scope rules respected:**\n  - No migration.\n  - domain-model.md and tools/test/workflows.test.ts are unchanged.\n  - No workflow changes.\n  - The only files shared with #42 are the three allowed ones.\n- **Unit tests and gitleaks:** the 5 new or changed unit test files (64 tests) pass, and gitleaks finds nothing in the PR commit.\n- **Database tests not run:** I did not run function-files.db.test.ts or the drift tests. The harness names scratch databases tp_test_*, which breaks the tp_rev_security_* rule; my own fresh-database run covers DBF-01's core.\n- Cleanup is done: no scratch databases or roles are left.\n\n**Main problems:**\n- **The summary the founder reads can be wrong.** CI's summary step builds the \"Function definitions changed\" diffs from the files committed in the PR, not from the migrated database. A hand-edited file shows its edit as the diff (confirmed).\n- **Functions outside schema `public` are invisible.** A SECURITY DEFINER function in another schema, granted to PUBLIC, produces no file and no diff; the document shows only an \"Other schemas\" line (confirmed).\n- **`--out` can delete files it does not own.** It deletes any `*.sql` in the target directory without checking it is generated. `--functions packages/db/migrations` would wipe the migrations (confirmed).\n- **The summary can exceed GitHub's description limit.** It has no size cap; a one-line change to 148 functions produces 109,954 characters, over the 65,536 a pull request description allows (measured).\n- **Scope helpers are not flagged.** `practice_in_scope` and `app_actor_id` read the tenant scope but are not sorted first or labelled in the summary. The checklists also do not name `practice_in_scope` or `open_practice_scope`.\n- **The reviewer checklist has gaps.** It misses `pg_temp` being absent, new code that sets the scope, dynamic SQL, and functions in other schemas.\n\nThe rest are nits and improvements.",
+  "findings": [
+   {
+    "id": "S1",
+    "severity": "should",
+    "file": "packages/db/src/cli/domain-model.ts",
+    "line": 171,
+    "problem": "The founder reads CI's domain model job summary as \"the copy that counts\". Its \"Function definitions changed since\" section is built from the function files committed in the PR, not from the migrated catalog. ci.yml runs `pnpm -s db:domain-model --summary-since origin/$BASE_REF` alone, before `pnpm db:migrate`, which takes the readFunctionDirectory path. A PR can commit files that hide or soften a change, such as a grant or LEAKPROOF. The `--check` step later turns the job red, but a schema PR awaiting signature is red there anyway. Regenerating the files afterwards leaves the document's text, and so the founder's approval line, valid. ADR 0068 and the governance runbook (step 1) present this section as written by the code from the schema.",
+    "evidence": "I edited the working-tree copy of packages/db/functions/allowed_practice_ids.sql, adding ` -- harmless` to its GRANT line, then ran `pnpm -s db:domain-model --summary-since HEAD`. Output: \"Compared: `packages/db/functions` at `HEAD` ... with the files in `packages/db/functions` in the working tree.\" followed by a diff showing `+GRANT EXECUTE ON FUNCTION public.allowed_practice_ids() TO tp_app; -- harmless`. cli/domain-model.ts lines 165-178 use readFunctionDirectory(functionsDir) when neither --out nor --check is given; ci.yml lines 345-355 run the summary step before db:migrate.",
+    "fix": "Build the function section in CI from the generated set. Add a step after `pnpm db:migrate` that runs `pnpm -s db:domain-model --out \"$RUNNER_TEMP/dm.md\" --functions \"$RUNNER_TEMP/functions\" --summary-since \"origin/$BASE_REF\" | tee -a $GITHUB_STEP_SUMMARY`; it compares the base's files with catalog-generated files and does not exit before printing. Alternatively, have the pre-migration step print only the document part and state that the function diffs follow after migration. Update ADR 0068 and runbook step 1 to name which copy counts. This is a workflow change, so coordinate with ci-deps."
+   },
+   {
+    "id": "S2",
+    "severity": "should",
+    "file": "packages/db/src/domain-model/catalog-reads.ts",
+    "line": 347,
+    "problem": "Only functions in schema `public` are read (`WHERE n.nspname = 'public'`), and nothing refuses a function elsewhere. A migration can create a schema plus a SECURITY DEFINER function granted to PUBLIC; it gets no function file and no summary diff, and the catalog test's definer check (also public only) never sees it. The document shows a single line. Once such a schema exists, later functions added to it change nothing but Appendix D. ADR 0068 lists \"a second schema beside public holds functions\" as a revisit trigger, but nothing detects it. Triggers on tables in another schema are also left off \"Trigger function of\" (the trigger query filters by the table's schema).",
+    "evidence": "revsec/exp.mts on a fresh migrated tp_rev_security_exp ran: `CREATE SCHEMA priv; CREATE FUNCTION priv.leak() RETURNS SETOF text LANGUAGE sql SECURITY DEFINER AS $$ SELECT 'x' $$; GRANT USAGE ON SCHEMA priv TO tp_app; GRANT EXECUTE ON FUNCTION priv.leak() TO PUBLIC`. The function directory compared equal to the committed files (`dir diff: []`). The only document change was line 12: \"- Other schemas: `priv` (0 tables, owner `postgres`); not described here\".",
+    "fix": "In readCatalog or renderFunctionFiles, read pg_proc from every schema except pg_catalog, information_schema, pg_toast* and extension members. Either refuse any function outside public with a DomainModelError (exit 2) naming it, which is the tripwire the ADR's revisit clause needs, or render such functions as `<schema>.<name>.sql`. Add a DBF-03 case for it, and add 'functions outside public have no file: read them in the migration' to both checklists."
+   },
+   {
+    "id": "S3",
+    "severity": "should",
+    "file": "packages/db/src/domain-model/function-files.ts",
+    "line": 111,
+    "problem": "writeFunctionDirectory removes every regular `*.sql` file in the target directory that no function produces, without checking it is a generated file. `--functions` takes any path (resolved against INIT_CWD). A slip like `--out --functions packages/db/migrations`, or `--functions .` in a directory holding SQL, silently deletes those files.",
+    "evidence": "revsec/wipe.mts: a directory holding `20260101_init.sql` ('CREATE TABLE important();'), then `writeFunctionDirectory(dir, new Map([['f.sql', ...]]))`. Result: `{ written: [ 'f.sql' ], removed: [ '20260101_init.sql' ] }`; the file is gone.",
+    "fix": "Remove a stale file only if it starts with FUNCTION_FILE_BANNER[0], and refuse with exit 2, listing them, when the directory holds `*.sql` files without the banner. Also consider refusing a `--functions` directory that lacks README.md unless it is new and empty. Add a DBF-04 case."
+   },
+   {
+    "id": "S4",
+    "severity": "should",
+    "file": "packages/db/src/domain-model/summary.ts",
+    "line": 626,
+    "problem": "renderFunctionChanges has no size cap. CLAUDE.md and the new-migration skill open every schema PR's description with this summary, and GitHub limits a pull request description to 65,536 characters; the step summary is limited to 1 MiB. A migration that touches many functions overflows the description, so creating the PR fails or the text is cut. A PostgreSQL-major regeneration can exceed the step-summary limit, so \"the copy that counts\" is dropped.",
+    "evidence": "revsec/size.mts, using the committed files and changing only the search_path line: 5 functions gives 4,049 characters, 20 gives 16,150, and 148 (all definers) gives 109,954, before the document part of the summary is added.",
+    "fix": "Add a budget, for example 50,000 characters for the description and about 900 KB for the step summary. Past it, print the full ordered file list with +/- line counts, render diffs in order until the budget runs out, then print one line saying the remaining diffs are in Files changed and in the job log. Alternatively, emit the diffs into a second file that the skill posts as a PR comment. Test it in summary.test.ts."
+   },
+   {
+    "id": "S5",
+    "severity": "should",
+    "file": "packages/db/src/domain-model/summary.ts",
+    "line": 614,
+    "problem": "sensitiveFunctionFile flags only SECURITY DEFINER functions and those that set app.practice_ids. Invoker functions that read the tenant scope are not sorted first or labelled, yet SECURITY DEFINER functions call them as their scope check. Examples: `practice_in_scope` (`current_setting('app.practice_ids')`, called in definer guards such as 20261030090000 line 665 and 20261026090000 line 33) and `app_actor_id` (`current_setting('app.actor_id')`). The checklists' list of scope functions (allowed_practice_ids, effective_practice_access, app_actor_*) also omits practice_in_scope and open_practice_scope.",
+    "evidence": "revsec/sens.mts gives: practice_in_scope false, app_actor_id false, pricing_run_rules false, open_practice_scope true. A migration that changes practice_in_scope's body to `SELECT true` would be listed among the ordinary functions, without a label.",
+    "fix": "Extend sensitiveFunctionFile to match `current_setting\\s*\\(\\s*'app\\.(practice_ids|actor_id)'`, `set_config('app.actor_id'`, and any `GRANT EXECUTE ... TO PUBLIC` line on either side. Rename the label to \"SECURITY DEFINER, tenant scope or PUBLIC\". Name practice_in_scope and open_practice_scope in security-reviewer.md, the skill and the README."
+   },
+   {
+    "id": "S6",
+    "severity": "should",
+    "file": ".claude/agents/security-reviewer.md",
+    "line": 19,
+    "problem": "The tenant-isolation checklist is incomplete (the same gaps are in .claude/skills/new-migration/SKILL.md and packages/db/functions/README.md). (a) \"pg_temp anywhere but last\" lets through a definer with `SET search_path = public` and no pg_temp; PostgreSQL then searches pg_temp first for relations, which is the classic definer hijack. It also does not require pg_catalog first. (b) Nothing flags a new set_config or `SET` of app.practice_ids or app.actor_id; widening the scope is the most dangerous change, and the list covers only a read removed or changed. Nothing flags set_config with is_local = false, which leaks the scope across pooled transactions. (c) Nothing flags dynamic SQL (EXECUTE / format without %I/%L) in a definer. (d) Nothing covers functions outside public (see S2). (e) The skill's last item drops \"or a scope check removed\", which the agent file has.",
+    "evidence": "The diff of security-reviewer.md lines 13-30 and SKILL.md lines 20-37 shows only the listed items. The repo's convention, visible in every definer file, is `SET search_path TO 'pg_catalog', 'public', 'pg_temp'`.",
+    "fix": "Reword the first item: \"SECURITY DEFINER without `SET search_path` that names pg_catalog first and pg_temp explicitly last\". Add: \"a new set_config or SET of app.practice_ids or app.actor_id, or one with is_local false\"; \"EXECUTE of built SQL in a definer without format %I/%L or quote_*\"; \"a function or trigger in a schema other than public (it has no file: read the migration)\". Keep the agent, the skill and the README's lists identical, and pin them with a small test."
+   },
+   {
+    "id": "N1",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/generate.ts",
+    "line": 131,
+    "problem": "readDatabase pins search_path, IntervalStyle, DateStyle and TimeZone but not quote_all_identifiers, standard_conforming_strings or extra_float_digits. A database or role setting changes every file (and the document), contrary to DBF-01's claim that the output does not depend on the connection's settings.",
+    "evidence": "`ALTER DATABASE tp_rev_security_exp SET quote_all_identifiers = on` followed by regeneration: all 337 files differ, for example `-CREATE OR REPLACE FUNCTION public.adjustment_references_in_practice()` became `+CREATE OR REPLACE FUNCTION \"public\".\"adjustment_references_in_practice\"()` and `OWNER TO \"tp_owner\"`.",
+    "fix": "Add `SET LOCAL quote_all_identifiers = off`, `SET LOCAL standard_conforming_strings = on` (literal() assumes it) and `SET LOCAL extra_float_digits = 1`. Extend DBF-01's alternate-settings connection to set them."
+   },
+   {
+    "id": "N2",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/history.ts",
+    "line": 104,
+    "problem": "`git diff --no-index` reads the user's global and system git config and attributes: diff.algorithm, diff.context, diff.interHunkContext, and a core.attributesFile marking *.sql as -diff or binary. The same change can therefore produce a different summary on different machines, and on one with a binary attribute it shows 'Binary files differ' instead of lines.",
+    "evidence": "history.ts lines 104-109 pass --no-color, --no-ext-diff and --no-textconv, but no -a, -U, --diff-algorithm, or config isolation.",
+    "fix": "Run git with env GIT_CONFIG_NOSYSTEM=1 and GIT_CONFIG_GLOBAL=/dev/null, plus `-c core.attributesFile=/dev/null`, and pass `--text -U3 --diff-algorithm=myers --no-indent-heuristic`."
+   },
+   {
+    "id": "N3",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/history.ts",
+    "line": 116,
+    "problem": "The diff headers are parsed with `\\S+`, and names come from readFunctionDirectory (any `*.sql`, in working-tree mode) or from the base tree (any `*.sql` blob). A name containing a space, or one that git quotes even with core.quotepath=off (tab, quote, newline), gets the wrong key and keeps an unrelabelled header. The validation `path.basename(name) !== name || name.startsWith('.')` does not apply FILE_NAME.",
+    "evidence": "Regex `/^diff --git [ab]\\/(\\S+) /` on `diff --git a/x y.sql b/x y.sql` captures `x`.",
+    "fix": "In functionFilesAtCommit, readFunctionDirectory and unifiedDiffs, accept only names that match `^[a-z_][a-z0-9_]*\\.sql$` (fileNameProblem); report any other name as an extra or refused entry instead of diffing it."
+   },
+   {
+    "id": "N4",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/history.ts",
+    "line": 70,
+    "problem": "functionFilesAtCommit throws a plain Error, not a DomainModelError, when cat-file answers `<oid> missing` (a shallow or partial clone). The CLI then dies with a stack trace and exit 1 instead of the documented exit 2 with a fetch hint.",
+    "evidence": "`if (!Number.isInteger(size)) throw new Error(`git cat-file answered ...`)`; printSummary does not catch it.",
+    "fix": "Throw a DomainModelError (\"--summary-since REF: blob ... missing; fetch the full history (fetch-depth: 0)\") and catch it in printSummary with fail(..., 2)."
+   },
+   {
+    "id": "N5",
+    "severity": "nit",
+    "file": "packages/db/src/cli/domain-model.ts",
+    "line": 244,
+    "problem": "`--out` writes the document first and the function directory second. If writeFunctionDirectory refuses (a symlink, a blocked entry), the process exits 2 with the document already rewritten and the files stale, a half-regenerated tree. readFunctionDirectory, used by the bare --summary-since path, does not call refuseLinkedDirectory, so it follows a symlinked directory that --check and --out refuse.",
+    "evidence": "Lines 243-251: writeFileSync(outPath) comes before writeFunctionDirectory in its try; function-files.ts readFunctionDirectory calls entries() directly.",
+    "fix": "Validate the directory (refuseLinkedDirectory plus the blocked-entry check) before writing the document, or write the functions first. Call refuseLinkedDirectory in readFunctionDirectory."
+   },
+   {
+    "id": "N6",
+    "severity": "nit",
+    "file": ".gitattributes",
+    "line": 5,
+    "problem": "With no `-text` or `eol=lf`, a contributor with core.autocrlf=true checks the files out as CRLF, and the byte-exact --check fails locally. tools/test/function-files.test.ts forbids every other attribute, claiming a text or eol rule 'would change the bytes', but `-text` prevents conversion. File mode is also not compared, so a chmod +x of a function file passes --check; functionFilesAtCommit accepts 100755.",
+    "evidence": "function-files.test.ts: `expect([...attributes(file).keys()], file).toEqual(['linguist-generated'])`. compareFunctionDirectory reads content only.",
+    "fix": "Add `-text` (or `text eol=lf`) to the rule and allow it in the test. Have compareFunctionDirectory refuse an executable bit, and functionFilesAtCommit accept only 100644."
+   },
+   {
+    "id": "I1",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/functions.ts",
+    "line": 112,
+    "problem": "Improvement: the checklist asks reviewers to flag 'a volatility change on a function a policy calls', but nothing in the file says which policies call it. Event triggers (pg_event_trigger) are also absent: an event-trigger function's file says 'Trigger function of: (none)'.",
+    "evidence": "overloadText prints only the signature, the body hash and trigger lines; catalog-reads has no pg_event_trigger or pg_policy dependency read for functions.",
+    "fix": "Add `-- Called by policy: <table>.<policy>` lines, from pg_depend on pg_policy or by searching polqual/polwithcheck for the function's OID, and `-- Event trigger: <name> ON <event>` lines, one per line in C order, as for triggers."
+   },
+   {
+    "id": "I2",
+    "severity": "nit",
+    "file": ".github/workflows/ci.yml",
+    "line": 350,
+    "problem": "Improvement (governance, existing pattern): the summary, including the new function section, is produced by the PR's own generator code (packages/db/src/domain-model/summary.ts, history.ts) running from the PR head. A PR can change what the founder's 'copy that counts' shows. CODEOWNERS covers those paths, but the founder approves the same PR that changes the judge.",
+    "evidence": "The domain model job checks out the PR head and runs `pnpm -s db:domain-model --summary-since` from it.",
+    "fix": "Run the summary renderer from the base ref (`git worktree add $RUNNER_TEMP/base origin/$BASE_REF`, then run its CLI against the head's generated files), or print a banner whenever packages/db/src/domain-model changed in the PR. This needs a workflow change, so record it as a proposal."
+   },
+   {
+    "id": "I3",
+    "severity": "nit",
+    "file": "packages/db/functions/README.md",
+    "line": 67,
+    "problem": "The 'What is not here' section lists extension members and aggregates but not functions in other schemas (they are invisible, see S2) or event triggers. A reader takes 'Every function in schema public' as the whole set.",
+    "evidence": "README lines 60-68.",
+    "fix": "Add a bullet: 'Functions in any schema other than public: none exists today; the generator refuses one' (once S2 is fixed), or say that they have no file and must be read in the migration."
+   }
+  ]
+ },
+ "tooling": {
+  "summary": "Review of PR #46 at head 2abcf83 (database and migration tooling lens). Fresh clone at /tmp/claude-0/-home-user-PhysicalTherapy/71c3757b-dd57-53da-b49e-a3419fdb3377/scratchpad/review-tooling. Progress log at /tmp/claude-0/-home-user-PhysicalTherapy/71c3757b-dd57-53da-b49e-a3419fdb3377/scratchpad/progress/review-tooling.md.\n\nWhat holds:\n- Scope is as required. The only files shared with #42 are docs/product/test-matrix.md, matrix.ts and registry.ts. There is no migration, and domain-model.md and workflows.test.ts are unchanged.\n- On a freshly migrated PG 18.4 scratch database, `--check --strict` passes: the document and all 337 files match.\n- A probe migration (GRANT TO PUBLIC on screening_standing plus a new function) makes `--check` exit 1, listing the missing file and the differing file with its first differing line. DBF-01 also fails with that probe in place. So the drift checks really do fail a migration merged without regenerated files.\n- The existing summary output is byte-identical to the base CLI's for the same ref; only the new section is appended.\n- Unit tests pass (9 files, 116 tests), and so do the domain-model db tests (4 files, 12 tests).\n- Real procedure, window, BEGIN ATOMIC/LEAKPROOF and comment cases render correctly against the database.\n- The provenance pathspec works.\n\nFindings that matter:\n1. The summary does not fit a PR description. With #42's migration, `--summary-since` prints 150,828 characters (the function section alone is 97,884, with 43 diffs). GitHub caps a PR body at 65,536, yet the template and runbook say the description opens with this summary.\n2. Two determinism gaps:\n   - `quote_all_identifiers` is not pinned, so every file changes when it is on.\n   - The diff section changes with the caller's git config, so the build's copy and CI's copy can differ.\n3. Errors in the summary path exit 1 with a stack trace. Exit 1 is the \"differs\" code; errors should exit 2.\n4. Untested claims:\n   - Nothing tests the CLI wiring.\n   - The ADR, the design and DBF-04 all cite a document \"with and without\" test that does not exist.\n5. `--out FILE` also rewrites the repository's packages/db/functions.\n\nSmaller items are listed as nits. All scratch databases were dropped and the base worktree removed. Nothing was committed or pushed.",
+  "findings": [
+   {
+    "id": "T1",
+    "severity": "blocking",
+    "file": "packages/db/src/domain-model/summary.ts",
+    "line": 625,
+    "problem": "renderFunctionChanges has no size cap or summary mode. The template, README and governance runbook require the build to open the PR description with this summary. For a real migration the summary is about twice GitHub's 65,536-character PR body limit, so it cannot be pasted whole. The founder is told to request changes when the description copy and the CI copy differ.",
+    "evidence": "Applied #42's migration (20261107090000_mail_streams.sql at 13f59b1) and its areas.json to a scratch DB, then ran `tsx packages/db/src/cli/domain-model.ts --out ../dm42.md --functions ../fn42 --summary-since HEAD`. Output: 150,828 characters in total; the 'Function definitions changed' section alone is 97,884 characters (43 '### ' diffs: 35 added, 3 removed). The document part was 52,944, which fit before this PR. GitHub rejects a PR body over 65,536 characters.",
+    "fix": "Give the section two forms. The CI step-summary copy (1 MiB limit) keeps the full diffs, with a truncation notice past about 900 KB. A compact form (e.g. `--function-diffs=stat`) lists each file with +N/-M and its sensitive flag for the PR description, which points to the job summary and Files changed. Alternatively, print full diffs only for sensitive files plus any privilege or owner line changes. Update the template and runbook so the 'copies must match' rule covers the compact form. Add a test of the size bound."
+   },
+   {
+    "id": "T2",
+    "severity": "should",
+    "file": "packages/db/src/domain-model/generate.ts",
+    "line": 131,
+    "problem": "readDatabase pins search_path, IntervalStyle, DateStyle and TimeZone but not quote_all_identifiers. That GUC changes regprocedure text, quote_ident (owner_ident, grantee_ident) and pg_get_functiondef. So every function file (and the document) depends on the connection's settings. This contradicts ADR 0068's 'Determinism' section and DBF-01's 'under any ... of the connection'.",
+    "evidence": "`ALTER DATABASE tp_rev_tooling_a SET quote_all_identifiers = on` then `pnpm db:domain-model --check` gave exit 1 and every file differed: `differs: .../adjustment_references_in_practice.sql, first at line 4: - -- adjustment_references_in_practice() + -- \"adjustment_references_in_practice\"()`. The document also changed (139 vs 23 to approve).",
+    "fix": "Add `SET LOCAL quote_all_identifiers = off` (consider also `extra_float_digits = 1`, `bytea_output = 'hex'`, `standard_conforming_strings = on` for printed defaults) beside the other SET LOCALs. Add quote_all_identifiers to the GUCs DBF-01's settings case sets with ALTER DATABASE."
+   },
+   {
+    "id": "T3",
+    "severity": "should",
+    "file": "packages/db/src/domain-model/history.ts",
+    "line": 104,
+    "problem": "unifiedDiffs runs `git diff --no-index` under the caller's global/system git config. diff.context, diff.algorithm, diff.interHunkContext and diff.indentHeuristic all change the hunks. The build's local summary and CI's (which 'counts') can then differ for the same files, and the runbook tells the founder to request changes when they differ.",
+    "evidence": "With a one-line change to screening_standing.sql, `--summary-since HEAD` printed `@@ -11,3 +11,4 @@` with 3 context lines. With GIT_CONFIG_COUNT=2 diff.context=0 diff.algorithm=histogram it printed `@@ -13,0 +14 @@ ...` with no context: `diff ../s1.txt ../s2.txt` shows the hunk differs.",
+    "fix": "Run that git with env GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_COUNT unset, and explicit `-U3 --diff-algorithm=myers --indent-heuristic --inter-hunk-context=0`. Add a unit test that sets GIT_CONFIG_* diff.context=0 and asserts unchanged output."
+   },
+   {
+    "id": "T4",
+    "severity": "should",
+    "file": "packages/db/src/cli/domain-model.ts",
+    "line": 156,
+    "problem": "printSummary calls functionFilesAtCommit and renderFunctionChanges (git ls-tree, cat-file, diff --no-index, mkdtemp) without try/catch. Any failure is an uncaught exception: a stack trace and exit 1, which the CLI documents as 'differs'. Errors should exit 2. The same applies to non-DomainModelError errors (EACCES and similar) from compareFunctionDirectory and writeFunctionDirectory, and to the plain `throw new Error` in functionFilesAtCommit's cat-file parsing.",
+    "evidence": "A fake git on PATH that exits 128 for `--no-index`, plus a modified screening_standing.sql, then `tsx packages/db/src/cli/domain-model.ts --summary-since HEAD`: exit=1, stderr `node:internal/errors:986 ... Error: Command failed: git -c core.quotepath=off diff --no-index ... fatal: simulated`.",
+    "fix": "Wrap the function-section rendering (and the directory compare/write) to turn git/fs failures into DomainModelError, then fail(..., 2). In functionFilesAtCommit and unifiedDiffs, throw DomainModelError with the git stderr. Add a CLI test for the exit code."
+   },
+   {
+    "id": "T5",
+    "severity": "should",
+    "file": "packages/db/src/cli/domain-model.ts",
+    "line": 200,
+    "problem": "Nothing tests the new CLI behaviour: no test imports or spawns cli/domain-model.ts. Untested: --check reporting both document and directory before exit 1, exit 1 vs 2, --functions resolved against INIT_CWD, --out writing the directory, and printSummary's before/after wiring per mode. The test-matrix row DBF-04 ('--check exits 1 naming each file') and the registry's assertedBy (function-files.test.ts) claim coverage the library-level tests do not give. Mutating the CLI back to exit at the first document difference, or dropping `if (differs) process.exit(1)`, fails no test.",
+    "evidence": "`grep -rln \"cli/domain-model\\|spawnSync\" packages/db/src/**/*.test.ts` finds nothing; only tools/test/codeowners.test.ts mentions the CLI path, as a package.json script string.",
+    "fix": "Add a db test (e.g. in function-files.db.test.ts) that spawns `tsx src/cli/domain-model.ts --check <tmp doc> --functions <tmp copy>` against the scratch DB. With a stray file and a doc edit, assert exit 1 and both messages on stderr. With a symlinked dir, assert exit 2. With INIT_CWD set and a relative --functions, assert it resolves. With --out, assert the files are written and the summary section is present."
+   },
+   {
+    "id": "T6",
+    "severity": "should",
+    "file": "docs/adr/0068-write-each-database-function-to-its-own-generated-file-check-the-files-beside-the-domain-model-and-open-each-approval-with-their-diffs.md",
+    "line": 116,
+    "problem": "The ADR (and design \u00a73.2 and DBF-04) state that 'a test asserts the document is byte-identical with and without the new catalog fields'. No such test exists. Only the existing drift case compares the committed document with a regeneration, which proves equality today but not independence from the new fields.",
+    "evidence": "`grep -rn -i \"byte-identical\\|with and without\\|renderDocument\" packages/db/src --include=*.test.ts` finds no such test.",
+    "fix": "Add a unit or db test that builds the model from a catalog, renders the document, and compares it with the same catalog where each function's definition, owner, owner_ident, acl, comment, kind, extension_member and sql_standard_body are replaced by different values. The text and documentSha256 must be equal. Alternatively, correct the ADR, design and matrix wording."
+   },
+   {
+    "id": "T7",
+    "severity": "should",
+    "file": "packages/db/src/cli/domain-model.ts",
+    "line": 243,
+    "problem": "`--out FILE` with a custom path (e.g. a preview to /tmp) always writes and prunes the repository's tracked packages/db/functions, unless --functions is also given. `--check FILE` likewise always compares the repository directory. This side effect on tracked files is surprising, and a stale-file prune can delete committed files. Also, the document is written before writeFunctionDirectory runs, so a refused directory (symlink or non-regular entry) exits 2 after the document has been rewritten.",
+    "evidence": "`pnpm db:domain-model --out ../tmp.66xAogUXoR/preview.md` printed `wrote .../packages/db/functions: 338 function files, 2 written, 0 removed`. `git status` then showed `M packages/db/functions/screening_standing.sql` and `?? packages/db/functions/rev_probe_new.sql`.",
+    "fix": "When FILE is given and --functions is not, either refuse with exit 2 ('give --functions DIR with a custom --out/--check FILE') or default the directory to `<dirname FILE>/functions`. Run refuseLinkedDirectory and the 'blocked' check before writing the document, so a refusal changes nothing. Document the rule in the usage comment and README."
+   },
+   {
+    "id": "T8",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/function-files.ts",
+    "line": 60,
+    "problem": "entries() drops names git ignores before computing `missing`. A generated file whose name is ignored (e.g. a global excludes rule for an untracked new function file) is written by --out but reported by --check as 'missing' even though it is on disk, which is a confusing message.",
+    "evidence": "In compareFunctionDirectory, `present` is built from entries(), which filters `ignored`. `missing = expected.keys().filter(!present.has)`. writeFunctionDirectory reads the file directly with readFileSync and skips it as unchanged.",
+    "fix": "Report an ignored generated file as its own category ('ignored by git: <file>; it would never be committed') instead of 'missing', or apply the ignore filter only to non-generated names."
+   },
+   {
+    "id": "T9",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/function-files.ts",
+    "line": 147,
+    "problem": "readFunctionDirectory (used by `--summary-since` alone, which is what CI's summary step runs) does not call refuseLinkedDirectory. A symlinked functions directory is followed there, unlike in --check and --out. It also returns any *.sql in the working tree (strays included), which then appear as 'added' functions in the summary.",
+    "evidence": "readFunctionDirectory goes straight to entries(directory), which uses readdirSync (follows symlinks). It has no refuseLinkedDirectory call, unlike compareFunctionDirectory and writeFunctionDirectory.",
+    "fix": "Call refuseLinkedDirectory in readFunctionDirectory and turn its DomainModelError into exit 2 in the alone path. Optionally flag non-generated-looking files."
+   },
+   {
+    "id": "T10",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/history.ts",
+    "line": 63,
+    "problem": "functionFilesAtCommit returns null only when REF has no entry at all under packages/db/functions. If the base holds only README.md (or a subdirectory), it returns an empty Map. The summary then prints all 337 files as full 'added' diffs instead of the one-line bootstrap message.",
+    "evidence": "`if (blobs.length === 0) return null;` counts every ls-tree entry (README, trees). The .sql filter happens afterwards and yields an empty Map.",
+    "fix": "Return null when `files.length === 0`, or have renderFunctionChanges use the bootstrap line when `before.size === 0 && after.size > 0`."
+   },
+   {
+    "id": "T11",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/summary.ts",
+    "line": 613,
+    "problem": "Two problems with sensitiveFunctionFile and the ordering. The SECURITY DEFINER regex `/^ (?:\\w+ )*SECURITY DEFINER\\b/m` also matches any body line that starts with one space and plain words, e.g. ' Runs as SECURITY DEFINER because ...'. And the 'first' ordering ignores the changes the checklist calls most dangerous: a GRANT TO PUBLIC, an owner change, LEAKPROOF added.",
+    "evidence": "' Runs as SECURITY DEFINER' matches: `^ ` then 'Runs ', 'as ', then 'SECURITY DEFINER'. In the probe run, rev_probe_new.sql (GRANT TO PUBLIC by default) and the screening_standing GRANT TO PUBLIC were listed without the sensitive marker.",
+    "fix": "Match only the header: search the text between the `CREATE OR REPLACE` line and the `AS $` / `RETURN` / `BEGIN ATOMIC` line. Also rank first any file whose diff touches a GRANT/REVOKE/OWNER/LEAKPROOF/STRICT/SET line, and say why in the heading."
+   },
+   {
+    "id": "T12",
+    "severity": "nit",
+    "file": "tools/test/function-files.test.ts",
+    "line": 55,
+    "problem": "The test forbids any `text`/`eol` attribute, calling it something that 'would change the bytes'. In fact `eol=lf` (or `-text`) is what keeps the working-tree bytes LF under core.autocrlf=true. Without it, a CRLF checkout makes --check report every file as differing at line 1, and makes the alone-mode summary diff every file. The design promised 'LF only'. `git check-attr --all` also reads the user's global attributes file, so the exact-list assertion can fail on a developer machine.",
+    "evidence": "`.gitattributes` holds only `packages/db/functions/*.sql linguist-generated=false`. The test asserts `[...attributes(file).keys()]` equals `['linguist-generated']`. firstDifferingLine splits on '\\n', so a trailing '\\r' differs.",
+    "fix": "Add `eol=lf` (or `-text`) to the .gitattributes line and allow it in the test. Run check-attr with `GIT_CONFIG_GLOBAL=/dev/null` / `-c core.attributesFile=/dev/null` so the test reads only the repository's attributes."
+   },
+   {
+    "id": "T13",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/function-files.ts",
+    "line": 101,
+    "problem": "A missing or wrong `--functions` directory produces one 'missing:' line per function (337 lines) rather than one clear line.",
+    "evidence": "`pnpm db:domain-model --check --functions ./nonexistent` (from packages/db) printed `missing: .../packages/db/nonexistent/adjustment_references_in_practice.sql` and so on for every file.",
+    "fix": "When the directory does not exist, report once: '<dir> does not exist; regenerate with --out', then exit 1."
+   },
+   {
+    "id": "T14",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/history.ts",
+    "line": 110,
+    "problem": "unifiedDiffs parses file names with `(\\S+)` and rejects only path separators and leading dots. In alone mode the working tree may hold a stray `*.sql` whose name has a space or a quote character (which git quotes even with quotepath=off). Its diff then gets a truncated or quoted key, and `diffs.get(name)` misses it, so the file is listed without its diff.",
+    "evidence": "readFunctionDirectory returns any `*.sql` regular file. The parse regex is `/^diff --git [ab]\\/(\\S+) /`.",
+    "fix": "Validate every name with functions.ts's fileNameProblem (plus the .sql suffix) before writing the temp sides, and raise DomainModelError (exit 2) on any other name."
+   },
+   {
+    "id": "T15",
+    "severity": "nit",
+    "file": "docs/adr/0068-write-each-database-function-to-its-own-generated-file-check-the-files-beside-the-domain-model-and-open-each-approval-with-their-diffs.md",
+    "line": 50,
+    "problem": "The ADR and README say the definitions come from 'the same READ ONLY snapshot' as the document. pg_get_functiondef, like the other ruleutils functions, reads through the syscache (the latest catalog snapshot), not the REPEATABLE READ transaction snapshot. This is harmless on a fresh scratch database, but the wording overstates the guarantee.",
+    "evidence": "PostgreSQL ruleutils.c pg_get_functiondef uses SearchSysCache1(PROCOID, ...). Catalog reads by the deparse functions do not use the transaction's MVCC snapshot.",
+    "fix": "Reword to 'in the same READ ONLY transaction, on a database nothing else is migrating', or leave as is and note the caveat."
+   },
+   {
+    "id": "T16",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/domain-model-drift.db.test.ts",
+    "line": 200,
+    "problem": "Gaps in the real-database tests. Procedures, window functions, BEGIN ATOMIC bodies, comments, WITH GRANT OPTION and GRANTED BY are rendered only from hand-written definitions in functions.test.ts. No db test runs them through pg_get_functiondef and aclexplode. The extension-member filter applies to the files but not to Appendix C, so DBF-01's name-set assertion will fail the first time an extension member exists.",
+    "evidence": "I verified by hand on a scratch DB that a procedure with GRANT ... WITH GRANT OPTION plus COMMENT, a WINDOW internal function and a BEGIN ATOMIC LEAKPROOF STRICT function all render correctly (output in this review). No committed test covers them. DBF-01 compares `files.keys()` with every Appendix C name.",
+    "fix": "Extend DBF-02's probe migration with one procedure (with a comment and a grantable grant) and one BEGIN ATOMIC function, and assert their files. Have DBF-01's name comparison exclude extension members, or add a comment tying it to the 'Revisit when' list."
+   },
+   {
+    "id": "T17",
+    "severity": "nit",
+    "file": "packages/db/src/domain-model/summary.ts",
+    "line": 624,
+    "problem": "Improvement. The section compares REF's files with the working tree or generated set. When run locally as documented (`--summary-since origin/<base>`) after the base has advanced, other PRs' function changes show as reversals in this PR's summary. CI is unaffected because it checks out the merge commit. The document section has the same pre-existing behaviour.",
+    "evidence": "functionFilesAtCommit(since.commit) reads the ref's tip; no merge-base is computed.",
+    "fix": "Optionally resolve `git merge-base <REF> HEAD` for the base files (and the document), or document that the local copy must be produced on a branch rebased onto the base."
+   }
+  ]
+ }
+}
