@@ -207,7 +207,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
 - **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~04:35 UTC:
   - ADR **0078** (0065 is #42's, 0066 the CI series', and 0067 to 0077 are claimed; 0077 by ux-forms at ~04:35);
   - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
-  - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', and 900100 is the screening's scale release);
+  - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', 900100 is the screening's scale release, and 900110 the release content checks' scale release, generated outside the repository);
   - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
   - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
@@ -838,7 +838,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
 - **2026-10-26 ~04:57 UTC: ux-forms gets its own session.** #111's session finished: its push runs on 4d99df8 are green (ci, mutation, screening-capacity). It declined ux-forms, rightly, because its brief was one PR, and a message from another session does not widen a brief. So `co-001/ux-forms` runs in a new parallel session (session_01VNsi2Kru6pfk8CAbQ2AaYB, created 04:56:47 UTC), with the full brief and the standing rulings, the same as the first eight.
   - Its PG18 note, for every session: after a container restart, PostgreSQL 18 on 5433 can keep a stale `/root/pgdata18/postmaster.pid`. Re-running `tools/setup-container.sh` clears it.
   - LANES rule 6 now names the generated files (the lockfile, `watched-paths.txt`, `packages/db/functions`): the PR merged second regenerates them. #38's session needed it for `watched-paths.txt`, and it applies to every migration PR's function files.
-- **2026-10-26 ~05:03 UTC: all eleven reviewers done; the synthesis started (wf_3582cebc-d2b).**
+- **2026-10-26 ~05:02 UTC: all eleven reviewers done; the synthesis started (wf_3582cebc-d2b).**
   - **335 raw findings, 23 blocking,** before deduplication. words-practice came last: 56 findings (3 blocking), the form reset and the materiality cents among them, and Actionable disagreeing between the home tile and the ROI statement.
   - Archived on this branch as `designs/lane-b-ux-review/raw-findings.md`: markdown, ids in backticks; gitleaks passed it.
   - **The synthesis, in order:**
@@ -849,3 +849,14 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     5. one adversarial reviewer on the rules and a fact checker on the code, in parallel;
     6. a reviser.
   - Every agent keeps a progress file (SAVE rule), and a monitor raises a 10-minute stall alarm. The script is archived in `workflow-scripts/`.
+- **2026-10-26 ~05:11 UTC: the UX review's screenshot galleries are published, private.** One version holds at most 511 files, so each width has its own gallery; each links to the other:
+  - 1280 px, light and dark (468 shots): https://claude.ai/artifact/NmJco1UsT631vdmXts8HHD
+  - 390 px (389 shots): https://claude.ai/artifact/V1vzMZc3BrJ8mtw1HXG5jh
+  - **What they do:** filter by area, role, state, theme and the checker's verdict; open a shot full size with its route, role and the checker's note. `#shot-id` links straight to a shot.
+  - **Images:** lossless WebP, 42.7 MB in all against 155 MB of PNG. The builder is `tools/lane-b-screen-gallery/`.
+  - **Next:** once the synthesis lands, the findings that cite each shot are added to both galleries. The next re-tour compares against these files.
+- **2026-10-26 ~05:20 UTC: the checklist PR `co-001/ux-brand-reviewer` started, run from this session while the synthesis works.**
+  - **Workflow wf_f49e6c03-028:** a designer, then one adversarial reviewer, then a reviser, then one builder. Worktree `/home/user/ux-brand-reviewer`, cut from 4d99df8.
+  - **Inputs:** the brand's rules and the 335 raw findings, or the synthesis if it lands first. The checklist targets recurring defect classes, not single bugs.
+  - **Q4 applies:** the `model:` key follows the other reviewer files, and the suite is documentation-only.
+  - **Next:** the draft PR, two adversarial reviews (brand and copy; consistency with the other reviewer files and the brief's "Then"), the fix round with the documentation-only suite, a fresh-clone verification reading CI, then the merge.

@@ -1,0 +1,619 @@
+{
+  "summary": "Build release content checks (#7, #30, #31, #59) in ten work packages by the design, then an integration check",
+  "agentCount": 11,
+  "logs": [
+    "WP1: done",
+    "WP2: done",
+    "WP3: done",
+    "WP8: done",
+    "WP5: done",
+    "WP4: done",
+    "WP6: done",
+    "WP9: done",
+    "WP7: done",
+    "WP10: done"
+  ],
+  "result": {
+    "results": {
+      "WP1": {
+        "wp": "WP1 rules core",
+        "done": true,
+        "commits": [
+          "38088c68 WP1 rules core: quarter helpers, range and coverage maps, COVERAGE schemas, previous release"
+        ],
+        "files": [
+          "/home/user/release-content-checks/packages/rules/src/schema.ts",
+          "/home/user/release-content-checks/packages/rules/src/records.ts",
+          "/home/user/release-content-checks/packages/rules/src/content.ts",
+          "/home/user/release-content-checks/packages/rules/src/schema.test.ts",
+          "/home/user/release-content-checks/packages/rules/src/records.test.ts",
+          "/home/user/release-content-checks/packages/rules/src/content.test.ts",
+          "/home/user/release-content-checks/packages/rules/src/coverage.test.ts"
+        ],
+        "tests": "The four WP1 test files: 167 passed, 1 skipped. The skipped one is the mode-000 EACCES case, which is skipped when running as root, as the design says. The whole packages/rules unit suite: 7 files, 319 passed, 1 skipped. The 2,000,000-identity heap test runs in a child `node --expose-gc` process and passes: the map grows the heap by 178 MiB against the 320 MiB bound, with 2 distinct interned values and no record kept (checked with WeakRefs). Full `pnpm typecheck` passed (22 projects). eslint on all 7 files is clean. `pnpm exec tsx tools/screening-capacity/watched.ts` prints exactly the committed watched-paths.txt.",
+        "deviations": [
+          "schema.ts already exported `type CmsQuarter = 'A' | 'B' | 'C' | 'D'`, the letter of a quarter, which clashes with the design's `interface CmsQuarter { year; quarter: 1|2|3|4 }`. That letter type is used only inside schema.ts, and index.ts re-exports it with no consumer anywhere. So I renamed it `CmsQuarterLetter` (the `cmsQuarterOf` return type and the pfs_rvu cast), and the design's interface takes the name `CmsQuarter`. As a result, `type CmsQuarter` re-exported from `@tp/rules` (index.ts) is now the year-and-quarter interface.",
+          "The design types a coverage loss key as `Record<string, string>` (`z.record(z.string(), z.string())`). The code allows null key values: denial_category keys hold `group_code` and `rarc` as nullable (testing.ts has `rarc: null`). So `CoverageLoss.key` is `CoverageKey = Readonly<Record<string, string | null>>` and the loss schema takes `z.string().nullable()` values. Without this, a denial_category loss could never be listed or withdrawn.",
+          "The design gives COVERAGE.md's prose only with a previous release ('from this release's records and release <m>'s'). With no previous release the line reads \"from this release's records; never edit it by hand (...)\". The second bullet is the design's 'Release <n> is the first release: nothing to compare.'",
+          "contentGaps takes `Iterable<RuleRecord>` instead of `readonly RuleRecord[]`. This is a widening that every caller written to the design still satisfies.",
+          "The design says records.ts 'imports zod and ./schema only'. It already imported node:crypto at the base, which is unchanged."
+        ],
+        "notMine": [
+          "packages/rules/src/index.ts: no work package owns it, and it is in pr42-files.txt. The consumers (tools/verify-content/check.ts, tools/release/assemble.ts, apps/worker, tools/content-calendar) import from '@tp/rules', whose only entry is index.ts. package.json exports no records or schema subpath. So WP3, WP4, WP5, WP7 and WP8 cannot reach the new exports until index.ts re-exports them. I did not touch it. It needs these added to its './schema' block: QUARTERLY_RECORD_TYPES, type QuarterlyRecordType, UNDATED_RECORD_TYPES, cmsQuarterWindow, cmsQuarterOfDate, exactCmsQuarter, windowQuarter, insideOneYear, quarterWindowProblem, quarterLabel (type CmsQuarter is already listed). It needs these added to its './records' block: type DateRange, dayAfter, dayBefore, mergeRanges, subtractRanges, CONTENT_IDS, type ContentId, contentOf, type ContentSummary, ContentSummaryBuilder, contentSummaries, type ContentGap, contentGaps, type CoverageMap, coverageMap, SOURCE_DATED_TYPES, type CoverageKey, type CoverageLoss, type CoverageRegression, coverageRegression, LOOK_BACK_YEARS, lookBackCutoff, releaseCoverageSchema, type ReleaseCoverage, type WithdrawnEntry, coverageWithdrawnNoteSchema, type CoverageWithdrawnNote, COVERAGE_FILE, COVERAGE_WITHDRAWN_FILE, renderCoverageFile, readJsonBlock. The orchestrator should assign index.ts to one work package (WP3, the first consumer, or a small WP1b). The watched closure already includes index.ts, so editing it adds no new path. previousReleaseNumber and releaseDirOf are on the existing '@tp/rules/content' subpath and need nothing."
+        ],
+        "notes": "Improvements inside my files:\n(1) coverageMap flattens each identity key with String.prototype.normalize(), falling back to the original text in the never-seen case where normalize would change it. In V8 a concatenated key is a tree of its parts, and the map keeps that tree alive. Measured on Node 24 for 2,000,000 PTP identities: 345 MiB without flattening, 178 MiB with it. The design estimated 300 MiB.\n(2) ContentSummaryBuilder re-merges a content's windows once it holds 4,096 more than at its last merge. This keeps its memory to a few ranges per content even over millions of drafts records, which serves the CLI's file-by-file reading (m8).\n(3) coverageRegression reads nextRecords in a single pass, and only when some open source-dated loss needs its closing record checked.\n(4) subtractRanges uses one moving pointer over the sorted subtrahend, so it runs in O(n+m) after sorting.\n(5) A second m3 test makes content/outgoing a regular file. That gives ENOTDIR, which must also throw, so the 'only ENOENT is swallowed' rule is tested even as root, where the mode-000 test skips.\n(6) The previousReleaseNumber readdir carries the /*turbopackIgnore: true*/ comment, as releaseDirOf and impact's releaseDirectory do.\n(7) contentOf throws a TypeError naming the key, in canonical JSON, when an mppr_rate key has neither hcpcs nor component.\n\nOther details:\n- readJsonBlock's own problem strings, which the design leaves open: 'holds N ```json blocks: it must hold exactly one', 'its ```json block is never closed by a ``` line', 'its ```json block is not valid JSON'. It accepts CRLF line endings.\n- renderCoverageFile writes keys in schema order and sorts key names (canonical order) inside each loss key.\n- windowQuarter also returns null for a reversed window (to before from).\n- quarterWindowProblem answers 'outside' for an open window (to === null), matching I5's message with 'open'. When both apply, it names 'outside' before 'not_effective_day'.\n\nFor integration: WP4 should switch tools/release/impact.ts's previousReleaseNumber and releaseDirectory to call '@tp/rules/content' (design 5.5.1). Until then, impact.ts keeps its own copy, which swallows every readdir error."
+      },
+      "WP2": {
+        "wp": "WP2 importer",
+        "done": true,
+        "commits": [
+          "49ef6a56 WP2 importer: quarterly windows refused outside the stated quarter, ZIP5 YYYYQ check"
+        ],
+        "files": [
+          "/home/user/release-content-checks/packages/rules/src/import.ts",
+          "/home/user/release-content-checks/packages/rules/src/import.test.ts",
+          "/home/user/release-content-checks/packages/rules/src/parsers/locality.ts",
+          "/home/user/release-content-checks/packages/rules/src/parsers/pprrvu.ts",
+          "/home/user/release-content-checks/packages/rules/src/parsers/ncci.ts",
+          "/home/user/release-content-checks/packages/rules/src/parsers/parsers.test.ts"
+        ],
+        "tests": "packages/rules: the full vitest run passed, 7 files, 358 passed and 1 skipped. That includes import.test.ts (52 tests) and parsers/parsers.test.ts (124 tests). tsc --noEmit for packages/rules is clean, and eslint on the six files is clean. Repo-wide pnpm lint:logs and lint:copy pass. `pnpm exec tsx tools/screening-capacity/watched.ts` prints exactly the committed watched-paths.txt. I also ran the tools tests in release/release.test.ts, release/scale.test.ts, verify-content, golden-worksheet and engine-freeze, and they show failures I did not cause. 13 tests in release.test.ts and verify-content/check.test.ts fail with \"COVERAGE.md is missing\", which comes from WP3's uncommitted check.ts in the shared worktree. engine-freeze/rule-tables.db.test.ts fails to start because I gave it no DATABASE_URL. None of these failures involves the importer or the parsers.",
+        "deviations": [
+          "import.test.ts 'applies the effective window options': I1 now refuses its open window (MUE_2026Q4.csv, effective_to null). So its input and its effective_to assertion both change, to the quarter end 2026-12-31. The design asked for the assertions to stay unchanged, but no undated type can take an open window any more.",
+          "import.test.ts, the ZIP9 test's second import (no window): its old assertion was the ZIP9 parser's quarter-mismatch message. I5 now refuses first, so the importer can no longer reach that message. The assertion is now I5's exact message. The parser's own mismatch test in parsers.test.ts still covers that message.",
+          "parsers.test.ts 'reads a short line without the optional positions': Z1 now refuses any line shorter than 80 characters. The test became 'reads a line whose optional positions are blank', using an 80-character line, so rural_indicator reads '' rather than null (plus_four_required is still null). The ZIP5 'a ZIP twice' refusal test gets 80-character lines and keeps its message.",
+          "The GPCI import tests ('writes import notes', 'passes the GPCI floor choice') get a --url that states the quarter (https://example.invalid/files/zip/rvu26a.zip) as well as a Q1 window. GPCI2026.csv and the old default URL state no quarter, so I2 would refuse them. The request() helper now defaults to the 2026-Q1 window that PPRRVU26_JAN.csv and the synthetic ZIP files (20261) state.",
+          "The design (5.2.1) says only that I3's message 'names' an effective date that is not a real date. My reading: such a date always throws I3 in its fixed template. The bad date is quoted as one of the two quarters, for example 'X states two quarters (\"Effective 02/30/2026\", which is no date, and 2026-Q1)'. The other quarter is the file's stated quarter, or 'none' when it states no other. Two different effective days also throw I3, with a and b given as 'effective <date>', because two effective dates can fall in the same quarter."
+        ],
+        "notMine": [],
+        "notes": "Improvements inside my files:\n- readAndParse is now readSource (the name check, the banner refusal and the fixture-bytes refusal) plus parseSource (the parse and the reserved-identifier refusal). The I1 to I8 checks (refuseUndatedWindow) run between them, so a SYNTHETIC fixture is still refused before any window refusal and the existing refusal tests keep their order.\n- The ZIP5 parser works out the window start's quarter with WP1's cmsQuarterOfDate instead of copying locality-plus-four.ts's private quarterOf.\n- statedQuarter is exported and has its own tests: each pattern, the 5-line title limit, a percent-decoded URL segment with its query and fragment dropped, and the ZIP first-non-blank-line read.\n- The new code uses Number.parseInt rather than Number(), because the money lint forbids Number().\n\nRisks and proposals outside my files:\n1. Most patterns in 5.2.1 use \\b, and '_' counts as a word character, so a token glued to an underscore is not read. 'ZIP9_JUL2026', 'OCT2026_MUE.csv' and 'RVU26D_x' state no quarter, while 'MUE-OCT2026.csv' and 'rvu26d.zip' do. I built the patterns exactly as written (they are the contract until the first real download). The later parser PR may want [^A-Za-z0-9] boundaries instead. The README text (WP10) should give examples that read, such as PPRRVU26_OCT, 2026Q4, -OCT2026 and RVU26D.zip.\n2. zipFileQuarter requires an 80-character line. A ZIP5 line of 81 or more characters is therefore refused by Z1 with a message about the 76-80 field, even when that field is valid. The message keeps the exact text the design specifies.\n3. Every ZIP5 line must now be 80 characters, so the parser's branches for lines of 14 or 20 characters or fewer (rural_indicator null, plus-four blank) are dead code. I left them alone so that this frozen file only gains refusals.\n4. For WP4 and the fix round: the tools tests above fail only on WP3's uncommitted COVERAGE.md refusal. The synthetic ZIP5 sources (ZIP5_SYNTHETIC.txt 20261 under a 2026-01-01 start; scale.ts `${year}1` under a 1 January start) still pass Z1 and Z2.\n\nProgress file: /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/build-WP2.md"
+      },
+      "WP3": {
+        "wp": "WP3 checker",
+        "done": true,
+        "commits": [
+          "ae9e4b5e WP3 checker: quarter rules, gaps, COVERAGE.md and the drafts note in verify-content"
+        ],
+        "files": [
+          "/home/user/release-content-checks/tools/verify-content/check.ts",
+          "/home/user/release-content-checks/tools/verify-content/check.test.ts"
+        ],
+        "tests": "tools/verify-content/check.test.ts: 54 of 54 pass. This covers one test or more for each of C1 to C16, D1 and D2, plus the review M2 bypass, the open hand-typed general MPPR rate, the fixture exemption, the 20-item cap, the two-map cache, \"this repository\" and a new loop over every fixtures/synthetic/rules/release-synth-* directory (900001 to 900006 today, and 900007 once WP4 adds it). I also broke the code on purpose (removed the per-record rules) and 5 tests failed, so they do catch a regression. tools/screening-capacity/watched.test.ts passes, and `pnpm exec tsx tools/screening-capacity/watched.ts` prints exactly the committed watched-paths.txt. `tsc --noEmit` passes for @tp/tools, and eslint is clean on both files. Expected failures until WP4 lands: 9 tests in tools/release/release.test.ts and workspace.test.ts fail, and every one is the same C5 problem (\"content/outgoing/1: COVERAGE.md is missing\"), because the assembler does not write COVERAGE.md yet. The golden-worksheet synthetic-release test passes.",
+        "deviations": [
+          "The new helpers from WP1 (records.ts: contentGaps, coverageMap, coverageRegression, the COVERAGE schemas, readJsonBlock, lookBackCutoff and others; schema.ts: QUARTERLY_RECORD_TYPES, UNDATED_RECORD_TYPES, windowQuarter, insideOneYear, quarterLabel) are not exported from @tp/rules's index.ts, which no work package owns. check.ts and check.test.ts therefore import them from '../../packages/rules/src/records' and '../../packages/rules/src/schema', with a comment saying why. Both files are already in the watched closure, so the closure is unchanged, and lint allows the import (tools/brand-copy/scan.ts does the same). Once index.ts exports them, the imports should switch to '@tp/rules'.",
+          "Existing tests had to change because the design's new refusals fire on them. (1) The release() helper in check.test.ts now writes the COVERAGE.md the assembler would write for numbered directories and seals it in the manifest. Without it, C5 would fire on every existing numbered-release test. No assertion changed. (2) The existing test 'refuses the reserved SYNTHETIC carrier, state and ZIP codes in content' holds a whole-year, hand-typed locality_map record in real drafts. Its exact expected list gains the C1 and C15 lines, and its three original lines are unchanged.",
+          "checkContentSet's signature is (root, set, readSource?, options?: { today? }, coverage?: CoverageCache). The cache that keeps at most two coverage maps is a fifth optional argument, alongside the existing readSource pattern. checkContent(root, dirs, options?) passes both through. index.ts is unchanged.",
+          "New problem text the design does not spell out: (a) more than 20 problems of one kind (C4 gaps, C11 losses, C12 listings) end with '<dir>: and N more of the same kind', following the design's 'at most 20 items, then and N more' convention. (b) If previousReleaseNumber throws (content/releases or content/outgoing cannot be listed), C14 reads 'the previous release of <n> cannot be read (content/releases or content/outgoing cannot be listed), ...', because no number m exists to name. (c) D2 has the same fallback: 'names previous release <a>, but content/releases or content/outgoing cannot be listed to find the newest release'. (d) C10's 'what' texts: 'not listed, but the release holds N record(s) of it', 'listed, but the release holds no record of it', 'listed K times', '<field> is <json>, but the records give <json>', and 'listed out of order'.",
+          "Some choices to fail closed. The previous release's map counts as unreadable (C14) when its directory cannot be listed, holds no record file, or has any record-file problem. The current set's map is cached as the next release's previous-release map only when all its records parsed. Coverage checks are skipped for a numbered set whose directory name is not a release number, because the manifest check already reports that."
+        ],
+        "notMine": [
+          "packages/rules/src/index.ts (no owner): it should re-export WP1's new exports from records.ts and schema.ts, so tools can import them from '@tp/rules' instead of by relative path. WP1 reported the same. Not touched."
+        ],
+        "notes": "For WP4 (assembler):\n- Calling checkContentSet(root, set, undefined, { today: request.today }) runs C5 to C14 on the new set.\n- release.test.ts and workspace.test.ts fail only on C5 until the assembler writes COVERAGE.md.\n- The ZIP5/ZIP9 assemble test passed C1 and C3; only C5 failed in it.\n- My check.test.ts helper coverageFile() shows how a COVERAGE.md for a release losing nothing is built: renderCoverageFile with contentSummaries and lookBackCutoff.\n\nFor the integration:\n- After index.ts gains the re-exports, change the two relative imports in check.ts and the one in check.test.ts to '@tp/rules'.\n- The fixture loop test will cover 900007 automatically once it exists.\n\nImprovements made inside my files:\n- The fixture test loops over every release-synth-* directory instead of naming 900002 to 900007 one by one.\n- The previous release's records are read file by file through a generator into coverageMap, so no previous-release record is held (R5).\n- Duplicates are counted when COVERAGE.md lists are matched, so a loss listed twice is reported.\n- Problems are capped at 20 per kind, so a dropped PTP file cannot print millions of lines.\n\nRisk:\n- C4 runs on every set, the real drafts included. It passes at the base, but a future L1 draft with a hole in its dates will now be refused in the drafts. The design intends this."
+      },
+      "WP8": {
+        "wp": "WP8 calendar, CLI, workflow, runbook",
+        "done": true,
+        "commits": [
+          "bb6c4e55 WP8 calendar: the content calendar and contentDue() under @tp/rules/calendar",
+          "42810a45 WP8 content calendar: CLI, workflow and the content-updates runbook"
+        ],
+        "files": [
+          "/home/user/release-content-checks/packages/rules/src/calendar.ts",
+          "/home/user/release-content-checks/packages/rules/src/calendar.test.ts",
+          "/home/user/release-content-checks/packages/rules/package.json",
+          "/home/user/release-content-checks/tools/content-calendar/index.ts",
+          "/home/user/release-content-checks/tools/content-calendar/sources.ts",
+          "/home/user/release-content-checks/tools/content-calendar/fetch.ts",
+          "/home/user/release-content-checks/tools/content-calendar/render.ts",
+          "/home/user/release-content-checks/tools/content-calendar/content-calendar.test.ts",
+          "/home/user/release-content-checks/tools/content-calendar/runbook.test.ts",
+          "/home/user/release-content-checks/tools/package.json",
+          "/home/user/release-content-checks/.github/workflows/content-calendar.yml",
+          "/home/user/release-content-checks/docs/runbooks/content-updates.md"
+        ],
+        "tests": "vitest unit: packages/rules/src/calendar.test.ts 18/18 passed; tools/content-calendar/content-calendar.test.ts 15/15 passed; tools/content-calendar/runbook.test.ts 3/3 passed (36 in all). tsc --noEmit clean for packages/rules and tools. ESLint --max-warnings=0 clean on every WP8 file. lint:logs passed (1002 files). actionlint passed on content-calendar.yml (shellcheck is not installed here, so the run: blocks got no shellcheck pass). tools/screening-capacity/watched.ts prints exactly the committed watched-paths.txt.",
+        "deviations": [
+          "The workflow's setup-node step uses `with: { node-version: 24, cache: pnpm }`, which is what ci.yml's static job actually has. The design says node-version-file, but that is not in ci.yml. The uses: lines (checkout, pnpm/action-setup, setup-node) are copied byte for byte from ci.yml at the base, and checkout has persist-credentials: false.",
+          "therapy_thresholds has `importCommands: []`. therapy_threshold is not an importable type: it is typed by hand with /new-rule-record. The runbook table says so.",
+          "In filled commands, `{url}` becomes the literal `<download address>`, because the calendar cannot know the download address. Two tokens were added beside the design's ones: `{period}`, so file placeholders can name the period, and `{yy}{Q}` as the design describes.",
+          "DueSources gains an optional `nextReleaseNo`. The CLI computes it as the highest number under content/releases or content/outgoing, plus 1, so `pnpm release:assemble <n>` is right when prepared releases exist. Without it the number is releaseNo + 1, or 1.",
+          "Rule 3 also gives not_loaded for a windowed family whose loaded windows all start after today. That case has no loaded-through date, and calling it 'nothing due' would be wrong.",
+          "Entries with `filePattern: null` (conversion factor, code lists, therapy thresholds, the on_change families) are watched for reachability only, with no source_unrecorded finding. With no pattern there is no list of files to record.",
+          "Body detail not set by the design: the 'Loaded through' line reads 'Loaded through: <date>, in the newest published release (<n>)', or 'in the drafts and the prepared releases (no release is published yet)'. This follows review m4's wording. The 6,000-character truncation line points to running the CLI locally."
+        ],
+        "notMine": [],
+        "notes": "Improvements inside my files:\n- A source page that several entries share (the CMS therapy services page has four entries) is fetched once per run.\n- sources.ts checks that each COVERAGE.md names its own directory's release number, and fails closed on a draft that is not valid JSON or fails the schema.\n- The calendar schema also refuses a MM-DD that some years lack (02-29) and a duplicate effective day.\n- The runbook table is generated by an exported `calendarTable()` in render.ts, so a reviewer can rebuild it, and the table includes each entry's source link.\n- sources.ts also exports `readPendingStates(root)` and `contentStates()` for WP7's console. Every path join keeps /*turbopackIgnore: true*/.\n- The drafts spy test (review m8) checks that each file's records are all added before the next file is read, and that the result holds no record object. The unit project has no --expose-gc, so it does not measure the heap.\n\nFor WP10 and integration:\n- tools/brand-copy/scan.ts COPY_FILES should gain packages/rules/src/calendar.ts (design 5.11). I did not run lint:copy on it.\n- workflows.test.ts needs the 'content-calendar.yml': { check: 15, notify: 5 } row and the new assertions. The workflow is written to satisfy them: workflow-level contents: read, a permissions block on notify only, notify has no uses: step and no ${{ inside run:, and on: has exactly schedule, workflow_dispatch, push and pull_request.\n- The runbook links content/sources/README.md's sections \"A correction inside a quarter\" and \"Coverage\", which WP10 writes.\n- The runbook mentions Lane A's content-release runbook but does not link it, because it does not exist yet.\n- I imported nothing from packages/rules/src by relative path outside the package, and packages/rules/src/index.ts is untouched. calendar.ts imports ./records and ./schema inside its own package.\n\nRisk: while no release is published, the daily workflow will open these issues on the real drafts:\n- 'Content calendar: entries not reviewed';\n- 'No rule release is published';\n- several 'not in the drafts' items;\n- source_unrecorded findings for every page with a file pattern.\nThe design intends this, but the founder should expect about 10 to 15 issues on the first run."
+      },
+      "WP5": {
+        "wp": "WP5 worker pricing (design 5.6 run refusal, 5.7 key-scoped reader)",
+        "done": true,
+        "commits": [
+          "8b919f70 WP5 worker pricing: the content refusal and the key-scoped release reader (audit #7, #31)"
+        ],
+        "files": [
+          "/home/user/release-content-checks/apps/worker/src/price/release.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/keyed-release.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/execute.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/impact.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/diff.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/public.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/test-support/pricing-world.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/content.test.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/content.db.test.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/release-source.db.test.ts",
+          "/home/user/release-content-checks/apps/worker/src/price/keyed-release.test.ts",
+          "/home/user/release-content-checks/tools/release/database-runs.ts",
+          "/home/user/release-content-checks/tools/release/dry-run.db.test.ts"
+        ],
+        "tests": "Typecheck: tsc --noEmit is clean in apps/worker and in tools. ESLint (--max-warnings=0) is clean on all 13 files; lint:logs and lint:copy pass. watched.ts prints exactly the committed watched-paths.txt.\nUnit tests: 70/70 passed (the apps/worker/src/price unit files, content.test.ts and keyed-release.test.ts among them, with the fast-check property at 200 runs, plus tools/screening-capacity/watched.test.ts).\nDB tests (PostgreSQL 18 on :5433):\n- every apps/worker/src/price/*.db.test.ts file that was there before (price, price.large, rerun, rerun-window, diff-location, pricing-check, export-pricing) together with release-source.db.test.ts and tools/release/dry-run.db.test.ts: 9 files, 50/50 passed;\n- after later edits, release-source.db.test.ts and content.db.test.ts together: 22/22 passed (10 + 12);\n- dry-run.db.test.ts again after its edit: 2/2 passed.\ncontent.db.test.ts ran against a temporary 900007 that I built locally by copying 900001 and ending its MPPR and MUE files on 2026-09-30, with the manifest rebuilt. I deleted it afterwards; it was never committed. Two hand-made mutants of execute.ts were each caught by one content.db test: throwing the location stop inside the batch loop (review m1), and checking content before the location.",
+        "deviations": [
+          "runReleaseImpact takes `ReleaseSource | IndexedRelease`, not only a ReleaseSource (design 5.7.2 table). The callers I do not own still pass an IndexedRelease: apps/web/src/lib/routes/releases.ts (WP7), and rerun.db.test.ts / rerun-window.db.test.ts (outside my list). An IndexedRelease is wrapped in memoryReleaseSource(), so it follows the same keyed contract. Once WP7 passes storedReleaseSource, the union can be narrowed.",
+          "execute.ts and impact.ts log CONTENT_NOT_LOADED and RELEASE_READ_OUTSIDE_FETCH with the message written out as fixed text instead of the CONTENT_NOT_LOADED_MESSAGE constant. lint:logs requires literal messages. The constant is still exported (execute.ts, public.ts) for infra/lib/jobs.ts's twin, and content.db.test.ts checks the logged text equals it.",
+          "content.db.test.ts: a no_gpci line outside the GPCI windows cannot happen under 900001 or 900007, where every GPCI covers all of 2026. The loud complete-run case therefore uses an unpublished scratch release, 900098: a SQL copy of 900001's records with pfs_gpci ending 2026-09-30, published inside the test and loaded only as the file's last test. A second scratch release, 900094 (unpublished), holds the M2 case: one hand-typed full-year MUE record next to quarterly MUE records widens rule_release_content_span(). Both are scratch numbers in that file's own fresh database, like price.db.test.ts's 900099, not fixture releases.",
+          "release-source.db.test.ts plan test: it uses auto_explain, as the design says. In the bare scratch database the planner seq-scans the tiny rule_record, so before ANALYZE the test inserts filler records under an unpublished scratch release, 900096: about 32,000 records, the same filler shape that packages/db/src/screening-queue.db.test.ts inserts under each of its two releases.",
+          "The commercial 2026-10 month is covered by two tests: the fixed fee the design names, and a percent-of-Medicare contract with its flags off. Neither logs a content alert; the second is the 'none without' case for loud lines under 900007. The 'violation in a later batch than the first location stop' case runs with claimsPerBatch 1 at ZIP 00012. Each of its two payments bills a code the other does not (97530 vs 97116), so whichever claim is priced second asks for a new key, whatever the claim order. The violation is forced by mocking claimsRequestedKeys so that, from a given call on, it leaves out every pfs_rvu key."
+        ],
+        "notMine": [
+          "fixtures/synthetic/rules/release-synth-900007/** (WP4): content.db.test.ts needs it. WP4 has not generated it yet, and tools/release/synthetic.ts is untouched in the worktree. Until WP4 commits 900007, content.db.test.ts fails in beforeAll (loadContentGapRelease).",
+          "packages/rules/src/index.ts: not needed. 42b14150 already exports ContentId, DateRange, dayBefore and mergeRanges. release.ts now imports them from '@tp/rules'; the relative import into packages/rules/src that I had written before the stop is gone."
+        ],
+        "notes": "Improvements inside my files:\n- release-source.db.test.ts's whole-release check now matches only loadRuleRelease's read. The old regex also matched the type scan's LIMIT 1 probe.\n- I removed a leftover unused context from the read-delta test.\n- The oracle shim binds its methods (unbound-method lint).\n- Module mocks use `import type * as`, not `import()` types.\n- dry-run.db.test.ts now proves the dry run reads the run's own release by key and never whole, using a pool wrapper that records statements.\n\nRisks for integration and review:\n- Every price job now makes three extra reads per run: the content spans, the content windows aggregate over LOUD_CONTENT_TYPES, and the type scan once per process. Each batch also makes one keyed statement for its new keys. price.large.db.test (100,000 lines) passed at 49.7 s executed; I did not compare it with base.\n- A location-stopped run now prices to its end before it fails, as design m1 says. No existing location_not_ready test needed changing.\n- WP6/WP7 can import from '@tp/worker/pricing': storedReleaseSource, memoryReleaseSource, typedRelease, ReleaseTypeNotRead, releaseContentSpans, releaseContentWindows, CONTENT_FAILURE_CODES, familiesOf, contentsOf, contentGapsOf, coveredDays, rangesCover, SPAN_CONTENTS and the types, plus CONTENT_NOT_LOADED_MESSAGE.\n- isLoudContentGap and LOUD_CONTENT_TYPES are exported from release.ts but not from public.ts, because only execute.ts uses them.\n- forgetSharedReleases() is a test helper in release.ts.\n\nOutside my scope: once WP7 switches apps/web/src/lib/routes/releases.ts to storedReleaseSource, and rerun*.db tests pass a source, runReleaseImpact's parameter can be narrowed to ReleaseSource as designed."
+      },
+      "WP4": {
+        "wp": "WP4 assembler and 900007",
+        "done": true,
+        "commits": [
+          "5e7f501f WP4 assembler and 900007: coverage, gaps, COVERAGE.md and the content-gap fixture release"
+        ],
+        "files": [
+          "/home/user/release-content-checks/tools/release/assemble.ts",
+          "/home/user/release-content-checks/tools/release/impact.ts",
+          "/home/user/release-content-checks/tools/release/synthetic.ts",
+          "/home/user/release-content-checks/tools/release/release.test.ts",
+          "/home/user/release-content-checks/tools/release/workspace.test.ts",
+          "/home/user/release-content-checks/fixtures/synthetic/rules/release-synth-900007/ (26 files: 900001's files with the MPPR and MUE files re-parsed, plus RELEASE.md and MANIFEST.json)"
+        ],
+        "tests": "tools: release/release.test.ts and release/workspace.test.ts 48/48 passed (9 new coverage tests, a new 900007 test, and 900007 added to the render-equality pair test). golden-worksheet/synthetic-release.test.ts, release/scale.test.ts and verify-content/check.test.ts 66/66 passed. checkContent finds no problems in 900001 to 900007 or in the repository. Running `tsx tools/release/synthetic.ts` rewrote 900001, 900004, 900005, 900006 and ZIP9_SYNTHETIC.txt byte for byte (git status shows no change), and the 900002/900003 render test and the 900100 scale tests pass. Handover checks: `tsc --noEmit` in tools passed; eslint --max-warnings=0 on my five files passed; lint:logs, lint:copy and check:fixtures passed; `pnpm exec tsx tools/screening-capacity/watched.ts` prints exactly the committed watched-paths.txt.",
+        "deviations": [
+          "RELEASE.md coverage section for a first release: the design gives only the heading `## Coverage against release <m>`, but its `previous: number | null` type allows a first release. With previous null, it renders `## Coverage` followed by 'This is the first release: nothing to compare. Details in COVERAGE.md.' The counts line leaves out the cutoff date, because the design's ReleaseNotesCoverage type does not carry it. COVERAGE.md carries it.",
+          "AssembleResult.files order: ['RELEASE.md', 'COVERAGE.md', ...copied, 'MANIFEST.json']. The design names no position.",
+          "A6, A4 and the note's read refusal list at most 20 lines and then '  and N more'. assemble.ts:300 slices to 20 with no count, and design 5 says 'then and N more'. A7 lists every unmatched entry, one full sentence each.",
+          "The assembler also parses content/drafts/COVERAGE-WITHDRAWN.md on its own and refuses one that does not read ('release n not assembled: content/drafts/COVERAGE-WITHDRAWN.md does not read:' plus the problems). The drafts check (D1) normally catches this first; this keeps the assembler safe on its own.",
+          "A5 is reachable only when the release being assembled is below the newest release, because the drafts check's D2 refuses every other stale note first. The A5 test uses releases 1 and 3, with 2 assembled and a note naming 3.",
+          "900007's MPPR and MUE records are parsed with 900001's BUILT_ON (2026-10-15), so each record differs from 900001's only in effective_to, as the 'only those two files' windows' test requires. The new date 2026-10-26 appears only in RELEASE.md's summary."
+        ],
+        "notMine": [],
+        "notes": "On resuming, the progress file did not exist, and an untracked release-synth-900007 directory was already there (probably a placeholder for WP5's content.db.test.ts, with RELEASE.md copied from 900001). I deleted it and regenerated it with the repository's generator. Its record files and their hashes are byte-identical to the placeholder's (MPPR 0c7ef0df..., MUE d6562e94...), so WP5's tests see the same records. Only RELEASE.md (title 'SYNTHETIC content-gap release 900007') and MANIFEST.json changed.\n\n900007 is free: I checked with `git grep -E '900007|900_007'` on every co-001/* head that `git ls-remote` returned. db-function-diffs (20898fb6) was fetched by SHA first.\n\nImprovements inside my files:\n- assemble.ts now uses the shared `dayAfter` from @tp/rules instead of its own copy.\n- impact.ts is now a thin delegate, so the rule that only ENOENT counts as 'no release' (review m3) applies to the assembler, dry-run and rollback paths too.\n- The existing dry-run test 'lists what changed against the previous release' now loses coverage, which R3 refuses. It now writes a signed withdrawal note for its two losses, and its assertions are unchanged.\n\nFor the fix round and the integration:\n- Design 6.3 asks check.test.ts (WP3) for \"passes the synthetic fixture release ... the same for 900002 to 900007\". check.test.ts checks 900001 only. I confirmed 900002 to 900007 pass checkContent, and release.test.ts asserts it for 900007, but WP3's test does not cover them.\n- apps/web/src/lib/routes/reruns-routes.db.test.ts prepares a first release through prepareRuleReleaseAction with today = services.now(). It should still pass, since a first release has no comparison, but I did not run it. It belongs in the full test:db run.\n- R5: impactLines/recordChangeLines (existing code) still reads the previous release's records in full for diffRecords. My R3 path reads them into a coverage map and drops them at once. Making the diff lean as well would be its own change.\n- Possible tidy-up: check.ts and assemble.ts each define lossText/lossIdentity/compareLosses. Exporting one copy from @tp/rules (records.ts) would remove the duplication. That is WP1/WP3's files, so I left it.\n\nProgress file: /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/build-WP4.md"
+      },
+      "WP6": {
+        "wp": "WP6 monitor, triage, report",
+        "done": true,
+        "commits": [
+          "c09bb270 WP6 monitor, triage, report: months waiting on Medicare content, the CONTENT_NOT_LOADED hold, typed release reads (audit #7, #31)"
+        ],
+        "files": [
+          "/home/user/release-content-checks/apps/worker/src/monitor/plan.ts",
+          "/home/user/release-content-checks/apps/worker/src/monitor/job.ts",
+          "/home/user/release-content-checks/apps/worker/src/monitor/monitor.db.test.ts",
+          "/home/user/release-content-checks/apps/worker/src/monitor/job.test.ts",
+          "/home/user/release-content-checks/apps/worker/src/triage/execute.ts",
+          "/home/user/release-content-checks/apps/worker/src/triage/triage.db.test.ts",
+          "/home/user/release-content-checks/apps/worker/src/report/content.ts",
+          "/home/user/release-content-checks/apps/worker/src/report/html.ts",
+          "/home/user/release-content-checks/apps/worker/src/report/report.test.ts",
+          "/home/user/release-content-checks/packages/triage/src/actionable.ts",
+          "/home/user/release-content-checks/packages/triage/src/behavior.ts",
+          "/home/user/release-content-checks/packages/triage/src/index.ts",
+          "/home/user/release-content-checks/packages/triage/src/actionable.test.ts",
+          "/home/user/release-content-checks/packages/triage/src/index.test.ts"
+        ],
+        "tests": "Unit tests: 168 of 168 passed (vitest --project unit over apps/worker/src/{triage,monitor,report} and packages/triage). That covers the new actionable test and the property test's new boolean, the index test (CONTENT_NOT_LOADED comes right after RELEASE_WITHDRAWN, and BEHAVIOR_RECORD_TYPES is exactly what releaseReferences() asks for), job.test.ts's WAITING_ON_CONTENT case (7 of 7 in that file), and report.test.ts's words test. Database tests on PostgreSQL 18 (DATABASE_URL=postgres://postgres:test@localhost:5433/postgres): monitor.db.test.ts passed 19 of 19, 4 of them new for RCC-05. The new cases are: the month fails, a second trigger creates no run, one WAITING_ON_CONTENT and one CONTENT_NOT_LOADED log line; a newer line plans the month again; a contract version signed off after the run plans it again, then a remap to a fixed fee with the flags off prices it; a newer release 900097 that loads no more leaves it waiting (coversMore is false, and true against 900001), withdrawing 900097 still waits, and withdrawing 900007 puts 900001 in force and the month completes. apps/worker/src/report/ and apps/worker/src/triage/ db tests passed 43 of 43, including the new triage.db case: a line priced before the refusal existed, under 900007, is held as CONTENT_NOT_LOADED with no case opened, and a September line is not held. Handover: typecheck passes for @tp/worker and @tp/triage; eslint --max-warnings=0 is clean on all 14 files; lint:logs and lint:copy pass; `pnpm exec tsx tools/screening-capacity/watched.ts` prints exactly the committed watched-paths.txt.",
+        "deviations": [
+          "TriageFacts.contentNotLoaded is optional (`readonly contentNotLoaded?: boolean`; absent means false), not required as design 5.6.7 says. Two files I do not own build CandidateLine/TriageFacts objects without it, packages/triage/src/patterns.test.ts and tools/golden-worksheet/triage.golden.test.ts, so a required field would break their typecheck. Both real callers set it explicitly: apps/worker/src/triage/execute.ts candidateLines and apps/worker/src/report/content.ts gatherReport. Recommended for the fix round: make the field required and add `contentNotLoaded: false` to those two test fixtures. That is one line each, and no golden output changes.",
+          "coversMore takes an optional fifth parameter, `spans`, which reads a release's spans and by default calls releaseContentSpans. planMonitoring passes a per-plan cache through it, which is how the design's rule 'spans are read once per release per plan' holds. The four parameters the design names are unchanged.",
+          "monitor.db.test.ts: the design names one withdrawal, of 900007, which reinstates 900001. 900097 has a higher number, so it is withdrawn first: the in-force release goes back to 900007, the run's own, and the month still waits (asserted). Then 900007 is withdrawn. The new RCC-05 block runs before PRC-23, so PRC-23 stays the file's last block and still runs under 900001.",
+          "triage.db.test.ts: the run refusal means no pricing run can produce such a line, so the 'line priced before 900007's gap' is made with a vi.mock of '../price/release'. While the price job runs, releaseContentSpans returns open spans, as the code did before the refusal; triage then reads the real spans. The test is last in the file because it puts 900007 in force."
+        ],
+        "notMine": [
+          "packages/triage/src/index.ts: I added BEHAVIOR_RECORD_TYPES to its existing export of './behavior'. That one-name addition was necessary because triage/execute.ts and report/content.ts import from '@tp/triage'. It is committed with my files. It is not a #42 file and not on WP6's list.",
+          "packages/triage/src/patterns.test.ts and tools/golden-worksheet/triage.golden.test.ts: not touched. They are why contentNotLoaded is optional (see deviations).",
+          "apps/worker/src/price/public.ts (WP5's file): not touched. WP7's Coverage card needs the monitor's terms predicate 'shared as one SQL fragment exported from @tp/worker/pricing' (5.6.4). I exported it as termsUnchangedSince(practice, createdAt) from apps/worker/src/monitor/plan.ts. public.ts should re-export it, a one-line addition, by WP5 or WP7 in the fix round."
+        ],
+        "notes": "I started from scratch: there was no progress file and no WP6 change in the worktree. The only relative imports into packages/rules are subtractRanges, now taken from '@tp/rules', and the price module's own exports.\n\nImprovements made inside my files:\n(1) plan.ts: the `newest` and `last_run` CTEs now live in one constant, LAST_MONTH_RUN, shared by waitingOnLocation and contentFailure. waitingOnLocation's SQL is unchanged.\n(2) The terms predicate is one exported function, termsUnchangedSince(), so the monitor and Coverage share one SQL fragment.\n(3) html.ts REASON_TEXT now has a `satisfies` clause covering every NotActionableReason except WRITTEN_OFF, plus its two report-only reasons. A new reason without words now fails typecheck, and report.test.ts checks that no reason falls back to its code.\n(4) triage/execute.ts: each release is read once (typed records and spans together), and each trace is parsed once per line instead of twice.\n(5) report/content.ts parses each trace once, used for both the hold and the behavior.\n(6) index.test.ts checks that releaseReferences() asks a release for exactly BEHAVIOR_RECORD_TYPES, so the typed read can never drop a type it needs.\n(7) Module comments: plan.ts (step 5), job.ts (log levels per wait), triage/execute.ts (the hold and the typed read) and actionable.ts (step 5).\n\nRisks for integration:\n- The monitor's WAITING_ON_CONTENT line logs at warn level and uses only release_no, error_code and record_count; lint:logs passes.\n- In monitor.db.test.ts the RCC-05 block loads 900007 and withdraws 900097 and 900007 permanently. A later block added between RCC-05 and PRC-23 that expects 900007 in force would break.\n- triage.db.test.ts's mock spreads the actual '../price/release' module and replaces only releaseContentSpans while a flag is set. Every other test in that file was unaffected: 20 of 20 pass.\n- Uncommitted files of other packages are in the worktree (tools/release/*, fixtures 900007 and others). I did not touch or commit them."
+      },
+      "WP9": {
+        "wp": "WP9 weekly capacity and infra",
+        "done": true,
+        "commits": [
+          "386f7df8 WP9 weekly capacity and infra: the real-size harness under release 900110, heap limits, the content alert"
+        ],
+        "files": [
+          "/home/user/release-content-checks/tools/release-capacity/run.ts",
+          "/home/user/release-content-checks/tools/release-capacity/scenario.ts",
+          "/home/user/release-content-checks/tools/release-capacity/checks.ts",
+          "/home/user/release-content-checks/tools/release-capacity/load.ts",
+          "/home/user/release-content-checks/tools/release-capacity/scenario.test.ts",
+          "/home/user/release-content-checks/tools/release-capacity/checks.test.ts",
+          "/home/user/release-content-checks/.github/workflows/release-capacity.yml",
+          "/home/user/release-content-checks/tools/screening-capacity/containers.ts",
+          "/home/user/release-content-checks/tools/screening-capacity/env.ts",
+          "/home/user/release-content-checks/packages/synth/src/release/scale.ts",
+          "/home/user/release-content-checks/packages/synth/src/release/scale.test.ts",
+          "/home/user/release-content-checks/tools/release/scale.ts",
+          "/home/user/release-content-checks/tools/release/scale.test.ts",
+          "/home/user/release-content-checks/infra/lib/heap.ts",
+          "/home/user/release-content-checks/infra/lib/jobs.ts",
+          "/home/user/release-content-checks/infra/test/heap.test.ts",
+          "/home/user/release-content-checks/infra/test/content-alert.test.ts"
+        ],
+        "tests": "Unit tests: 15 files, 426 tests passed (tools/release-capacity checks and scenario, all of tools/screening-capacity including watched.test.ts, tools/release/scale.test.ts with 8, packages/synth/src/release/scale.test.ts with 15, infra heap, content-alert, monitoring and compute). Year-mode scale output is byte-identical to the base generator for SMALL_SCALE_RELEASE_SHAPE and SCALE_RELEASE_SHAPE: the source files, scaleRecordCounts and scaleZip9Size all match, checked against 6ddd587's scale.ts. tsc --noEmit is clean for tools, infra and packages/synth. eslint is clean on all my files and lint:logs passes. actionlint passes on release-capacity.yml. `pnpm exec tsx tools/screening-capacity/watched.ts` prints exactly the committed watched-paths.txt. Smoke run on PG18 (port 5433): a scratch script, not committed, seeded the practices on a migrated scratch database with the small quarterly 900110 loaded (11,247 records) through scenario.ts: specialist and split, practices, 2,000 bulk lines, contract and mapping, a staged 835, then createRun. It ran the price job in-process: the run completed with 2,000 of 2,000 lines priced, no error_code lines, and requestReport worked. The smoke found one bug, now fixed: the support_grant four-hour CHECK. The full harness was not run: Docker images were not built, and the fix round runs it once.",
+        "deviations": [
+          "workerEnv(...) is named workerEnvironment(...), to match the module's platformEnvironment, screeningEnvironment and webEnvironment.",
+          "The worker environment uses the worker's own login (logins.worker) for DATABASE_URL, not the app login the design names: production's worker task uses database.workerSecret (infra/lib/constructs/compute.ts:265-267, docs/adr/0061). The code is the fact here. QUEUE_DATABASE_URL is the queue login, and the module also gets DOCUMENTS_DIR, the local key provider and the outbox.",
+          "New file tools/release-capacity/load.ts, inside my glob: tools/screening-capacity/load.ts fixes the loader option at SCALE_RELEASE_NUMBER (900100), and the loader refuses a manifest naming another number. load.ts is not my file, so I added a loader that takes the release number.",
+          "The checker-rule assertions on the release's records (C1, C2, C3 and C16) live in tools/release/scale.test.ts, not in packages/synth/src/release/scale.test.ts. @tp/synth has no dependency on @tp/rules, package.json may not change, and records only exist after the parsers run. The synth test covers the per-quarter files, the ZIP YYYYQ fields, the Q2 correction split and that 900100 is unchanged.",
+          "memory.peak cannot be reset before the concurrent phase, because Runtime has no cgroup write and containers.ts may gain only the worker name and command. The phase peak is therefore the maximum of memory.current sampled every second, which is the design's fallback. memory.peak at the end covers the whole run.",
+          "Jobs are queued through the web's own producer, PgBossQueue (apps/web/src/lib/uploads/queue.ts, imported by relative path). tools has no pg-boss dependency and package.json is frozen. The process exits on an unref'd timer after the report is written, because the producer has no stop.",
+          "C's 835s are staged the way PricingWorld.stage() stages them: the document row in the billing manager's scope, the bytes sealed in the local store with LocalSealedBytes, then the owner marks the row hashed, clean and scanned, as intake records it. They do not go through a browser upload. The report row is inserted with the report action's exact statement in the billing manager's scope. Runs go through createPricingRun, contracts through @tp/contracts' services, and the location through practice_set_location().",
+          "Period: A's and B's runs cover 2026-01-01 to 2026-12-31, because the design wants A's dates spread over Q1 to Q4. A run period is any range (create.ts).",
+          "The workflow does not cache release 900110; it rebuilds it each run. At about twice 900100's size it would crowd screening-capacity's caches out of the repository's 10 GB. The worker image reads screening-capacity's layer cache (cache-from) and writes none.",
+          "The worker runs on the CPU layout's web slot (layout.web, half a vCPU), because no web container runs in this test. Postgres and the harness use the screening layout's CPUs. runnerTooSmall uses the screening's (stricter) requirement."
+        ],
+        "notMine": [
+          "Imported without editing (read-only use): apps/web/src/lib/uploads/queue.ts (PgBossQueue) and apps/worker/src/price/test-support/pricing-world.ts (the stage() pattern, read only). Neither was changed. packages/rules/src/index.ts was not changed: every rules helper I use (QUARTERLY_RECORD_TYPES, windowQuarter, insideOneYear, contentOf, zipFileQuarter, findOverlaps, contentGaps) is already exported from '@tp/rules'."
+        ],
+        "notes": "Improvements inside my files:\n- `run.ts --small` gives a smoke size: the quarterly shape at the unit-test size plus SMALL_SIZE practices.\n- `scale.ts --shape quarterly --small` also works.\n- SCALE_SHAPES and scaleReleaseDirName() replace hard-coded 900100 paths.\n- infra/test/content-alert.test.ts checks that every worker log call of CONTENT_NOT_LOADED_MESSAGE carries error_code CONTENT_NOT_LOADED and that no other copy of the text exists. That is stronger than the engine-error pair's check.\n- scenario.test.ts asserts that containers.ts and env.ts never import infra/lib/heap (B1).\n\nRisks for integration and review:\n- The full harness has not run with Docker. The PG18 smoke covered seeding, contract, run creation, keyed pricing under small 900110 and the report row. It did not cover the container start, the cgroup reads, pg-boss job states (pgboss.job columns state, started_on and completed_on are assumed from pg-boss 12), the parse_835 of C's documents in the container, or the Postgres restart in the windows step.\n- The audit report decrypts claim.payer_claim_control_number, so the bulk-inserted claims seal it, and the patient control number, under the practice key.\n- B's and C's parse jobs queue `monitor`. C's plans are unmapped, so no extra runs are expected.\n- WP10 adds the CI-10 row ('release-capacity.yml': { capacity: 180, notify: 5 }), the PINNED entry and the notify assertions in tools/test/workflows.test.ts. The workflow already meets them: contents read, only notify has issues: write, no checkout or uses in notify, no ${{ }} inside run blocks, ubuntu-24.04, concurrency group starting with release-capacity, no continue-on-error, uses lines copied from ci.yml's pins.\n- Prettier --check flags these files, but it flags base files such as infra/lib/jobs.ts too. The repository has no prettier config, so this is not a gate.\n\nOutside scope: tools/screening-capacity/load.ts could take the release number as an argument, so the later PR's move to 900110 can reuse it. That file is not in this package."
+      },
+      "WP7": {
+        "wp": "WP7 web",
+        "done": true,
+        "commits": [
+          "d0444d67 WP7 web: months waiting on Medicare content, fee-schedule periods not loaded, loaded-through dates and Content due (audit #7, #59)"
+        ],
+        "files": [
+          "/home/user/release-content-checks/apps/web/src/components/pricing/display.tsx",
+          "/home/user/release-content-checks/apps/web/src/components/pricing/content.tsx",
+          "/home/user/release-content-checks/apps/web/src/lib/pricing/content.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/pricing/content.db.test.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/coverage/in-effect.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/routes/coverage.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/routes/releases.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/routes/rule-releases.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/routes/console-routes.db.test.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/releases/content-through.ts",
+          "/home/user/release-content-checks/apps/web/src/lib/releases/content-through.db.test.ts",
+          "/home/user/release-content-checks/apps/web/src/app/p/[practiceId]/coverage/page.tsx",
+          "/home/user/release-content-checks/apps/web/src/app/p/[practiceId]/releases/page.tsx",
+          "/home/user/release-content-checks/apps/web/src/app/console/rule-releases/page.tsx"
+        ],
+        "tests": "Run under flock, one at a time. tsc --noEmit for apps/web: clean. ESLint (--max-warnings=0) on all 14 files: clean. lint:copy: 494 files, pass. watched.ts output is identical to the committed watched-paths.txt. lint:logs: my files are clean; its only 5 violations are in WP9's uncommitted tools/release-capacity/.smoke.tmp.ts. DB tests (PostgreSQL 18 on :5433): lib/pricing/content.db.test.ts 9/9, lib/releases/content-through.db.test.ts 8/8, lib/routes/console-routes.db.test.ts 25/25 (2 new). Re-run after a formatting repair: the 3 files 42/42; the 12 route-tests shards + snapshot, coverage-in-effect, coverage-formats, reruns-routes and pricing-routes 17 files 6890/6890. Web unit project: 54 files, 638/638.",
+        "deviations": [
+          "The design says the 'terms changed' check (5.6.4) is one SQL fragment exported from @tp/worker/pricing. In the code, WP6 put termsUnchangedSince() and coversMore() in apps/worker/src/monitor/plan.ts, and price/public.ts (WP5's file) does not export them. I did not edit public.ts. lib/pricing/content.ts has private copies of both, each commented as a copy of the monitor's. The db tests check the copies against the monitor's rules: the terms_changed, repricing and waiting cases. The fix is to add `export { coversMore, termsUnchangedSince } from '../monitor/plan'` to public.ts and have content.ts import them; coversMore already accepts a spans function, so the web's cached contentSpansOf can be passed to it.",
+          "monthsWaitingOnContent also requires the month to be uncovered (no queued, running or complete run covers its newest line), as monthsWaitingOnLocation and the monitor do. The design only says 'newest exact-month run failed a content code, cut-off at or after the newest line'.",
+          "If the practice's terms changed and the release in force also loads more of the month, the month reads terms_changed, because the monitor checks terms first.",
+          "ContentWaitMonth has a releaseInForce field, so the repricing row can say 'being priced again under release <n>'.",
+          "ContentDue on the console has an extra `problems` field. readPendingStates' read problems are shown in a pre on the page, and the pending state is still used. Before, an unreadable draft would have shown nothing.",
+          "The console's family table lists every calendar family, the on_change ones included, since the 'calendar entry not reviewed' finding applies to all entries. The Releases page leaves the on_change families out, as 5.8.6 says. The Releases page also skips families with no date to show (not loaded, or loaded only for future days), because 5.11 only has the 'loaded through' and 'in force, no end date' wordings.",
+          "Status cells: an item can have more than one stage (for example 'ends within 45 days' plus 'calendar entry not reviewed'), so the cell joins them with '; '. A family whose calendar entry is unreviewed is marked from CONTENT_CALENDAR's review === null, because the aggregated calendar_unreviewed item has family null. Open families show 'in force, no end date' in the console's Loaded through column, reusing the Releases page wording.",
+          "The 'What this release covers' card shows only when the note shown is the release in force, since its dates are that release's (5.8.6: 'for the release in force').",
+          "Coverage's fee-schedule sentence says '1 line (... billed) is unpriced' when the count is one; 5.11's wording is plural only.",
+          "feeSchedulePeriodsNotLoaded binds the windows as $2, not the design's $3; it has only two parameters."
+        ],
+        "notMine": [
+          "apps/worker/src/price/public.ts (WP5): needs termsUnchangedSince and coversMore re-exported from ../monitor/plan so the web can use the monitor's own fragment and predicate (see deviations). Not edited.",
+          "packages/rules/src/index.ts: no addition was needed. Everything was imported from '@tp/rules', '@tp/rules/calendar', '@tp/tools/content-calendar' and '@tp/worker/pricing', with no relative imports into other packages."
+        ],
+        "notes": "- **Interrupted earlier run:** no progress file existed and the worktree held none of WP7's changes, so WP7 started fresh. The progress file is at /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/build-WP7.md.\n- **Formatting slip, fixed before the commit:** the repository has no prettier config. A plain `pnpm exec prettier --write` reformatted my files to prettier's defaults (double quotes, 80 columns). I rebuilt each existing file from HEAD plus my edits, re-applied the new code in the repository's style (single quotes, wide lines), and re-ran every check after the repair. If CI ever adds a prettier check, it needs a config file first: the code is close to `--single-quote --print-width 200 --trailing-comma all` but not exactly that.\n\n**Improvements inside my files (for the PR description):**\n- The release cache in content-through.ts keeps the read in progress, so two requests at once start one read, and it drops a failed read so the next request tries again.\n- content-through.ts has `windowsInForce()`, used by Coverage, the Releases page and the console, so the windows are computed once.\n- The console page shows the checkout's read problems instead of silently judging less.\n- `contentDue` is given the console's `nextRelease`, so the commands name the right `pnpm release:assemble <n>`.\n- The Releases page's impact check now reads the release by key (`storedReleaseSource`) instead of loading the whole release.\n- The db tests check that another practice's scope sees nothing, for both the waiting months and the fee-schedule periods.\n\n**Proposals outside my scope:**\n- Re-export `termsUnchangedSince` and `coversMore` from price/public.ts (WP5/WP6), then drop the copies in content.ts.\n- WP9's tools/release-capacity/.smoke.tmp.ts fails lint:logs; it should be removed or kept out of the commit.\n- `familiesLoadedThrough` lets the calendar be passed in, so a later test can drive the console with a calendar that has been reviewed.\n\n**Risks for integration:**\n- RCC-08's e2e should assert only 900001's MUE date (2026-12-31) on the Releases page; the card's li carries `data-family` and `data-through` for that.\n- The console page now reads the drafts on every view when a checkout is configured, through readPendingStates, as 5.8.5 asks. That costs as much as readWorkspace already does.\n- The waiting-month SQL computes the terms check per month inside a LATERAL join; with only a few months per practice that is cheap."
+      },
+      "WP10": {
+        "wp": "WP10 records and docs",
+        "done": true,
+        "commits": [
+          "78577f3b WP10 records: test matrix RCC-01 to RCC-08, the synth registry and their fixtures",
+          "f8b9abdc WP10 checks: the content-calendar and release-capacity workflows' tests, and the copy lint's two new files",
+          "06f01d3b WP10 docs: ADR 0071, the #30 exception in reconciliation-001, the content READMEs, PRD and the CI runbook"
+        ],
+        "files": [
+          "/home/user/release-content-checks/docs/product/test-matrix.md",
+          "/home/user/release-content-checks/packages/synth/src/cases/matrix.ts",
+          "/home/user/release-content-checks/packages/synth/src/cases/registry.ts",
+          "/home/user/release-content-checks/packages/synth/src/cases/common.ts",
+          "/home/user/release-content-checks/packages/synth/src/expected/types.ts",
+          "/home/user/release-content-checks/fixtures/synthetic/RCC-01/expected.json ... RCC-08/expected.json (8 files, generated by pnpm synth --all)",
+          "/home/user/release-content-checks/tools/test/workflows.test.ts",
+          "/home/user/release-content-checks/tools/brand-copy/scan.ts",
+          "/home/user/release-content-checks/docs/adr/0071-check-a-releases-coverage-against-the-last-refuse-months-the-content-does-not-cover-read-only-the-keys-a-run-prices-and-keep-a-content-calendar.md",
+          "/home/user/release-content-checks/docs/product/reconciliation-001.md",
+          "/home/user/release-content-checks/docs/product/PRD.md",
+          "/home/user/release-content-checks/docs/runbooks/ci.md",
+          "/home/user/release-content-checks/content/sources/README.md",
+          "/home/user/release-content-checks/content/drafts/README.md",
+          "/home/user/release-content-checks/content/outgoing/README.md"
+        ],
+        "tests": "All run under the heavy lock. packages/synth/src/fixtures.test.ts: 23 passed. tools/test/workflows.test.ts: 80 passed, 6 of them new (content-calendar's triggers, token and concurrency; the check job only reads; notify alone writes issues, once per title; release-capacity's weekly run with 900110 built outside the repository; its notify job; neither is a required check). tools/brand-copy/scan.test.ts: 44 passed. pnpm lint:copy is clean (496 files). placeholders, required-checks, codeowners and compliance controls tests: 37 passed. pnpm verify-content passes. pnpm synth --all wrote only the 8 RCC fixtures (200 cases, 475 unchanged, 0 removed). tsc --noEmit is clean for packages/synth and for tools. eslint --max-warnings=0 is clean on my 6 .ts files. pnpm exec tsx tools/screening-capacity/watched.ts prints exactly the committed watched-paths.txt.",
+        "deviations": [
+          "Where the design's line references disagreed with the code at the base, I followed the code. content/sources/README.md's effective-window paragraph is at :81-87, not :79-87. content/outgoing/README.md has 36 lines and its layout block is at :10-15, not :77-82. The rewrite keeps the design's text.",
+          "reconciliation-001's exception bullet lists two importer refusals that design 4.5's text leaves out but WP2 built: a quarterly window not given (I4), and a --year other than the stated quarter's (I6). It also lists the ZIP5 parser's own refusals (Z1, Z2) and says tools/verify-content/index.ts is unchanged. The bullet otherwise follows 4.5's structure and wording.",
+          "The proposed-PR paragraph says '*added 2026-10-26*', and ADR 0071's Date is 2026-10-26, where the design says '<merge date>'. A placeholder should not be committed; the merger changes the date if the PR merges on another day.",
+          "The proposed-PR paragraph also records Q1 and Q2 as taken under the co-founder's ruling of 2026-10-26 ~00:20 UTC, and points to the #30 exception, as the task asked. Design 4.5's text has neither.",
+          "PRD 9: besides the locality_map row the design names, the pfs_gpci row now reads 'Quarterly, in each quarter's relative value zip' instead of 'Yearly'. 'Yearly' contradicts the design's decision that GPCI is quarterly (2.2 R1, 10.3).",
+          "ADR 0071 cites the retention rule as PRD 19 ('contract term plus six years'), because that is where PRD.md holds it (section 19, :814). The design cites only PRD.md:813 and lists PRD sections 9, 11, 12, 16 and 18; the ADR also names 19's runbooks.",
+          "content/sources/README.md says ZIP5 and ZIP9 state their quarter at 76-80 of their lines, and PPRRVU, GPCI and MUE in their title lines, name or download address. 4.4's text says only 'the file states'. import.test.ts shows a ZIP5 file name never states a quarter, so the README says where each type is read."
+        ],
+        "notMine": [
+          "None edited. I read the other packages' files (records.ts, import.ts, check.ts, assemble.ts, release.ts, execute.ts, heap.ts, run.ts, both workflows, content-updates.md and the commits) only so the records match what was built.",
+          "tools/brand-copy/scan.test.ts is not WP10's. I made a change to it, then put it back from HEAD unchanged; the proposed edit is in notes."
+        ],
+        "notes": "Improvements inside my files:\n- workflows.test.ts: its module comment and PINNED's comment now name both new workflows, and the pinned-SHA describe covers them.\n- ci.md: the 'A private repository' section gives Q2's minute budget (about 1,250 a month, inside Team's 3,000).\n- content/sources/README.md: release 1's step 5 says the assembler writes COVERAGE.md. It also drops the old advice to re-import the previous quarter with --effective-to, which the new rules contradict.\n- content/drafts/README.md: the Files table gains COVERAGE-WITHDRAWN.md.\n- ADR 0071's alternatives table explains why COVERAGE.md is .md and not .json: readRelease, the loader and publish-content.sh read every .json in a release.\n\nProposals outside my files:\n1. tools/brand-copy/scan.test.ts should list apps/worker/src/price/release.ts and packages/rules/src/calendar.ts in its fixture's read list and its real-tree list. Today it passes only because the fixture never writes those files, so the new COPY_FILES entries are not pinned by a test. This is a three-line, tests-only change. I reverted it because the file is not WP10's.\n2. ADR 0008's alternatives row (:92) could carry an 'amended by 0071' pointer; ADR 0071 states the amendment itself.\n3. LANES.md's claim row has 900007, RCC 14 and the Lane A handover, but not the synthetic release number 900110 that design 1 says the builder adds. It is an ops-branch record, outside the PR.\n4. content-calendar.yml's setup-node uses `node-version: 24`, where design 5.8.4 says 'node-version-file'. That matches ci.yml's actual lines, so it is consistent, not a defect.\n\nRisks for integration and review:\n- test-matrix.md, reconciliation-001.md, registry.ts and matrix.ts are rule-6 shared documents with #42. Whichever PR merges second keeps both sides; the RCC section and rows go after CI-17.\n- workflows.test.ts is shared by hand with ci-deps. Its CI-10 table now has the content-calendar.yml and release-capacity.yml rows. If ci-deps merges first and changes SHAs, PINNED and the two workflows' uses: lines move together.\n- The proposed-PR paragraph's and ADR 0071's date (2026-10-26) should be checked at merge."
+      }
+    },
+    "integ": {
+      "wp": "integration",
+      "done": true,
+      "commits": [
+        "9ca39962 Integration: the mutation changes job accounts for the rules reader's numbered-release lookups",
+        "df546308 Integration: the web's waiting months use the monitor's terms fragment and coversMore",
+        "45fe117f Integration: the content calendar's fetch comment names no hex-like token"
+      ],
+      "files": [
+        "/home/user/release-content-checks/tools/stryker/affected.ts",
+        "/home/user/release-content-checks/tools/stryker/affected.test.ts",
+        "/home/user/release-content-checks/apps/worker/src/price/public.ts",
+        "/home/user/release-content-checks/apps/web/src/lib/pricing/content.ts",
+        "/home/user/release-content-checks/tools/content-calendar/fetch.ts",
+        "/tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/build-integrate.md"
+      ],
+      "tests": "Every step ran under flock /tmp/laneb-heavy.lock. Steps 1 to 8 and 10 were run again on the final head (45fe117f).\n1. pnpm typecheck: passed, 22 projects (before and after the fixes).\n2. pnpm lint: passed, 1,513 files, 0 errors, 0 warnings. eslint --max-warnings=0 is clean on every file I changed.\n3. pnpm lint:logs: passed, 1,010 files.\n4. pnpm lint:copy: passed, 496 files.\n5. pnpm verify-content: passed on content/drafts (10 records). It also passed on each fixture release: 900001 (65 records), 900002 (79), 900003 (67), 900004 (65), 900005 (65), 900006 (67) and 900007 (65), with no problems.\n6. pnpm check:fixtures: passed (248 files read by the guard, 2,873 text files searched).\n7. pnpm synth --all: 200 cases, 0 written, 483 unchanged, 0 removed; EMR formats 0 written, 16 unchanged. git diff --exit-code -- fixtures/synthetic is clean, and there are no untracked files there.\n8. watched.ts prints exactly the committed watched-paths.txt (checked at the start and on the final head).\n9. engine-freeze check.ts against merge base 6ddd587c: no non-test file under packages/pricing/src changes, nothing let through by the exception, no problems.\n10. ENGINE_FREEZE_BASE=6ddd587c CI=true pnpm test:\n- First run: 5,223 passed, 1 failed, 1 skipped. The failure was tools/brand-colors/scan.test.ts: a '#123' in the module comment of tools/content-calendar/fetch.ts. Fixed in 45fe117f.\n- Final run: 329 files, 5,224 passed, 1 skipped, exit 0, with the coverage gate.\n11. pnpm test:golden: 4 files, 188 of 188 passed.\n12. actionlint .github/workflows/*.yml: passed on all 9 workflows.\n13. Database tests (PostgreSQL 18 on :5433):\n- Batch 1: 20 files, 166 of 166 passed. It covers every apps/worker/src/price/*.db.test.ts (content.db against the committed 900007, release-source.db and the rest), monitor.db, the triage and report db tests, the web's pricing/content.db, releases/content-through.db and routes/console-routes.db, and tools/release/dry-run.db.\n- Batch 2: 7 files, 38 of 38 passed: reruns-routes, coverage-in-effect, coverage-formats, screening release-cache, engine-freeze rule-tables (which WP2 could not run), tools/release load.db and screening-capacity oracle.db.\n(a) tools/stryker/affected.test.ts: 35 of 35 passed. pnpm -s exec tsx tools/stryker/affected.ts --event pull_request --base 6ddd587c passes.",
+      "deviations": [
+        "affected.ts (task a): a DIRECTORY_READS entry's `onlyIn` can now name several functions (`string | readonly string[]`). It used to name exactly one. content.ts reads content/releases and content/outgoing in two functions, previousReleaseNumber and releaseDirOf, through one constant. So each directory gets one entry with reads [] and onlyIn ['previousReleaseNumber', 'releaseDirOf']. Each name must appear in content.ts and in no other file of the pricing or packets closure. Only the checker and the assembler call these two functions. The tests cover a list that passes, a name another closure file uses, a name not in the file, an empty list, and the repository's two entries.",
+        "Mutation shards: design 6.5 expects only pricing's 3 shards and packets' 2. This PR now changes tools/stryker/**, which is a GLOBAL_INPUT, so affected.ts names all six shards, money-ledger included. This follows from task (a) and is correct.",
+        "Task (b), no relative imports into another package's src: no file under packages/*/src is imported by a relative path. The 'packages/rules/src' hits outside packages/rules are comments and registry assertedBy paths only. One exception is left on purpose: tools/release-capacity/run.ts imports PgBossQueue from '../../apps/web/src/lib/uploads/queue'. Fixing it needs one of two changes I may not make here. Either tools gets a pg-boss dependency (tools/package.json is frozen except for its export, and so is the lockfile), or apps/worker/src/jobs gets an exported producer (that file is not in 7.1). The base has the same pattern: tools/screening-capacity/containers.ts imports apps/worker/src/screening/threads and many tools import infra/lib by relative path. The infra/lib imports added in this PR follow that existing pattern.",
+        "WP6/WP7 deviation closed: @tp/worker/pricing (price/public.ts) now re-exports termsUnchangedSince and coversMore from ../monitor/plan, as design 5.6.4 asks for one shared SQL fragment. apps/web/src/lib/pricing/content.ts drops its two private copies and calls the monitor's coversMore, passing its cached spans through the spans parameter. plan.ts was already in the watched closure, so the list does not change.",
+        "These package deviations are kept as built, because the files that would close them are outside 7.1. (1) WP6: TriageFacts.contentNotLoaded stays optional, because packages/triage/src/patterns.test.ts and tools/golden-worksheet/triage.golden.test.ts build TriageFacts without it. (2) WP5: runReleaseImpact keeps the type `ReleaseSource | IndexedRelease`, because rerun.db.test.ts and rerun-window.db.test.ts still pass an IndexedRelease. Every non-test caller now passes a ReleaseSource."
+      ],
+      "notMine": [
+        "packages/triage/src/patterns.test.ts and tools/golden-worksheet/triage.golden.test.ts (not in 7.1): adding `contentNotLoaded: false` to each would let TriageFacts.contentNotLoaded become required, as design 5.6.7 says. Not touched.",
+        "apps/worker/src/price/rerun.db.test.ts and rerun-window.db.test.ts (not in 7.1): passing memoryReleaseSource(...) or storedReleaseSource(...) would let runReleaseImpact's parameter narrow to ReleaseSource, as design 5.7.2 says. Not touched.",
+        "tools/brand-copy/scan.test.ts (not in 7.1): WP10's proposal to pin the two new COPY_FILES entries in its fixture and real-tree lists. Not touched.",
+        "packages/rules/src/index.ts and packages/triage/src/index.ts are outside 7.1 but changed on the branch: 42b14150 re-exported the rules helpers and WP6 added BEHAVIOR_RECORD_TYPES. Both were needed, and neither adds a path to the watched list."
+      ],
+      "notes": "I checked the diff against the design adversarially:\n- the 7.1 file list and the forbidden paths;\n- the overlap with pr42-files.txt, which is only the four shared documents;\n- the package.json diffs, which are only the two named exports;\n- execute.ts against 5.6.2 and 5.6.5: the per-line recording callback, the precedence after the loop, and one content alert for refused and complete runs alike;\n- the log messages and fields in 5.12;\n- every visible string in 5.11, each found in its file;\n- the 6.3 test list: the console at 2026-11-20 under 900001, the check.test.ts loop over all fixture releases, and the M2 bypass db test.\n\nI found no missing item beyond the three fixes above.\n\nOutside my files, for the PR or the ops records:\n1. LANES.md (ops branch) still needs three records from design 8: the claim row with 900007, RCC = 14 and the synthetic release 900110; and the 'Handed to Lane A' entry for operator_content_coverage(). This worktree cannot do that.\n2. check.ts and assemble.ts each still define lossText and lossIdentity. One exported copy in packages/rules/src/records.ts, re-exported from index.ts, would remove the duplicate. It is small, but it touches index.ts, so I left it.\n3. Not run here, and left to the fix round's full suite (9.3): steps 18 to 22, which are the whole test:db in 6 shards, the domain-model check, the build and e2e, the mutation shards (now all six), and the release-capacity harness under Docker. Also licenses:check, check-releases-immutable and synth --large.\n4. The PR description should list:\n- the six mutation shards and why;\n- that a location-stopped run now prices to its end;\n- the dates 2026-10-26 in ADR 0071 and the proposed-PR paragraph, to check at merge.\n\nProgress file: /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/build-integrate.md"
+    }
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Build"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Integrate"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "build:WP1",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "ab0f16b2a0c3f8e89",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792986747702,
+      "lastProgressAt": 1792986747702,
+      "cached": true,
+      "resultPreview": "{\"wp\":\"WP1 rules core\",\"done\":true,\"commits\":[\"38088c68 WP1 rules core: quarter helpers, range and coverage maps, COVERAGE schemas, previous release\"],\"files\":[\"/home/user/release-content-checks/packages/rules/src/schema.ts\",\"/home/user/release-content-checks/packages/rules/src/records.ts\",\"/home/user/release-content-checks/packages/rules/src/content.ts\",\"/home/user/release-content-checks/packages…",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "build:WP2",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "aabbe93da5836015d",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792986747703,
+      "lastProgressAt": 1792986747703,
+      "cached": true,
+      "resultPreview": "{\"wp\":\"WP2 importer\",\"done\":true,\"commits\":[\"49ef6a56 WP2 importer: quarterly windows refused outside the stated quarter, ZIP5 YYYYQ check\"],\"files\":[\"/home/user/release-content-checks/packages/rules/src/import.ts\",\"/home/user/release-content-checks/packages/rules/src/import.test.ts\",\"/home/user/release-content-checks/packages/rules/src/parsers/locality.ts\",\"/home/user/release-content-checks/packa…",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "build:WP3",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "a1ff581821ac50116",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792986747704,
+      "lastProgressAt": 1792986747704,
+      "cached": true,
+      "resultPreview": "{\"wp\":\"WP3 checker\",\"done\":true,\"commits\":[\"ae9e4b5e WP3 checker: quarter rules, gaps, COVERAGE.md and the drafts note in verify-content\"],\"files\":[\"/home/user/release-content-checks/tools/verify-content/check.ts\",\"/home/user/release-content-checks/tools/verify-content/check.test.ts\"],\"tests\":\"tools/verify-content/check.test.ts: 54 of 54 pass. This covers one test or more for each of C1 to C16, D1…",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "build:WP5",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "a87df7dceda42f11d",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792986747763,
+      "queuedAt": 1792986747704,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "WP5 worker pricing (design 5.6 run refusal, 5.7 key-scoped …",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792987570977,
+      "tokens": 241711,
+      "toolCalls": 78,
+      "durationMs": 823212,
+      "resultPreview": "{\"wp\":\"WP5 worker pricing (design 5.6 run refusal, 5.7 key-scoped reader)\",\"done\":true,\"commits\":[\"8b919f70 WP5 worker pricing: the content refusal and the key-scoped release reader (audit #7, #31)\"],\"files\":[\"/home/user/release-content-checks/apps/worker/src/price/release.ts\",\"/home/user/release-content-checks/apps/worker/src/price/keyed-release.ts\",\"/home/user/release-content-checks/apps/worker/…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "build:WP8",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "a38d54086028c3648",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792986747763,
+      "queuedAt": 1792986747705,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "WP8 calendar, CLI, workflow, runbook",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792987370255,
+      "tokens": 215492,
+      "toolCalls": 58,
+      "durationMs": 618996,
+      "resultPreview": "{\"wp\":\"WP8 calendar, CLI, workflow, runbook\",\"done\":true,\"commits\":[\"bb6c4e55 WP8 calendar: the content calendar and contentDue() under @tp/rules/calendar\",\"42810a45 WP8 content calendar: CLI, workflow and the content-updates runbook\"],\"files\":[\"/home/user/release-content-checks/packages/rules/src/calendar.ts\",\"/home/user/release-content-checks/packages/rules/src/calendar.test.ts\",\"/home/user/rele…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "build:WP4",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "a6942ebf5cfbdf874",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792987373394,
+      "queuedAt": 1792986747761,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "WP4 assembler and 900007",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792988030139,
+      "tokens": 241172,
+      "toolCalls": 65,
+      "durationMs": 656744,
+      "resultPreview": "{\"wp\":\"WP4 assembler and 900007\",\"done\":true,\"commits\":[\"5e7f501f WP4 assembler and 900007: coverage, gaps, COVERAGE.md and the content-gap fixture release\"],\"files\":[\"/home/user/release-content-checks/tools/release/assemble.ts\",\"/home/user/release-content-checks/tools/release/impact.ts\",\"/home/user/release-content-checks/tools/release/synthetic.ts\",\"/home/user/release-content-checks/tools/release…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 7,
+      "label": "build:WP6",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "a30eb2b2e59352122",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792987574262,
+      "queuedAt": 1792987574257,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "WP6 monitor, triage, report",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792988462843,
+      "tokens": 270225,
+      "toolCalls": 87,
+      "durationMs": 888580,
+      "resultPreview": "{\"wp\":\"WP6 monitor, triage, report\",\"done\":true,\"commits\":[\"c09bb270 WP6 monitor, triage, report: months waiting on Medicare content, the CONTENT_NOT_LOADED hold, typed release reads (audit #7, #31)\"],\"files\":[\"/home/user/release-content-checks/apps/worker/src/monitor/plan.ts\",\"/home/user/release-content-checks/apps/worker/src/monitor/job.ts\",\"/home/user/release-content-checks/apps/worker/src/moni…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 8,
+      "label": "build:WP9",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "a7b7ef7ad451bd30f",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792988033257,
+      "queuedAt": 1792987574258,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "WP9 weekly capacity and infra",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792989850331,
+      "tokens": 419975,
+      "toolCalls": 126,
+      "durationMs": 1817074,
+      "resultPreview": "{\"wp\":\"WP9 weekly capacity and infra\",\"done\":true,\"commits\":[\"386f7df8 WP9 weekly capacity and infra: the real-size harness under release 900110, heap limits, the content alert\"],\"files\":[\"/home/user/release-content-checks/tools/release-capacity/run.ts\",\"/home/user/release-content-checks/tools/release-capacity/scenario.ts\",\"/home/user/release-content-checks/tools/release-capacity/checks.ts\",\"/home…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 9,
+      "label": "build:WP7",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "af0950ef7d50da9a2",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792988465235,
+      "queuedAt": 1792987574258,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "WP7 web",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792990230773,
+      "tokens": 312193,
+      "toolCalls": 104,
+      "durationMs": 1765537,
+      "resultPreview": "{\"wp\":\"WP7 web\",\"done\":true,\"commits\":[\"d0444d67 WP7 web: months waiting on Medicare content, fee-schedule periods not loaded, loaded-through dates and Content due (audit #7, #59)\"],\"files\":[\"/home/user/release-content-checks/apps/web/src/components/pricing/display.tsx\",\"/home/user/release-content-checks/apps/web/src/components/pricing/content.tsx\",\"/home/user/release-content-checks/apps/web/src/l…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 10,
+      "label": "build:WP10",
+      "phaseIndex": 1,
+      "phaseTitle": "Build",
+      "agentId": "aac5cbbe2588da3ba",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792990233658,
+      "queuedAt": 1792990233654,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "WP10 records and docs",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792991056734,
+      "tokens": 270845,
+      "toolCalls": 83,
+      "durationMs": 823076,
+      "resultPreview": "{\"wp\":\"WP10 records and docs\",\"done\":true,\"commits\":[\"78577f3b WP10 records: test matrix RCC-01 to RCC-08, the synth registry and their fixtures\",\"f8b9abdc WP10 checks: the content-calendar and release-capacity workflows' tests, and the copy lint's two new files\",\"06f01d3b WP10 docs: ADR 0071, the #30 exception in reconciliation-001, the content READMEs, PRD and the CI runbook\"],\"files\":[\"/home/us…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 11,
+      "label": "integrate",
+      "phaseIndex": 2,
+      "phaseTitle": "Integrate",
+      "agentId": "af3ecbfe1b49d504a",
+      "model": "claude-opus-5-5",
+      "state": "done",
+      "startedAt": 1792991059664,
+      "queuedAt": 1792991059661,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "integration",
+      "promptPreview": "Context: you are a builder for Lane B of the PaidWhole build (CLAUDE.md is in your context; Lane B conventions in /home/user/ops/lanes/lane-b.md, \"How Lane B runs\"). The build contract is /home/user/ops/designs/lane-b-release-content-checks.md (reviewed; Appendix A lists the review's fixes, which are already in the sections). Implement it exactly; do not re-decide. When the design and the code at …",
+      "promptFramed": true,
+      "lastProgressAt": 1792992163759,
+      "tokens": 216001,
+      "toolCalls": 88,
+      "durationMs": 1104094,
+      "resultPreview": "{\"wp\":\"integration\",\"done\":true,\"commits\":[\"9ca39962 Integration: the mutation changes job accounts for the rules reader's numbered-release lookups\",\"df546308 Integration: the web's waiting months use the monitor's terms fragment and coversMore\",\"45fe117f Integration: the content calendar's fetch comment names no hex-like token\"],\"files\":[\"/home/user/release-content-checks/tools/stryker/affected.t…"
+    }
+  ],
+  "totalTokens": 2187614,
+  "totalToolCalls": 689
+}

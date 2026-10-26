@@ -1,0 +1,210 @@
+<title>PaidWhole Screen Review, __WIDTH__ px</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a sticky filter bar over a contact-sheet grid; one shot opens in a full-height viewer with its notes beside it. */
+:root {
+  --bg: #ffffff; --raised: #f6f7f9; --inset: #eceef2; --fg: #0d1e3a; --muted: #526070; --line: #dad7cf; --line-strong: #b9bec8;
+  --accent: #1f4e9a; --focus: #2f5da8; --keystone: #c99a3b;
+  --note: #8a4b12; --note-bg: #fbf0e2; --find: #b5452e; --find-bg: #f8ece8; --ok: #1f7a4d; --ok-bg: #eaf4ee;
+  --shadow: 0 1px 2px rgba(13, 30, 58, .08), 0 4px 16px rgba(13, 30, 58, .06);
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --step--1: .8125rem; --step-0: .9375rem; --step-1: 1.125rem; --step-2: 1.5rem;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0b1424; --raised: #111d31; --inset: #17253d; --fg: #e8ecf3; --muted: #a3afc2; --line: #24334d; --line-strong: #34476a;
+  --accent: #8fb2ee; --focus: #9cbcf3; --keystone: #d8b25e;
+  --note: #f0c48a; --note-bg: #3a2a14; --find: #f2a08e; --find-bg: #3d1f19; --ok: #8fd3ad; --ok-bg: #163327;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .3); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0b1424; --raised: #111d31; --inset: #17253d; --fg: #e8ecf3; --muted: #a3afc2; --line: #24334d; --line-strong: #34476a;
+  --accent: #8fb2ee; --focus: #9cbcf3; --keystone: #d8b25e;
+  --note: #f0c48a; --note-bg: #3a2a14; --find: #f2a08e; --find-bg: #3d1f19; --ok: #8fd3ad; --ok-bg: #163327;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .3); color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 400 var(--step-0)/1.5 var(--sans); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg) }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1480px; margin: 0 auto }
+header.top { padding-block: 20px 8px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between }
+h1 { margin: 0; font-size: var(--step-2); font-weight: 600; letter-spacing: -.01em; text-wrap: balance; display: flex; gap: 10px; align-items: baseline }
+h1 .key { width: 10px; height: 10px; background: var(--keystone); transform: rotate(45deg) translateY(-2px); display: inline-block; flex: none }
+.lede { margin: 4px 0 0; color: var(--muted); max-width: 70ch; font-size: var(--step--1) }
+.swap { font-size: var(--step--1); color: var(--accent) }
+.muted { color: var(--muted) }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding-block: 10px }
+.bar .wrap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.bar input, .bar select { font: inherit; font-size: var(--step--1); color: var(--fg); background: var(--raised); border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 8px; min-width: 0 }
+.bar input { flex: 1 1 220px }
+.bar select { flex: 0 1 auto; max-width: 100% }
+.count { margin-left: auto; font-size: var(--step--1); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px }
+main { padding-block: 16px 48px }
+.area { margin: 20px 0 10px; font-size: var(--step--1); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; gap: 8px; align-items: baseline }
+.area .n { font-weight: 400; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(__CARDMIN__, 1fr)); gap: 14px }
+.card { display: flex; flex-direction: column; min-width: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; text-align: left; padding: 0; font: inherit; color: inherit }
+.card:hover { border-color: var(--line-strong); box-shadow: var(--shadow) }
+.thumb { aspect-ratio: __RATIO__; width: 100%; max-width: 100%; background: var(--inset); overflow: hidden; border-bottom: 1px solid var(--line) }
+.thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block }
+.meta { padding: 8px 10px 10px; display: grid; gap: 4px; min-width: 0 }
+.id { font: 500 var(--step--1)/1.35 var(--mono); overflow-wrap: anywhere }
+.route { font: 400 .75rem/1.35 var(--mono); color: var(--muted); overflow-wrap: anywhere }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px }
+.chip { font-size: .6875rem; line-height: 1; padding: 4px 6px; border-radius: 4px; background: var(--inset); color: var(--muted); white-space: nowrap }
+.chip.note { background: var(--note-bg); color: var(--note) }
+.chip.find { background: var(--find-bg); color: var(--find); font-weight: 600 }
+.chip.ok { background: var(--ok-bg); color: var(--ok) }
+.empty { padding: 48px 0; color: var(--muted) }
+dialog { border: 0; padding: 0; width: 100vw; max-width: 100vw; height: 100%; max-height: 100%; margin: 0; background: var(--bg); color: var(--fg) }
+dialog::backdrop { background: rgba(5, 10, 20, .6) }
+.view { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); height: 100%; padding-top: env(safe-area-inset-top, 0px) }
+.shot { overflow: auto; background: var(--inset); padding: 16px max(16px, env(safe-area-inset-left, 0px)); display: flex; justify-content: center; align-items: flex-start; min-width: 0 }
+.shot img { max-width: 100%; height: auto; box-shadow: var(--shadow); background: #fff }
+.side { border-left: 1px solid var(--line); overflow: auto; padding: 16px max(16px, env(safe-area-inset-right, 0px)) 24px 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0 }
+.side h2 { margin: 0; font: 500 var(--step-1)/1.3 var(--mono); overflow-wrap: anywhere }
+.nav { display: flex; gap: 6px; flex-wrap: wrap }
+.nav button { font: inherit; font-size: var(--step--1); color: var(--fg); background: var(--raised); border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 10px; cursor: pointer }
+.nav button:hover { border-color: var(--accent) }
+dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: var(--step--1) }
+dt { color: var(--muted) }
+dd { margin: 0; overflow-wrap: anywhere }
+dd.mono { font-family: var(--mono); font-size: .75rem }
+.box { font-size: var(--step--1); line-height: 1.5; padding: 10px 12px; border-radius: 6px; background: var(--raised); border: 1px solid var(--line) }
+.box h3 { margin: 0 0 4px; font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600 }
+.box.find { border-color: var(--find); }
+.box ul { margin: 0; padding-left: 18px; display: grid; gap: 6px }
+.sev { font-weight: 600; color: var(--find) }
+.hint { font-size: .75rem; color: var(--muted) }
+@media (max-width: 760px) {
+  .view { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .side { border-left: 0; border-top: 1px solid var(--line); max-height: 45vh; padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) }
+  .count { margin-left: 0 }
+}
+@media (prefers-reduced-motion: no-preference) { .card { transition: box-shadow .15s, border-color .15s } }
+</style>
+
+<header class="wrap top">
+  <div>
+    <h1><span class="key" aria-hidden="true"></span>PaidWhole Screen Review, __WIDTH__ px</h1>
+    <p class="lede">The UX/UI and brand baseline review's capture, 2026-10-26: every reachable screen and state at __WIDTH__ px, as the role that uses it, from claude/build-platform 6ddd587 on synthetic data. A checker looked at every shot first; its notes are leads the eleven reviewers verified. __COUNT__ shots.</p>
+  </div>
+  __OTHER__
+</header>
+<div class="bar">
+  <div class="wrap" role="search">
+    <input id="q" type="search" placeholder="Search id, route, role or note" aria-label="Search id, route, role or note">
+    <select id="fa" aria-label="Area"><option value="">Every area</option></select>
+    <select id="fo" aria-label="Role"><option value="">Every role</option></select>
+    <select id="fs" aria-label="State"><option value="">Every state</option></select>
+    <select id="ft" aria-label="Theme"><option value="">Light and dark</option><option value="light">Light</option><option value="dark">Dark (tokens only)</option></select>
+    <select id="fv" aria-label="Checker's verdict"><option value="">Every verdict</option><option value="ok">Checked, no note</option><option value="noted">Checker noted a problem</option><option value="find">Named in a finding</option></select>
+    <span class="count" id="count" aria-live="polite"></span>
+  </div>
+</div>
+<main class="wrap" id="main"></main>
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <div class="view">
+    <div class="shot" id="shot"></div>
+    <aside class="side">
+      <div class="nav">
+        <button type="button" id="prev">Previous</button>
+        <button type="button" id="next">Next</button>
+        <button type="button" id="close">Close</button>
+      </div>
+      <h2 id="dlg-title"></h2>
+      <dl id="dl"></dl>
+      <div id="extra"></div>
+      <p class="hint">Arrow keys move through the shots the filters show; Escape closes. The page's address with #shot-id opens a shot.</p>
+    </aside>
+  </div>
+</dialog>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(() => {
+  const rows = JSON.parse(document.getElementById('data').textContent);
+  const $ = (id) => document.getElementById(id);
+  const AREAS = ['Practice', 'Console', 'Account and organization', 'Support', 'Sign-in', 'Public and shared'];
+  const STATE = (s) => s.split(':')[0];
+  const fill = (sel, vals) => vals.forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  fill($('fa'), AREAS.filter((a) => rows.some((r) => r.a === a)));
+  fill($('fo'), [...new Set(rows.map((r) => r.o))].sort());
+  fill($('fs'), [...new Set(rows.map((r) => STATE(r.s)))].sort());
+  if (!rows.some((r) => r.t === 'dark')) $('ft').hidden = true;
+  if (!rows.some((r) => r.f.length)) $('fv').querySelector('option[value="find"]').hidden = true;
+  const verdictText = (v) => v === 'ok' ? 'Checked' : ({ other: 'Noted', cropped: 'Noted: cut off', 'dark-not-applied': 'Noted: dark not applied', 'error-page': 'Noted: error page', 'state-not-shown': 'Noted: state not shown' }[v] || 'Noted: ' + v);
+  let shown = [];
+  const keyOf = (r) => [r.id, r.r, r.p, r.o, r.n, r.s].join(' ').toLowerCase();
+  function render() {
+    const q = $('q').value.trim().toLowerCase(), fa = $('fa').value, fo = $('fo').value, fs = $('fs').value, ft = $('ft').value, fv = $('fv').value;
+    shown = rows.filter((r) => (!q || keyOf(r).includes(q)) && (!fa || r.a === fa) && (!fo || r.o === fo) && (!fs || STATE(r.s) === fs) && (!ft || r.t === ft)
+      && (!fv || (fv === 'ok' ? r.v === 'ok' : fv === 'noted' ? r.v !== 'ok' : r.f.length > 0)));
+    $('count').textContent = shown.length === rows.length ? `${rows.length} shots` : `${shown.length} of ${rows.length} shots`;
+    const main = $('main'); main.textContent = '';
+    if (!shown.length) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = 'No shot matches these filters. Clear the search or choose "Every" in a filter.'; main.appendChild(p); return; }
+    for (const a of AREAS) {
+      const inArea = shown.filter((r) => r.a === a); if (!inArea.length) continue;
+      const h = document.createElement('h2'); h.className = 'area'; h.textContent = a;
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = `${inArea.length}`; h.appendChild(n); main.appendChild(h);
+      const grid = document.createElement('div'); grid.className = 'grid';
+      for (const r of inArea) grid.appendChild(card(r));
+      main.appendChild(grid);
+    }
+  }
+  function chip(text, cls) { const c = document.createElement('span'); c.className = 'chip' + (cls ? ' ' + cls : ''); c.textContent = text; return c; }
+  function card(r) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'card'; b.setAttribute('aria-label', `Open ${r.id}`);
+    const t = document.createElement('div'); t.className = 'thumb';
+    const img = document.createElement('img'); img.loading = 'lazy'; img.decoding = 'async'; img.alt = ''; img.src = `s/${String(r.k).padStart(4, '0')}.webp`; t.appendChild(img);
+    const m = document.createElement('div'); m.className = 'meta';
+    const id = document.createElement('div'); id.className = 'id'; id.textContent = r.id;
+    const route = document.createElement('div'); route.className = 'route'; route.textContent = r.r;
+    const chips = document.createElement('div'); chips.className = 'chips';
+    chips.appendChild(chip(r.o)); chips.appendChild(chip(r.s.replace('interaction:', ''))); if (r.t === 'dark') chips.appendChild(chip('dark'));
+    if (r.f.length) chips.appendChild(chip(`${r.f.length} finding${r.f.length > 1 ? 's' : ''}`, 'find'));
+    else if (r.v !== 'ok') chips.appendChild(chip(verdictText(r.v), 'note'));
+    if (r.rt) chips.appendChild(chip('retaken'));
+    m.append(id, route, chips); b.append(t, m);
+    b.addEventListener('click', () => open(r.id));
+    return b;
+  }
+  let cur = -1, opener = null;
+  function open(id) {
+    let i = shown.findIndex((r) => r.id === id);
+    if (i < 0) { const r = rows.find((x) => x.id === id); if (!r) return; shown = [r]; i = 0; }
+    cur = i; opener = document.activeElement; show(); if (!$('dlg').open) $('dlg').showModal();
+    try { history.replaceState(null, '', '#' + id); } catch (e) {}
+  }
+  function show() {
+    const r = shown[cur];
+    $('dlg-title').textContent = r.id;
+    const shot = $('shot'); shot.textContent = ''; shot.scrollTop = 0;
+    const img = document.createElement('img'); img.src = `s/${String(r.k).padStart(4, '0')}.webp`; img.alt = `Screenshot ${r.id}: ${r.r} as ${r.o}, ${r.s}`; shot.appendChild(img);
+    const dl = $('dl'); dl.textContent = '';
+    const add = (k, v, mono) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; if (mono) dd.className = 'mono'; dl.append(dt, dd); };
+    add('Route', r.r, true); add('Path', r.p, true); add('Role', r.o); add('State', r.s); add('Theme', r.t === 'dark' ? 'Dark (tokens only; no user reaches dark today)' : 'Light');
+    add('Checker', verdictText(r.v) + (r.rt ? ' (retaken)' : '')); add('Shot', `${cur + 1} of ${shown.length}`);
+    const extra = $('extra'); extra.textContent = '';
+    if (r.f.length) {
+      const box = document.createElement('div'); box.className = 'box find';
+      const h = document.createElement('h3'); h.textContent = 'Findings that cite this shot'; box.appendChild(h);
+      const ul = document.createElement('ul');
+      for (const f of r.f) { const li = document.createElement('li'); const s = document.createElement('span'); s.className = 'sev'; s.textContent = `${f.ux} ${f.sev}`; li.append(s, document.createTextNode(` ${f.title}`)); ul.appendChild(li); }
+      box.appendChild(ul); extra.appendChild(box);
+    }
+    if (r.n) { const box = document.createElement('div'); box.className = 'box'; const h = document.createElement('h3'); h.textContent = "Checker's note"; const p = document.createElement('div'); p.textContent = r.n; box.append(h, p); extra.appendChild(box); }
+  }
+  const step = (d) => { if (!shown.length) return; cur = (cur + d + shown.length) % shown.length; show(); try { history.replaceState(null, '', '#' + shown[cur].id); } catch (e) {} };
+  $('prev').addEventListener('click', () => step(-1));
+  $('next').addEventListener('click', () => step(1));
+  $('close').addEventListener('click', () => $('dlg').close());
+  $('dlg').addEventListener('close', () => { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} render(); if (opener && opener.focus) opener.focus(); });
+  $('dlg').addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') { e.preventDefault(); step(1); } else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); } });
+  for (const id of ['q', 'fa', 'fo', 'fs', 'ft', 'fv']) $(id).addEventListener('input', render);
+  render();
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h && rows.some((r) => r.id === h)) open(h);
+})();
+</script>
