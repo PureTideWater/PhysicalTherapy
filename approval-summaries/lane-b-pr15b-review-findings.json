@@ -1,0 +1,158 @@
+[
+ {
+  "report": "ux.md",
+  "verdict": "fix",
+  "findings": [
+   {
+    "id": "UX-1",
+    "severity": "blocking",
+    "kind": "defect",
+    "where": "apps/web/src/components/reconciliation/display.tsx LineCorrectionWords 'patient_balance' branch (Reconciliation and case-page line paragraphs); cause apps/worker/src/reconcile/patient-share.ts:143",
+    "issue": "The paragraph prints only the allowed increase and says the patient's share 'took all of it'. A line is read as patient_balance whenever billable > 0, even when other non-billable reductions took part of the increase, so the sentence overstates what the patient owes. The billable figure never appears on Reconciliation.",
+    "evidence": "DB probe: LED-15 original (allowed 70.00, paid 40.00, PR-1 30.00), then adjusted (allowed 100.00, paid 40.00, PR-1 50.00, CO-253 10.00). lineCorrections returns correction 'patient_balance', billable 2000, otherReduction 1000. The rendered text is 'The payer raised the allowed amount by $30.00 and pays nothing more: the patient\u2019s deductible took all of it.' The true share is $20.00. With deductible +40.00 and coinsurance \u221210.00 it also says 'deductible took all of it'. Probe copies are in scratchpad/pr15b-review/ux-probes/.",
+    "fix": "Lead with 'Billable to the patient: {billable} ({signed reasons})'. Say 'took all of it' only when billable == allowedIncrease and otherReduction == 0; otherwise add '{otherReduction} was reduced by the payer for other reasons, not billable'. Add the mixed case to display.test.tsx and a DB case."
+   },
+   {
+    "id": "UX-2",
+    "severity": "should_fix",
+    "kind": "defect",
+    "where": "apps/web/src/components/reconciliation/display.tsx LineCorrectionWords 'other_reductions' branch",
+    "issue": "The paragraph says the payer 'reduced its payment by the same for other reasons'. When the patient's share fell, the other reductions are larger than the allowed increase, so 'the same' is wrong.",
+    "evidence": "Rendered with allowed +30.00, deductible \u221210.00, otherReduction 40.00: '\u2026raised the allowed amount by $30.00 and reduced its payment by the same for other reasons\u2026'",
+    "fix": "Print otherReductionCents, and the fall in the patient's share when there is one."
+   },
+   {
+    "id": "UX-3",
+    "severity": "should_fix",
+    "kind": "improvement",
+    "where": "cases/[caseId]/page.tsx (Facts and the Packet and dispute card); LineCorrectionWords",
+    "issue": "A patient-balance case shows Actionable $30.00 beside Billable to the patient $30.00 and still offers 'Build the packet', with no next step. The audit report lists the same case under Actionable cases. The Q1 interim says 'labelled', but the label names the outcome and not the action.",
+    "evidence": "tour-after/png/led15.case.1280.png, led15.case.390.png, led15.audit-report.1280.png",
+    "fix": "Keep the figures as ruled. Add a next step to the line paragraph and to the Packet card when corrections.patientBalance is true: 'Bill the balance to the patient in the practice-management system; a packet would ask the payer for what it has already allowed.'"
+   },
+   {
+    "id": "UX-4",
+    "severity": "should_fix",
+    "kind": "improvement",
+    "where": "apps/web/src/app/p/[practiceId]/cases/[caseId]/submissions/page.tsx:320",
+    "issue": "The label 'Amount the payer will pay' reads as the payer's whole payment, while the hint says 'The additional payment the letter states'.",
+    "evidence": "tour-after/png/led18.case-submissions.1280.png and .390.png",
+    "fix": "Label it 'Additional amount the payer will pay (accepted or partial only, dollars)'. The aria-describedby is already correct."
+   },
+   {
+    "id": "UX-5",
+    "severity": "nit",
+    "kind": "improvement",
+    "where": "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx, the 'Billable to the patient' Fact",
+    "issue": "The Fact renders on every case, including share-free cases with no correction, as $0.00 with a note about corrections that never happened.",
+    "evidence": "The Fact has no condition in the diff. LineCorrectionWords, by contrast, hides at zero.",
+    "fix": "Render the Fact only when billableCents > 0 or some line has a correction."
+   },
+   {
+    "id": "UX-6",
+    "severity": "nit",
+    "kind": "defect",
+    "where": "apps/web/src/components/reconciliation/display.tsx Signed",
+    "issue": "The +/\u2212 sign renders outside the mono Money span. brand.md requires every money figure in mono with tabular numerals. At 390 px the reason word and its amount break onto separate lines.",
+    "evidence": "Signed puts '+'/'\u2212' before <Money> in the body font; tour-after/png/led14.reconciliation-case.390.png shows 'coinsurance' and '+$6.00' on separate lines.",
+    "fix": "Put the sign inside the mono span, and join the reason word and the amount with a non-breaking space."
+   },
+   {
+    "id": "UX-7",
+    "severity": "nit",
+    "kind": "improvement",
+    "where": "apps/web/src/components/reports/display.tsx Headline (approved === false)",
+    "issue": "With no approval, the Reports screen still says 'no payer approval was recorded yet', while the PDF says 'what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet'.",
+    "evidence": "tour-after/png/led15.audit-report.1280.png against led15.audit-report-pdf.page2.1280.png",
+    "fix": "Use one wording on both."
+   },
+   {
+    "id": "UX-8",
+    "severity": "nit",
+    "kind": "improvement",
+    "where": "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx EntryTable",
+    "issue": "A line with no entries shows an entries table with headers and no rows. A patient-balance line now reaches this state as an ordinary outcome.",
+    "evidence": "tour-after/png/led15.reconciliation-case.1280.png",
+    "fix": "Add an empty-state row: 'No entry on this line: the correction paid nothing more.'"
+   },
+   {
+    "id": "UX-9",
+    "severity": "nit",
+    "kind": "improvement",
+    "where": "apps/web/src/components/reconciliation/display.tsx LedgerTotals approved note",
+    "issue": "The note now runs 11 lines in the narrow tile at 1280 px (10 before) and sets the height of all six tiles.",
+    "evidence": "tour-after/png/led14.reconciliation-case.1280.png, led18.abstraction-ledger.1280.png",
+    "fix": "Shorten the tile note and move the reversal detail into the screen's help."
+   },
+   {
+    "id": "UX-10",
+    "severity": "nit",
+    "kind": "improvement",
+    "where": "apps/web/src/components/reconciliation/display.tsx Allocation",
+    "issue": "'The patient\u2019s share is the claim\u2019s, allocated to the line by charge' is awkward. The tour did not reach this state.",
+    "evidence": "Code only.",
+    "fix": "'The payer reported the patient's share for the whole claim; it is split to this line by charge ($X of $Y).'"
+   }
+  ]
+ },
+ {
+  "report": "engine.md",
+  "verdict": "fix",
+  "findings": [
+   {
+    "id": "B1",
+    "severity": "blocking",
+    "kind": "defect",
+    "where": "apps/worker/src/reconcile/remittances.ts claimLines/paidLine (paid(n) = service_line.paid_cents = SVC03, parse/plan.ts:302); also postings.ts shares and patient-share.ts otherReductionCents",
+    "issue": "When the patient's share (or a CO such as CO-253) is reported at claim level, paid(n) ignores it, because CLP04 = sum of SVC03 minus the claim-level CAS. 'approved' therefore still counts the patient's share, which is the #12 bug on this path, and the difference stays approved but never provable.",
+    "evidence": "Probe E8 (engine-probes/probe-engine.db.test.ts). Original: SVC 150/70, claim CAS PR-2 14.00, CLP04 56. Correction: SVC 150/100, claim PR-2 20.00, CLP04 80, BPR 24.00. Result: approved 3000 (#12 gives 2400). lineCorrections billable coinsurance 600 is shown beside the 3000 that already counts it. otherReductionCents is -600. After the 24.00 EFT: deposited 2400 and payerApproved 3000, so 600 stays approved and never provable.",
+    "fix": "Measure the line's cash as its share of CLP04: SVC03 less its allocation of the claim-level CAS (all groups, signed), allocated with allocateProRata or allocateByWeight so the parts sum to CLP04, rounded once with the exact fraction kept. Use it in the chain, the shares and patientShareChange. Add a claim-level PR fixture variant and a pay unit case, and state the rule in ADR 0067. No migration is needed."
+   },
+   {
+    "id": "S1",
+    "severity": "should_fix",
+    "kind": "defect",
+    "where": "apps/worker/src/reconcile/remittances.ts matchClaims for(;;) re-query loop vs CHAIN_ORDER",
+    "issue": "The in-pass re-query lets patient-number candidates that are paid earlier be processed after control-number ones. The stored chain orders one reconcile's matches by bpr16_date, created_at, id, so the pass's amounts are later walked in a different order. That breaks postings net/attribution, lineCorrections words, later baselines and the confirmed count. Before this PR such a claim matched in the next reconcile, and the orders agreed.",
+    "evidence": "Probe F1: original 70/56, P (2026-06-08, new ICN, 100/80) and A (2026-07-07, F8 original, 87.50/70), one reconcile. The pass writes A +1400 then P +1000. The chain reads net(P)=2400 and net(A)=-1000, and A's ERA shows 'payment increase -$10.00'. A later resend Q (100/80) is counted 'confirmed' against a phantom unpaid acceptance of 10. A's check deposits nothing.",
+    "fix": "Run the candidate closure to a fixpoint first (extending known depends only on pairing), then process all candidates in CHAIN_ORDER's claim order (bpr16_date, created_at, id). Add F1 as a test."
+   },
+   {
+    "id": "S2",
+    "severity": "should_fix",
+    "kind": "improvement",
+    "where": "apps/worker/src/reconcile/payment-terms.db.test.ts (worker not mutation-tested)",
+    "issue": "Four worker mutants survive payment-terms + ledger.db + oracle (78 tests): M4 (afterReprocessing take-back forced to 0), M7 (lineChain withholding take-back forced to 0), M5 (CHAIN_ORDER kind rank removed) and M2 (laterClaimStands ignores the as-of position). M1 (<= to <) is equivalent. M3, M6 and M8 are killed.",
+    "evidence": "mutants.log. Under M7, probe E1 (LED-14 proved, PLB WO 10.00, reissue 110/88) approves 800 instead of 1800. Under M4, probe M4P (adjusted + lowered + correction 100/80 in one reconcile) gives no_change plus a false reprocessed_no_change instead of approved 1000. M5 is reachable when a PLB WO dated before a correction is reconciled in the same pass. M2 changes A_b after a reversal followed by a non-anchor claim.",
+    "fix": "Add E1, M4P, a WO-plus-correction-in-one-reconcile case, and a reversal then no-change then lower-allowed case to payment-terms.db.test.ts."
+   },
+   {
+    "id": "S3",
+    "severity": "should_fix",
+    "kind": "improvement",
+    "where": "apps/web/src/lib/reconciliation/queries.ts:225 casePatientBalance and apps/worker/src/report/content.ts:461 patientBalanceCases",
+    "issue": "The rule for whether a case is a 'patient balance' case (with its line_status stage subquery) is written twice. Design 2.3 (S13) asks for one definition, and the screen and the report can drift.",
+    "evidence": "Both files carry the same open.some(patient_balance) && open.every(patient_balance or payer_approved or recovered) predicate.",
+    "fix": "Export one casePatientBalance from patient-share.ts through public.ts and use it in both. Both files are already in this PR."
+   },
+   {
+    "id": "N1",
+    "severity": "nit",
+    "kind": "defect",
+    "where": "apps/worker/src/reconcile/remittances.ts recordInterest",
+    "issue": "Interest is flagged allocated when several lines are named, even if only one has a weight.",
+    "evidence": "Probe E4: a patient-balance line plus a paid line; all 300 goes to the paid line with allocated=true. This behaviour predates the PR.",
+    "fix": "Fix outside this PR: set allocated from the count of lines with a positive weight."
+   },
+   {
+    "id": "N2",
+    "severity": "nit",
+    "kind": "defect",
+    "where": "tools/screening-capacity/watched-paths.txt (commit 0e086eda)",
+    "issue": "This file is on #42's list (/tmp/claude-0/pr42-files.txt:143). It is regenerated because the unit test requires the new files to be listed.",
+    "evidence": "git diff shows +2 lines (payment.ts, patient-share.ts); the pr42 file list has it at line 143.",
+    "fix": "The orchestrator should rule on it: accept it as a generated shared file, or let #42 regenerate it."
+   }
+  ]
+ }
+]
