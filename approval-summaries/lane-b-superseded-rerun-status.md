@@ -18,6 +18,7 @@ Open questions: none.
 - **Screenshots:** 42 AFTER shots on 961783a, 40 paired with the before shots and 2 of the refusal moment.
 - **CI on 961783a:** green so far, the rest still running. |
 | 2026-10-26 03:25 | Fix round | wf_11fa7137-42b: a worker fixer, then a web fixer, then the full local suite (one commit, then one push). Dispositions are recorded in the fix round's summary. |
+| 2026-10-26 03:52 | Fix round resumed | The account's 5-hour session limit stopped wf_11fa7137-42b, and the #32 design wf_98ca48d8-64c, at about 03:15 UTC, before any change was made. Resumed at 03:52 after the 03:40 reset. **CI on 961783a: all green**, every required check passing (all green, mutation, screening-capacity gate, approval-of-record). The #32 design resumes after #50 (the orchestrator's priority). |
 
 **Proposal for Lane A:** the trigger mirror in `pricing_run_rules()` (design §5.2). Recommended, not urgent; it needs the founder's exception for a pricing table.
 
