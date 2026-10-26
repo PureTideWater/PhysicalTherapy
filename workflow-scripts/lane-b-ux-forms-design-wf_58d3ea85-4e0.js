@@ -1,0 +1,114 @@
+export const meta = {
+  name: 'lane-b-ux-forms-design',
+  description: 'Design for co-001/ux-forms: three scouts, the author, one adversarial reviewer, the revision',
+  phases: [{ title: 'Scout' }, { title: 'Author' }, { title: 'Review' }, { title: 'Revise' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/41255adc-382e-5323-a809-0f2d8619b682/scratchpad'
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
+const WT = '/home/user/ux-forms'
+const DESIGN = '/home/user/ops/designs/lane-b-ux-forms.md'
+const DDIR = '/home/user/ops/designs/lane-b-ux-forms'
+const REVIEW = DDIR + '/review.md'
+const COMMON = `Context: PaidWhole monorepo. You work for a Lane B session building ONE pull request, co-001/ux-forms: "Forms keep what the person typed, and name the refused field", the UX baseline review's first PR. Code checkout (branch co-001/ux-forms, cut from claude/build-platform 4d99df8, pnpm install done): ${WT}. Read code there; do not edit product code in this stage and do not commit or push anything (the orchestrating session commits /home/user/ops files). Scratch files go under ${SP}.
+Source findings (read IN FULL; they are the requirements): ${SP}/../../../../ops/mine.md is not it; use /tmp/claude-0/ops/mine.md (31 findings, ids in backticks). The brief: /tmp/claude-0/ops/lane-b-ux-review-brief.md.
+Machine rules: export PATH=/opt/node24/bin:$PATH in every command. One heavy command at a time on this machine: wrap install, build, typecheck, lint, test, next dev/build/start and playwright in "flock /tmp/laneb-heavy.lock <cmd>" and never hold the lock longer than the one command. Never run a foreground sleep; use run_in_background for long commands. Synthetic data only; no PHI. No model name in any file.
+Hard constraints:
+- No migration (Lane B never opens a schema PR). If something would need one, say so loudly.
+- Do not touch any file of open PR #42 (list: /tmp/claude-0/pr42-files.txt, 143 files; among them apps/web/package.json, apps/web/src/components/screening/upload-form.tsx, apps/web/src/components/help.ts, shell.tsx, apps/web/src/app/console/support/page.tsx, apps/web/src/app/screening/page.tsx, the users page, apps/web/src/lib/routes/{console,practice,settings,index}.ts, apps/web/src/lib/screening/*, apps/web/e2e/{env,prepare,screening}.ts(.spec)). A #42 page is fixed only through a shared component, or left for after #42 (say which).
+- Out of scope: notices (Alert's role and kinds, ?notice= success notices; a later Notice PR) and row-control names (a11y-other-10).
+- Reserved: ADR 0077 (only if the design needs one; the form submission pattern is a fair candidate), test-matrix FRM-01 to FRM-08 (a new series, two digits), no synth cases.
+- Founder's standing rule: only the best option, never weighted by build effort, never sacrificing quality. Improve as you go: an improvement inside the PR's files goes in; one outside is a proposal.
+- Wording a person sees: take the recommended option, within .claude/rules/brand.md, docs/brand/BRAND.md and CO-11 (docs/product/change-order-001.md); report it. Security trade-offs: take the safer option, with reasons.
+- Design questions set by the orchestrator: (1) progressive enhancement: the post must still work without JavaScript; (2) security: keep values in the browser (onSubmit + startTransition) rather than echoing them from the server; never echo a password or a code; (3) the field-to-label mapping has ONE source, not a per-form table that drifts.`
+
+const SCOUTS = [
+  { key: 'mechanics', prompt: `Scout A: the submission mechanics, verified EMPIRICALLY in a real browser, not from memory. React ${'^'}19.3.1 and Next ${'^'}16.4.1 (read the exact installed versions in ${WT}/node_modules). ${SAVE('scout-mechanics.md', 'each question, the experiment run, and its observed result')}
+Read apps/web/src/components/action-form.tsx, apps/web/src/lib/http/next.ts (ActionState, runAction, runSignInStep), apps/web/src/lib/http/form.ts, apps/web/src/components/form-keys.tsx, apps/web/src/components/screening/upload-form.tsx:80-150 (the onSubmit + preventDefault + startTransition pattern that already keeps values), apps/web/src/components/hardware-key.tsx.
+Then answer each question with an experiment. Build a minimal Next app in ${SP}/mech-app using the worktree's installed next/react/react-dom (symlink or point NODE_PATH; do not install from the network if avoidable; if needed pnpm can install offline from the store), with a server action shaped like runAction (returns {error, issues} on refusal, calls redirect() on success, to the same path with ?notice=), a client ActionForm copy, a FormKeys-like hidden requestKey (randomUUID per server render) and fields of every type (text with defaultValue, select with defaultValue, textarea, checkbox, checkbox group named x[], radio, date, password, one-time code). Drive it with Playwright (require('playwright'); chromium.launch() needs no options) on a free port such as 3417, under the lock for next build/start. Questions:
+ 1. With <form action={formAction}> (today): confirm every uncontrolled field resets after a refusal (React's requestFormReset), and read the react-dom source (node_modules/react-dom/cjs/react-dom-client.development.js, search requestFormReset and the form action event plugin, the listener checking nativeEvent.defaultPrevented) to cite exactly why.
+ 2. With onSubmit: preventDefault + startTransition(() => formAction(new FormData(form, submitter))) and action={formAction} kept: after a refusal every field keeps its value; useFormStatus pending and useActionState's pending work; React does not ALSO dispatch (no double submit; count server calls).
+ 3. SUCCESS: the action redirects to the same path with ?notice= (as runAction does). Without React's reset, do the uncontrolled fields keep the typed text after the successful navigation (a create form like 'add a note' would then show stale text and invite a duplicate)? Does the hidden requestKey get the new server value? Find the best way to reset the form on success only: e.g. react-dom's requestFormReset(form) called inside the action when the server action's redirect is observed (does the client see a thrown redirect, does the dispatched action promise ever settle on redirect?), comparing the requestKey value, a key remount, or Next's own behaviour. Prove the chosen one works for: success redirect to the same path, success redirect to another path, refusal (no reset).
+ 4. NO JAVASCRIPT (javaScriptEnabled: false): the post still works through Next's progressive enhancement with action={formAction}; what the refused page shows (the summary? the inline errors if they come from context? values lost?), and the success redirect.
+ 5. Double submit and pending: if the submit button stays focusable with aria-disabled while pending (not disabled), can a second press or Enter submit twice? The best guard.
+ 6. Focus: after a refusal, where is focus with each variant; can focus be moved reliably to the summary or first invalid field in useEffect; does the disabled button drop focus to body (it does today)?
+ 7. Whether FormData from the DOM includes the $ACTION_ hidden fields and whether that matters (form.ts filters $ACTION).
+Return a precise report: each question, the experiment, the observed result, and the recommended mechanism with its code sketch. Write the report to ${DDIR}/scout-mechanics.md as well.` },
+  { key: 'inventory', prompt: `Scout B: the inventory of every form the PR must fix. ${SAVE('scout-inventory.md', 'each file inventoried, appended as you go')}
+1. Every <ActionForm> call site (grep -rn "<ActionForm" ${WT}/apps/web/src; about 112 in about 61 files). For each file record: whether it is a #42 file (/tmp/claude-0/pr42-files.txt), the controls inside each ActionForm: shared Field/SelectField/TextAreaField, or RAW <input>/<select>/<textarea> (with file:line), checkbox groups (name ending []) and their fieldset/legend, radio groups, hidden inputs, password and one-time-code fields, file inputs, controls outside the form via form=, nested buttons with name/value, defaultValue sources, and whether every control has a visible <label for>/legend (needed to name a refused field by its own label). Note forms with no FormKeys.
+2. For each route the forms post to (apps/web/src/lib/routes/*.ts, apps/web/src/lib/http/invoke.ts:70-95 where issues are built), the issue field keys the server can return, and whether each key maps to a named control of its form; list keys that map to no control (hidden fields, 'input', database rules, array fields like components) and what the message alone would say.
+3. Forms NOT on ActionForm that post (grep "action=" and "onSubmit" in apps/web/src): split-form (components/screening/split-form.tsx), convert-form, packet version-form, narrative editor, hardware-key, uploader, stripe-payment-method, template-mapper, sign-in steps (apps/web/src/app/sign-in/**), and whether each has the reset defect or the error-naming defects.
+4. The current e2e tests that refill fields after a refusal (apps/web/e2e/helpers.ts:29-33, sign-in.spec.ts:56, onboarding.spec.ts:293-295 and any other) which will now see kept values: list each test that would break or must change.
+5. The screen tour's refused-form states: /home/user/ops/tools/lane-b-screen-tour/capture/tour.spec.ts (grep error), which routes and forms they refuse, so the before/after screenshot step knows them.
+Return a structured report (and write it to ${DDIR}/scout-inventory.md): the counts, the table per file, the raw controls to migrate (non-#42 files) or leave (#42 files), the unmapped keys, the non-ActionForm forms, the e2e tests affected, and the tour's error states.` },
+  { key: 'surfaces', prompt: `Scout C: the other surfaces and the test tooling. ${SAVE('scout-surfaces.md', 'each surface read and the facts found')}
+Read and report facts with file:line for each:
+1. Sign-in: apps/web/src/app/sign-in/** pages, apps/web/src/lib/routes/sign-in.ts (the step refusals at about :44, :46, :85-86; the deliberately vague first-step wording must stay for account enumeration), apps/web/src/lib/http/next.ts runSignInStep, apps/web/src/lib/routes/schemas.ts (sixDigitCode at about :23) and every caller of sixDigitCode, and whether any of these is a #42 file. Findings a11y-other-08, words-other-29, a11y-other-05, narrow-other-23 (Show password). Is there a code field anywhere else (MFA enroll, console)?
+2. Hardware key: apps/web/src/components/hardware-key.tsx (a11y-other-07); stripe-payment-method.tsx's same pattern.
+3. Loading: packages/ui/src/states/loading-state.tsx and its test, and every loading.tsx (a11y-other-26, a11y-practice-1-17): what a fix in the shared component can do, and what would need each loading.tsx (out of scope unless it lives in the shared component).
+4. Uploader: apps/web/src/components/uploads/uploader.tsx:370-390 (a11y-practice-1-20); the screening split form apps/web/src/components/screening/split-form.tsx (a11y-other-09) and its test; the status page's components[] group (apps/web/src/app/console/status/page.tsx, and the route schema in apps/web/src/lib/routes/support.ts about :390-400); whether these files are #42's.
+5. Type scale: docs/adr/0056-*.md (the type scale sentence about 14 px for dense controls), packages/brand/src/tokens.css, packages/ui/src/styles.css, packages/ui/src/components/input.tsx, every select/textarea class in apps/web/src (text-sm), and the Tailwind breakpoints; findings narrow-other-09 and narrow-practice-2-10. Recommend whether ADR 0056 is amended (it is an accepted ADR: is amending allowed, or must ADR 0077 record the phone exception?).
+6. Unit-test tooling: apps/web has no DOM test environment (no jsdom, happy-dom or testing-library; check pnpm-workspace.yaml catalog, root package.json, every package.json, vitest configs, and how existing component tests work: renderToStaticMarkup). apps/web/package.json is a #42 file, so it cannot gain a devDependency in this PR. Find the best way to unit test ActionForm's client behaviour (values kept, errors mapped to labels, focus): options include adding happy-dom or jsdom (+ @testing-library/react or React's act + createRoot) to the root package.json or packages/ui and using a per-file // @vitest-environment directive (check that vitest resolves the environment from apps/web; try it in a scratch copy, not the worktree), a Playwright component harness, or e2e only. Read the dependency policy (docs/adr on dependencies, the ci-deps design /home/user/ops/designs/lane-b-ci.md 'ci-deps' parts, .github/dependabot.yml, any allowlist or license check, pnpm-workspace.yaml's minimumReleaseAge or catalog rules) and say exactly what adding a devDependency requires. Recommend one.
+7. e2e and axe: apps/web/e2e/a11y.ts (how expectAccessible runs, which tags), playwright.config.ts, how the journeys sign in (helpers.ts, journeys.ts), whether a new spec file such as apps/web/e2e/forms-keep-input.spec.ts can reach real refusals with the seeded synthetic personas (apps/web/scripts/synthetic-personas.ts) without touching #42's e2e files (env.ts, prepare.ts are #42's: can a new spec import them read-only? importing is not changing).
+8. Combined audit #103 (WCAG 2.2, lands in Lane A's PR 7): /home/user/ops/audits/combined/combined-report.md section "### 103.". What PR 7 plans (a generated per-route axe check with WCAG 2.2 rules) and how this PR must avoid colliding with it (files, tags, a11y.ts).
+9. reconciliation-001's "What must not change, as checks" (docs/product/reconciliation-001.md in ${WT}): which checks this PR could touch.
+10. The brand rules for an error mark: .claude/rules/brand.md, docs/brand/BRAND.md, packages/brand/src/tokens.css (the danger colour, contrast on white and on its tint), and whether an icon is allowed/available (lucide? check packages/ui deps).
+Return the facts and recommendations, and write them to ${DDIR}/scout-surfaces.md.` },
+]
+
+phase('Scout')
+const scouts = await parallel(SCOUTS.map((s) => () => agent(`${COMMON}\n\n${s.prompt}`, { label: 'scout-' + s.key, phase: 'Scout' })))
+
+phase('Author')
+const author = await agent(`${COMMON}
+
+The three scouts' reports (also in ${DDIR}/scout-*.md):
+--- mechanics ---
+${scouts[0] || '(missing: read ' + DDIR + '/scout-mechanics.md or the progress file)'}
+--- inventory ---
+${scouts[1] || '(missing: read ' + DDIR + '/scout-inventory.md)'}
+--- surfaces ---
+${scouts[2] || '(missing: read ' + DDIR + '/scout-surfaces.md)'}
+
+Your task: write the design document ${DESIGN}. ${SAVE('design-author.md', 'what you have read, each decision with its reason, and which sections are written')}
+Read the findings in full and verify every claim against the code with file:line citations. Where the scouts disagree with the code, the code wins. The orchestrator's starting view, to test rather than trust:
+- Submission: keep action={formAction} (no-JS posts still work); add onSubmit that preventDefaults and dispatches new FormData(form, submitter) in startTransition, so React never resets on a refusal and nothing is echoed from the server. Reset the form on SUCCESS only (the scout's proven mechanism), so a create form does not keep stale text after a successful save. Clear secret fields (password, one-time code) after a refusal, the 3.3.7 security exception, focusing the right field.
+- Errors: ActionForm provides its refusal through a context; Field, SelectField, TextAreaField and a new checkbox-group/fieldset component (and a PasswordField if Show password is judged best) render the field's own message under the control, tied by aria-describedby, with aria-invalid, and a mark that is not colour alone (text such as an 'Error:' prefix or icon, plus a thicker border, in one base rule in packages/ui/src/styles.css covering raw controls too). The summary moves ABOVE the fields, in accurate words, each item a link to its control, named by the control's own visible label read from the DOM (label for / fieldset legend / aria-labelledby), so the one source of a field's name is the label the person sees; the labels prop is removed or kept only where no control exists; an issue with no control shows its message alone, never a key. Decide the focus target after a refusal (the summary, as GOV.UK does, or the first invalid field) with reasons, and what happens with no JavaScript.
+- Raw controls in non-#42 pages move onto the shared components; #42 pages get only what the shared component gives them.
+- Pending: the button stays focusable (aria-disabled) with a guard against double submission, and a polite live region says it is working.
+- Shared loading state (packages/ui) announced; uploader's hidden file input out of the tab order; hardware-key focus and announcements; split-form's live region and marks; the components[] group; 16 px controls below the sm breakpoint (and the ADR question); the six-digit code accepting spaces (client and server); sign-in step refusals as issues on their own field (keeping the first step's vague wording); the password-policy wording; format hints as component support (a hint prop, and a test that a pattern without a hint fails, if best).
+The design must contain:
+1. The defect and its cause, with the React source citation and the scout's evidence.
+2. The mechanism, chosen as best, with alternatives considered (server echo of values; controlled fields via context; key remount) and why rejected; the progressive-enhancement behaviour; the security analysis (nothing echoed; secrets cleared; nothing logged).
+3. The error model: context shape, components, the label source, summary placement, words (exact strings, replacing 'Check the fields marked below.' in next.ts and anywhere else), links, focus, the not-colour-alone mark, the no-control case, raw controls, checkbox groups, what screen readers hear.
+4. Pending and loading states; hardware key; uploader; split form.
+5. Fields: 16 px controls (exact classes), the code normalisation (exact schema change and every caller), Show password (decide), format hints.
+6. Sign-in: per-step issues and wording; first step unchanged for enumeration.
+7. The exact file list the builders change, grouped into independent build slices (so two builders can work in parallel without touching the same file), each slice with its files and tests; and the files left for after #42 with what they lose until then.
+8. Tests: test-matrix rows FRM-01 to FRM-08 (exact wording in the style of docs/product/test-matrix.md), unit tests (tooling chosen with the scout's reasoning), the e2e spec apps/web/e2e/forms-keep-input.spec.ts (which real forms it refuses, what it asserts, axe on a refused form), changes to existing e2e tests that refilled fields, and any test that must change wording.
+9. Docs: ADR 0077 (decide whether needed; the form submission and error pattern is a fair candidate) and any ADR 0056 note; docs/product text; reconciliation-001's checks touched.
+10. Visible changes for the before/after screenshots (which routes, which states), and every new or changed string a person sees.
+11. Confirm no migration, with reasons. Proposals outside the PR.
+Write plainly. Return a summary: mechanism, files by slice, wording, tests, ADR, risks.`, { label: 'design-author', phase: 'Author' })
+
+phase('Review')
+const review = await agent(`${COMMON}
+
+You are the ONE adversarial design reviewer. Read the design ${DESIGN} and the scouts' reports in ${DDIR}/scout-*.md, and attack the design against the code in ${WT} and against React's and Next's real behaviour (run an experiment in ${SP}/mech-app if a claim is doubtful: it may already exist from the mechanics scout). ${SAVE('design-review.md', 'each finding as you confirm it, with its evidence')}
+Try hard to break it:
+- a form whose values are still lost, or stale values kept after a SUCCESS (a create form, a form whose page redirects to itself, a form whose fields have defaultValue from stored data that changes on save, two forms on one page, a form inside a table row);
+- double submission, a replayed requestKey, a CSRF token that went stale, a refusal after a session expired (sign-in redirect);
+- no JavaScript; slow networks; the browser back button; bfcache;
+- secrets: a password or code kept, logged, echoed or left in the DOM after a refusal; PHI typed in a free-text field travelling anywhere new;
+- labels: a control with no label, a label with nested markup (a hint, a required mark, a <Money/>), duplicate names on one page, a field outside the form via form=, a checkbox group, radios, a field in a #42 page; the summary still showing a raw key anywhere;
+- accessibility: WCAG 2.1 AA plus 2.2's 3.3.7 Redundant Entry and 2.4.11 Focus Not Obscured (the sticky header and focus moved to a field under it), 3.3.1, 3.3.3, 1.4.1, 1.3.1, 4.1.3, 2.4.3; what a screen reader actually announces after a refusal and while pending; aria-disabled buttons and keyboard;
+- the brand: .claude/rules/brand.md (danger colour use, status colours for data only, copy rules), docs/brand/BRAND.md, CO-11;
+- scope: no migration, no #42 file touched, nothing out of scope (notices, row-control names), collisions with Lane A's PR 7 (#103), the test tooling choice and the dependency policy, test rows precise and testable, the build slices really independent.
+Check that it is the best option, not the cheapest. Write the review to ${REVIEW}: numbered findings, each with severity (blocking / should-fix / nit), evidence (file:line or experiment), and the fix you recommend. Return the same findings.`, { label: 'design-review', phase: 'Review' })
+
+phase('Revise')
+const revised = await agent(`${COMMON}
+
+The design ${DESIGN} has been reviewed; the review is ${REVIEW}. ${SAVE('design-revise.md', 'each finding and its disposition as you apply it')}
+Apply every finding: change the design for each one you verify, or, where you disagree, keep the design and record why with evidence. Add a section "Review and dispositions" at the end listing each finding, its disposition and reason. Keep the design self-consistent (mechanism, components, wording, slices, tests, docs). Return: the mechanism in one paragraph; the build slices with their exact files and tests; FRM-01 to FRM-08 as written; every visible string; the ADR decision; the files left for after #42; proposals outside the PR; confirmation of no migration; and the list of dispositions.`, { label: 'design-revise', phase: 'Revise' })
+
+return { scouts: scouts.map((s) => (s ? s.slice(0, 4000) : null)), author, review, revised }
