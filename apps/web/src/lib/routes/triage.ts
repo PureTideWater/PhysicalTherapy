@@ -1,7 +1,7 @@
-import { type PracticeScope, type ScopeClient, loadPracticeCipher, rolesPermit } from '@tp/db/runtime';
-import { type Cents, centsToString } from '@tp/money';
+import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, rolesPermit } from '@tp/db/runtime';
+import { type Cents, centsToString, sumCents } from '@tp/money';
 import { CASE_STATES, WRITE_OFF_REASONS, writeOffSchema } from '@tp/triage';
-import { practiceLedgerTotals } from '@tp/worker/ledger';
+import { lineCorrections, practiceLedgerTotals } from '@tp/worker/ledger';
 import { packetOfCase } from '@tp/worker/packets';
 import { waitingPatterns } from '@tp/worker/triage';
 import { z } from 'zod';
@@ -33,6 +33,7 @@ import { type PayerOption, payerOptions } from '../remittances/queries';
 import { type Person, caseWorkers } from '../cases/people';
 import type { TimelineEvent } from '../cases/timeline';
 import { type ActivityView, caseActivity, caseTimeline } from '../cases/workbench';
+import { type CorrectionView, casePatientBalance, correctionView } from '../reconciliation/queries';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
 /**
@@ -310,6 +311,47 @@ export interface CaseLedger {
   readonly proofLevel: string;
 }
 
+/**
+ * Beside the case's ledger and counted in no total (docs/adr/0067): the patient's share of the payer's corrections
+ * across the case's lines, as text cents; whether the case reads "Payer corrected; balance is the patient's" (beside
+ * its stored state, which is case_rules' as ever); and each line's correction, by service line.
+ */
+export interface CaseCorrections {
+  readonly billableCents: string;
+  readonly patientBalance: boolean;
+  readonly lines: Readonly<Record<string, CorrectionView>>;
+}
+
+/** The case's lines' corrections in payment terms, every line of the case (not only the page's), their reads audited. */
+async function caseCorrections(scope: PracticeScope<ScopeClient>, practiceId: string, caseId: string, phi: boolean, requestId: string): Promise<CaseCorrections> {
+  const lines = await readWithAudit(
+    scope,
+    { objectType: 'service_line', purpose: 'case_review', requestId },
+    async (client) =>
+      (
+        await client.query<{ service_line_id: string; practice_id: string; written_off: boolean; stage: string | null }>(
+          `SELECT cl.service_line_id, cl.practice_id, cl.written_off_reason IS NOT NULL AS written_off,
+                  (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_id ORDER BY s.seq DESC LIMIT 1) AS stage
+             FROM case_line cl WHERE cl.practice_id = $1 AND cl.case_id = $2 ORDER BY cl.service_line_id`,
+          [practiceId, caseId],
+        )
+      ).rows,
+    (row) => ({ objectId: row.service_line_id, practiceId: row.practice_id }),
+  );
+  const corrections = await lineCorrections(
+    scope,
+    practiceId,
+    lines.map((line) => line.service_line_id),
+  );
+  const views = Object.fromEntries(lines.map((line) => [line.service_line_id, correctionView(corrections.get(line.service_line_id), phi)]));
+  return {
+    // Every line's, written off or not: what the payer's corrections left the patient, never a figure of the case's.
+    billableCents: centsToString(sumCents([...corrections.values()].map((line) => line.billable?.billableCents ?? (0n as Cents)))),
+    patientBalance: casePatientBalance(lines.map((line) => ({ correction: corrections.get(line.service_line_id)?.correction ?? null, writtenOff: line.written_off, stage: line.stage }))),
+    lines: views,
+  };
+}
+
 export interface CasePageData {
   readonly practiceId: string;
   readonly asOf: string;
@@ -320,6 +362,7 @@ export interface CasePageData {
   readonly workers: readonly Person[];
   readonly dispute: CaseDispute;
   readonly ledger: CaseLedger;
+  readonly corrections: CaseCorrections;
   readonly canWork: boolean;
   readonly canDraft: boolean;
   readonly canReadPhi: boolean;
@@ -375,6 +418,7 @@ export const casePage = practiceRoute({
       workers: canWork ? await caseWorkers(scope, practiceId) : [],
       dispute: await caseDispute(scope, practiceId, params.caseId, asOf),
       ledger: { approvedCents: centsToString(totals.payerApprovedCents), recoveredCents: centsToString(totals.recoveredCents), proofLevel: totals.proofLevel },
+      corrections: await caseCorrections(scope, practiceId, params.caseId, canReadPhi, request.requestId),
       canWork,
       canDraft: rolesPermit(access.roles, 'packet.draft'),
       canReadPhi,

@@ -113,6 +113,43 @@ const CASES: readonly OracleCase[] = [
     ],
     known: { approved: 3000n, posted: 3000n, deposited: 0n, recouped: 0n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'payer_approved' },
   },
+  {
+    name: 'a correction on a line with coinsurance, posted by line, deposited, then reversed alone',
+    fixture: 'LED-14',
+    steps: [
+      { kind: 'export', file: 'lines-posting-export.csv', as: 'posting_export' },
+      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
+      { kind: 'remittance', file: 'reversal.835' },
+    ],
+    // 80.00 paid against the 56.00 before it: 24.00 approved, the 80.00 line row and the 24.00 deposit each proving 24.00, and the reversal taking back the 24.00 paid.
+    known: { approved: 2400n, posted: 2400n, deposited: 2400n, recouped: -2400n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'actionable' },
+  },
+  {
+    name: 'a correction a deductible absorbed, its line row posted',
+    fixture: 'LED-15',
+    steps: [{ kind: 'export', file: 'lines-posting-export.csv', as: 'posting_export' }],
+    // The allowed amount 30.00 higher and the payment the same 40.00: no entry, and the 40.00 row proves nothing.
+    known: { approved: 0n, posted: 0n, deposited: 0n, recouped: 0n, interest: 0n, recovered: 0n, postedEntries: 0, lineStage: 'actionable' },
+  },
+  {
+    name: 'a correction on a line with an unchanged copay, deposited',
+    fixture: 'LED-16',
+    steps: [{ kind: 'export', file: 'eft-export.csv', as: 'eft_export' }],
+    // 80.00 paid against 50.00 with the 20.00 copay unchanged: the whole 30.00 allowed increase.
+    known: { approved: 3000n, posted: 0n, deposited: 3000n, recouped: 0n, interest: 0n, recovered: 3000n, postedEntries: 0, lineStage: 'recovered' },
+  },
+  {
+    name: 'a line holding two approvals, each posted by line and deposited, the last reversed alone with nothing standing',
+    fixture: 'LED-17',
+    steps: [
+      { kind: 'remittance', file: 'second.835' },
+      { kind: 'export', file: 'lines-posting-export.csv', as: 'posting_export' },
+      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
+      { kind: 'remittance', file: 'reversal.835' },
+    ],
+    // 8.00 and 16.00 approved, posted and deposited; every claim of the line reversed, so the last reversal takes back both.
+    known: { approved: 2400n, posted: 2400n, deposited: 2400n, recouped: -2400n, interest: 0n, recovered: 0n, postedEntries: 2, lineStage: 'actionable' },
+  },
 ];
 
 interface Expected {

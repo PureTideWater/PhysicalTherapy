@@ -23,6 +23,7 @@
           "packages/ledger/src/index.ts",
           "packages/ledger/src/matching.ts",
           "packages/ledger/src/pairing.ts",
+          "packages/ledger/src/payment.ts",
           "packages/ledger/src/reconciliation.ts",
           "packages/ledger/src/roi.ts",
           "packages/ledger/src/settings.ts",

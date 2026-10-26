@@ -442,10 +442,10 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await approver.goto(`${casePath}/submissions`);
       const form = approver.getByRole('region', { name: 'Log a payer response' });
       await form.getByLabel('Response', { exact: true }).selectOption('partial');
-      await form.getByLabel('Amount accepted (accepted or partial only, dollars)').fill('60.00');
+      await form.getByLabel('Additional amount the payer will pay (accepted or partial only, dollars)').fill('60.00');
       await form.getByRole('button', { name: 'Record the response' }).click();
       await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();
-      await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('$60.00 accepted');
+      await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('$60.00 the payer will pay');
       await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('(with its document)');
       // Recording the response writes no ledger entry (LED-01): nothing is approved until the reconcile.
       await approver.goto(`/p/${practiceId}/reconciliation`);

@@ -1,5 +1,30 @@
 import type { PracticeCipher } from '@tp/db/runtime';
-import { type ClaimCandidate, type PairableLine, type Reprocessing, allocateByWeight, countedStage, entriesById, pairedLine, preferredCandidates, reprocessing, takeInOrder } from '@tp/ledger';
+import {
+  type ClaimAdjustmentPart,
+  type ClaimCandidate,
+  type ClaimSplitLine,
+  type PairableLine,
+  type PaidLine,
+  type PaymentBaselines,
+  type PaymentChain,
+  type PaymentEvent,
+  type PaymentOutcome,
+  type ReversalTakeBack,
+  allocateByWeight,
+  claimLinePayments,
+  countedStage,
+  keptClaimPart,
+  entriesById,
+  pairLines,
+  pairedLine,
+  paymentChain,
+  paymentMatchOutcome,
+  paymentOutcome,
+  paymentStep,
+  preferredCandidates,
+  reversalTakeBack,
+  takeInOrder,
+} from '@tp/ledger';
 import { type Cents, ZERO_CENTS, cents, negateCents, parseCents } from '@tp/money';
 
 import { EMPTY_LINE_LEDGER, type LineLedger, type Scope, type StoredEntry, type StoredMatch, approvedRemaining, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers } from './ledger';
@@ -7,27 +32,41 @@ import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
 
 /**
  * Remittances against case lines (PRD 13, Matching step 1, and Recoupments and reversals; PRD 5, J10;
- * test matrix LED-02, LED-03, LED-06). Inside the reconcile step's transaction, for the job's one
- * practice:
+ * test matrix LED-02, LED-03, LED-06, LED-14 to LED-17; docs/adr/0067). Inside the reconcile step's
+ * transaction, for the job's one practice:
  *
  * - Each new claim is checked against the open case lines (not written off, in a case not closed) by
  *   payer claim control number first (the claim supersedes the line's claim, or one matched to it since,
  *   or carries its control number) and by patient control number, service date and code second. The
  *   case line is compared with its own line of the claim (@tp/ledger pairLines: the same code,
  *   modifiers, units and date of service, else the same code and date, each line of the claim paired with
- *   one case line at most) against what the remittances have allowed it so far (remittanceBaseline: the
- *   original's observed allowed as later reprocessings changed it, less what recoupments took back; never
- *   an approval a payer response made that no remittance has paid): higher than that and every
- *   acceptance no remittance has paid creates an approved entry for the rest and attaches the claim;
- *   higher within such an acceptance confirms (the part of) it the claim pays, attached with no entry of
- *   its own, the rest left as a shortfall for a person to adjust or dispute; lower on a line with an
- *   approval standing takes back what the remittances paid less (a recouped entry, at most what was
- *   approved); the same, or lower with nothing approved, is a payer response "reprocessed, no change"
- *   (the submissions' record).
+ *   one case line at most) against what the remittances have allowed and paid it so far (the line's chain,
+ *   @tp/ledger paymentChain: its latest standing approving claim match's line, as the take-backs since
+ *   moved it; never an approval a payer response made that no remittance has paid). The outcome is
+ *   decided on the allowed amount and every amount is the payer's cash (@tp/ledger paymentOutcome):
+ *   higher, paying more than the remittances paid and every acceptance no remittance has paid, creates
+ *   an approved entry for the rest of the payment increase and attaches the claim; higher, paying more
+ *   within such an acceptance, confirms (the part of) it the claim pays, attached with no entry of its
+ *   own, the rest left as a shortfall for a person to adjust or dispute; higher, paying exactly what the
+ *   remittances paid (the patient's share or other reductions took the increase), attaches the claim with
+ *   no entry and no payer response; lower on a line with an approval standing, or higher or the same
+ *   paying less (the founder's ruling on Q2), takes back the payment decrease (a recouped entry, at most
+ *   what was approved; none when the payment did not fall or nothing is approved); the same, or lower with
+ *   nothing approved, is a payer response "reprocessed, no change" (the submissions' record).
+ * - A line's cash, everywhere the chain reads it, is its share of its claim's CLP04 (claimLines, @tp/ledger
+ *   claimLinePayments): SVC03 less its part of the claim-level CAS (every group, signed) that no SVC03 holds,
+ *   split over the lines carrying CAS of their own (every line when none does) by each one's allowed amount before
+ *   the claim-level CAS (SVC02 less its own CAS outside group PR), rounded once with the exact fraction beside
+ *   it; SVC03 itself when the claim carries none. A line of a correction whose charge, own CAS and SVC03 are
+ *   those of its paired line in the claim it corrects (claim.superseded_by_claim_id) keeps that line's part,
+ *   and the rest is split over the lines that changed (@tp/ledger keptClaimPart), so a claim-level change is
+ *   the changed lines' and never moves onto a line the payer did not change.
  * - A reversal of a claim attached to a case line, with no correction of it in the same remittance,
- *   takes back what that claim approved (a recouped entry, at once). A PLB WO naming the line's claim
- *   takes back what it names, from the lines with an approval standing, in order, never more than each
- *   has.
+ *   takes back the payment it removes above the original (@tp/ledger reversalTakeBack: its own claim's
+ *   approval while an earlier payment of the line stands, every approval its payment carried when nothing
+ *   stands, nothing while a later claim of the line stands; a recouped entry, at once). A PLB WO naming
+ *   the line's claim takes back what it names, from the lines with an approval standing, in order, never
+ *   more than each has.
  * - Interest the payer paid on a claim attached to a case line, a PLB L6 naming it or the claim's own
  *   AMT I, is an interest entry, split by the lines' approvals when it covers several (allocated).
  * - A forward balance (PLB FB) is never an entry: it counts nothing until a recoupment resolves it.
@@ -49,7 +88,11 @@ export interface RemittanceOutcome {
   readonly approved: number;
   /** Claims that paid what a payer response had accepted: attached to the line, no entry of their own. */
   readonly confirmed: number;
+  /** Claims of a higher allowed amount paying exactly what the remittances paid: attached, approved, no entry and no payer response. */
+  readonly noPaymentIncrease: number;
   readonly decreased: number;
+  /** Claims recorded decreased with nothing to take back: the payment fell with nothing approved, or the allowed amount fell and the payment did not. */
+  readonly decreasedNoEntry: number;
   readonly noChange: number;
   readonly recoupments: number;
   readonly interest: number;
@@ -166,43 +209,112 @@ export interface ClaimLine extends PairableLine {
   readonly claimId: string;
   readonly lineNo: number;
   readonly observedAllowedCents: Cents;
+  /** The line's cash, its share of CLP04 (@tp/ledger claimLinePayments): what every amount of the chain reads. */
   readonly paidCents: Cents;
+  /** SVC03 as sent: what a line-level posting row of the line posts. */
+  readonly servicePaidCents: Cents;
+  /** Its part of the claim-level CAS SVC03 leaves out, with the exact fraction beside the cents; null when it takes none. */
+  readonly claimAdjustment: ClaimAdjustmentPart | null;
+  /** The line as its claim's claim-level CAS is split (@tp/ledger claimAllocations): the cash and the patient's share read the same lines and weights. */
+  readonly split: ClaimSplitLine;
 }
 
-/** The lines of the claims named, in line order, by claim. */
+interface ClaimLineRow {
+  id: string;
+  claim_id: string;
+  line_no: number;
+  procedure_code: string;
+  modifiers: string[];
+  units: string | null;
+  service_date: string | null;
+  observed_allowed_cents: string;
+  charge_cents: string;
+  paid_cents: string;
+  claim_paid_cents: string;
+  carries_adjustments: boolean;
+  line_reduction_cents: string;
+  corrects_claim_id: string | null;
+}
+
+/** What @tp/ledger pairLines reads of a line row. */
+const pairable = (row: ClaimLineRow): PairableLine => ({ procedureCode: row.procedure_code, modifiers: row.modifiers, units: row.units, serviceDate: row.service_date });
+
+/**
+ * The lines of the claims named, in line order, by claim, each with its cash: SVC03 less its part of the
+ * claim-level CAS that no SVC03 holds, so the claim's lines add up to its CLP04 (@tp/ledger
+ * claimLinePayments; docs/adr/0067). A correction's line that the payer did not change keeps its part of the
+ * claim it corrects (the claim whose superseded_by_claim_id names it, its lines paired by @tp/ledger pairLines;
+ * @tp/ledger keptClaimPart), so the claims each corrects are read too, back to the first. Read from stored rows only.
+ */
 export async function claimLines(scope: Scope, claimIds: readonly string[]): Promise<Map<string, ClaimLine[]>> {
-  const { rows } = await scope.client.query<{
-    id: string;
-    claim_id: string;
-    line_no: number;
-    procedure_code: string;
-    modifiers: string[];
-    units: string | null;
-    service_date: string | null;
-    observed_allowed_cents: string;
-    paid_cents: string;
-  }>(
-    `SELECT s.id, s.claim_id, s.line_no, s.procedure_code, s.modifiers, s.units::text AS units, s.service_date::text AS service_date,
-            s.observed_allowed_cents::text AS observed_allowed_cents, s.paid_cents::text AS paid_cents
-       FROM service_line s WHERE s.claim_id = ANY ($1::uuid[]) ORDER BY s.claim_id, s.line_no`,
+  const { rows } = await scope.client.query<ClaimLineRow>(
+    `WITH RECURSIVE named (id) AS (
+       SELECT unnest($1::uuid[])
+        UNION
+       SELECT k.id FROM claim k JOIN named n ON k.superseded_by_claim_id = n.id)
+     SELECT s.id, s.claim_id, s.line_no, s.procedure_code, s.modifiers, s.units::text AS units, s.service_date::text AS service_date,
+            s.observed_allowed_cents::text AS observed_allowed_cents, s.charge_cents::text AS charge_cents, s.paid_cents::text AS paid_cents,
+            c.paid_cents::text AS claim_paid_cents, EXISTS (SELECT 1 FROM adjustment a WHERE a.service_line_id = s.id) AS carries_adjustments,
+            (SELECT COALESCE(sum(a.amount_cents), 0) FROM adjustment a WHERE a.service_line_id = s.id AND a.group_code <> 'PR')::text AS line_reduction_cents,
+            (SELECT k.id FROM claim k WHERE k.superseded_by_claim_id = s.claim_id ORDER BY k.created_at DESC, k.id LIMIT 1) AS corrects_claim_id
+       FROM service_line s JOIN claim c ON c.id = s.claim_id WHERE s.claim_id IN (SELECT id FROM named) ORDER BY s.claim_id, s.line_no`,
     [[...new Set(claimIds)]],
   );
-  const byClaim = new Map<string, ClaimLine[]>();
+  const rowsOf = new Map<string, ClaimLineRow[]>();
   for (const row of rows) {
-    const line: ClaimLine = {
-      serviceLineId: row.id,
-      claimId: row.claim_id,
-      lineNo: row.line_no,
-      procedureCode: row.procedure_code,
-      modifiers: row.modifiers,
-      units: row.units,
-      serviceDate: row.service_date,
-      observedAllowedCents: parseCents(row.observed_allowed_cents),
-      paidCents: parseCents(row.paid_cents),
-    };
-    byClaim.set(row.claim_id, [...(byClaim.get(row.claim_id) ?? []), line]);
+    rowsOf.set(row.claim_id, [...(rowsOf.get(row.claim_id) ?? []), row]);
   }
-  return byClaim;
+  const byClaim = new Map<string, ClaimLine[]>();
+  const linesOf = (claimId: string, seen: ReadonlySet<string>): ClaimLine[] => {
+    const known = byClaim.get(claimId);
+    if (known !== undefined) {
+      return known;
+    }
+    const own = rowsOf.get(claimId) ?? [];
+    const corrects = own[0]?.corrects_claim_id ?? null;
+    // The claim it corrects, split first (a loop, which the loader's links never make, is read as no claim corrected).
+    const before = corrects === null || seen.has(corrects) ? [] : linesOf(corrects, new Set([...seen, claimId]));
+    const pairs = pairLines(own.map(pairable), before);
+    const lines = own.map((row) => ({
+      chargeCents: parseCents(row.charge_cents),
+      lineReductionCents: parseCents(row.line_reduction_cents),
+      carriesAdjustments: row.carries_adjustments,
+      servicePaidCents: parseCents(row.paid_cents),
+    }));
+    const splits = lines.map((line, index): ClaimSplitLine => {
+      const at = pairs[index] ?? null;
+      const was = at === null ? undefined : before[at];
+      const keptCents = keptClaimPart(line, was === undefined ? undefined : { line: { ...was.split, servicePaidCents: was.servicePaidCents }, part: was.claimAdjustment });
+      return { chargeCents: line.chargeCents, lineReductionCents: line.lineReductionCents, carriesAdjustments: line.carriesAdjustments, keptCents };
+    });
+    const payments = claimLinePayments({
+      claimPaidCents: parseCents(own[0]?.claim_paid_cents ?? '0'),
+      lines: lines.map((line, index) => ({ ...(splits[index] as ClaimSplitLine), servicePaidCents: line.servicePaidCents })),
+    });
+    const result = own.map((row, index): ClaimLine => {
+      const payment = payments[index] as (typeof payments)[number];
+      return {
+        serviceLineId: row.id,
+        claimId: row.claim_id,
+        lineNo: row.line_no,
+        ...pairable(row),
+        observedAllowedCents: parseCents(row.observed_allowed_cents),
+        paidCents: payment.paidCents,
+        servicePaidCents: parseCents(row.paid_cents),
+        claimAdjustment: payment.claimAdjustment,
+        split: splits[index] as ClaimSplitLine,
+      };
+    });
+    byClaim.set(claimId, result);
+    return result;
+  };
+  const named = new Map<string, ClaimLine[]>();
+  for (const claimId of [...new Set(claimIds)]) {
+    if (rowsOf.has(claimId)) {
+      named.set(claimId, linesOf(claimId, new Set()));
+    }
+  }
+  return named;
 }
 
 /**
@@ -216,42 +328,256 @@ export function caseLinePair(lines: ReadonlyMap<string, readonly ClaimLine[]>, c
   return index < 0 ? undefined : pairedLine(original, index, lines.get(claimId) ?? []);
 }
 
-/** What the comparisons read of a case line: which line of which claim it is, and what it was allowed. */
-export type LineIdentity = Pick<CaseLine, 'serviceLineId' | 'claimId' | 'observedAllowedCents'>;
+/** What the chain reads of a case line: which line of which claim it is. */
+export type ChainLine = Pick<CaseLine, 'serviceLineId' | 'claimId'>;
 
-/** The observed allowed of the claim's line paired with the case line, or null when it has none. */
-export async function comparableAllowed(scope: Scope, claimId: string, line: LineIdentity): Promise<Cents | null> {
-  return caseLinePair(await claimLines(scope, [line.claimId, claimId]), line, claimId)?.observedAllowedCents ?? null;
+/** The cash and allowed amount of a claim's line, as @tp/ledger's payment terms read it. */
+export const paidLine = (line: ClaimLine): PaidLine => ({ allowedCents: line.observedAllowedCents, paidCents: line.paidCents });
+
+/** A loaded reversal (CLP02 22) of a claim, and when it was loaded. */
+interface LoadedReversal {
+  readonly id: string;
+  readonly remittanceId: string;
+  readonly reversedClaimId: string;
+  readonly paidOn: string;
+  /** When its remittance was loaded (claim.created_at, in microseconds since the epoch). */
+  readonly loadedAt: bigint;
+  /** Its remittance holds the correction that superseded the reversed claim: the reprocessing, never a take-back. */
+  readonly beside: boolean;
 }
 
 /**
- * What the remittances have allowed a case line so far, the baseline a reprocessing is compared with
- * (PRD 13, Matching step 1 and Recoupments and reversals): the allowed of its latest standing approving
- * claim match's line (a reprocessing that approved more, or paid what a response accepted), less what
- * recoupments matched after it took back; with none, the original's observed allowed less every
- * recoupment. An approval a payer response made counts only once a remittance pays it.
+ * What the practice's chains are read from: its matches in chain order, when each was made, the lines of
+ * every claim a case line or a match names, the loaded reversals of those claims, and what each match's
+ * counted recouped entries took back.
  */
-export async function remittanceBaseline(scope: Scope, line: LineIdentity, matches: readonly StoredMatch[], entries: readonly StoredEntry[]): Promise<Cents> {
-  const order = new Map(matches.map((match, index) => [match.id, index]));
-  const anchor = matches.filter((match) => match.kind === 'claim' && match.standing && match.outcome === 'approved' && match.serviceLineId === line.serviceLineId).at(-1);
-  const anchorAllowed = anchor === undefined ? null : await comparableAllowed(scope, anchor.claimId as string, line);
-  const from = anchor === undefined || anchorAllowed === null ? -1 : (order.get(anchor.id) as number);
+export interface ChainContext {
+  /** The claim and recoupment matches in chain order. */
+  readonly matches: readonly StoredMatch[];
+  /** When each match was made (matched_at, in microseconds since the epoch). */
+  readonly matchedAt: ReadonlyMap<string, bigint>;
+  readonly lines: ReadonlyMap<string, readonly ClaimLine[]>;
+  /** In the order they were paid: the reversal take-backs' order. */
+  readonly reversals: readonly LoadedReversal[];
+  /** Each match's counted recouped entries, summed (zero or less). */
+  readonly recouped: ReadonlyMap<string, Cents>;
+}
+
+/**
+ * The practice's claim and recoupment matches in chain order. A reconcile's matches share one matched_at
+ * (the transaction's), so within it they are ordered as the reconcile made them: claims first, in the
+ * order their candidates were paid, then reversals in theirs, then provider adjustments in theirs.
+ */
+const CHAIN_ORDER = `
+  SELECT m.id, (extract(epoch FROM m.matched_at) * 1000000)::bigint::text AS matched_at
+    FROM ledger_match m JOIN remittance r ON r.id = m.remittance_id LEFT JOIN claim c ON c.id = m.claim_id LEFT JOIN provider_adjustment a ON a.id = m.provider_adjustment_id
+   WHERE m.practice_id = $1 AND m.kind IN ('claim', 'recoupment')
+   ORDER BY m.matched_at, CASE WHEN m.kind = 'claim' THEN 0 WHEN m.claim_id IS NOT NULL THEN 1 ELSE 2 END, r.bpr16_date, coalesce(c.created_at, a.created_at), a.position, coalesce(c.id, a.id), m.id`;
+
+/** Reads what the chains of the case lines of `claimIds` (their own claims) are walked from. */
+export async function chainContext(scope: Scope, practiceId: string, claimIds: readonly string[], entries: readonly StoredEntry[]): Promise<ChainContext> {
+  const { rows: order } = await scope.client.query<{ id: string; matched_at: string }>(CHAIN_ORDER, [practiceId]);
+  const position = new Map(order.map((row, index) => [row.id, index]));
+  const matches = (await ledgerMatches(scope, practiceId)).filter((match) => position.has(match.id)).sort((a, b) => (position.get(a.id) as number) - (position.get(b.id) as number));
+  const claims = [...new Set([...claimIds, ...matches.filter((match) => match.kind === 'claim').map((match) => match.claimId as string)])];
+  const { rows: reversals } = await scope.client.query<{ id: string; remittance_id: string; reversed_claim_id: string; paid_on: string; loaded_at: string; beside: boolean }>(
+    `SELECT v.id, v.remittance_id, v.reversal_of_claim_id AS reversed_claim_id, r.bpr16_date::text AS paid_on, (extract(epoch FROM v.created_at) * 1000000)::bigint::text AS loaded_at,
+            EXISTS (SELECT 1 FROM claim n WHERE n.id = x.superseded_by_claim_id AND n.remittance_id = v.remittance_id) AS beside
+       FROM claim v JOIN remittance r ON r.id = v.remittance_id JOIN claim x ON x.id = v.reversal_of_claim_id
+      WHERE v.practice_id = $1 AND r.status = 'loaded' AND v.claim_status_code = '22' AND v.reversal_of_claim_id = ANY ($2::uuid[])
+      ORDER BY r.bpr16_date, v.created_at, v.id`,
+    [practiceId, claims],
+  );
   const byId = entriesById(entries);
-  const takenBack = entries
-    .filter((entry) => entry.serviceLineId === line.serviceLineId && entry.matchId !== null && (order.get(entry.matchId) ?? -1) > from && countedStage(entry, byId) === 'recouped')
-    .reduce((sum, entry) => sum + entry.amountCents, 0n);
-  return cents((anchorAllowed ?? line.observedAllowedCents) + takenBack);
+  const recouped = new Map<string, Cents>();
+  for (const entry of entries) {
+    if (entry.matchId !== null && entry.serviceLineId !== null && countedStage(entry, byId) === 'recouped') {
+      recouped.set(entry.matchId, cents((recouped.get(entry.matchId) ?? ZERO_CENTS) + entry.amountCents));
+    }
+  }
+  return {
+    matches,
+    matchedAt: new Map(order.map((row) => [row.id, BigInt(row.matched_at)])),
+    lines: await claimLines(scope, claims),
+    reversals: reversals.map((row) => ({ id: row.id, remittanceId: row.remittance_id, reversedClaimId: row.reversed_claim_id, paidOn: row.paid_on, loadedAt: BigInt(row.loaded_at), beside: row.beside })),
+    recouped,
+  };
 }
 
-/** What is approved for the line beyond what the remittances paid: an acceptance no remittance has paid yet (zero or more). */
-export function unpaidApproval(line: LineIdentity, ledger: LineLedger, baseline: Cents): Cents {
-  const unpaid = approvedRemaining(ledger) - (baseline - line.observedAllowedCents);
-  return cents(unpaid > 0n ? unpaid : 0n);
+/** A claim of a case line's chain: the line's own (no match) or one matched to it, with its line paired with the case line. */
+export interface ChainClaim {
+  readonly match: StoredMatch | null;
+  readonly claimId: string;
+  /** Its place in the chain's matches (the original's is -1). */
+  readonly position: number;
+  readonly line: ClaimLine;
 }
 
-/** A reprocessing's outcome for the case line, against what the remittances allowed it and what is approved. */
-export function compareWithLine(line: LineIdentity, ledger: LineLedger, baseline: Cents, allowed: Cents): Reprocessing {
-  return reprocessing({ remittanceAllowedCents: baseline, unpaidApprovalCents: unpaidApproval(line, ledger, baseline), newAllowedCents: allowed, approvedRemainingCents: approvedRemaining(ledger) });
+/** A case line's chain: its own claim's line, its claims (the original first, then each standing claim match in order), and the baselines walked over it. */
+export interface LineChain {
+  readonly original: ClaimLine;
+  readonly claims: readonly ChainClaim[];
+  readonly chain: PaymentChain;
+}
+
+/** Where a take-back is judged from: a place in the chain and when (null: now, every loaded reversal counting). */
+interface AsOf {
+  readonly position: number;
+  readonly at: bigint | null;
+}
+
+const NOW: AsOf = { position: Number.POSITIVE_INFINITY, at: null };
+
+/**
+ * A reversal of claim `reversed` of the chain (PRD 13, Recoupments and reversals; @tp/ledger
+ * reversalTakeBack): whether a claim of the chain after it stands, which claim before it stands (the
+ * latest with no loaded reversal, the original included), and so what it takes back and the claim the
+ * baselines return to (the original when none stands). Judged as of the reversal's own recoupment match,
+ * so the chain walks the same way after later reversals arrive.
+ */
+function reversalRule(chain: Pick<LineChain, 'original' | 'claims'>, reversed: ChainClaim, reversals: readonly LoadedReversal[], asOf: AsOf, remaining: Cents): { readonly take: ReversalTakeBack; readonly base: ChainClaim } {
+  const stands = (claim: ChainClaim) => !reversals.some((reversal) => reversal.reversedClaimId === claim.claimId && (asOf.at === null || reversal.loadedAt <= asOf.at));
+  const laterClaimStands = chain.claims.some((claim) => claim.position > reversed.position && claim.position < asOf.position && stands(claim));
+  const earlier = chain.claims.filter((claim) => claim.position < reversed.position && stands(claim)).at(-1) ?? null;
+  const take = reversalTakeBack({
+    originalPaidCents: chain.original.paidCents,
+    reversedPaidCents: reversed.line.paidCents,
+    standingEarlierPaidCents: earlier?.line.paidCents ?? null,
+    laterClaimStands,
+    approvedRemainingCents: remaining,
+  });
+  return { take, base: earlier ?? (chain.claims[0] as ChainClaim) };
+}
+
+/**
+ * A case line's chain from the context: its standing claim matches with their paired lines, and the
+ * baselines walked over every event in chain order (@tp/ledger paymentChain): each standing claim match
+ * with its stored outcome and its own take-back, each standing recoupment of a reversal with its rule
+ * judged as of that recoupment, and each other standing recoupment (a PLB WO) as cash. Undefined when the
+ * line's claim is not loaded.
+ */
+export function lineChain(context: ChainContext, line: ChainLine): LineChain | undefined {
+  const original = caseLinePair(context.lines, line, line.claimId);
+  if (original === undefined) {
+    return undefined;
+  }
+  const own = context.matches.filter((match) => match.serviceLineId === line.serviceLineId && match.standing);
+  const claims: ChainClaim[] = [{ match: null, claimId: line.claimId, position: -1, line: original }];
+  for (const [position, match] of own.entries()) {
+    const pair = match.kind === 'claim' ? caseLinePair(context.lines, line, match.claimId as string) : undefined;
+    if (pair !== undefined) {
+      claims.push({ match, claimId: match.claimId as string, position, line: pair });
+    }
+  }
+  const events: PaymentEvent[] = [];
+  for (const [position, match] of own.entries()) {
+    const recoupedCents = context.recouped.get(match.id) ?? ZERO_CENTS;
+    if (match.kind === 'claim') {
+      const claim = claims.find((item) => item.match?.id === match.id);
+      if (claim !== undefined) {
+        events.push({ kind: 'claim', matchId: match.id, outcome: match.outcome ?? 'no_change', ...paidLine(claim.line), recoupedCents });
+      }
+      continue;
+    }
+    const reversal = match.claimId === null ? undefined : context.reversals.find((item) => item.id === match.claimId);
+    const reversed = reversal === undefined ? undefined : claims.find((claim) => claim.match !== null && claim.claimId === reversal.reversedClaimId && claim.position < position);
+    if (reversed === undefined) {
+      events.push({ kind: 'withholding', recoupedCents });
+      continue;
+    }
+    const { take, base } = reversalRule({ original, claims }, reversed, context.reversals, { position, at: context.matchedAt.get(match.id) ?? null }, ZERO_CENTS);
+    events.push({
+      kind: 'reversal',
+      recoupedCents,
+      reversedAllowedCents: reversed.line.observedAllowedCents,
+      baseAllowedCents: base.line.observedAllowedCents,
+      baseMatchId: base.match?.id ?? null,
+      uncappedCents: take.uncappedCents,
+    });
+  }
+  return { original, claims, chain: paymentChain({ original: paidLine(original), events }) };
+}
+
+/** A reprocessing of a case line by a claim: the claim's line paired with it, and how it compares (@tp/ledger paymentOutcome). */
+export interface Reprocessed {
+  readonly claimId: string;
+  readonly next: ClaimLine;
+  readonly outcome: PaymentOutcome;
+  /** The match's stored outcome. */
+  readonly matchOutcome: 'approved' | 'decreased' | 'no_change';
+}
+
+/**
+ * A claim compared with the case line against its baselines (the chain's, as the pass has carried them)
+ * and what is approved for it: the one comparison the reconcile and a person's match by hand both make.
+ * Null when the claim has no line paired with the case line.
+ */
+export async function reprocessingOf(
+  scope: Scope,
+  line: ChainLine,
+  claimId: string,
+  against: { readonly original: PaidLine; readonly baselines: PaymentBaselines; readonly ledger: LineLedger },
+): Promise<Reprocessed | null> {
+  const next = caseLinePair(await claimLines(scope, [line.claimId, claimId]), line, claimId);
+  if (next === undefined) {
+    return null;
+  }
+  const outcome = paymentOutcome({ original: against.original, baselines: against.baselines, next: paidLine(next), approvedRemainingCents: approvedRemaining(against.ledger) });
+  return { claimId, next, outcome, matchOutcome: paymentMatchOutcome(outcome) };
+}
+
+/** The entry a reprocessing writes: an approval, a take-back, or none (a confirmation, no payment increase, a decrease of nothing, or no change). */
+export function reprocessingEntry(outcome: PaymentOutcome): { readonly stage: 'approved' | 'recouped'; readonly amountCents: Cents } | null {
+  if (outcome.kind === 'approved') {
+    return { stage: 'approved', amountCents: outcome.amountCents };
+  }
+  return outcome.kind === 'decreased' && outcome.amountCents < ZERO_CENTS ? { stage: 'recouped', amountCents: outcome.amountCents } : null;
+}
+
+/** The baselines after a reprocessing is matched: what the next comparison of the same pass reads. */
+export function afterReprocessing(baselines: PaymentBaselines, matchId: string, reprocessed: Reprocessed): PaymentBaselines {
+  const entry = reprocessingEntry(reprocessed.outcome);
+  return paymentStep(baselines, {
+    kind: 'claim',
+    matchId,
+    outcome: reprocessed.matchOutcome,
+    ...paidLine(reprocessed.next),
+    recoupedCents: entry?.stage === 'recouped' ? entry.amountCents : ZERO_CENTS,
+  });
+}
+
+/**
+ * Records a reprocessing: the claim match with its outcome and the entry it writes, in no one's name or
+ * the person's who matched by hand. Null when a match already stands for the claim and line.
+ */
+export async function recordReprocessing(
+  scope: Scope,
+  practiceId: string,
+  line: Pick<CaseLine, 'caseId' | 'serviceLineId'>,
+  claim: { readonly remittanceId: string; readonly paidOn?: string },
+  reprocessed: Reprocessed,
+  by: string | null,
+): Promise<{ readonly matchId: string; readonly entryId: string | null } | null> {
+  const matchId = await insertMatch(scope, practiceId, { kind: 'claim', claimId: reprocessed.claimId, remittanceId: claim.remittanceId, serviceLineId: line.serviceLineId, outcome: reprocessed.matchOutcome, matchedBy: by });
+  if (matchId === null) {
+    return null;
+  }
+  const entry = reprocessingEntry(reprocessed.outcome);
+  const entryId =
+    entry === null
+      ? null
+      : await insertEntry(scope, practiceId, {
+          caseId: line.caseId,
+          serviceLineId: line.serviceLineId,
+          stage: entry.stage,
+          amountCents: entry.amountCents,
+          evidenceKind: 'claim',
+          evidenceId: reprocessed.claimId,
+          matchId,
+          ...(claim.paidOn === undefined ? {} : { effectiveOn: claim.paidOn }),
+          createdBy: by,
+        });
+  return { matchId, entryId };
 }
 
 /** The line's ledger after an entry: what the next comparison of the same pass reads. */
@@ -265,7 +591,9 @@ function after(line: LineLedger, stage: 'approved' | 'recouped', amount: Cents, 
 interface Counts {
   approved: number;
   confirmed: number;
+  noPaymentIncrease: number;
   decreased: number;
+  decreasedNoEntry: number;
   noChange: number;
   recoupments: number;
   interest: number;
@@ -278,128 +606,149 @@ interface Recouped {
   readonly amountCents: Cents;
 }
 
-/** Step 1: each open case line's new claims, in the order they were paid. */
-async function matchClaims(
-  scope: Scope,
-  cipher: PracticeCipher,
-  practiceId: string,
-  lines: readonly CaseLine[],
-  ledgers: Map<string, LineLedger>,
-  matches: readonly StoredMatch[],
-  recordNoChange: RecordReprocessedNoChange,
-  counts: Counts,
-  recouped: Recouped[],
-): Promise<void> {
-  const entries = await ledgerEntries(scope, practiceId);
+/** What one pass of step 1 carries: where it writes, what it counts, and each line's ledger as it approves and takes back. */
+interface ClaimPass {
+  readonly scope: Scope;
+  readonly practiceId: string;
+  readonly ledgers: Map<string, LineLedger>;
+  readonly recordNoChange: RecordReprocessedNoChange;
+  readonly counts: Counts;
+  readonly recouped: Recouped[];
+}
+
+/**
+ * Step 1: each open case line's new claims. The candidates are found first, to a fixpoint: a correction
+ * of a candidate the line pairs with is a candidate too (whether a claim extends the search depends on its
+ * pairing only, never on its outcome). Then they are compared in the stored chain's own claim order (by
+ * payment date, then load, then id; CHAIN_ORDER), so what the pass writes is what every later walk of the
+ * chain reads. The line's baselines are walked from its stored chain once, then carried through the pass
+ * as each candidate is matched.
+ */
+async function matchClaims(pass: ClaimPass, cipher: PracticeCipher, lines: readonly CaseLine[]): Promise<void> {
+  const { scope, practiceId } = pass;
+  const context = await chainContext(scope, practiceId, lines.map((line) => line.claimId), await ledgerEntries(scope, practiceId));
   for (const line of lines.filter((item) => item.open)) {
-    const known = [line.claimId, ...matches.filter((match) => match.kind === 'claim' && match.standing && match.serviceLineId === line.serviceLineId).map((match) => match.claimId as string)];
-    let baseline: Cents | null = null;
-    for (const candidate of await candidatesFor(scope, cipher, practiceId, line, known)) {
-      const allowed = await comparableAllowed(scope, candidate.claimId, line);
-      if (allowed === null) {
-        continue;
-      }
-      const ledger = ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
-      baseline ??= await remittanceBaseline(scope, line, matches, entries);
-      const outcome = compareWithLine(line, ledger, baseline, allowed);
-      const matchId = await insertMatch(scope, practiceId, {
-        kind: 'claim',
-        claimId: candidate.claimId,
-        remittanceId: candidate.remittanceId,
-        serviceLineId: line.serviceLineId,
-        outcome: outcome.kind === 'confirmed' ? 'approved' : outcome.kind,
-        matchedBy: null,
-      });
-      if (matchId === null) {
-        continue;
-      }
-      if (outcome.kind === 'confirmed') {
-        // It pays (part of) what a payer response accepted: no entry of its own, no take-back of the rest.
-        baseline = allowed;
-        counts.confirmed += 1;
-        continue;
-      }
-      if (outcome.kind === 'no_change') {
-        counts.noChange += 1;
-        await recordNoChange(scope, { practiceId, caseId: line.caseId, remittanceId: candidate.remittanceId, receivedOn: candidate.paidOn });
-        continue;
-      }
-      const stage = outcome.kind === 'approved' ? 'approved' : 'recouped';
-      const entryId = await insertEntry(scope, practiceId, {
-        caseId: line.caseId,
-        serviceLineId: line.serviceLineId,
-        stage,
-        amountCents: outcome.amountCents,
-        evidenceKind: 'claim',
-        evidenceId: candidate.claimId,
-        matchId,
-        effectiveOn: candidate.paidOn,
-        createdBy: null,
-      });
-      ledgers.set(line.serviceLineId, after(ledger, stage, outcome.amountCents, matchId));
-      if (stage === 'approved') {
-        baseline = allowed;
-        counts.approved += 1;
-      } else {
-        baseline = cents(baseline + outcome.amountCents);
-        counts.decreased += 1;
-        recouped.push({ caseId: line.caseId, entryId: entryId as string, serviceLineId: line.serviceLineId, amountCents: outcome.amountCents });
+    const chain = lineChain(context, line);
+    if (chain === undefined) {
+      continue;
+    }
+    const state = { original: paidLine(chain.original), baselines: chain.chain.current };
+    for (const candidate of await chainOrdered(scope, await candidateClosure(scope, cipher, practiceId, line, chain))) {
+      await matchCandidate(pass, line, state, candidate);
+    }
+  }
+}
+
+type Candidate = Awaited<ReturnType<typeof candidatesFor>>[number];
+
+/** A case line's candidates to a fixpoint: each one paired with the line extends the search by its own control numbers. */
+async function candidateClosure(scope: Scope, cipher: PracticeCipher, practiceId: string, line: CaseLine, chain: LineChain): Promise<Candidate[]> {
+  const known = new Set(chain.claims.map((claim) => claim.claimId));
+  const seen = new Set<string>();
+  const found: Candidate[] = [];
+  for (;;) {
+    const candidates = (await candidatesFor(scope, cipher, practiceId, line, [...known])).filter((candidate) => !seen.has(candidate.claimId));
+    if (candidates.length === 0) {
+      return found;
+    }
+    const lines = await claimLines(scope, [line.claimId, ...candidates.map((candidate) => candidate.claimId)]);
+    for (const candidate of candidates) {
+      seen.add(candidate.claimId);
+      if (caseLinePair(lines, line, candidate.claimId) !== undefined) {
+        known.add(candidate.claimId);
+        found.push(candidate);
       }
     }
   }
 }
 
-const min = (a: Cents, b: Cents): Cents => (a < b ? a : b);
+/** The candidates in the chain's claim order: by payment date (BPR16), then when each was loaded, then id. */
+async function chainOrdered(scope: Scope, candidates: readonly Candidate[]): Promise<Candidate[]> {
+  if (candidates.length < 2) {
+    return [...candidates];
+  }
+  const { rows } = await scope.client.query<{ id: string }>(
+    'SELECT c.id FROM claim c JOIN remittance r ON r.id = c.remittance_id WHERE c.id = ANY ($1::uuid[]) ORDER BY r.bpr16_date, c.created_at, c.id',
+    [candidates.map((candidate) => candidate.claimId)],
+  );
+  return rows.map((row) => candidates.find((candidate) => candidate.claimId === row.id) as Candidate);
+}
+
+/** Compares one candidate with the line, records it, and carries the line's baselines past it. */
+async function matchCandidate(
+  pass: ClaimPass,
+  line: CaseLine,
+  state: { readonly original: PaidLine; baselines: PaymentBaselines },
+  candidate: { readonly claimId: string; readonly remittanceId: string; readonly paidOn: string },
+): Promise<void> {
+  const { scope, practiceId, ledgers, counts } = pass;
+  const ledger = ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
+  const reprocessed = await reprocessingOf(scope, line, candidate.claimId, { original: state.original, baselines: state.baselines, ledger });
+  if (reprocessed === null) {
+    return;
+  }
+  const written = await recordReprocessing(scope, practiceId, line, candidate, reprocessed, null);
+  if (written === null) {
+    return;
+  }
+  state.baselines = afterReprocessing(state.baselines, written.matchId, reprocessed);
+  const { outcome } = reprocessed;
+  if (outcome.kind === 'confirmed') {
+    // It pays (part of) what a payer response accepted: no entry of its own, no take-back of the rest.
+    counts.confirmed += 1;
+  } else if (outcome.kind === 'no_payment_increase') {
+    // The patient's share (or other reductions) took the whole increase: no entry, never no change.
+    counts.noPaymentIncrease += 1;
+  } else if (outcome.kind === 'no_change') {
+    counts.noChange += 1;
+    await pass.recordNoChange(scope, { practiceId, caseId: line.caseId, remittanceId: candidate.remittanceId, receivedOn: candidate.paidOn });
+  } else if (outcome.kind === 'approved') {
+    ledgers.set(line.serviceLineId, after(ledger, 'approved', outcome.amountCents, written.matchId));
+    counts.approved += 1;
+  } else if (outcome.amountCents < ZERO_CENTS) {
+    ledgers.set(line.serviceLineId, after(ledger, 'recouped', outcome.amountCents, written.matchId));
+    counts.decreased += 1;
+    pass.recouped.push({ caseId: line.caseId, entryId: written.entryId as string, serviceLineId: line.serviceLineId, amountCents: outcome.amountCents });
+  } else {
+    // Decreased with nothing to take back: no entry, no payer response, and neither baseline moves.
+    counts.decreasedNoEntry += 1;
+  }
+}
 
 /**
- * What a claim that confirmed a payer response's approval paid of it (it wrote no entry of its own): what
- * its line allowed above the original, at most what the responses approved. Its reversal takes that back.
+ * A reversal of a claim attached to a case line, with no correction of it in the same remittance: the
+ * payment it removes above the original is taken back (@tp/ledger reversalTakeBack), at most what is
+ * approved and not yet taken back.
  */
-async function confirmedBy(scope: Scope, line: CaseLine, claimId: string, ledger: LineLedger): Promise<Cents> {
-  const allowed = await comparableAllowed(scope, claimId, line);
-  const paid = allowed === null ? ZERO_CENTS : cents(allowed - line.observedAllowedCents);
-  return paid > ZERO_CENTS ? min(paid, ledger.approvedByResponsesCents) : ZERO_CENTS;
-}
-
-interface ReversalRow {
-  readonly id: string;
-  readonly remittance_id: string;
-  readonly reversed_claim_id: string;
-  readonly paid_on: string;
-}
-
-/** A reversal of a claim attached to a case line, with no correction of it in the same remittance: what that claim approved is taken back. */
 async function recoupReversals(scope: Scope, practiceId: string, lines: readonly CaseLine[], ledgers: Map<string, LineLedger>, matches: readonly StoredMatch[], counts: Counts, recouped: Recouped[]): Promise<void> {
   const approving = matches.filter((match) => match.kind === 'claim' && match.standing && match.outcome === 'approved');
   if (approving.length === 0) {
     return;
   }
-  const { rows } = await scope.client.query<ReversalRow>(
-    `SELECT v.id, v.remittance_id, v.reversal_of_claim_id AS reversed_claim_id, r.bpr16_date::text AS paid_on
-       FROM claim v JOIN remittance r ON r.id = v.remittance_id JOIN claim x ON x.id = v.reversal_of_claim_id
-      WHERE v.practice_id = $1 AND r.status = 'loaded' AND v.claim_status_code = '22' AND v.reversal_of_claim_id = ANY ($2::uuid[])
-        AND NOT EXISTS (SELECT 1 FROM claim n WHERE n.id = x.superseded_by_claim_id AND n.remittance_id = v.remittance_id)
-      ORDER BY r.bpr16_date, v.created_at, v.id`,
-    [practiceId, [...new Set(approving.map((match) => match.claimId as string))]],
-  );
-  for (const reversal of rows) {
-    for (const match of approving.filter((item) => item.claimId === reversal.reversed_claim_id)) {
+  const context = await chainContext(scope, practiceId, lines.map((line) => line.claimId), await ledgerEntries(scope, practiceId));
+  const reversed = new Set(approving.map((match) => match.claimId as string));
+  for (const reversal of context.reversals.filter((item) => !item.beside && reversed.has(item.reversedClaimId))) {
+    for (const match of approving.filter((item) => item.claimId === reversal.reversedClaimId)) {
       const line = lines.find((item) => item.serviceLineId === match.serviceLineId);
-      const ledger = ledgers.get(match.serviceLineId as string) ?? EMPTY_LINE_LEDGER;
       if (line === undefined || everMatched(matches, 'recoupment', reversal.id, line.serviceLineId)) {
         continue;
       }
-      const remaining = approvedRemaining(ledger);
-      const taken = min(ledger.approvedByMatch.get(match.id) ?? (await confirmedBy(scope, line, match.claimId as string, ledger)), remaining);
-      if (taken <= ZERO_CENTS) {
+      const chain = lineChain(context, line);
+      const claim = chain?.claims.find((item) => item.match?.id === match.id);
+      if (chain === undefined || claim === undefined) {
         continue;
       }
-      const matchId = await insertMatch(scope, practiceId, { kind: 'recoupment', claimId: reversal.id, remittanceId: reversal.remittance_id, serviceLineId: line.serviceLineId, matchedBy: null });
+      const ledger = ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
+      const { takenCents } = reversalRule(chain, claim, context.reversals, NOW, approvedRemaining(ledger)).take;
+      if (takenCents <= ZERO_CENTS) {
+        continue;
+      }
+      const matchId = await insertMatch(scope, practiceId, { kind: 'recoupment', claimId: reversal.id, remittanceId: reversal.remittanceId, serviceLineId: line.serviceLineId, matchedBy: null });
       if (matchId === null) {
         continue;
       }
-      const amount = negateCents(taken);
-      const entryId = await insertEntry(scope, practiceId, { caseId: line.caseId, serviceLineId: line.serviceLineId, stage: 'recouped', amountCents: amount, evidenceKind: 'claim', evidenceId: reversal.id, matchId, effectiveOn: reversal.paid_on, createdBy: null });
+      const amount = negateCents(takenCents);
+      const entryId = await insertEntry(scope, practiceId, { caseId: line.caseId, serviceLineId: line.serviceLineId, stage: 'recouped', amountCents: amount, evidenceKind: 'claim', evidenceId: reversal.id, matchId, effectiveOn: reversal.paidOn, createdBy: null });
       ledgers.set(line.serviceLineId, after(ledger, 'recouped', amount, matchId));
       counts.recoupments += 1;
       recouped.push({ caseId: line.caseId, entryId: entryId as string, serviceLineId: line.serviceLineId, amountCents: amount });
@@ -582,13 +931,13 @@ async function hashesOf(scope: Scope, matches: readonly StoredMatch[]): Promise<
 /** Step 1, recoupments and interest, for the practice (inside the reconcile step's locked transaction). */
 export async function reconcileRemittances(scope: Scope, cipher: PracticeCipher, practiceId: string, recordNoChange: RecordReprocessedNoChange): Promise<RemittanceOutcome> {
   const lines = await caseLines(scope, cipher, practiceId);
-  const counts: Counts = { approved: 0, confirmed: 0, decreased: 0, noChange: 0, recoupments: 0, interest: 0 };
+  const counts: Counts = { approved: 0, confirmed: 0, noPaymentIncrease: 0, decreased: 0, decreasedNoEntry: 0, noChange: 0, recoupments: 0, interest: 0 };
   const recouped: Recouped[] = [];
   if (lines.length === 0) {
     return { ...counts, recouped };
   }
   const ledgers = lineLedgers(await ledgerEntries(scope, practiceId));
-  await matchClaims(scope, cipher, practiceId, lines, ledgers, await ledgerMatches(scope, practiceId), recordNoChange, counts, recouped);
+  await matchClaims({ scope, practiceId, ledgers, recordNoChange, counts, recouped }, cipher, lines);
   const matches = await ledgerMatches(scope, practiceId);
   await recoupReversals(scope, practiceId, lines, ledgers, matches, counts, recouped);
   await providerAdjustments(scope, cipher, practiceId, lines, ledgers, await ledgerMatches(scope, practiceId), counts, recouped);
