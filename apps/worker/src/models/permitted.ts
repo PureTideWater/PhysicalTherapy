@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { parsePageText } from '@tp/contracts';
 import { type KeyProvider, type PracticeScope, type ScopeClient, type ScopePool, documentPagesKey, isUuid, loadPracticeCipher, readWithAudit, withJobScope } from '@tp/db/runtime';
 import {
@@ -17,6 +19,7 @@ import {
   correctionSchema,
   earlierPermittedReportSchema,
   permittedReport,
+  permittedRequestKey,
   permittedResult,
 } from '@tp/model-gateway';
 import type { Logger } from '@tp/observability';
@@ -41,12 +44,16 @@ import { type DocumentStore, collect } from '../storage/documents';
  * proposes is written as a proposal or a rate record.
  *
  * What leaves the practice's scope is the report (tp-model-eval-permitted/2): tallies, problem codes and
- * example IDs, never a document's text, a quote or a figure. A problem (the document unavailable, a failed
- * call, an output that did not parse) scores the example as proposing nothing, so a run that could not
- * read an example shows as lower recall and fails the gate rather than passing it silently. A call the
- * gateway refused before it was made (refused:<code>: an input refused, or a feature or variant off or not
- * evaluable, refused:not_evaluated) is counted apart, as refused, not as the model's miss, and the gate
- * fails a run in which refusals rose.
+ * example IDs, each variant's apart (the default model's examples and the larger model's, the PR review's
+ * M3), with the run's ID and whether it ran in production, never a document's text, a quote or a figure.
+ * A problem (the document unavailable, a failed call, an output that did not parse) scores the example as
+ * proposing nothing, so a run that could not read an example shows as lower recall and fails the gate
+ * rather than passing it silently. A call the gateway refused before it was made (refused:<code>: an input
+ * refused, or a feature or variant off or not evaluable, refused:not_evaluated) is counted apart, as
+ * refused, not as the model's miss, and the gate fails a run in which refusals rose. Which outcomes
+ * measured the model is the gateway package's allowlist (permittedOutcome): record-permitted refuses a run
+ * with any other, so a run that never reached the model (outside production, every call refused
+ * phi_boundary) serves nothing.
  */
 
 export interface PermittedEvaluationServices {
@@ -161,6 +168,9 @@ async function propose(
   }
 }
 
+/** The variant an example's call asks for: the larger model's when the proposal it corrects was of a contract marked ambiguous. */
+const variantOf = (row: ExampleRow) => (row.ambiguous ? 'ambiguous' : 'default');
+
 /** One practice's examples, proposed again and scored. */
 export async function evaluatePracticeExamples(services: PermittedEvaluationServices, run: { readonly runId: string; readonly practiceId: string }): Promise<PermittedResult[]> {
   const { runId, practiceId } = run;
@@ -168,7 +178,8 @@ export async function evaluatePracticeExamples(services: PermittedEvaluationServ
   const requestId = `evaluate-permitted:${runId}`;
   const rows = await inScope((scope) => examples(scope, practiceId, requestId));
   // The run may call the model for a key waiting only on this run (docs/adr/0070, Part 2; F5 (a)): the gateway
-  // serves its evaluable set to this job's store, and to no other actor.
+  // serves its evaluable set to this job's store, and to no other actor, for this run's own calls only (each
+  // under permittedRequestKey; the PR review's N1).
   const gateway = new ModelGateway({
     provider: services.provider,
     store: new PostgresModelCallStore(services.pool, { kind: 'job', jobId: runId }),
@@ -182,14 +193,14 @@ export async function evaluatePracticeExamples(services: PermittedEvaluationServ
     const parsed = correctionSchema.safeParse(row.expected);
     if (!parsed.success) {
       // An expectation that does not parse scores nothing; its problem names it.
-      results.push(permittedResult(row.id, null, { proposal: null, problem: 'expected_invalid' }));
+      results.push(permittedResult(row.id, null, { proposal: null, problem: 'expected_invalid' }, variantOf(row)));
       continue;
     }
     const correction = parsed.data;
     // The page text is read in its own transaction, which ends before the call is made.
     const pages = await inScope((scope) => documentPages(scope, services, practiceId, correction.document_id, requestId));
-    const outcome = pages.ok ? await propose(gateway, { practiceId, requestKey: `eval:${runId}:${row.id}` }, correction.document_id, pages, row.ambiguous) : { proposal: null, problem: 'document_unavailable' };
-    results.push(permittedResult(row.id, correction, outcome));
+    const outcome = pages.ok ? await propose(gateway, { practiceId, requestKey: permittedRequestKey(runId, row.id) }, correction.document_id, pages, row.ambiguous) : { proposal: null, problem: 'document_unavailable' };
+    results.push(permittedResult(row.id, correction, outcome, variantOf(row)));
   }
   services.logger.info('permitted examples evaluated', { practice_id: practiceId, job_id: runId });
   return results;
@@ -201,7 +212,7 @@ export async function evaluatePermitted(services: PermittedEvaluationServices, r
   for (const practiceId of run.practiceIds) {
     results.push(...(await evaluatePracticeExamples(services, { runId: run.runId, practiceId })));
   }
-  return permittedReport(services.provider.kind, run.practiceIds.length, results);
+  return permittedReport(services.provider.kind, run.practiceIds.length, results, { runId: run.runId, production: services.production });
 }
 
 export interface PermittedArgs {
@@ -273,4 +284,32 @@ export function parseEarlierReport(text: string): PermittedReport {
     throw new PermittedArgsError(`--against: earlier_report_format: the earlier report is ${parsed.data.format}; run the earlier prompt and model again on the current code for a ${PERMITTED_REPORT_FORMAT} report`);
   }
   return parsed.data;
+}
+
+/**
+ * Refuses (PermittedArgsError, exit 2, before anything is called) a real provider configured outside
+ * production: there the PHI boundary refuses every practice's example (refused:phi_boundary), so the run
+ * would call nothing and its report would measure nothing (the PR review's S1). The local provider runs
+ * anywhere (the database tests' runs, on synthetic examples).
+ */
+export function checkPermittedGateway(gateway: { readonly production: boolean; readonly provider: string }): void {
+  if (!gateway.production && gateway.provider !== 'local') {
+    throw new PermittedArgsError(`${gateway.provider} is configured outside production: a practice's examples reach a real provider only from a production deployment, so the run would measure nothing`);
+  }
+}
+
+/**
+ * The earlier run's report read from the file --against names, and parsed (parseEarlierReport). A file
+ * that is missing or cannot be read is a PermittedArgsError too (exit 2, before anything is called), whose
+ * message names the flag and the system's error code, never the path or the file's content.
+ */
+export async function readEarlierReport(file: string, read: (file: string) => Promise<string> = (name) => readFile(name, 'utf8')): Promise<PermittedReport> {
+  let text: string;
+  try {
+    text = await read(file);
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' && /^[A-Z0-9_]{1,32}$/.test(error.code) ? error.code : 'unreadable';
+    throw new PermittedArgsError(`--against: the earlier report could not be read (${code})`);
+  }
+  return parseEarlierReport(text);
 }

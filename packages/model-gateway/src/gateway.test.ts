@@ -9,7 +9,7 @@ import { gatewayServing } from './evaluated';
 import { DuplicateModelCallError, GatewayError, InputRefusedError, ModelBudgetExceededError, ModelBusyError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
 import { CallLimiter } from './limiter';
 import type { FlagRow } from './flags';
-import { type GatewayResult, ModelGateway, mostCost } from './gateway';
+import { type GatewayResult, ModelGateway, mostCost, permittedRequestKey } from './gateway';
 import { canonicalJson, sha256Hex } from './hash';
 import type { ModelPrice } from './prices';
 import { PROMPTS, modelFor } from './prompts';
@@ -319,14 +319,40 @@ describe('serving each feature on its own evaluation (docs/adr/0070, Part 2)', (
     expect(vi.mocked(gatewayServing)).toHaveBeenLastCalledWith(true, 'bedrock', 'served');
   });
 
+  /** A permitted-run call's context: the run's (the job's) ID and a synthetic example's. */
+  const RUN_CONTEXT = { practiceId: SYNTHETIC_IDS.practice, requestKey: permittedRequestKey(SYNTHETIC_IDS.user, '00000000-0000-4000-8000-0000000000e1') };
+
   it('lets the permitted run’s job call the model for an evaluable key, and any other gateway of the job not', async () => {
     const job = production({ actor: { kind: 'job', jobId: SYNTHETIC_IDS.user }, serving: 'evaluable' });
     serveOnce('proposeContractTerms/default');
-    await expect(job.build().proposeContractTerms(CONTEXT, syntheticContractInput())).resolves.toMatchObject({ passed: true });
+    await expect(job.build().proposeContractTerms(RUN_CONTEXT, syntheticContractInput())).resolves.toMatchObject({ passed: true });
     expect(job.store.calls).toHaveLength(1);
     expect(job.store.calls[0]).toMatchObject({ actorKind: 'service', provider: 'bedrock' });
     // The same job's gateway with no option serves what has passed: nothing, as the repository ships.
     await expect(production({ actor: { kind: 'job', jobId: SYNTHETIC_IDS.user } }).build().proposeContractTerms(CONTEXT, syntheticContractInput())).rejects.toMatchObject({ reason: 'not_evaluated' });
+  });
+
+  it('makes the permitted run’s own calls only through a gateway built for it: no other job, key or purpose (the PR review’s N1)', async () => {
+    const job = production({ actor: { kind: 'job', jobId: SYNTHETIC_IDS.user }, serving: 'evaluable' });
+    serveOnce('proposeContractTerms/default', 'draftPacketNarrative/default');
+    const gateway = job.build();
+    const otherRun = permittedRequestKey('00000000-0000-4000-8000-0000000000c9', '00000000-0000-4000-8000-0000000000e1');
+    for (const made of [
+      // A later job's own key, another run's key, and this run's ID without an example's.
+      () => gateway.proposeContractTerms(CONTEXT, syntheticContractInput()),
+      () => gateway.proposeContractTerms({ ...CONTEXT, requestKey: otherRun }, syntheticContractInput()),
+      () => gateway.proposeContractTerms({ ...CONTEXT, requestKey: `eval:${SYNTHETIC_IDS.user}:step-1` }, syntheticContractInput()),
+      // Another purpose, under the run's own key.
+      () => gateway.draftPacketNarrative(RUN_CONTEXT, syntheticNarrativeInput()),
+    ]) {
+      await expect(made()).rejects.toMatchObject({ code: 'serving_invalid' });
+    }
+    // Refused before the flags are read, with nothing sent and no model_call row.
+    expect(job.flagReads).not.toHaveBeenCalled();
+    expect(job.provider.requests).toEqual([]);
+    expect(job.store.calls).toEqual([]);
+    // A job whose ID is not a run's (a UUID) cannot have the set at all.
+    expect(() => production({ actor: { kind: 'job', jobId: 'nightly-job' }, serving: 'evaluable' }).build()).toThrow(expect.objectContaining({ code: 'serving_invalid' }) as Error);
   });
 
   it('serves the default contract model while the larger one is off: only the ambiguous call is refused, after its preparation and before any screen (review m3, N10)', async () => {

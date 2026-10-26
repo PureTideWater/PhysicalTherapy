@@ -25,7 +25,8 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  *    before anything else is read, so calls waiting on a model never hold all of a task's connections.
  * 1. Serving (./evaluated.ts; docs/adr/0070, Part 2): in production on a real provider, a purpose none of
  *    whose variants has passed its evaluation for the pinned model is refused before anything else is
- *    read, as `not_evaluated`, and the screens fall back to hand entry.
+ *    read, as `not_evaluated`, and the screens fall back to hand entry. A gateway built for the permitted
+ *    run (serving 'evaluable') refuses, before that, any call but the run's own (`serving_invalid`).
  * 2. The kill switch, and a v1.5 purpose's own flag (test matrix MOD-06): with either off, nothing is
  *    sent and the caller falls back to hand entry.
  * 3. The PHI boundary: outside production only the local provider, or a synthetic evaluation call with
@@ -65,8 +66,13 @@ export interface GatewayOptions {
    * Which set the gateway serves; never the set itself, which the gateway works out (./evaluated.ts
    * gatewayServing), so no caller can widen it (the design review's B1). 'served' (the default) is what
    * has passed. 'evaluable' adds the keys waiting only on the in-boundary permitted run, for that run's own
-   * gateway (apps/worker/src/models/permitted.ts): it is accepted only when the store acts for a job, so
-   * no request path can ask for it.
+   * gateway (apps/worker/src/models/permitted.ts): it is accepted only when the store acts for a job whose
+   * ID is a UUID (the run's ID), so no request path can ask for it, and such a gateway then makes the
+   * permitted run's calls and no other (the PR review's N1): a contract proposal whose request key is
+   * permittedRequestKey(the job's ID, an example's ID). Any other call through it, a narrative or a
+   * contract under another key (another job's work, or this job's under another name), is refused with
+   * `serving_invalid` before anything is read, so the wider set is held to the run in code, not by
+   * convention.
    */
   readonly serving?: Serving;
 }
@@ -92,6 +98,16 @@ export interface GatewayResult<P> {
 
 const REQUEST_KEY = /^[A-Za-z0-9._:-]{1,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID_TEXT = UUID.source.slice(1, -1);
+const PERMITTED_REQUEST_KEY = new RegExp(`^eval:(${UUID_TEXT}):${UUID_TEXT}$`);
+
+/**
+ * The request key of one permitted-run call: the run's ID (its job's) and the example's (eval_example row
+ * ID), so each example is called once per run. The only key an evaluable gateway accepts (the PR review's N1).
+ */
+export function permittedRequestKey(runId: string, exampleId: string): string {
+  return `eval:${runId}:${exampleId}`;
+}
 const MICRO = 1_000_000n;
 
 function utcDayStart(now: Date): Date {
@@ -114,15 +130,19 @@ export class ModelGateway {
   private readonly now: () => Date;
   /** What this gateway serves: worked out here from the provider and production, never taken from the caller. */
   private readonly served: ServedSet;
+  /** The permitted run this gateway was built for (serving 'evaluable'), whose calls alone it makes; null for every other gateway. */
+  private readonly permittedRun: string | null;
 
   constructor(private readonly options: GatewayOptions) {
     this.timeoutMs = options.timeoutMs ?? CALL_TIMEOUT_MS;
     this.prices = options.prices ?? PRICES;
     this.now = options.now ?? (() => new Date());
     const serving = options.serving ?? 'served';
-    if (serving === 'evaluable' && options.store.actor.kind !== 'job') {
+    const { actor } = options.store;
+    if (serving === 'evaluable' && (actor.kind !== 'job' || !UUID.test(actor.jobId))) {
       throw new GatewayError('serving_invalid', 'the evaluable set is served only to the permitted run’s job');
     }
+    this.permittedRun = serving === 'evaluable' && actor.kind === 'job' ? actor.jobId : null;
     this.served = gatewayServing(options.production, options.provider.kind, serving);
   }
 
@@ -163,6 +183,9 @@ export class ModelGateway {
 
   private async run<I, O, P, C>(spec: PurposeSpec<I, O, P, C>, context: CallContext, input: I): Promise<GatewayResult<P>> {
     this.checkContext(context);
+    if (this.permittedRun !== null && (spec.purpose !== 'proposeContractTerms' || PERMITTED_REQUEST_KEY.exec(context.requestKey)?.[1] !== this.permittedRun)) {
+      throw new GatewayError('serving_invalid', 'a gateway built for the permitted run makes that run’s contract calls only');
+    }
     const release = this.options.limiter?.tryAcquire(context.practiceId);
     if (release === null) {
       this.options.logger.warn('a model call was refused: the server has as many calls in flight as it may', { error_code: 'MODEL_CALLS_BUSY' });

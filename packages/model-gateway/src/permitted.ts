@@ -2,7 +2,7 @@ import { addDays } from '@tp/contracts';
 import { canonicalNumber } from '@tp/packets';
 import { z } from 'zod';
 
-import { tallySchema } from './baseline-format';
+import { CONTRACT_VARIANTS, type ContractVariant, tallySchema } from './baseline-format';
 import { normalized, readAmount, readDate, readPercent, readYear } from './figures';
 import type { CandidateReview, ContractTermsProposal } from './functions/contract-terms';
 import { PROMPTS } from './prompts';
@@ -144,7 +144,7 @@ export function finalKeys(final: FinalRecord): Keys {
   return keys;
 }
 
-/** What a reviewed candidate states, field by field, as code reads it, and which of its fields verified. */
+/** What a reviewed candidate states, field by field, as code reads it, which of its fields verified, and whether it became a rate record. */
 export function statedKeys(candidate: CandidateReview): Stated<PermittedField> {
   const keys: Partial<Record<PermittedField, string | null>> = { method: candidate.method };
   const verified = new Set<PermittedField>();
@@ -177,7 +177,9 @@ export function statedKeys(candidate: CandidateReview): Stated<PermittedField> {
     keys.lesser_of_schedule = schedule.method;
     verified.add('lesser_of_schedule');
   }
-  return { keys, verified };
+  // Whether the candidate became a rate record, so that a scope field it leaves out is counted widened,
+  // wrong but verified, rather than missed (src/tally.ts; the PR review's M2), as eval/score.ts counts it.
+  return { keys, verified, rateRecord: candidate.rateRecord !== null };
 }
 
 /** One example's field tallies: the proposal (null when the call proposed nothing) against the finals it is scored on (scoredFinals). */
@@ -186,10 +188,41 @@ export function scorePermitted(correction: Correction, proposal: ContractTermsPr
   return tallyFields(PERMITTED_FIELDS, truths, (proposal?.candidates ?? []).map(statedKeys)).tallies;
 }
 
-/** A refusal's problem code: the gateway refused the input before any call (InputRefusedError, PhiBoundaryError). */
+/** A refusal's problem code: the gateway refused the input before any call (InputRefusedError, PhiBoundaryError, ModelFeatureOffError). */
 const isRefusal = (problem: string | null) => problem !== null && problem.startsWith('refused:');
 
-/** One example's outcome: its tallies, the problem code when the call proposed nothing, and whether its correction was /1. */
+/**
+ * What an example's outcome says of the model, by its problem code, as an allowlist (the PR review's S1):
+ *
+ * - `measured`: the model was called and answered (no problem, or `invalid_output`, an answer that did not
+ *   follow the schema). Only these measure the model the entry would serve.
+ * - `outside_model`: nothing reached the model, for a reason of the example's own that a rerun meets
+ *   again, so it is counted and kept: the document is no longer readable as a clean contract with its
+ *   pages (`document_unavailable`), the expectation does not parse (`expected_invalid`), or the gateway
+ *   refused the input on its own merits (a document of another kind, one with no page text or too many
+ *   pages, or, from docs/adr/0070 Part 3, one that names a patient of the practice).
+ * - `unmeasured`: every other code. The call failed (`call_failed:<code>`), or was refused for the run's
+ *   own setting rather than the input (the kill switch, a flag, a feature or variant not evaluable, the PHI
+ *   boundary of a run outside production, the patient screen unavailable, the budget, the server busy, a
+ *   request the run built wrong), or the code is one this list does not know. Such a run measured
+ *   nothing for that example and is refused whole by record-permitted: a new code is unmeasured until it is
+ *   put on this list.
+ */
+export type PermittedOutcome = 'measured' | 'outside_model' | 'unmeasured';
+
+/** The problem codes (beside none) of a call the model answered. */
+export const MEASURED_PROBLEMS: readonly string[] = ['invalid_output'];
+/** The problem codes of an example nothing of which reached the model, for a reason of its own. */
+export const OUTSIDE_MODEL_PROBLEMS: readonly string[] = ['document_unavailable', 'expected_invalid', 'refused:document_kind', 'refused:no_text', 'refused:too_many_pages', 'refused:names_patient'];
+
+export function permittedOutcome(problem: string | null): PermittedOutcome {
+  if (problem === null || MEASURED_PROBLEMS.includes(problem)) {
+    return 'measured';
+  }
+  return OUTSIDE_MODEL_PROBLEMS.includes(problem) ? 'outside_model' : 'unmeasured';
+}
+
+/** One example's outcome: its tallies, the problem code when the call proposed nothing, whether its correction was /1, and the variant it asked for. */
 export interface PermittedResult {
   readonly exampleId: string;
   readonly counts: Readonly<Record<PermittedField, FieldTally>>;
@@ -198,17 +231,28 @@ export interface PermittedResult {
   readonly legacy: boolean;
   /** The correction's finals with no citation, left out of its expectation (0 for /1, which cannot tell). */
   readonly uncitedFinals: number;
+  /**
+   * The variant the example's call asks for: `ambiguous` when the specialist had marked the contract
+   * ambiguous (the larger model reads it), else `default`. Each variant is a model of its own, tallied,
+   * compared and recorded on its own (the PR review's M3).
+   */
+  readonly variant: ContractVariant;
 }
 
 /**
- * One example's result from its correction (null when its expected did not parse) and what the call
- * returned. A refused call is tallied as nothing (it is counted apart, as refused); a call that failed or
- * proposed nothing is tallied as proposing nothing, so every final is missed and the gate cannot pass it
- * silently.
+ * One example's result from its correction (null when its expected did not parse), what the call
+ * returned, and the variant the call asked for. A refused call is tallied as nothing (it is counted apart,
+ * as refused); a call that failed or proposed nothing is tallied as proposing nothing, so every final is
+ * missed and the gate cannot pass it silently.
  */
-export function permittedResult(exampleId: string, correction: Correction | null, outcome: { readonly proposal: ContractTermsProposal | null; readonly problem: string | null }): PermittedResult {
+export function permittedResult(
+  exampleId: string,
+  correction: Correction | null,
+  outcome: { readonly proposal: ContractTermsProposal | null; readonly problem: string | null },
+  variant: ContractVariant,
+): PermittedResult {
   if (correction === null || isRefusal(outcome.problem)) {
-    return { exampleId, counts: zeroTallies(PERMITTED_FIELDS), problem: outcome.problem, legacy: correction !== null && isLegacyCorrection(correction), uncitedFinals: 0 };
+    return { exampleId, counts: zeroTallies(PERMITTED_FIELDS), problem: outcome.problem, legacy: correction !== null && isLegacyCorrection(correction), uncitedFinals: 0, variant };
   }
   return {
     exampleId,
@@ -216,28 +260,54 @@ export function permittedResult(exampleId: string, correction: Correction | null
     problem: outcome.problem,
     legacy: isLegacyCorrection(correction),
     uncitedFinals: correction.format === CORRECTION_FORMAT_V2 ? correction.uncited_finals : 0,
+    variant,
   };
 }
 
 export const PERMITTED_REPORT_FORMAT_V1 = 'tp-model-eval-permitted/1';
 export const PERMITTED_REPORT_FORMAT = 'tp-model-eval-permitted/2';
 
+/** One variant's part of a run: its model, its examples and their tallies. */
+export interface PermittedVariantReport {
+  /** The model the prompt version pins for the variant on the provider; null when it pins none (each such call is refused, not_evaluated). */
+  readonly modelId: string | null;
+  readonly examples: number;
+  /** The variant's examples, sorted. */
+  readonly exampleIds: readonly string[];
+  /** The variant's examples the model answered (permittedOutcome `measured`). */
+  readonly measured: number;
+  readonly fields: Readonly<Record<PermittedField, FieldTally>>;
+  readonly total: FieldTally;
+  readonly refused: number;
+}
+
+/** Which run a report is: its ID and where it ran. */
+export interface PermittedRunIdentity {
+  /** The run's ID: the job actor its reads and calls are recorded under (model_call actor_id), a random UUID. */
+  readonly runId: string;
+  /** NODE_ENV=production: only there does a practice's material reach a real provider. */
+  readonly production: boolean;
+}
+
 /** A run's report: counts, codes and example IDs only. */
-export interface PermittedReport {
+export interface PermittedReport extends PermittedRunIdentity {
   readonly format: typeof PERMITTED_REPORT_FORMAT;
   readonly promptVersion: string;
   readonly promptSha256: string;
   readonly provider: string;
-  /** The models the prompt version pins for the provider (an ambiguous contract's is the larger). */
-  readonly modelIds: readonly string[];
   readonly practices: number;
   readonly examples: number;
   /** The examples run, sorted (eval_example row IDs, not PHI): the gate compares runs on the same examples, not the same number. */
   readonly exampleIds: readonly string[];
+  /** The examples the model answered (permittedOutcome `measured`), every variant's. */
+  readonly measured: number;
+  /** Every variant's tallies summed: read alone it can hide one model's regression behind the other's gain, so the gate compares `variants`. */
   readonly fields: Readonly<Record<PermittedField, FieldTally>>;
   readonly total: FieldTally;
   /** Examples whose call the gateway refused before it was made: counted here, apart from the tally. */
   readonly refused: number;
+  /** Each variant of the contract prompt, its model and its examples apart (the PR review's M3). */
+  readonly variants: Readonly<Record<ContractVariant, PermittedVariantReport>>;
   /** Examples scored against every final of a /1 correction, unfiltered. */
   readonly legacyUnfiltered: number;
   /** Finals the examples' corrections left out for having no citation. */
@@ -246,23 +316,44 @@ export interface PermittedReport {
   readonly problems: readonly { readonly exampleId: string; readonly problem: string }[];
 }
 
-/** The run's report from its examples' results, for the current prompt version and the provider's pinned models. */
-export function permittedReport(provider: ProviderKind, practices: number, results: readonly PermittedResult[]): PermittedReport {
+const sortedIds = (results: readonly PermittedResult[]) => results.map((result) => result.exampleId).sort();
+
+function variantReport(modelId: string | null, results: readonly PermittedResult[]): PermittedVariantReport {
+  const tallied = results.filter((result) => !isRefusal(result.problem));
+  const fields = sumTallies(PERMITTED_FIELDS, tallied.map((result) => result.counts));
+  return {
+    modelId,
+    examples: results.length,
+    exampleIds: sortedIds(results),
+    measured: results.filter((result) => permittedOutcome(result.problem) === 'measured').length,
+    fields,
+    total: totalTally(PERMITTED_FIELDS, fields),
+    refused: results.length - tallied.length,
+  };
+}
+
+/** The run's report from its examples' results, for the current prompt version and the models it pins for the provider, each variant apart. */
+export function permittedReport(provider: ProviderKind, practices: number, results: readonly PermittedResult[], run: PermittedRunIdentity): PermittedReport {
   const prompt = PROMPTS.proposeContractTerms;
   const tallied = results.filter((result) => !isRefusal(result.problem));
   const fields = sumTallies(PERMITTED_FIELDS, tallied.map((result) => result.counts));
   return {
     format: PERMITTED_REPORT_FORMAT,
+    runId: run.runId,
+    production: run.production,
     promptVersion: prompt.id,
     promptSha256: prompt.sha256,
     provider,
-    modelIds: [...new Set(Object.values(prompt.models[provider]))].sort(),
     practices,
     examples: results.length,
-    exampleIds: results.map((result) => result.exampleId).sort(),
+    exampleIds: sortedIds(results),
+    measured: results.filter((result) => permittedOutcome(result.problem) === 'measured').length,
     fields,
     total: totalTally(PERMITTED_FIELDS, fields),
     refused: results.length - tallied.length,
+    variants: Object.fromEntries(
+      CONTRACT_VARIANTS.map((variant) => [variant, variantReport(prompt.models[provider][variant] ?? null, results.filter((result) => result.variant === variant))]),
+    ) as Record<ContractVariant, PermittedVariantReport>,
     legacyUnfiltered: results.filter((result) => result.legacy).length,
     uncitedFinals: results.reduce((sum, result) => sum + result.uncitedFinals, 0),
     problems: results.flatMap((result) => (result.problem === null ? [] : [{ exampleId: result.exampleId, problem: result.problem }])),
@@ -270,20 +361,25 @@ export function permittedReport(provider: ProviderKind, practices: number, resul
 }
 
 const count = z.number().int().nonnegative();
+const fieldsSchema = z.strictObject(Object.fromEntries(PERMITTED_FIELDS.map((field) => [field, tallySchema])) as Record<PermittedField, typeof tallySchema>);
+const variantSchema = z.strictObject({ modelId: z.string().nullable(), examples: count, exampleIds: z.array(z.string()), measured: count, fields: fieldsSchema, total: tallySchema, refused: count });
 
-/** A report as a run wrote it (the earlier run a gate compares against). */
+/** A report as a run wrote it (the earlier run a gate compares against): every key, and nothing else. */
 export const permittedReportSchema = z.strictObject({
   format: z.literal(PERMITTED_REPORT_FORMAT),
+  runId: z.uuid(),
+  production: z.boolean(),
   promptVersion: z.string(),
   promptSha256: z.string(),
   provider: z.string(),
-  modelIds: z.array(z.string()),
   practices: count,
   examples: count,
   exampleIds: z.array(z.string()),
-  fields: z.strictObject(Object.fromEntries(PERMITTED_FIELDS.map((field) => [field, tallySchema])) as Record<PermittedField, typeof tallySchema>),
+  measured: count,
+  fields: fieldsSchema,
   total: tallySchema,
   refused: count,
+  variants: z.strictObject(Object.fromEntries(CONTRACT_VARIANTS.map((variant) => [variant, variantSchema])) as Record<ContractVariant, typeof variantSchema>),
   legacyUnfiltered: count,
   uncitedFinals: count,
   problems: z.array(z.strictObject({ exampleId: z.string(), problem: z.string() })),
@@ -297,6 +393,46 @@ export const permittedReportSchema = z.strictObject({
 export const earlierPermittedReportSchema = z.union([permittedReportSchema, z.looseObject({ format: z.literal(PERMITTED_REPORT_FORMAT_V1) })]);
 export type EarlierPermittedReport = PermittedReport | { readonly format: typeof PERMITTED_REPORT_FORMAT_V1 };
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Whether a report's counts are what permittedReport writes from some set of results (the PR review's N3):
+ * the strict schema refuses a key the run does not write, and this refuses a report edited, or spliced from
+ * two runs, whose parts no longer add up. Each example ID once, sorted, and counted; the variants' examples
+ * the run's, each in one variant; each variant's total its fields', and the run's fields every variant's;
+ * the refused and measured counts those its problems give; each problem an example's, once. Empty when it
+ * holds; `report_inconsistent` otherwise.
+ */
+export function permittedReportProblems(report: PermittedReport): string[] {
+  const ids = report.exampleIds;
+  const problemOf = new Map(report.problems.map((entry) => [entry.exampleId, entry.problem]));
+  const parts = CONTRACT_VARIANTS.map((variant) => report.variants[variant]);
+  const sortedUnique = (list: readonly string[]) => same(list, [...new Set(list)].sort());
+  const held = [
+    sortedUnique(ids) && ids.length === report.examples,
+    same([...parts.flatMap((part) => part.exampleIds)].sort(), ids),
+    problemOf.size === report.problems.length && report.problems.every((entry) => ids.includes(entry.exampleId)),
+    same(report.fields, sumTallies(PERMITTED_FIELDS, parts.map((part) => part.fields))) && same(report.total, totalTally(PERMITTED_FIELDS, report.fields)),
+    report.refused === parts.reduce((sum, part) => sum + part.refused, 0) && report.measured === parts.reduce((sum, part) => sum + part.measured, 0),
+    report.legacyUnfiltered <= report.examples,
+    ...parts.map(
+      (part) =>
+        sortedUnique(part.exampleIds) &&
+        part.exampleIds.length === part.examples &&
+        same(part.total, totalTally(PERMITTED_FIELDS, part.fields)) &&
+        part.refused === part.exampleIds.filter((id) => isRefusal(problemOf.get(id) ?? null)).length &&
+        part.measured === part.exampleIds.filter((id) => permittedOutcome(problemOf.get(id) ?? null) === 'measured').length,
+    ),
+  ];
+  return held.every(Boolean) ? [] : ['report_inconsistent'];
+}
+
+/** The variant's examples whose outcome is unmeasured (permittedOutcome), by problem code. */
+export function unmeasuredProblems(report: PermittedReport, variants: readonly ContractVariant[] = CONTRACT_VARIANTS): string[] {
+  const ids = new Set(variants.flatMap((variant) => report.variants[variant].exampleIds));
+  return [...new Set(report.problems.filter((entry) => ids.has(entry.exampleId) && permittedOutcome(entry.problem) === 'unmeasured').map((entry) => entry.problem))].sort();
+}
+
 /** Whether fraction a/b is below c/d, compared exactly (an empty fraction is 1). */
 function below(a: DerivedCounts, b: DerivedCounts, of: (counts: DerivedCounts) => number): boolean {
   const ratio = (counts: DerivedCounts) => {
@@ -309,40 +445,55 @@ function below(a: DerivedCounts, b: DerivedCounts, of: (counts: DerivedCounts) =
 }
 
 /**
- * The gate inside the PHI boundary: what is worse in the current run than in the earlier one. Empty when
- * nothing is. The runs must be on the same examples (`examples_changed` otherwise: the same number of other
- * examples is not the same run); for the total and each field, precision or recall lower
- * (`precision_regressed:<field|all>`, `recall_regressed:<field|all>`) or more values wrong but verified
- * (`wrong_verified_rose:<field|all>`); more refused calls (`refused_rose`). An earlier /1 report is refused
- * whole (`earlier_report_format`).
+ * The gate inside the PHI boundary: what is worse in the current run than in the earlier one, variant by
+ * variant (the PR review's M3: the default and the ambiguous variant are two models, and a sum of both
+ * would let one's gain hide the other's regression). Empty when nothing is. The runs must be on the same
+ * examples (`examples_changed` otherwise: the same number of other examples is not the same run), and each
+ * variant on the same examples (`examples_changed:<variant>`). For each variant compared, in total and per
+ * field: precision or recall lower (`precision_regressed:<variant>:<field|all>`,
+ * `recall_regressed:<variant>:<field|all>`), more values wrong but verified
+ * (`wrong_verified_rose:<variant>:<field|all>`), more refused calls (`refused_rose:<variant>`); and an
+ * earlier variant that did not measure its model (`earlier_unmeasured:<variant>`: a failed call or a call
+ * refused for the run's setting, permittedOutcome), which is no run of that model to be compared with. An
+ * earlier /1 report is refused whole (`earlier_report_format`). `variants` names the variants compared
+ * (every variant by default).
  */
-export function permittedRegressions(current: PermittedReport, earlier: EarlierPermittedReport): string[] {
+export function permittedRegressions(current: PermittedReport, earlier: EarlierPermittedReport, variants: readonly ContractVariant[] = CONTRACT_VARIANTS): string[] {
   if (earlier.format !== PERMITTED_REPORT_FORMAT) {
     return ['earlier_report_format'];
   }
   const problems: string[] = [];
-  const ids = (report: PermittedReport) => JSON.stringify([...report.exampleIds].sort());
-  if (ids(current) !== ids(earlier)) {
+  const ids = (list: readonly string[]) => JSON.stringify([...list].sort());
+  if (ids(current.exampleIds) !== ids(earlier.exampleIds)) {
     problems.push('examples_changed');
   }
-  const compare = (name: string, now: FieldTally, then: FieldTally) => {
-    const [nowCounts, thenCounts] = [asCounts(now), asCounts(then)];
-    if (below(nowCounts, thenCounts, (counts) => counts.fp)) {
-      problems.push(`precision_regressed:${name}`);
+  for (const variant of variants) {
+    const [now, then] = [current.variants[variant], earlier.variants[variant]];
+    if (ids(now.exampleIds) !== ids(then.exampleIds)) {
+      problems.push(`examples_changed:${variant}`);
     }
-    if (below(nowCounts, thenCounts, (counts) => counts.fn)) {
-      problems.push(`recall_regressed:${name}`);
+    if (unmeasuredProblems(earlier, [variant]).length > 0) {
+      problems.push(`earlier_unmeasured:${variant}`);
     }
-    if (wrongVerified(now) > wrongVerified(then)) {
-      problems.push(`wrong_verified_rose:${name}`);
+    const compare = (name: string, a: FieldTally, b: FieldTally) => {
+      const [nowCounts, thenCounts] = [asCounts(a), asCounts(b)];
+      if (below(nowCounts, thenCounts, (counts) => counts.fp)) {
+        problems.push(`precision_regressed:${variant}:${name}`);
+      }
+      if (below(nowCounts, thenCounts, (counts) => counts.fn)) {
+        problems.push(`recall_regressed:${variant}:${name}`);
+      }
+      if (wrongVerified(a) > wrongVerified(b)) {
+        problems.push(`wrong_verified_rose:${variant}:${name}`);
+      }
+    };
+    compare('all', now.total, then.total);
+    for (const field of PERMITTED_FIELDS) {
+      compare(field, now.fields[field], then.fields[field]);
     }
-  };
-  compare('all', current.total, earlier.total);
-  for (const field of PERMITTED_FIELDS) {
-    compare(field, current.fields[field], earlier.fields[field]);
-  }
-  if (current.refused > earlier.refused) {
-    problems.push('refused_rose');
+    if (now.refused > then.refused) {
+      problems.push(`refused_rose:${variant}`);
+    }
   }
   return problems;
 }

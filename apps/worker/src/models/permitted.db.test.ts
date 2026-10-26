@@ -143,6 +143,10 @@ describe('the evaluation on permitted examples inside the PHI boundary', () => {
     const report = await evaluatePermitted(services(), { runId, practiceIds: [north.practiceId] });
     expect(report).toMatchObject({ format: 'tp-model-eval-permitted/2', provider: 'local', practices: 1, examples: 4, refused: 0, legacyUnfiltered: 0, uncitedFinals: 0, promptVersion: PROMPTS.proposeContractTerms.id, promptSha256: PROMPTS.proposeContractTerms.sha256 });
     expect(report.exampleIds).toEqual([ids.exact, ids.corrected, ids.gone, ids.unreadable].sort());
+    // The run names itself and where it ran; no proposal here was of a contract marked ambiguous, so every example is the default model's.
+    expect(report).toMatchObject({ runId, production: false, measured: 2 });
+    expect(report.variants.default).toMatchObject({ modelId: PROMPTS.proposeContractTerms.models.local.default, exampleIds: report.exampleIds, measured: 2, total: report.total });
+    expect(report.variants.ambiguous).toMatchObject({ examples: 0, exampleIds: [], measured: 0 });
     // exact: 2 records x 5 fields right; corrected: 9 right, 97140's amount wrong but verified; gone: 5 fields missed; unreadable: nothing.
     expect(report.fields.amount).toEqual(tally({ tp: 3, wrong: 1, missed: 1 }));
     expect(report.fields.codes).toEqual(tally({ tp: 4, missed: 1 }));
@@ -198,7 +202,7 @@ describe('the evaluation on permitted examples inside the PHI boundary', () => {
     // A provider that answers nothing for these documents: every call fails, nothing is proposed.
     const silent = await evaluatePermitted({ ...services(), provider: new LocalDeterministicProvider() }, { runId: randomUUID(), practiceIds: [north.practiceId] });
     expect(silent.problems.map((problem) => problem.problem)).toEqual(['call_failed:no_fixed_output', 'call_failed:no_fixed_output', 'document_unavailable', 'expected_invalid']);
-    expect(permittedRegressions(silent, earlier)).toEqual(expect.arrayContaining(['recall_regressed:all', 'recall_regressed:amount']));
+    expect(permittedRegressions(silent, earlier)).toEqual(expect.arrayContaining(['recall_regressed:default:all', 'recall_regressed:default:amount']));
   });
 
   it('scores a /2 example against its own document’s finals only, a /1 example against all of them, and counts each kind apart', async () => {
@@ -217,8 +221,8 @@ describe('the evaluation on permitted examples inside the PHI boundary', () => {
     // Nothing was sent, so nothing was logged as a call.
     expect(await asOwner(owner, [blank.practiceId], async () => (await owner.query<{ id: string }>('SELECT id FROM model_call WHERE practice_id = $1', [blank.practiceId])).rows)).toEqual([]);
     // Against an earlier run on the same example in which the call was made, the rise in refusals fails the gate.
-    const earlier = { ...report, refused: 0, problems: [] };
-    expect(permittedRegressions(report, earlier)).toEqual(['refused_rose']);
+    const earlier = { ...report, refused: 0, problems: [], variants: { ...report.variants, default: { ...report.variants.default, refused: 0 } } };
+    expect(permittedRegressions(report, earlier)).toEqual(['refused_rose:default']);
   });
 
   it('scores an answer that does not parse as proposing nothing', async () => {
