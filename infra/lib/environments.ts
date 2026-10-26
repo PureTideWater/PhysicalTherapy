@@ -1,8 +1,8 @@
 import { aws_ec2 as ec2 } from 'aws-cdk-lib';
 
 /**
- * The three environments of PRD section 15. `dev` is local Docker Postgres and MinIO with
- * synthetic data only; its stack exists so shared constructs can be synthesized and tested the
+ * The three environments of PRD section 15. `dev` is local Docker Postgres and documents on local disk,
+ * with synthetic data only; its stack exists so shared constructs can be synthesized and tested the
  * same way as the others. `staging` is a full AWS copy with synthetic data; `production` holds PHI.
  */
 export const ENVIRONMENTS = ['dev', 'staging', 'production'] as const;

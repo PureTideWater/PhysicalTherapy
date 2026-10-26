@@ -459,6 +459,11 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-08': none(0, 'The groups and the scheduler are planned for hosts the test describes; no file.', ['tools/lint/groups.test.ts']),
   'CI-09': none(0, 'The workflow and the database suite are read; the drift case migrates a scratch database; no file.', ['tools/test/workflows.test.ts', 'packages/db/src/domain-model/domain-model.db.test.ts']),
   'CI-10': none(0, 'Every workflow file is read; no file.', ['tools/test/workflows.test.ts']),
+  // The pins, Dependabot, the images and the toolchain (docs/adr/0066, Part 2).
+  'CI-11': none(0, "Every workflow file is read; the actions' tags and files are synthetic ls-remote lines and action files the tests build in memory; no file.", ['tools/check-action-pins/check.test.ts', 'tools/check-action-pins/verify.test.ts', 'tools/check-action-pins/workflows.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-12': none(0, 'The Dependabot configuration is read, here and in a copy with every pin and digest rewritten in a temporary directory; no file.', ['tools/test/dependabot-config.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-13': none(0, 'The Dockerfiles, docker-compose.yml and the workflows are read; the Postgres script runs against a stub docker in a temporary directory; no file.', ['tools/test/workflows.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/ci/postgres.test.ts', 'tools/screening-capacity/measure.test.ts', 'tools/screening-capacity/watched.test.ts']),
+  'CI-14': none(0, "The lockfile, the manifests and the exception lists are read; the registry's answers and the base's tree are built in memory; no file.", ['tools/check-toolchain/check.test.ts', 'tools/check-toolchain/registry.test.ts', 'tools/check-toolchain/tree.test.ts', 'tools/check-licenses/check.test.ts', 'tools/test/no-duplicated-versions.test.ts']),
   // The mutation workflow's (docs/adr/0066, Part 4).
   'CI-15': none(0, "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.", ['tools/stryker/canary/verdict.test.ts', 'tools/test/workflows.test.ts']),
   'CI-16': none(0, "The gate judges shards' reports and equivalents the test builds in memory; no file.", ['tools/stryker/gate.test.ts', 'tools/stryker/mutants.test.ts', 'tools/test/workflows.test.ts']),
