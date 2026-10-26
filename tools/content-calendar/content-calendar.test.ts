@@ -26,7 +26,7 @@ import {
 } from './fetch';
 import { runContentCalendar } from './index';
 import { MAX_BODY, MAX_FILE_BYTES, MAX_OPENED_PER_RUN, findings, findingsJson, sourceBody, summaryMarkdown } from './render';
-import { readCalendarSources } from './sources';
+import { pendingFingerprint, readCalendarSources, readPendingStatesCached } from './sources';
 
 /**
  * The content-calendar CLI (audit #59; docs/adr/0071; test matrix RCC-08): the sources it reads from a checkout (here a
@@ -176,6 +176,42 @@ describe('sources', () => {
       typeof value === 'object' && value !== null && (records.has(value as RuleRecord) || Object.values(value).some(holdsRecord));
     expect(holdsRecord(sources)).toBe(false);
     expect(sources.pending?.ncci_mue?.windows).toEqual([{ from: '2026-10-01', to: '2027-06-30' }]);
+  });
+});
+
+describe('the pending state, kept while the checkout is unchanged (int-surfaces improvement 2)', () => {
+  it('reads the drafts once while nothing under content/drafts or content/outgoing changes, and again after any change', () => {
+    mueDraft('content/drafts/ncci_mue/2027/q1.json', '2027-01-01', '2027-03-31', '2026-12-05');
+    let reads = 0;
+    const readers = {
+      readRecordFile: (file: string, where: string) => {
+        reads += 1;
+        return readRecordFile(file, where);
+      },
+    };
+    const first = readPendingStatesCached(root, readers);
+    expect(reads).toBe(1);
+    expect(first.pending.ncci_mue?.windows).toEqual([{ from: '2027-01-01', to: '2027-03-31' }]);
+    expect(readPendingStatesCached(root, readers)).toBe(first);
+    expect(reads).toBe(1);
+    // A new draft, a prepared release and a rewritten draft each read it all again.
+    const before = pendingFingerprint(root);
+    mueDraft('content/drafts/ncci_mue/2027/q2.json', '2027-04-01', '2027-06-30', '2027-03-05');
+    expect(pendingFingerprint(root)).not.toBe(before);
+    expect(readPendingStatesCached(root, readers).pending.ncci_mue?.windows).toEqual([{ from: '2027-01-01', to: '2027-06-30' }]);
+    expect(reads).toBe(3);
+    writeCoverage('content/outgoing', 4, everyContent());
+    readPendingStatesCached(root, readers);
+    expect(reads).toBe(5);
+    rmSync(path.join(root, 'content/outgoing'), { recursive: true });
+    mueDraft('content/drafts/ncci_mue/2027/q2.json', '2027-04-01', '2027-05-31', '2027-03-05');
+    expect(readPendingStatesCached(root, readers).pending.ncci_mue?.windows).toEqual([{ from: '2027-01-01', to: '2027-05-31' }]);
+    expect(reads).toBe(7);
+  });
+
+  it('fingerprints a checkout with no drafts or prepared releases as empty, the same each time', () => {
+    expect(pendingFingerprint(root)).toBe(pendingFingerprint(root));
+    expect(readPendingStatesCached(root).pending).toEqual({});
   });
 });
 

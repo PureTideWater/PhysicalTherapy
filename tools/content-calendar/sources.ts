@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { COVERAGE_FILE, ContentSummaryBuilder, type ContentId, type DateRange, type RuleRecord, describeIssues, mergeRanges, readJsonBlock, releaseCoverageSchema } from '@tp/rules';
@@ -125,6 +126,52 @@ export function readPendingStates(root: string, readers: SourceReaders = {}): { 
   const prepared = releaseNumbers(root, 'content/outgoing').flatMap((release) => readCoverage(root, 'content/outgoing', release, problems));
   const pending = contentStates([...prepared, ...draftSummaries(root, problems, readers)]);
   return { pending, problems };
+}
+
+/**
+ * What the pending state is read from, as one hash: every entry under content/drafts and content/outgoing with its
+ * size, modification and change times and inode. A stat of each, never a read; a tree that does not exist yet hashes
+ * as empty.
+ */
+export function pendingFingerprint(root: string): string {
+  const hash = createHash('sha256');
+  for (const parent of ['content/drafts', 'content/outgoing']) {
+    const base = path.join(/*turbopackIgnore: true*/ root, parent);
+    let entries;
+    try {
+      entries = readdirSync(base, { recursive: true, withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        continue;
+      }
+      throw error;
+    }
+    const lines = entries.map((entry) => {
+      const full = path.join(entry.parentPath, entry.name);
+      const stat = lstatSync(full);
+      return `${path.relative(base, full)}\0${String(stat.size)}\0${String(stat.mtimeMs)}\0${String(stat.ctimeMs)}\0${String(stat.ino)}`;
+    });
+    hash.update(`${parent}\n${lines.sort().join('\n')}\n`);
+  }
+  return hash.digest('hex');
+}
+
+const pendingCache = new Map<string, { readonly fingerprint: string; readonly result: ReturnType<typeof readPendingStates> }>();
+
+/**
+ * readPendingStates, kept per checkout while nothing under its drafts and prepared releases changes (pendingFingerprint):
+ * the console's Rule releases page reads it on every view, and the PTP drafts alone reach about 2 million records
+ * (int-surfaces improvement 2). Any change of a file's size, times or inode reads the whole state again.
+ */
+export function readPendingStatesCached(root: string, readers: SourceReaders = {}): ReturnType<typeof readPendingStates> {
+  const fingerprint = pendingFingerprint(root);
+  const kept = pendingCache.get(root);
+  if (kept?.fingerprint === fingerprint) {
+    return kept.result;
+  }
+  const result = readPendingStates(root, readers);
+  pendingCache.set(root, { fingerprint, result });
+  return result;
 }
 
 /**

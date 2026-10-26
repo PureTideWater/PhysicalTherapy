@@ -1,6 +1,6 @@
 import type { ScopeClient } from '@tp/db/runtime';
 import { CONTENT_CALENDAR, type ContentFamilyId, type DueItem, contentDue } from '@tp/rules/calendar';
-import { readPendingStates } from '@tp/tools/content-calendar';
+import { readPendingStatesCached } from '@tp/tools/content-calendar';
 import { type CheckResult, type ContentWorkspace, ReleaseToolError, checkWorkspace, nextReleaseNumber, prepareRelease, readWorkspace } from '@tp/tools/workspace';
 import { z } from 'zod';
 
@@ -84,7 +84,8 @@ export interface ContentDue {
 /** The calendar judged on `today` against the release in force and, with a checkout, the drafts and prepared releases. */
 async function dueContent(client: ScopeClient, inForce: PublishedRelease | undefined, root: string | null, nextRelease: number | null, today: string): Promise<ContentDue> {
   const windows = inForce === undefined ? null : await contentWindowsOf(client, inForce.releaseNo, inForce.manifestSha256);
-  const pending = root === null ? null : readPendingStates(root);
+  // Read again only once a draft or a prepared release changes (int-surfaces improvement 2).
+  const pending = root === null ? null : readPendingStatesCached(root);
   const items = contentDue(
     CONTENT_CALENDAR,
     {
