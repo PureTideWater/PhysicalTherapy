@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
-import { type CheckEvent, type Finding, type Tree, checkToolchain, dockerfileRule } from './check';
+import { type CheckEvent, type Finding, type Tree, checkOffline, checkToolchain, dockerfileRule } from './check';
 import { compareVersions, parseSelector, rangeHolds, splitSpec } from './policy';
 import { type Advisory, NetworkReadError, type Packument, type Registry, type VersionFacts } from './registry';
 
@@ -473,12 +473,26 @@ describe('check-toolchain', () => {
 });
 
 describe('the committed lists', () => {
-  it('hold the trust exclude CQ2 (a) ruled, and no audit, release-age or override entry in phase 1', async () => {
+  it('hold the trust exclude CQ2 (a) ruled, and no audit or release-age entry', async () => {
     const { readFileSync } = await import('node:fs');
     const read = (file: string) => JSON.parse(readFileSync(new URL(file, import.meta.url), 'utf8')) as { entries: Record<string, string>[] };
     expect(read('./trust-exceptions.json').entries.map((entry) => entry.package)).toEqual(['semver@6.3.1']);
     expect(read('./audit-exceptions.json').entries).toEqual([]);
     expect(read('./release-age-exceptions.json').entries).toEqual([]);
-    expect(read('./overrides.json').entries).toEqual([]);
+  });
+
+  it("hold the repository's real tree to every offline rule, overrides and trust excludes among them (ci-infra N3)", async () => {
+    const { repositoryRoot } = await import('../content-files');
+    const { readWorkingTree } = await import('./tree');
+    const real = readWorkingTree(repositoryRoot);
+    const findings = checkOffline(real);
+    expect(problems(findings)).toEqual([]);
+    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'lockfile resolutions', 'trust excludes', 'overrides']);
+    // The phase-2 slip it exists to catch: an override written in pnpm-workspace.yaml without its overrides.json entry.
+    const { parse, stringify: yaml } = await import('yaml');
+    const workspace = { ...(parse(real.workspace ?? '') as Record<string, unknown>), overrides: { 'typed-rest-client>qs': '6.16.1' } };
+    expect(problems(checkOffline({ ...real, workspace: yaml(workspace) }))).toContain(
+      'overrides: the pnpm overrides (pnpm-workspace.yaml, package.json) lists typed-rest-client>qs: 6.16.1, which tools/check-toolchain/overrides.json does not; the two lists are kept equal',
+    );
   });
 });

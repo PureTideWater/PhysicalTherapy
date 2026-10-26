@@ -696,6 +696,19 @@ function overridesRule(head: Config): Finding[] {
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(head.overrides.length)} override(s), each with its entry and still applied` }];
 }
 
+/**
+ * The rules that read only the tree, with no base and no registry: the gates, the settings, every lockfile entry's
+ * resolution, the trust excludes and the overrides. The unit tests run them on the repository's real tree, so a list
+ * out of step with pnpm's settings fails offline as well as in static's networked run (ci-infra N3).
+ */
+export function checkOffline(tree: Tree): Finding[] {
+  const head = readConfig(tree);
+  if (head.problems.length > 0) {
+    return head.problems.map((message) => ({ level: 'error', rule: 'files', message }));
+  }
+  return [...gatesRule(head), ...settingsRule(head), ...lockfileResolutionRule(head.lockfile), ...trustRule(head), ...overridesRule(head)];
+}
+
 /** Every rule, in order. Never throws for a network failure: each fails closed as an error finding. */
 export async function checkToolchain(input: CheckInput, registry: Registry): Promise<Finding[]> {
   const head = readConfig(input.head);
