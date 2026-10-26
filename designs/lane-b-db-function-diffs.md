@@ -12,8 +12,9 @@ no `packages/synth` IDs.
 - `docs/product/domain-model.md` Appendix C shows each function's body only as the first 16 hex digits of its SHA-256.
   The founder approves the document by hash, so a changed body is visible there as a changed hash, never as the change.
 - The functions hold the rules that never bend: the tenancy scope (`allowed_practice_ids`, `effective_practice_access`,
-  `app_actor_*`), the append-only and approval guards, the ledger's triggers. 338 functions (339 rows: one overloaded
-  name, `submit_prospect_request`), all `prokind = 'f'`, all owned by `tp_owner`, one with a SQL-standard body.
+  `app_actor_*`), the append-only and approval guards, the ledger's triggers. 338 functions under 337 names (one
+  overloaded name, `submit_prospect_request`), all `prokind = 'f'`, all owned by `tp_owner`, one with a SQL-standard
+  body (`screening_standing`), 148 SECURITY DEFINER.
 
 ## 2. Confirmed at design: no migration
 
@@ -136,3 +137,63 @@ so its SHA-256 and the founder's approval, byte for byte unchanged. Lane B may b
 - **One file per signature:** a changed argument list becomes a delete and an add, and a new overload renames nothing
   but scatters history; per name is clearer for review.
 - **Marking the files linguist-generated:** GitHub would collapse exactly the diffs this exists to show.
+
+## 7. The design review and its dispositions (wf_2fc4efb8-887, 2026-10-26 ~00:10 UTC)
+
+One adversarial reviewer: "sound with changes", no migration needed (`designs/lane-b-db-function-diffs-review.json`).
+Every finding is taken; the design above is amended by these, which win where they differ:
+
+- **R1 (blocking) "Defined by" dropped.** migration-text.ts sees CREATE statements only, never the hardening migration's
+  `ALTER FUNCTION ... SET search_path` inside a DO block, so the line would point at the wrong migration for the tenancy
+  functions. `git log -p packages/db/functions/<name>.sql` gives each function's true history from the catalog.
+- **R2 The summary shows the changed lines.** `--summary-since REF` gains a section "Function definitions changed since
+  REF": every file under `packages/db/functions` that differs between REF and the files this run has (the generated
+  set with `--out` or `--check`, else the working tree), each as a unified diff in a fenced `diff` block (git's own
+  `git diff --no-index` over two temporary directories), SECURITY DEFINER and scope-setting functions first, then by
+  name. So a header-only change (a DEFAULT, STRICT, LEAKPROOF, owner, a grant) that Appendix C does not show is in the
+  copy the code writes, which the runbook calls the one that counts. When REF has no `packages/db/functions` (the
+  bootstrap PR), it prints one line: the base has no function files, N files added, nothing to compare.
+  The `(diff: …)` pointer of section 3.2 is replaced by this section.
+- **R3 The body-hash line is labelled for what it is:** `-- Body SHA-256 (the text between the dollar quotes only), as
+  Appendix C prints it: f2ef1aad2276f6cd`. The README and ADR 0068 say the files are bound to the approved document by
+  the drift check and Appendix D's migration hashes, not by this line. DBF-02 asserts the hash of the text between the
+  delimiters equals the Appendix C value, for a plpgsql function and for `screening_standing`.
+- **R4 #42's ordering:** if this merges before #42, #42's next `--out` writes its function files, and that commit must
+  come before the founder signs #42, since a later commit dismisses the approval of record. Told to the orchestrator for
+  Lane A at design (send_message), and in the status file.
+- **R5 Kinds:** `f`, `p` and `w` render with `pg_get_functiondef`; an aggregate (`a`) is refused with a
+  DomainModelError (exit 2) naming it and asking for generator support, never a crash or a guessed rendering. Tested.
+- **R6 Privileges, every line explicit:** `REVOKE ALL ... FROM PUBLIC;` when PUBLIC lacks EXECUTE, `GRANT EXECUTE ...
+  TO PUBLIC;` when it holds it, so opening a function to PUBLIC adds a line; `GRANTED BY <role>` when the grantor is
+  not the owner; `REVOKE EXECUTE ... FROM <owner>;` when the owner revoked its own; ACL read through
+  `aclexplode(coalesce(proacl, acldefault('f', proowner)))`.
+- **R7 `.gitattributes`:** `packages/db/functions/*.sql linguist-generated=false`, so Linguist's heuristics never collapse the diffs; a test pins
+  it. The banner avoids the conventional markers ("@generated", "DO NOT EDIT").
+- **R8 CODEOWNERS:** `/packages/db/functions/ @PureTideWater` under "The schema and its approval"; codeowners.test.ts's
+  ordered list follows (the README is the tracked file its tracked-path test needs).
+- **R9 Determinism:** the definitions are read inside `readCatalog`, under `readDatabase`'s pinned SET LOCALs, in the
+  same READ ONLY snapshot. DBF-01 opens the connection with a different search_path, DateStyle, IntervalStyle and
+  TimeZone and gets the same files. ADR 0068 notes the dependence on the PostgreSQL major version (the CI image is the
+  floating `postgres:18` tag, as for the document already).
+- **R10, R11, R12:** counts corrected (above); GitHub sorts `functions/` before `migrations/`, so the files show above
+  the migration, which still reads well; each overload's header line is the signature exactly as Appendix C prints it.
+- **R13 "Trigger function of":** kept, one `table.trigger` per line in C order, so a new table adds exactly one line; the
+  README says such a line is the new trigger, not a change to the function.
+- **R14 Bytes:** strip pg_get_functiondef's one trailing newline before the `;`; `.editorconfig` gains
+  `[packages/db/functions/**]` with `trim_trailing_whitespace` and `insert_final_newline` unset, so no editor rewrites a
+  verbatim body.
+- **R15 CLI:** `--check` reports both the document and the directory, then exits 1 if either differs; `--functions DIR`
+  resolves against INIT_CWD like `--out`; the "no other entry" rule counts only paths git would commit (ignored files
+  such as `.DS_Store` are not entries).
+- **R16 Extensions:** members of an extension (pg_depend deptype `e`) are left out of the files, as their definitions
+  belong to the extension's version; none exist today, and the README says so.
+- **R17 Reviewer checklist** (security-reviewer.md and the skill) adds: SECURITY DEFINER without `SET search_path`, or
+  `pg_temp` not last; LEAKPROOF added; STRICT removed; a volatility change on a function a policy calls; any GRANT to
+  PUBLIC or a widened grant; an owner change; a new overload of a scope function; a removed or changed
+  `app.practice_ids` read.
+- **Improvements taken in this PR:** a unit test that the provenance exclude still flags migration edits; CO-02's
+  compliance control (`packages/compliance/src/controls.ts`) names the function files beside the domain model job;
+  the PR description says the bootstrap adds 337 generated files that need no line-by-line read.
+- **Proposals outside this PR (status file):** `.claude/hooks/protect-content.sh` refusing hand edits to
+  `packages/db/functions/*.sql`, and a CLAUDE.md "Never" line (both founder-owned guards); one sentence in Appendix C's
+  intro pointing at the files, at Lane A's next domain-model regeneration (it changes the approved text).
