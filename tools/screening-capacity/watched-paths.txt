@@ -3,6 +3,7 @@
 # A line is a path, or a shell pattern whose * also matches across /.
 .github/workflows/screening-capacity.yml
 apps/web/Dockerfile
+apps/web/e2e/browser-builds/*
 apps/web/e2e/browser.json
 apps/web/next.config.ts
 apps/web/package.json

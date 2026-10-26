@@ -363,8 +363,8 @@ migration and login tasks, the web's screening pages, actions and routes with th
 pages, and the harness), each relative import and each workspace package's export followed to its file, and the files
 no import reaches that still change what is measured: the Dockerfiles, the web's Next config, the packages' manifests,
 the lockfile, the migrations, the settings the harness reads, the fixture release, the workflow, and the capacity
-job's own setup (`tools/ci/apt-archives.sh`, `tools/ci/browser-build.ts` and the `apps/web/e2e/browser.json` it
-reads), which runs there on the release's runner image and nowhere else. After a change
+job's own setup (`tools/ci/apt-archives.sh`, `tools/ci/browser-build.ts` and the `apps/web/e2e/browser.json` and
+`apps/web/e2e/browser-builds/*.sha256` it reads), which runs there on the release's runner image and nowhere else. After a change
 that adds an import on that path, regenerate it (`pnpm exec tsx tools/screening-capacity/watched.ts --write`) and commit
 it: a unit test fails while the committed list differs from what the code derives. The `changes` job reads the list
 from the pull request's base and its head as data (it runs no repository code) and measures when a changed file

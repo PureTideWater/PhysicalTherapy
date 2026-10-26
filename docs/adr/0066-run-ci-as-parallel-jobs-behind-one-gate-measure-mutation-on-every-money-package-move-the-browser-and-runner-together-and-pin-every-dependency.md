@@ -734,8 +734,9 @@ with no exclude. Playwright 1.64.1 pins chromium and the headless shell at revis
 156.0.8078.4. The worker image copies the lockfile's playwright-core from its build stage's frozen install, with no
 version of its own. `apps/web/e2e/browser.json` records both builds (per build its directory, its binary's path, the
 SHA-256 of every file of the build as `find <dir> -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum`
-gives it, the binary's SHA-256, and the Chrome for Testing zip and its SHA-256 for the local layout).
-`tools/ci/browser-build.ts` holds the installed builds to it, and its `--image <ref>` form holds a worker image's headless
+gives it, the binary's SHA-256, and the Chrome for Testing zip and its SHA-256 for the local layout), and the lines that
+hash to each tree's SHA-256 are committed beside it as `apps/web/e2e/browser-builds/<dir>.sha256`, so a difference names
+the files that differ. `tools/ci/browser-build.ts` holds the installed builds to it, and its `--image <ref>` form holds a worker image's headless
 shell to it. The shell's two header controls are named by their visible text (`aria-label` "<practice>, practice
 switcher" and "<email>, account menu", the initial drawn as generated content), and the brand journey checks every
 header control's name contains its visible text at 1280 and 390 px.
@@ -799,7 +800,8 @@ config digest to buildx's `containerimage.config.digest`, loads the worker as th
 checks its headless shell, so every pull request proves the reader and the containerd rule on the store the probe will
 use. `screening-capacity.yml`'s builds write archives and load them the same way. `release-dry-run.yml` carries the same
 steps, cut to its one image, without the push and the registry check. The watched list gains `tools/ci/apt-archives.sh`,
-`tools/ci/browser-build.ts` and `browser.json`, which the capacity job runs or reads.
+`tools/ci/browser-build.ts`, `browser.json` and the file lists under `browser-builds/`, which the capacity job runs or
+reads.
 
 ### After #42
 
