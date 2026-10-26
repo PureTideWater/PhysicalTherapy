@@ -59,15 +59,88 @@ export interface UploaderProps {
   readonly csrfToken: string;
   readonly roleNames: string;
   readonly gate: { readonly open: boolean; readonly reason: string | null };
+  /**
+   * The batch's limits. `contentTypes` is every type the drop zone takes: the 835's when `kinds` is absent, else every
+   * offered kind's together. A file's declared type is always checked against the chosen kind's own types.
+   */
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number; readonly contentTypes: readonly string[] };
   /** The kinds a person chooses between (contracts, exhibits, payer letters); 835s when absent. */
   readonly kinds?: readonly UploadKind[];
+  /**
+   * The kind the panel starts with, when one of several offered is the screen's own (the Uploads page's 835, whose
+   * heading names it; its other kind, an ERA export, needs a second, explicit choice of format). Absent, a panel that
+   * offers more than one kind starts with none (startingKind).
+   */
+  readonly initialKind?: string;
   readonly heading?: string;
   readonly description?: string;
   /** Who uploads, for the permission state. */
   readonly uploaders?: string;
   /** Whether the practice's receipts are listed below the drop zone. */
   readonly showReceipts?: boolean;
+}
+
+/** The kind a panel without `kinds` takes: an 835, with the limits' types. */
+const DEFAULT_835 = { kind: 'x12_835', label: '835 remittance' } as const;
+
+/** The refusal of a batch dropped or chosen before the kind is (design 5.9; docs/adr/0070, Part 3). */
+export const CHOOSE_KIND_FIRST = 'Choose the kind of document first, then choose the files again.';
+
+/** The kind select's first, disabled option, shown while no kind is chosen. */
+export const CHOOSE_KIND_PLACEHOLDER = 'Choose the kind of document';
+
+/**
+ * The kind a panel starts with: the one the page names, else the only one offered, else an 835 when none is offered.
+ * A panel that offers more than one kind and names none starts with none, so the person chooses: a payer letter or an
+ * EOB dropped onto the Contracts screen is never filed as a contract by default, which the contract terms reader would
+ * then send to the model (docs/adr/0070, Part 3; design 5.9). A named kind that is not offered starts with none too.
+ * A kind, once recorded on a document, never changes, so the choice is the person's before the upload, not after.
+ */
+export function startingKind(kinds: readonly UploadKind[] | undefined, initialKind: string | undefined, contentTypes: readonly string[]): UploadKind | null {
+  if (kinds === undefined) {
+    return { ...DEFAULT_835, contentTypes };
+  }
+  if (initialKind !== undefined) {
+    return kinds.find((candidate) => candidate.kind === initialKind) ?? null;
+  }
+  return kinds.length === 1 ? (kinds[0] ?? null) : null;
+}
+
+/**
+ * What stops a batch before the server is asked for anything, each in the uploader's words: too many files; no kind
+ * chosen; an ERA export's system not chosen; and, file by file by its place in the batch, an empty file, one too large,
+ * or a spreadsheet chosen as a CSV-only export (docs/adr/0059 and 0060). Names no file: names stay in this browser.
+ */
+export function batchProblems(
+  chosen: readonly { readonly name: string; readonly type: string; readonly size: number }[],
+  kind: UploadKind | null,
+  format: UploadFormat | undefined,
+  limits: { readonly maxFiles: number; readonly maxBytes: number },
+): string[] {
+  const found: string[] = [];
+  if (chosen.length > limits.maxFiles) {
+    found.push(`At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`);
+  }
+  // The kind decides what reads the file (a contract's terms may go to the model), so the person names it first.
+  if (kind === null && chosen.length > 0) {
+    found.push(CHOOSE_KIND_FIRST);
+  }
+  // An ERA export is read with its system's layout, so the person says which system's export it is first.
+  if (kind?.formats !== undefined && format === undefined && chosen.length > 0) {
+    found.push('Choose which system’s ERA export the files are, then choose the files again.');
+  }
+  chosen.forEach((file, index) => {
+    // A spreadsheet chosen as a posting, EFT or ERA export: those are read as CSV only (docs/adr/0059 and 0060).
+    const spreadsheet = kind === null ? null : spreadsheetExportProblem(kind.kind, file, index + 1);
+    if (file.size === 0) {
+      found.push(`File ${String(index + 1)} is empty.`);
+    } else if (file.size > limits.maxBytes) {
+      found.push(`File ${String(index + 1)} is larger than ${formatBytes(limits.maxBytes)}; split it or zip it.`);
+    } else if (spreadsheet !== null) {
+      found.push(spreadsheet);
+    }
+  });
+  return found;
 }
 
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
@@ -138,10 +211,13 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
 export function Uploader(props: UploaderProps) {
   const { practiceId, canUpload, gate, limits, kinds, csrfToken } = props;
   const router = useRouter();
-  const [kind, setKind] = useState<UploadKind>(kinds?.[0] ?? { kind: 'x12_835', label: '835 remittance', contentTypes: limits.contentTypes });
+  /** The kind chosen; none, on a panel of several kinds the page does not choose between, until the person chooses. */
+  const [kind, setKind] = useState<UploadKind | null>(() => startingKind(kinds, props.initialKind, limits.contentTypes));
+  /** Whether the panel started with no kind: its select then leads with the disabled placeholder. */
+  const [startedUnchosen] = useState(kind === null);
   /** The format chosen for a kind that has formats (an ERA export); none until the person chooses. */
   const [formatId, setFormatId] = useState('');
-  const format = kind.formats?.find((candidate) => candidate.id === formatId);
+  const format = kind?.formats?.find((candidate) => candidate.id === formatId);
   const [batch, setBatch] = useState<BatchFile[]>([]);
   const [problems, setProblems] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -174,27 +250,9 @@ export function Uploader(props: UploaderProps) {
 
   const start = useCallback(
     async (chosen: readonly File[]) => {
-      const found: string[] = [];
-      if (chosen.length > limits.maxFiles) {
-        found.push(`At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`);
-      }
-      // An ERA export is read with its system's layout, so the person says which system's export it is first.
-      if (kind.formats !== undefined && format === undefined && chosen.length > 0) {
-        found.push('Choose which system’s ERA export the files are, then choose the files again.');
-      }
-      chosen.forEach((file, index) => {
-        // A spreadsheet chosen as a posting, EFT or ERA export: those are read as CSV only (docs/adr/0059 and 0060).
-        const spreadsheet = spreadsheetExportProblem(kind.kind, file, index + 1);
-        if (file.size === 0) {
-          found.push(`File ${String(index + 1)} is empty.`);
-        } else if (file.size > limits.maxBytes) {
-          found.push(`File ${String(index + 1)} is larger than ${formatBytes(limits.maxBytes)}; split it or zip it.`);
-        } else if (spreadsheet !== null) {
-          found.push(spreadsheet);
-        }
-      });
+      const found = batchProblems(chosen, kind, format, limits);
       setProblems(found);
-      if (found.length > 0 || chosen.length === 0) {
+      if (found.length > 0 || chosen.length === 0 || kind === null) {
         return;
       }
       const items: BatchFile[] = chosen.map((file) => ({ key: crypto.randomUUID(), file, phase: 'waiting', progress: 0 }));
@@ -322,13 +380,19 @@ export function Uploader(props: UploaderProps) {
               </label>
               <select
                 id="upload-kind"
-                value={kind.kind}
+                value={kind?.kind ?? ''}
+                required
                 onChange={(event) => {
                   setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
                   setFormatId('');
                 }}
                 className="h-9 rounded-md border bg-background px-2 text-sm"
               >
+                {startedUnchosen ? (
+                  <option value="" disabled>
+                    {CHOOSE_KIND_PLACEHOLDER}
+                  </option>
+                ) : null}
                 {kinds.map((candidate) => (
                   <option key={candidate.kind} value={candidate.kind}>
                     {candidate.label}
@@ -337,7 +401,7 @@ export function Uploader(props: UploaderProps) {
               </select>
             </div>
           )}
-          {kind.formats === undefined ? null : (
+          {kind?.formats === undefined ? null : (
             <div className="flex flex-col gap-1">
               <label htmlFor="upload-format" className="text-sm font-medium">
                 Which system’s export

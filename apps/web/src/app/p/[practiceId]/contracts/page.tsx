@@ -203,7 +203,7 @@ export default async function ContractsPage(props: Props) {
             canUpload={upload.canUpload}
             roleNames={roleNames(roles)}
             gate={upload.gate}
-            limits={{ ...upload.limits, contentTypes: upload.kinds[0]?.contentTypes ?? [] }}
+            limits={{ ...upload.limits, contentTypes: [...new Set(upload.kinds.flatMap((kind) => kind.contentTypes))] }}
             kinds={upload.kinds.map((kind) => ({ kind: kind.kind, label: KIND_NAMES[kind.kind].replace(/^./, (first) => first.toUpperCase()), contentTypes: kind.contentTypes }))}
             heading="Drop contracts, exhibits or payer letters here"
             description="PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to 2 GiB each."

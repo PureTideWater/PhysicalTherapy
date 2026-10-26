@@ -71,6 +71,22 @@ test('a contract abstracted by hand, approved and signed off becomes the version
   await test.step('the billing manager uploads the agreement and tags it to its payer', async () => {
     const response = await page.goto(`/p/${other}/contracts`);
     expect(response?.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
+    // The panel offers several kinds and starts with none (docs/adr/0070, Part 3): a file dropped or chosen before the
+    // kind is refused in the browser and nothing is uploaded, so a payer letter is never filed as a contract by default.
+    const panel = page.getByRole('region', { name: 'Upload a contract or exhibit' });
+    await expect(panel.getByLabel('Kind of document')).toHaveValue('');
+    const dropped = await page.evaluateHandle(() => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(['%PDF-1.4 SYNTHETIC'], 'dropped.pdf', { type: 'application/pdf' }));
+      return transfer;
+    });
+    await panel.getByRole('region', { name: 'Drop zone' }).dispatchEvent('drop', { dataTransfer: dropped });
+    const refused = panel.locator('[data-state="error"]');
+    await expect(refused).toContainText('Nothing was uploaded');
+    await expect(refused).toContainText('Choose the kind of document first, then choose the files again.');
+    await panel.getByLabel('Choose files to upload').setInputFiles([{ name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(path.join(FIXTURES, 'CON-01', 'version-1.pdf')) }]);
+    await expect(refused).toContainText('Choose the kind of document first, then choose the files again.');
+    await expect(panel.getByRole('region', { name: 'This batch' })).toHaveCount(0);
     await uploadContract(page, 'version-1.pdf');
     const untagged = page.getByRole('list', { name: 'Untagged documents' }).getByRole('listitem');
     await expect(untagged).toHaveCount(1, { timeout: 30_000 });

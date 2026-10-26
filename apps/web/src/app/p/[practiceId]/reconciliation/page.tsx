@@ -268,7 +268,7 @@ export default async function ReconciliationPage(props: Props) {
                 canUpload={data.upload.canUpload}
                 roleNames={roleNames(data.roles)}
                 gate={data.upload.gate}
-                limits={{ ...data.upload.limits, contentTypes: data.upload.kinds[0]?.contentTypes ?? [] }}
+                limits={{ ...data.upload.limits, contentTypes: [...new Set(data.upload.kinds.flatMap((kind) => kind.contentTypes))] }}
                 kinds={data.upload.kinds.map((kind) => ({ kind: kind.kind, label: kind.kind === 'posting_export' ? 'Posting export' : 'EFT or bank export', contentTypes: kind.contentTypes }))}
                 heading="Drop posting or EFT exports here"
                 description="CSV exports from the practice-management system or the bank, one at a time or a batch."
