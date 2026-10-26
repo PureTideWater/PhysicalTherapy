@@ -263,6 +263,7 @@ export const CONTROLS: readonly Control[] = [
       { kind: 'ci_job', workflow: CI, step: 'pnpm licenses:check', what: 'the license allowlist on every pull request (the static job)' },
       { kind: 'ci_job', workflow: CI, step: 'aquasecurity/trivy-action', what: 'the container scan of both images on every pull request (the images job)' },
       { kind: 'ci_job', workflow: RELEASE, step: 'sbom-', what: 'a software bill of materials per release image' },
+      { kind: 'runbook', file: 'docs/runbooks/dependency-upgrades.md' },
       { kind: 'policy', policy: 'change-management' },
     ],
   },
