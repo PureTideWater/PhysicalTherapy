@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { baseState, selectPins } from './base';
+import { builderOf, checkBuilder } from './buildkit';
 import { tagCommit, type Transport } from './network';
 import { ActionReader, verifyPin } from './verify';
 import { actionUses, consistencyProblems, formProblems, parsePin, versionsByRef, type WorkflowText } from './workflows';
@@ -36,6 +37,8 @@ export interface CheckOptions {
   readonly offline?: boolean;
   /** The push run's deadline for its re-reads (PUSH_DEADLINE_MS; shorter in the tests). */
   readonly pushDeadlineMs?: number;
+  /** The time the builder's release age is measured from (now; fixed in the tests). */
+  readonly now?: Date;
 }
 
 /** Runs each task with at most `limit` in flight, starting none after the signal aborts. */
@@ -68,7 +71,8 @@ export function readWorkflows(root: string): WorkflowText[] {
 
 export async function checkActionPins(options: CheckOptions): Promise<CheckResult> {
   const workflows = readWorkflows(options.root);
-  const errors = [...formProblems(workflows), ...consistencyProblems(workflows)];
+  const builder = builderOf(workflows);
+  const errors = [...formProblems(workflows), ...consistencyProblems(workflows), ...builder.problems];
   const warnings: string[] = [];
   const notes: string[] = [];
   if (options.offline === true) return { errors, warnings, notes: ['offline: the networked checks did not run'] };
@@ -112,7 +116,17 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
       errors.push(`${ref}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  if (verify.size === 0) notes.push('no pin is new or used with changed inputs: nothing read from the network');
+  if (verify.size === 0) notes.push('no pin is new or used with changed inputs: no action read from the network');
+
+  // The BuildKit builder, on every networked run: Dependabot never updates it, so this read is what notices a release.
+  if (builder.builder !== undefined) {
+    const before = base === undefined ? undefined : builderOf(base).builder;
+    const isNew = before === undefined || before.version !== builder.builder.version || before.digest !== builder.builder.digest;
+    const verdict = await checkBuilder(options.transport, builder.builder, { isNew, now: options.now ?? new Date() });
+    errors.push(...verdict.errors);
+    warnings.push(...verdict.warnings);
+    notes.push(...verdict.notes);
+  }
 
   if (options.event === 'push') {
     notes.push(`a push: the tags of ${String(unchanged.size)} unchanged pin(s) read again, a moved or unreadable one a warning`);

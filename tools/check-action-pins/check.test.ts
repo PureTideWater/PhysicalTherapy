@@ -80,7 +80,7 @@ describe('the pins the network reads', () => {
     const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport });
     expect(result).toMatchObject({ errors: [], warnings: [] });
     expect(transport.reads).toEqual([]);
-    expect(result.notes).toContain('no pin is new or used with changed inputs: nothing read from the network');
+    expect(result.notes).toContain('no pin is new or used with changed inputs: no action read from the network');
   });
 
   it('are the new pin alone, with its tag and its inputs read, and a step whose inputs changed', async () => {
@@ -168,6 +168,30 @@ ${Array.from({ length: 10 }, (_, i) => `      - uses: octo/a${String(i)}@${sha(s
     expect(await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: slow })).toMatchObject({ errors: [], warnings: [] });
     expect(slow.reads).toHaveLength(10);
     expect(slow.peak()).toBe(PUSH_CONCURRENCY);
+  });
+
+  it('reads the BuildKit builder on Docker Hub on every networked run, a newer release three days old a warning', async () => {
+    const BUILDX = sha('b');
+    const DIGEST = `sha256:${'3'.repeat(64)}`;
+    const builder = `${workflow(CHECKOUT)}      - uses: octo/setup-buildx@${BUILDX} # v4.4.1\n        with: { driver-opts: "image=moby/buildkit:v0.34.1@${DIGEST}" }\n`.replaceAll('octo/setup-buildx', 'docker/setup-buildx-action');
+    const repo = repository({ baseWorkflow: builder, headWorkflow: builder, baseChecker: true });
+    const now = new Date('2030-01-10T00:00:00Z');
+    const transport = recordedTransport({
+      urls: {
+        'https://hub.docker.com/v2/repositories/moby/buildkit/tags/v0.34.1': JSON.stringify({ digest: DIGEST }),
+        'https://hub.docker.com/v2/repositories/moby/buildkit/tags?page_size=100&ordering=last_updated': JSON.stringify({ results: [{ name: 'v0.35.0', tag_last_pushed: '2030-01-05T00:00:00Z' }] }),
+      },
+    });
+    const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport, now });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([expect.stringMatching(/^the builder moby\/buildkit:v0\.34\.1: moby\/buildkit v0\.35\.0 was pushed 2030-01-05T00:00:00\.000Z/)]);
+    // The builder is read; no action pin is, since none changed.
+    expect(transport.reads.every((read) => read.startsWith('GET https://hub.docker.com/'))).toBe(true);
+    // Offline, two builders are a failure without a read.
+    const two = repository({ baseWorkflow: builder, headWorkflow: builder.replace('v0.34.1@', 'v0.34.0@'), baseChecker: true });
+    writeFileSync(path.join(two.dir, '.github/workflows/b.yml'), builder.replace('name: ci', 'name: b'));
+    const offline = await checkActionPins({ root: two.dir, base: two.base, event: 'pull_request', transport: recordedTransport({}), offline: true });
+    expect(offline.errors).toEqual([expect.stringMatching(/^the setup-buildx steps name 2 builders, not one/)]);
   });
 
   it('fails closed when a new pin cannot be read in three tries, naming the host', async () => {
