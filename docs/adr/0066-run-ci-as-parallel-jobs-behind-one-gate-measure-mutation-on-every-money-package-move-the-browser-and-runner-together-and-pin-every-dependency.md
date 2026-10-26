@@ -636,7 +636,9 @@ together.
   starts `publish-content.yml` with its `cache: pnpm`, restores no store the build branch saved.
 - A young security fix is red until a person adds its dated exclude to both lists; the weekly triage removes expired
   ones (`docs/runbooks/dependency-upgrades.md`). A young version merged into the lockfile stops every full
-  re-resolution, Dependabot's included, until it is three days old.
+  re-resolution, Dependabot's included, until it is three days old. Dependabot's file `ignore` entries hold for security
+  updates too, so an advisory fixed only in an ignored major raises an alert and no pull request: the weekly triage
+  reads open alerts as well as pull requests and takes such a fix as a deliberate upgrade (security review N4).
 - `packageManager` moves only by a person's pull request, on `check-toolchain`'s warning or an advisory against the
   pinned pnpm, which turns `static` red on every pull request until that pull request merges first.
 - A Lane A or Lane B pull request that resolves the lockfile does so under pnpm 10.34.8 and both gates, starting from

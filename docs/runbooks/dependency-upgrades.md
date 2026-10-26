@@ -30,8 +30,10 @@ docs/runbooks/github-governance.md, "The default branch until launch"):
 | the node image and compose's postgres | Wednesday 04:43 | 7 days | one, `container-images` |
 
 Majors are ignored for `@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`, the node image and
-compose's postgres: each moves in a pull request of its own (below). Monday holds the weekly mutation (05:23),
-large-zip (06:17) and capacity (06:41) runs, so no ecosystem runs then.
+compose's postgres: each moves in a pull request of its own (below). The ignores hold for security updates too, so an
+advisory fixed only in one of those majors raises an alert and no pull request: the weekly triage reads the alerts for
+that reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no
+ecosystem runs then.
 
 npm's cooldown equals the release age on purpose (the co-founder's CQ1 (a)). Dependabot hands pnpm its own release
 age whenever that is longer than the repository's: its update checker probes each candidate with the version's
@@ -65,14 +67,34 @@ Once a week, after Thursday's npm batch:
      is not about the update (a flaky journey, a runner lost) is fixed or re-run as any other (docs/runbooks/ci.md);
    - `browser-tests`: red by design (below);
    - a group that moves a money closure's packages runs mutation in full; read its survivors like any other.
-3. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below);
+3. **Open Dependabot alerts.** An alert can stand with no pull request behind it, so read the alerts, not only the
+   pull requests:
+
+   ```sh
+   gh api "repos/PureTideWater/PhysicalTherapy/dependabot/alerts?state=open&per_page=100" --paginate \
+     --jq '.[] | [.number, .security_advisory.ghsa_id, .security_advisory.severity, .dependency.package.name,
+       (.security_vulnerability.first_patched_version.identifier // "no fix"), .html_url] | @tsv'
+   ```
+
+   For each, find the `security` group's pull request that fixes it. When there is none:
+   - **the fix is only in a major the file ignores** (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`,
+     `pg-boss`): a file `ignore` entry applies to security updates too, so Dependabot opens nothing. (Alerts cover the
+     npm packages and the actions; the images' advisories surface in the images job's scan.) Handle it by hand as a
+     deliberate upgrade (below, "The upgrades made on purpose"), in its own pull request, at once for a moderate or
+     worse advisory on anything the product runs; if the advisory cannot reach what we run, record why in an audit
+     exception (below) instead;
+   - **no fixed version yet**: an audit exception with its reason and expiry (below), and the alert read again weekly;
+   - **the fix is under three days old**: the pull request is red until its dated exclude is added (below, "The
+     release age"); add it when the fix cannot wait.
+   Never dismiss an alert without a written reason in the alert and, for a dependency we run, the founder's agreement.
+4. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below);
    `pnpm toolchain:check` warns of each on every run until then. Read the audit exceptions likewise: an entry nearing
    30 days is fixed or renewed (below).
-4. **`check-toolchain`'s warnings.** A newer pnpm 10.x at least three days old: make the `packageManager` pull request
+5. **`check-toolchain`'s warnings.** A newer pnpm 10.x at least three days old: make the `packageManager` pull request
    (below). An action whose tag moved under an unchanged pin (a push run's warning from `pnpm actions:check`): read
    why upstream moved it; a pin is a commit, so nothing we run changed, but a moved tag on a security tool is reported
    to the founder.
-5. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
+6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
    them with `@dependabot show <dependency> ignore conditions` on any Dependabot pull request, and remove one with
    `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist.
 
