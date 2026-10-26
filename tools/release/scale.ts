@@ -3,7 +3,16 @@ import path from 'node:path';
 
 import { MANIFEST_FILE, PARSERS, RELEASE_NOTES_FILE, type RuleRecord, buildManifest, buildParsedRecords, parseRuleRecord, serializeManifest, serializeRecords, sha256 } from '@tp/rules';
 import { readRecordFile } from '@tp/rules/content';
-import { SCALE_RELEASE_NUMBER, SCALE_RELEASE_SHAPE, SMALL_SCALE_RELEASE_SHAPE, type ScaleReleaseShape, scalePromptPayStates, scaleSourceFiles } from '@tp/synth';
+import {
+  QUARTERLY_SCALE_RELEASE_NUMBER,
+  QUARTERLY_SCALE_RELEASE_SHAPE,
+  SCALE_RELEASE_NUMBER,
+  SCALE_RELEASE_SHAPE,
+  SMALL_SCALE_RELEASE_SHAPE,
+  type ScaleReleaseShape,
+  scalePromptPayStates,
+  scaleSourceFiles,
+} from '@tp/synth';
 
 import { repositoryRoot } from '../content-files';
 import { SYNTHETIC_RELEASE_DIR } from './synthetic';
@@ -18,10 +27,27 @@ import { SYNTHETIC_RELEASE_DIR } from './synthetic';
  * with the loader's synthetic test option, into a scratch database. The PTP table goes in files of at most 100,000
  * records (SCALE_RELEASE_SHAPE.ptpFileRecords says why). Nothing is written under the repository: the caller names the directory ($RUNNER_TEMP in CI).
  *
- *   tsx tools/release/scale.ts --out <dir> [--small]
+ * `--shape quarterly` builds the quarterly scale release 900110 instead (audit #30 and #31; docs/adr/0071): the same
+ * production shape with every undated file per CMS quarter over seven years (QUARTERLY_SCALE_RELEASE_SHAPE), which the
+ * weekly real-size test prices under (tools/release-capacity). `--small` takes either shape at the unit tests' size.
+ *
+ *   tsx tools/release/scale.ts --out <dir> [--shape production|quarterly] [--small]
  */
 
-export const SCALE_RELEASE_DIR_NAME = `release-synth-${String(SCALE_RELEASE_NUMBER)}`;
+/** The directory a scale release is written to under `--out`. */
+export function scaleReleaseDirName(releaseNo: number): string {
+  return `release-synth-${String(releaseNo)}`;
+}
+
+export const SCALE_RELEASE_DIR_NAME = scaleReleaseDirName(SCALE_RELEASE_NUMBER);
+
+/** The shapes `--shape` names: the scale release 900100 and the quarterly one, 900110. */
+export const SCALE_SHAPES = {
+  production: { releaseNo: SCALE_RELEASE_NUMBER, shape: SCALE_RELEASE_SHAPE },
+  quarterly: { releaseNo: QUARTERLY_SCALE_RELEASE_NUMBER, shape: QUARTERLY_SCALE_RELEASE_SHAPE },
+} as const;
+
+export type ScaleShapeName = keyof typeof SCALE_SHAPES;
 const BUILT_ON = '2026-10-20';
 const BUILDER = 'SYNTHETIC scale release builder (tools/release/scale.ts)';
 const GENERATOR_PATH = 'packages/synth/src/release/scale.ts';
@@ -74,14 +100,15 @@ function handTypedFiles(shape: ScaleReleaseShape, root: string): Map<string, Rul
 }
 
 /**
- * Writes the scale release to `<out>/release-synth-900100` (replacing what is there) and returns what it holds. Each
- * source file is parsed and written before the next is generated, so the largest held at once is one PTP file's
- * records.
+ * Writes the scale release to `<out>/release-synth-900100` (or the number given: 900110 for the quarterly shape),
+ * replacing what is there, and returns what it holds. Each source file is parsed and written before the next is
+ * generated, so the largest held at once is one PTP file's records.
  */
-export function writeScaleRelease(options: { readonly out: string; readonly shape?: ScaleReleaseShape; readonly root?: string }): ScaleReleaseSummary {
+export function writeScaleRelease(options: { readonly out: string; readonly shape?: ScaleReleaseShape; readonly releaseNo?: number; readonly root?: string }): ScaleReleaseSummary {
   const shape = options.shape ?? SCALE_RELEASE_SHAPE;
+  const releaseNo = options.releaseNo ?? SCALE_RELEASE_NUMBER;
   const root = options.root ?? repositoryRoot;
-  const dir = path.join(options.out, SCALE_RELEASE_DIR_NAME);
+  const dir = path.join(options.out, scaleReleaseDirName(releaseNo));
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   const hashes = new Map<string, string>();
@@ -112,10 +139,12 @@ export function writeScaleRelease(options: { readonly out: string; readonly shap
   }
   const total = Object.values(byType).reduce((sum, count) => sum + count, 0);
   const notes = [
-    `# SYNTHETIC scale release ${String(SCALE_RELEASE_NUMBER)}`,
+    `# SYNTHETIC scale release ${String(releaseNo)}`,
     '',
     `Built by \`tsx tools/release/scale.ts\` from packages/synth/src/release/scale.ts on ${BUILT_ON}: invented values at the`,
-    'sizes of CMS’s public files, for the screening capacity test (audit #53 part 1). Never published, never loaded outside',
+    ...(releaseNo === SCALE_RELEASE_NUMBER
+      ? ['sizes of CMS’s public files, for the screening capacity test (audit #53 part 1). Never published, never loaded outside']
+      : ['sizes of CMS’s public files, each undated file per CMS quarter, for the weekly real-size test (audit #31). Never published, never loaded outside']),
     'a scratch database, never used to price a real line.',
     '',
     '| Type | Records |',
@@ -128,24 +157,29 @@ export function writeScaleRelease(options: { readonly out: string; readonly shap
   ].join('\n');
   writeFileSync(path.join(dir, RELEASE_NOTES_FILE), notes);
   hashes.set(RELEASE_NOTES_FILE, sha256(notes));
-  const manifest = serializeManifest(buildManifest(SCALE_RELEASE_NUMBER, hashes));
+  const manifest = serializeManifest(buildManifest(releaseNo, hashes));
   writeFileSync(path.join(dir, MANIFEST_FILE), manifest);
-  return { releaseNo: SCALE_RELEASE_NUMBER, dir, manifestSha256: sha256(manifest), records: total, byType, files: hashes.size };
+  return { releaseNo, dir, manifestSha256: sha256(manifest), records: total, byType, files: hashes.size };
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
   const args = process.argv.slice(2);
   const at = args.indexOf('--out');
   const out = at === -1 ? undefined : args[at + 1];
-  if (out === undefined || out === '') {
-    process.stderr.write('usage: tsx tools/release/scale.ts --out <dir> [--small]\n');
+  const shapeAt = args.indexOf('--shape');
+  const shapeName = shapeAt === -1 ? 'production' : args[shapeAt + 1];
+  if (out === undefined || out === '' || (shapeName !== 'production' && shapeName !== 'quarterly')) {
+    process.stderr.write('usage: tsx tools/release/scale.ts --out <dir> [--shape production|quarterly] [--small]\n');
     process.exit(2);
   }
+  const chosen = SCALE_SHAPES[shapeName];
   const resolved = path.resolve(out);
   if (resolved === repositoryRoot || resolved.startsWith(`${repositoryRoot}${path.sep}`)) {
     process.stderr.write('the scale release is written outside the repository (it is never committed)\n');
     process.exit(2);
   }
-  const summary = writeScaleRelease({ out: resolved, shape: args.includes('--small') ? SMALL_SCALE_RELEASE_SHAPE : SCALE_RELEASE_SHAPE });
+  // The small shape keeps the chosen one's windows, so `--shape quarterly --small` is the quarterly shape at the tests' size.
+  const shape = args.includes('--small') ? { ...SMALL_SCALE_RELEASE_SHAPE, ...(chosen.shape.windows === undefined ? {} : { windows: chosen.shape.windows }) } : chosen.shape;
+  const summary = writeScaleRelease({ out: resolved, shape, releaseNo: chosen.releaseNo });
   process.stdout.write(`${JSON.stringify(summary)}\n`);
 }

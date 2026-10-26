@@ -74,7 +74,8 @@ async function run(command: string, args: readonly string[], options: { readonly
 
 /** A screening consumer task's service: screening-1 to screening-N, one per declared task. */
 export type ScreeningServiceName = `screening-${number}`;
-export type ServiceName = 'web' | 'platform' | ScreeningServiceName;
+/** The practice jobs' worker ('worker') runs only in the weekly real-size test (tools/release-capacity), from the worker image. */
+export type ServiceName = 'web' | 'platform' | 'worker' | ScreeningServiceName;
 
 /** The consumer's task services, one per declared task (production's desiredCount). */
 export function screeningServices(tasks: number): ScreeningServiceName[] {
@@ -88,11 +89,14 @@ export function isScreeningService(name: string): name is ScreeningServiceName {
 /**
  * What each service runs, as production's task definitions run it: the images' own commands (infra/lib/constructs/
  * compute.ts, COMMANDS), and for the screening consumer the worker's command with the main thread's heap limit
- * (SCREENING_MAIN_HEAP_FLAG, #31's explicit heap limit; its pricing threads carry their own).
+ * (SCREENING_MAIN_HEAP_FLAG, #31's explicit heap limit; its pricing threads carry their own). The practice worker's is
+ * production's as it is today, with no heap flag: the weekly real-size test adds infra/lib/heap.ts's to its own spec
+ * (tools/release-capacity/run.ts), so no file this module's closure reaches imports it (tools/screening-capacity/watched.ts).
  */
 export const SERVICE_COMMANDS = {
   web: ['node', 'apps/web/server.js'],
   platform: ['node', '--enable-source-maps', 'dist/main.js'],
+  worker: ['node', '--enable-source-maps', 'dist/main.js'],
   screening: ['node', '--enable-source-maps', SCREENING_MAIN_HEAP_FLAG, 'dist/main.js'],
 } as const;
 
