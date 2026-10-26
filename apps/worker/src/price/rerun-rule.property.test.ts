@@ -225,6 +225,10 @@ function play(model: RunModel, steps: readonly Step[]): void {
   }
 }
 
+// Each property plays thousands of sequences: seconds, and more under CI's coverage instrumentation, so each has
+// its own bound rather than the unit project's five-second default (the CI run of c637dfd stopped one at 5 s).
+const PROPERTY_TIMEOUT_MS = 60_000;
+
 describe('PRC-25 to PRC-28: the acceptance rule over random sequences of runs, lines, releases and acceptances', () => {
   it('keeps every priced line in effect, never regresses one, leaves an accepted re-run in effect and accepts a freshest re-run', () => {
     fc.assert(
@@ -247,7 +251,7 @@ describe('PRC-25 to PRC-28: the acceptance rule over random sequences of runs, l
     ]) {
       expect(seen.get(outcome) ?? 0, `${outcome} among ${JSON.stringify([...seen])}`).toBeGreaterThan(0);
     }
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('holds over executions at once and newer pinned inputs: no acceptance regresses a line to pricing read or pinned earlier', () => {
     fc.assert(
@@ -256,7 +260,7 @@ describe('PRC-25 to PRC-28: the acceptance rule over random sequences of runs, l
       }),
       { numRuns: 6_000 },
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('checks an acceptance that began before others committed: every finished acceptance leaves its re-run in effect', () => {
     fc.assert(
@@ -273,7 +277,7 @@ describe('PRC-25 to PRC-28: the acceptance rule over random sequences of runs, l
       }),
       { numRuns: 500 },
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 });
 
 // The rules the design rejected (§2.3), each over the same model.
