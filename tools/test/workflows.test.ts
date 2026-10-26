@@ -561,6 +561,9 @@ describe('workflows', () => {
       const steps = Object.entries(release.jobs).flatMap(([name, entry]) => entry.steps.map((step) => ({ where: `${name}: ${step.name ?? step.uses ?? step.run?.split('\n')[0] ?? ''}`, step })));
       expect(steps.filter(({ step }) => /^actions\/cache(?:\/|@)/.test(step.uses ?? '')).map(({ where }) => where)).toEqual([]);
       const named = (action: string) => steps.filter(({ step }) => usesAction(step, action));
+      // These explicit inputs are the only guard for a JavaScript action's built-in cache (setup-node's, action-setup's,
+      // setup-buildx's binary cache): tools/check-action-pins follows the actions/cache steps a composite nests, and a
+      // JavaScript action's cache is code it cannot read (the security review's N2).
       // Node without its package-manager cache, which v7 turns on by itself for a packageManager it caches.
       expect(named('actions/setup-node').map(({ step }) => step.with)).toEqual([{ 'node-version': 24, 'package-manager-cache': false }]);
       expect(named('pnpm/action-setup').map(({ step }) => step.with)).toEqual([{ cache: false }]);
@@ -588,6 +591,8 @@ describe('workflows', () => {
     expect(test?.env).toMatchObject({ TP_LARGE_ZIP_MB: '2048' });
     // Chromium first: the db project fails on CI without it rather than skip a printing test (CI-05).
     expect(stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium')).toBeLessThan(steps.indexOf(test as Step));
+    // GitHub's bash with pipefail, as ci.yml and the release run theirs, so no pipe in a step can hide a failure.
+    expect(large.defaults).toEqual({ run: { shell: 'bash' } });
   });
 
   it('rasterize the e2e browser’s text with fixed parameters and its own fontconfig, so the brand baselines compare the same on any Linux host', () => {
@@ -1311,8 +1316,9 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
 
   it('runs on every pull request and push that changes the release, its dry run or the images’ Dockerfiles, outside the required checks', () => {
     expect(dry().on).toEqual({ pull_request: { paths: PATHS }, push: { branches: ['claude/build-platform'], paths: PATHS } });
-    expect(Object.keys(dry().jobs)).toEqual(['build', 'push']);
+    expect(Object.keys(dry().jobs)).toEqual(['build', 'push', 'capacity']);
     expect(dry().jobs.push?.needs).toBe('build');
+    expect(dry().jobs.capacity?.needs).toBe('build');
     expect(REQUIRED_CHECKS.filter((check) => check.workflow === 'release-dry-run.yml')).toEqual([]);
   });
 
@@ -1341,6 +1347,36 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
       }
     }
     expect(dry().jobs.build?.steps.find((step) => usesAction(step, 'actions/upload-artifact'))?.with?.overwrite).toBe(true);
+  });
+
+  it('runs the capacity job’s setup as release.yml does, with no cache, up to its frozen install and no further (the ci-infra review’s N4)', () => {
+    // The steps a tag runs first in its capacity job: the checkout, a download by name, pnpm and Node with no cache and
+    // the frozen install, each with release.yml's own inputs; the measurement itself stays the tag's.
+    const theirs = release().jobs.capacity?.steps ?? [];
+    const ours = dry().jobs.capacity?.steps ?? [];
+    expect(ours.map((step) => step.run ?? step.uses?.split('@')[0])).toEqual(['actions/checkout', 'actions/download-artifact', 'pnpm/action-setup', 'actions/setup-node', 'pnpm install --frozen-lockfile']);
+    for (const step of ours) {
+      // The download names the dry run's one image where the tag names the production web image; every other input is
+      // release.yml's own.
+      const inputs = usesAction(step, 'actions/download-artifact') ? { ...step.with, name: 'image-web-production' } : step.with;
+      const match = theirs.find((candidate) => (step.run !== undefined ? candidate.run === step.run : candidate.uses === step.uses && isDeepStrictEqual(candidate.with, inputs)));
+      expect(match, `${step.run ?? step.uses ?? ''} with ${JSON.stringify(step.with)}`).toBeDefined();
+    }
+    expect(ours.find((step) => usesAction(step, 'actions/download-artifact'))?.with).toEqual({ name: 'image-web', path: '${{ runner.temp }}/image' });
+    expect(dry().jobs.capacity?.permissions).toBeUndefined();
+  });
+
+  it('writes the software bill of materials with release.yml’s own step, cut to this run’s image, and checks it is SPDX', () => {
+    const sbom = (entry: Job | undefined) => entry?.steps.find((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
+    const theirs = sbom(release().jobs.build);
+    const ours = sbom(dry().jobs.build);
+    expect(ours?.uses).toBe(theirs?.uses);
+    expect(ours?.with).toEqual({ ...theirs?.with, output: 'sbom-web-dry-run.spdx.json' });
+    expect(theirs?.with?.output).toBe('sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json');
+    const steps = dry().jobs.build?.steps ?? [];
+    const index = steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
+    expect(index).toBeGreaterThan(steps.findIndex((step) => usesAction(step, 'docker/build-push-action')));
+    expect(steps[index + 1]?.run).toBe("jq -e '.spdxVersion and (.packages | length > 0)' sbom-web-dry-run.spdx.json > /dev/null");
   });
 
   it('saves the image and checks its identity with release.yml’s own scripts, cut to the web image and this run’s tag', () => {
@@ -1637,7 +1673,7 @@ describe('job timeouts (CI-10)', () => {
       // Its one run took 21 s; the work of the static job's band (the founder's F4, which allows this one line).
       'publish-content.yml': { publish: 15 },
       // Each about three times its expected time (docs/adr/0066, Part 2).
-      'release-dry-run.yml': { build: 20, push: 10 },
+      'release-dry-run.yml': { build: 20, push: 10, capacity: 15 },
       // The release's own table is held in its describe block above; S4 three times in the capacity job.
       'release.yml': { build: 60, capacity: 100, push: 30, report: 10 },
       // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8), S4 three
@@ -1772,9 +1808,24 @@ describe('Postgres from docker-compose.yml (CI-13; docs/adr/0066, Part 2)', () =
     expect(postgres?.ports).toEqual(['5432:5432']);
     expect(postgres?.environment?.POSTGRES_PASSWORD).toBe('test');
   });
+
+  it('checks its health on the timing ci.yml’s services proved, every 2 s with 5 s to answer, 30 times, all inside the wait postgres.sh gives compose', () => {
+    const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { healthcheck?: Record<string, unknown> }> };
+    const health = compose.services.postgres?.healthcheck;
+    // The whole check, as the services' --health-interval 2s --health-timeout 5s --health-retries 30 held it.
+    expect(health).toEqual({ test: ['CMD-SHELL', 'pg_isready -h localhost -U postgres'], interval: '2s', timeout: '5s', retries: 30 });
+    const seconds = (value: unknown) => Number(/^(\d+)s$/.exec(String(value))?.[1] ?? Number.NaN);
+    const script = readFileSync(path.join(repositoryRoot, 'tools/ci/postgres.sh'), 'utf8');
+    const composeWait = Number(/--wait-timeout (\d+)/.exec(script)?.[1] ?? Number.NaN);
+    const scriptWait = Number(/POSTGRES_WAIT_SECONDS:-(\d+)/.exec(script)?.[1] ?? Number.NaN);
+    // Its retries run out before compose stops waiting, and compose gives its verdict before the wait step stops reading.
+    expect(seconds(health?.interval) * Number(health?.retries)).toBeLessThan(composeWait);
+    expect(composeWait).toBeLessThan(scriptWait);
+  });
 });
 
 describe('images by digest (CI-13)', () => {
+  const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
   it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
     const DIGEST = /@sha256:[0-9a-f]{64}$/;
     for (const app of ['web', 'worker']) {
@@ -1787,6 +1838,38 @@ describe('images by digest (CI-13)', () => {
     }
     const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { image?: string }> };
     for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST);
+  });
+
+  it('name every image a build runs by digest: the Dockerfile frontend and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
+    // The frontend: a `# syntax=` line pulls its image from Docker Hub by tag on every build, so either none (the
+    // frontend built into the pinned BuildKit) or one by digest.
+    for (const app of ['web', 'worker']) {
+      const syntax = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
+        .split('\n')
+        .filter((line) => /^#\s*syntax\s*=/i.test(line));
+      for (const line of syntax) expect(line, app).toMatch(/^# syntax=docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/);
+    }
+    // The builder: setup-buildx's docker-container driver runs moby/buildkit, by default by the mutable buildx-stable-1.
+    const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (job.steps ?? []).map((step, index) => ({ where: `${file} ${id} step ${String(index + 1)}`, file, id, index, step }))));
+    const buildx = steps.filter(({ step }) => usesAction(step, 'docker/setup-buildx-action'));
+    expect(buildx.map(({ file }) => file).sort()).toEqual(['ci.yml', 'release-dry-run.yml', 'release.yml', 'screening-capacity.yml']);
+    const images = buildx.map(({ where, step }) => {
+      const opts = step.with?.['driver-opts'];
+      expect(opts, where).toMatch(/^image=moby\/buildkit:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
+      return opts;
+    });
+    expect(new Set(images).size, images.join('\n')).toBe(1);
+    // Every build runs on that builder: each job that builds an image sets up buildx before its first build.
+    for (const { where, file, id, index } of steps.filter(({ step }) => usesAction(step, 'docker/build-push-action'))) {
+      expect(buildx.some((setup) => setup.file === file && setup.id === id && setup.index < index), where).toBe(true);
+    }
+    // And no job or step runs an image by tag: no container or service by tag, no docker:// action by tag.
+    for (const file of workflowFiles()) {
+      for (const [id, job] of Object.entries(workflow(file).jobs) as [string, Job & { container?: unknown }][]) {
+        if (job.container !== undefined) expect(typeof job.container === 'string' ? job.container : (job.container as { image?: string }).image, `${file} ${id}`).toMatch(DIGEST_PIN);
+        for (const step of job.steps ?? []) if (step.uses?.startsWith('docker://') === true) expect(step.uses, `${file} ${id}`).toMatch(DIGEST_PIN);
+      }
+    }
   });
 });
 
@@ -1898,20 +1981,54 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
     return { dir, pins, digests, originals };
   }
 
-  /** vitest on these assertions with CI_TREE set to the copy: a vitest of its own, as collection.test.ts runs one. */
-  function assertionsOn(dir: string, extra: readonly string[] = []) {
+  /** What these tests read of vitest's JSON report (--reporter=json): its counts and each test's outcome. */
+  interface Report {
+    readonly numTotalTests: number;
+    readonly numPassedTests: number;
+    readonly numFailedTests: number;
+    readonly numPendingTests: number;
+    readonly numTodoTests: number;
+    readonly testResults: readonly { readonly name: string; readonly assertionResults: readonly { readonly fullName: string; readonly status: string; readonly failureMessages: readonly string[] }[] }[];
+  }
+
+  /**
+   * vitest on these assertions with CI_TREE set to the copy: a vitest of its own, as collection.test.ts runs one. Its
+   * counts are read from its JSON report, written to a scratch file, never from its printed summary, whose colour codes
+   * depend on the environment (CI's runner sets FORCE_COLOR, which coloured the summary and hid the passed count:
+   * run 40255481181). NO_COLOR stays as belt and braces for what it prints.
+   */
+  function assertionsOn(dir: string, extra: readonly string[] = []): { status: number | null; output: string; report: Report } {
     const vitest = path.join(path.dirname(createRequire(import.meta.url).resolve('vitest/package.json')), 'vitest.mjs');
-    // Plain text: CI's runner sets FORCE_COLOR, whose colour codes would break the counts read from the output.
+    const outputFile = path.join(mkdtempSync(path.join(scratch, 'report-')), 'report.json');
     const env: NodeJS.ProcessEnv = { ...process.env, CI_TREE: dir, NO_COLOR: '1' };
     for (const name of Object.keys(env).filter((key) => key.startsWith('VITEST') || key === 'FORCE_COLOR')) Reflect.deleteProperty(env, name);
-    const ran = spawnSync(process.execPath, [vitest, 'run', '--project', 'unit', ...TESTS, ...extra], { cwd: repositoryRoot, env, encoding: 'utf8', timeout: 280_000 });
+    const ran = spawnSync(process.execPath, [vitest, 'run', '--project', 'unit', '--reporter=json', `--outputFile=${outputFile}`, ...TESTS, ...extra], {
+      cwd: repositoryRoot,
+      env,
+      encoding: 'utf8',
+      timeout: 280_000,
+    });
     expect(ran.error).toBeUndefined();
-    return { status: ran.status, output: stripVTControlCharacters(`${ran.stdout}${ran.stderr}`) };
+    const output = stripVTControlCharacters(`${ran.stdout}${ran.stderr}`);
+    expect(existsSync(outputFile), output).toBe(true);
+    return { status: ran.status, output, report: JSON.parse(readFileSync(outputFile, 'utf8')) as Report };
   }
+
+  /** Every test of a report by its full name and outcome. */
+  const outcomes = (report: Report) => report.testResults.flatMap((file) => file.assertionResults.map((result) => ({ file: path.relative(repositoryRoot, file.name), ...result })));
+
+  /** The failed tests of a report with their messages, for an assertion's message: the JSON reporter prints none. */
+  const failures = (report: Report) =>
+    outcomes(report)
+      .filter((result) => result.status === 'failed')
+      .map((result) => `${result.file} > ${result.fullName}\n${result.failureMessages.join('\n')}`)
+      .join('\n\n');
+
+  const SELF = 'passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy';
 
   // Skipped inside the run it starts, which sets CI_TREE, so it never recurses.
   it.skipIf(process.env.CI_TREE !== undefined)(
-    'passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy',
+    SELF,
     () => {
       const copy = rewrittenCopy();
       expect(copy.pins).toBeGreaterThan(50);
@@ -1924,16 +2041,22 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
       const texts = CI_FILES.flatMap(list).join('\n');
       expect(copy.originals.filter((original) => texts.includes(original))).toEqual([]);
       const green = assertionsOn(copy.dir);
-      expect(green.status, green.output).toBe(0);
-      // Every assertion of the three files ran on the copy (this test alone skipped there), none filtered out.
-      expect(Number(/Tests\s+(\d+) passed/.exec(green.output)?.[1] ?? 0)).toBeGreaterThan(80);
-      expect(green.output).not.toMatch(/\d+ failed/);
+      expect(green.status, `${green.output}\n${failures(green.report)}`).toBe(0);
+      // Every test of the three files ran on the copy and passed, but this one, which skips itself there; none filtered out.
+      expect(green.report.testResults.map((file) => path.relative(repositoryRoot, file.name)).sort()).toEqual([...TESTS].sort());
+      expect(green.report.numFailedTests, failures(green.report)).toBe(0);
+      expect(green.report.numTotalTests).toBeGreaterThan(80);
+      expect(green.report.numPassedTests).toBe(green.report.numTotalTests - 1);
+      expect(outcomes(green.report).filter((result) => result.status !== 'passed').map((result) => [result.file, result.fullName.endsWith(SELF), result.status])).toEqual([['tools/test/workflows.test.ts', true, 'skipped']]);
 
       // One checkout's persist-credentials removed: the rule that holds it fails on the copy, so the run read the copy.
       const broken = rewrittenCopy((file, text) => (file.endsWith('large-zip.yml') ? text.replace('\n        with: { persist-credentials: false }', '') : text));
       const red = assertionsOn(broken.dir, ['-t', 'keeps no token in the checkout']);
       expect(red.status, red.output).toBe(1);
-      expect(red.output).toContain('large-zip.yml large-zip');
+      const failed = outcomes(red.report).filter((result) => result.status === 'failed');
+      expect(red.report.numFailedTests).toBe(1);
+      expect(failed.map((result) => result.fullName)).toEqual([expect.stringContaining('keeps no token in the checkout')]);
+      expect(failed[0]?.failureMessages.join('\n')).toContain('large-zip.yml large-zip');
     },
     300_000,
   );

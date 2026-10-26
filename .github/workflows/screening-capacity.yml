@@ -142,7 +142,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
+      # moby/buildkit:buildx-stable-1 by tag; Dependabot cannot update this string, so tools/check-action-pins warns when a
+      # newer release is three days old (docs/runbooks/dependency-upgrades.md).
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
 
       # The production images, from their Dockerfiles, as ci.yml's images job builds them. Every run reads the layer cache;
       # only a push to the build branch writes it, and only the final layers (mode=min): both Dockerfiles copy the whole

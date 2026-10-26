@@ -337,17 +337,26 @@ rewrites them stays green unless something really broke:
   version, and the check that no capacity step uses `actions/cache` holds for a pinned step too;
 - (d) a simulated Dependabot rewrite (A4): a test copies `.github/`, both Dockerfiles and `docker-compose.yml` into a
   temporary directory, replaces every pin with another well-formed one and every image digest with another, and runs
-  `workflows.test.ts` and `dependabot-config.test.ts` on that copy (`CI_TREE`) in a spawned vitest, which must pass. A
-  second copy with one deliberate break must fail, which proves the spawned run reads the copy.
+  `workflows.test.ts`, `dependabot-config.test.ts` and `no-duplicated-versions.test.ts` on that copy (`CI_TREE`) in a
+  spawned vitest, which must pass. Its counts are read from vitest's JSON report written to a scratch file
+  (`--reporter=json --outputFile`), never from its printed summary, whose colour codes CI's runner turns on (run
+  40255481181): no test failed, all three files ran, and every test passed but the rewrite test itself, which skips
+  inside the run it starts. A second copy with one deliberate break must fail, read from its own report, which proves
+  the spawned run reads the copy.
 
 **`tools/check-action-pins`** (`pnpm actions:check`, in `static`, on every run) checks the same form offline and, for
 each pin, three things on the network: the tag's peeled commit is the pinned SHA (`git ls-remote`); every `with:` key
 used is an input the action declares at that SHA, and every required input without a default is given; and a
 composite action nests no action by tag or branch, recursively, naming the chain. It reads the network only for a pin
 the base does not use, or one used by a step whose `with:` changed, or for every pin when the checker itself changed or
-the base has none; each read fails closed after three tries, naming the host. On push runs it re-reads every unchanged
-pin's tag, and a moved tag there is a warning, never a failure, so an upstream re-tag or a rate limit cannot turn both
-lanes red. No facts are committed per SHA: Dependabot's actions pull requests rewrite only `uses:` lines, and a
+the base has none; each read fails closed after three tries, naming the host. An action's files are read with git
+from github.com, the host `git ls-remote` reads (a shallow fetch of the pinned commit without file contents, then the
+one blob), not from raw.githubusercontent.com, whose unauthenticated per-address rate limit a shared runner can exhaust
+(the ci-infra review's N5). On push runs it re-reads every unchanged pin's tag, four at a time under one two-minute
+deadline for them all, well inside `static`'s fifteen; a moved or unreadable tag there is a warning, never a failure,
+and the tags the deadline leaves unread are one warning, so an upstream re-tag, a rate limit or a github.com that
+never answers cannot turn both lanes red (the ci-infra review's S1). A pin it reads whose action runs on a Node.js
+runtime GitHub has deprecated (node20 or older) is a warning naming it. No facts are committed per SHA: Dependabot's actions pull requests rewrite only `uses:` lines, and a
 committed file would make each of them red. Read at the pinned commits, every nested reference is already a SHA:
 trivy-action pins setup-trivy and `actions/cache`, setup-trivy pins `actions/cache/restore`, `actions/checkout` and
 `actions/cache/save`, and attest-build-provenance pins `actions/attest`.
@@ -362,8 +371,11 @@ amended): no `actions/cache*` step, and the scale release is built in the run (a
 `cache: false`; both trivy-action steps set `cache: false` and a `cache-dir` under `runner.temp`, as ci.yml's `images`
 job does; setup-buildx sets `cache-binary: false`, and no build sets `cache-from` or `cache-to`. `workflows.test.ts`
 holds release.yml to those inputs by name, offline. What the actions nest is `check-action-pins`' to check, since only
-it reads their files: it follows each nested `actions/cache*` of every action release.yml uses to the top-level input
-that gates it, which must be `false` in release.yml, and fails an ungated one, naming the chain. Its three uploads set
+it reads their files: it follows every `actions/cache*` step a composite action release.yml uses nests, through
+composites up to eight levels deep (failing closed beyond them), to the top-level input that gates it, which must be
+`false` in release.yml, and fails an ungated one, naming the chain. A JavaScript action's built-in cache (setup-node's,
+action-setup's, setup-buildx's binary cache) is code, not steps, and the check cannot see it: `workflows.test.ts`'s
+assertions of release.yml's explicit inputs are the guard for JavaScript actions. Its three uploads set
 `overwrite: true`, as ci.yml's per-run uploads do (Part 1, "Artifacts"), so a re-run of a tag's failed job replaces
 what the first attempt left. Every upload of every workflow overwrites, screening-capacity's per-run report
 included, which had the same re-run conflict. release.yml and the dry run run their scripts under
@@ -377,10 +389,16 @@ that changes release.yml, itself, `tools/screening-capacity/image-id.ts` or eith
 `overwrite: true`, kept a day); its `push` job (`contents: read`, `packages: read`) downloads it with
 `merge-multiple` (v8), runs release.yml's identity check, loads it and logs in to ghcr.io with the job's own token. It
 names its image `ghcr.io/<repository>/web:dry-run-<run id>`, since a pull request's ref name (`<n>/merge`) is no image
-tag, and never tags, pushes or attests. A test holds every step it shares with release.yml to the same action and the same
+tag, and never tags, pushes or attests. Its build job also writes the image's bill of materials with release.yml's
+Trivy step and reads the file as SPDX, and its `capacity` job (`contents: read`) runs release.yml's capacity job up to
+its frozen install: the checkout, a download by name, action-setup with `cache: false`, setup-node with
+`package-manager-cache: false` and `pnpm install --frozen-lockfile`, so those inputs run on every change to the
+release, not first on a tag (the ci-infra review's N4). A test holds every step it shares with release.yml to the same action and the same
 `with:` keys, with `overwrite` and the cache inputs equal in value, so the dry run cannot drift from what a tag runs.
 The new majors of upload, download, login, build-push and setup-buildx therefore run on a pull request, not first on
 the founder's tag.
+
+`large-zip.yml` runs its steps under the same `defaults: run: shell: bash`, so its scripts have `pipefail` too.
 
 #### Images by digest, each from one source
 
@@ -393,7 +411,20 @@ the founder's tag.
   `postgres:18-trixie@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6` (pushed
   2026-10-21T19:08Z), the index `postgres:18` already resolved to, so the pin changes no bits for CI or the capacity
   harness. Its healthcheck runs `pg_isready -h localhost -U postgres`, on TCP: the image's first-run setup serves the
-  Unix socket before the server listens on TCP, which Part 1 found for the service blocks.
+  Unix socket before the server listens on TCP, which Part 1 found for the service blocks. Its timing is the service
+  blocks' that CI proved, held whole by a test: every 2 s, a 5 s timeout, 30 retries, so interval times retries (60 s)
+  stays under `postgres.sh`'s `--wait-timeout 120` (the ci-infra review's S2).
+- **The builder and the frontend by digest too** (the security review's S4). Neither Dockerfile has a
+  `# syntax=docker/dockerfile:1` line, which pulled the frontend from Docker Hub by tag on every build: neither uses a
+  feature the frontend built into BuildKit lacks, so the pinned builder's own frontend parses them. Every
+  setup-buildx step (ci.yml's images, release.yml, the dry run, screening-capacity) sets
+  `driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c`
+  (pushed 2026-10-20T21:37Z, the latest release at least three days old), where the driver ran
+  `moby/buildkit:buildx-stable-1` by tag. CI-13's test holds both, that the copies are one value, that every job that
+  builds sets up buildx first, and that no container or `docker://` step runs by tag. Dependabot cannot update a
+  `driver-opts` string, so `check-action-pins` reads Docker Hub for it on every networked run: the version's tag must
+  be the pinned digest, and a newer release three days old is a warning naming it, for the manual step in
+  `docs/runbooks/dependency-upgrades.md`.
 - **Postgres comes from the compose file everywhere.** `services:` cannot read an image from a file, four digest copies
   in workflows would drift (Dependabot's actions ecosystem rewrites only `uses:`), and a job output feeding `services:`
   would add a job to the critical path. So ci.yml's db, domain-model and e2e jobs and large-zip.yml declare no

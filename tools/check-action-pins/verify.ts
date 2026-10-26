@@ -10,9 +10,21 @@ import { parsePin, type ActionUse } from './workflows';
  * - every input a step gives is one the action declares, and every input it requires with no default is given;
  * - an action that runs as a composite pins every action among its steps to a full commit SHA, followed recursively,
  *   so no tag or branch runs inside a pinned action;
- * - in release.yml, every actions/cache use the action nests, at any depth, is gated by an input that release.yml's
- *   step sets to false, so a tag's run restores and saves nothing another run left (docs/adr/0062).
+ * - in release.yml, every actions/cache step a composite action nests, through composites up to MAX_DEPTH levels deep
+ *   (beyond that the check fails closed), is gated by an input that release.yml's step sets to false, so a tag's run
+ *   restores and saves nothing another run left (docs/adr/0062). A JavaScript action's built-in cache (setup-node's,
+ *   action-setup's, setup-buildx's binary cache) is code, not steps, and this check cannot see it: those are held by
+ *   tools/test/workflows.test.ts's assertions of release.yml's explicit inputs (package-manager-cache: false,
+ *   cache: false, cache-binary: false), which are the guard for JavaScript actions;
+ * - a warning, not a failure, when the action runs on a Node.js runtime GitHub has deprecated (node20 or older), which
+ *   the runner forces onto a newer Node.js today and will one day refuse.
  */
+
+/** The newest Node.js runtime GitHub has deprecated for actions; an action on it or older is warned about. */
+export const DEPRECATED_NODE_UP_TO = 20;
+
+/** How many levels of nested composites cacheGates follows before it fails closed. */
+export const MAX_DEPTH = 8;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -127,12 +139,14 @@ const isOff = (value: unknown) => value === false || value === 'false';
 export type CacheGate = { readonly chain: string; readonly input: string } | { readonly chain: string; readonly off: string } | { readonly chain: string; readonly problem: string };
 
 /**
- * Every actions/cache use an action nests, followed through composites, each traced to the action's own input that
+ * Every actions/cache step a composite action nests, followed through composites, each traced to the action's own input that
  * gates it: a cache step's condition must require `inputs.<name> == 'true'`, and a composite that nests one must bind
  * that input to one of its own (`${{ inputs.<name> }}`), or set it to false, or leave it at a false default.
  */
 export async function cacheGates(reader: ActionReader, meta: ActionMeta, chain: readonly string[], depth = 0): Promise<CacheGate[]> {
-  if (meta.using !== 'composite' || depth > 8) return [];
+  if (meta.using !== 'composite') return [];
+  // Beyond its depth the check cannot see what runs, so it fails closed rather than reading nothing there.
+  if (depth > MAX_DEPTH) return [{ chain: chain.join(' > '), problem: `composites nested deeper than ${String(MAX_DEPTH)} levels, which this check does not follow; a cache there could not be seen, so the check fails closed` }];
   const gates: CacheGate[] = [];
   for (const step of meta.steps) {
     if (step.uses === undefined) continue;
@@ -184,6 +198,14 @@ export interface PinVerdict {
   readonly ref: string;
   readonly problems: string[];
   readonly notes: string[];
+  readonly warnings: string[];
+}
+
+/** The warning for an action on a deprecated Node.js runtime, if it is on one. */
+export function runtimeWarning(ref: string, version: string, using: string): string | undefined {
+  const node = /^node(\d+)$/.exec(using);
+  if (node === null || Number(node[1]) > DEPRECATED_NODE_UP_TO) return undefined;
+  return `${ref}: ${version} runs on ${using}, a Node.js runtime GitHub has deprecated; move to a release that runs on node24`;
 }
 
 /**
@@ -192,8 +214,8 @@ export interface PinVerdict {
  */
 export async function verifyPin(transport: Transport, reader: ActionReader, ref: string, version: string | undefined, uses: readonly ActionUse[]): Promise<PinVerdict> {
   const pin = parsePin(ref);
-  if (pin === undefined) return { ref, problems: [`${ref}: not a pinned reference`], notes: [] };
-  if (version === undefined) return { ref, problems: [`${ref}: no release version to verify the commit against`], notes: [] };
+  if (pin === undefined) return { ref, problems: [`${ref}: not a pinned reference`], notes: [], warnings: [] };
+  if (version === undefined) return { ref, problems: [`${ref}: no release version to verify the commit against`], notes: [], warnings: [] };
   const problems: string[] = [];
   const notes: string[] = [];
   const tagged = await tagCommit(transport, pin.repo, version);
@@ -203,9 +225,9 @@ export async function verifyPin(transport: Transport, reader: ActionReader, ref:
   const job = uses.filter((use) => use.step === -1);
   if (job.length > 0) notes.push(`${ref}: called as a reusable workflow; its tag is checked, its inputs are not read`);
   const steps = uses.filter((use) => use.step !== -1);
-  if (steps.length === 0) return { ref, problems, notes };
+  if (steps.length === 0) return { ref, problems, notes, warnings: [] };
   const meta = await reader.read(pin.repo, pin.path, pin.sha);
-  if (meta === undefined) return { ref, problems: [...problems, `${ref}: no action.yml or action.yaml at that commit`], notes };
+  if (meta === undefined) return { ref, problems: [...problems, `${ref}: no action.yml or action.yaml at that commit`], notes, warnings: [] };
   for (const use of steps) {
     problems.push(...inputProblems(meta, use.with).map((problem) => `${use.file} ${use.job} step ${String(use.step + 1)} (${ref}): ${problem}`));
   }
@@ -220,5 +242,6 @@ export async function verifyPin(transport: Transport, reader: ActionReader, ref:
     }
   }
   notes.push(`${ref}: ${meta.using}, ${String(steps.length)} step(s), inputs declared`);
-  return { ref, problems, notes };
+  const runtime = runtimeWarning(ref, version, meta.using);
+  return { ref, problems, notes, warnings: runtime === undefined ? [] : [runtime] };
 }
