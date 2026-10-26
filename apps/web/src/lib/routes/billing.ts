@@ -1,11 +1,13 @@
 import { BillingEventError, BillingProviderError, type CatalogPrice, type PaymentMethodSummary, type PlanCatalog, type PlanPrice, WebhookSignatureError, planCatalog } from '@tp/billing';
 import { LocalBillingProvider, SIMULATOR_TEST_ROUTING } from '@tp/billing/local';
+import { type StandingKind, standingKind } from '@tp/billing/standing';
 import { type ScopeClient, rolesPermit } from '@tp/db/runtime';
 import type { Cents } from '@tp/money';
 import {
   type BillingServices,
   BillingRefusedError,
   type ConsoleBillingRow,
+  type HoldingInvoice,
   type InvoiceView,
   type OrganizationBilling,
   assertManagesBilling,
@@ -87,8 +89,9 @@ export type CentsText<T> = { readonly [K in keyof T]: T[K] extends Cents ? strin
 
 export type InvoiceRow = CentsText<InvoiceView>;
 
-export interface BillingView extends Omit<OrganizationBilling, 'invoices'> {
+export interface BillingView extends Omit<OrganizationBilling, 'invoices' | 'holdingInvoice'> {
   readonly invoices: readonly InvoiceRow[];
+  readonly holdingInvoice: CentsText<HoldingInvoice> | null;
 }
 
 export interface CatalogView {
@@ -102,6 +105,7 @@ export type ConsoleBillingView = CentsText<ConsoleBillingRow>;
 function billingView(billing: OrganizationBilling): BillingView {
   return {
     ...billing,
+    holdingInvoice: billing.holdingInvoice === null ? null : { ...billing.holdingInvoice, amountRemainingCents: billing.holdingInvoice.amountRemainingCents.toString() },
     invoices: billing.invoices.map((invoice) => ({
       ...invoice,
       amountDueCents: invoice.amountDueCents.toString(),
@@ -149,7 +153,56 @@ export interface OrganizationBillingPage {
   readonly publishableKey: string | null;
   /** Why new runs are refused for the organization's practices, or null. */
   readonly suspension: string | null;
+  readonly standing: AccountStanding;
   readonly testRouting: string;
+}
+
+/** A next step as one sentence: its action (a link when it has an address) and the rest of the sentence. */
+export interface NextStep {
+  readonly action: string;
+  readonly href: string | null;
+  readonly detail: string;
+}
+
+/** Billing's own hold beside a suspension or closure by PaidWhole: an unpaid invoice whose payment failed. */
+export interface BillingHold {
+  readonly kind: 'past_due' | 'suspended_nonpayment';
+  readonly since: Date | null;
+  readonly invoice: CentsText<HoldingInvoice> | null;
+}
+
+export interface AccountStanding {
+  readonly kind: StandingKind;
+  readonly label: string;
+  readonly tone: 'neutral' | 'danger';
+  readonly title: string | null;
+  readonly notice: string | null;
+  readonly alert: boolean;
+  readonly nextSteps: readonly NextStep[];
+  readonly billingHold: BillingHold | null;
+  readonly formsNote: string | null;
+  readonly planRefusal: string | null;
+}
+
+type StandingInput = Pick<BillingView, 'kind' | 'status' | 'standing' | 'pastDueSince' | 'suspendedSince' | 'holdingInvoice'>;
+
+const OLD_LABEL: Readonly<Record<string, string>> = { good: 'In good standing', past_due: 'Past due', suspended: 'Suspended for nonpayment' };
+
+/** Stub for the failing tests: the page's standing as it read before. */
+export function accountStanding(billing: StandingInput): AccountStanding {
+  const notice = suspensionNotice(billing);
+  return {
+    kind: standingKind(billing.status, billing.standing, billing.kind),
+    label: OLD_LABEL[billing.standing] ?? billing.standing,
+    tone: billing.standing === 'good' ? 'neutral' : 'danger',
+    title: notice === null ? null : 'New runs have stopped',
+    notice,
+    alert: notice !== null,
+    nextSteps: [],
+    billingHold: null,
+    formsNote: null,
+    planRefusal: null,
+  };
 }
 
 /** The standing as a sentence for the page, from the record's status and billing's view. */
@@ -185,6 +238,7 @@ export const organizationBillingPage = organizationRoute({
       provider: services.billing.kind,
       publishableKey: services.billing.publishableKey,
       suspension: suspensionNotice(billing),
+      standing: accountStanding(billingView(billing)),
       testRouting: SIMULATOR_TEST_ROUTING,
     };
   },

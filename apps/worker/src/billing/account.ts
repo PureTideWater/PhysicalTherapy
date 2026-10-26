@@ -59,6 +59,13 @@ export interface InvoiceView {
   readonly createdAt: Date;
 }
 
+/** The invoice that holds billing's standing (billing_standing.invoice_id): the oldest unpaid one whose payment failed. */
+export interface HoldingInvoice {
+  readonly id: string;
+  readonly number: string | null;
+  readonly amountRemainingCents: Cents;
+}
+
 export interface OrganizationBilling {
   readonly organizationId: string;
   readonly name: string;
@@ -69,6 +76,8 @@ export interface OrganizationBilling {
   readonly standing: 'good' | 'past_due' | 'suspended';
   readonly pastDueSince: Date | null;
   readonly suspendedSince: Date | null;
+  /** The invoice holding the organization past due or suspended for nonpayment, wherever it falls among the invoices; null in good standing. */
+  readonly holdingInvoice: HoldingInvoice | null;
   readonly subscription: SubscriptionView | null;
   readonly invoices: readonly InvoiceView[];
 }
@@ -136,6 +145,7 @@ export async function organizationBilling(client: ReadClient, organizationId: st
     standing: organization.standing,
     pastDueSince: organization.past_due_since,
     suspendedSince: organization.suspended_since,
+    holdingInvoice: null,
     subscription:
       subscription === undefined
         ? null

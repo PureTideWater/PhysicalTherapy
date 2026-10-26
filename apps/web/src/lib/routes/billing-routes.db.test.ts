@@ -157,17 +157,17 @@ const DECLINED_CARD = { method: 'card', cardNumber: '4000000000000341' };
 const GOOD_CARD = { method: 'card', cardNumber: '4242424242424242' };
 
 /** An open invoice whose payment failed `days` ago, as Stripe's events would have left it. */
-async function failedInvoice(world: TenantWorld, days: number): Promise<string> {
+async function failedInvoice(world: TenantWorld, days: number, number: string | null = null): Promise<string> {
   const [customer] = await rows<{ ref: string | null }>('SELECT billing_customer_ref AS ref FROM organization WHERE id = $1', [world.organizationId]);
   const ref = customer?.ref ?? `cus_hand${randomBytes(6).toString('hex')}`;
   if (customer?.ref === null) {
     await owner.query('UPDATE organization SET billing_customer_ref = $2 WHERE id = $1', [world.organizationId, ref]);
   }
   const [invoice] = await rows<{ id: string }>(
-    `INSERT INTO invoice (organization_id, stripe_invoice_id, stripe_customer_id, kind, status, currency, amount_due_cents, amount_paid_cents, amount_remaining_cents,
+    `INSERT INTO invoice (organization_id, stripe_invoice_id, stripe_customer_id, number, kind, status, currency, amount_due_cents, amount_paid_cents, amount_remaining_cents,
        attempt_count, first_failed_at, last_failure_code, stripe_event_at)
-     VALUES ($1, $2, $3, 'audit', 'open', 'usd', 250000, 0, 250000, 1, now() - make_interval(days => $4), 'insufficient_funds', now() - make_interval(days => $4)) RETURNING id`,
-    [world.organizationId, `in_hand${randomBytes(6).toString('hex')}`, ref, days],
+     VALUES ($1, $2, $3, $5, 'audit', 'open', 'usd', 250000, 0, 250000, 1, now() - make_interval(days => $4), 'insufficient_funds', now() - make_interval(days => $4)) RETURNING id`,
+    [world.organizationId, `in_hand${randomBytes(6).toString('hex')}`, ref, days, number],
   );
   return invoice?.id ?? '';
 }
@@ -179,7 +179,13 @@ describe('Settings, billing (J18)', () => {
     expect(ok(await call(billingSettingsPage, admin, {})).organizations).toEqual([{ organizationId: world.organizationId, name: expect.any(String) as string, kind: 'group' }]);
 
     const before = ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId }));
-    expect(before).toMatchObject({ provider: 'local', paymentMethod: null, suspension: null, billing: { standing: 'good', subscription: null, invoices: [] }, testRouting: SIMULATOR_TEST_ROUTING });
+    expect(before).toMatchObject({
+      provider: 'local',
+      paymentMethod: null,
+      standing: { kind: 'good', label: 'In good standing', notice: null },
+      billing: { standing: 'good', holdingInvoice: null, subscription: null, invoices: [] },
+      testRouting: SIMULATOR_TEST_ROUTING,
+    });
     // A plan needs a payment method first.
     expect(await call(choosePlanAction, admin, { organizationId: world.organizationId }, { plan: 'monthly' })).toMatchObject({ status: 'invalid' });
 
@@ -400,7 +406,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     expect(ok(await call(practiceHome, admin, P)).suspension).toBeNull();
     expect((await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).status).toBe('ok');
 
-    const suspendedInvoice = await failedInvoice(world, 31);
+    const suspendedInvoice = await failedInvoice(world, 31, 'SIM-HAND-0031');
     const documents = async () => (await rows<{ n: string }>('SELECT count(*)::text AS n FROM source_document WHERE practice_id = $1', [world.practiceId]))[0]?.n;
     const before = await documents();
 
@@ -408,7 +414,16 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     expect(home.suspension).toMatch(/suspended for nonpayment.*data stays readable/);
     expect(ok(await call(uploadsPage, admin, P)).gate).toEqual({ open: false, reason: expect.stringMatching(/^Uploads are paused: the organization is suspended for nonpayment/) as string });
     expect((await call(pricingRunsPage, admin, P)).status).toBe('ok');
-    expect(ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId })).suspension).toMatch(/New runs have stopped/);
+    // The billing page dates the suspension from billing and names the invoice holding it (BIL-05).
+    const billingPage = ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId }));
+    expect(billingPage.billing.holdingInvoice).toEqual({ id: suspendedInvoice, number: 'SIM-HAND-0031', amountRemainingCents: '250000' });
+    expect(billingPage.standing).toMatchObject({
+      kind: 'suspended_nonpayment',
+      label: expect.stringMatching(/^Suspended for nonpayment since \d{4}-\d{2}-\d{2}$/) as string,
+      title: 'New runs have stopped',
+      billingHold: null,
+      nextSteps: [{ action: 'Pay SIM-HAND-0031', href: `#pay-${suspendedInvoice}` }, { action: 'Open a support ticket', href: '/support?from=billing' }],
+    });
 
     // The wrapper refuses with the database's reason; over HTTP, a 402.
     const refused = await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] });
@@ -430,7 +445,31 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     await owner.query("UPDATE invoice SET status = 'paid', paid_at = now(), amount_paid_cents = amount_due_cents, amount_remaining_cents = 0 WHERE id = ANY ($1::uuid[])", [[invoiceId, suspendedInvoice]]);
     expect(ok(await call(practiceHome, admin, P)).suspension).toBeNull();
     expect((await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).status).toBe('ok');
-    expect(ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId })).billing.standing).toBe('good');
+    const reinstated = ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId }));
+    expect(reinstated.billing).toMatchObject({ standing: 'good', holdingInvoice: null });
+    expect(reinstated.standing).toMatchObject({ kind: 'good', label: 'In good standing', notice: null, nextSteps: [] });
+  });
+
+  it('names the invoice holding the organization suspended even when it is older than the newest 24 (BIL-05)', async () => {
+    const world = await createTenantWorld(owner, 'SYNTHETIC BILLING OLD HOLD');
+    const holding = await failedInvoice(world, 45, 'SIM-HAND-0045');
+    await owner.query("UPDATE invoice SET created_at = now() - interval '45 days' WHERE id = $1", [holding]);
+    const [customer] = await rows<{ ref: string }>('SELECT billing_customer_ref AS ref FROM organization WHERE id = $1', [world.organizationId]);
+    for (let index = 0; index < 24; index += 1) {
+      await owner.query(
+        `INSERT INTO invoice (organization_id, stripe_invoice_id, stripe_customer_id, kind, status, currency, amount_due_cents, amount_paid_cents, amount_remaining_cents, attempt_count, paid_at, stripe_event_at)
+         VALUES ($1, $2, $3, 'audit', 'paid', 'usd', 1000, 1000, 0, 1, now(), now())`,
+        [world.organizationId, `in_hand${randomBytes(6).toString('hex')}`, customer?.ref],
+      );
+    }
+    const page = ok(await call(organizationBillingPage, world.adminUserId, { organizationId: world.organizationId }));
+    expect(page.billing.invoices).toHaveLength(24);
+    expect(page.billing.invoices.some((invoice) => invoice.id === holding)).toBe(false);
+    expect(page.billing.holdingInvoice).toEqual({ id: holding, number: 'SIM-HAND-0045', amountRemainingCents: '250000' });
+    expect(page.standing.nextSteps[0]).toMatchObject({ action: 'Pay SIM-HAND-0045', href: `#pay-${holding}` });
+    // The page's Pay form takes it: it is the organization's own unpaid invoice.
+    ok(await call(simulatedPaymentMethodAction, world.adminUserId, { organizationId: world.organizationId }, GOOD_CARD));
+    ok(await call(payInvoiceAction, world.adminUserId, { organizationId: world.organizationId }, { invoiceId: holding }));
   });
 
   it('refuses new work while a platform administrator holds the organization suspended', async () => {
@@ -444,6 +483,73 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       reason: expect.stringMatching(/^the organization is suspended: its data stays readable/) as string,
     });
     expect((await call(pricingRunsPage, world.adminUserId, P)).status).toBe('ok');
-    expect(ok(await call(organizationBillingPage, world.adminUserId, { organizationId: world.organizationId })).suspension).toMatch(/platform administrator has suspended/);
+
+    // Its billing page never reads "In good standing": "Suspended by PaidWhole", the notice, the ticket's link and the
+    // note that a plan or payment method does not lift it (BIL-05, BIL-06).
+    const organizationId = world.organizationId;
+    const held = ok(await call(organizationBillingPage, world.adminUserId, { organizationId }));
+    expect(held.billing).toMatchObject({ status: 'suspended', standing: 'good', holdingInvoice: null });
+    expect(held).not.toHaveProperty('suspension');
+    expect(held.standing).toEqual({
+      kind: 'suspended_by_paidwhole',
+      label: 'Suspended by PaidWhole',
+      tone: 'danger',
+      title: 'New runs have stopped',
+      notice: 'PaidWhole has suspended the organization: new runs have stopped until PaidWhole lifts it, and its data stays readable. Paying an invoice does not lift this suspension.',
+      alert: true,
+      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing', detail: ' to find out why and what lifts it.' }],
+      billingHold: null,
+      formsNote: 'Changing the plan or payment method does not lift a suspension by PaidWhole.',
+      planRefusal: null,
+    });
+
+    // The console reads it the same way, and lists it before every organization in good standing.
+    const platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
+    await addMembership(owner, await createOrganization(owner, 'internal'), platformAdmin, 'platform_admin');
+    tokens.set(platformAdmin, (await openSession(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
+    const listed = ok(await call(consoleBillingPage, platformAdmin, {})).organizations;
+    const heldAt = listed.findIndex((row) => row.organizationId === organizationId);
+    expect(listed[heldAt]).toMatchObject({ status: 'suspended', standing: 'good', standingKind: 'suspended_by_paidwhole' });
+    expect(listed.findIndex((row) => row.standingKind === 'good')).toBeGreaterThan(heldAt);
+
+    // Suspended by PaidWhole and an invoice unpaid for 31 days: both holds are named, and paying is the second step,
+    // since reinstating alone restarts nothing (the database's refusal then names the invoice).
+    const unpaid = await failedInvoice(world, 31, 'SIM-HAND-HELD');
+    const both = ok(await call(organizationBillingPage, world.adminUserId, { organizationId }));
+    expect(both.standing).toMatchObject({
+      kind: 'suspended_by_paidwhole',
+      label: 'Suspended by PaidWhole',
+      billingHold: { kind: 'suspended_nonpayment', invoice: { id: unpaid, number: 'SIM-HAND-HELD' } },
+      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing' }, { action: 'Pay SIM-HAND-HELD', href: `#pay-${unpaid}`, detail: ' below.' }],
+    });
+    expect(both.standing.notice).toMatch(/Paying an invoice does not lift this suspension\. An invoice is also unpaid since \d{4}-\d{2}-\d{2}; new runs stay stopped until it is paid as well\.$/);
+    await owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [organizationId]);
+    expect(await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).toEqual({
+      status: 'suspended',
+      reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string,
+    });
+    expect(ok(await call(organizationBillingPage, world.adminUserId, { organizationId })).standing.kind).toBe('suspended_nonpayment');
+  });
+
+  it('refuses a new plan for a closed organization, and says so where the plan form was (BIL-05)', async () => {
+    const world = await createTenantWorld(owner, 'SYNTHETIC BILLING CLOSED');
+    const organizationId = world.organizationId;
+    ok(await call(simulatedPaymentMethodAction, world.adminUserId, { organizationId }, GOOD_CARD));
+    await owner.query("UPDATE organization SET status = 'closed' WHERE id = $1", [organizationId]);
+    expect(await call(choosePlanAction, world.adminUserId, { organizationId }, { plan: 'monthly' })).toMatchObject({
+      status: 'invalid',
+      issues: [{ field: 'plan', message: 'a closed organization takes no new plan' }],
+    });
+    // Refused before Stripe is asked or a claim is taken.
+    expect(await rows('SELECT 1 FROM subscription_claim WHERE organization_id = $1', [organizationId])).toEqual([]);
+    expect(await rows('SELECT 1 FROM subscription WHERE organization_id = $1', [organizationId])).toEqual([]);
+    const page = ok(await call(organizationBillingPage, world.adminUserId, { organizationId }));
+    expect(page.standing).toMatchObject({
+      kind: 'closed',
+      label: 'Closed',
+      formsNote: null,
+      planRefusal: 'A closed organization takes no new plan; open a support ticket to reopen it.',
+      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing', detail: ' to reopen it.' }],
+    });
   });
 });
