@@ -3,16 +3,22 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { dockerfilePaths, mergeBase, readTreeAt, readWorkingTree } from './tree';
 
 /**
  * The base check-toolchain compares with: BASE reduced with `git merge-base BASE HEAD`, so a change is judged on what
- * it adds against the commit it left, however far BASE has moved since. Built in a scratch repository.
+ * it adds against the commit it left, however far BASE has moved since. Built in a scratch repository, made in beforeAll
+ * so that collecting this file without running it (vitest list, a filtered run) leaves no directory behind.
  */
-const root = mkdtempSync(path.join(tmpdir(), 'check-toolchain-'));
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+let root = '';
+beforeAll(() => {
+  root = mkdtempSync(path.join(tmpdir(), 'check-toolchain-'));
+});
+afterAll(() => {
+  if (root) rmSync(root, { recursive: true, force: true });
+});
 
 function git(...args: string[]): string {
   const result = spawnSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: root, encoding: 'utf8' });
