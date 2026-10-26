@@ -322,8 +322,9 @@ again when pinned (`refs/tags/vX.Y.Z^{}`):
 | `actions/attest-build-provenance` | v4.2.2 (kept) | `4d101475d8b20a2381f78447822ac1eab6504dd8` | 2026-08-06 |
 
 Two differ from #40's offer: action-setup v6.1.0, the latest release, where #40 offers v6.0.10, and login v4.7.0, where
-#40 offers v4.6.0, most likely because GitHub's default three-day cooldown held it back. login is pinned at v4.7.0 only
-once its tag commit is three days old (from 2026-10-26T15:11Z). action-setup v6.1.0 bootstraps its own pnpm and then
+#40 offers v4.6.0, most likely because GitHub's default three-day cooldown held it back. login was pinned at v4.7.0
+once its tag commit (2026-10-23T15:11:41Z) was three days old, in release.yml and the dry run together, which also
+cleared `check-action-pins`' warning that v3.7.0 runs on node20. action-setup v6.1.0 bootstraps its own pnpm and then
 runs `pnpm self-update` to `packageManager`'s version in its own directory, so the workspace's release age never
 applies to that switch, and `check-toolchain` checks `packageManager`'s version itself (below). Each new major's
 breaking changes were read against our use: none removes an input or behaviour a workflow relies on, and every `with:`
