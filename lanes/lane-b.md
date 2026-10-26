@@ -889,3 +889,16 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - #32: design done, not built;
     - #46 (the Verified seal) and #48's narrative draft: not started;
     - ci-browser at 8b38f48 (phase 1 built) and the CI follow-ups P1, P2 and P4: designed and reviewed.
+- **2026-10-26 ~10:31 UTC: the UX review is complete, and its checklist merged as #55 (6070e41).**
+  - **The synthesis** (`designs/lane-b-ux-review.md`, wf_3582cebc-d2b): 342 reviewer findings, retake included, in 208 verified problems (16 blocking, 121 should fix, 71 polish; none dropped). They are grouped into 91 PRs in landing order (§3; data in `designs/lane-b-ux-review/synthesis/prs.json`).
+    - 19 items go to Lane A (§5).
+    - 5 questions go to the founder (§6.2): dark mode, the terms text, the palette, and two screening legal texts.
+    - The wording and brand choices taken under the co-founder's ruling are listed in §6.1.
+    - One adversarial review on the rules and a fact check on the code found 6 blocking, 24 should fix and 26 nits: 54 applied, 2 rejected with reasons (§10).
+  - **The galleries** now show, on each shot, the UX findings that cite it: 303 of the 468 shots at 1280 and 126 of the 389 at 390. They are private to the co-founder's account, so Lane A's account sees them only once shared from each page's Share menu.
+  - **#55:** `.claude/agents/ux-brand-reviewer.md`, 128 lines, and the PR template names it.
+    - Its reviews: two adversarial ones (41 findings, all fixed).
+    - Its suite: documentation-only (typecheck, lint, lint:copy, unit 5,077 passed and 3 skipped).
+    - Its verification: a fresh-clone check that it changes exactly the two files, the frontmatter matches security-reviewer.md's, and every required check is green on f8a795d.
+    - Its review's blocking point, how Lane A takes the shots, is fixed on this branch: the tour README's "From another lane" section and `tile.py`.
+  - Merged today: #47, #46, #54, #53, #55.
