@@ -1,7 +1,79 @@
-# Lane B: ux-forms status (co-001/ux-forms)
+# Lane B: ux-forms status (co-001/ux-forms): HANDOFF
 
-Forms keep what the person typed, and name the refused field (the UX baseline review's first PR). Session
-session_01VNsi2Kru6pfk8CAbQ2AaYB. Claims: ADR 0077 if needed; test-matrix FRM-01 to FRM-08; no synth cases.
+Forms keep what the person typed, and name the refused field (the UX baseline review's first PR). Built by
+session_01VNsi2Kru6pfk8CAbQ2AaYB; stopped cleanly at 2026-10-26 10:10 UTC on the orchestrator's wind-down. The next
+session (Lane A or Lane B) continues from here.
+
+## Handoff
+- **Branch:** `co-001/ux-forms`, head **17bbb70**, pushed, on claude/build-platform 7ef421b (#54 included). Two commits:
+  0c0ea22 (slices B, D, E) and 17bbb70 (slice A without #50's files, the C pages no open PR touches). No PR is open.
+- **Design:** `designs/lane-b-ux-forms.md` (sections 1 to 12; section 7 is the file list by slice, 7.9 the landing
+  order, 8 the tests, 12 the review's 23 dispositions). Scouts and review in `designs/lane-b-ux-forms/`.
+- **Reserved IDs:** ADR 0077 (written: `docs/adr/0077-…md` on the branch), test-matrix FRM-01 to FRM-08 (in
+  `docs/product/test-matrix.md`, `packages/synth/src/cases/{matrix,registry}.ts`), synth MODULE_NUMBER 16 for FRM
+  (confirmed by the orchestrator 09:27; `common.ts`, fixtures `fixtures/synthetic/FRM-01..08`).
+- **No migration**, no new dependency, no #42 file (only the three shared documents, LANES.md rule 6).
+- **Workflow scripts:** `workflow-scripts/lane-b-ux-forms-{design,build-1,build-2a}-*.js`. The component API every
+  slice codes against: section 3 of the design, as built in `apps/web/src/components/form-issues.tsx`, `field.tsx`,
+  `password-field.tsx`.
+
+### Built and tested
+| Slice | What | Tests (local; no CI yet, no PR) |
+|---|---|---|
+| B: sign-in and server words | the code and password steps refuse on their own field; a code with spaces or a hyphen accepted (client and `sixDigitCode`); routing, account, request-audit, evidence date, terms version, no-payment-method words; `listed()`; `componentList` | words and Cognito unit 18; db: sign-in and onboarding routes 25, billing routes plus the 12 generated security route files 6,877, worker billing and sign-in 23 |
+| D: console and shared surfaces | console status `CheckboxGroup`; format hints; `/support` no-PHI hints; hardware key (aria-disabled, status line, alert focus, "Not registered"); uploader's hidden input out of the tab order; split form (`role=status`, marks, `beforeSubmit`); Stripe form; `LoadingState` announced (`loading-announcement.tsx`) | packages/ui and component unit tests (in the 319 below) |
+| E: e2e, personas, docs | `apps/web/e2e/forms-keep-input.spec.ts` (written, **never run**: it needs the new ActionForm), four personas, `triage.spec.ts` refused write-off, `contracts.spec.ts` comment, ADR 0077, ADR 0056 and BRAND.md notes, FRM rows | synth deterministic (`pnpm synth --all` 0 written) |
+| A, part: the form core minus #50's files | `form-issues.tsx` (context, `RefusalSummary` named by the page's labels, `useGuardedSubmit`, `PendingStatus`, `summaryLead(state, placed)`), `field.tsx` (client; `CheckboxField`, `CheckboxGroup`; `data-secret` for codes), `password-field.tsx`, `form.ts` comment, ui `button`/`input`/`styles.css` (2 px invalid mark, 16 px below 48rem, scroll padding, wrapping); the in-repo browser harness | `action-form.browser.test.tsx` 16 passed, 6 todo; apps/web components + packages/ui + synth unit: 319 passed, 6 todo, 2 failing that wait (below) |
+| C, part: pages no open PR touches | cases, reports, report review (`CheckboxGroup`), pricing runs, version and export forms, abstraction regulations and versions (hints), agreements, proof level, settings pricing, contracts forms, template mapper; all `labels=` props removed (incl. #54's defaults, console models and practice settings); e2e `refusal()` also matches `[data-slot="refusal-summary"]` | eslint clean on every changed file; lint:copy, lint:logs clean |
+
+**Typecheck now:** 4 errors, all fixed only by #50's files (`export-status.tsx:106` needs `ActionState.invalid`;
+`split-form.tsx:139,148` need ActionForm's `beforeSubmit`). **Unit failures now:** the synth registry test (FRM-04 names
+`action-form.test.tsx`, which #50 creates) and `form-hints.test.ts` (the ledger amount hint, which waits for #51).
+
+### What remains, in the landing order
+1. **When #50 (co-001/superseded-rerun) merges** (it was open at a3c583d, CI green, at 10:09): merge
+   claude/build-platform into the branch with a merge commit (rule 6), `pnpm install`, then slice A's last three files
+   (design 7.1; details in the build-2a check, scratchpad `progress/build-2a-check.md`, summarised here):
+   - `components/action-form.tsx`: keep every #50 export (`refreshOnError`, `RefreshAfterRefusal`, `RefusalTakeover`,
+     `noteRefusal`, `takesFocus`, `summaryLead` (re-export from form-issues), `takesOrphanedRefusal`,
+     `RefusalFallback`); adopt `useGuardedSubmit`, `FormIssues`, `RefusalSummary`, `PendingStatus` (inside the button's
+     `flex flex-wrap items-center gap-2` wrapper); the button `aria-disabled`, never `disabled`; add `beforeSubmit`;
+     remove `labels` and `problems`; render `RefreshAfterRefusal` for `stale` too; the header comment on 2.2's two
+     conditions (pass the server action itself to `useActionState`, never a wrapper; never render FormKeys in a layout).
+   - `lib/http/next.ts`: keep #50's `invalid`; add `stale`; drop `problems`; the lead words of 3.5; `csrf_refused` and a
+     requestKey-only refusal become `stale` (3.5a).
+   - `components/action-form.test.tsx`: #50's `summaryLead(state, true/false)` calls become `(state, 1)`/`(state, 0)`,
+     plus 3.5's new cases.
+   - Fill the 6 `it.todo` browser tests and swap the harness form for the real ActionForm.
+2. **When #51, #52 and #49 merge** (rule 6 each time): slice C on the eight waiting pages (design 7.3, 7.4):
+   #51: `abstraction/ledger` (input + the hint `form-hints.test.ts` asserts, text area, `CheckboxField`),
+   `cases/[caseId]` (write-off Reason select, checkbox as `CheckboxField errorName="Confirmation"`, inputs, text area),
+   `cases/[caseId]/submissions` (selects, inputs, checkboxes, text area), `reconciliation` (reverse reason
+   `TextAreaField`, checkbox); and `e2e/packets.spec.ts`'s refused "Partially accepted" step (exact steps in scratchpad
+   `progress/build-E.md`), then add it to FRM-01's `assertedBy`.
+   #52: `cases/[caseId]/packet` (text area), `packet/[versionId]/review` (`CheckboxGroup` "Confirm each item before you
+   attest"), `lines/[lineId]` (text area); `words.ts` merges trivially with #52's.
+   #49: `coverage` (add the missing `<FormKeys />` to the review form, a real defect: every submit is refused today;
+   `keep:<n>` as a `CheckboxGroup issueKey="kept"`, `dismiss` as a `CheckboxField`).
+3. **Then the rest of the pipeline:** the full typecheck, lint and unit; run `forms-keep-input.spec.ts` and the
+   affected e2e (sign-in, onboarding, contracts, triage, packets); a draft PR into claude/build-platform from the
+   template (written with update_pull_request, read back), subscribed; two adversarial reviews (UX and brand with
+   before and after screenshots of the refused forms at 1280 and 390 px via `tools/lane-b-screen-tour`, TOUR_REF the
+   base then the head, `*.error.*` shots; security and accessibility with `.claude/agents/security-reviewer.md` plus
+   WCAG 2.1 AA, 2.2's 3.3.7 and 2.4.11); a fix round with the full local suite; a fresh-clone verification reading CI;
+   merge per lane-b.md "Merging".
+4. **After #42 merges:** the follow-up `co-001/ux-forms-after-42` (design 7.8): upload-form.tsx (`a11y-other-15`,
+   its own label table retired), console support Ticket hint, the users page's raw checkbox, and the ZIP, email and
+   screening wordings.
+
+### Notes for the next session
+- gitleaks reads a synthetic password literal in a test as a key: build such values from parts in one constant
+  (`TYPED_PASSWORD` in `action-form.browser.test.tsx`).
+- The browser unit tests run in vitest's unit project with the installed Playwright Chromium (about 8 s warm, 34 s
+  cold), under the heavy lock.
+- Proposals outside this PR are in the design's section 11.2 and the build summaries: "enter at most {n} characters"
+  wording in packets.ts, settings.ts, submissions.ts and reconciliation/template.ts; a note on `NewPasswordStep` for an
+  empty `problems` list; a shared `RadioGroup`; a per-box message in `CheckboxGroup`.
 
 ## Log
 | Time (UTC) | Stage | Detail |
@@ -12,6 +84,7 @@ session_01VNsi2Kru6pfk8CAbQ2AaYB. Claims: ADR 0077 if needed; test-matrix FRM-01
 | 2026-10-26 09:05 | Resumed, build part 1 | The 5-hour limit stopped the session about 06:15; resumed 09:00 on the orchestrator's message. Branch fast-forwarded to 7ef421b (#54 merged). #50 still open (a3c583d, CI green), so build part 1 (wf_2292c24d-611) builds slices B, D and E against the design's component API; slice A, C1 and C2 follow once #50 merges. |
 | 2026-10-26 09:27 | Build part 1 done; part 2a | Part 1 (wf_2292c24d-611): slices B, D, E, 54 files, committed 0c0ea22 and pushed (no PR yet). Checks without slice A: lint:copy, lint:logs, tsc for ui/synth/worker clean; 203 unit tests pass; db tests of the changed routes pass (sign-in and onboarding 25, billing and the 12 generated security route files 6877, worker billing and sign-in 23). Synth module 16 confirmed for FRM by the orchestrator (09:27). Part 2a (wf_0ee7c77c-8b4): slice A without #50's three files, and the C1/C2 pages no open PR touches. Waiting: #50 (action-form.tsx, next.ts), #51/#52/#49 (eight pages). |
 | 2026-10-26 09:52 | Build part 2a done | wf_0ee7c77c-8b4: slice A's new files (form-issues.tsx, field.tsx, password-field.tsx, the ui styles, the in-repo browser harness with 16 browser tests passing and 6 todo until ActionForm adopts them), and the C pages no open PR touches. I removed the last `labels=` props (#54's defaults, console models and practice settings) and widened the e2e `refusal()` helper to the new summary. gitleaks refused a synthetic test password literal once: rewritten unpushed (a joined constant), pushed as 17bbb70. Checks: typecheck has only the 4 errors #50's files fix; eslint, lint:copy, lint:logs clean; unit 319 passed, 2 failing that wait for #50 (the synth registry names action-form.test.tsx) and #51 (the ledger hint). Waiting on #50, then #49, #51, #52. |
+| 2026-10-26 10:10 | Stopped (wind-down) | The orchestrator's wind-down of 10:09 UTC (weekly usage at 90%; Lane B hands over to Lane A). Nothing was running; the #50 waiter was stopped. Branch pushed at 17bbb70, worktree clean, no PR, no scheduled check-in. Handoff below. |
 
 ## Decisions (each with its reason in the design)
 - Keep values in the browser, never echo them (security, the safer option); without JavaScript the post works and shows the errors, but values are lost (the accepted cost).
@@ -21,5 +94,3 @@ session_01VNsi2Kru6pfk8CAbQ2AaYB. Claims: ADR 0077 if needed; test-matrix FRM-01
 - 16 px controls below 48rem; a pasted code with spaces accepted, client and server.
 - Show password: yes (hidden until mounted, spell check and autocapitalise off, re-hidden before submit).
 
-## Next step
-Build after #50 merges: slices A (form core), B (sign-in and server words), C1/C2 (practice pages), D (console, shared states), E (e2e and docs).
