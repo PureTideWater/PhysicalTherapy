@@ -6,10 +6,10 @@ Session: a parallel Lane B session started by the orchestrator (session_01CntuGR
 None. Q1 and Q2 (below) were taken as recommended under the co-founder's ruling of 2026-10-26 ~00:20 UTC ("Don't ask for approvals anymore just build and optimize").
 
 ## PR
-#49, draft, into `claude/build-platform`. Pushed head ac162d6c (CI all green on it). The fix round's commits (b20b85ef .. abd4d0bb and the suite's) are local until its one push.
+#49, draft. Head 94b5f218 (pushed ~13:40 UTC; current with claude/build-platform c355633b). CI running.
 
 ## Next step
-Finish the merge of the latest `claude/build-platform` (#54, 7ef421b, merged at 08:56) and re-check what it touched → one push → CI green → the fresh-clone verification → mark ready → merge with `expectedHeadSha` → unsubscribe, clean the machine, send the orchestrator the merge commit.
+CI green on 94b5f218 → the UX and brand review (running; #55 made it the template's rule for screen changes: Coverage, Releases, console Rule releases, failure texts) and any fix it needs → the fresh-clone verification reading CI → the PR description (drafted in the scratchpad) → mark ready → merge with `expectedHeadSha` → unsubscribe, clean the machine, send the orchestrator the merge commit.
 
 ## Stage (times UTC, from date -u)
 - 2026-10-26 ~00:10: machine set up (`tools/setup-container.sh` OK; `gh api user` = PureTideWater). Base 6ddd587.
@@ -19,7 +19,8 @@ Finish the merge of the latest `claude/build-platform` (#54, 7ef421b, merged at 
 - ~05:35: the PR was `dirty` (#46, #47 merged on the base) so CI had not run. Merged the base in a side worktree (ac162d6c; only the shared lists conflicted, both kept: DBF 13, RCC 14, BIL 15); local checks clean; pushed. **CI on ac162d6c: all green** (db 1-4, e2e 1-2, mutation with all six shards, domain model, approval-of-record, screening-capacity).
 - ~05:30-06:10: **two adversarial reviews** (wf_9ab8bb48-29a; integrity: pipeline, money paths, surfaces; security: application, jobs/logs/content publisher), a skeptic per finding: `lane-b-release-content-checks-review-summary.md` and `-review-findings.json`. 0 blockers; 3 major (INT-PIPE-1 an unchanged quarterly file cannot be kept for two quarters; SEC-APP-1 a failure text promised an alert nothing sent; SB-1 the source watch failed open on unplain file names); 17 minor; 7 nits; S7 refuted (kept as a nit).
 - ~06:15-10:05: **fix round** (wf_695df8eb-4c5): every finding, nits and improvements, in three groups (pipeline 12e2671a; money and app b20b85ef, 22785126, 3dfc5376, fb9ffd79, e673fc19; calendar, workflows and docs 25a88196 .. abd4d0bb). Stopped by the session limit at ~06:35, resumed ~09:00. Full local suite since ~10:05: steps 1-22 all pass (install, check:fixtures, typecheck 22 projects, lint 1,524 files, lint:logs, lint:copy, verify-content drafts and 900001-900007, releases immutable, engine freeze clean, synth --all unchanged, synth --large, watched list, affected.ts (all six shards), `pnpm test` 5,366 passed 1 skipped, golden 188, oracle 637 fixtures, licenses 189, actionlint, test:db 6 shards 9,119 passed 1 skipped, domain model unchanged, build, e2e 51 passed, mutation canary and six shards with the gate: money 96.58%, ledger 98.13%, packets 95.87%, pricing 98.67%). Step 23, the real-size harness (process runtime; no Docker daemon here) under 900110: the price job fits (100,000/100,000 lines, peak 804 MiB of 1,024, no restarts); triage and the report of the large practice fail with Postgres "out of shared memory" (SUITE-CAP-1, a per-line advisory lock in `line_status_rules()`, predates this PR; needs a migration or an RDS parameter, handed to Lane A through the orchestrator ~12:40). Windows query 10-13 s cold (advisory, 5 s budget; stored windows proposed with #8).
-- ~12:30: merging the latest base (0e28f9b9: #50, #52 to #56); six code files conflict with #50 and #52; a merge agent resolves and tests them.
+- ~12:30-13:30: merged the base 0e28f9b9 (#50, #52 to #56): six code files conflicted with #50 and #52, resolved keeping both (57cb629d; typecheck, lint, watched, affected, synth, `pnpm test` 6,015, `pnpm test:db` 9,176 passed). Pushed. The base moved again (#51): merged clean (94b5f218; typecheck, lint, synth, watched, affected (seven shards), `pnpm test` 6,146 passed 1 skipped). Pushed ~13:40.
+- ~13:45: the UX and brand review started on the changed screens, before and after shots (the template's rule since #55).
 
 ## Later PR, for after #42 merges (not started; Lane B hands it to Lane A with the lane)
 Design 7.2 is its contract. It holds:
