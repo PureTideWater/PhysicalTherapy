@@ -2,8 +2,8 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC.*
 
-- **Stage:** fix round running (wf_521d97fc-8ba, from ~05:20): every review finding, the base merge (4d99df8, PR #46), the full local suite once; then one push.
-- **Branch / PR:** `co-001/materiality-cents`, cut from c5195ee, worktree /home/user/materiality-cents / #54 (draft), head c74d304 (4618e41 tests first, 4bfcb12 fix, c74d304 docs).
+- **Stage:** fix round done and pushed (head 4a2ee32, ~06:05): every finding fixed (755122e, c23441f), base 4d99df8 merged (no conflicts), the full local suite passed once; CI on 4a2ee32, then the fresh-clone verification.
+- **Branch / PR:** `co-001/materiality-cents`, worktree /home/user/materiality-cents / #54 (draft), head 4a2ee32.
 - **Migration:** none. No #42 file: the route (`apps/web/src/lib/routes/settings.ts`, a #42 file) already returns what
   the page needs and is not touched. `packages/money` unchanged (`formatCents(parseCents(…))` already exists).
 - **Reserved numbers:** test-matrix CAS-38 and CAS-39; `packages/synth` CAS-38 and CAS-39. No ADR.
@@ -22,5 +22,7 @@
 - **Base moved:** PR #46 (db-function-diffs) merged as 4d99df8 at ~05:00; merges cleanly; taken in the fix round.
 - **Machine:** restarted again ~04:21 (PG18 restarted by the builder); the first before-capture failed on it and was retaken.
 - **Safety net:** send_later 08:50 UTC (trig_012MWfJwXCJEX4TNFjtwos9i).
-- **CI:** none yet.
-- **Next:** shots; UX review; the fix round; CI; verification; merge.
+- **CI:** c74d304 green on every check. 4a2ee32 running.
+- **Full local suite on 4a2ee32:** typecheck 22; lint 1,502 files 0/0; lint:copy, lint:logs, verify-content, engine freeze, check:fixtures; synth clean (203 cases); unit 327 files 5,096 passed 3 skipped; golden 188; oracle 637; test:db six shards 120 files 9,069 passed 1 skipped; build + stamp + e2e 51/51 (triage.spec's CAS-38 step included); no money package affected (`approval-summaries/lane-b-materiality-cents-fix-suite.md`).
+- **After shots retaken at 4a2ee32;** gallery version 2.
+- **Next:** CI on 4a2ee32; the fresh-clone verification; ready; merge.
