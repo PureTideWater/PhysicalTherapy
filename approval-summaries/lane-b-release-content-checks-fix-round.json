@@ -1,0 +1,423 @@
+{
+ "pipeline": {
+  "dispositions": [
+   {
+    "id": "INT-PIPE-1",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "C16 (one stored file, one window) is now keyed on source.path. The importer adds a refusal: it will not replace an existing draft of the same name that holds another window (refuseOtherWindowsDraft, message names a per-quarter file name such as GPCI2026_Q4.csv). Row 2 of content/sources/README.md now renames GPCI2026.csv per quarter, and the Effective windows section says why.",
+    "test": "tools/verify-content/check.test.ts 'passes two quarters of identical GPCI bytes'; packages/rules/src/import.test.ts 'never replaces another quarter's draft'"
+   },
+   {
+    "id": "INT-PIPE-2",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "Both the assembler and the checker refuse a release numbered below one already prepared or published. This uses a new releaseNumbers() in packages/rules/src/content.ts, and previousReleaseNumber is now built on it.",
+    "test": "tools/release/release.test.ts A5 (rewritten); tools/verify-content/check.test.ts 'refuses a release numbered below'"
+   },
+   {
+    "id": "INT-PIPE-3",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "New checker rule C17: an RVU, GPCI or MUE record whose window is not in the quarter its stored file states, or does not start on the file's effective day, is refused. The checker reads the quarter with the same statedQuarter the importer uses. statedQuarter moved from import.ts to packages/rules/src/parsers/index.ts, so the watched closure did not gain import.ts.",
+    "test": "tools/verify-content/check.test.ts 'the quarter a stored file states (C17)'"
+   },
+   {
+    "id": "INT-PIPE-4",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "A COVERAGE.md that is not byte for byte what the assembler writes is now refused. readJsonBlock also refuses a repeated key.",
+    "test": "tools/verify-content/check.test.ts INT-PIPE-4 case; packages/rules/src/coverage.test.ts duplicate-key case"
+   },
+   {
+    "id": "INT-PIPE-5",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "Quarter tokens now end at any character that is not a letter or digit, using lookarounds instead of \\b, so an underscore no longer joins a token to the next word. RVU tokens accept CMS's R revision suffix, and Eff/Effective dates accept space, underscore, colon, dot or dash as the separator. These only add matches that lead to refusals or to agreement with the window. The README documents them.",
+    "test": "packages/rules/src/import.test.ts statedQuarter INT-PIPE-5 cases"
+   },
+   {
+    "id": "INT-PIPE-6",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "Nit. A ZIP5 line of the wrong length now gets a length message instead of the misleading 'not YYYYQ'. The single not-a-date effective-date message no longer names a second quarter that does not exist. Both are new wording on cases that were already refused, not rewording of existing problems in check.ts.",
+    "test": "packages/rules/src/parsers/parsers.test.ts 'Z1 81 chars'; packages/rules/src/import.test.ts 'I3 no other quarter'"
+   },
+   {
+    "id": "IMP-classify",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "RECORD_DATING in schema.ts classifies every RuleRecordType in one table that uses satisfies Record<RuleRecordType, RecordDating>. recordTypesDated() derives QUARTERLY_RECORD_TYPES and UNDATED_RECORD_TYPES from it, so a new type fails to compile until it is classified.",
+    "test": "packages/rules/src/schema.test.ts RECORD_DATING case"
+   },
+   {
+    "id": "IMP-readBaseline-manifest",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "The checker's baseline (the previous release) must match its own MANIFEST.json. Otherwise the checker reports a problem, the same sealed-set guarantee the assembler gets through readRelease.",
+    "test": "tools/verify-content/check.test.ts 'previous release whose files are not the ones its manifest seals'"
+   },
+   {
+    "id": "IMP-dup-withdrawn",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "The COVERAGE-WITHDRAWN note schema in records.ts now refuses a range listed twice (superRefine), with a clear message. Before, it passed A7 and then failed later at C12 with a confusing message. The README says so.",
+    "test": "packages/rules/src/coverage.test.ts duplicate withdrawn entry case"
+   },
+   {
+    "id": "IMP-closed-by-source",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "An end date counts as closed by the source only when the row the closing NCCI PTP or X12 code-list record quotes states that date. An end typed into a draft by hand closes nothing. This is limited to the parsed source-dated types, which kept it in proportion.",
+    "test": "tools/verify-content/check.test.ts closed-by-source quoted-row case"
+   },
+   {
+    "id": "IMP-loss-helpers",
+    "disposition": "fixed",
+    "commit": "12e2671a",
+    "what": "lossText and lossIdentity (and compareLosses) were defined in both check.ts and assemble.ts. They now have one exported copy in packages/rules/src/records.ts, re-exported from index.ts, and both tools import it.",
+    "test": "covered by the existing coverage and assemble tests (tools/release/release.test.ts, tools/verify-content/check.test.ts)"
+   }
+  ],
+  "docNotes": [
+   "ADR 0071 and the test matrix: add checker rule C17. An RVU, GPCI or MUE record's window must lie in the quarter its stored source file states (title lines, stored name, source.url, read by statedQuarter) and start on the file's effective day when it states one.",
+   "ADR 0071: C16 (one source file, one window) is keyed on the stored source.path, not the file's hash. Add the new importer refusal: a draft of the same name that holds another window is never replaced, and the same window may be re-imported over its own draft.",
+   "ADR 0071 and the test matrix: the assembler (before writing) and the checker refuse a release numbered below one already prepared or published.",
+   "ADR 0071 / design: COVERAGE.md must be byte-exact what the assembler writes; readJsonBlock refuses a repeated JSON key; the previous release used as the checker's baseline must match its own MANIFEST.json.",
+   "Design / content/sources README 'Coverage': closed by source requires the quoted row of the closing NCCI PTP or code-list record to state the end date. The withdrawal note refuses a range listed twice.",
+   "Runbook (load-release / sources): every RVU zip of a year ships GPCI2026.csv, often with identical bytes, so it is renamed per quarter (GPCI2026_Q4.csv) before import. The row-2 command in content/sources/README.md now says so.",
+   "Design: the statedQuarter token rules now end a token at any character that is not a letter or digit, accept an RVU revision letter (RVU24AR), and accept Eff/Effective followed by space, underscore, colon, dot or dash. statedQuarter is now exported from @tp/rules (packages/rules/src/parsers/index.ts) instead of @tp/rules/import."
+  ],
+  "tests": "On the final tree: tsc --noEmit for packages/rules and tools is clean; eslint on every changed file is clean. vitest --project unit across packages/rules, tools/verify-content, tools/release, tools/screening-capacity, tools/content-calendar and tools/golden-worksheet passed 26 files, 754 tests, 1 skipped (the mode-000 test, which is skipped when running as root). The earlier run also covered tools/stryker and apps/worker/src/packets: 15 files, 145 tests. pnpm verify-content passes on content/drafts, as do lint:logs and lint:copy. The output of pnpm exec tsx tools/screening-capacity/watched.ts is identical to the committed watched-paths.txt. Per the progress file, the earlier run confirmed on a scratch copy of the base that the 25 new or changed tests fail before the fix.",
+  "notes": "Resumed from the progress file. All the code and READMEs were already written and uncommitted. This session fixed an eslint no-base-to-string error in import.ts by adding a heldDate helper. It also found that check.ts's new import of @tp/rules/import pulled packages/rules/src/import.ts into the screening-capacity watched closure, which made watched.ts differ from the committed list, and that list may not be edited. The stated-quarter code (StatedQuarter, the patterns, urlFileName, statedQuarter) therefore moved into packages/rules/src/parsers/index.ts, which is already watched. It uses a '/' split instead of node:path, and check.ts now takes statedQuarter from @tp/rules. Everything is in one commit, 12e2671a, containing only the group's paths (packages/rules/src/**, tools/release/{assemble.ts,release.test.ts}, tools/verify-content/{check.ts,check.test.ts}, the three content READMEs); fixtures/synthetic/rules/release-synth-900007 needed no regeneration. Other groups' files were not touched. Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/fix-pipeline.md."
+ },
+ "money": {
+  "dispositions": [
+   {
+    "id": "M-1",
+    "disposition": "fixed",
+    "commit": "b20b85ef",
+    "what": "isLoudContentGap now judges no_gpci and no_conversion_factor the way the engine looked them up. Under latest_in_basis_year it checks whether any window falls in the locked basis year, using the same year-overlap test as the pfs_rvu branch. Locality and plus-four still use the service date.",
+    "test": "apps/worker/src/price/content.test.ts: the two locked-year cases fail before the fix and pass after"
+   },
+   {
+    "id": "M-2",
+    "disposition": "fixed",
+    "commit": "3dfc5376",
+    "what": "TriageFacts.contentNotLoaded is now required, as design 5.6.7 says, and judgeLine tests the field directly. Every test that builds TriageFacts or CandidateLine sets contentNotLoaded: false (actionable.test.ts, patterns.test.ts, triage.golden.test.ts, triage.db.test.ts).",
+    "test": "packages/triage/src/actionable.test.ts: an @ts-expect-error on facts without the field (tsc fails before the fix)"
+   },
+   {
+    "id": "M-3",
+    "disposition": "fixed",
+    "commit": "22785126",
+    "what": "Nit-level, at the verdict's better fix. No new wait. The failure text no longer tells the customer to create a new run: it says the month is priced again by itself once the defect is fixed. A monitor test pins that a month failed release_read_outside_fetch is planned again and never listed as waiting.",
+    "test": "apps/web/src/components/pricing/display.test.tsx; apps/worker/src/monitor/monitor.db.test.ts (OUTSIDE-FETCH-RETRY)"
+   },
+   {
+    "id": "N-1",
+    "disposition": "fixed",
+    "commit": "3dfc5376",
+    "what": "Removed the actionable.ts comment clause about a release span that a later correction narrowed. That cannot happen.",
+    "test": "comment only"
+   },
+   {
+    "id": "N-2",
+    "disposition": "fixed",
+    "commit": "fb9ffd79",
+    "what": "The dry run now makes a fresh memoryReleaseSource per run over the shared index, so keys fetched by one run no longer hide another run's key-set miss. runReleaseImpact now takes a ReleaseSource, and the rerun db tests pass memoryReleaseSource or storedReleaseSource.",
+    "test": "tools/release/dry-run.db.test.ts: a distinct source per run (fails before the fix); rerun.db.test.ts and rerun-window.db.test.ts pass"
+   },
+   {
+    "id": "SEC-APP-1",
+    "disposition": "fixed",
+    "commit": "22785126",
+    "what": "The customer text no longer says the operator was alerted. It now says what is true today: the read was logged for the operator and the month is priced again by itself once the defect is fixed. The refused run logs READ_OUTSIDE_FETCH_MESSAGE ('pricing run read rule content outside the keys it fetched', error_code RELEASE_READ_OUTSIDE_FETCH) at error level as fixed text, for the later PR's alarm to read.",
+    "test": "apps/web/src/components/pricing/display.test.tsx (the text); apps/worker/src/price/price.test.ts (the log call is the fixed constant); content.db.test.ts (the line is logged with the run ID)"
+   },
+   {
+    "id": "SEC-APP-2",
+    "disposition": "fixed",
+    "commit": "22785126",
+    "what": "The alarm stays in the later PR. Each refusal logs its fixed line now: a content refusal logs CONTENT_NOT_LOADED, a read outside the fetch logs RELEASE_READ_OUTSIDE_FETCH, and the monitor logs WAITING_ON_CONTENT. A content-refused run whose other lines stopped on engine errors that page the operator also logs the PRICING_ENGINE_ERROR line, as it would have if complete, so the refusal never hides that page.",
+    "test": "apps/worker/src/price/content.db.test.ts 'engine-error page of a refused run' (fails before the fix)"
+   },
+   {
+    "id": "S1",
+    "disposition": "fixed",
+    "commit": "e673fc19",
+    "what": "'What this release covers' now lists every dated family through a new ReleaseLoadedThrough component. Three rows that used to be dropped are now stated in words: 'not loaded in this release', 'only partly loaded in this release' (some contents have records, e.g. a ZIP5 file with no ZIP+4 file) and 'loaded only from <date>' or 'loaded only from a later date'. FamilyThrough gains partly and from.",
+    "test": "apps/web/src/components/pricing/content.test.tsx (new; fails before the fix); content-through.db.test.ts (zip_locality partly, ncci_mue from 2026-01-01); reruns-routes.db.test.ts (loadedThrough holds the not-loaded row)"
+   },
+   {
+    "id": "S7",
+    "disposition": "not a defect",
+    "commit": "e673fc19",
+    "what": "I checked it: a withdrawal must reinstate an earlier release (reinstated_release_no NOT NULL, plus the trigger), so the last release in force can never be withdrawn. 'None in force' therefore means 'none published'. I added a one-line comment at the dueContent call in rule-releases.ts saying so, and no dead branch.",
+    "test": "none (comment only)"
+   },
+   {
+    "id": "int-money improvement 1",
+    "disposition": "fixed",
+    "commit": "3fb49636",
+    "what": "The keyed-release oracle property now draws releases 900001, 900006 and 900007, ZIP 00011 and 00012 with and without a ZIP+4, the CURRENT basis and LOCKED 2025, 2026 and 2027, dates across the year turns, and several view() calls through one source.",
+    "test": "apps/worker/src/price/keyed-release.test.ts (new property, 150 runs, passes)"
+   },
+   {
+    "id": "int-money improvement 2",
+    "disposition": "deferred",
+    "commit": "",
+    "what": "Making NCCI PTP a fourth span content, or a triage hold, changes span contents and triage across the release model. It belongs to the later PR, as the reviewer suggests.",
+    "test": ""
+   },
+   {
+    "id": "int-money improvement 3",
+    "disposition": "deferred",
+    "commit": "",
+    "what": "This asks for a written precedence rule, which is documentation. It is in docNotes. execute.ts already states the precedence: read outside fetch, then location, then content.",
+    "test": ""
+   },
+   {
+    "id": "sec-app improvement 1",
+    "disposition": "fixed",
+    "commit": "e673fc19",
+    "what": "contentWindowsOf and windowsInForce now take the contents a page shows and read only their record types, cached per release, manifest and type set. Coverage reads pfs_rvu only, so it never aggregates the code-pair edits. Releases reads the dated families' contents. The console still reads everything.",
+    "test": "apps/web/src/lib/releases/content-through.db.test.ts 'the contents a page reads' (the API did not exist before; tsc fails)"
+   },
+   {
+    "id": "sec-app improvement 2",
+    "disposition": "fixed",
+    "commit": "e673fc19",
+    "what": "Added a negative route test: the practice's own administrator is refused console.rule_releases (forbidden, rule_release.manage) and gets no contentDue data.",
+    "test": "apps/web/src/lib/routes/console-routes.db.test.ts (a guard test; it passes before and after because the permission is unchanged)"
+   },
+   {
+    "id": "sec-app improvement 3",
+    "disposition": "deferred",
+    "commit": "",
+    "what": "Letting lint:logs accept an imported constant means changing tools/lint-logs, which is outside this group's files. The literal plus the string-search guard stay. price.test.ts already pins that each log call's literal equals its exported constant.",
+    "test": ""
+   }
+  ],
+  "docNotes": [
+   "ADR 0071 and runbook content-updates.md: until the alarm PR (#42's monitoring.ts) lands, no alarm reads these lines. Each refusal already logs its fixed line: CONTENT_NOT_LOADED (warn, 'pricing run found lines stopped by rule content not loaded for their dates', once per refused or complete run), WAITING_ON_CONTENT (warn, the monitor, once per plan), and RELEASE_READ_OUTSIDE_FETCH (error, 'pricing run read rule content outside the keys it fetched', once per failed run). The runbook should tell the operator to check the worker logs daily for these three error codes in that window.",
+   "Design 7.2 / the later PR's monitoring.ts row: add RELEASE_READ_OUTSIDE_FETCH (a worker log-group filter on error_code, paging the operator topic) beside CONTENT_NOT_LOADED and WAITING_ON_CONTENT. The design's string table must drop 'the operator was alerted' from release_read_outside_fetch and use the new text: '...which is PaidWhole's defect, so no line was kept and it was logged for the operator. The month is priced again by itself once it is fixed.'",
+   "Design 5.6.3 / ADR 0071: a month failed release_read_outside_fetch is planned again at each monitoring trigger, by intent (no wait), and fails at its first bad batch until the defect is fixed; it then prices by itself.",
+   "Design 5.6.5 / ADR 0071: a content-refused run whose other lines stopped on engine errors that page the operator also logs the PRICING_ENGINE_ERROR line, so 'the engine-error page stays' holds for refused runs too.",
+   "Design 5.6.5 content-alert table: no_gpci and no_conversion_factor under LOCKED:<year> terms are judged against the basis year (any window meeting that year), not the service date (M-1). Locality and plus-four keep the service date.",
+   "Design 5.6.7: TriageFacts.contentNotLoaded is required (no 'absent is false').",
+   "Design 5.8.6, runbook content-updates.md section 6 and test matrix RCC-08: the Releases card lists each dated family of the release in force in one of these forms: '<title>: loaded through <date>', '<title>: in force, no end date', '<title>: loaded only from <date>' (or 'from a later date'), '<title>: only partly loaded in this release' (some but not every content has records), '<title>: not loaded in this release'.",
+   "Design / ADR 0071 (content-through cache): Coverage reads only pfs_rvu windows and Releases only the dated families' record types; the console reads every content. The cache is keyed by release, manifest and record-type set.",
+   "Design 5.6.2 precedence (int-money improvement 3): when a run hits both a location stop and a content gap, the customer's location step is shown first. The content wait is learned only on the next run, and no CONTENT_NOT_LOADED line is logged for a location-refused run, even when every line also read content outside its span.",
+   "Later PR (int-money improvement 2): consider NCCI PTP as a fourth span content, or a triage hold. A PTP quarter that is not loaded drops NCCI_REVIEW holds without notice."
+  ],
+  "tests": "Typecheck (tsc --noEmit) is clean for apps/web, apps/worker, packages/triage and tools. ESLint with --max-warnings=0 is clean on every file of the group changed since ac162d6c. lint:logs and lint:copy pass. Unit tests over apps/web/src/components, apps/web/src/lib, apps/worker/src/{price,monitor,triage} and packages/triage: 801 pass. test:golden: 188 pass. DB tests over apps/worker/src/{price,monitor,triage}, apps/web/src/lib/releases, apps/web/src/lib/pricing, reruns-routes, console-routes and tools/release/dry-run: 162 pass in 18 files. The output of tsx tools/screening-capacity/watched.ts equals the committed watched-paths.txt.",
+  "notes": "I resumed from /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/fix-money.md. Commits b20b85ef, 22785126, 3dfc5376 and fb9ffd79 came from the earlier run. This run added e673fc19 (S1, S7, sec-app improvements 1 and 2) and 3fb49636 (int-money improvement 1).\n\nWhen I resumed, S1 was half done and not committed. I finished it and changed one thing: a family with some but not all of its contents (ZIP5 without ZIP+4) now says 'only partly loaded in this release', not 'not loaded', which would have been false to customers.\n\nThe reviewers did not raise this, but it is left alone: a location-refused run logs no line, even when its other lines hit paging engine errors. That behaviour predates this PR (the customer's step) and is outside SEC-APP-2's scope.\n\nEach commit added only this group's paths under /tmp/rcc-git.lock. Nothing was pushed, and no other group's files were staged."
+ },
+ "surfaces": {
+  "dispositions": [
+   {
+    "id": "SB-1",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "The source watch now tests the pattern against every decoded link name. A new matching name that is not plain counts as a source_changed finding. It is counted and shown in a code span percent-encoded (only letters, digits and . _ - % remain), cut at 200 characters. knownFiles accepts either the raw name or the encoded form.",
+    "test": "tools/content-calendar/content-calendar.test.ts 'finds a new file whatever its name holds' (RVU27A%20updated.zip and RVU27B(1).zip give one source_changed). The hostile-href test was rewritten so it checks that every code-span line matches [A-Za-z0-9._%-]."
+   },
+   {
+    "id": "SB-2",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "pageFileNames reads hrefs in double quotes, single quotes and no quotes. There is a new finding kind, source_lost: knownFiles is non-empty but the page now shows no matching name. render.ts has its statement.",
+    "test": "content-calendar.test.ts 'reads single-quoted and unquoted hrefs, and reports a recorded page that lists no matching file any more'"
+   },
+   {
+    "id": "SB-3",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "httpFetcherFor(sourceHosts(calendar)) sets redirect to manual and follows at most 3 hops itself. Every hop must be https to a host the calendar names, with no port and no credentials. Anything else throws, which readPage reports as source_unreachable.",
+    "test": "content-calendar.test.ts 'the fetcher': it refuses http, a foreign host, a port, credentials and more than 3 redirects, and follows a same-host redirect. A local-server test runs the real fetch through a downgrade redirect."
+   },
+   {
+    "id": "SB-4",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "MAX_PAGE_BYTES is 5 MiB. A declared content-length over the cap is refused without reading the body. A streamed body is cancelled once it passes the cap.",
+    "test": "content-calendar.test.ts 'reads at most 5 MiB of a page, declared or streamed', plus the local-server case with a 64 MiB body"
+   },
+   {
+    "id": "SB-5",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "findings() no longer caps the list. The file is bounded at 700,000 bytes, and above that the CLI exits 1. The notify job opens at most MAX_OPENED=20 new issues per run, counting only titles that are not already open. Findings left over are listed in one issue, 'Content calendar: findings not filed', which closes itself once everything is filed.",
+    "test": "tools/test/workflows.test.ts runs the real notify script with a fake gh. With 25 findings, 3 already open: findings 3-22 are filed and 23-24 go to the overflow issue. The next day 23 and 24 are filed and the overflow issue closes. Checked to fail against the base ymls."
+   },
+   {
+    "id": "SB-6",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "Only names that match the pattern are counted, so mailto:, javascript: and other noise no longer appear.",
+    "test": "content-calendar.test.ts 'counts no link that does not match the pattern'"
+   },
+   {
+    "id": "SB-7",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "release-capacity notify now runs on failure, on cancelled (which covers the 180-minute timeout) or on an advisory, and its body names the result.",
+    "test": "workflows.test.ts release-capacity notify case: a cancelled run comments on the open issue and the body says 'ended cancelled'"
+   },
+   {
+    "id": "S2",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "bounded() keeps the first line and the tail (Source, Runbook, caveat) whole. It cuts lines from the end of the rest, closes a code fence left open, and adds a line saying how many lines were cut and where the rest is. The note no longer names a command that does not print the full body.",
+    "test": "content-calendar.test.ts 400-name source_changed case (body at most 6,000 characters, tail kept, exact note) and the 25-finding due-body case"
+   },
+   {
+    "id": "S3",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "run.ts writes advisories as base64 to GITHUB_OUTPUT (advisoriesOutput in checks.ts). The capacity job exposes an advisories output. Notify runs on an advisory and adds an 'Advisory:' section; a passing run with an advisory gets its own 'Release capacity advisory' issue.",
+    "test": "tools/release-capacity/checks.test.ts 'the advisories output'; workflows.test.ts runs the notify script for failure, cancelled and success-with-advisory"
+   },
+   {
+    "id": "S4",
+    "disposition": "fixed",
+    "commit": "abd4d0bb",
+    "what": "The runbook's Ended row now says what happens per family. MPPR and MUE months wait and reprice by themselves. Other families complete with lines unpriced or ENGINE_ERROR and must be priced again by hand once the release is in force.",
+    "test": "doc only (tools/content-calendar/runbook.test.ts still passes)"
+   },
+   {
+    "id": "S5",
+    "disposition": "fixed",
+    "commit": "abd4d0bb",
+    "what": "ADR 0071 (the workflows paragraph and Revisit), ci.md and a comment on release-capacity.yml's runs-on line now say this: on a private repository the weekly test is refused as RUNNER_TOO_SMALL and needs the same 4-core larger runner as screening-capacity, priced separately at about 780 larger-runner minutes. runs-on is unchanged, so it can be decided together with screening-capacity's.",
+    "test": "doc/comment only; workflows.test.ts passes"
+   },
+   {
+    "id": "S6",
+    "disposition": "fixed",
+    "commit": "8fed5275",
+    "what": "New route-level db test, apps/web/src/lib/routes/coverage-content.db.test.ts. It calls coveragePage and checks feeScheduleNotLoaded from the route's own pfs_rvu windows: the year 2025 for LOCKED:2025 under 900001, and nothing for CURRENT. Under 900007 it checks waitingOnContent (month, quarter, families, lines, billed) and contentHeadline. RCC-05 and RCC-08 now name it, content.test.tsx and reruns-routes.db.test.ts in their assertedBy lists. The 'no release in force' case cannot be reached, because the withdrawal trigger always keeps one release in force.",
+    "test": "apps/web/src/lib/routes/coverage-content.db.test.ts (2 tests). It guards wiring that was untested, and its headline assertion fails before improvement 3."
+   },
+   {
+    "id": "S8",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "Notify checks the decoded findings with jq -e (it must be an array of {title, body} strings). An empty or invalid hand-off, invalid base64, or a check result other than success opens the 'Content calendar check failing' issue, or comments on it if it is open.",
+    "test": "workflows.test.ts S8 case: six bad hand-offs each produce the failing issue; a later failure comments on issue #7; an empty list files nothing"
+   },
+   {
+    "id": "S9",
+    "disposition": "fixed",
+    "commit": "8fed5275",
+    "what": "In MonthsWaitingOnContent, the 'Waiting on' cell renders quarters, family codes and the release number in font-mono, with the same words as waitingOnText.",
+    "test": "apps/web/src/components/pricing/content.test.tsx 'sets the quarters, the family codes and the release number in the mono face'"
+   },
+   {
+    "id": "sec-boundary improvement 1",
+    "disposition": "deferred",
+    "commit": "abd4d0bb",
+    "what": "The real CMS pages could not be checked: the proxy refused cms.gov (CONNECT 403) and WebFetch could not resolve it. The runbook's 'How to review an entry' step 2 and the ADR's Revisit section now require the first review to confirm each pattern against the page. Once files are recorded, a page that links sub-pages shows up as source_lost.",
+    "test": ""
+   },
+   {
+    "id": "sec-boundary improvement 2",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "Each later failing run comments on the open 'check failing' issue.",
+    "test": "workflows.test.ts S8 case (issue comment 7)"
+   },
+   {
+    "id": "sec-boundary improvement 3",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "The open issues are read with gh api --paginate over every page, replacing --limit 200.",
+    "test": "workflows.test.ts content-calendar notify static case"
+   },
+   {
+    "id": "sec-boundary improvement 4",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "Added a local http server test that drives the real fetch through httpFetcherFor (redirect, downgrade, size cap).",
+    "test": "content-calendar.test.ts 'against a local server through the real fetch'"
+   },
+   {
+    "id": "int-surfaces improvement 1",
+    "disposition": "fixed",
+    "commit": "6754de0f",
+    "what": "An ended or not_loaded family gets import commands for every period from its first gap up to the period holding today. Every stage fills a template only for a content that does not hold the period (an overdue family only for its stale contents). The schema refuses an import command whose --type loads none of the entry's contents.",
+    "test": "packages/rules/src/calendar.test.ts 'fills an ended family's commands for every period it lacks...' and the schema refusal cases"
+   },
+   {
+    "id": "int-surfaces improvement 2",
+    "disposition": "fixed",
+    "commit": "a85faffc",
+    "what": "readPendingStatesCached keys the pending state by a stat-only fingerprint of content/drafts and content/outgoing (size, mtime, ctime, inode). The console's rule-releases.ts uses it.",
+    "test": "content-calendar.test.ts 'the pending state, kept while the checkout is unchanged'; console-routes.db.test.ts passes (27)"
+   },
+   {
+    "id": "int-surfaces improvement 3",
+    "disposition": "fixed",
+    "commit": "8fed5275",
+    "what": "contentHeadline returns ContentHeadline (lines, chargeCents, paidCents) without claims, matching the location card. coverage.ts was typed to match.",
+    "test": "content.test.tsx headline case; content.db.test.ts updated"
+   },
+   {
+    "id": "int-surfaces improvement 4",
+    "disposition": "fixed",
+    "commit": "abd4d0bb",
+    "what": "Runbook section 4 now describes the titles exactly (period, or the loaded end date for ends-within and ended), plus the multi-period commands, cut bodies and the 20-issue cap.",
+    "test": "doc only"
+   },
+   {
+    "id": "int-surfaces improvement 5",
+    "disposition": "fixed",
+    "commit": "25a88196",
+    "what": "The dead phase check was replaced: a concurrent phase sampled fewer than once every 2 seconds (PHASE_SAMPLE_GAP_MS) over its recorded time fails.",
+    "test": "tools/release-capacity/checks.test.ts sampling case (299 of 300 fails)"
+   },
+   {
+    "id": "int-surfaces improvement 6",
+    "disposition": "fixed",
+    "commit": "abd4d0bb",
+    "what": "ci.md's minute estimate now counts the content-calendar check runs on pushes and pull requests that touch the calendar or content/.",
+    "test": "doc only"
+   },
+   {
+    "id": "copy lint pins",
+    "disposition": "fixed",
+    "commit": "ea0e60fc",
+    "what": "tools/brand-copy/scan.test.ts pins apps/worker/src/price/release.ts and packages/rules/src/calendar.ts in the fixture list and in the real-tree check.",
+    "test": "tools/brand-copy/scan.test.ts (fails if either COPY_FILES entry is dropped)"
+   }
+  ],
+  "docNotes": [
+   "Done in abd4d0bb: ADR 0071 now carries every docNote from the pipeline and money groups: C16 keyed on path, C17, the low release number check, byte-exact COVERAGE.md, repeated JSON key, sealed baseline, closed-by-source quoted row, duplicate withdrawal range, the importer's same-name refusal, statedQuarter token rules and the per-quarter GPCI name, the three log lines and the daily log check, the precedence, the outside-fetch retry, the engine-error line for refused runs, M-1's basis year, contentNotLoaded required, the dry run's per-run source, the five Releases forms and the type-keyed cache. The later PR also gains RELEASE_READ_OUTSIDE_FETCH and the NCCI PTP question. reconciliation-001's #30 exception and the PRD line 385 sentence list the new refusals. Test matrix and matrix.ts RCC-01, 02, 03, 05 and 08 were reworded and the fixtures regenerated (067382eb).",
+   "Runbook content-updates.md: the Ended row (S4), exact titles, multi-period commands, the cut-body note, new rows 'Source lost' and 'Findings not filed', a wider 'Source unreachable' row, percent-encoded names in knownFiles, a pattern check against the page in the review step, the five forms in section 6, and a new section 8 'read the worker log daily' (the old section 8 is now 9).",
+   "ci.md: the notify rows for both workflows, the private-repository larger runner for release-capacity, and the calendar's push and pull-request runs.",
+   "The design appendix in /home/user/ops/designs/lane-b-release-content-checks.md has a 'Fix round' section that records where the fixes depart from the design. Design 5.10's release-capacity notify `if: failure()` is superseded by failure, cancel or advisory. Section 3's 'at most 20 findings' now means at most 20 issues per run, enforced in notify. 5.8.3's plain-names-only rule is replaced by match-all with percent-encoded display. The docs owner should carry these into the body sections (5.8.3, 5.8.4, 5.9, 5.10, 5.11) when the design is next edited.",
+   "Still open for the docs owner: the design's own string table for release_read_outside_fetch (5.11) should take the money group's new text. The appendix notes this, but the table itself was not edited."
+  ],
+  "tests": "On the final tree (abd4d0bb): tsc --noEmit is clean for tools, packages/rules, packages/synth and apps/web. ESLint --max-warnings=0 is clean on every TS/TSX file I changed (run in two batches with NODE_OPTIONS=--max-old-space-size=6144, because the single run hit an out-of-memory abort). Unit tests (vitest --project unit) over tools, packages/rules, packages/synth and apps/web/src/components: 98 files, 1,636 passed, 4 skipped. That run includes workflows.test.ts, where actionlint is present and ran, plus content-calendar, release-capacity, brand-copy and runbook.test. DB tests (DATABASE_URL=postgres://postgres:test@localhost:5433/postgres): coverage-content.db.test.ts 2 passed, pricing/content.db.test.ts 9 passed, console-routes.db.test.ts 27 passed. lint:copy and lint:logs pass, as does check:fixtures. The output of pnpm exec tsx tools/screening-capacity/watched.ts is identical to the committed watched-paths.txt. To confirm the workflow tests fail before the fix, I swapped in the base ymls: the 4 new notify tests failed, then I restored the ymls. The other new tests depend on APIs that did not exist before (encoded, httpFetcherFor, readPendingStatesCached, advisoriesOutput, PHASE_SAMPLE_GAP_MS, ContentHeadline, the mono spans), so they cannot pass on the base.",
+  "notes": "There was no progress file at start and none of this group's commits existed, so I started from scratch. Progress is in /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/fix-surfaces.md. Seven commits: 25a88196, 6754de0f, 8fed5275, a85faffc, ea0e60fc, 067382eb, abd4d0bb. Each one staged only its own paths under /tmp/rcc-git.lock. Nothing was pushed.\n\nFiles touched outside the group's literal file list:\n- apps/web: pricing/content.ts, content.db.test.ts, components/pricing/content.tsx and content.test.tsx, routes/coverage.ts, rule-releases.ts, and the new coverage-content.db.test.ts. These carry S6, S9 and improvements 2 and 3, which are this group's items. The money group had finished with those files.\n- fixtures/synthetic/RCC-0{1,2,3,5,8}/expected.json, regenerated by pnpm synth --all after the matrix rows changed.\n- docs/product/PRD.md (one line).\nNone of these are in pr42-files.txt; my only overlap with it is the shared documents (reconciliation-001, test-matrix, matrix.ts, registry.ts). No migration, nothing under pricing, ledger, db, observability, .claude, content/releases, engine-freeze, watched-paths, publish-content, lockfile or package.json.\n\nDecisions:\n- 'Named safely' for SB-1 means percent-encoding, cut at 200 characters with '...'.\n- source_lost fires only when no matching name remains at all. When the page lists new files but none of the recorded ones, source_changed already covers it.\n- A capacity cancel, including a manual one, opens or comments on the failing issue, and its body names the result.\n- The optional --full artifact for cut bodies was not built. Each body is already bounded, the source page holds the full list, and printing bodies to the job log was ruled out.\n\nOne point for the reviewer of the pipeline group (not my file): keying C16 on the path lets two quarters of identical bytes pass. This is relaxed only against this PR's own earlier C16, which never shipped, so relative to main it is still additions only.\n\nS7 belongs to the money group (they handled it as not a defect)."
+ },
+ "suite": {
+  "dispositions": [
+   {
+    "id": "SUITE-CAP-1",
+    "disposition": "deferred",
+    "commit": "",
+    "what": "Step 23 found a real defect that predates this PR. A triage of practice A's 100,000-line period fails with Postgres 53200 'out of shared memory' (hint: max_locks_per_transaction). So does A's audit report, which runs triage inline (generate.ts:73). The cause: line_status_rules() takes pg_advisory_xact_lock per inserted line_status row (migrations 20261019160000, 20261022090000, 20261023120000). advanceStages (apps/worker/src/triage/execute.ts:330) inserts about 60,000 lines in one transaction, which overflows the lock table (64 x connections). B's 12,170 lines pass. The Docker runtime (max_connections=200) and RDS defaults are also below 60,000, so production would fail too. The best fix is a migration (one lock per statement or per practice in the trigger) or an RDS parameter-group change (max_locks_per_transaction, mirrored in the harness's Postgres). Both are outside this round's hard rules: no migration, nothing under packages/db, and the trigger is the ledger's existing behaviour. Splitting triage into several transactions would change triage's atomicity, which is out of proportion for a suite fix. Hand it to Lane A.",
+    "test": "tools/release-capacity/run.ts at full size reproduces it. The error was read from pgboss.job.output on a --keep-database run."
+   }
+  ],
+  "docNotes": [
+   "ADR 0071 / design 5.10 and runbook content-updates or screening-capacity: the first full-size release-capacity run (process runtime, 2026-10-26) fails on A's triage and A's audit report. The cause is the per-line pg_advisory_xact_lock in line_status_rules(), which overflows the lock table on about 60,000 lines in one transaction. This is a release-1 sizing blocker for Lane A: change the trigger in a migration or raise max_locks_per_transaction in the RDS parameter group, and set the same value in the harness's Postgres (tools/screening-capacity/containers.ts passes only shared_buffers and max_connections).",
+   "docs/runbooks/screening-capacity.md 'Running it elsewhere' (process runtime): the worker process does not inherit PLAYWRIGHT_BROWSERS_PATH, so Playwright looks in ~/.cache/ms-playwright. On a machine whose browsers are elsewhere (here /opt/pw-browsers), audit_report fails until that path holds chromium_headless_shell at the pinned revision (1194). The runbook should say so, or ProcessRuntime should pass the variable through.",
+   "Design 5.10: the windows query measured 12,848 ms and 10,125 ms cold, against its 5,000 ms advisory budget, on an unlimited local Postgres 18. The plan is a GroupAggregate over all 4.17M rule_record rows with about 557k temp blocks read. It is advisory, but it is worth an index or a summary table in the later PR."
+  ],
+  "tests": "The suite ran on head abd4d0bb (the tree after all three fix groups, worktree clean), merge base 4d99df80. Every heavy step ran under flock /tmp/laneb-heavy.lock, one at a time.\n1 pnpm install --frozen-lockfile: PASS (lockfile up to date).\n2 check:fixtures: PASS (the guard read 248 files and searched 3,234 text files).\n3 typecheck: PASS (22 projects).\n4 lint: PASS (1,524 files, 0 errors, 0 warnings).\n5 lint:logs: PASS (1,013 files).\n6 lint:copy: PASS (497 files).\n7 verify-content: PASS on content/drafts (10 records) and on release-synth-900001 to 900007 (65, 79, 67, 65, 65, 67, 65 records), no problems.\n8 check-releases-immutable: PASS (the base has no published releases; 4 prompt versions unchanged).\n9 engine-freeze: PASS, clean (no non-test pricing change, nothing let through, no problems).\n10 synth --all: PASS (209 cases, 0 written, 492 unchanged, 8 EMR formats with 16 unchanged); no diff and no untracked file under fixtures/synthetic.\n11 synth --large: PASS.\n12 watched.ts: PASS (identical to watched-paths.txt).\n13 stryker affected.ts: PASS. It names all 6 shards (money-ledger, packets-scan, packets-rest, pricing-engine, pricing-recompute, pricing-rest).\n14 ENGINE_FREEZE_BASE=<merge base> CI=true pnpm test: PASS, 335 files, 5,366 passed and 1 skipped (5,367).\n15 test:golden: PASS, 4 files, 188 tests.\n16 test:oracle: PASS. pyx12 4.0.0 and packages/edi835 agree on all 637 synthetic 835s (626 valid, 11 malformed rejected).\n17 licenses:check: PASS (189 production packages).\n18 actionlint: PASS (no output).\n19 db:migrate on a fresh database rcc_suite (44 migrations, 0 already applied), then test:db --shard=k/6 for k=1 to 6, each PASS. Files per shard: 21, 21, 21, 21, 20, 20 (124 in all). Tests per shard: 2,425; 772 (plus 1 skipped); 2,497; 1,825; 1,388; 212. Total 9,119 passed, 1 skipped.\n20 db:domain-model --check --strict --require-approval: PASS. It matches the schema at 20261106090000, the 337 function files match, the approval is carried, 0 explanation problems.\n21 pnpm build: PASS. build-stamp wrote abd4d0bb. E2E_PREBUILT=1 test:e2e --workers=2: PASS, 51 passed in 8.1 min.\n22 Mutation: each of the 6 shards ran its canary first, 5 of 5 as expected on Node 24.22.0, then its shard and its per-shard gate. The final gate (--expected all 6): PASS. Scores: money 96.58% (226/234), ledger 98.13% (1,633/1,664), packets 95.87% (2,299/2,398), pricing 98.67% (1,934/1,960). Every undetected mutant is a recorded equivalent.\n23 release-capacity run.ts at full size: FAIL (exit 1), run twice.\n- Run 1: B audit report, A triage and A audit report failed. B's report failed for an environment reason, the missing browser path.\n- Run 2, with the browsers reachable: the run completes, 100,000 of 100,000 priced lines and 8,000 of 8,000 parsed claims. B's price, triage and audit report and C's four parse_835 jobs complete. Peak memory is 803.9 MiB of 1,024, 0 OOM kills, 0 restarts. A triage and A audit report fail: 'out of shared memory' (SUITE-CAP-1).\n- Advisory in both runs: the windows query took 12,848 ms and then 10,125 ms cold, against a 5,000 ms budget.",
+  "notes": "Resumed with no progress file and no suite commits; the worktree was clean at abd4d0bb. Steps 1 to 22 all passed on the first run, so nothing was fixed and nothing was committed. The progress file is /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/progress/fix-suite.md. Logs are in /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/suite-logs/ (one file per step).\n\nStep 23 did not pass. What ran and what could not:\n- This machine has a docker binary but no Docker daemon, so the workflow's --runtime docker (the tp-worker:capacity image, Postgres at db.t4g.medium limits, netem delay) could not run.\n- It ran with --runtime process instead, as docs/runbooks/screening-capacity.md describes. The worker layout is at /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/cap-images/worker: apps/worker/dist from step 21's build, packages/db/migrations, and playwright-core 1.56.1.\n- It used the quarterly scale release 900110 (4,172,393 records, manifest 0b700554...), built outside the repository with tools/release/scale.ts. Postgres was the local 5433 server (unlimited), with the harness pinned to CPUs 0-1.\n- The release load took 717 s.\n- In the process runtime the report says commit 'unknown', because the images directory is not a git checkout.\n\nRun 1 failure, environment only: the process runtime does not pass PLAYWRIGHT_BROWSERS_PATH (/opt/pw-browsers here) to the worker, so Chromium was looked for in /root/.cache/ms-playwright and audit_report failed. A --small --keep-database run confirmed this from pgboss.job.output. For run 2 I added a temporary symlink, and removed it afterwards.\n\nRun 2 failure, a real defect that predates this PR: SUITE-CAP-1, the per-line advisory xact lock in the line_status trigger, hit by a ~60k-line triage in one transaction. It needs a migration or an RDS parameter, so it is deferred to Lane A under the hard rules. Until it is fixed, the weekly release-capacity workflow will fail on its first scheduled run. Its summary for the PR description is /tmp/claude-0/-home-user-PhysicalTherapy/6dcacc47-f55b-5ed0-ab9e-d8b495c8bdd9/scratchpad/cap-out2/summary.md.\n\nCleanup: the scratch databases (rcc_suite, rcc_capacity, rcc_capacity_small) and both sets of suffixed harness logins (a76194d0 and f8b6d61b) are dropped.\n\nMinor: during the harness, pg printed 'client.query() when the client is already executing a query' once. It comes from the harness's own client."
+ }
+}
