@@ -231,6 +231,33 @@ describe('isLoudContentGap', () => {
     expect(isLoudContentGap(unpriced(at('2026-09-30'), 'ENGINE_ERROR', detail), windowsOf([]))).toBe(true);
   });
 
+  it.each([
+    ['no_gpci', 'pfs_gpci'],
+    ['no_conversion_factor', 'conversion_factor'],
+  ] as const)('for terms locked to a year, judges an ENGINE_ERROR %s against the basis year the engine looked in (%s), not the service date', (detail, content) => {
+    const locked2025 = { ...feeSchedule, year_basis: 'LOCKED:2025', basis_year: 2025, lookup: 'latest_in_basis_year' as const };
+    // 2026 loaded and 2025 not: the engine looked in 2025, so the line waits on content although its date is loaded.
+    const only2026 = windowsOf([[content, [range('2026-01-01', '2027-01-01')]]]);
+    expect(isLoudContentGap(unpriced(at('2026-03-02', locked2025), 'ENGINE_ERROR', detail), only2026)).toBe(true);
+    // 2025 loaded and 2026 not: the basis year is loaded, so a missing key is the key's own reason, not a content gap.
+    const only2025 = windowsOf([[content, [range('2025-01-01', '2026-01-01')]]]);
+    expect(isLoudContentGap(unpriced(at('2026-03-02', locked2025), 'ENGINE_ERROR', detail), only2025)).toBe(false);
+    // Terms priced on the date of service keep the service date.
+    expect(isLoudContentGap(unpriced(at('2026-03-02'), 'ENGINE_ERROR', detail), only2025)).toBe(true);
+    expect(isLoudContentGap(unpriced(at('2026-03-02'), 'ENGINE_ERROR', detail), only2026)).toBe(false);
+  });
+
+  it.each([
+    ['no_sequestration_record', 'sequestration'],
+    ['no_assistant_record', 'assistant_modifier'],
+    ['no_locality', 'locality_map'],
+    ['no_locality_plus_four', 'locality_map_plus_four'],
+  ] as const)('for terms locked to a year, judges an ENGINE_ERROR %s on the service date all the same (%s; Q07)', (detail, content) => {
+    const locked2025 = { ...feeSchedule, year_basis: 'LOCKED:2025', basis_year: 2025, lookup: 'latest_in_basis_year' as const };
+    expect(isLoudContentGap(unpriced(at('2026-03-02', locked2025), 'ENGINE_ERROR', detail), windowsOf([[content, [range('2025-01-01', '2026-01-01')]]]))).toBe(true);
+    expect(isLoudContentGap(unpriced(at('2026-03-02', locked2025), 'ENGINE_ERROR', detail), windowsOf([[content, [range('2026-01-01', '2027-01-01')]]]))).toBe(false);
+  });
+
   it('is never another ENGINE_ERROR, nor the span contents’ own stops', () => {
     for (const detail of ['no_mppr_rate', 'unexpected', 'locality_needs_zip_plus_four', 'zip_plus_four_not_in_locality_map', 'mppr_needs_fee_schedule']) {
       expect(isLoudContentGap(unpriced(at('2026-10-14'), 'ENGINE_ERROR', detail), windowsOf([])), detail).toBe(false);

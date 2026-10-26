@@ -304,11 +304,12 @@ const LOUD_DETAILS: ReadonlyMap<string, (typeof LOUD_CONTENT_TYPES)[number]> = n
 ]);
 
 /**
- * A line stopped by content PaidWhole has not loaded for its date (never one of the three span contents, which refuse
- * the run): a fee schedule not loaded as the engine looked for it (NO_PFS_VALUE no_rvu_in_basis_year, with the service
- * date outside every pfs_rvu window for terms priced on it, or no pfs_rvu window in the locked basis year), or a stop
- * on a missing GPCI, conversion factor, sequestration or assistant record or locality whose content is not loaded on
- * the service date. A loaded date whose code simply has no relative value is not one: that is the code's reason.
+ * A line stopped by content PaidWhole has not loaded as the engine looked for it (never one of the three span
+ * contents, which refuse the run): a fee schedule (NO_PFS_VALUE no_rvu_in_basis_year), GPCI or conversion factor not
+ * loaded on the service date for terms priced on it, or in no window of the locked basis year for LOCKED:<year> terms
+ * (the engine's latestInYear); or a stop on a missing sequestration or assistant record or locality whose content is
+ * not loaded on the service date, whatever the basis year (Q07). A loaded date or year whose key simply has no record
+ * is not one: that is the code's reason.
  */
 export function isLoudContentGap(result: LinePricing, windows: ContentWindows): boolean {
   if (result.outcome !== 'unpriced') {
@@ -316,20 +317,38 @@ export function isLoudContentGap(result: LinePricing, windows: ContentWindows): 
   }
   const { trace } = result;
   const date = trace.line.service_date;
+  const schedule = trace.steps.fee_schedule;
   if (result.reason === 'NO_PFS_VALUE' && result.detail === 'no_rvu_in_basis_year') {
-    const schedule = trace.steps.fee_schedule;
-    const loaded = windows.get('pfs_rvu')?.loaded ?? [];
     if (schedule === null) {
       return false;
     }
-    if (schedule.lookup === 'in_force_on_service_date') {
-      return !rangesCover(loaded, date);
-    }
-    const year = String(schedule.basis_year).padStart(4, '0');
-    return !loaded.some((range) => (range.from === null || range.from <= `${year}-12-31`) && (range.until === null || range.until > `${year}-01-01`));
+    return !loadedAsLooked(windows.get('pfs_rvu')?.loaded ?? [], schedule, date);
   }
   const content = result.reason === 'ENGINE_ERROR' && result.detail !== null ? LOUD_DETAILS.get(result.detail) : undefined;
-  return content !== undefined && !rangesCover(windows.get(content)?.loaded ?? [], date);
+  if (content === undefined) {
+    return false;
+  }
+  const loaded = windows.get(content)?.loaded ?? [];
+  // The GPCI and the conversion factor go through the fee schedule's lookup, so a locked basis year is judged as the
+  // engine looked; the locality and the other records follow the service date (Q07).
+  if (schedule !== null && BASIS_YEAR_CONTENTS.has(content)) {
+    return !loadedAsLooked(loaded, schedule, date);
+  }
+  return !rangesCover(loaded, date);
+}
+
+/** The contents the engine looks up through the fee schedule's lookup: in force on the date, or latest in the basis year. */
+const BASIS_YEAR_CONTENTS: ReadonlySet<string> = new Set(['pfs_gpci', 'conversion_factor']);
+
+/** Whether the windows hold what the fee schedule's lookup looked at: the service date, or any day of the locked basis year. */
+function loadedAsLooked(loaded: readonly HalfOpenRange[], schedule: NonNullable<PricingTrace['steps']['fee_schedule']>, date: string): boolean {
+  return schedule.lookup === 'in_force_on_service_date' ? rangesCover(loaded, date) : yearHasWindow(loaded, schedule.basis_year);
+}
+
+/** Whether any window meets [year-01-01, year-12-31]. */
+function yearHasWindow(loaded: readonly HalfOpenRange[], basisYear: number): boolean {
+  const year = String(basisYear).padStart(4, '0');
+  return loaded.some((range) => (range.from === null || range.from <= `${year}-12-31`) && (range.until === null || range.until > `${year}-01-01`));
 }
 
 // ---------------------------------------------------------------------------------------------------
