@@ -204,9 +204,9 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
-- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~04:35 UTC:
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~09:27 UTC:
   - ADR **0078** (0065 is #42's, 0066 the CI series', and 0067 to 0077 are claimed; 0077 by ux-forms at ~04:35);
-  - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
+  - `packages/synth` MODULE_NUMBER **17** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 and FRM 16 are claimed; FRM at 09:27);
   - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', 900100 is the screening's scale release, and 900110 the release content checks' scale release, generated outside the repository);
   - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
