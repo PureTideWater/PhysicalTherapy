@@ -12,8 +12,10 @@ import { repositoryRoot } from '../content-files';
  * - the postgres image: docker-compose.yml;
  * - pnpm: package.json's packageManager, version and sha512, from which both images derive and verify theirs;
  * - mutation.yml's exact Node: tools/stryker/unicode.json, which workflows.test.ts holds its node-version values to;
- * - the worker image's playwright-core: the version the lockfile resolves, until ci-browser derives it from
- *   apps/worker/package.json.
+ * - Playwright: apps/web/package.json's @playwright/test and pnpm-workspace.yaml's catalog line for playwright-core, which
+ *   the worker and the tools name as `catalog:` (tools/test/browser-version.test.ts holds them and the lockfile to one
+ *   version); the worker image copies the lockfile's playwright-core from its build stage and names no version, and no
+ *   workflow, Dockerfile or document repeats Playwright's version.
  * One deliberate exception: the BuildKit builder's `driver-opts: image=moby/buildkit:<version>@sha256:<digest>`, written
  * on every setup-buildx step, since a step's inputs cannot read a file. Dependabot never rewrites that string (it is no
  * `uses:` and no FROM), so no update can leave a stale copy, and workflows.test.ts holds every copy to one value.
@@ -92,12 +94,15 @@ describe('no duplicated versions (A4 (b))', () => {
     expect(where(scanned(), literal, (file, line) => !(file === '.github/workflows/mutation.yml' && line.trim() === `node-version: ${node}`))).toEqual([]);
   });
 
-  it('installs no package by version in either image but the worker’s playwright-core, at the version the lockfile resolves', () => {
+  it('installs no package by version in either image, the worker’s playwright-core included (it is the lockfile’s, copied from the build stage)', () => {
     const files = scanned();
-    const literals = DOCKERFILES.flatMap((file) => [...(files.get(file) ?? '').matchAll(/(?<![\w/@.-])(@?[a-z0-9][\w./-]*)@(\d+\.\d+\.\d+)\b/g)].map((match) => ({ file, name: match[1] ?? '', version: match[2] ?? '' })));
-    expect(literals.filter(({ name }) => name !== 'playwright-core').map(({ file, name, version }) => `${file}: ${name}@${version}`)).toEqual([]);
-    const locked = [...readFileSync(path.join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8').matchAll(/^ {2}playwright-core@(\d+\.\d+\.\d+):$/gm)].map((match) => match[1]);
-    expect(new Set(locked).size).toBe(1);
-    for (const { file, version } of literals.filter(({ name }) => name === 'playwright-core')) expect(version, file).toBe(locked[0]);
+    const literals = DOCKERFILES.flatMap((file) => [...(files.get(file) ?? '').matchAll(/(?<![\w/@.-])(@?[a-z0-9][\w./-]*)@(\d+\.\d+\.\d+)\b/g)].map((match) => `${file}: ${match[0]}`));
+    expect(literals).toEqual([]);
+  });
+
+  it('names Playwright’s version in no workflow, Dockerfile or document: the manifests, the catalog and the lockfile hold it', () => {
+    const version = (JSON.parse(readFileSync(path.join(repositoryRoot, 'apps/web/package.json'), 'utf8')) as { devDependencies?: Record<string, string> }).devDependencies?.['@playwright/test'] ?? '';
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(where(scanned(), new RegExp(`\\b${version.replaceAll('.', '\\.')}\\b`))).toEqual([]);
   });
 });
