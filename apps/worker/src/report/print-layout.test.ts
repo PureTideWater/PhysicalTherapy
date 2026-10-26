@@ -4,7 +4,7 @@ import { insertIdentifiers, type RowIdentifiers } from '@tp/packets';
 import { describe, expect, it } from 'vitest';
 
 import { packetHtml } from '../packets/html';
-import { content as packetContent, exported, payerCopy } from '../packets/test-support/exported-packet';
+import { content as packetContent, exported, payerCopy, payerWords, steppedContent, steppedExported, words } from '../packets/test-support/exported-packet';
 import { statementHtml } from '../reconcile/statement-html';
 import { brandedDocument, figureColumns } from './brand';
 import { coverageReportHtml, monthlySummaryHtml } from './documents';
@@ -125,7 +125,7 @@ function widePacket(): string {
   const identifiers = new Map<number, RowIdentifiers>(
     packetContent.lines.map((line) => [line.row, { claim_control_number: 'SYNCCN'.padEnd(38, '0'), patient_control_number: 'SYNPCN'.padEnd(38, '9'), patient_name: 'SYNTHETIC-HYPHENATED-SURNAME, PATIENT WITH SEVERAL GIVEN NAMES', member_id: 'SYNMBR'.padEnd(50, '7') }]),
   );
-  return packetHtml(insertIdentifiers(packetContent, exported.narrative, identifiers), payerCopy);
+  return packetHtml(insertIdentifiers(packetContent, exported.narrative, identifiers), payerCopy, words);
 }
 
 /** Each printed template, its cover's headline and its running header's title (BRAND.md, section 7). */
@@ -147,8 +147,14 @@ const DOCUMENTS: readonly Printed[] = [
   { name: 'the coverage report, widest figures and names', html: () => coverageReportHtml(wideCoverage(), { ...PINS, practiceName: LONG_NAME }), heading: 'Coverage report', title: 'Coverage report' },
   { name: 'the monthly summary (documents.test’s content)', html: () => monthlySummaryHtml(monthly(), PINS), heading: 'Monthly variance summary', title: 'Monthly variance summary' },
   { name: 'the monthly summary, widest figures and names', html: () => monthlySummaryHtml(wideMonthly(), { ...PINS, practiceName: LONG_NAME }), heading: 'Monthly variance summary', title: 'Monthly variance summary' },
-  { name: 'the dispute packet (export.test’s version)', html: () => packetHtml(exported, payerCopy), heading: 'Request to reprocess underpaid claims', title: `${packetContent.practice.name} · Payment dispute` },
+  { name: 'the dispute packet (export.test’s version)', html: () => packetHtml(exported, payerCopy, words), heading: 'Request to reprocess underpaid claims', title: `${packetContent.practice.name} · Payment dispute` },
   { name: 'the dispute packet, the longest identifiers', html: widePacket, heading: 'Request to reprocess underpaid claims', title: `${packetContent.practice.name} · Payment dispute` },
+  {
+    name: 'the dispute packet, percent of Medicare with every step and its fee schedule worksheet',
+    html: () => packetHtml(steppedExported, payerCopy, payerWords(steppedContent)),
+    heading: 'Request to reprocess underpaid claims',
+    title: `${packetContent.practice.name} · Payment dispute`,
+  },
 ];
 
 const PROBE_FRAME = { title: 'Probe', kicker: 'Probe', heading: 'Probe', practiceName: 'SYNTHETIC', meta: [], reference: 'Probe', reconciliation: { reconciledToCash: false, source: 'probe' } } as const;

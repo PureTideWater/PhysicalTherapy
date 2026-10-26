@@ -3,13 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { type DataKey, type KeyProvider, type PracticeScope, type ScopeClient, readDatabaseUrl, recordAuditEvent, withJobScope, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
+import { WORDS_VERSION } from '@tp/packets';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { JobContext } from '../jobs/handlers';
 import type { Practice } from '../price/test-support/pricing-world';
 import { DocumentStore, type WrittenDocument } from '../storage/documents';
 import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
-import { type PacketExportServices, exportFailureCode, exportPacketVersion, packetExportHandler } from './export';
+import { type PacketExportServices, PacketExportRenderError, PacketExportWordsVersionError, exportFailureCode, exportPacketVersion, packetExportHandler } from './export';
 import { PACKET_EXPORT_FAILURES, PACKET_EXPORT_REFUSALS, type PacketExportRefusal, exportReadiness } from './readiness';
 import { EXPORT_REQUEST_REFUSALS, approvePacketVersion, requestPacketExport, writePacketVersion } from './services';
 import { PacketWorld } from './test-support/packet-world';
@@ -251,7 +252,7 @@ describe('each refusal of the export job', () => {
     await refusedFor(setup, versionId, 'contact_missing');
     // The handler logs its code and returns: a refusal is not a failed try, so nothing is retried.
     const logs: Record<string, unknown>[] = [];
-    await expect(packetExportHandler(w.services)({ practice_id: practice.practiceId, packet_version_id: versionId }, context(practice, false, logs))).resolves.toBeUndefined();
+    await expect(packetExportHandler(w.services)({ practice_id: practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION }, context(practice, false, logs))).resolves.toBeUndefined();
     expect(logs).toEqual([expect.objectContaining({ msg: 'packet not exported', packet_version_id: versionId, error_code: 'PACKET_CORRESPONDENCE_CONTACT_MISSING' })]);
     expect((await attemptEvents(setup, versionId)).map((event) => [event.action, event.purpose])).toEqual([
       ['packet_export_refused', 'contact_missing'],
@@ -288,12 +289,25 @@ async function failing(label: string, services: (setup: Setup, versionId: string
 }
 
 describe('each failed try of the export job', () => {
-  /** Runs the handler on the attempt (`last` or not), which rethrows; returns the event it recorded and its log. */
-  async function failedTry(setup: Setup, versionId: string, services: PacketExportServices, last: boolean): Promise<{ events: AttemptEvent[]; logs: Record<string, unknown>[]; job: JobContext }> {
+  /**
+   * Runs the handler on the attempt (`last` or not), asked from a page this renderer worded unless `wordsVersion` says
+   * otherwise, which rethrows; returns the event it recorded, its log and the error.
+   */
+  async function failedTry(
+    setup: Setup,
+    versionId: string,
+    services: PacketExportServices,
+    last: boolean,
+    wordsVersion: { readonly words_version?: string } = { words_version: WORDS_VERSION },
+  ): Promise<{ events: AttemptEvent[]; logs: Record<string, unknown>[]; job: JobContext; error: unknown }> {
     const logs: Record<string, unknown>[] = [];
     const job = context(setup.practice, last, logs);
-    await expect(packetExportHandler(services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId }, job)).rejects.toBeInstanceOf(Error);
-    return { events: await attemptEvents(setup, versionId), logs, job };
+    const error: unknown = await packetExportHandler(services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, ...wordsVersion }, job).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(Error);
+    return { events: await attemptEvents(setup, versionId), logs, job, error };
   }
 
   it('records the renderer’s failure as a retry, then as the last, with its code alone; the log keeps the code', async () => {
@@ -322,6 +336,38 @@ describe('each failed try of the export job', () => {
     // Nothing was exported.
     const { rows } = await w.as(setup.practice, setup.practice.manager, (scope) => scope.client.query<{ exported_at: Date | null }>('SELECT exported_at FROM packet_version WHERE id = $1', [versionId]));
     expect(rows[0]?.exported_at).toBeNull();
+  });
+
+  it('records a job asked for under another wording of the calculation, or under none, as a print failure: nothing is printed or stored (combined audit #38, finding M1; CAS-32)', async () => {
+    const printed: string[] = [];
+    const { setup, versionId, services } = await failing('attempt-words-version', () => ({
+      ...w.services,
+      pdf: {
+        render: (html: string) => {
+          printed.push(html);
+          return w.services.pdf.render(html);
+        },
+      },
+    }));
+    const other = await failedTry(setup, versionId, services, false, { words_version: 'f'.repeat(64) });
+    expect(other.error).toBeInstanceOf(PacketExportRenderError);
+    expect((other.error as PacketExportRenderError).cause).toBeInstanceOf(PacketExportWordsVersionError);
+    expect(other.events.map((event) => [event.action, event.purpose])).toEqual([['packet_export_attempt_failed', 'render_failed']]);
+    // A job queued before the words version was carried names none: refused alike, on its last try too.
+    const none = await failedTry(setup, versionId, services, true, {});
+    expect((none.error as PacketExportRenderError).cause).toBeInstanceOf(PacketExportWordsVersionError);
+    expect(none.events.map((event) => [event.action, event.purpose])).toEqual([
+      ['packet_export_attempt_failed', 'render_failed'],
+      ['packet_export_failed', 'render_failed'],
+    ]);
+    expect(none.logs.filter((line) => line.msg === 'packet export failed')).toEqual([expect.objectContaining({ error_code: 'PACKET_EXPORT_RENDER_FAILED', packet_version_id: versionId })]);
+    expect(printed).toEqual([]);
+    const { rows } = await w.as(setup.practice, setup.practice.manager, (scope) => scope.client.query<{ exported_at: Date | null }>('SELECT exported_at FROM packet_version WHERE id = $1', [versionId]));
+    expect(rows[0]?.exported_at).toBeNull();
+    // Asked for under this renderer's words, the same version is printed and exported.
+    await packetExportHandler(services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION }, context(setup.practice, false, []));
+    expect(printed).toHaveLength(1);
+    expect(printed[0]).toContain('How the expected amount is computed');
   });
 
   it('records the store’s failure, and a store that sealed other bytes', async () => {
@@ -447,13 +493,13 @@ describe('the latest attempt, as the packet page reads it', () => {
     await requested(setup, versionId);
     expect(await read()).toEqual([{ state: 'in_progress', code: null }]);
     const broken: PacketExportServices = { ...w.services, pdf: { render: () => Promise.reject(new Error('SYNTHETIC renderer crash')) } };
-    await expect(packetExportHandler(broken)({ practice_id: setup.practice.practiceId, packet_version_id: versionId }, context(setup.practice, false))).rejects.toBeInstanceOf(Error);
+    await expect(packetExportHandler(broken)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION }, context(setup.practice, false))).rejects.toBeInstanceOf(Error);
     expect(await read()).toEqual([{ state: 'retrying', code: 'render_failed' }]);
-    await expect(packetExportHandler(broken)({ practice_id: setup.practice.practiceId, packet_version_id: versionId }, context(setup.practice, true))).rejects.toBeInstanceOf(Error);
+    await expect(packetExportHandler(broken)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION }, context(setup.practice, true))).rejects.toBeInstanceOf(Error);
     expect(await read()).toEqual([{ state: 'failed', code: 'render_failed' }]);
     // Asked again, and printed.
     await requested(setup, versionId);
-    await packetExportHandler(w.services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId }, context(setup.practice, false));
+    await packetExportHandler(w.services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION }, context(setup.practice, false));
     const [exported] = await attempt(setup, setup.practice.manager, versionId);
     const { rows } = await w.as(setup.practice, setup.practice.manager, (scope) => scope.client.query<{ exported_at: Date }>('SELECT exported_at FROM packet_version WHERE id = $1', [versionId]));
     expect(exported).toMatchObject({ state: 'exported', code: null, at: rows[0]?.exported_at });

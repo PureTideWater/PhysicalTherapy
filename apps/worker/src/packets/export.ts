@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import { type KeyProvider, type PracticeScope, type ScopeClient, loadPracticeCipher, packetExportKey, recordAuditEvent } from '@tp/db/runtime';
-import { type PacketContent, type VerifierReport, insertIdentifiers, narrativeFacts, packetReference, verifyNarrative } from '@tp/packets';
+import { type PacketContent, type PacketWords, type VerifierReport, WORDS_VERSION, explainPacket, insertIdentifiers, narrativeFacts, packetReference, verifyNarrative } from '@tp/packets';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { PdfRenderer } from '../report/pdf';
@@ -13,6 +13,7 @@ import { packetCsv } from './csv';
 import { packetHtml } from './html';
 import { scheduleIdentifiers } from './identifiers';
 import { type PacketExportFailure, type PacketExportRefusal, exportReadiness } from './readiness';
+import { packetTraces } from './records';
 
 export { exportDeadlineStatus } from './readiness';
 
@@ -52,6 +53,15 @@ export { exportDeadlineStatus } from './readiness';
  * read again here after the readiness and before any narrative is decrypted or identifier read; a contact that is
  * not set by then (a concurrent change) refuses the export with contact_missing too (D7, step 3), recorded and never
  * retried.
+ *
+ * Combined audit #38 (docs/adr/0072): the PDF words each line's calculation and prints the fee schedule worksheets with
+ * @tp/packets explainPacket(..., 'payer'), the function the review page calls, so the payer reads what the reviewer
+ * read. Its input is the version's stored traces, read here in this transaction (packetTraces()), and it words nothing
+ * until each trace hashes to the SHA-256 its approved calculation carries and was priced by what the version cites; it
+ * runs before anything is decrypted. A trace that differs, a code with no words or a calculation the words cannot
+ * state is a print failure. So is a job whose payload does not carry this deploy's WORDS_VERSION (finding M1): the
+ * export was asked for from a page worded by another renderer, so its words may not be the ones the requester read,
+ * and the remedy is to request the export again. Nothing is stored for either.
  */
 
 export interface PacketExportServices {
@@ -76,14 +86,28 @@ export class PacketExportIntegrityError extends Error {
 
 /**
  * The payer's copy could not be printed: the PDF renderer failed, or the copy's renderer refused the version (a code it
- * has no words for, a window without its last day). Nothing is stored, and the job fails (fixed words; the error is the
- * cause, never logged).
+ * has no words for, a window without its last day, a stored trace that is not the one its approval names), or the job
+ * was asked for under another words version (PacketExportWordsVersionError). Nothing is stored, and the job fails
+ * (fixed words; the error is the cause, never logged).
  */
 export class PacketExportRenderError extends Error {
   override readonly name = 'PacketExportRenderError';
 
   constructor(cause: unknown) {
     super('the PDF renderer failed to print the packet', { cause });
+  }
+}
+
+/**
+ * The job was asked for from a page worded by another renderer than this one: its payload names another words version,
+ * or none (a job queued before the words version was carried). Always the cause of a PacketExportRenderError: the
+ * export is a print failure, and the remedy is to request it again (fixed words; no value).
+ */
+export class PacketExportWordsVersionError extends Error {
+  override readonly name = 'PacketExportWordsVersionError';
+
+  constructor() {
+    super('the export was asked for under another wording of the calculation than this one prints');
   }
 }
 
@@ -110,6 +134,21 @@ interface ExportRow {
 /** The job's refusal of a version, as an audit event in the export's own transaction: the version and one code, nothing else. */
 async function recordRefusal(scope: PracticeScope<ScopeClient>, context: TriageJobContext, practiceId: string, versionId: string, reason: PacketExportRefusal): Promise<void> {
   await recordAuditEvent(scope, { action: 'packet_export_refused', objectType: 'packet_version', objectId: versionId, practiceId, purpose: reason, requestId: context.jobId });
+}
+
+/**
+ * A version's calculation in the payer's words and its fee schedule worksheets (docs/adr/0072), from the stored traces
+ * its approved content names by their SHA-256, read in the caller's transaction. A version they cannot be worded for
+ * (a trace missing or not the one its approval names, a line priced by another record than the version cites, a code
+ * with no words, a calculation the words cannot state) is a print failure: nothing is printed.
+ */
+export async function exportWords(client: ScopeClient, practiceId: string, content: PacketContent): Promise<PacketWords> {
+  const traces = await packetTraces(client, practiceId, content);
+  try {
+    return explainPacket(content, traces, 'payer');
+  } catch (error) {
+    throw new PacketExportRenderError(error);
+  }
 }
 
 export interface PacketExportOptions {
@@ -159,6 +198,8 @@ export async function exportPacketVersion(
       await recordRefusal(scope, context, practiceId, versionId, 'contact_missing');
       return { outcome: 'not_exportable', reason: 'contact_missing' };
     }
+    // Each line's calculation in words and the fee schedule worksheets, before anything is decrypted.
+    const words = await exportWords(scope.client, practiceId, version.content);
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const narrative = cipher.decrypt('packet_version.narrative', version.narrative);
     const identifiers = await scheduleIdentifiers(scope, cipher, version.content, { purpose: 'packet_export', requestId: context.jobId });
@@ -177,7 +218,7 @@ export async function exportPacketVersion(
     let csv: Buffer;
     try {
       const reference = packetReference(version.approved_sha256);
-      const html = packetHtml(exported, { approvedOn: version.approved_at.toISOString().slice(0, 10), reference, contact: contact.contact });
+      const html = packetHtml(exported, { approvedOn: version.approved_at.toISOString().slice(0, 10), reference, contact: contact.contact }, words);
       csv = Buffer.from(packetCsv(exported, reference), 'utf8');
       pdf = await services.pdf.render(html);
     } catch (error) {
@@ -257,6 +298,10 @@ export function packetExportHandler(services: PacketExportServices): JobHandler<
   return async (payload, context) => {
     let outcome: PacketExportOutcome;
     try {
+      // Asked for from a page this renderer worded, or not printed (finding M1).
+      if (payload.words_version !== WORDS_VERSION) {
+        throw new PacketExportRenderError(new PacketExportWordsVersionError());
+      }
       outcome = await exportPacketVersion(context, services, payload.practice_id, payload.packet_version_id);
     } catch (error) {
       const code = exportFailureCode(error);
