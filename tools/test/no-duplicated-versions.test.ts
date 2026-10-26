@@ -14,6 +14,9 @@ import { repositoryRoot } from '../content-files';
  * - mutation.yml's exact Node: tools/stryker/unicode.json, which workflows.test.ts holds its node-version values to;
  * - the worker image's playwright-core: the version the lockfile resolves, until ci-browser derives it from
  *   apps/worker/package.json.
+ * One deliberate exception: the BuildKit builder's `driver-opts: image=moby/buildkit:<version>@sha256:<digest>`, written
+ * on every setup-buildx step, since a step's inputs cannot read a file. Dependabot never rewrites that string (it is no
+ * `uses:` and no FROM), so no update can leave a stale copy, and workflows.test.ts holds every copy to one value.
  * The scan reads the whole text, comments included, of every workflow, both Dockerfiles, docker-compose.yml, README.md and
  * CLAUDE.md. ADRs and dated runbook entries record what was, and are not scanned. The CI files are read through CI_TREE
  * when it is set (workflows.test.ts, the simulated rewrite).
@@ -71,7 +74,10 @@ describe('no duplicated versions (A4 (b))', () => {
     const digests = [...files].flatMap(([file, text]) => [...text.matchAll(/sha256:[0-9a-f]{64}/g)].map((match) => ({ file, digest: match[0] })));
     const homes = new Map<string, Set<string>>();
     for (const { file, digest } of digests) homes.set(digest, (homes.get(digest) ?? new Set()).add(file));
-    const scattered = [...homes].filter(([, found]) => found.size > 1 && ![...found].every((file) => DOCKERFILES.includes(file)));
+    // The builder's digest is on setup-buildx steps only, each line the same driver-opts (held equal by workflows.test.ts).
+    const builder = new Set(where(files, /^\s*driver-opts: image=moby\/buildkit:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/).map((line) => /sha256:[0-9a-f]{64}/.exec(line)?.[0]));
+    expect(builder.size).toBeLessThanOrEqual(1);
+    const scattered = [...homes].filter(([digest, found]) => found.size > 1 && ![...found].every((file) => DOCKERFILES.includes(file)) && !(builder.has(digest) && [...found].every((file) => file.startsWith('.github/workflows/'))));
     expect(scattered.map(([digest, found]) => `${digest}: ${[...found].join(', ')}`)).toEqual([]);
   });
 

@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # The web image: Next.js standalone server. Build from the repository root, once per environment, with that
 # environment's StaticAssetsOrigin stack output (Next writes it into the build as assetPrefix; docs/adr/0055):
 #   docker build -f apps/web/Dockerfile --build-arg STATIC_ASSET_ORIGIN=https://<StaticDomainName> -t tp-web .

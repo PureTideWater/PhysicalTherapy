@@ -1792,6 +1792,7 @@ describe('Postgres from docker-compose.yml (CI-13; docs/adr/0066, Part 2)', () =
 });
 
 describe('images by digest (CI-13)', () => {
+  const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
   it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
     const DIGEST = /@sha256:[0-9a-f]{64}$/;
     for (const app of ['web', 'worker']) {
@@ -1804,6 +1805,38 @@ describe('images by digest (CI-13)', () => {
     }
     const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { image?: string }> };
     for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST);
+  });
+
+  it('name every image a build runs by digest: the Dockerfile frontend and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
+    // The frontend: a `# syntax=` line pulls its image from Docker Hub by tag on every build, so either none (the
+    // frontend built into the pinned BuildKit) or one by digest.
+    for (const app of ['web', 'worker']) {
+      const syntax = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
+        .split('\n')
+        .filter((line) => /^#\s*syntax\s*=/i.test(line));
+      for (const line of syntax) expect(line, app).toMatch(/^# syntax=docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/);
+    }
+    // The builder: setup-buildx's docker-container driver runs moby/buildkit, by default by the mutable buildx-stable-1.
+    const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (job.steps ?? []).map((step, index) => ({ where: `${file} ${id} step ${String(index + 1)}`, file, id, index, step }))));
+    const buildx = steps.filter(({ step }) => usesAction(step, 'docker/setup-buildx-action'));
+    expect(buildx.map(({ file }) => file).sort()).toEqual(['ci.yml', 'release-dry-run.yml', 'release.yml', 'screening-capacity.yml']);
+    const images = buildx.map(({ where, step }) => {
+      const opts = step.with?.['driver-opts'];
+      expect(opts, where).toMatch(/^image=moby\/buildkit:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
+      return opts;
+    });
+    expect(new Set(images).size, images.join('\n')).toBe(1);
+    // Every build runs on that builder: each job that builds an image sets up buildx before its first build.
+    for (const { where, file, id, index } of steps.filter(({ step }) => usesAction(step, 'docker/build-push-action'))) {
+      expect(buildx.some((setup) => setup.file === file && setup.id === id && setup.index < index), where).toBe(true);
+    }
+    // And no job or step runs an image by tag: no container or service by tag, no docker:// action by tag.
+    for (const file of workflowFiles()) {
+      for (const [id, job] of Object.entries(workflow(file).jobs) as [string, Job & { container?: unknown }][]) {
+        if (job.container !== undefined) expect(typeof job.container === 'string' ? job.container : (job.container as { image?: string }).image, `${file} ${id}`).toMatch(DIGEST_PIN);
+        for (const step of job.steps ?? []) if (step.uses?.startsWith('docker://') === true) expect(step.uses, `${file} ${id}`).toMatch(DIGEST_PIN);
+      }
+    }
   });
 });
 
@@ -1951,6 +1984,13 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
   /** Every test of a report by its full name and outcome. */
   const outcomes = (report: Report) => report.testResults.flatMap((file) => file.assertionResults.map((result) => ({ file: path.relative(repositoryRoot, file.name), ...result })));
 
+  /** The failed tests of a report with their messages, for an assertion's message: the JSON reporter prints none. */
+  const failures = (report: Report) =>
+    outcomes(report)
+      .filter((result) => result.status === 'failed')
+      .map((result) => `${result.file} > ${result.fullName}\n${result.failureMessages.join('\n')}`)
+      .join('\n\n');
+
   const SELF = 'passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy';
 
   // Skipped inside the run it starts, which sets CI_TREE, so it never recurses.
@@ -1968,10 +2008,10 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
       const texts = CI_FILES.flatMap(list).join('\n');
       expect(copy.originals.filter((original) => texts.includes(original))).toEqual([]);
       const green = assertionsOn(copy.dir);
-      expect(green.status, green.output).toBe(0);
+      expect(green.status, `${green.output}\n${failures(green.report)}`).toBe(0);
       // Every test of the three files ran on the copy and passed, but this one, which skips itself there; none filtered out.
       expect(green.report.testResults.map((file) => path.relative(repositoryRoot, file.name)).sort()).toEqual([...TESTS].sort());
-      expect(green.report.numFailedTests, green.output).toBe(0);
+      expect(green.report.numFailedTests, failures(green.report)).toBe(0);
       expect(green.report.numTotalTests).toBeGreaterThan(80);
       expect(green.report.numPassedTests).toBe(green.report.numTotalTests - 1);
       expect(outcomes(green.report).filter((result) => result.status !== 'passed').map((result) => [result.file, result.fullName.endsWith(SELF), result.status])).toEqual([['tools/test/workflows.test.ts', true, 'skipped']]);

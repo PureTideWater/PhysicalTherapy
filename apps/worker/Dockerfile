@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # The worker image: one bundled ESM file (apps/worker/build.ts). Build from the repository root:
 #   docker build -f apps/worker/Dockerfile -t tp-worker .
 
