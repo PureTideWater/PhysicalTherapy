@@ -2,7 +2,7 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC (date -u).*
 
-- **Stage:** design written (09:29); design review next; the UX review document's revision to be re-read before builders.
+- **Stage:** design reviewed (wf_dc42b346-7e7, 09:35: build with changes, no migration, SS-01 to SS-14 accepted); before shots taken (12, base 7ef421b); builders next.
 - **Branch / PR:** `co-001/ux-suspended-standing`, cut from 7ef421b / no PR yet.
 - **Migration:** none (the billing view already holds the record status and billing's standing). No #42 file.
 - **Reserved numbers:** test-matrix BIL-05, BIL-06; `packages/synth` BIL-05, BIL-06 (module 15) if needed. No ADR.

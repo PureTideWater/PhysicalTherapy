@@ -47,6 +47,49 @@ migration, and `lib/routes/console.ts` is #42's).
 4. **The page data** carries `standing: AccountStanding` in place of `suspension: string | null`; the route stays
    `phi: false`, the same permission, the same query; billing still runs as `tp_billing`.
 
+## After the design review (wf_dc42b346-7e7, ~09:40 UTC: build with changes, no migration; SS-01 to SS-14 all accepted; `designs/lane-b-ux-suspended-standing-review.json`)
+These replace the text above where they differ:
+- **SS-01, firms:** a firm's suspension refuses no run today (`practice_run_refusal` checks only the practice's owning
+  group; ADR 0050:118 defers firms to milestone 12). The state table gains `kind`: a firm's suspension reads "Suspended by
+  PaidWhole" with "PaidWhole has suspended the organization. Open a support ticket to find out why." and no claim about
+  runs; nonpayment cannot arise for a firm before milestone 12. Handed to Lane A as a blocking product defect: a firm's
+  suspension should refuse work on its granted practices (a migration), and the console card's claim with it.
+- **SS-02, combined holds:** `accountStanding` returns a secondary `billingHold` (past due or suspended for nonpayment,
+  since, the holding invoice). With the record suspended or closed and billing not good, the notice adds "An invoice is
+  also unpaid since <date>; new runs stay stopped until it is paid as well.", the next steps are the ticket and "Pay
+  <invoice>", and the past-due alert never renders on its own while the record is suspended. BIL-05 covers all nine
+  status × standing pairs for a group and the firm rows.
+- **SS-03, bank payments:** the nonpayment next step: "Pay <invoice> below. A card payment restarts runs at once; a bank
+  (ACH) payment restarts them once the bank settles it, usually within a few days."
+- **SS-04, the holding invoice:** `organizationBilling` selects `billing_standing.invoice_id` and exposes
+  `holdingInvoice { id, number, amountRemainingCents }`; the next step names it and the page renders its Pay form even
+  outside the newest 24 (`apps/worker/src/billing/account.ts`, not a #42 file; re-checked).
+- **SS-05, closed:** a closed organization's Plan form is replaced by "A closed organization takes no new plan; open a
+  support ticket to reopen it."; the payment method form and Pay buttons stay; `subscribe` refuses a closed organization
+  (`BillingRefusedError('plan', …)`). The suspended-by-PaidWhole note shows only in that state. (`organization.status`
+  holds one value, so "closed wins over suspended" is dropped.)
+- **SS-06:** the page renders only `label` (no second "since"); `suspendedSince` is billing's (first failure + 30 days);
+  "Suspended by PaidWhole" carries no date until Lane A stores one.
+- **SS-07, one derivation shared:** the pure `standingKind(status, standing, kind)` lives in a new
+  `apps/worker/src/billing/standing.ts`, exported through `@tp/worker/billing`; the customer words stay in
+  `lib/routes/billing.ts`; the console billing page's Standing cell and sort use the kind (operator words "Suspended
+  (PaidWhole)", "Suspended for nonpayment"); the practice home's last sentence becomes "The organization's administrator
+  sees the standing and what to do next in Settings, Billing." Lane A: the database refusal's words ("PaidWhole").
+- **SS-08 (Lane A, #42's dunning.ts):** the "New runs have started again" mail is sent while PaidWhole's suspension lasts;
+  it should send only when `organization_run_refusal` is null after payment. Recorded, not built here.
+- **SS-09, e2e isolation:** BIL-06 uses a dedicated seeded persona and group ("SYNTHETIC SUSPENDED GROUP", held suspended
+  by the seed), so nothing races and nothing is reinstated; the billing db test's suspended case asserts the standing and
+  adds suspended plus a 31-day failed invoice.
+- **SS-10:** registry entries `none(11, …)` with assertedBy, matrix text identical.
+- **SS-11:** `/support?from=billing` preselects the Billing category.
+- **SS-12, the notice:** "PaidWhole has suspended the organization: new runs have stopped until PaidWhole lifts it, and its
+  data stays readable. Paying an invoice does not lift this suspension." (group); the firm variant per SS-01.
+- **SS-13, the second lens:** correctness against the database's refusal (each state, every kind, against
+  `organization_run_refusal`, `practice_run_refusal` and `billing_standing`), with the security checklist for the new
+  `subscribe` refusal and the seeded persona.
+- **SS-14:** this review checked the raw finding only; the builders re-read §3.2 PR 2 and UX-004 if the review document
+  has landed.
+
 ## Tests (BIL-05 and BIL-06, reserved)
 | ID | Case | Assertion |
 | --- | --- | --- |
