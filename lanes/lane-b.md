@@ -752,3 +752,15 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - DBF module 13 (#111), RCC module 14 plus fixture release 900007 (the release content checks), BIL module 15 (#135).
     - The next free values are under "Shared counters" in the conventions. #135's session was told BIL = 15.
   - **Handed to Lane A:** `operator_content_coverage()` for #59's later daily `content_due` job. `tp_operator` has no grant on rule objects, and a GRANT on `rule_record` would be DDL on a rule table.
+- **2026-10-26 ~02:15 UTC: the UX capture is done; the image checks run 20 batches at once.**
+  - **Capture** (wf_b56fe7b4-652's capture agent):
+    - **857 shots covering all 83 reachable routes.** At 1280 px light, 385 (84 default, 126 interaction, 75 error, 52 loading, 45 empty, 3 not-found); 83 at 1280 px dark (tokens only), one per route; 389 at 390 px light.
+    - **36 named states that synthetic data cannot show** are each recorded with the reason, never faked. Examples: the screening's "not open yet", a 50-group pager, empty consoles the seed always fills, a tampered ledger.
+    - **The lock** was held about 100 minutes in two fresh-prepare sessions; the final data is session 2 (populate 3.0 min, capture 28 min, a 390 px sticky-header retake).
+    - **Clean at the end:** server stopped, port 3297 free, `tp_e2e_screens` dropped.
+  - **The tour tool grew** (committed here):
+    - `tour.spec.ts` rewritten: a declarative capture helper, stable ids, `TOUR_ONLY`, bounded timeouts, held submits that are truly aborted, and loading shots taken after prefetch;
+    - `screens.config.ts` populates with seven specs (`reports.spec.ts` added), and `run.sh` excludes only the webhook test;
+    - new `reserve.sh` (re-serve a build from a fresh prepare), `build-only.sh` and `batches.py`, with the README.
+  - **The route map is committed** with the 83 real pages. The six phantom paths are kept only in the readable map's "Paths with no page".
+  - **Faster checks:** the workflow runs two agents at a time on this 4-CPU container, so its 20 check batches would have taken about ten rounds. Eighteen background checkers took batches 03 to 20 at once, writing the same progress and verdict files as the workflow's checkers, which take the results when they reach each batch.

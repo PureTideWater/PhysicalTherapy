@@ -2,8 +2,8 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC.*
 
-- **Stage:** fix round running (wf_f41510b7-8f9, from ~01:25): every review finding, then the full local suite once; then one push.
-- **Branch / PR:** `co-001/bank-account-first`, cut from 6ddd587, worktree /home/user/bank-account-first / #47 (draft), head 5ca2263.
+- **Stage:** fix round done and pushed (head 744e1d6, ~02:05): every finding fixed, the full local suite passed once on 422344b; CI on 744e1d6 next, then the fresh-clone verification.
+- **Branch / PR:** `co-001/bank-account-first`, worktree /home/user/bank-account-first / #47 (draft), head 744e1d6 (commits 5ca2263, 56007bd, b15d45f, 422344b, 744e1d6). Base still 6ddd587.
 - **Machine:** setup-container.sh printed OK; `gh api user` is PureTideWater.
 - **Migration:** none (confirmed at design: presentation and three Stripe request parameters; `packages/db` untouched).
 - **Reserved numbers:** test-matrix BIL-01 to BIL-04 (the matrix has no billing series at 6ddd587, so the reserved IDs
@@ -44,4 +44,15 @@
     with nothing on file (prices shown, a sentence); UX-7 unknown brands through labelOf; UX-8 one term "bank account
     (ACH)" and "On file: …"; UX-9 the replace line in both directions; UX-10 role="group"; UX-11 Stripe's form themed
     from the brand tokens.
-- **Next:** the fix round's push; CI; the fresh-clone verification; merge.
+- **Fix round (wf_f41510b7-8f9, ~01:25-02:05):** all 15 findings fixed (`approval-summaries/lane-b-bank-account-first-fix-suite.md`). Full local suite on 422344b:
+  install, check:fixtures, typecheck (22), lint (1,490 files, 0/0), lint:copy, lint:logs, verify-content, engine
+  freeze, synth --all clean; unit 322 files 5,013 passed 3 skipped; golden 188; oracle 637 agree; test:db six shards
+  118 files 9,050 passed 1 skipped; build + stamp + e2e 51/51; mutation: no money package affected, gate passes.
+- **Orchestrator allocation (~01:27):** the billing case module is 15 (DBF 13, RCC 14 on other branches): 744e1d6.
+- **After shots retaken at 744e1d6** and the gallery updated (version 2).
+- **PR description** updated with every finding's resolution and the suite, read back byte for byte (12,568 bytes).
+- **Proposals (outside this PR):** a test-mode control that advances the simulator's clock, so BIL-04's renewal shows
+  through the routes; the simulator emitting customer.subscription.updated when a subscription's default changes; a
+  staging check by hand that Stripe's form accepts the resolved token colours, light and dark; showing a pending
+  micro-deposit verification on later visits.
+- **Next:** CI on 744e1d6; the fresh-clone verification; merge.
