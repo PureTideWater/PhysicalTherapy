@@ -60,6 +60,34 @@ gallery page.
   - `gallery-build.py <dir>` fills `gallery-page.html` from a `gallery.json` in `<dir>`. Run it from this directory.
   - A new tour writes its own manifest from `shots.json` (which now carries the theme) and its own `gallery.json`.
 
+## From another lane (a Lane A session, or any session but Lane B's)
+The UX and brand reviewer (`.claude/agents/ux-brand-reviewer.md`) asks for before and after shots of every screen a pull
+request changes. This tool takes them in any session.
+- **What it needs:** PostgreSQL 18 on port 5433, Playwright's Chromium in `/opt/pw-browsers`, Node 24 and pnpm, all of
+  which `tools/setup-container.sh` (on `claude/build-ops`) installs. Fetch it and run it as Lane B's sessions do:
+  `git -C <checkout> fetch -q origin claude/build-ops && git -C <checkout> show FETCH_HEAD:tools/setup-container.sh >
+  /tmp/setup-container.sh && bash /tmp/setup-container.sh`, until it prints OK.
+- **One check:** `pg_isready -h localhost -p 5433 && ls /opt/pw-browsers >/dev/null && echo ready`.
+- **The lock:** every heavy step runs under `flock /tmp/laneb-heavy.lock`, one at a time, as below. In a container of
+  its own the lock is free; it matters where several sessions share one.
+- **A pull request's shots:** two runs of "Set-up and a run" below, each with its own `TOUR_DIR`. The first has
+  `TOUR_REF` set to the PR's base commit, the second to its head. Set `TOUR_ONLY` to the sample's ids (prefixes with a
+  trailing `*` are fine). Then `python3 -I tools/lane-b-screen-tour/tile.py <TOUR_DIR> <id-prefix ...>` cuts each shot
+  into window-height tiles (800 px at 1280, 844 px at 390) under `<TOUR_DIR>/tiles/`, with `index.json`. Give the
+  reviewer the tiles of both runs and their `shots.json` entries.
+- **The sample** (the reviewer reports any changed route outside it as "not seen, by sample"):
+  - every screen and state the diff changes, at 1280 and 390 px light, and 1280 px dark (tokens only);
+  - after a change to a shared component, a token or the shell: one shot per layout, at both widths and in the dark
+    set, as well;
+  - the screens of every baseline finding the PR says it fixes (`designs/lane-b-ux-review.md`, the finding's
+    "Screens").
+  List the sample in the PR's reviewer table.
+- **A route the tour does not take yet:** either lane adds its `cap(...)` calls to `capture/tour.spec.ts` here on
+  `claude/build-ops`, and its entry to `designs/lane-b-ux-review/route-map.json`. Pull first, and push through the
+  pre-push hook.
+- **Data:** synthetic only. The repository is public, so PNGs and tiles never go on a branch. Share them as a private
+  gallery (`tools/lane-b-screen-gallery`).
+
 ## Set-up and a run (any session)
 1. `export TOUR_DIR=<this session's scratchpad>/screens`. Every script and spec reads it; nothing names a session.
 2. `bash tools/lane-b-screen-tour/setup.sh`. Optionally set `TOUR_REF` first. Re-run it after every change here: it copies the files into `$TOUR_DIR`.
