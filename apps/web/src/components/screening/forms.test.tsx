@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ActionState } from '../../lib/http/next';
 import { ScreeningConvertForm } from './convert-form';
-import { ScreeningSplitForm, splitCodes, splitSettings } from './split-form';
+import { ScreeningSplitForm, splitCodes, splitFaults, splitSettings } from './split-form';
 
 /**
  * The screening's two forms (CO-04; decision D20 a): the conversion to an audit request, which asks only what the
@@ -63,6 +63,34 @@ describe('the place-of-service split form', () => {
     expect(splitSettings('11', '11')).toEqual({ problems: ['Place of service 11 is listed as both facility and non-facility.'] });
     expect(splitSettings('x', '')).toEqual({ problems: ['Each place of service is a two-digit code from 01 to 99.', 'List at least one place of service.'] });
     expect(splitSettings('', '')).toEqual({ problems: ['List at least one place of service.'] });
+  });
+
+  it('says which list each problem concerns: a malformed code its own list, a code in both lists both, no code the facility list', () => {
+    expect(splitFaults('22', '11')).toEqual({ facility: false, nonFacility: false });
+    expect(splitFaults('22', '1a')).toEqual({ facility: false, nonFacility: true });
+    expect(splitFaults('x', '11')).toEqual({ facility: true, nonFacility: false });
+    expect(splitFaults('11 22', '11')).toEqual({ facility: true, nonFacility: true });
+    expect(splitFaults('', '')).toEqual({ facility: true, nonFacility: false });
+  });
+
+  it('holds its status region from the first render, empty until the lists have a problem, and marks the field at fault', () => {
+    const keys = <input type="hidden" name="requestKey" value="k" />;
+    const empty = renderToStaticMarkup(<ScreeningSplitForm action={action} facility="" nonFacility="" formKeys={keys} />);
+    expect(empty).toContain('<div id="split-problems" role="status"></div>');
+    expect(empty).not.toContain('aria-invalid="');
+    const both = renderToStaticMarkup(<ScreeningSplitForm action={action} facility="11" nonFacility="11" formKeys={keys} />);
+    expect(both).toContain('Place of service 11 is listed as both facility and non-facility.');
+    expect(both).toMatch(/<div id="split-problems" role="status"><ul [^>]*data-state="split-problems"/);
+    for (const id of ['split-facility', 'split-non-facility']) {
+      const input = [...both.matchAll(/<input [^>]*>/g)].map((match) => match[0]).find((tag) => tag.includes(`id="${id}"`)) ?? '';
+      expect(input).toContain('aria-invalid="true"');
+      expect(input).toContain(`aria-describedby="split-problems ${id}-hint"`);
+    }
+  });
+
+  it('places a server issue on the built split on the facility field', () => {
+    const html = renderToStaticMarkup(<ScreeningSplitForm action={action} facility="22" nonFacility="11" formKeys={null} />);
+    expect([...html.matchAll(/<input [^>]*>/g)].map((match) => match[0]).find((tag) => tag.includes('id="split-facility"'))).toContain('data-issue-for="settings"');
   });
 
   it('sends only the built split: the two lists have no name', () => {

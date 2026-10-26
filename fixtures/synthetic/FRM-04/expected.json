@@ -1,0 +1,23 @@
+{
+  "case": "FRM-04",
+  "module": "FRM",
+  "title": "A refused field is named, described and marked",
+  "assertion": "The summary is first in the form, on a line of its own, under \"Not done\"; its lead is \"Fix the field listed here, then try again.\" for one field, \"Fix the fields listed here, then try again.\" for several, and absent when no issue names a field; each item names its field by the label the person sees (a trailing parenthetical dropped unless it says posted or deposited; a group by its legend, a single box by its own label), links to it, and never shows a key; an issue with no field shows its message alone; under the field, \"Error:\" beside the message, the element that describes the field holding the message alone; the control is aria-invalid with a 2 px border in the danger color; the same refusal twice is announced twice",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/components/action-form.browser.test.tsx",
+    "apps/web/src/components/action-form.test.tsx",
+    "apps/web/src/components/form-issues.test.ts",
+    "apps/web/src/components/fields.test.tsx",
+    "apps/web/e2e/forms-keep-input.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

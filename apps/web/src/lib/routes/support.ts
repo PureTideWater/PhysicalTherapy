@@ -389,8 +389,9 @@ export const setComponentStatus = platformRoute({
   sample: { params: () => ({}), input: () => ({ component: 'uploads', status: 'degraded' }) },
 });
 
+/** The components a form ticks: none ticked posts no field at all, which reads as an empty list, so the list's own message names it. */
 const componentList = z.preprocess(
-  (value) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',').filter((part) => part !== '') : value),
+  (value) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',').filter((part) => part !== '') : value === undefined || value === null ? [] : value),
   z.array(z.enum(STATUS_COMPONENT_KEYS)).min(1, 'choose at least one component').max(STATUS_COMPONENT_KEYS.length),
 );
 

@@ -1,0 +1,155 @@
+# 0077. Submit forms from the browser, keep what was typed, name each refused field by its label, and size controls for phones
+
+- **Status:** accepted (`co-001/ux-forms`, the UX baseline review's first pull request); amends
+  [0056](0056-wear-the-paidwhole-brand-from-one-token-source-self-hosted-fonts-and-status-as-text-on-tint.md) (the type
+  scale's phone exception, decision D6)
+- **Date:** 2026-10-26
+- **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
+  2026-10-25, whose rulings of 2026-10-25 (about 21:27 and 21:34 UTC) have the build improve as it goes and take each
+  recommended wording and visible change without asking; the build (Lane B). Each reversible by the founder
+- **PRD sections:** 6 (Cross-cutting: accessibility, labels, every error with a next step; PRD.md:256); test matrix
+  FRM-01 to FRM-08; ADRs [0017](0017-one-route-wrapper-a-route-registry-and-the-persona-matrix-as-data.md) (request
+  keys),
+  [0053](0053-onboard-customers-through-recorded-agreements-gate-every-request-on-csrf-rate-limits-terms-and-maintenance-and-keep-soc2-evidence-as-a-checked-map.md)
+  (CSRF, the Content-Security-Policy) and 0056
+
+## Context
+
+The UX baseline review (31 findings) found that every `<ActionForm>` came back empty after a refusal. The tour showed
+it on 37 refused forms. The worst cases recorded the wrong thing on a second press: the write-off form put "Window
+passed" back after "Other" was refused and unticked the consequence box; the console's model flag form put back "Kill
+switch (every model feature off)" for everyone; pricing settings and the billing organization put back the stored ZIP
+and the test routing number, valid-looking values beside an error that described the value the person had typed.
+
+The cause is React 19's form action. `<form action={formAction}>` from `useActionState` makes React's form listener
+wrap the action as `requestFormReset(form); return action(formData)`: the reset is requested before the action runs,
+whatever it returns, and the DOM's `form.reset()` is called when the transition commits, which is exactly when the
+refusal appears. When an `onSubmit` handler calls `preventDefault` and starts a transition itself, the listener takes
+its other branch: it only marks the form pending, and requests no reset. The screening upload form and the hardware
+key form already submitted that way and kept their values. No test saw the reset, because every e2e journey refilled
+each field with `fill()`, `check()` or `selectOption()` after a refusal, and axe ran only on pages as loaded.
+
+The review also found that the summary named each field by its route key (`organizationName: …`) or by a per-page
+label table only one page kept; that only `Input` showed an invalid state, by hue alone (1.54:1 between its two
+borders); that a pending button was `disabled`, which dropped focus to the page, and changed its words in no live
+region; that a dropped connection replaced the page with the error screen and remounted the form empty; that a page
+whose CSRF token or request key was out of date asked the person to reload, which now throws away what this decision
+keeps; that every control was 14 px, so iOS Safari zoomed the page into any focused field; that the six-digit code
+refused the "123 456" an authenticator app copies; and that several fields checked by `pattern` never said the format.
+
+## Decision
+
+- **D1. Submit from the browser, keep `<form action>` for the post without JavaScript.** A form keeps
+  `<form action>` on a `useActionState` over the **unwrapped** server action, so the post without JavaScript and
+  React's replay of a press made before hydration still carry Next's `$ACTION_*` fields. It dispatches from `onSubmit`
+  (`preventDefault`; `startTransition(() => dispatch(new FormData(form, submitter)))`, synchronous, so the form's own
+  pending state turns on) to a second `useActionState` whose action calls the same server action. React then never
+  resets the form on a refusal, and nothing typed is echoed back: `ActionState` carries no value, only `error`,
+  `invalid`, `issues`, `locked` and `stale`. The second hook turns a dropped connection (fetch's `TypeError` with no
+  `digest`) into a "Not confirmed" state, and rethrows everything else, Next's redirect included. A success resets the
+  form through Next's redirect remount, with no reset code of its own. Two conditions keep that true, and
+  `components/action-form.tsx`'s header comment states both: the hook on `<form action>` takes the server action
+  itself, never a client wrapper; and `<FormKeys/>` is rendered by pages, never by a layout, or a second submit after a
+  success would replay the old request key. A ref, not React state, guards a second press: it is the only guard that
+  stops two presses in one frame.
+- **D2. Secrets are emptied after a refusal, and the field says so.** Every control the shared components mark
+  `data-secret` (a `PasswordField`, and a `Field` whose `autoComplete` is `one-time-code`) is emptied after every
+  refusal, before anything is marked or focused (WCAG 2.2 3.3.7's exception for security fields), with any
+  `input[type=password]` and `[autocomplete=one-time-code]` a page wrote by hand. A note under each says why: "Emptied
+  for your security: type it again." (a password) or "Emptied for your security." (a code, whose error already gives
+  the next step). Both secret components stay uncontrolled.
+- **D3. A refused field is named by the label the person sees, read from the page.** The summary resolves each issue
+  to its control (the name, the name with `[]`, a `data-issue-for` that lists the key, then the key's part before its
+  first `.`) and names it by the control's `data-error-name`, else a group's legend when the issue names a group, else
+  the control's own label. One rule tidies the name: white space collapsed, one trailing parenthetical and a trailing
+  colon dropped, never a parenthetical that says posted or deposited. No form keeps a table of labels, and no code path
+  prints a key. The summary is first in the form, on a line of its own in any grid or row, keyed per response so the
+  same refusal twice is announced twice; its lead counts the issues that name a field ("Fix the field listed here, then
+  try again.", "Fix the fields listed here, then try again.", or none). Under each refused field the shared components
+  show "Error:" and an icon beside the message, the element that describes the field holding the message alone. One
+  unlayered CSS rule marks every refused control with a 2 px border in the danger color, and a refused checkbox or
+  group with a 2 px rule down its left edge: a change of width and of words, never of hue alone.
+- **D4. Focus after a refusal.** Exactly one issue on a field focuses that field; anything else (several issues, an
+  issue with no field, a refusal with no issue, a dropped connection, a page out of date) focuses the summary.
+  `html { scroll-padding-top: calc(3.5rem + 1rem) }`, the sticky header's height and a 16 px gap, keeps the focused
+  element in view (WCAG 2.2 2.4.11) on every page.
+- **D5. A pending submit keeps its button.** The button is `aria-disabled`, never `disabled`, so it keeps focus; its
+  words do not change; a polite status inside the button's wrapper says "Working…".
+- **D6. Form controls are 16 px below the md breakpoint.** One unlayered rule in `packages/ui/src/styles.css` sets
+  text inputs, selects and text areas to 16 px below 48rem, where the rail folds into the header's Menu, so iOS Safari
+  does not zoom the page on focus; from md up they keep the dense 14 px of 0056's type scale. The viewport never sets
+  `maximum-scale`, so pinch zoom stays (WCAG 1.4.4).
+- **D7. A six-digit code is accepted as an authenticator app copies it.** Spaces and hyphens are dropped before the
+  six digits are checked, and the code fields carry no `pattern`, whose generic browser message no paste with a space
+  could get past.
+- **D8. Password fields offer Show** (NIST SP 800-63B 5.1.1.2), named by their own words ("Show password", "Show new
+  password", "Show new password again"), never by an `aria-label`. The input always turns off spell checking,
+  autocorrect and autocapitalisation, so a shown password never reaches a browser's cloud spelling service, and it is
+  turned back to `type=password`, through its own state, before the form's data is read.
+- **D9. Every field checked by `pattern` states its format in its hint**, held by `components/form-hints.test.ts`.
+- **D10. A page whose CSRF token or request key is out of date is read again in place.** `next.ts` maps
+  `csrf_refused` and a refusal whose only issue is `requestKey` to `{ error, stale: true }`; the form calls
+  `router.refresh()`, which renders a fresh token and key while the uncontrolled fields keep their values. Only a
+  refusal of the person's own press invites pressing again ("It is up to date now: press “{submit}” again."); a post
+  this page did not start reads "Check the form, then send it again if you still mean to.", because the outcome cannot
+  tell a stale token from a wrong origin.
+
+## Alternatives considered
+
+- **The server echoes the values.** `ActionState` would carry the submitted entries and each field would read them
+  back. It sends what the person typed back in a response, the very text a no-patient-information check refused
+  included, and still loses a group's and a radio's state unless each component learns to read it.
+- **Controlled fields through a context.** Every form's fields rewritten as controlled components (112 forms, 48 raw
+  controls among them), and a post without JavaScript shows no value at all.
+- **Write the values back after the reset.** The reset happens and is undone: a flash of empty fields, a race with the
+  focus, and per-type restore code that cannot restore a file.
+- **Remount the form on a new request key, or reset it on the caught redirect.** A refusal that sets a cookie renders a
+  new key and would be wiped; and a client wrapper on `<form action>` drops the fields the post without JavaScript
+  needs. Both are redundant on success, which the redirect remount already resets.
+- **A single hook.** A dropped connection then shows the error page and the form comes back empty.
+- **Names from the render.** A summary above the fields renders before them, so no field can give it a label in the
+  same render without an impure registry; moving the summary after the fields and up with CSS breaks reading and
+  focus order (WCAG 1.3.2, 2.4.3).
+- **A closed list of label notes to drop.** The notes vary ("(when named)", "(estimate)", "(for an approval)"), so a
+  list would misname fields or need markup on labels across many files; the one note a strip must keep is the
+  brand's posted or deposited.
+- **A separate id or CSS content for "Error:".** A separate id changes the `aria-describedby` an existing test asserts
+  exactly; CSS content may or may not be read by assistive technology (failure F87).
+- **`text-base md:text-sm` on each component.** Raw controls and pages outside the shared components would stay at
+  14 px, and each new control would have to remember it.
+- **Turn browser validation off (`noValidate`).** Kept for later: the server's words for "required", an email and a
+  pattern are not all instructions yet.
+
+## Consequences
+
+- A refused form keeps every value but the secrets, with JavaScript; without it, the page comes back with the summary
+  and each field's own message, every value lost and a new request key rendered (the same as before this decision,
+  now with the messages).
+- `ActionForm`'s `labels` prop and the pricing settings page's `FORM_LABELS` are removed: the page's own labels are the
+  one source.
+- `components/field.tsx` is a client module, so its fields read the refusal from context; a server page may pass it
+  only serialisable props, which TypeScript and Next's build enforce.
+- Playwright's `click()` waits on an `aria-disabled` button; a test that presses while pending uses the keyboard.
+- The FRM rows of the test matrix hold the behaviour: a browser harness over the real components in the unit project,
+  and `apps/web/e2e/forms-keep-input.spec.ts` with four personas of its own.
+
+## Not covered
+
+- **A press made before hydration** is replayed by React through the server hook, bypassing `onSubmit`: the in-flight
+  guard does not run, and a refusal of that press resets the form, as before. The window is the page's first moments,
+  and the post itself still works.
+- **A session that ends while a form is open** sends the person to sign in, and what was typed is lost, on purpose:
+  typed text is never kept in browser storage, because it may hold patient information.
+
+## Not verified here
+
+- iOS Safari's zoom itself: the captures and CI run Chromium, and the computed font size is what is asserted.
+- Screen readers by hand: the announcements follow the ARIA the tests assert, and are listed for the manual 3.3.7 and
+  3.3.8 checks of the accessibility pull request (combined audit #103).
+
+## Revisit when
+
+- React or Next changes the form-action reset or the redirect remount: the FRM-01 and FRM-02 tests fail first.
+- The words pass after pull request #42 lets browser validation be turned off.
+- The route outcome can tell a stale CSRF token from a wrong origin, so a page out of date may invite a press after a
+  post without JavaScript too.

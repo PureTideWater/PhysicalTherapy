@@ -1,0 +1,17 @@
+{
+  "case": "FRM-05",
+  "module": "FRM",
+  "title": "Focus after a refusal",
+  "assertion": "One issue on a field focuses that field; several issues, an issue with no field, a refusal with no issue, a dropped connection or a page out of date focus the summary; a link in the summary focuses its field; the focused element is never under the sticky header",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/src/components/action-form.browser.test.tsx","apps/web/e2e/forms-keep-input.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

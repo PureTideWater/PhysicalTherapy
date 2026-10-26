@@ -188,7 +188,7 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
             <SelectField label="Workforce member (for an attestation or the security official)" name="member" options={[{ value: '', label: '—' }, ...workforce.map((member) => ({ value: member.userId, label: `${member.email} (${roleNames(member.roles)})` }))]} />
             <Field label="Date it happened" name="occurredOn" type="date" required />
             <Field label="Document reference" name="documentRef" required maxLength={200} />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document's SHA-256, 64 hexadecimal characters." />
           </ActionForm>
         </CardContent>
       </Card>

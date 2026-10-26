@@ -15,6 +15,9 @@ export const metadata: Metadata = { title: 'Support' };
 
 const STATUS: Readonly<Record<string, string>> = { open: 'Open', answered: 'Answered', closed: 'Closed' };
 
+/** The rule a ticket keeps, in the hint of each field a person types into, so the field itself says it (docs/adr/0077). */
+const NO_PATIENT_INFORMATION = "No patient names, dates of birth, member IDs or claim numbers. Name the screen and the record's ID.";
+
 /**
  * Support (PRD 19, Support: "a support address that creates a ticket; a published response target"; docs/adr/0053):
  * a ticket opened from the screen the help link came from, the support address beside it, and the person's own
@@ -41,8 +44,7 @@ export default async function SupportPage(props: { readonly searchParams: Promis
           <CardTitle>Open a ticket</CardTitle>
           <CardDescription>
             We answer within {responseTarget}. Or write to <a className="underline" href={`mailto:${supportEmail}`}>{supportEmail}</a> from the address you sign in with: the mail opens a ticket
-            here too. Never send a patient&apos;s
-            name, date of birth, member ID or claim number: name the screen and the record&apos;s ID from its address instead.
+            here too.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -50,8 +52,8 @@ export default async function SupportPage(props: { readonly searchParams: Promis
             <FormKeys />
             <input type="hidden" name="screen" value={from} />
             <SelectField label="What is it about" name="category" options={categories} />
-            <Field label="Subject" name="subject" required maxLength={200} />
-            <TextAreaField label="What happened, and what you expected" name="message" required maxLength={4000} rows={6} />
+            <Field label="Subject" name="subject" required maxLength={200} hint={NO_PATIENT_INFORMATION} />
+            <TextAreaField label="What happened, and what you expected" name="message" required maxLength={4000} rows={6} hint={NO_PATIENT_INFORMATION} />
           </ActionForm>
         </CardContent>
       </Card>

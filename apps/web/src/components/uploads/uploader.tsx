@@ -380,6 +380,10 @@ export function Uploader(props: UploaderProps) {
             multiple
             className="sr-only"
             aria-label="Choose files to upload"
+            // Out of the tab order and hidden from assistive technology: "Choose files" is the one control and opens the
+            // picker, so a keyboard meets one stop, not an invisible input and then the button (docs/adr/0077).
+            tabIndex={-1}
+            aria-hidden="true"
             onChange={(event) => {
               void start([...(event.target.files ?? [])]);
               event.target.value = '';

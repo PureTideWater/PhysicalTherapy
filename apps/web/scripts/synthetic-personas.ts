@@ -21,7 +21,10 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * practice of its own; and three billing managers of the other group for the ERA export journeys, in
  * practices of their own; and two billing managers of the other group and a reimbursement reviewer for the journey of a
  * submission sent without sign-off, in a practice of its own; and a platform administrator and two people of the other
- * group for the pricing-location journey, in a group of its own the console creates).
+ * group for the pricing-location journey, in a group of its own the console creates; and, for the forms journey, a viewer
+ * who signs in with a wrong password and code, an invited viewer who chooses a password, a billing manager of the other
+ * group and a platform administrator, each alone, because a refusal counts toward the ten-failure lock and the specs run
+ * in parallel).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -115,6 +118,13 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'location-admin', organization: 'internal', role: 'platform_admin' },
   { key: 'location-practice-admin', organization: 'other_group', role: 'viewer' },
   { key: 'location-manager', organization: 'other_group', role: 'billing_manager' },
+  // The forms journey (docs/adr/0077): a viewer refused at sign-in, an invited viewer refused a new password (neither ever
+  // saved, so each run starts from the seed), a billing manager of the other group refused on ROI and on a support ticket,
+  // and a platform administrator refused an incident on the console's status page.
+  { key: 'forms-signin', organization: 'group', role: 'viewer' },
+  { key: 'forms-invited', organization: 'group', role: 'viewer', invited: true },
+  { key: 'forms-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'forms-admin', organization: 'internal', role: 'platform_admin' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

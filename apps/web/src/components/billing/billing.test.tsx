@@ -100,6 +100,9 @@ describe('Stripe’s payment form (BIL-01)', () => {
     const onFile = renderToStaticMarkup(<StripePaymentMethod organizationId={ORGANIZATION} csrfToken={TOKEN} methodOnFile />);
     expect(onFile).toContain('>Replace with a bank account (ACH) or card</button>');
     expect(loadStripe).not.toHaveBeenCalled();
+    // Pressed, the button keeps its words and focus (aria-disabled, never disabled); its status line is there, empty, from the first render.
+    expect(none).not.toMatch(/<button[^>]*\sdisabled/);
+    expect(none).toMatch(/<p (?=[^>]*role="status")(?=[^>]*data-slot="pending-status")[^>]*><\/p>/);
   });
 
   it('reads Stripe’s answer: saved, waiting on micro-deposits of Stripe’s type with Stripe’s page, or Stripe’s refusal', () => {

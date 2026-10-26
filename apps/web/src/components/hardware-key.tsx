@@ -2,7 +2,7 @@
 
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { Alert, AlertDescription, AlertTitle, Button, Input, Label } from '@tp/ui';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * The browser side of the hardware-key ceremonies (WebAuthn, user verification required). The
@@ -23,15 +23,46 @@ async function post(path: string, body: unknown): Promise<Answer> {
   return response.ok ? answer : { error: 'The sign-in step was refused. Start again.' };
 }
 
-function Problem({ message, locked }: { readonly message: string | undefined; readonly locked: boolean }) {
+/** While a ceremony runs: what the key needs from the person, in a status line present from the first render. */
+const WAITING = 'Waiting for your hardware key. Touch it, then confirm with its PIN or fingerprint.';
+
+/**
+ * What the server or the key refused, focused when it appears (as a form's refusal summary is), so the keyboard
+ * and a screen reader meet it at once; `title` is the caller's ("Not signed in", "Not registered").
+ */
+function Problem({ message, locked, title }: { readonly message: string | undefined; readonly locked: boolean; readonly title: string }) {
+  const alert = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (message !== undefined) {
+      alert.current?.focus();
+    }
+  }, [message]);
   if (message === undefined) {
     return null;
   }
   return (
-    <Alert variant="destructive" data-state={locked ? 'locked' : 'error'}>
-      <AlertTitle>{locked ? 'Account locked' : 'Not signed in'}</AlertTitle>
+    <Alert ref={alert} variant="destructive" tabIndex={-1} data-state={locked ? 'locked' : 'error'}>
+      <AlertTitle>{locked ? 'Account locked' : title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
     </Alert>
+  );
+}
+
+/**
+ * The ceremony's button and its status line (docs/adr/0077): the button keeps its words and its focus while the key
+ * is asked (aria-disabled, never disabled, which would drop the focus to the page), and the line beside it says what
+ * the key needs. The caller's ref guard is what refuses a second press.
+ */
+function CeremonyButton({ busy, type, onClick, children }: { readonly busy: boolean; readonly type: 'submit' | 'button'; readonly onClick?: () => void; readonly children: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type={type} aria-disabled={busy || undefined} onClick={onClick}>
+        {children}
+      </Button>
+      <p role="status" className="text-sm text-muted-foreground" data-slot="pending-status">
+        {busy ? WAITING : ''}
+      </p>
+    </div>
   );
 }
 
@@ -40,8 +71,13 @@ export function HardwareKeySignIn() {
   const [error, setError] = useState<string | undefined>();
   const [locked, setLocked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
 
   async function signIn(): Promise<void> {
+    if (inFlight.current) {
+      return;
+    }
+    inFlight.current = true;
     setBusy(true);
     setError(undefined);
     try {
@@ -62,6 +98,7 @@ export function HardwareKeySignIn() {
     } catch {
       setError('The hardware key did not answer. Connect it and try again.');
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -78,12 +115,10 @@ export function HardwareKeySignIn() {
         <Label htmlFor="key-email">Email</Label>
         <Input id="key-email" name="email" type="email" autoComplete="username webauthn" required value={email} onChange={(event) => setEmail(event.target.value)} />
       </div>
-      <Problem message={error} locked={locked} />
-      <div>
-        <Button type="submit" disabled={busy}>
-          {busy ? 'Waiting for the key…' : 'Sign in with hardware key'}
-        </Button>
-      </div>
+      <Problem message={error} locked={locked} title="Not signed in" />
+      <CeremonyButton busy={busy} type="submit">
+        Sign in with hardware key
+      </CeremonyButton>
     </form>
   );
 }
@@ -91,8 +126,13 @@ export function HardwareKeySignIn() {
 export function HardwareKeyRegistration() {
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
 
   async function register(): Promise<void> {
+    if (inFlight.current) {
+      return;
+    }
+    inFlight.current = true;
     setBusy(true);
     setError(undefined);
     try {
@@ -115,18 +155,17 @@ export function HardwareKeyRegistration() {
     } catch {
       setError('The hardware key did not answer. Connect it and try again.');
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <Problem message={error} locked={false} />
-      <div>
-        <Button type="button" disabled={busy} onClick={() => void register()}>
-          {busy ? 'Waiting for the key…' : 'Register hardware key'}
-        </Button>
-      </div>
+      <Problem message={error} locked={false} title="Not registered" />
+      <CeremonyButton busy={busy} type="button" onClick={() => void register()}>
+        Register hardware key
+      </CeremonyButton>
     </div>
   );
 }

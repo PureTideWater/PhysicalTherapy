@@ -286,7 +286,7 @@ export async function payOpenInvoice(services: BillingServices, organizationId: 
 export async function issueAuditInvoice(services: BillingServices, organizationId: string, requestKey: string): Promise<string> {
   const customer = await ensureCustomer(services, organizationId);
   if ((await services.provider.paymentMethodOnFile(customer)) === null) {
-    throw new BillingRefusedError('organizationId', 'the organization has no payment method on file; its administrator adds one in Settings first');
+    throw new BillingRefusedError('organizationId', 'the organization has no payment method on file: ask its administrator to add one under Billing, then issue the invoice');
   }
   return services.provider.createAuditInvoice({ customerRef: customer, organizationId, idempotencyKey: `audit:${organizationId}:${requestKey}` });
 }

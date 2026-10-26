@@ -313,7 +313,7 @@ export const publishTerms = platformRoute({
     version: z
       .string()
       .trim()
-      .regex(/^[A-Za-z0-9._-]{1,40}$/, 'letters, digits and . _ -'),
+      .regex(/^[A-Za-z0-9._-]{1,40}$/, 'use only letters, digits, dots, underscores and hyphens, such as 2026-11'),
     documentRef: z
       .string()
       .trim()

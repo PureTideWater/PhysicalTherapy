@@ -1,12 +1,18 @@
 /**
  * Words the screens build around a number or a code (the screen tour's C1): a count with its noun, singular for
- * one ("its 1 linked entry", never "its 1 linked entries"), and a code shown as a label in sentence case, its
- * initialisms in capitals ("NCCI PTP", never "Ncci ptp"). Pure: no database.
+ * one ("its 1 linked entry", never "its 1 linked entries"), a code shown as a label in sentence case, its
+ * initialisms in capitals ("NCCI PTP", never "Ncci ptp"), and a list in words ("a, b and c", never "a, b, c").
+ * Pure: no database.
  */
 
 /** A count and its noun: the singular for one, the plural (the singular and an s, unless given) for any other count. */
 export function counted(count: number, one: string, many = `${one}s`): string {
   return `${String(count)} ${count === 1 ? one : many}`;
+}
+
+/** A list in words: commas between the items and "and" before the last ("a digit and a symbol"); empty for none. */
+export function listed(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`;
 }
 
 /**

@@ -1,0 +1,21 @@
+{
+  "case": "FRM-07",
+  "module": "FRM",
+  "title": "Sign-in refusals",
+  "assertion": "A wrong password keeps the email, empties the password and marks no field; a wrong code empties and marks the code field under \"That did not match.\"; a code written \"123 456\" signs in; a weak password and two passwords that differ are issues on their own fields, the policy in the field's hint; Show password reveals and hides the text, is named by its words, turns off spell checking, autocorrect and autocapitalisation, and is hidden again, with aria-pressed false, before the form's data is read",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/components/action-form.browser.test.tsx",
+    "apps/web/e2e/forms-keep-input.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas sign in through the local identity provider; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

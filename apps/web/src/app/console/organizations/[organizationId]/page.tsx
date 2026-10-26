@@ -105,8 +105,8 @@ export default async function OrganizationPage(props: { readonly params: Promise
               <FormKeys />
               <input type="hidden" name="organizationId" value={organization.id} />
               <Field label="Practice name" name="name" required maxLength={200} />
-              <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" />
-              <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" />
+              <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" hint="Ten digits." />
+              <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" hint="The last four digits." />
               <Field
                 label="Billing ZIP (ZIP+4 if Medicare needs one)"
                 name="zip"

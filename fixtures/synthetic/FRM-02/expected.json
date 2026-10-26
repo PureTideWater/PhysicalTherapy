@@ -1,0 +1,17 @@
+{
+  "case": "FRM-02",
+  "module": "FRM",
+  "title": "A saved form starts fresh",
+  "assertion": "After a success that redirects to the same page, to the same address or to another page, the form shows its defaults, shows no refusal and carries a new request key",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/e2e/forms-keep-input.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "A synthetic persona’s support ticket is saved after a refusal; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -73,7 +73,7 @@ export default async function ConsoleBillingPage() {
             <CardHeader>
               <CardTitle>Issue an audit invoice</CardTitle>
               <CardDescription>
-                {catalog.audit.name}, <Money value={catalog.audit.amountCents} />, charged to the organization&apos;s payment method on file (its administrator adds one in Settings first).
+                {catalog.audit.name}, <Money value={catalog.audit.amountCents} />, charged to the organization&apos;s payment method on file (its administrator adds one under Billing first).
               </CardDescription>
             </CardHeader>
             <CardContent>

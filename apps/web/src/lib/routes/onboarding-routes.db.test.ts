@@ -505,6 +505,11 @@ describe('the status page and maintenance', () => {
     ok(await call(updateIncident, platformAdmin, {}, { incidentId: opened.objectId, status: 'resolved', message: 'Fixed.' }));
     expect((await call(updateIncident, platformAdmin, {}, { incidentId: opened.objectId, status: 'monitoring', message: 'Again.' })).status).toBe('invalid');
     expect((await call(openIncident, platformAdmin, {}, { title: 'Call 919-555-0134', impact: 'minor', components: 'web', message: 'x' })).status).toBe('invalid');
+    // No component ticked posts no field at all: the list's own words, never the parser's (FRM-04).
+    expect(await call(openIncident, platformAdmin, {}, { title: 'Slow uploads', impact: 'minor', message: 'x' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'components', message: 'choose at least one component' }],
+    });
     const page = ok(await call(statusPage, null, {}));
     expect(page.incidents.map((incident) => [incident.title, incident.status, incident.components])).toEqual([['Slow uploads', 'resolved', ['uploads', 'jobs']]]);
     expect(page.incidents[0]?.updates.map((update) => update.message)).toEqual(['Fixed.', 'Uploads are slower than usual.']);

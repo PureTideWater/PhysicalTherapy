@@ -1,0 +1,17 @@
+{
+  "case": "FRM-06",
+  "module": "FRM",
+  "title": "A refused form without JavaScript",
+  "assertion": "The post reaches the action once; the page shows the summary and each field's own message, and no key; a success redirects with its notice",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/e2e/forms-keep-input.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The public request form is posted from a browser with scripts off; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

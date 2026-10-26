@@ -148,7 +148,7 @@ export const recordEvidence = platformRoute({
   audit: { action: 'compliance_evidence_recorded', objectType: 'compliance_record' },
   handle: async ({ scope, input, services }): Promise<MutationResult> => {
     if (input.occurredOn > utcDate(services.now())) {
-      throw new InputError([{ field: 'occurredOn', message: 'evidence is recorded for what has happened' }]);
+      throw new InputError([{ field: 'occurredOn', message: 'the date is after today: enter the day it happened, today or earlier' }]);
     }
     let subject: string;
     if (input.kind === 'policy_approval') {

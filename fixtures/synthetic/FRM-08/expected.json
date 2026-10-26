@@ -1,0 +1,17 @@
+{
+  "case": "FRM-08",
+  "module": "FRM",
+  "title": "Phone-width controls and a refused form's accessibility",
+  "assertion": "At 390 px an input, a select and a text area are at least 16 px; at 1280 px they are 14 px; a refused form passes axe (WCAG 2.1 A and AA) at both widths",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/e2e/forms-keep-input.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The public request form and a synthetic practice’s form are measured and scanned in the browser; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

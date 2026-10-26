@@ -1,0 +1,21 @@
+{
+  "case": "FRM-01",
+  "module": "FRM",
+  "title": "A refused form keeps what was typed",
+  "assertion": "Text, a select, a text area, a checkbox, a checkbox group, a radio, a date and a month keep the person's values after a refusal, and a valid default never replaces a refused value; a password and a one-time code are emptied, and a note under each says so; the action's state carries no value the person typed; a dropped connection keeps every value and says the save is not confirmed; a page whose CSRF token or request key is out of date is read again in place, and a second press saves with the values intact",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/components/action-form.browser.test.tsx",
+    "apps/web/e2e/forms-keep-input.spec.ts",
+    "apps/web/e2e/triage.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

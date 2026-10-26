@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
-import { Field, SelectField, TextAreaField } from '../../../components/field';
+import { CheckboxGroup, Field, SelectField, TextAreaField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { utc } from '../../../components/format';
 import { AppShell, Forbidden } from '../../../components/shell';
@@ -112,14 +112,7 @@ export default async function ConsoleStatusPage() {
             <FormKeys />
             <Field label="Title" name="title" required maxLength={120} />
             <SelectField label="Impact" name="impact" options={impacts.map((value) => ({ value, label: value }))} />
-            <fieldset className="flex flex-wrap gap-3 text-sm">
-              <legend className="mb-1 text-sm font-medium">Components affected</legend>
-              {components.map((component) => (
-                <label key={component.key} className="flex items-center gap-1">
-                  <input type="checkbox" name="components[]" value={component.key} /> {component.name}
-                </label>
-              ))}
-            </fieldset>
+            <CheckboxGroup legend="Components affected" issueKey="components" options={components.map((component) => ({ name: 'components[]', value: component.key, label: component.name }))} />
             <TextAreaField label="First update" name="message" required maxLength={1000} rows={2} />
           </ActionForm>
         </CardContent>
