@@ -5,7 +5,7 @@ import type { CalendarEntry, ContentCalendar } from '@tp/rules/calendar';
  * names it links to are compared with the ones the entry recorded, and an unreachable page, a page never recorded or a
  * changed list of files is a finding. The names come from a third-party page and go into issue bodies on a public
  * repository, so only plain names (letters, digits, dot, underscore, hyphen; at most 120) are ever kept; any other is
- * counted, never shown, so no `@name`, `#123`, Markdown link or backtick from a page reaches an issue (review m6).
+ * counted, never shown, so no `@name`, issue reference, Markdown link or backtick from a page reaches an issue (review m6).
  */
 
 export const USER_AGENT = 'PaidWhole content calendar';
