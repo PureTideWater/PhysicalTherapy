@@ -94,7 +94,7 @@ describe('accountStanding, a group (BIL-05)', () => {
     );
     expect(accountStanding({ kind: 'group', status: 'active', ...SUSPENDED, holdingCount: 3 }).nextSteps[0]?.detail).toMatch(/^ and the other 2 invoices unpaid for 30 days below\. /);
     expect(accountStanding({ kind: 'group', status: 'suspended', ...SUSPENDED, holdingCount: 2 }).notice).toBe(
-      `${PAID_WHOLE} 2 invoices are also unpaid 30 days after their payments failed, the oldest since 2026-09-01; new runs stay stopped until all of them are paid as well.`,
+      `${PAID_WHOLE} 2 invoices have also been unpaid for 30 days since their payments failed, the oldest since 2026-09-01; new runs stay stopped until all of them are paid as well.`,
     );
   });
 
@@ -212,6 +212,10 @@ describe('accountStanding, a firm (BIL-05)', () => {
   it('reads a closed firm "Closed" with no claim about runs', () => {
     expect(standingOf('firm', 'closed', 'good')).toMatchObject({ kind: 'closed', label: 'Closed', notice: 'Its data stays readable.', planRefusal: PLAN_REFUSAL });
     expect(standingOf('firm', 'closed', 'suspended').notice).toBe('Its data stays readable. An invoice is also unpaid since 2026-09-01; it is still owed.');
+    // Several invoices still owed are counted, the oldest dated, still with no clause about runs.
+    expect(accountStanding({ kind: 'firm', status: 'closed', ...SUSPENDED, holdingCount: 2 }).notice).toBe(
+      'Its data stays readable. 2 invoices are also unpaid, the oldest since 2026-09-01; they are still owed.',
+    );
   });
 
   it('never says runs have stopped or will stop for a firm', () => {

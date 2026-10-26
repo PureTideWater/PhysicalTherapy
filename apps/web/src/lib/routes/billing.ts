@@ -266,7 +266,12 @@ export function accountStanding(
   const paying = billingHold === null ? [] : [pay(invoice, ' below.')];
   if (kind === 'closed') {
     // Nothing restarts runs for a closed organization, so its unpaid invoice is named as owed, with no clause about runs.
-    const owed = billingHold === null ? '' : ` An invoice is also unpaid since ${day(billingHold.since)}; it is still owed.`;
+    const owed =
+      billingHold === null
+        ? ''
+        : several
+          ? ` ${String(billing.holdingCount)} invoices are also unpaid, the oldest since ${day(billingHold.since)}; they are still owed.`
+          : ` An invoice is also unpaid since ${day(billingHold.since)}; it is still owed.`;
     return {
       kind,
       label: 'Closed',
@@ -287,7 +292,7 @@ export function accountStanding(
         ? ` An invoice is also unpaid since ${day(billingHold.since)}.`
         : billingHold.kind === 'suspended_nonpayment'
           ? several
-            ? ` ${String(billing.holdingCount)} invoices are also unpaid 30 days after their payments failed, the oldest since ${day(billingHold.since)}; new runs stay stopped until all of them are paid as well.`
+            ? ` ${String(billing.holdingCount)} invoices have also been unpaid for 30 days since their payments failed, the oldest since ${day(billingHold.since)}; new runs stay stopped until all of them are paid as well.`
             : ` An invoice is also unpaid since ${day(billingHold.since)}; new runs stay stopped until it is paid as well.`
           : ` An invoice is also unpaid since ${day(billingHold.since)}; if it is still unpaid at ${stops}, new runs stop then, even if PaidWhole has reinstated the organization; ${ACH_SETTLES}.`;
   return {
