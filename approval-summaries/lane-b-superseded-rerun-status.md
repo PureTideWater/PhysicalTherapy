@@ -24,6 +24,13 @@ Open questions: none.
 | 2026-10-26 08:59 | Verification (part) | wf_f83c3757-009. **CI on a3c583d: all green**, every check. The adversarial re-review of the fix round passed with one nit, N1: past 200 held-by runs a re-run can never be accepted. The screens were re-taken on a3c583d (42 shots). The UX re-check found all nine first-round findings fixed, one new should-fix (at 390 px the new Re-run button overflows its card) and nits N2 to N6. The fresh-clone verifier was stopped by the session limit (~06:25 to 08:40 UTC); it is re-run on the final head. The base moved again (#54, 7ef421b). |
 | 2026-10-26 09:28 | Second fix round, base merged | 170e8be: the 390 px Re-run button wraps (UX N1); nits N2 to N6; the held-by bound with a page state past 200 and a label (re-review N1). Checks: typecheck 22; lint 1,499 files; lint:copy; lint:logs; unit 173 (web components, worker price); synth 158; rerun and reruns-routes db 47; e2e `pricing.spec.ts` 1. ed85bcf: claude/build-platform 7ef421b (#54 settings amounts in dollars) merged in, clean, both lanes' rows kept (CAS-38 and CAS-39 beside PRC-25 to PRC-28), its checks passing. Pushed ed85bcf. |
 | 2026-10-26 09:29 | Final verification | wf_6b60ea5d-f8c on ed85bcf: the fresh-clone verification reading CI, the screens re-taken at 390 and 320 px, and a UX confirm. The #32 design resumed in parallel (wf_98ca48d8-64c). |
+| 2026-10-26 09:42 | Final verification, then a third fix round | wf_6b60ea5d-f8c on ed85bcf:
+- **Fresh clone:** every local check passes (typecheck 22; lint 1,505; lint:copy; lint:logs; check:fixtures; synth 158; unit 184; db 47), and the records match the code. The PRC-26 property-test naming nit stays as is: the db tests name and assert PRC-26.
+- **CI on ed85bcf (so far):** unit 5,140 passed, 1 skipped; db (2/4) 2,578, (3/4) 2,498, (4/4) 902; e2e (1/2) 26; every completed check green.
+- **UX confirm:** N1 to N6 fixed, as shown at 390 and 320 px. Two new should-fix findings:
+  - NEW-A: ScrollTable does not contain its sr-only cells, so run pages scroll sideways.
+  - NEW-B: the diff summary counts unpriced lines as priced at $0.00. This predates the PR, in `summaryOf`, and is fixed here because the PR changes that file and those screens.
+- **Next:** the third fix round wf_96f70b2e-d9a, with a screens confirm. |
 
 **Proposal for Lane A:** the trigger mirror in `pricing_run_rules()` (design §5.2). Recommended, not urgent; it needs the founder's exception for a pricing table.
 

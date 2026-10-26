@@ -27,6 +27,8 @@ const PNG = `${OUT}/png`;
 const FIXTURES = '/home/user/screens/fixtures/synthetic';
 const DESKTOP = { width: 1280, height: 800 };
 const PHONE = { width: 390, height: 844 };
+// The narrowest phone (UX recheck of PR #50, N1: the longer "Re-run the run in effect under release N" button wraps).
+const NARROW = { width: 320, height: 568 };
 const WIDTHS = [DESKTOP, PHONE] as const;
 
 interface Shot {
@@ -56,25 +58,53 @@ async function settle(page: Page): Promise<void> {
 }
 
 /** The page as it stands now (no navigation), at its current width. */
-async function save(page: Page, name: string, state: string): Promise<void> {
-  await settle(page);
-  counter += 1;
+async function save(page: Page, name: string, state: string, tag?: string, quick = tag !== undefined && tag !== 'c'): Promise<void> {
+  // A quick shot is the refusal moment (tags "a", "b"), while the page's refresh is held on purpose: waiting for the
+  // network to go idle would wait on that held read and outlast the head's focus hand-off (action-form.tsx
+  // TAKEOVER_MS, 15 s), so it waits only for the load, the fonts and a short pause. Tag "c" is a 320 px shot of a state
+  // already shot at 1280 and 390 px, added after them without renumbering; it settles as usual.
+  if (!quick) {
+    await settle(page);
+  } else {
+    await page.waitForLoadState('load');
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await page.waitForTimeout(400);
+  }
+  // A tagged shot (tag "a", "b", "c") sits after shot `counter` without taking a number, so a shot only one side of a
+  // before/after pair, or only a later tour, has does not renumber the shots after it.
+  if (tag === undefined) counter += 1;
   const width = page.viewportSize()?.width ?? 0;
-  const file = `${PNG}/${String(counter).padStart(2, '0')}-${name}-${String(width)}.png`;
+  const file = `${PNG}/${String(counter).padStart(2, '0')}${tag ?? ''}-${name}-${String(width)}.png`;
   await page.screenshot({ path: file, fullPage: true, animations: 'disabled' });
   const url = new URL(page.url());
   shots.push({ file, route: `${url.pathname}${url.search}`, state, width });
   record();
 }
 
-/** Opens the route at 1280 then 390 px and saves each; a failure is recorded and the capture goes on. */
-async function capture(page: Page, name: string, route: string, state: string): Promise<void> {
+/** Whether the page offers the run in effect's Re-run (head only), logged beside a 320 px shot for the record. */
+async function logRerunOffer(page: Page, file: string): Promise<void> {
+  const offered = await page.getByRole('button', { name: /^Re-run the run in effect under release \d+$/ }).count();
+  console.log(`320 px ${file}: "Re-run the run in effect" buttons ${String(offered)}`);
+}
+
+/**
+ * Opens the route at 1280 then 390 px and saves each; a failure is recorded and the capture goes on. `narrow` adds a
+ * 320 px shot: tagged "c" (no new number) for a state earlier tours shot at two widths only, or numbered ("numbered")
+ * for a state new to this spec.
+ */
+async function capture(page: Page, name: string, route: string, state: string, narrow?: 'tagged' | 'numbered'): Promise<void> {
   await test.step(`${name} (${state})`, async () => {
     try {
       for (const size of WIDTHS) {
         await page.setViewportSize(size);
         await page.goto(route);
         await save(page, name, state);
+      }
+      if (narrow !== undefined) {
+        await page.setViewportSize(NARROW);
+        await page.goto(route);
+        await save(page, name, state, narrow === 'tagged' ? 'c' : undefined);
+        await logRerunOffer(page, `${name} (${state})`);
       }
     } catch (error) {
       skipped.push(`${name} (${state}): ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
@@ -192,9 +222,10 @@ test('audit #10 screens: a re-run superseded by a newer run of its month (synthe
       await page.getByRole('button', { name: /^Re-run under release \d+$/ }).click();
       await expect(page.getByRole('region', { name: 'Re-run' })).toBeVisible();
       rerun = runIdOf(page);
+      // The diff, or (accepting it changing nothing, the head since its second fix round) its one no-changes line.
       await expect(async () => {
         await page.reload();
-        await expect(page.locator('[data-state="diff-summary"]')).toBeVisible({ timeout: 1_000 });
+        await expect(page.locator('[data-state="diff-summary"], [data-state="no-changes"]').first()).toBeVisible({ timeout: 1_000 });
       }).toPass({ timeout: 120_000 });
     } finally {
       await local.close();
@@ -254,7 +285,7 @@ test('audit #10 screens: a re-run superseded by a newer run of its month (synthe
   });
 
   const SUPERSEDED_RERUN = 'superseded: X in effect and would price differently now (a mapping corrected after X)';
-  await capture(page, 'rerun-page', `${runs}/${rerun}`, SUPERSEDED_RERUN);
+  await capture(page, 'rerun-page', `${runs}/${rerun}`, SUPERSEDED_RERUN, 'tagged');
   await capture(page, 'original-run-page', `${runs}/${first}`, SUPERSEDED_RERUN);
   await capture(page, 'compare-original-rerun', `${runs}/compare?before=${first}&after=${rerun}`, SUPERSEDED_RERUN);
   await capture(page, 'pricing-runs-list', runs, SUPERSEDED_RERUN);
@@ -267,12 +298,48 @@ test('audit #10 screens: a re-run superseded by a newer run of its month (synthe
       await stale.setViewportSize(PHONE);
       await save(stale, 'stale-rerun-before-accept', STALE);
       await stale.setViewportSize(DESKTOP);
+      // The refusal moment (head only): ActionForm's refreshOnError reads the page again (router.refresh, a GET with
+      // the RSC header) right after a refusal. Those reads are held until the refusal is captured, then let through;
+      // the gate opens by itself after 60 s, so a page that needs such a read to show its result (the base's
+      // acceptance) is only delayed. The server action's own POST is never held.
+      let open: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        open = resolve;
+        setTimeout(resolve, 60_000);
+      });
+      await stale.route('**/*', async (route) => {
+        const request = route.request();
+        const headers = request.headers();
+        if (request.method() === 'GET' && headers.rsc === '1' && headers['next-action'] === undefined) await gate;
+        await route.continue().catch(() => undefined);
+      });
+      const refused = refusal(stale).filter({ hasText: 'This re-run:' });
+      const explanation = refusal(stale).filter({ hasText: 'A newer run of these service dates is in effect' });
       await stale.getByRole('button', { name: 'Accept this run' }).click();
-      await expect(stale.locator('[data-state="accepted"]').or(refusal(stale).first())).toBeVisible({ timeout: 30_000 });
+      // The base accepts (data-state="accepted"); the head refuses ("This re-run: ...").
+      await expect(stale.locator('[data-state="accepted"]').or(refused)).toBeVisible({ timeout: 30_000 });
+      if (await refused.isVisible()) {
+        const REFUSED = 'stale tab on R: Accept refused, before the page refreshes (head only: the base accepts)';
+        await save(stale, 'stale-rerun-refused', REFUSED, 'a');
+        await stale.setViewportSize(PHONE);
+        await save(stale, 'stale-rerun-refused', REFUSED, 'b');
+        await stale.setViewportSize(DESKTOP);
+      }
+      open();
+      // Then the page as it settles: accepted on the base, the explanation in place of the form on the head.
+      await expect(stale.locator('[data-state="accepted"]').or(explanation)).toBeVisible({ timeout: 30_000 });
+      // The head hands the refused form's focus to the explanation that takes its place ([data-takes-over^="accept:"]);
+      // the base has no such element. Logged for the record, not asserted, so the same spec runs on both.
+      await stale.waitForTimeout(500);
+      const focused = await stale.evaluate(() => document.activeElement?.getAttribute('data-takes-over') ?? document.activeElement?.tagName ?? 'none');
+      console.log(`stale accept: focus after the refresh is on ${focused}`);
       const AFTER = 'stale tab on R: after pressing Accept (the base accepts it; the head refuses and refreshes)';
       await save(stale, 'stale-rerun-after-accept', AFTER);
       await stale.setViewportSize(PHONE);
       await save(stale, 'stale-rerun-after-accept', AFTER);
+      await stale.setViewportSize(NARROW);
+      await save(stale, 'stale-rerun-after-accept', AFTER, 'c');
+      await logRerunOffer(stale, 'stale-rerun-after-accept');
     } catch (error) {
       skipped.push(`stale accept: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
       record();
@@ -282,11 +349,75 @@ test('audit #10 screens: a re-run superseded by a newer run of its month (synthe
   });
 
   const AFTER_STALE = 'after the stale Accept was pressed';
-  await capture(page, 'rerun-page', `${runs}/${rerun}`, AFTER_STALE);
+  await capture(page, 'rerun-page', `${runs}/${rerun}`, AFTER_STALE, 'tagged');
   await capture(page, 'original-run-page', `${runs}/${first}`, AFTER_STALE);
   await capture(page, 'coverage', `/p/${other}/coverage`, AFTER_STALE);
 
-  writeFileSync(`${OUT}/ids.superseded.json`, `${JSON.stringify({ practice: other, first, rerun, newer }, null, 2)}\n`);
+  // A re-run whose acceptance diff has changed lines (UX recheck of PR #50, N3: the changed-lines table scrolls
+  // sideways on a phone). The plan's mapping is corrected to out of network, so every February line would read
+  // NO_AGREEMENT (docs/product/unpriced-reasons.md) instead of its MA non-contracted price, and the run in effect is
+  // re-run: from the superseded re-run's page where it offers "Re-run the run in effect" (head), else from the run in
+  // effect's own page (the base, where the stale Accept made R the run in effect). Taken last, so no earlier shot moves.
+  let changed = '';
+  await test.step('the plan’s mapping is corrected to out of network, and the run in effect is re-run (changed lines)', async () => {
+    try {
+      await page.goto(planPage);
+      await page.getByLabel('Agreement', { exact: true }).selectOption({ label: 'No agreement (out of network)' });
+      await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
+      await page.getByLabel('Corrects', { exact: true }).selectOption({ index: 1 });
+      await page.getByRole('button', { name: 'Save the mapping' }).click();
+      await expect(page.locator('[data-notice="corrected"]')).toBeVisible();
+      await page.goto(`${runs}/${rerun}`);
+      const offer = page.getByRole('button', { name: /^Re-run the run in effect under release \d+$/ });
+      let from = page.url();
+      if ((await offer.count()) === 0) {
+        await page.goto(runs);
+        const inEffect = page.getByRole('list', { name: 'Pricing runs' }).getByRole('listitem').filter({ has: page.locator('[data-state="in-effect"]') });
+        await inEffect.getByRole('link', { name: /^Pricing run, 2026-02-01 to 2026-02-28, / }).first().click();
+        await expect(page.getByRole('button', { name: /^Re-run under release \d+$/ })).toBeVisible();
+        from = page.url();
+      }
+      const local = await startLocalWorker();
+      try {
+        await page.getByRole('button', { name: /^Re-run (the run in effect )?under release \d+$/ }).click();
+        await expect(page).not.toHaveURL(from);
+        await expect(page.getByRole('region', { name: 'Re-run' })).toBeVisible();
+        changed = runIdOf(page);
+        await expect(async () => {
+          await page.reload();
+          await expect(page.locator('[data-state="diff-summary"], [data-state="no-changes"]').first()).toBeVisible({ timeout: 1_000 });
+        }).toPass({ timeout: 120_000 });
+      } finally {
+        await local.close();
+      }
+      const lines = await page.getByRole('table', { name: 'Changed lines' }).getByRole('row').count();
+      console.log(`changed-lines re-run ${changed}: Changed lines table rows (with its header) ${String(lines)}`);
+      // Changed lines, not the no-changes line (the table's name is the head's; the base's table may have none).
+      await expect(page.locator('[data-state="diff-summary"]')).toBeVisible();
+      await expect(page.locator('[data-state="no-changes"]')).toHaveCount(0);
+    } catch (error) {
+      skipped.push(`changed-lines re-run: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
+      record();
+    }
+  });
+
+  if (changed !== '') {
+    const CHANGED = 'changed lines: the plan corrected to out of network, the run in effect re-run, awaiting acceptance (every line priced in effect would read NO_AGREEMENT)';
+    await capture(page, 'changed-rerun-page', `${runs}/${changed}`, CHANGED, 'numbered');
+    await test.step('the changed-lines re-run is accepted', async () => {
+      try {
+        await page.goto(`${runs}/${changed}`);
+        await page.getByRole('button', { name: 'Accept this run' }).click();
+        await expect(page.locator('[data-state="accepted"]')).toBeVisible({ timeout: 30_000 });
+      } catch (error) {
+        skipped.push(`changed-lines accept: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
+        record();
+      }
+    });
+    await capture(page, 'changed-rerun-page', `${runs}/${changed}`, 'changed lines: that re-run accepted and in effect', 'numbered');
+  }
+
+  writeFileSync(`${OUT}/ids.superseded.json`, `${JSON.stringify({ practice: other, first, rerun, newer, changed }, null, 2)}\n`);
   record();
   expect(skipped).toEqual([]);
 });
