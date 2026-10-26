@@ -6,8 +6,24 @@ import path from 'node:path';
 
 import { referenceCandidate } from '../../eval/reference';
 import { sha256Hex } from '../hash';
-import { SYNTHETIC_CONTRACT_PAGES, syntheticContractInput, syntheticContractOutput } from '../testing';
-import { CITED_FIELDS, type ContractTermsCandidate, type FieldReview, MAX_PAGES, SCOPE_UNSTATED, contractTermsOutput, contractTermsSpec, rowProblems, scopesOverlap, verifyContractTerms } from './contract-terms';
+import { syntheticRecordsCheck } from '../patient-records';
+import { NO_IDENTIFIERS, SYNTHETIC_CONTRACT_PAGES, SYNTHETIC_IDS, memoryPracticeRecords, syntheticContractInput, syntheticContractOutput, syntheticPracticeCheck } from '../testing';
+import {
+  CITED_FIELDS,
+  type ContractTermsCandidate,
+  type FieldReview,
+  MAX_PAGES,
+  NAMES_PATIENT_MESSAGE,
+  SCOPE_UNSTATED,
+  SCREEN_UNAVAILABLE_MESSAGE,
+  contractTermsOutput,
+  contractTermsSpec,
+  rowProblems,
+  scopesOverlap,
+  screenContractPages,
+  verifyContractTerms,
+} from './contract-terms';
+import { practiceRecordsCheck } from '../patient-records';
 
 /**
  * proposeContractTerms's verifier (test matrix MOD-01, MOD-02): every quote on its page, every amount,
@@ -438,5 +454,67 @@ describe('the row check (not_in_row, docs/adr/0070 Part 1)', () => {
       }
     }
     expect(fields).toBe(742);
+  });
+});
+
+describe('the contract PHI check (combined audit #120; docs/adr/0070 Part 3)', () => {
+  const PRACTICE_CALL = { practiceId: SYNTHETIC_IDS.practice, requestKey: 'request-1' };
+  const EVALUATION_CALL = { practiceId: null, requestKey: 'eval-1' };
+  const HELD = { memberIds: ['ZZ1234567'], patientControlNumbers: ['SYNPCN00012345'], payerClaimNumbers: ['7712345678901'] };
+  const screen = (patientRecords: Parameters<typeof screenContractPages>[0]['patientRecords'], pages: readonly string[] = SYNTHETIC_CONTRACT_PAGES, context: { practiceId: string | null; requestKey: string } = PRACTICE_CALL) =>
+    screenContractPages({ ...input, pages, patientRecords }, contractTermsSpec.prepare({ ...input, pages }), context);
+
+  it('is the purpose’s screen', async () => {
+    const forged = { practiceId: SYNTHETIC_IDS.practice, namesPatient: () => Promise.resolve('clear' as const) };
+    await expect(contractTermsSpec.screen?.({ ...input, patientRecords: forged }, contractTermsSpec.prepare(input), PRACTICE_CALL)).rejects.toMatchObject({ code: 'screen_invalid' });
+    await expect(contractTermsSpec.screen?.(input, contractTermsSpec.prepare(input), PRACTICE_CALL)).resolves.toBeUndefined();
+  });
+
+  it('passes a contract that names no patient of the practice', async () => {
+    await expect(screen(syntheticPracticeCheck(SYNTHETIC_IDS.practice, HELD))).resolves.toBeUndefined();
+  });
+
+  it('refuses a page naming a member ID, a payer claim number (as written and hyphenated) or a long patient control number, with a fixed sentence', async () => {
+    for (const page of ['Member ID:ZZ 123 4567', 'Claim 7712345678901', 'Claim 77-1234-5678901', 'Patient account SYNPCN00012345']) {
+      const refusal = screen(syntheticPracticeCheck(SYNTHETIC_IDS.practice, HELD), [SYNTHETIC_CONTRACT_PAGES[0] ?? '', page]);
+      await expect(refusal, page).rejects.toMatchObject({ name: 'InputRefusedError', code: 'names_patient', message: NAMES_PATIENT_MESSAGE });
+    }
+    expect(NAMES_PATIENT_MESSAGE).toBe('this document names a patient of the practice and was not sent');
+  });
+
+  it('refuses a check the gateway did not issue, or issued for another practice, as screen_invalid', async () => {
+    const forged = { practiceId: SYNTHETIC_IDS.practice, namesPatient: () => Promise.resolve('clear' as const) };
+    await expect(screen(forged)).rejects.toMatchObject({ code: 'screen_invalid' });
+    await expect(screen(Object.freeze({ ...syntheticPracticeCheck() }))).rejects.toMatchObject({ code: 'screen_invalid' });
+    await expect(screen(syntheticPracticeCheck(SYNTHETIC_IDS.otherPractice))).rejects.toMatchObject({ code: 'screen_invalid' });
+    await expect(screen(undefined as never)).rejects.toMatchObject({ code: 'screen_invalid' });
+  });
+
+  it('accepts a synthetic check (no practice) on an evaluation call only, and a practice check on a practice call only', async () => {
+    await expect(screen(syntheticRecordsCheck(NO_IDENTIFIERS))).rejects.toMatchObject({ code: 'screen_invalid' });
+    await expect(screen(syntheticRecordsCheck(NO_IDENTIFIERS), SYNTHETIC_CONTRACT_PAGES, EVALUATION_CALL)).resolves.toBeUndefined();
+    await expect(screen(syntheticPracticeCheck(), SYNTHETIC_CONTRACT_PAGES, EVALUATION_CALL)).rejects.toMatchObject({ code: 'screen_invalid' });
+  });
+
+  it('refuses when the records could not be read: screen_unavailable above the bound, screen_failed on any load error', async () => {
+    const memory = (options: Parameters<typeof memoryPracticeRecords>[2]) => {
+      const held = memoryPracticeRecords(SYNTHETIC_IDS.practice, HELD, options);
+      return practiceRecordsCheck({ authorizedBy: held.scope, pool: held.pool, cipher: held.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
+    };
+    await expect(screen(memory({ identifierCount: 50_001 }))).rejects.toMatchObject({ code: 'screen_unavailable', message: SCREEN_UNAVAILABLE_MESSAGE });
+    await expect(screen(memory({ fault: 'decrypt' }))).rejects.toMatchObject({ code: 'screen_failed', message: SCREEN_UNAVAILABLE_MESSAGE });
+    expect(SCREEN_UNAVAILABLE_MESSAGE).toBe('this document could not be checked for patient details and was not sent');
+  });
+
+  it('a fee-schedule twin is not refused by a practice whose short patient control numbers are CPT codes and whose others are dates and words', async () => {
+    const practice = { memberIds: ['ZZ1234567', '990012345'], patientControlNumbers: ['97110', '97140', '20260101', '12312026', 'AGREEMENT', '10000001'], payerClaimNumbers: ['7712345678901'] };
+    const twin = [
+      'SYNTHETIC FEE SCHEDULE EXHIBIT  Provider NPI 9912345678  TIN 00-1234567',
+      'Remit to SYNTHVILLE NC 00013-1234; phone 555-555-1234',
+      'Effective 2026-01-01 (01/01/2026, January 1, 2026, 01-01-2026) through 12-31-2026',
+      'CPT 97110 $32.50   CPT 97140 $30.25   CPT 97530 $35.00   CPT 97112 $31.00',
+      'This AGREEMENT governs REIMBURSEMENT of Covered Services',
+    ];
+    await expect(screen(syntheticPracticeCheck(SYNTHETIC_IDS.practice, practice), twin)).resolves.toBeUndefined();
   });
 });

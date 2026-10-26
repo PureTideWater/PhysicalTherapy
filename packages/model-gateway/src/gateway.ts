@@ -2,7 +2,7 @@ import type { Logger } from '@tp/observability';
 
 import { CALL_TIMEOUT_MS } from './config';
 import { type Serving, gatewayServing } from './evaluated';
-import { DuplicateModelCallError, GatewayError, ModelBudgetExceededError, ModelBusyError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
+import { DuplicateModelCallError, GatewayError, InputRefusedError, ModelBudgetExceededError, ModelBusyError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
 import type { ContractPagesInput, ContractTermsProposal } from './functions/contract-terms';
 import type { DenialLetterInput, DenialLetterProposal } from './functions/denial-letter';
 import type { EvidenceRequestsInput, EvidenceRequestsProposal } from './functions/evidence-requests';
@@ -35,8 +35,10 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  *    patient, an identifier in a narrative's inputs), frames the input as data and names the model
  *    variant (the larger model for a contract marked ambiguous); the variant served, or the call is
  *    refused as `not_evaluated`; and only then the purpose's screen against records outside the input (a
- *    letter naming another patient of the practice), so no audited read runs for a call that would be
- *    refused anyway.
+ *    letter naming another patient of the practice; a contract naming any patient of the practice, through
+ *    the records check the gateway issued for the call's practice, ./patient-records.ts), so no audited read
+ *    runs for a call that would be refused anyway. A screen's refusal is logged with the practice's ID and
+ *    its code only.
  * 5. The idempotency key: the SHA-256 of the purpose, prompt version, practice, the caller's request key
  *    and the input hashes. A completed call under the key is never made again (a replay of a job).
  * 6. The practice's daily budget (test matrix MOD-05): a call is refused once the day's spend, with the
@@ -220,7 +222,7 @@ export class ModelGateway {
     if (!this.served.keys.has(servedKey(spec.purpose, prepared.variant))) {
       throw new ModelFeatureOffError('not_evaluated');
     }
-    await spec.screen?.(input, prepared);
+    await this.screen(spec, input, prepared, context);
     const { prompt } = spec;
     const modelId = modelFor(prompt, provider.kind, prepared.variant);
     const price = priceOf(provider.kind, modelId, this.prices);
@@ -260,6 +262,43 @@ export class ModelGateway {
       if (!recorded && holdId !== null && practiceId !== null) {
         await store.release(practiceId, holdId);
       }
+    }
+  }
+
+  /**
+   * The purpose's screen against records outside the input (step 4): a refusal is logged with the practice's ID
+   * and a code only (docs/adr/0070, Part 3; never which identifier, its kind, how many or any text) and rethrown,
+   * so nothing is sent, no budget is held and no model_call row is written.
+   */
+  private async screen<I, O, P, C>(spec: PurposeSpec<I, O, P, C>, input: I, prepared: PreparedCall<C>, context: CallContext): Promise<void> {
+    try {
+      await spec.screen?.(input, prepared, context);
+    } catch (error) {
+      this.logScreenRefusal(error instanceof InputRefusedError ? error.code : null, context.practiceId);
+      throw error;
+    }
+  }
+
+  /** One line per screen refusal: a fixed sentence, the practice's ID and a code (the design's 5.6); a screen's own message is never logged. */
+  private logScreenRefusal(code: string | null, practiceId: string | null): void {
+    const { logger } = this.options;
+    switch (code) {
+      case 'names_patient':
+        logger.warn('a model call was refused before it was sent: its input names a patient of the practice', { practice_id: practiceId, error_code: 'MODEL_INPUT_NAMES_PATIENT' });
+        return;
+      case 'more_than_one_patient':
+        logger.warn('a model call was refused before it was sent: its input names more than one patient', { practice_id: practiceId, error_code: 'MODEL_INPUT_MORE_THAN_ONE_PATIENT' });
+        return;
+      case 'screen_unavailable':
+        logger.warn('a model call was refused before it was sent: the practice holds more identifiers than the screen reads', { practice_id: practiceId, error_code: 'MODEL_INPUT_SCREEN_UNAVAILABLE' });
+        return;
+      case 'screen_invalid':
+        logger.warn('a model call was refused before it was sent: it carried no records check the gateway issued for its practice', { practice_id: practiceId, error_code: 'MODEL_INPUT_SCREEN_INVALID' });
+        return;
+      case null:
+      default:
+        // screen_failed, or a screen that failed some other way: the call is refused all the same.
+        logger.warn('a model call was refused before it was sent: its screen could not read the practice records', { practice_id: practiceId, error_code: 'MODEL_INPUT_SCREEN_FAILED' });
     }
   }
 

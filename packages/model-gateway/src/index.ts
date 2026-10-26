@@ -153,11 +153,12 @@ export {
   recordReviewerDecisionIn,
   setFeatureFlag,
 } from './postgres-store';
-export { PURPOSE_SPECS, type PurposeInputs, type PurposeOutputs, type PurposeProposals, requestFor } from './specs';
+export { PURPOSE_SPECS, type PurposeInputs, type PurposeOutputs, type PurposeProposals, type RequestInputs, requestFor } from './specs';
 export {
   CONTRACT_KINDS,
   type CandidateReview,
   type CodeDefault,
+  type ContractPages,
   type ContractPagesInput,
   type ContractTermsOutput,
   type ContractTermsProposal,
@@ -165,9 +166,24 @@ export {
   type FieldProblem,
   type FieldReview,
   MAX_PAGES,
+  NAMES_PATIENT_MESSAGE,
   type ProposedRateRecord,
+  SCREEN_UNAVAILABLE_MESSAGE,
   verifyContractTerms,
 } from './functions/contract-terms';
+export {
+  CONTRACT_SCREEN_PURPOSE,
+  type PatientRecordsCheck,
+  type PracticeRecordsOptions,
+  SCREEN_MAX_IDENTIFIERS,
+  type ScreenIdentifiers,
+  type ScreenOutcome,
+  issuedCheck,
+  practiceRecordsCheck,
+  recordContractScreenRequested,
+  screenAuditRequestId,
+  syntheticRecordsCheck,
+} from './patient-records';
 export {
   type DenialCategory,
   type DenialLetterInput,
@@ -187,4 +203,4 @@ export {
   KNOWN_REASON_CODES,
   verifyEvidenceRequests,
 } from './functions/evidence-requests';
-export { type LetterClaim, type PatientIdentifiers, compactIdentifier, identifierCandidates, redactLetter } from './redact';
+export { type LetterClaim, type PatientIdentifiers, SCREEN_FLOORS, compactIdentifier, identifierCandidates, identifierRuns, redactLetter } from './redact';

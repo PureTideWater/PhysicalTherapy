@@ -30,7 +30,7 @@ import {
 } from '@tp/synth';
 import { z } from 'zod';
 
-import type { ContractPagesInput } from '../src/functions/contract-terms';
+import type { ContractPages } from '../src/functions/contract-terms';
 import type { NarrativeInput } from '../src/functions/narrative';
 
 /**
@@ -159,8 +159,8 @@ export interface ContractCase {
   readonly tier: ContractTier;
   readonly pageText: PageTextFidelity;
   readonly truth: ContractTruth;
-  /** The document as intake read it, as the gateway is given it. */
-  readonly input: ContractPagesInput;
+  /** The document as intake read it, as the gateway is given it (the harness adds the synthetic records check). */
+  readonly input: ContractPages;
   /** Whether a text reader found no text on any page (an image-only scan's pages carry none). */
   readonly textless: boolean;
 }

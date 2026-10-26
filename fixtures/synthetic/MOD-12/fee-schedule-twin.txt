@@ -1,0 +1,18 @@
+SYNTHETIC Payer G fee schedule exhibit
+Provider NPI 9932538736 and group NPI 9948470015; TIN 00-0481549.
+Remit to SYNTHVILLE NC 00013-0042 or SYNTHTOWN NC 00011-1234; phone 555-555-0142.
+Effective 2026-01-01 (01/01/2026; 01-01-2026; 20260101) through December 31 2026 (12-31-2026).
+This SCHEDULE is part of the AGREEMENT and governs REIMBURSEMENT.
+
+97110   $40.00 per unit
+97112   $42.00 per unit
+97116   $46.00 per unit
+97140   $30.00 per unit
+97530   $60.00 per unit
+97161   $51.00 per unit
+97162   $52.00 per unit
+97163   $53.00 per unit
+97164   $54.00 per unit
+97026   $56.00 per unit
+97035   $65.00 per unit
+G0283   $33.00 per unit

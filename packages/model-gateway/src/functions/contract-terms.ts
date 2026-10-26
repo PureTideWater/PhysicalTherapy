@@ -4,8 +4,10 @@ import { centsToString } from '@tp/money';
 import { z } from 'zod';
 
 import { InputRefusedError } from '../errors';
+import type { CallContext } from '../gateway';
 import { isSha256, sha256Hex } from '../hash';
 import { type QuoteSpan, type WrittenFigure, codeTokens, figureInQuote, figureSpans, inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote, tokenSpans } from '../figures';
+import { type PatientRecordsCheck, issuedCheck } from '../patient-records';
 import { PROMPTS } from '../prompts';
 import type { PurposeSpec, Verified } from '../spec';
 import { framePages } from '../untrusted';
@@ -87,7 +89,8 @@ export type ContractTermsOutput = z.output<typeof contractTermsOutput>;
 /** The stored document kinds a contract proposal reads: no other kind is ever sent (a payer letter is PHI). */
 export const CONTRACT_KINDS = ['contract', 'exhibit'] as const;
 
-export interface ContractPagesInput {
+/** The document a contract call reads: what the request is framed from, and what the verifier checks the answer against. */
+export interface ContractPages {
   readonly documentId: string;
   /** The stored document's SHA-256. */
   readonly documentSha256: string;
@@ -97,6 +100,15 @@ export interface ContractPagesInput {
   readonly pages: readonly string[];
   /** The specialist marked the contract ambiguous: the prompt's larger model reads it (PRD 14). */
   readonly ambiguous?: boolean;
+}
+
+export interface ContractPagesInput extends ContractPages {
+  /**
+   * The practice's records, asked before anything is sent whether the pages name one of its patients (combined
+   * audit #120; ../patient-records.ts). Required, so no caller compiles without one, and the screen accepts only a
+   * check the gateway's factories issued for the call's own practice (a synthetic one only on an evaluation call).
+   */
+  readonly patientRecords: PatientRecordsCheck;
 }
 
 export const FIELD_PROBLEMS = ['page_missing', 'quote_not_on_page', 'not_in_quote', 'unreadable', 'not_in_row'] as const;
@@ -421,7 +433,7 @@ function evidenceField(candidate: ContractTermsCandidate): { readonly page: numb
   return candidate.amount ?? candidate.percentage ?? candidate.method;
 }
 
-function reviewCandidate(input: ContractPagesInput, candidate: ContractTermsCandidate, index: number): Omit<CandidateReview, 'conflictsWith'> {
+function reviewCandidate(input: ContractPages, candidate: ContractTermsCandidate, index: number): Omit<CandidateReview, 'conflictsWith'> {
   const reviewed = citedFields(candidate).map((entry) => reviewField(entry, input.pages));
   const notInRow = rowProblems(candidate, reviewed);
   const fields = reviewed.map((field): FieldReview => (notInRow.has(field.field) ? { ...field, verified: false, problems: [...field.problems, 'not_in_row'] } : field));
@@ -446,7 +458,7 @@ function reviewCandidate(input: ContractPagesInput, candidate: ContractTermsCand
   return { index, label: candidate.label, method: candidate.method.value, fields, defaults: [...new Set(defaults)], rateRecord, problems };
 }
 
-export function verifyContractTerms(input: ContractPagesInput, output: ContractTermsOutput): Verified<ContractTermsProposal> {
+export function verifyContractTerms(input: ContractPages, output: ContractTermsOutput): Verified<ContractTermsProposal> {
   const reviews = output.candidates.map((candidate, index) => reviewCandidate(input, candidate, index));
   const scopes = output.candidates.map(readScope);
   const candidates: CandidateReview[] = reviews.map((review, index) => ({
@@ -464,6 +476,40 @@ export function verifyContractTerms(input: ContractPagesInput, output: ContractT
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The sentence a person reads when a contract names a patient (docs/adr/0070, Part 3): no identifier, kind or count. */
+export const NAMES_PATIENT_MESSAGE = 'this document names a patient of the practice and was not sent';
+/** The sentence for a check that could not run (the bound, or a load error): the call is refused, never sent unchecked. */
+export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked for patient details and was not sent';
+
+/**
+ * The contract PHI check (combined audit #120; docs/adr/0070, Part 3), run by the gateway after preparation and the
+ * variant's serving check and before the idempotency key, the budget and the call (gateway.ts, step 4):
+ * 1. the check must be one the gateway's factories issued (../patient-records.ts), else `screen_invalid`;
+ * 2. it must be bound to the call's practice (a synthetic check, bound to none, only on a synthetic evaluation
+ *    call), else `screen_invalid`;
+ * 3. a page run that is one of the practice's member IDs, payer claim control numbers or patient control numbers
+ *    refuses the call as `names_patient`; a check that could not read the records refuses it as
+ *    `screen_unavailable` (the bound) or `screen_failed` (any load error). Every message is a fixed sentence.
+ */
+export async function screenContractPages(input: ContractPagesInput, _prepared: unknown, context: CallContext): Promise<void> {
+  const check: unknown = input.patientRecords;
+  if (!issuedCheck(check) || check.practiceId !== context.practiceId) {
+    throw new InputRefusedError('screen_invalid', 'a contract is sent only with the practice records check the gateway issues');
+  }
+  const outcome = await check.namesPatient(input.pages);
+  switch (outcome) {
+    case 'clear':
+      return;
+    case 'names_patient':
+      throw new InputRefusedError('names_patient', NAMES_PATIENT_MESSAGE);
+    case 'screen_unavailable':
+    case 'screen_failed':
+      throw new InputRefusedError(outcome, SCREEN_UNAVAILABLE_MESSAGE);
+    default:
+      throw new InputRefusedError('screen_failed', SCREEN_UNAVAILABLE_MESSAGE);
+  }
+}
 
 export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOutput, ContractTermsProposal> = {
   purpose: 'proposeContractTerms',
@@ -491,5 +537,6 @@ export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOut
       context: undefined,
     };
   },
+  screen: screenContractPages,
   verify: verifyContractTerms,
 };

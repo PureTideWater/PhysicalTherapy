@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { ESLint } from 'eslint';
@@ -50,5 +50,49 @@ describe('a test file that imports the provider directly', () => {
   it('passes inside packages/model-gateway, the only code that calls a model', async () => {
     const result = await lintAs('packages/model-gateway/src/narrative.test.ts');
     expect(result.messages.filter((message) => message.message.includes(MESSAGE))).toEqual([]);
+  });
+});
+
+/**
+ * The contract PHI check (combined audit #120; docs/adr/0070, Part 3) is accepted only when patient-records.ts issued
+ * it: its WeakSet is added to in one place, called by the two factories alone, and no other source in the
+ * repository builds an object with a namesPatient method (a hand-made check would be refused at runtime as
+ * screen_invalid; this keeps one from being written at all).
+ */
+describe('the contract screen’s records check is issued only by its two factories', () => {
+  const SOURCE = /\.(?:ts|tsx|mts|cts)$/;
+  const SKIP = new Set(['node_modules', '.git', '.next', 'dist', 'coverage', 'fixtures', '.turbo']);
+
+  function sources(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return SKIP.has(entry.name) ? [] : sources(full);
+      }
+      return SOURCE.test(entry.name) ? [full] : [];
+    });
+  }
+
+  const files = ['apps', 'packages', 'tools', 'infra'].flatMap((top) => (existsSync(path.join(root, top)) ? sources(path.join(root, top)) : []));
+  const relative = (file: string) => path.relative(root, file).split(path.sep).join('/');
+  const RECORDS = 'packages/model-gateway/src/patient-records.ts';
+
+  it('adds to the issued set in one function, which only practiceRecordsCheck and syntheticRecordsCheck call', () => {
+    // This file names the call it looks for, and is left out.
+    const adds = files.filter((file) => file !== import.meta.filename && readFileSync(file, 'utf8').includes('issued.add(')).map(relative);
+    expect(adds).toEqual([RECORDS]);
+    const text = readFileSync(path.join(root, RECORDS), 'utf8');
+    expect(text.match(/issued\.add\(/g)).toHaveLength(1);
+    expect(text).toMatch(/function issue\(check: PatientRecordsCheck\): PatientRecordsCheck \{\n {2}const frozen = Object\.freeze\(check\);\n {2}issued\.add\(frozen\);/);
+    // Each `return issue({` is one factory's; the module has exactly two.
+    const callers = [...text.matchAll(/export function (\w+)\([^)]*\): PatientRecordsCheck \{[\s\S]*?\n\}/g)].filter((match) => match[0].includes('return issue({')).map((match) => match[1]);
+    expect(callers).toEqual(['practiceRecordsCheck', 'syntheticRecordsCheck']);
+    expect(text.match(/\bissue\(/g)).toHaveLength(3);
+  });
+
+  it('defines a namesPatient method nowhere else', () => {
+    const definitions = files.filter((file) => /(?<![.\w])namesPatient\s*(?:\??:|\()|async\s+namesPatient\s*\(/.test(readFileSync(file, 'utf8'))).map(relative);
+    // patient-records.ts (the interface and the two factories) and the tests that show a forged check is refused.
+    expect(definitions.filter((file) => !/\.test\.tsx?$/.test(file))).toEqual([RECORDS]);
   });
 });

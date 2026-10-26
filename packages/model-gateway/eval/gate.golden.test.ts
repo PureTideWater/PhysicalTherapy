@@ -4,10 +4,12 @@ import path from 'node:path';
 
 import { normalizePageText, quoteOnPage } from '@tp/contracts';
 import { identifierForms } from '@tp/packets';
-import { INJECTION_CANARY, TRUTH_FIELDS } from '@tp/synth';
+import { COLLISION_CLASSES, INJECTION_CANARY, TRUTH_FIELDS, screenCollisionIdentifiers, screenTwinIdentifiers } from '@tp/synth';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { verifyContractTerms } from '../src/functions/contract-terms';
+import { type ScreenRules, SHIPPED_SCREEN_RULES, identifierEntries, pagesName, screenSet } from '../src/patient-records';
+import { SCREEN_FLOORS } from '../src/redact';
 import type { ModelProvider } from '../src/provider';
 import { readGatewayConfig } from '../src/config';
 import { COMMITTED_BASELINE, COMMITTED_FLOORS, servedSet, servingDecisions } from '../src/evaluated';
@@ -45,7 +47,7 @@ import {
   wrongValue,
 } from './faults';
 import { parseFloors } from './floors';
-import { type EvaluationReport, caseMismatches, contractReportFrom, runEvaluation, spliceReport } from './harness';
+import { type EvaluationReport, caseMismatches, contractReportFrom, runEvaluation, screenTwinRecords, spliceReport } from './harness';
 import { referenceContractOutput, registerReferences } from './reference';
 import { type LoadedContractSet, type LoadedNarrativeSet, CONTRACT_SET_MANIFEST, FIXTURES, contractSetHash, loadContractSet, loadNarrativeSet, truthFields } from './sets';
 
@@ -85,6 +87,19 @@ beforeAll(async () => {
   report = await runEvaluation({ provider: reference, contracts, narratives, store });
   held = { reference: report.contracts };
 }, 180_000);
+
+/**
+ * The collision measurement over set v2 (the design's check C.4; reported in the pull request): per class, how many
+ * identifiers the set's own pages yield and how many of its 63 documents a practice holding them would have refused,
+ * with the stored-side rules and without them. TIN and ZIP+4 collisions are refused either way (fail closed: a member
+ * ID equal to the practice's own TIN is a collision the check cannot tell from a patient).
+ */
+const MEASURED = {
+  date: { identifiers: 219, withRules: 0, withoutRules: 7 },
+  tin: { identifiers: 513, withRules: 10, withoutRules: 10 },
+  zip4: { identifiers: 500, withRules: 10, withoutRules: 10 },
+  word: { identifiers: 79, withRules: 0, withoutRules: 63 },
+};
 
 /** Every field's floor at one value (SYNTHETIC: a test floors file; the committed values are the founder's and the specialist's). */
 const every = (value: string | null) => Object.fromEntries(TRUTH_FIELDS.map((field) => [field, value]));
@@ -350,6 +365,52 @@ describe('the gate on the local deterministic provider', () => {
     // Every verifier passes but on four cases: the two whose reading errors leave a figure code cannot read (V05, V07),
     // and the two terms-only contracts of a pair (V03, L04), whose candidates state no rate for the terms to be valid.
     expect(store.calls.filter((call) => call.verifierPassed !== true)).toHaveLength(4);
+  });
+});
+
+describe('the contract PHI check over the set (test matrix MOD-12; docs/adr/0070 Part 3; the design’s check C.4)', () => {
+  /** Floors other than the ruled ones, for the measurement only. */
+  const floors = (patientControlNumber: number): ScreenRules => ({ floors: { ...SCREEN_FLOORS, patientControlNumber: { minLength: patientControlNumber, digit: true } }, dropDates: true });
+  /** Neither stored-side rule: no digit required, dates kept (the floors' lengths as ruled). */
+  const NO_RULES: ScreenRules = {
+    floors: { memberId: { minLength: 6, digit: false }, payerClaimNumber: { minLength: 6, digit: false }, patientControlNumber: { minLength: 8, digit: false } },
+    dropDates: false,
+  };
+  const refusedCases = (identifiers: Parameters<typeof identifierEntries>[0], rules: ScreenRules) => {
+    const set = screenSet(identifierEntries(identifiers), rules);
+    return contracts.cases.filter((item) => pagesName(item.input.pages, set)).map((item) => item.id);
+  };
+
+  it('screens every evaluation call against the large twin practice, and refuses none of set v2’s 63 documents', () => {
+    expect(report.contracts?.results.filter((result) => result.problem !== null)).toEqual([]);
+    expect(store.calls.filter((call) => call.purpose === 'proposeContractTerms')).toHaveLength(63);
+  });
+
+  it('refuses a case whose pages name a twin practice identifier, before its call: the harness’s check is the twin practice', async () => {
+    const twin = screenTwinIdentifiers();
+    const v01 = caseOf('V01');
+    const named = { ...contracts, cases: contracts.cases.map((item) => (item.id === 'V01' ? { ...item, input: { ...item.input, pages: [...item.input.pages, `Member ID: ${twin.memberIds[0] ?? ''}`] } } : item)) };
+    const before = store.calls.length;
+    const subset = await runEvaluation({ provider: reference, contracts: named, store, cases: new Set([v01.id]) });
+    expect(subset.contracts?.results.map((result) => [result.id, result.problem])).toEqual([['V01', 'refused:names_patient']]);
+    expect(store.calls).toHaveLength(before);
+    expect(screenTwinRecords()).toBe(screenTwinRecords());
+  });
+
+  it('the false-refusal measurement: zero refusals over the twin practice at the ruled floors (6/6/8), and at 6/6/6 and 6/6/10', () => {
+    const twin = screenTwinIdentifiers();
+    expect(twin.memberIds).toHaveLength(80_000);
+    expect(twin.patientControlNumbers).toHaveLength(201_000);
+    expect(twin.payerClaimNumbers).toHaveLength(200_000);
+    expect({ ruled: refusedCases(twin, SHIPPED_SCREEN_RULES), pcn6: refusedCases(twin, floors(6)), pcn10: refusedCases(twin, floors(10)) }).toEqual({ ruled: [], pcn6: [], pcn10: [] });
+  });
+
+  it('the adversarial collision classes (review M12): the stored-side rules bring dates and words to zero; TIN and ZIP+4 collisions stay refused and are counted', () => {
+    const classes = screenCollisionIdentifiers(contracts.cases.flatMap((item) => item.input.pages));
+    const counts = Object.fromEntries(
+      COLLISION_CLASSES.map((name) => [name, { identifiers: classes[name].memberIds.length + classes[name].patientControlNumbers.length, withRules: refusedCases(classes[name], SHIPPED_SCREEN_RULES).length, withoutRules: refusedCases(classes[name], NO_RULES).length }]),
+    );
+    expect(counts).toEqual(MEASURED);
   });
 });
 

@@ -91,6 +91,19 @@ export {
   textractRecording,
 } from './formats/scan';
 
+// The contract PHI check's twin practices (combined audit #120; docs/adr/0070 Part 3; test matrix MOD-12).
+export {
+  COLLISION_CLASSES,
+  type CollisionClass,
+  MOD12_PRACTICE,
+  SCREEN_TWIN_COUNTS,
+  SHORT_PCNS_EQUAL_TO_CODES,
+  type ScreenTwinIdentifiers,
+  mod12Identifiers,
+  screenCollisionIdentifiers,
+  screenTwinIdentifiers,
+} from './screen/patient-twins';
+
 // The screening capacity test's production-shaped SYNTHETIC release and uploads (audit #53 part 1; docs/adr/0062).
 export * from './release/scale';
 export * from './screening/uploads';
