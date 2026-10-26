@@ -12,6 +12,8 @@ export { CAUSE_KINDS, type CauseKind, type ContractPin, type LineCause, type Map
 export type { FailureCode } from './execute';
 export {
   type CompareRunsInput,
+  type AcceptanceDiff,
+  type CompareAcceptanceInput,
   DIFF_CHANGES,
   DIFF_KINDS,
   DIFF_LINES_PER_PAGE,
@@ -25,17 +27,24 @@ export {
   type DiffSummary,
   type RunDiff,
   RunComparisonError,
+  compareAcceptance,
   compareRuns,
 } from './diff';
 export { type ImpactOptions, type ImpactRun, type RunImpact, completeRuns, runReleaseImpact } from './impact';
 export {
   ELIGIBLE_RUN,
   IN_EFFECT_SINCE,
+  NEWER_BECAUSE,
+  NEWER_REASONS,
   NEWER_RUN_PENDING,
   NEWER_RUN_RUNNING,
+  type NewerReason,
   OVERLAPPING_FIRST_RUN,
   PRICED_IN_EFFECT,
+  RERUN_ACCEPTANCE,
+  RERUN_ACCEPTANCES,
   RERUN_SUPERSEDED,
+  type RerunAcceptance,
   RUN_IN_EFFECT,
   SUPERSEDES_RERUN,
   TOOK_EFFECT_MEANWHILE,

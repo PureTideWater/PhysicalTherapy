@@ -4,10 +4,12 @@ import type { UnpricedReason } from '@tp/pricing';
 import {
   ELIGIBLE_RUN,
   IN_EFFECT_SINCE,
-  NEWER_RUN_RUNNING,
+  NEWER_BECAUSE,
+  type NewerReason,
   OVERLAPPING_FIRST_RUN,
-  RERUN_SUPERSEDED,
+  RERUN_ACCEPTANCE,
   RUN_IN_EFFECT,
+  type RerunAcceptance,
   type RerunReason,
   type RunCoverage,
   type SupersededKind,
@@ -82,15 +84,15 @@ export interface RunSummary {
   /** The content rollback that withdrew the run's release: the run is flagged, never changed. */
   readonly withdrawal: { readonly reinstatedReleaseNo: number; readonly withdrawnAt: string; readonly reason: string } | null;
   /**
-   * For a complete re-run nobody has accepted: awaiting a person, superseded (something in effect for overlapping
-   * service dates is newer, so it can no longer be accepted), or waiting while a first run of overlapping dates is
-   * being priced (PRC-25 to PRC-28). Null for every other run. The same rule acceptRun judges by.
+   * For a complete re-run nobody has accepted: pinned to a withdrawn release, superseded (something in effect for
+   * overlapping service dates is newer, so it can no longer be accepted), waiting while a first run of overlapping
+   * dates is being priced, or awaiting a person (PRC-25 to PRC-28). Null for every other run. The worker's
+   * RERUN_ACCEPTANCE, in acceptRun's order of refusals, so no badge offers what acceptRun would refuse.
    */
-  readonly acceptance: RunAcceptance | null;
+  readonly acceptance: RerunAcceptance | null;
 }
 
-/** Where a complete, unaccepted re-run's acceptance stands (RunSummary.acceptance). */
-export type RunAcceptance = 'awaiting' | 'superseded' | 'newer_run_pending';
+export type { NewerReason, RerunAcceptance };
 
 interface RunRow {
   readonly id: string;
@@ -113,16 +115,13 @@ interface RunRow {
   readonly reinstated_release_no: number | null;
   readonly withdrawn_at: Date | null;
   readonly withdrawal_reason: string | null;
-  readonly acceptance: RunAcceptance | null;
+  readonly acceptance: RerunAcceptance | null;
 }
 
 const RUN_COLUMNS = `r.id, r.practice_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.engine_version, r.status,
   r.failure_code, r.created_at, r.completed_at, u.email, r.created_by_job_id IS NOT NULL AS monitoring, r.coverage, r.rerun_of_id, r.accepted_at, ua.email AS accepted_email,
   ${RUN_IN_EFFECT('r')} AS in_effect, w.reinstated_release_no, w.withdrawn_at, w.reason AS withdrawal_reason,
-  CASE WHEN r.rerun_of_id IS NULL OR r.status <> 'complete' OR r.accepted_at IS NOT NULL THEN NULL
-       WHEN ${RERUN_SUPERSEDED('r')} THEN 'superseded'
-       WHEN ${NEWER_RUN_RUNNING('r')} THEN 'newer_run_pending'
-       ELSE 'awaiting' END AS acceptance`;
+  ${RERUN_ACCEPTANCE('r')} AS acceptance`;
 
 const RUN_FROM = `pricing_run r LEFT JOIN "user" u ON u.id = r.created_by LEFT JOIN "user" ua ON ua.id = r.accepted_by
   LEFT JOIN rule_release_withdrawal w ON w.release_no = r.release_no`;
@@ -236,17 +235,21 @@ export async function pendingFirstRuns(scope: Scope, practiceId: string, runId: 
 /**
  * Whether a complete, unaccepted re-run can be accepted now, with the runs to name (docs/adr/0037, amendment of
  * 2026-10-26). acceptable: the run its acceptance replaces, the run in effect for its exact period, which its diff is
- * against. superseded: which wording applies (supersededKind, as the worker's refusal chooses it), the runs that
- * supersede it, newest in effect first, its original, the run in effect for its exact period (the one to re-run
- * instead) and the first runs pending for that run (while any is, no Re-run button is offered). newer_run_pending:
- * the first runs of overlapping periods being priced, oldest first.
+ * against, and the first runs of overlapping periods still queued (acceptance does not wait for them; each takes
+ * effect after it once priced). superseded: which wording applies (supersededKind, as the worker's refusal chooses
+ * it), the runs that supersede it, newest in effect first, with why each is newer (NEWER_BECAUSE: priced after it,
+ * pinned to a later release or split, or holding lines loaded later), its original, the run in effect for its exact
+ * period (the one to re-run instead) and the first runs pending for that run (while any is, no Re-run button is
+ * offered). newer_run_pending: the first runs of overlapping periods being priced, oldest first.
  */
 export type RerunAcceptanceView =
-  | { readonly state: 'acceptable'; readonly replaces: RunSummary }
+  | { readonly state: 'acceptable'; readonly replaces: RunSummary; readonly queued: readonly RunSummary[] }
   | {
       readonly state: 'superseded';
       readonly kind: SupersededKind;
       readonly superseding: readonly RunSummary[];
+      /** Why each superseding run is newer than the re-run, by its ID; null when no clause reads (never while it supersedes). */
+      readonly newerBy: Readonly<Record<string, NewerReason | null>>;
       readonly original: RunSummary | null;
       readonly inEffect: RunSummary | null;
       readonly inEffectPending: readonly RunSummary[];
@@ -265,7 +268,7 @@ export async function rerunAcceptance(scope: Scope, practiceId: string, run: Run
     if (replaces === undefined) {
       throw new Error('the run a re-run replaces was not read');
     }
-    return { state: 'acceptable', replaces };
+    return { state: 'acceptable', replaces, queued: await pendingFirstRuns(scope, practiceId, run.id, requestId) };
   }
   if (block.state === 'newer_run_pending') {
     return { state: 'newer_run_pending', running: await runsById(scope, practiceId, block.runningIds, requestId) };
@@ -273,10 +276,17 @@ export async function rerunAcceptance(scope: Scope, practiceId: string, run: Run
   const kind = supersededKind(block);
   const [original] = run.rerunOfId === null ? [] : await runsById(scope, practiceId, [run.rerunOfId], requestId);
   const [inEffect] = block.inEffectId === null ? [] : await runsById(scope, practiceId, [block.inEffectId], requestId);
+  const superseding = await runsById(scope, practiceId, kind === 'same_period' ? block.samePeriodIds : block.otherPeriodIds, requestId);
+  const { rows } = await scope.client.query<{ id: string; because: NewerReason | null }>(
+    `SELECT x.id, ${NEWER_BECAUSE('x', 'r')} AS because FROM pricing_run x JOIN pricing_run r ON r.id = $2 AND r.practice_id = x.practice_id
+      WHERE x.practice_id = $1 AND x.id = ANY ($3::uuid[])`,
+    [practiceId, run.id, superseding.map((item) => item.id)],
+  );
   return {
     state: 'superseded',
     kind,
-    superseding: await runsById(scope, practiceId, kind === 'same_period' ? block.samePeriodIds : block.otherPeriodIds, requestId),
+    superseding,
+    newerBy: Object.fromEntries(superseding.map((item) => [item.id, rows.find((row) => row.id === item.id)?.because ?? null])),
     original: original ?? null,
     inEffect: inEffect ?? null,
     inEffectPending: inEffect === undefined ? [] : await pendingFirstRuns(scope, practiceId, inEffect.id, requestId),

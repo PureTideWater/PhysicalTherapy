@@ -22,10 +22,11 @@ import { startLocalWorker } from './worker';
  * an older re-run is overtaken (combined audit #10; test matrix PRC-25 and PRC-28; docs/adr/0037, amendment of
  * 2026-10-26): the run in effect is re-run, and before anyone accepts it a new run of February is
  * created and priced after it. The re-run's page then says a newer run of these service dates is in
- * effect, links to it and offers no Accept button; the first run's page names the run in effect and
- * offers no Re-run button; and an Accept clicked on a page opened before the new run reads "This
- * re-run: ..." and gives way to the explanation. In the other group's practice, whose February no
- * other spec loads lines into. Synthetic data only.
+ * effect, says it was priced after the re-run, links to it by a name that tells it from the re-run and
+ * offers no Accept button; the first run's page names the run in effect and offers no Re-run button; and
+ * an Accept clicked on a page opened before the new run reads "This re-run: ..." under "Not done" alone
+ * (no field to mark), gives way to the explanation and hands it the focus. In the other group's practice,
+ * whose February no other spec loads lines into. Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -164,7 +165,8 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
       await local.close();
     }
     const rerunUrl = page.url();
-    await expect(page.locator('[data-state="diff-summary"]')).toContainText('0 of 3 lines both runs priced are priced differently');
+    // The diff is exactly what accepting changes (payment-engine review of PR #50, F4): nothing, under the same release and mapping.
+    await expect(page.locator('[data-state="diff-summary"]')).toContainText('Accepting this re-run changes the pricing in effect of 0 lines: 0 of the 3 lines priced now and once accepted');
     await expect(page.locator('[data-state="no-changes"]')).toBeVisible();
     await expect(page.locator('[data-state="awaiting-acceptance"]')).toBeVisible();
     // Until a person accepts the re-run, Coverage reads the first run.
@@ -236,11 +238,17 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
 
       // The re-run's page: the explanation, the link to the run in effect, and no Accept button.
       await page.goto(staleUrl);
-      const explanation = page.getByRole('alert').filter({ hasText: 'A newer run of these service dates is in effect' });
+      // A note, not an alert: it is on the page from the start (UX review of PR #50, UX-5).
+      const explanation = page.getByRole('status').filter({ hasText: 'A newer run of these service dates is in effect' });
       await expect(explanation).toBeVisible();
-      await expect(explanation).toContainText('Pricing run, 2026-02-01 to 2026-02-28, rule release 900001 took effect after the run this re-run prices again.');
+      await expect(page.getByRole('alert').filter({ hasText: 'these service dates' })).toHaveCount(0);
+      await expect(explanation).toContainText(/Pricing run, 2026-02-01 to 2026-02-28, rule release 900001, priced \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC took effect after the run this re-run prices again, and it was priced after this re-run\./);
       await expect(explanation).toContainText('There is nothing more to accept.');
-      await expect(explanation.getByRole('link', { name: 'Pricing run, 2026-02-01 to 2026-02-28, rule release 900001' })).toHaveAttribute('href', `/p/${other}/pricing-runs/${newerId}`);
+      // The link's name tells the run in effect from this re-run, which has the same dates and release (UX-2).
+      const named = explanation.getByRole('link', { name: /^Pricing run, 2026-02-01 to 2026-02-28, rule release 900001, priced / });
+      await expect(named).toHaveAttribute('href', `/p/${other}/pricing-runs/${newerId}`);
+      await expect(page.getByRole('region', { name: 'Re-run' })).toContainText('It was never accepted, and it is not in effect.');
+      await expect(page.getByRole('region', { name: 'Re-run' })).not.toContainText('Nothing of it is in effect until a person accepts it.');
       await expect(page.getByRole('button', { name: 'Accept this run' })).toHaveCount(0);
       await expect(page.locator('span[data-state="rerun-superseded"]')).toHaveText('Can no longer be accepted');
       await expectAccessible(page, 'a re-run that can no longer be accepted');
@@ -255,15 +263,23 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
       // The stale tab's Accept is refused after its label, and the page refreshes to the explanation.
       await tab.evaluate(() => {
         const seen = (): void => {
-          if (document.body.textContent.includes('This re-run: can no longer be accepted, because a newer run of these service dates is in effect; the page now names it')) {
+          const text = document.body.textContent;
+          if (text.includes('This re-run: can no longer be accepted, because a newer run of these service dates is in effect; the page is updated to name it')) {
             document.body.dataset.refusalSeen = 'true';
+          }
+          // Every issue is on the form's hidden run field: no "fields marked below" (UX review of PR #50, UX-3).
+          if (text.includes('Check the fields marked below.')) {
+            document.body.dataset.genericSeen = 'true';
           }
         };
         new MutationObserver(seen).observe(document.body, { childList: true, subtree: true, characterData: true });
       });
       await tab.getByRole('button', { name: 'Accept this run' }).click();
-      await expect(tab.getByRole('alert').filter({ hasText: 'A newer run of these service dates is in effect' })).toBeVisible({ timeout: 15_000 });
+      await expect(tab.getByRole('status').filter({ hasText: 'A newer run of these service dates is in effect' })).toBeVisible({ timeout: 15_000 });
       await expect(tab.locator('body')).toHaveAttribute('data-refusal-seen', 'true');
+      await expect(tab.locator('body')).not.toHaveAttribute('data-generic-seen', 'true');
+      // The refused form is gone: the focus it held moves to the explanation that took its place (UX-6).
+      await expect(tab.locator('[data-takes-over^="accept:"]')).toBeFocused();
       await expect(tab.getByRole('button', { name: 'Accept this run' })).toHaveCount(0);
       await expect(tab.locator('[data-state="accepted"]')).toHaveCount(0);
       await expectAccessible(tab, 'a stale Accept refused');

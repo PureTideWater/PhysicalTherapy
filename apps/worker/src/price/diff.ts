@@ -2,6 +2,7 @@ import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runt
 import { canonicalJson } from '@tp/rules';
 
 import { type CauseTrace, LOCATION_RECORD_TYPES, type LineCause, type OtherRelease, type RecordVersion, type TraceRecordRef, differingRecords, lineCauses, recordsRead, ruleLabel } from './causes';
+import { PRICED_IN_EFFECT } from './in-effect';
 
 /**
  * The diff of two complete runs of a practice (PRD 7, Pricing runs: "compare two runs; re-run under a
@@ -14,6 +15,12 @@ import { type CauseTrace, LOCATION_RECORD_TYPES, type LineCause, type OtherRelea
  * not. Lines are matched by service line. The counts are SQL over the stored lines (the database's
  * pricing_run_changed_lines() counts the same predicate); each listed line's two priced lines are
  * audited reads. Neither run changes.
+ *
+ * What accepting a re-run changes (compareAcceptance; J17: the re-run "lists exactly which lines would change
+ * before anyone accepts it"; combined audit #10, docs/adr/0037, amendment of 2026-10-26) is the same diff with
+ * other sides: before, each line's pricing in effect now (PRICED_IN_EFFECT, whichever run of any period holds it);
+ * after, the pricing in effect once the re-run is accepted. Where a run of other service dates holds some of its
+ * lines, those lines are compared with that run, and the diff names it.
  */
 
 export const DIFF_KINDS = ['changed', 'only_before', 'only_after'] as const;
@@ -74,6 +81,8 @@ export interface DiffSummary {
 /** One side of a listed line: how that run priced it. */
 export interface DiffSide {
   readonly pricedLineId: string;
+  /** The run that priced it: one of the two compared, or, in what accepting a re-run changes, a run of other service dates that holds the line. */
+  readonly pricingRunId: string;
   readonly method: string | null;
   readonly expectedAllowedCents: string | null;
   readonly varianceCents: string | null;
@@ -118,6 +127,15 @@ export interface RunDiff {
   readonly total: number;
 }
 
+/**
+ * What accepting a re-run changes (compareAcceptance): the diff, `before` the run its acceptance replaces and `after`
+ * the re-run, and the runs of other service dates whose pricing in effect either side reads (each line's side names
+ * its run), oldest in effect first; none when every line's pricing in effect is the replaced run's.
+ */
+export interface AcceptanceDiff extends RunDiff {
+  readonly heldBy: readonly DiffRun[];
+}
+
 export interface CompareRunsInput {
   readonly practiceId: string;
   readonly beforeRunId: string;
@@ -145,8 +163,45 @@ const DIFFERS = `(a.id IS NULL OR b.id IS NULL
       OR a.contract_version_id IS DISTINCT FROM b.contract_version_id
       OR a.rate_record_id IS DISTINCT FROM b.rate_record_id)`;
 
+/** Two runs' lines: `a` the first run's ($2), `b` the second's ($3), of the practice $1. */
 const SIDES = `a AS (SELECT * FROM priced_line WHERE practice_id = $1 AND pricing_run_id = $2),
      b AS (SELECT * FROM priced_line WHERE practice_id = $1 AND pricing_run_id = $3)`;
+
+/**
+ * What accepting re-run $3, which replaces run $2 (the run in effect for its period), changes for the practice $1.
+ * The lines are those either run priced: no other line's pricing in effect moves, since the re-run takes effect for
+ * its own period only. `a`: each line's pricing in effect now. `b`: the re-run's line where it priced one (accepted
+ * last, it holds every line it priced); for a line only the replaced run priced, the pricing in effect of the runs
+ * left in effect, those of other periods (the replaced run no longer is).
+ */
+const ACCEPTANCE_SIDES = `lines AS (SELECT DISTINCT service_line_id FROM priced_line WHERE practice_id = $1 AND pricing_run_id IN ($2, $3)),
+     rerun AS (SELECT period_from, period_to FROM pricing_run WHERE practice_id = $1 AND id = $3),
+     a AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT service_line_id FROM lines)')}),
+     b AS (SELECT * FROM priced_line WHERE practice_id = $1 AND pricing_run_id = $3
+           UNION ALL
+           SELECT left_in_effect.* FROM (${PRICED_IN_EFFECT(
+             '$1',
+             `p.service_line_id IN (SELECT service_line_id FROM lines)
+                AND NOT EXISTS (SELECT 1 FROM priced_line own WHERE own.practice_id = $1 AND own.pricing_run_id = $3 AND own.service_line_id = p.service_line_id)
+                AND NOT EXISTS (SELECT 1 FROM rerun WHERE rerun.period_from = r.period_from AND rerun.period_to = r.period_to)`,
+           )}) left_in_effect)`;
+
+/**
+ * The runs other than re-run `rerunId` and the run it replaces whose priced lines what accepting it changes reads,
+ * on either side (ACCEPTANCE_SIDES), by ID. With the replaced run, they are everything that diff depends on: priced
+ * lines never change, and a run taking effect or leaving it that holds one of these lines changes this set. So
+ * acceptRun, under the practice's pricing_current lock, refuses an acceptance whose diff was read against another
+ * set (diff_changed), as it does when the replaced run is another.
+ */
+export async function acceptanceHeldBy(client: ScopeClient, practiceId: string, rerunId: string, replacesId: string): Promise<string[]> {
+  const { rows } = await client.query<{ id: string }>(
+    `WITH ${ACCEPTANCE_SIDES}
+     SELECT DISTINCT s.pricing_run_id::text AS id FROM (SELECT pricing_run_id FROM a UNION SELECT pricing_run_id FROM b) s
+      WHERE s.pricing_run_id <> $2 AND s.pricing_run_id <> $3 ORDER BY 1`,
+    [practiceId, replacesId, rerunId],
+  );
+  return rows.map((row) => row.id);
+}
 
 interface RunRow {
   readonly id: string;
@@ -216,9 +271,9 @@ interface SummaryRow {
   readonly after_expected_cents: string;
 }
 
-async function summaryOf(client: ScopeClient, practiceId: string, before: string, after: string): Promise<DiffSummary> {
+async function summaryOf(client: ScopeClient, sides: string, practiceId: string, before: string, after: string): Promise<DiffSummary> {
   const { rows } = await client.query<SummaryRow>(
-    `WITH ${SIDES}
+    `WITH ${sides}
      SELECT count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL)::int AS compared,
             count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${DIFFERS})::int AS changed,
             count(*) FILTER (WHERE b.id IS NULL)::int AS only_before,
@@ -254,6 +309,9 @@ interface SideRow {
   readonly side: 'before' | 'after';
   readonly id: string;
   readonly practice_id: string;
+  readonly pricing_run_id: string;
+  /** The release of the run that priced it, for its causes. */
+  readonly release_no: number;
   readonly service_line_id: string;
   readonly procedure_code: string;
   readonly modifiers: string[] | null;
@@ -276,6 +334,7 @@ function sideOf(row: SideRow | undefined): DiffSide | null {
     ? null
     : {
         pricedLineId: row.id,
+        pricingRunId: row.pricing_run_id,
         method: row.method,
         expectedAllowedCents: row.expected_allowed_cents,
         varianceCents: row.variance_cents,
@@ -387,13 +446,24 @@ async function otherReleaseLookup(
   };
 }
 
-export async function compareRuns(scope: PracticeScope<ScopeClient>, input: CompareRunsInput): Promise<RunDiff> {
+interface DiffBody {
+  readonly summary: DiffSummary;
+  readonly filter: DiffFilter;
+  readonly lines: readonly DiffLine[];
+  readonly page: number;
+  readonly pages: number;
+  readonly total: number;
+}
+
+/**
+ * The diff of two sides (`sides`: CTEs `a` and `b` over priced lines, with $1 the practice and $2 and $3 the two runs):
+ * its counts, then a page of its lines, each line's two priced lines an audited read, and each changed line's causes
+ * read from its two traces under the releases of the runs that priced them.
+ */
+async function diffOf(scope: PracticeScope<ScopeClient>, sides: string, input: { readonly practiceId: string; readonly before: string; readonly after: string; readonly requestId: string; readonly filter?: DiffFilter; readonly page?: number; readonly perPage?: number }): Promise<DiffBody> {
   const filter = input.filter ?? 'all';
   const perPage = input.perPage ?? DIFF_LINES_PER_PAGE;
-  const runs = await runsOf(scope, input.practiceId, [input.beforeRunId, input.afterRunId], input.requestId);
-  const before = diffRun(runs.get(input.beforeRunId));
-  const after = diffRun(runs.get(input.afterRunId));
-  const summary = await summaryOf(scope.client, input.practiceId, before.id, after.id);
+  const summary = await summaryOf(scope.client, sides, input.practiceId, input.before, input.after);
   const total = filter === 'all' ? summary.changed + summary.onlyBefore + summary.onlyAfter : filter === 'changed' ? summary.changed : filter === 'only_before' ? summary.onlyBefore : summary.onlyAfter;
   const pages = Math.max(1, Math.ceil(total / perPage));
   const page = Math.min(Math.max(1, input.page ?? 1), pages);
@@ -403,7 +473,7 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
     async (client) =>
       (
         await client.query<SideRow>(
-          `WITH ${SIDES},
+          `WITH ${sides},
            diff AS (
              SELECT coalesce(a.service_line_id, b.service_line_id) AS service_line_id,
                     CASE WHEN a.id IS NULL THEN 'only_after' WHEN b.id IS NULL THEN 'only_before' ELSE 'changed' END AS kind,
@@ -422,13 +492,13 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
              UNION ALL
              SELECT page.position, page.kind, 'after', page.after_id FROM page WHERE page.after_id IS NOT NULL
            )
-           SELECT s.position::text AS position, s.kind, s.side, p.id, p.practice_id, p.service_line_id, l.procedure_code, l.modifiers, trim_scale(l.units)::text AS units,
-                  p.method, p.expected_allowed_cents::text AS expected_allowed_cents, p.variance_cents::text AS variance_cents, p.unpriced_reason,
+           SELECT s.position::text AS position, s.kind, s.side, p.id, p.practice_id, p.pricing_run_id, pr.release_no, p.service_line_id, l.procedure_code, l.modifiers,
+                  trim_scale(l.units)::text AS units, p.method, p.expected_allowed_cents::text AS expected_allowed_cents, p.variance_cents::text AS variance_cents, p.unpriced_reason,
                   p.adjustments_applied, p.window_ends_on::text AS window_ends_on, ${FLAGS_OF('p')} AS review_flags,
                   p.mapping_id, p.contract_version_id, p.rate_record_id, p.trace
-             FROM sides s JOIN priced_line p ON p.id = s.priced_line_id JOIN service_line l ON l.id = p.service_line_id
+             FROM sides s JOIN priced_line p ON p.id = s.priced_line_id JOIN pricing_run pr ON pr.id = p.pricing_run_id JOIN service_line l ON l.id = p.service_line_id
             ORDER BY s.position, s.side DESC`,
-          [input.practiceId, before.id, after.id, filter],
+          [input.practiceId, input.before, input.after, filter],
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
@@ -440,18 +510,16 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
     byLine.set(row.service_line_id, entry);
   }
   const entries = [...byLine.entries()].sort(([, x], [, y]) => x.position - y.position);
-  const pairs = entries.flatMap(([, entry]) =>
-    entry.before !== undefined && entry.after !== undefined
-      ? differingRecords(entry.before.trace, entry.after.trace).map((pair) => ({ ...pair, beforeRelease: before.releaseNo, afterRelease: after.releaseNo }))
-      : [],
-  );
-  const sameRule = (await sameRuleLookup(scope.client, pairs))(before.releaseNo, after.releaseNo);
-  const otherRelease = await otherReleaseLookup(
-    scope.client,
-    entries.flatMap(([, entry]) => (entry.before !== undefined && entry.after !== undefined ? [{ before: entry.before.trace, after: entry.after.trace }] : [])),
-    before.releaseNo,
-    after.releaseNo,
-  );
+  const both = entries.flatMap(([, entry]) => (entry.before !== undefined && entry.after !== undefined ? [{ before: entry.before, after: entry.after }] : []));
+  const pairs = both.flatMap((side) => differingRecords(side.before.trace, side.after.trace).map((pair) => ({ ...pair, beforeRelease: side.before.release_no, afterRelease: side.after.release_no })));
+  const sameRule = await sameRuleLookup(scope.client, pairs);
+  // The releases a changed line's two sides were priced under: the two runs', or, where a run of other dates holds the line, that run's.
+  const otherReleases = new Map<string, OtherRelease>();
+  const releasePairs = new Map(both.map((side) => [`${String(side.before.release_no)}:${String(side.after.release_no)}`, [side.before.release_no, side.after.release_no] as const]));
+  for (const [key, [beforeRelease, afterRelease]] of releasePairs) {
+    const traces = both.filter((side) => side.before.release_no === beforeRelease && side.after.release_no === afterRelease).map((side) => ({ before: side.before.trace, after: side.after.trace }));
+    otherReleases.set(key, await otherReleaseLookup(scope.client, traces, beforeRelease, afterRelease));
+  }
   const lines = entries.map(([serviceLineId, entry]): DiffLine => {
     const any = (entry.before ?? entry.after) as SideRow;
     const first = sideOf(entry.before);
@@ -465,8 +533,46 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
       before: first,
       after: second,
       changes: first !== null && second !== null ? sideChanges(first, second) : [],
-      causes: entry.before !== undefined && entry.after !== undefined ? lineCauses(entry.before.trace, entry.after.trace, sameRule, otherRelease) : [],
+      causes:
+        entry.before !== undefined && entry.after !== undefined
+          ? lineCauses(entry.before.trace, entry.after.trace, sameRule(entry.before.release_no, entry.after.release_no), otherReleases.get(`${String(entry.before.release_no)}:${String(entry.after.release_no)}`))
+          : [],
     };
   });
-  return { before, after, summary, filter, lines, page, pages, total };
+  return { summary, filter, lines, page, pages, total };
+}
+
+export async function compareRuns(scope: PracticeScope<ScopeClient>, input: CompareRunsInput): Promise<RunDiff> {
+  const runs = await runsOf(scope, input.practiceId, [input.beforeRunId, input.afterRunId], input.requestId);
+  const before = diffRun(runs.get(input.beforeRunId));
+  const after = diffRun(runs.get(input.afterRunId));
+  return { before, after, ...(await diffOf(scope, SIDES, { ...input, before: before.id, after: after.id })) };
+}
+
+export interface CompareAcceptanceInput {
+  readonly practiceId: string;
+  /** The complete re-run nobody has accepted. */
+  readonly rerunId: string;
+  /** The run its acceptance replaces, the run in effect for its period (rerunBlock's replacesId). */
+  readonly replacesId: string;
+  readonly requestId: string;
+  readonly filter?: DiffFilter;
+  readonly page?: number;
+  readonly perPage?: number;
+}
+
+/**
+ * What accepting a re-run changes, exactly (J17): each line either run priced, its pricing in effect now against
+ * its pricing in effect once the re-run is accepted (ACCEPTANCE_SIDES), and the runs of other service dates that
+ * hold some of those lines (acceptanceHeldBy), which the page names and its Accept form posts. With none, it is the
+ * diff of the replaced run and the re-run. It does not judge whether the re-run can be accepted (rerunBlock does);
+ * the caller reads it for the run rerunBlock says acceptance replaces.
+ */
+export async function compareAcceptance(scope: PracticeScope<ScopeClient>, input: CompareAcceptanceInput): Promise<AcceptanceDiff> {
+  const heldIds = await acceptanceHeldBy(scope.client, input.practiceId, input.rerunId, input.replacesId);
+  const runs = await runsOf(scope, input.practiceId, [input.replacesId, input.rerunId, ...heldIds], input.requestId);
+  const before = diffRun(runs.get(input.replacesId));
+  const after = diffRun(runs.get(input.rerunId));
+  const heldBy = heldIds.map((id) => diffRun(runs.get(id))).sort((x, y) => (x.acceptedAt ?? x.completedAt).getTime() - (y.acceptedAt ?? y.completedAt).getTime() || (x.id < y.id ? -1 : 1));
+  return { before, after, heldBy, ...(await diffOf(scope, ACCEPTANCE_SIDES, { ...input, before: before.id, after: after.id })) };
 }

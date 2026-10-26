@@ -72,7 +72,7 @@ const now = (target: Practice, content: ReturnType<typeof contentOf>) =>
   scopeOf(target, (scope) => linePricingNow(scope, { practiceId: target.practiceId, content, requestId: `test-${randomUUID()}` }));
 const rerun = (target: Practice, runId: string, releaseNo: number) =>
   scopeOf(target, async (scope) => (await createRerun(scope, { practiceId: target.practiceId, pricingRunId: runId, releaseNo, requestId: `test-${randomUUID()}` })).pricingRunId);
-const accept = (target: Practice, runId: string) => scopeOf(target, (scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId: runId }));
+const accept = (target: Practice, runId: string, replacesId: string) => scopeOf(target, (scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId: runId, replacesId , heldByIds: [] }));
 
 let first: Awaited<ReturnType<typeof linesOf>>;
 let later: Awaited<ReturnType<typeof linesOf>>;
@@ -99,7 +99,7 @@ describe('a service line’s pricing in effect', () => {
     expect(await versionCheck(prc19, contentOf(rerunLines))).toBe('PRICING_NOT_IN_EFFECT');
 
     // Accepted, it is the pricing in effect: the first run's lines are no longer current.
-    await accept(prc19, runB);
+    await accept(prc19, runB, runA);
     both = await inEffect(prc19);
     expect(both.sql).toEqual(both.ts);
     expect(both.sql).toEqual(byServiceLine(rerunLines));
@@ -194,7 +194,7 @@ describe('a rule release withdrawn since the lines were priced', () => {
     await w.loadRerunRelease();
     const runD = await rerun(prc19, laterRunId, RERUN_RELEASE);
     await w.execute(prc19, runD);
-    await accept(prc19, runD);
+    await accept(prc19, runD, laterRunId);
     const underTwo = await linesOf(runD);
     const repriced = await now(prc19, contentOf(later));
     expect(repriced.every((line) => line.check === 'PRICING_NOT_IN_EFFECT' && line.now?.releaseNo === RERUN_RELEASE)).toBe(true);
@@ -227,7 +227,7 @@ describe('a rule release withdrawn since the lines were priced', () => {
     // Priced again under the release in force and accepted, the lines are current again.
     const back = await rerun(prc19, runD, RELEASE);
     await w.execute(prc19, back);
-    await accept(prc19, back);
+    await accept(prc19, back, runD);
     const current = await linesOf(back);
     expect(await versionCheck(prc19, contentOf(current))).toBe('current');
     const fixed = await now(prc19, contentOf(underTwo));

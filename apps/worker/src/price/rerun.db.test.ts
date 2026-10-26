@@ -8,10 +8,11 @@ import { parseTrace, recompute } from '@tp/pricing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { RuleReleaseMismatchError, currentReleaseNo, loadRuleRelease, releaseWithdrawals } from './release';
-import { RunComparisonError, compareRuns } from './diff';
-import { failRun } from './execute';
+import { RunComparisonError, acceptanceHeldBy, compareAcceptance, compareRuns } from './diff';
+import type { JobContext } from '../jobs/handlers';
+import { executePricingRun, failRun } from './execute';
 import { completeRuns, runReleaseImpact } from './impact';
-import { NEWER_RUN_RUNNING, PRICED_IN_EFFECT, RERUN_SUPERSEDED, RUN_IN_EFFECT } from './in-effect';
+import { PRICED_IN_EFFECT, RERUN_ACCEPTANCE, RERUN_SUPERSEDED, RUN_IN_EFFECT } from './in-effect';
 import { RerunRefusedError, acceptRun, createRerun, rerunBlock, rerunReasons } from './rerun';
 import { type Practice, PricingWorld, RELEASE, RERUN_RELEASE, errorOf } from './test-support/pricing-world';
 import { RunModel } from './test-support/rerun-model';
@@ -62,7 +63,14 @@ const scopeOf = <T>(target: Practice, actorId: string, run: Parameters<typeof wi
   withPracticeScope(w.app, { actorId, practiceIds: [target.practiceId] }, run);
 const rerun = (target: Practice, pricingRunId: string, releaseNo: number, actorId = target.manager) =>
   scopeOf(target, actorId, (scope) => createRerun(scope, { practiceId: target.practiceId, pricingRunId, releaseNo, requestId: `test-${randomUUID()}` }));
-const accept = (target: Practice, pricingRunId: string, actorId = target.manager) => scopeOf(target, actorId, (scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId }));
+/**
+ * Accepts the re-run in place of `replacesId`, the run its diff was shown against, and with the runs of other dates
+ * that diff read (`heldByIds`), by default those its page reads now.
+ */
+const accept = (target: Practice, pricingRunId: string, replacesId: string, actorId = target.manager, heldByIds?: readonly string[]) =>
+  scopeOf(target, actorId, async (scope) =>
+    acceptRun(scope, { practiceId: target.practiceId, pricingRunId, replacesId, heldByIds: heldByIds ?? (await acceptanceHeldBy(scope.client, target.practiceId, pricingRunId, replacesId)) }),
+  );
 const compare = (target: Practice, beforeRunId: string, afterRunId: string, filter?: 'all' | 'changed' | 'only_before' | 'only_after') =>
   scopeOf(target, target.manager, (scope) => compareRuns(scope, { practiceId: target.practiceId, beforeRunId, afterRunId, requestId: `test-${randomUUID()}`, filter }));
 const asJob = <T>(target: Practice, run: Parameters<typeof withJobScope<typeof w.app, T>>[2]) => withJobScope(w.app, { jobId: randomUUID(), practiceId: target.practiceId }, run);
@@ -124,6 +132,17 @@ async function februaryPractice(label: string): Promise<{ readonly target: Pract
 async function lateLines(target: Practice): Promise<void> {
   await w.load(target, 'MAP-05/remit.835');
   await w.mapped(target, await w.planOf(target, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+}
+
+/** PRC-19's SYNTHETIC 835 moved to April (its own payment, claims and interchange): lines no February or quarter run prices. */
+async function aprilLines(target: Practice): Promise<void> {
+  await w.loadVariant(target, 'PRC-19/remit.835', [
+    ['DTM*472*202602', 'DTM*472*202604'],
+    ['SYNEFTPRC19001', 'SYNEFTPRC19APR'],
+    ['SYNPCNPRC19', 'SYNPCNPRCAP'],
+    ['SYNCCNPRC19', 'SYNCCNPRCAP'],
+    ['40190001', '40190002'],
+  ]);
 }
 
 /** A first run of the period, created and executed. */
@@ -276,11 +295,13 @@ describe('MAP-03: a re-run after a mapping is corrected', () => {
     // Accepting: not by a role that cannot map plans (the database refuses it too), once, and never a first run.
     const analyst = await createUser(w.owner);
     await addMembership(w.owner, target.world.organizationId, analyst, 'analyst');
-    await expect(accept(target, created.pricingRunId, analyst)).rejects.toThrow(/row-level security/);
-    await expect(accept(target, first)).rejects.toMatchObject({ name: 'RerunRefusedError', reason: 'not_rerun' });
-    const accepted = await accept(target, created.pricingRunId);
+    await expect(accept(target, created.pricingRunId, first, analyst)).rejects.toThrow(/row-level security/);
+    await expect(accept(target, first, first)).rejects.toMatchObject({ name: 'RerunRefusedError', reason: 'not_rerun' });
+    const accepted = await accept(target, created.pricingRunId, first);
     expect(accepted).toMatchObject({ pricingRunId: created.pricingRunId, acceptedBy: target.manager, alreadyAccepted: false });
-    expect(await accept(target, created.pricingRunId)).toEqual({ ...accepted, alreadyAccepted: true });
+    expect(await accept(target, created.pricingRunId, first)).toEqual({ ...accepted, alreadyAccepted: true });
+    // An acceptance already recorded stays as it is, whatever run the request names.
+    expect(await accept(target, created.pricingRunId, randomUUID())).toEqual({ ...accepted, alreadyAccepted: true });
     await expect(
       asOwner(w.owner, [target.practiceId], () => w.owner.query('UPDATE pricing_run SET accepted_at = now() WHERE id = $1', [created.pricingRunId]), target.manager),
     ).rejects.toThrow(/never changes once it is complete/);
@@ -366,11 +387,11 @@ describe('what the database refuses of a re-run', () => {
     // Another practice's run is not found, in code and in the database.
     const other = await practice('rerun-refusals-other');
     expect(await errorOf(rerun(other, first, RELEASE, other.manager))).toMatchObject({ name: 'RerunRefusedError', reason: 'not_found' });
-    expect(await errorOf(accept(other, first, other.manager))).toMatchObject({ name: 'RerunRefusedError', reason: 'not_found' });
+    expect(await errorOf(accept(other, first, first, other.manager))).toMatchObject({ name: 'RerunRefusedError', reason: 'not_found' });
 
     // An open re-run is not accepted.
     const queued = await rerun(target, first, RELEASE);
-    expect(await errorOf(accept(target, queued.pricingRunId))).toMatchObject({ name: 'RerunRefusedError', reason: 'not_complete' });
+    expect(await errorOf(accept(target, queued.pricingRunId, first))).toMatchObject({ name: 'RerunRefusedError', reason: 'not_complete' });
     await expect(
       asOwner(w.owner, [target.practiceId], () => w.owner.query('UPDATE pricing_run SET accepted_by = $2, accepted_at = now() WHERE id = $1', [queued.pricingRunId, target.manager]), target.manager),
     ).rejects.toThrow(/pricing_run_accepts_complete_reruns|only a complete re-run is accepted/);
@@ -396,20 +417,20 @@ describe('PRC-26: two re-runs of one run, the first under release 900001 (its se
 
 describe('PRC-26: two re-runs of one run accepted at once', () => {
   /** A first run of February and two re-runs of it, the second priced after the first. */
-  async function twoReruns(label: string): Promise<{ readonly target: Practice; readonly r1: string; readonly r2: string }> {
+  async function twoReruns(label: string): Promise<{ readonly target: Practice; readonly first: string; readonly r1: string; readonly r2: string }> {
     const { target } = await februaryPractice(label);
     const first = await priced(target, FEBRUARY);
     const r1 = await repriced(target, first);
-    return { target, r1, r2: await repriced(target, first) };
+    return { target, first, r1, r2: await repriced(target, first) };
   }
-  const accepting = (target: Practice, pricingRunId: string) => (scope: Parameters<Parameters<typeof withPracticeScope<typeof w.app, unknown>>[2]>[0]) =>
-    acceptRun(scope, { practiceId: target.practiceId, pricingRunId });
+  const accepting = (target: Practice, pricingRunId: string, replacesId: string) => (scope: Parameters<Parameters<typeof withPracticeScope<typeof w.app, unknown>>[2]>[0]) =>
+    acceptRun(scope, { practiceId: target.practiceId, pricingRunId, replacesId, heldByIds: [] });
 
   it('(i) refuses the first re-run as superseded once the second is accepted, though its transaction began first', async () => {
-    const { target, r1, r2 } = await twoReruns('prc-26-at-once-i');
-    const b = opening(target, accepting(target, r1));
+    const { target, first, r1, r2 } = await twoReruns('prc-26-at-once-i');
+    const b = opening(target, accepting(target, r1, first));
     await b.open;
-    const a = held(target, accepting(target, r2));
+    const a = held(target, accepting(target, r2, first));
     await a.made;
     b.go();
     await pause(WAIT_MS);
@@ -423,10 +444,10 @@ describe('PRC-26: two re-runs of one run accepted at once', () => {
   }, 60_000);
 
   it('(ii) refuses the second re-run as changed_meanwhile when its transaction began before the first was accepted, and accepts it made again', async () => {
-    const { target, r1, r2 } = await twoReruns('prc-26-at-once-ii');
-    const b = opening(target, accepting(target, r2));
+    const { target, first, r1, r2 } = await twoReruns('prc-26-at-once-ii');
+    const b = opening(target, accepting(target, r2, first));
     await b.open;
-    const a = held(target, accepting(target, r1));
+    const a = held(target, accepting(target, r1, first));
     await a.made;
     b.go();
     await pause(WAIT_MS);
@@ -439,15 +460,18 @@ describe('PRC-26: two re-runs of one run accepted at once', () => {
       message: 'was not accepted, because a run of these service dates took effect while it was being accepted; check the page again and accept it if it is still offered',
     });
     expect(await inEffectRun(r1)).toBe(true);
-    expect((await accept(target, r2)).alreadyAccepted).toBe(false);
+    // Made again from the page that now shows its changes against the first re-run; against the first run, refused.
+    expect(await errorOf(accept(target, r2, first))).toMatchObject({ name: 'RerunRefusedError', reason: 'diff_changed' });
+    expect((await accept(target, r2, r1)).alreadyAccepted).toBe(false);
     expect(await inEffectRun(r2)).toBe(true);
   }, 60_000);
 
   it('(iii) accepts the second re-run after the first when its transaction began after the first’s', async () => {
-    const { target, r1, r2 } = await twoReruns('prc-26-at-once-iii');
-    const a = held(target, accepting(target, r1));
+    const { target, first, r1, r2 } = await twoReruns('prc-26-at-once-iii');
+    const a = held(target, accepting(target, r1, first));
     await a.made;
-    const b = opening(target, accepting(target, r2));
+    // The person accepting the second saw its changes against the first re-run (what the acceptance then replaces).
+    const b = opening(target, accepting(target, r2, r1));
     await b.open;
     b.go();
     await pause(WAIT_MS);
@@ -458,6 +482,38 @@ describe('PRC-26: two re-runs of one run accepted at once', () => {
     expect(await inEffectRun(r2)).toBe(true);
     expect(await inEffectRun(r1)).toBe(false);
   }, 60_000);
+
+  it('accepts a re-run when only runs that do not count took effect while it waited: a re-run nobody accepted, and a run of other dates', async () => {
+    const { target, first, r2 } = await twoReruns('prc-26-meanwhile-others');
+    const r3 = (await rerun(target, first, RELEASE)).pricingRunId;
+    await aprilLines(target);
+    const april = await w.createRun(target, '2026-04-01', '2026-04-30');
+    const b = opening(target, accepting(target, r2, first));
+    await b.open;
+    await w.execute(target, r3);
+    await w.execute(target, april);
+    b.go();
+    expect(await b.result).toBeUndefined();
+    expect(await inEffectRun(r2)).toBe(true);
+  }, 60_000);
+
+  it('accepts only against the run the person’s diff was shown against (security review F1): a page loaded before another re-run was accepted is refused', async () => {
+    const { target, first, r1: one, r2: two } = await twoReruns('prc-26-diff-changed');
+    // The page of `two` reads its diff against the first run; then `one` is accepted, which `two` does not supersede.
+    expect(await blockOf(target, two)).toEqual({ state: 'acceptable', replacesId: first });
+    expect((await accept(target, one, first)).alreadyAccepted).toBe(false);
+    expect(await blockOf(target, two)).toEqual({ state: 'acceptable', replacesId: one });
+    expect(await errorOf(accept(target, two, first))).toMatchObject({
+      name: 'RerunRefusedError',
+      reason: 'diff_changed',
+      message: 'was not accepted, because the pricing it would replace has changed since its changes were shown; check the changes again and accept it if it is still offered',
+    });
+    expect(await w.one('SELECT accepted_at FROM pricing_run WHERE id = $1', [two])).toEqual({ accepted_at: null });
+    expect(await inEffectRun(one)).toBe(true);
+    // Against the run it now replaces, the diff the page shows after its refresh, it is accepted.
+    expect((await accept(target, two, one)).alreadyAccepted).toBe(false);
+    expect(await inEffectRun(two)).toBe(true);
+  });
 });
 
 describe('PRC-27: a re-run whose service dates overlap a run of another period, or a run still being priced', () => {
@@ -467,11 +523,11 @@ describe('PRC-27: a re-run whose service dates overlap a run of another period, 
     const stale = await repriced(target, quarter);
     await w.as(target, target.manager, (context) => correctMapping(context, { practiceId: target.practiceId, planId, kind: 'no_agreement', effectiveFrom: '2026-01-01', supersedesId: mappingId }));
     const february = await priced(target, FEBRUARY);
-    const refused = await errorOf(accept(target, stale));
+    const refused = await errorOf(accept(target, stale, quarter));
     expect(refused).toMatchObject({
       name: 'RerunRefusedError',
       reason: 'superseded',
-      message: 'can no longer be accepted, because a run of some of these service dates was priced after it; re-run the earlier run again',
+      message: 'can no longer be accepted, because a run of some of these service dates holds newer pricing; re-run the run in effect for these service dates',
     });
     expect(await blockOf(target, stale)).toEqual({ state: 'superseded', originalEligible: true, samePeriodIds: [], otherPeriodIds: [february], inEffectId: quarter });
     // February's lines keep the February run's terms (the corrected mapping), not the stale re-run's.
@@ -481,7 +537,7 @@ describe('PRC-27: a re-run whose service dates overlap a run of another period, 
     // Re-running the January-to-March run again prices after the February run: it is accepted, and every line it prices reads it.
     const fresh = await repriced(target, quarter);
     expect(await blockOf(target, fresh)).toEqual({ state: 'acceptable', replacesId: quarter });
-    expect((await accept(target, fresh)).alreadyAccepted).toBe(false);
+    expect((await accept(target, fresh, quarter)).alreadyAccepted).toBe(false);
     expect(await pricingInEffect(target)).toEqual(Object.fromEntries((await serviceLinesOf(fresh)).map((line) => [line, fresh])));
   });
 
@@ -491,7 +547,7 @@ describe('PRC-27: a re-run whose service dates overlap a run of another period, 
     await lateLines(target);
     const february = await priced(target, FEBRUARY);
     const again = await repriced(target, quarter);
-    expect((await accept(target, again)).alreadyAccepted).toBe(false);
+    expect((await accept(target, again, quarter)).alreadyAccepted).toBe(false);
     const inEffect = await pricingInEffect(target);
     const common = await serviceLinesOf(again);
     const onlyFebruary = (await serviceLinesOf(february)).filter((line) => !common.includes(line));
@@ -508,7 +564,7 @@ describe('PRC-27: a re-run whose service dates overlap a run of another period, 
     const february = await w.createRun(target, FEBRUARY.from, FEBRUARY.to);
     await w.execute(target, february);
     await w.execute(target, again);
-    expect((await accept(target, again)).alreadyAccepted).toBe(false);
+    expect((await accept(target, again, quarter)).alreadyAccepted).toBe(false);
     const inEffect = await pricingInEffect(target);
     const common = await serviceLinesOf(again);
     const onlyFebruary = (await serviceLinesOf(february)).filter((line) => !common.includes(line));
@@ -525,10 +581,10 @@ describe('PRC-27: a re-run whose service dates overlap a run of another period, 
     expect(await errorOf(rerun(target, quarter, RELEASE))).toMatchObject({
       name: 'RerunRefusedError',
       reason: 'newer_run_pending',
-      message: 'is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; re-run once it finishes',
+      message: 'is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; once it finishes, re-run the run in effect',
     });
     expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: quarter });
-    const accepted = await accept(target, again);
+    const accepted = await accept(target, again, quarter);
     await w.execute(target, february);
     const since = await w.one<{ completed_at: Date }>('SELECT completed_at FROM pricing_run WHERE id = $1', [february]);
     expect(since.completed_at.getTime()).toBeGreaterThan(accepted.acceptedAt.getTime());
@@ -544,7 +600,7 @@ describe('PRC-27: a re-run whose service dates overlap a run of another period, 
     const again = await repriced(target, quarter);
     const february = await w.createRun(target, FEBRUARY.from, FEBRUARY.to);
     await running(target, february);
-    expect(await errorOf(accept(target, again))).toMatchObject({
+    expect(await errorOf(accept(target, again, quarter))).toMatchObject({
       name: 'RerunRefusedError',
       reason: 'newer_run_pending',
       message: 'cannot be accepted yet, because a newer run of these service dates is being priced; wait until it finishes',
@@ -554,7 +610,159 @@ describe('PRC-27: a re-run whose service dates overlap a run of another period, 
     expect(await errorOf(rerun(target, quarter, RELEASE))).toMatchObject({ name: 'RerunRefusedError', reason: 'newer_run_pending' });
     expect(await w.one('SELECT accepted_at FROM pricing_run WHERE id = $1', [again])).toEqual({ accepted_at: null });
     await failed(target, february);
-    expect((await accept(target, again)).alreadyAccepted).toBe(false);
+    expect((await accept(target, again, quarter)).alreadyAccepted).toBe(false);
+  });
+});
+
+describe('PRC-27: runs that do not count against a re-run', () => {
+  it('does not count a run of the month that took effect before the original: two first runs priced out of order', async () => {
+    const { target } = await februaryPractice('prc-27-out-of-order');
+    const original = await w.createRun(target, FEBRUARY.from, FEBRUARY.to);
+    await lateLines(target);
+    const later = await w.createRun(target, FEBRUARY.from, FEBRUARY.to);
+    await w.execute(target, later);
+    await w.execute(target, original);
+    expect([await inEffectRun(original), await inEffectRun(later)]).toEqual([true, false]);
+    const again = await repriced(target, original);
+    expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: original });
+    expect((await accept(target, again, original)).alreadyAccepted).toBe(false);
+  });
+
+  it('is not held back by a re-run of overlapping dates being priced: only a first run is waited for', async () => {
+    const { target } = await februaryPractice('prc-27-rerun-running');
+    const quarter = await priced(target, QUARTER);
+    const again = await repriced(target, quarter);
+    await running(target, (await rerun(target, quarter, RELEASE)).pricingRunId);
+    expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: quarter });
+    expect((await rerun(target, quarter, RELEASE)).rerunOfId).toBe(quarter);
+    expect((await accept(target, again, quarter)).alreadyAccepted).toBe(false);
+  });
+});
+
+describe('PRC-27: what accepting a re-run changes, under overlapping periods (payment-engine review F4)', () => {
+  const acceptanceOf = (target: Practice, rerunId: string, replacesId: string) =>
+    scopeOf(target, target.manager, (scope) => compareAcceptance(scope, { practiceId: target.practiceId, rerunId, replacesId, requestId: `test-${randomUUID()}`, perPage: 500 }));
+
+  /** Each service line's pricing in effect, as the stored columns the diff compares (DIFFERS), by service line. */
+  async function pricedInEffect(target: Practice): Promise<Record<string, string>> {
+    return scopeOf(target, target.manager, async (scope) => {
+      const { rows } = await scope.client.query<{ service_line_id: string; pricing: string }>(
+        `SELECT p.service_line_id, jsonb_build_array(p.expected_allowed_cents::text, p.unpriced_reason, p.adjustments_applied, p.window_ends_on, coalesce(p.trace #> '{outcome,review_flags}', '[]'::jsonb),
+                p.mapping_id, p.contract_version_id, p.rate_record_id)::text AS pricing
+           FROM (${PRICED_IN_EFFECT('$1', 'true')}) p`,
+        [target.practiceId],
+      );
+      return Object.fromEntries(rows.map((row) => [row.service_line_id, row.pricing]));
+    });
+  }
+
+  /** Accepts the re-run with the diff its page reads, and expects that diff to list exactly the lines whose pricing in effect then changed. */
+  async function expectExact(target: Practice, rerunId: string, replacesId: string, heldBy: readonly string[]) {
+    const diff = await acceptanceOf(target, rerunId, replacesId);
+    expect(diff.heldBy.map((run) => run.id)).toEqual(heldBy);
+    const before = await pricedInEffect(target);
+    expect((await accept(target, rerunId, replacesId, target.manager, heldBy)).alreadyAccepted).toBe(false);
+    const after = await pricedInEffect(target);
+    const moved = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((line) => before[line] !== after[line]).sort();
+    expect(diff.lines.map((line) => line.serviceLineId).sort()).toEqual(moved);
+    expect(diff.total).toBe(moved.length);
+    return diff;
+  }
+
+  it('lists nothing for lines a February run already prices as the re-run does, though the re-run differs from the run it replaces there, and names that run', async () => {
+    const { target, planId, mappingId } = await februaryPractice('prc-27-f4-nothing');
+    const quarter = await priced(target, QUARTER);
+    await w.as(target, target.manager, (context) => correctMapping(context, { practiceId: target.practiceId, planId, kind: 'no_agreement', effectiveFrom: '2026-01-01', supersedesId: mappingId }));
+    const february = await priced(target, FEBRUARY);
+    const again = await repriced(target, quarter);
+    expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: quarter });
+    // Against the January-to-March run every line changes (the corrected mapping); in effect, each already reads the February run's same pricing.
+    expect((await compare(target, quarter, again)).summary).toMatchObject({ compared: 4, changed: 4 });
+    const diff = await acceptanceOf(target, again, quarter);
+    expect([diff.before.id, diff.after.id]).toEqual([quarter, again]);
+    expect(diff.summary).toMatchObject({ compared: 4, changed: 0, onlyBefore: 0, onlyAfter: 0 });
+    // A page read before the February run took effect showed no other run: that acceptance is refused, and nothing changes.
+    expect(await errorOf(accept(target, again, quarter, target.manager, []))).toMatchObject({ name: 'RerunRefusedError', reason: 'diff_changed' });
+    expect(await inEffectRun(quarter)).toBe(true);
+    await expectExact(target, again, quarter, [february]);
+  });
+
+  it('lists each line against the pricing in effect it replaces: a February run’s, not the run the re-run prices again', async () => {
+    const { target, planId, mappingId } = await februaryPractice('prc-27-f4-sides');
+    const quarter = await priced(target, QUARTER);
+    const corrected = await w.as(target, target.manager, (context) =>
+      correctMapping(context, { practiceId: target.practiceId, planId, kind: 'no_agreement', effectiveFrom: '2026-01-01', supersedesId: mappingId }),
+    );
+    const february = await priced(target, FEBRUARY);
+    await w.as(target, target.manager, (context) =>
+      correctMapping(context, { practiceId: target.practiceId, planId, kind: 'ma_noncontracted', effectiveFrom: '2026-01-01', supersedesId: corrected.mappingId }),
+    );
+    const again = await repriced(target, quarter);
+    const diff = await expectExact(target, again, quarter, [february]);
+    expect(diff.summary).toMatchObject({ compared: 4, changed: 4 });
+    expect(diff.lines.map((line) => [line.before?.pricingRunId, line.before?.unpricedReason, line.after?.pricingRunId, line.after?.unpricedReason])).toEqual(
+      diff.lines.map(() => [february, 'NO_AGREEMENT', again, null]),
+    );
+    expect(diff.lines.every((line) => line.changes.includes('unpriced_reason') && line.causes.some((cause) => cause.kind === 'mapping'))).toBe(true);
+  });
+
+  it('is the diff with the replaced run when no other run holds a line', async () => {
+    const { target } = await februaryPractice('prc-27-f4-plain');
+    const quarter = await priced(target, QUARTER);
+    const again = await repriced(target, quarter, RELEASE);
+    const diff = await acceptanceOf(target, again, quarter);
+    const plain = await scopeOf(target, target.manager, (scope) => compareRuns(scope, { practiceId: target.practiceId, beforeRunId: quarter, afterRunId: again, requestId: `test-${randomUUID()}`, perPage: 500 }));
+    expect({ ...diff, heldBy: undefined }).toEqual({ ...plain, heldBy: undefined });
+    await expectExact(target, again, quarter, []);
+  });
+});
+
+describe('PRC-27: two executions at once (payment-engine review F1)', () => {
+  it('stamps a run whose pricing began first but read its inputs last after the run that read first, so the older re-run is refused', async () => {
+    const { target, planId, mappingId } = await februaryPractice('prc-27-at-once');
+    const quarter = await priced(target, QUARTER);
+    const stale = (await rerun(target, quarter, RELEASE)).pricingRunId;
+    const february = await w.createRun(target, FEBRUARY.from, FEBRUARY.to);
+    // The February run's pricing transaction begins, so its now() is fixed, and waits before the execution lock.
+    const job = w.jobContext(target.practiceId);
+    let transactions = 0;
+    let go!: () => void;
+    const gate = new Promise<void>((resolve) => (go = resolve));
+    let begun!: () => void;
+    const began = new Promise<void>((resolve) => (begun = resolve));
+    const gated: JobContext = {
+      ...job,
+      transaction: (work) => {
+        transactions += 1;
+        if (transactions !== 2) {
+          return job.transaction(work);
+        }
+        return job.transaction(async (scope) => {
+          begun();
+          await gate;
+          return work(scope);
+        });
+      },
+    };
+    const pricing = executePricingRun(gated, target.practiceId, february);
+    await began;
+    // The re-run's pricing begins later, takes the lock first and completes; then the mapping is corrected.
+    await w.execute(target, stale);
+    await w.as(target, target.manager, (context) => correctMapping(context, { practiceId: target.practiceId, planId, kind: 'no_agreement', effectiveFrom: '2026-01-01', supersedesId: mappingId }));
+    go();
+    expect(await pricing).toMatchObject({ outcome: 'complete' });
+    // It began again under the lock: its completed_at follows the re-run's, the order the two read their inputs.
+    expect(transactions).toBe(3);
+    const stamps = await w.one<{ february: Date; stale: Date }>('SELECT (SELECT completed_at FROM pricing_run WHERE id = $1) AS february, (SELECT completed_at FROM pricing_run WHERE id = $2) AS stale', [
+      february,
+      stale,
+    ]);
+    expect(stamps.february.getTime()).toBeGreaterThan(stamps.stale.getTime());
+    expect((await linesOf(february)).every((line) => line.unpriced_reason === 'NO_AGREEMENT')).toBe(true);
+    expect(await errorOf(accept(target, stale, quarter))).toMatchObject({ name: 'RerunRefusedError', reason: 'superseded' });
+    expect(await blockOf(target, stale)).toEqual({ state: 'superseded', originalEligible: true, samePeriodIds: [], otherPeriodIds: [february], inEffectId: quarter });
+    const shared = await serviceLinesOf(february);
+    expect(Object.fromEntries(shared.map((line) => [line, february]))).toEqual(await pricingInEffect(target));
   });
 });
 
@@ -564,13 +772,13 @@ describe('PRC-28: re-running a run that is not in effect', () => {
     const first = await priced(target, FEBRUARY);
     const replacing = await repriced(target, first);
     const unaccepted = await repriced(target, first);
-    expect((await accept(target, replacing)).alreadyAccepted).toBe(false);
+    expect((await accept(target, replacing, first)).alreadyAccepted).toBe(false);
     // A run an accepted re-run replaced, and a re-run nobody accepted, are not re-run.
     for (const runId of [first, unaccepted]) {
       expect(await errorOf(rerun(target, runId, RELEASE))).toMatchObject({
         name: 'RerunRefusedError',
         reason: 'not_in_effect',
-        message: 'is no longer the run in effect for its service dates, so it is not priced again; re-run the run in effect instead',
+        message: 'is not the run in effect for its service dates, so it is not priced again; re-run the run in effect instead',
       });
     }
     // The run in effect is re-run as before.
@@ -590,7 +798,7 @@ describe('PRC-28: re-running a run that is not in effect', () => {
     );
     const legacy = (rows[0] as { id: string }).id;
     await w.execute(target, legacy);
-    expect(await errorOf(accept(target, legacy))).toMatchObject({
+    expect(await errorOf(accept(target, legacy, unaccepted))).toMatchObject({
       name: 'RerunRefusedError',
       reason: 'superseded',
       message: 'can no longer be accepted, because the run it prices again was never in effect; re-run the run in effect for these service dates',
@@ -605,7 +813,7 @@ describe('an acceptance outside READ COMMITTED (review finding 7)', () => {
     const first = await priced(target, FEBRUARY);
     const again = await repriced(target, first);
     const refused = await errorOf(
-      withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId], oneSnapshot: true }, (scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId: again })),
+      withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId], oneSnapshot: true }, (scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId: again, replacesId: first, heldByIds: [] })),
     );
     expect(refused).toBeInstanceOf(Error);
     expect(refused).not.toBeInstanceOf(RerunRefusedError);
@@ -616,12 +824,14 @@ describe('an acceptance outside READ COMMITTED (review finding 7)', () => {
 
 describe('PRC-25 to PRC-28: the property test’s model agrees with the SQL over three hand-built sequences', () => {
   type TieStep =
-    | readonly ['load', fixture: 'PRC-19' | 'MAP-05']
-    | readonly ['first', name: string, period: 'february' | 'quarter']
+    | readonly ['load', fixture: 'PRC-19' | 'MAP-05' | 'APRIL']
+    | readonly ['first', name: string, period: 'february' | 'quarter' | 'april']
     | readonly ['execute', name: string]
     | readonly ['rerun', name: string, of: string, expected: string]
-    | readonly ['accept', name: string, expected: string];
-  const MONTHS = { february: [1, 1], quarter: [0, 2] } as const;
+    | readonly ['accept', name: string, expected: string]
+    | readonly ['split'];
+  const MONTHS = { february: [1, 1], quarter: [0, 2], april: [3, 3] } as const;
+  const PERIODS = { february: FEBRUARY, quarter: QUARTER, april: { from: '2026-04-01', to: '2026-04-30' } } as const;
 
   /** Plays the steps on the database and on the model, comparing every outcome, every run in effect and every re-run's acceptance. */
   async function tie(label: string, steps: readonly TieStep[]): Promise<void> {
@@ -641,13 +851,17 @@ describe('PRC-25 to PRC-28: the property test’s model agrees with the SQL over
           if (step[1] === 'PRC-19') {
             await w.load(target, 'PRC-19/remit.835');
             await w.mapped(target, await w.planOf(target, 'CE:SYNPLAN-MA-NC'), 'ma_noncontracted', '2026-01-01');
-          } else {
+            model.loadLine(1);
+          } else if (step[1] === 'MAP-05') {
             await lateLines(target);
+            model.loadLine(1);
+          } else {
+            await aprilLines(target);
+            model.loadLine(3);
           }
-          model.loadLine(1);
           break;
         case 'first': {
-          const period = step[2] === 'february' ? FEBRUARY : QUARTER;
+          const period = PERIODS[step[2]];
           const db = await w.createRun(target, period.from, period.to);
           const [from, to] = MONTHS[step[2]];
           ids.set(step[1], { db, model: model.createFirstRun(from, to) });
@@ -671,9 +885,17 @@ describe('PRC-25 to PRC-28: the property test’s model agrees with the SQL over
         }
         case 'accept': {
           const run = idOf(step[1]);
-          expect([model.accept(run.model), await outcomeOf(accept(target, run.db))]).toEqual([step[2], step[2]]);
+          // As from a page read just now: against the run the acceptance replaces, or the original when there is none.
+          const block = await blockOf(target, run.db);
+          const original = [...ids.values()].find((other) => other.model === model.run(run.model)?.rerunOf);
+          const replacesId = block.state === 'acceptable' ? block.replacesId : (original?.db ?? run.db);
+          expect([model.accept(run.model), await outcomeOf(accept(target, run.db, replacesId))]).toEqual([step[2], step[2]]);
           break;
         }
+        case 'split':
+          await w.approveSplit({ '11': 'non_facility', '22': 'facility' });
+          model.approveSplit();
+          break;
       }
       for (const [name, run] of ids) {
         const modelled = model.run(run.model);
@@ -741,6 +963,88 @@ describe('PRC-25 to PRC-28: the property test’s model agrees with the SQL over
       ['accept', 'R2', 'accepted'],
     ]);
   }, 120_000);
+
+  it('Sequence F: runs of service dates that do not overlap, waiting and then priced after the re-run, change nothing for it', async () => {
+    await tie('tie-f', [
+      ['load', 'PRC-19'],
+      ['first', 'F', 'february'],
+      ['execute', 'F'],
+      ['load', 'APRIL'],
+      ['first', 'A', 'april'],
+      ['rerun', 'R', 'F', 'created'],
+      ['execute', 'R'],
+      ['execute', 'A'],
+      ['accept', 'R', 'accepted'],
+    ]);
+  }, 120_000);
+
+  it('Sequence D: a newer run of the month priced before the older re-run, which lacks its late line (the cut-off alone decides)', async () => {
+    await tie('tie-d', [
+      ['load', 'PRC-19'],
+      ['first', 'F', 'february'],
+      ['execute', 'F'],
+      ['rerun', 'R', 'F', 'created'],
+      ['load', 'MAP-05'],
+      ['first', 'X', 'february'],
+      ['execute', 'X'],
+      ['execute', 'R'],
+      ['accept', 'R', 'superseded'],
+    ]);
+  }, 120_000);
+
+  it('Sequence E: a February run pinned to a later place-of-service split, priced before a re-run of January to March (the split alone decides)', async () => {
+    await tie('tie-e', [
+      ['load', 'PRC-19'],
+      ['first', 'Q', 'quarter'],
+      ['execute', 'Q'],
+      ['rerun', 'R', 'Q', 'created'],
+      ['split'],
+      ['first', 'X', 'february'],
+      ['execute', 'X'],
+      ['execute', 'R'],
+      ['accept', 'R', 'superseded'],
+      ['rerun', 'R2', 'Q', 'created'],
+      ['execute', 'R2'],
+      ['accept', 'R2', 'accepted'],
+    ]);
+  }, 120_000);
+});
+
+describe('PRC-27: a run pinned to a later place-of-service split (payment-engine review F2)', () => {
+  it('refuses a re-run of January to March once a February run pinned to a split approved after it, and priced before it, is in effect', async () => {
+    const { target } = await februaryPractice('prc-27-split');
+    await w.approveSplit({ '11': 'non_facility', '22': 'facility' });
+    const quarter = await priced(target, QUARTER);
+    const stale = (await rerun(target, quarter, RELEASE)).pricingRunId;
+    await w.approveSplit({ '11': 'non_facility', '21': 'facility' });
+    const february = await priced(target, FEBRUARY);
+    await w.execute(target, stale);
+    // Priced after the February run, under the same release: only the split the February run pinned makes it newer.
+    expect(await errorOf(accept(target, stale, quarter))).toMatchObject({
+      name: 'RerunRefusedError',
+      reason: 'superseded',
+      message: 'can no longer be accepted, because a run of some of these service dates holds newer pricing; re-run the run in effect for these service dates',
+    });
+    expect(await blockOf(target, stale)).toEqual({ state: 'superseded', originalEligible: true, samePeriodIds: [], otherPeriodIds: [february], inEffectId: quarter });
+    const shared = await serviceLinesOf(february);
+    expect(Object.fromEntries(shared.map((line) => [line, february]))).toEqual(await pricingInEffect(target));
+    // A re-run created now pins the later split too: priced after the February run, it is accepted.
+    const again = await repriced(target, quarter);
+    expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: quarter });
+    expect((await accept(target, again, quarter)).alreadyAccepted).toBe(false);
+    expect(await pricingInEffect(target)).toEqual(Object.fromEntries((await serviceLinesOf(again)).map((line) => [line, again])));
+  });
+});
+
+/** PRC-27 (g): a re-run of January to March pinned to release 900001, left queued until a February run under 900004 is priced. */
+let laterRelease: { target: Practice; quarter: string; stale: string } | undefined;
+
+describe('PRC-27 (g): a re-run under release 900001 left queued (the February run under 900004 follows PRC-19)', () => {
+  it('prices a January-to-March run and creates its re-run under release 900001', async () => {
+    const { target } = await februaryPractice('prc-27-g');
+    const quarter = await priced(target, QUARTER);
+    laterRelease = { target, quarter, stale: (await rerun(target, quarter, RELEASE)).pricingRunId };
+  });
 });
 
 let prc19: Practice;
@@ -830,7 +1134,7 @@ describe('PRC-19: a re-run under release 2 with one changed RVU', () => {
 
     // Accepted, the re-run is the run in effect; a second re-run, of it, is left unaccepted for the rollback below.
     // (Only the run in effect is priced again, PRC-28: the first run is no longer re-run once the re-run replaced it.)
-    expect((await accept(prc19, runB)).alreadyAccepted).toBe(false);
+    expect((await accept(prc19, runB, runA)).alreadyAccepted).toBe(false);
     expect(await errorOf(rerun(prc19, runA, RERUN_RELEASE))).toMatchObject({ name: 'RerunRefusedError', reason: 'not_in_effect' });
     pendingRerun = (await rerun(prc19, runB, RERUN_RELEASE)).pricingRunId;
     await w.execute(prc19, pendingRerun);
@@ -856,10 +1160,10 @@ describe('PRC-25: a late line priced by a newer run of the month, then the older
     const stale = await repriced(target, first, RERUN_RELEASE);
     await lateLines(target);
     const newer = await priced(target, FEBRUARY, RERUN_RELEASE);
-    expect(await errorOf(accept(target, stale))).toMatchObject({
+    expect(await errorOf(accept(target, stale, first))).toMatchObject({
       name: 'RerunRefusedError',
       reason: 'superseded',
-      message: 'can no longer be accepted, because a newer run of these service dates is in effect; the page now names it',
+      message: 'can no longer be accepted, because a newer run of these service dates is in effect; the page is updated to name it',
     });
     expect(await w.one('SELECT accepted_at FROM pricing_run WHERE id = $1', [stale])).toEqual({ accepted_at: null });
     // Every line, the late ones too, reads the newer run, which stays in effect.
@@ -877,8 +1181,25 @@ describe('PRC-25: a late line priced by a newer run of the month, then the older
     expect(await reasonsOf(target, newer)).toEqual(['mapping_changed']);
     const again = await repriced(target, newer, RERUN_RELEASE);
     expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: newer });
-    expect((await accept(target, again)).alreadyAccepted).toBe(false);
+    expect((await accept(target, again, newer)).alreadyAccepted).toBe(false);
     expect(await inEffectRun(again)).toBe(true);
+  });
+});
+
+describe('PRC-27 (g): a run pinned to a later release, priced before the re-run', () => {
+  it('refuses the re-run under release 900001 once a February run under 900004, priced before it, is in effect', async () => {
+    if (laterRelease === undefined) {
+      throw new Error('the re-run under release 900001 was not created');
+    }
+    const { target, quarter, stale } = laterRelease;
+    const february = await priced(target, FEBRUARY, RERUN_RELEASE);
+    await w.execute(target, stale);
+    // Priced after the February run, with the same split: only the later release makes the February run newer.
+    expect(await errorOf(accept(target, stale, quarter))).toMatchObject({ name: 'RerunRefusedError', reason: 'superseded' });
+    expect(await blockOf(target, stale)).toEqual({ state: 'superseded', originalEligible: true, samePeriodIds: [], otherPeriodIds: [february], inEffectId: quarter });
+    const shared = await serviceLinesOf(february);
+    expect(Object.fromEntries(shared.map((line) => [line, february]))).toEqual(await pricingInEffect(target));
+    expectTracesRecompute(await linesOf(february), RERUN_RELEASE);
   });
 });
 
@@ -890,8 +1211,8 @@ describe('PRC-26: two re-runs of one run, the second priced after the first unde
     }
     // Accepting the second, then the first: the month ends on the second, under release 2.
     const r2 = await repriced(secondFirst.target, secondFirst.first, RERUN_RELEASE);
-    expect((await accept(secondFirst.target, r2)).alreadyAccepted).toBe(false);
-    expect(await errorOf(accept(secondFirst.target, secondFirst.r1))).toMatchObject({ name: 'RerunRefusedError', reason: 'superseded' });
+    expect((await accept(secondFirst.target, r2, secondFirst.first)).alreadyAccepted).toBe(false);
+    expect(await errorOf(accept(secondFirst.target, secondFirst.r1, secondFirst.first))).toMatchObject({ name: 'RerunRefusedError', reason: 'superseded' });
     expect(await blockOf(secondFirst.target, secondFirst.r1)).toEqual({ state: 'superseded', originalEligible: true, samePeriodIds: [r2], otherPeriodIds: [], inEffectId: r2 });
     const linesTwo = await serviceLinesOf(r2);
     expect(await pricingInEffect(secondFirst.target)).toEqual(Object.fromEntries(linesTwo.map((line) => [line, r2])));
@@ -899,9 +1220,9 @@ describe('PRC-26: two re-runs of one run, the second priced after the first unde
 
     // Accepting the first, then the second: the second replaces the first, and the month ends on it.
     const other = await repriced(firstFirst.target, firstFirst.first, RERUN_RELEASE);
-    expect((await accept(firstFirst.target, firstFirst.r1)).alreadyAccepted).toBe(false);
+    expect((await accept(firstFirst.target, firstFirst.r1, firstFirst.first)).alreadyAccepted).toBe(false);
     expect(await blockOf(firstFirst.target, other)).toEqual({ state: 'acceptable', replacesId: firstFirst.r1 });
-    expect((await accept(firstFirst.target, other)).alreadyAccepted).toBe(false);
+    expect((await accept(firstFirst.target, other, firstFirst.r1)).alreadyAccepted).toBe(false);
     expect(await pricingInEffect(firstFirst.target)).toEqual(Object.fromEntries((await serviceLinesOf(other)).map((line) => [line, other])));
     expect(await inEffectRun(other)).toBe(true);
   });
@@ -951,8 +1272,8 @@ describe('a content rollback', () => {
     ).rejects.toThrow(/rule-release mismatch/);
 
     // A re-run pinned to the withdrawn release is never accepted.
-    expect(await errorOf(accept(prc19, pendingRerun))).toMatchObject({ name: 'RerunRefusedError', reason: 'release_withdrawn' });
-    expect(await errorOf(accept(prc19, pendingRerun))).toBeInstanceOf(RerunRefusedError);
+    expect(await errorOf(accept(prc19, pendingRerun, runB))).toMatchObject({ name: 'RerunRefusedError', reason: 'release_withdrawn' });
+    expect(await errorOf(accept(prc19, pendingRerun, runB))).toBeInstanceOf(RerunRefusedError);
     await expect(
       asOwner(w.owner, [prc19.practiceId], () => w.owner.query('UPDATE pricing_run SET accepted_by = $2, accepted_at = now() WHERE id = $1', [pendingRerun, prc19.manager]), prc19.manager),
     ).rejects.toThrow(/pinned to a withdrawn rule release is never accepted/);
@@ -987,7 +1308,7 @@ describe('PRC-27 (f): a run pinned to a withdrawn release is not newer', () => {
     const { target, quarter, february } = withdrawnOverlap;
     const again = await repriced(target, quarter, RELEASE);
     expect(await blockOf(target, again)).toEqual({ state: 'acceptable', replacesId: quarter });
-    expect((await accept(target, again)).alreadyAccepted).toBe(false);
+    expect((await accept(target, again, quarter)).alreadyAccepted).toBe(false);
     // The February lines it shares read it, under the reinstated release: what the rollback intends.
     const inEffect = await pricingInEffect(target);
     const shared = (await serviceLinesOf(february)).filter((line) => inEffect[line] !== undefined);
@@ -999,38 +1320,58 @@ describe('PRC-27 (f): a run pinned to a withdrawn release is not newer', () => {
 describe('parity with the database (review finding 10): every run of the file, at the end', () => {
   it('reads the run in effect as pricing_run_in_effect() does, finds no re-run newer than its period superseded, and rerunBlock agrees with the run columns', async () => {
     // A re-run newer in pricing than every run of its period, so the second check is not vacuous.
+    // A first run of its dates left queued, which does not hold an acceptance back (awaiting, not newer_run_pending).
     const { target } = await februaryPractice('parity');
     await repriced(target, await priced(target, FEBRUARY));
+    await w.createRun(target, FEBRUARY.from, FEBRUARY.to);
 
     const { rows: runs } = await w.owner.query<{ id: string; app: boolean; db: boolean }>(`SELECT r.id, ${RUN_IN_EFFECT('r')} AS app, pricing_run_in_effect(r.id) AS db FROM pricing_run r ORDER BY r.id`);
     expect(runs.length).toBeGreaterThan(40);
     expect(runs.filter((run) => run.app !== run.db)).toEqual([]);
 
     // Wherever the original is in effect and nothing of another period overlaps, a complete re-run newer in pricing
-    // than every run of its period (priced after each, and on no older release that is not withdrawn) is not superseded.
-    const { rows: newest } = await w.owner.query<{ id: string; superseded: boolean }>(
-      `SELECT rr.id, ${RERUN_SUPERSEDED('rr')} AS superseded
-         FROM pricing_run rr JOIN pricing_run orig ON orig.id = rr.rerun_of_id
-        WHERE rr.status = 'complete' AND rr.accepted_at IS NULL AND pricing_run_in_effect(orig.id)
-          AND NOT EXISTS (SELECT 1 FROM pricing_run y WHERE y.practice_id = rr.practice_id AND y.status = 'complete'
-                             AND y.period_from <= rr.period_to AND y.period_to >= rr.period_from AND (y.period_from, y.period_to) <> (rr.period_from, rr.period_to))
-          AND NOT EXISTS (SELECT 1 FROM pricing_run y WHERE y.practice_id = rr.practice_id AND y.id <> rr.id AND y.status = 'complete'
-                             AND (y.period_from, y.period_to) = (rr.period_from, rr.period_to)
-                             AND (y.completed_at >= rr.completed_at OR (y.release_no > rr.release_no AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal wd WHERE wd.release_no = y.release_no))))`,
+    // than every run of its period (priced after each, on no older release that is not withdrawn, and on no split
+    // approved later, read from the split table itself) is not superseded. Read with the file's practices in scope, as
+    // pricing_run_split() answers.
+    const { rows: newest } = await asOwner(
+      w.owner,
+      practices.map((each) => each.practiceId),
+      () =>
+        w.owner.query<{ id: string; superseded: boolean }>(
+          `SELECT rr.id, ${RERUN_SUPERSEDED('rr')} AS superseded
+             FROM pricing_run rr JOIN pricing_run orig ON orig.id = rr.rerun_of_id
+            WHERE rr.status = 'complete' AND rr.accepted_at IS NULL AND pricing_run_in_effect(orig.id)
+              AND NOT EXISTS (SELECT 1 FROM pricing_run y WHERE y.practice_id = rr.practice_id AND y.status = 'complete'
+                                 AND y.period_from <= rr.period_to AND y.period_to >= rr.period_from AND (y.period_from, y.period_to) <> (rr.period_from, rr.period_to))
+              AND NOT EXISTS (SELECT 1 FROM pricing_run y WHERE y.practice_id = rr.practice_id AND y.id <> rr.id AND y.status = 'complete'
+                                 AND (y.period_from, y.period_to) = (rr.period_from, rr.period_to)
+                                 AND (y.completed_at >= rr.completed_at OR (y.release_no > rr.release_no AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal wd WHERE wd.release_no = y.release_no))
+                                      OR EXISTS (SELECT 1 FROM place_of_service_split ys WHERE ys.id = y.place_of_service_split_id
+                                                  AND NOT EXISTS (SELECT 1 FROM place_of_service_split rs WHERE rs.id = rr.place_of_service_split_id AND (rs.approved_at, rs.id) >= (ys.approved_at, ys.id)))))`,
+        ),
     );
     expect(newest.length).toBeGreaterThan(0);
     expect(newest.filter((run) => run.superseded)).toEqual([]);
 
-    // rerunBlock's state, for every complete re-run nobody accepted, is the run columns' (RERUN_SUPERSEDED, then NEWER_RUN_RUNNING).
+    // The run columns' acceptance (RERUN_ACCEPTANCE), read in each practice's scope as the pages read it, for every
+    // complete re-run nobody accepted: release_withdrawn for one pinned to a withdrawn release (acceptRun's first
+    // refusal), and otherwise rerunBlock's state (awaiting where it is acceptable).
+    const states: Record<string, number> = {};
     for (const each of practices) {
-      const { rows } = await w.owner.query<{ id: string; columns: string }>(
-        `SELECT r.id, CASE WHEN ${RERUN_SUPERSEDED('r')} THEN 'superseded' WHEN ${NEWER_RUN_RUNNING('r')} THEN 'newer_run_pending' ELSE 'acceptable' END AS columns
-           FROM pricing_run r WHERE r.practice_id = $1 AND r.rerun_of_id IS NOT NULL AND r.status = 'complete' AND r.accepted_at IS NULL`,
-        [each.practiceId],
-      );
+      const rows = await scopeOf(each, each.manager, async (scope) => {
+        const { rows: found } = await scope.client.query<{ id: string; acceptance: string; withdrawn: boolean }>(
+          `SELECT r.id, ${RERUN_ACCEPTANCE('r')} AS acceptance, EXISTS (SELECT 1 FROM rule_release_withdrawal wd WHERE wd.release_no = r.release_no) AS withdrawn
+             FROM pricing_run r WHERE r.practice_id = $1 AND r.rerun_of_id IS NOT NULL AND r.status = 'complete' AND r.accepted_at IS NULL`,
+          [each.practiceId],
+        );
+        return found;
+      });
       for (const row of rows) {
-        expect([row.id, (await blockOf(each, row.id)).state]).toEqual([row.id, row.columns]);
+        const state = (await blockOf(each, row.id)).state;
+        expect([row.id, row.acceptance]).toEqual([row.id, row.withdrawn ? 'release_withdrawn' : state === 'acceptable' ? 'awaiting' : state]);
+        states[row.acceptance] = (states[row.acceptance] ?? 0) + 1;
       }
     }
+    expect(Object.keys(states).sort()).toEqual(['awaiting', 'release_withdrawn', 'superseded']);
   }, 120_000);
 });

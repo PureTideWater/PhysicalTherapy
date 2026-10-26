@@ -6,20 +6,23 @@ import { type AcceptOutcome, type AcceptRule, type ModelRun, PAID_WHOLE_RULE, Ru
 /**
  * The re-run acceptance rule against a model of a practice's runs (combined audit #10; test matrix PRC-25 to PRC-28;
  * docs/adr/0037, amendment of 2026-10-26). Random sequences of loads, corrections and reversals, first runs of one to
- * three months, re-runs, pricing that begins and later commits or fails, acceptances that begin and later commit, and
- * release, withdrawal and mapping changes. After every step: (i) every line some eligible run priced, still priceable,
- * keeps pricing in effect; (ii) no acceptance moves a line's pricing in effect to older pricing; (iii) an accepted
- * re-run is the run in effect for its period; (iv) a re-run freshest by every measure is acceptable. Each rule the
- * design rejected fails one of them, shown on a named counter-example. rerun.db.test.ts ties the model to the SQL.
+ * three months, re-runs, executions that run at once (each set running, its pricing transaction begun and stamped,
+ * its inputs read under the execution lock, then committed or failed), acceptances that begin and later commit, and
+ * release, withdrawal, split and mapping changes. After every step: (i) every line some eligible run priced, still
+ * priceable, keeps pricing in effect; (ii) no acceptance moves a line's pricing in effect to pricing older in anything
+ * it read or pinned; (iii) an accepted re-run is the run in effect for its period; (iv) a re-run freshest by every
+ * measure is acceptable. Each rule the design rejected fails one of them, shown on a named counter-example, and so do
+ * an execution that keeps a stamp from before the lock and a rule that leaves out the split. rerun.db.test.ts ties
+ * the model to the SQL.
  */
 
 type Step =
   | { readonly kind: 'load'; readonly month: number }
   | { readonly kind: 'correct' | 'reverse'; readonly pick: number }
   | { readonly kind: 'first'; readonly from: number; readonly months: number }
-  | { readonly kind: 'rerun' | 'start' | 'fail' | 'begin_accept' | 'finish_accept' | 'accept'; readonly pick: number }
+  | { readonly kind: 'rerun' | 'price' | 'start' | 'begin' | 'read' | 'fail' | 'begin_accept' | 'finish_accept' | 'accept'; readonly pick: number }
   | { readonly kind: 'race'; readonly first: number; readonly second: number }
-  | { readonly kind: 'commit' | 'publish' | 'withdraw' | 'map' };
+  | { readonly kind: 'commit' | 'publish' | 'withdraw' | 'split' | 'map' };
 
 const MONTHS = 4;
 const pick = fc.nat(1_000);
@@ -28,14 +31,34 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   { weight: 1, arbitrary: fc.record({ kind: fc.constantFrom('correct' as const, 'reverse' as const), pick }) },
   { weight: 3, arbitrary: fc.record({ kind: fc.constant('first' as const), from: fc.nat(MONTHS - 1), months: fc.integer({ min: 1, max: 3 }) }) },
   { weight: 4, arbitrary: fc.record({ kind: fc.constant('rerun' as const), pick }) },
-  { weight: 5, arbitrary: fc.record({ kind: fc.constant('start' as const), pick }) },
-  { weight: 5, arbitrary: fc.record({ kind: fc.constant('commit' as const) }) },
+  // A whole execution with nothing else holding the lock, and the four steps of executions that run at once.
+  { weight: 4, arbitrary: fc.record({ kind: fc.constant('price' as const), pick }) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constant('start' as const), pick }) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constant('begin' as const), pick }) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constant('read' as const), pick }) },
+  { weight: 4, arbitrary: fc.record({ kind: fc.constant('commit' as const) }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant('fail' as const), pick }) },
   { weight: 3, arbitrary: fc.record({ kind: fc.constantFrom('begin_accept' as const, 'finish_accept' as const), pick }) },
   { weight: 4, arbitrary: fc.record({ kind: fc.constant('accept' as const), pick }) },
   // The interleaving of the design's §1.6.3: one acceptance begins, another begins and commits, then the first checks.
   { weight: 2, arbitrary: fc.record({ kind: fc.constant('race' as const), first: pick, second: pick }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constantFrom('publish' as const, 'withdraw' as const, 'map' as const) }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('split' as const) }) },
+);
+
+/**
+ * Executions at once and the inputs a run pins when it is created, without the corrections, withdrawals and
+ * acceptance races of `step`: the sequences that reach a stamp out of step with the reads, or a newer split, often.
+ */
+const pinnedStep: fc.Arbitrary<Step> = fc.oneof(
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('load' as const), month: fc.nat(MONTHS - 1) }) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constant('first' as const), from: fc.nat(MONTHS - 1), months: fc.integer({ min: 1, max: 3 }) }) },
+  { weight: 4, arbitrary: fc.record({ kind: fc.constant('rerun' as const), pick }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('price' as const), pick }) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constantFrom('start' as const, 'begin' as const, 'read' as const), pick }) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constant('commit' as const) }) },
+  { weight: 4, arbitrary: fc.record({ kind: fc.constant('accept' as const), pick }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constantFrom('split' as const, 'publish' as const, 'map' as const) }) },
 );
 
 const choose = <T>(items: readonly T[], at: number): T | undefined => (items.length === 0 ? undefined : items[at % items.length]);
@@ -96,6 +119,16 @@ function play(model: RunModel, steps: readonly Step[]): void {
         }
         break;
       }
+      case 'price': {
+        const run = choose(
+          model.runs.filter((candidate) => model.canStart(candidate)),
+          next.pick,
+        );
+        if (run !== undefined) {
+          model.price(run.id);
+        }
+        break;
+      }
       case 'start': {
         const run = choose(
           model.runs.filter((candidate) => model.canStart(candidate)),
@@ -106,10 +139,30 @@ function play(model: RunModel, steps: readonly Step[]): void {
         }
         break;
       }
+      case 'begin': {
+        const run = choose(
+          model.runs.filter((candidate) => candidate.status === 'running' && candidate.completedAt === null),
+          next.pick,
+        );
+        if (run !== undefined) {
+          model.beginPricing(run.id);
+        }
+        break;
+      }
+      case 'read': {
+        const run = choose(
+          model.runs.filter((candidate) => candidate.status === 'running' && candidate.completedAt !== null && candidate.readAt === null),
+          next.pick,
+        );
+        if (run !== undefined) {
+          count(`read:${model.readInputs(run.id)}`);
+        }
+        break;
+      }
       case 'commit': {
-        const running = model.runs.find((run) => run.status === 'running');
-        if (running !== undefined) {
-          model.commitPricing(running.id);
+        const holder = model.lockHolder();
+        if (holder !== undefined) {
+          model.commitPricing(holder.id);
         }
         break;
       }
@@ -161,6 +214,9 @@ function play(model: RunModel, steps: readonly Step[]): void {
       case 'withdraw':
         model.withdraw();
         break;
+      case 'split':
+        model.approveSplit();
+        break;
       case 'map':
         model.correctMapping();
         break;
@@ -178,9 +234,28 @@ describe('PRC-25 to PRC-28: the acceptance rule over random sequences of runs, l
       { numRuns: 3_000 },
     );
     // The sequences reached every outcome the rule can give, so none of the invariants held vacuously.
-    for (const outcome of ['accept:accepted', 'accept:superseded', 'accept:newer_run_pending', 'accept:changed_meanwhile', 'rerun:created', 'rerun:not_in_effect', 'rerun:newer_run_pending']) {
+    for (const outcome of [
+      'accept:accepted',
+      'accept:superseded',
+      'accept:newer_run_pending',
+      'accept:changed_meanwhile',
+      'rerun:created',
+      'rerun:not_in_effect',
+      'rerun:newer_run_pending',
+      'read:read',
+      'read:restarted',
+    ]) {
       expect(seen.get(outcome) ?? 0, `${outcome} among ${JSON.stringify([...seen])}`).toBeGreaterThan(0);
     }
+  });
+
+  it('holds over executions at once and newer pinned inputs: no acceptance regresses a line to pricing read or pinned earlier', () => {
+    fc.assert(
+      fc.property(fc.array(pinnedStep, { minLength: 30, maxLength: 60, size: 'max' }), (steps) => {
+        play(new RunModel(), steps);
+      }),
+      { numRuns: 6_000 },
+    );
   });
 
   it('checks an acceptance that began before others committed: every finished acceptance leaves its re-run in effect', () => {
@@ -260,6 +335,17 @@ const STRICT_OVERLAP_RULE: AcceptRule = (model, rerun) => {
     return 'superseded';
   }
   return model.runs.some((x) => x.id !== original.id && x.id !== rerun.id && model.eligible(x) && model.overlaps(x, rerun) && model.tookEffectAfter(x, original)) ? 'superseded' : 'accepted';
+};
+
+/** The rule as built, with NEWER_PRICING judging only the pricing stamp and the release, not the split. */
+const NO_SPLIT_RULE: AcceptRule = (model, rerun, now) => {
+  if (model.rerunSuperseded(rerun, (x, r) => (x.completedAt ?? Number.NaN) >= (r.completedAt ?? Number.NaN) || (x.release > r.release && !model.withdrawn.has(x.release)))) {
+    return 'superseded';
+  }
+  if (model.newerRunRunning(rerun)) {
+    return 'newer_run_pending';
+  }
+  return model.tookEffectMeanwhile(rerun, now) ? 'changed_meanwhile' : 'accepted';
 };
 
 const FEBRUARY = 1;
@@ -344,6 +430,74 @@ function lateOverlap(rule: AcceptRule): RunModel {
   model.price(created(model.createRerun(quarter)));
   return model;
 }
+
+/**
+ * Payment-engine review F1: a re-run of January to March and a February first run picked up at once. The February
+ * run's pricing transaction begins first, the re-run's takes the lock first and completes, a mapping is corrected,
+ * then the February run reads.
+ */
+function pickedUpTogether(orderGuard: boolean): { readonly model: RunModel; readonly rerun: number; readonly february: number } {
+  const model = new RunModel(PAID_WHOLE_RULE, { orderGuard });
+  model.loadLine(FEBRUARY);
+  model.loadLine(FEBRUARY);
+  const quarter = model.createFirstRun(0, 2);
+  model.price(quarter);
+  const rerun = created(model.createRerun(quarter));
+  const february = model.createFirstRun(FEBRUARY, FEBRUARY);
+  expect([model.startPricing(february), model.startPricing(rerun), model.beginPricing(february), model.beginPricing(rerun)]).toEqual([true, true, true, true]);
+  expect(model.readInputs(rerun)).toBe('read');
+  expect(model.commitPricing(rerun)).toBe(true);
+  model.correctMapping();
+  let read = model.readInputs(february);
+  while (read === 'restarted') {
+    read = model.readInputs(february);
+  }
+  expect([read, model.commitPricing(february)]).toEqual(['read', true]);
+  return { model, rerun, february };
+}
+
+/** Payment-engine review F2: the re-run pins the split in force; a later split is approved, and a February run pins it and is priced first. */
+function laterSplit(rule: AcceptRule): { readonly model: RunModel; readonly before: ReadonlyMap<number, number | null>; readonly outcome: AcceptOutcome } {
+  const model = new RunModel(rule);
+  model.loadLine(FEBRUARY);
+  const quarter = model.createFirstRun(0, 2);
+  model.price(quarter);
+  const rerun = created(model.createRerun(quarter));
+  model.approveSplit();
+  model.price(model.createFirstRun(FEBRUARY, FEBRUARY));
+  model.price(rerun);
+  const before = pricingInEffect(model);
+  return { model, before, outcome: model.accept(rerun) };
+}
+
+describe('PRC-27: an execution that keeps its stamp from before the lock, and a rule without the split, fail the property', () => {
+  it('without execute.ts’s restart, a run that began first and read last ranks as priced first, and the older re-run is accepted over it (invariant ii)', () => {
+    for (const orderGuard of [false, true]) {
+      const { model, rerun, february } = pickedUpTogether(orderGuard);
+      const [r, x] = [model.run(rerun), model.run(february)];
+      if (r === undefined || x === undefined) {
+        throw new Error('the runs were not created');
+      }
+      expect((x.readAt ?? 0) > (r.readAt ?? 0)).toBe(true);
+      expect((x.completedAt ?? 0) > (r.completedAt ?? 0)).toBe(orderGuard);
+      expect(model.restarts).toBe(orderGuard ? 1 : 0);
+      const before = pricingInEffect(model);
+      const outcome = model.accept(rerun);
+      expect(outcome).toBe(orderGuard ? 'superseded' : 'accepted');
+      expect(regressions(model, before).length > 0).toBe(!orderGuard);
+    }
+  });
+
+  it('a rule that leaves out the split accepts a re-run over a run pinned to a later split and priced first (invariant ii)', () => {
+    const unsplit = laterSplit(NO_SPLIT_RULE);
+    expect(unsplit.outcome).toBe('accepted');
+    expect(regressions(unsplit.model, unsplit.before)).not.toEqual([]);
+    const built = laterSplit(PAID_WHOLE_RULE);
+    expect(built.outcome).toBe('superseded');
+    expect(regressions(built.model, built.before)).toEqual([]);
+    expect(lostLines(built.model)).toEqual([]);
+  });
+});
 
 describe('PRC-25 to PRC-28: each rule the design rejected fails the property, on a named counter-example', () => {
   it('the audit’s rule alone puts older pricing back on February’s lines under overlapping periods (Sequence C, invariant ii)', () => {

@@ -79,7 +79,7 @@ describe('a re-run under another approval of the place-of-service split (review 
     const second = await rerun(first);
     const later = await w.approveSplit({ '11': 'non_facility', '21': 'facility' });
     // Only the run in effect is priced again (PRC-28): the second run is accepted before it is re-run.
-    await scope((s) => acceptRun(s, { practiceId: target.practiceId, pricingRunId: second }));
+    await scope((s) => acceptRun(s, { practiceId: target.practiceId, pricingRunId: second, replacesId: first , heldByIds: [] }));
     const third = await rerun(second);
     const added = await compare(first, second);
     expect([added.before, added.after].map((run) => [run.placeOfServiceSplitId, run.placeOfServiceSplitApprovedAt])).toEqual([

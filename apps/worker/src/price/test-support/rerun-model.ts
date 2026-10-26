@@ -5,19 +5,26 @@
  *
  * - Lines load into months (0 is January 2026), and a correction (the corrected claim's line is superseded and its
  *   correction loads) or a reversal later arrives for one; both are read live when a run is priced (lines.ts).
- * - A first run's cut-off is its creation; a re-run keeps its original's (create.ts). Each run pins the release in
- *   force when it is created; a release is published, or the one in force withdrawn for good (the one before it is in
- *   force again).
- * - Pricing begins (status running, then the pricing transaction, whose start is completed_at and which reads the
- *   lines under the practice's execution lock, so one run at a time) and later commits (complete) or fails. A first
- *   run is not priced while a first run of its period created before it is still open: the model's scope is
- *   acceptance and re-run creation, and same-period first runs priced out of order are a gap of their own.
+ * - A first run's cut-off is its creation; a re-run keeps its original's (create.ts). Each run pins, when it is
+ *   created, the inputs fixed at creation (FIXED_AT_CREATION): the release in force (a release is published, or the
+ *   one in force withdrawn for good, and the one before it is in force again) and the place-of-service split in force
+ *   (a later approval is in force from then on). The triage date is not modelled: it changes nothing a line's
+ *   pricing in effect is read for (in-effect.ts, NEWER_PRICING).
+ * - Pricing, as execute.ts runs it, with any number of executions at once: the run is set running; its pricing
+ *   transaction begins, and that start is its completed_at; later, under the practice's execution lock (one run at a
+ *   time, until it commits or fails), it reads the lines and the live inputs (its readAt), unless a run that began
+ *   after it has already completed, when the transaction begins again (execute.ts's restart; `orderGuard: false`
+ *   leaves it out, for the counter-example); then it commits (complete) or fails. A first run is not priced while a
+ *   first run of its period created before it is still open: the model's scope is acceptance and re-run creation,
+ *   and same-period first runs priced out of order are a gap of their own.
  * - An acceptance begins (its transaction's now(), which becomes accepted_at) and later checks and commits under the
  *   lock, atomically, against what has committed by then.
  * - Which run is in effect (RUN_IN_EFFECT) and each line's pricing in effect (PRICED_IN_EFFECT), as in-effect.ts.
  *
- * The acceptance rule is pluggable, so the property test can show each rejected rule of the design failing.
- * Synthetic: months and counters only, no line content.
+ * The invariants judge newness by what each run read and pinned (readAt and FIXED_AT_CREATION), never by the rule's
+ * own completed_at, so a gap between the stamp and the reads, or an input the rule leaves out, fails them. The
+ * acceptance rule is pluggable, so the property test can show each rejected rule of the design failing. Synthetic:
+ * months and counters only, no line content.
  */
 
 export type ModelStatus = 'queued' | 'running' | 'complete' | 'failed';
@@ -29,11 +36,15 @@ export interface ModelRun {
   readonly to: number;
   readonly cutOff: number;
   readonly release: number;
+  /** The place-of-service split it pinned: the approvals counted from 1, 0 for none. */
+  readonly split: number;
   readonly rerunOf: number | null;
   readonly createdAt: number;
   status: ModelStatus;
-  /** When its pricing transaction began (completed_at); set once pricing begins. */
+  /** When its pricing transaction began (completed_at); set once that transaction begins, again on a restart. */
   completedAt: number | null;
+  /** When it read the lines and the live inputs under the execution lock; set once it has. */
+  readAt: number | null;
   acceptedAt: number | null;
   /** The lines it priced. */
   readonly lines: Set<number>;
@@ -57,6 +68,32 @@ export type AcceptOutcome = RuleOutcome | 'not_found' | 'not_rerun' | 'not_compl
 
 export type CreateOutcome = { readonly created: number } | { readonly refused: 'not_found' | 'not_complete' | 'not_in_effect' | 'newer_run_pending' };
 
+/** What a pricing transaction's read under the lock came to: read, begun again (execute.ts's restart), or not its turn. */
+export type ReadOutcome = 'read' | 'restarted' | 'blocked';
+
+/** Whether run `b`'s pinned input is older than run `a`'s, for each input fixed at creation. */
+export interface FixedInput {
+  readonly name: string;
+  older(model: RunModel, b: ModelRun, a: ModelRun): boolean;
+}
+
+/**
+ * The inputs a run pins when it is created: the rule release (older unless `a`'s is withdrawn, after which the
+ * reinstated release is the one wanted) and the place-of-service split (a later approval is newer).
+ */
+export const FIXED_AT_CREATION: readonly FixedInput[] = [
+  { name: 'release', older: (model, b, a) => b.release < a.release && !model.withdrawn.has(a.release) },
+  { name: 'split', older: (_model, b, a) => b.split < a.split },
+];
+
+/** Whether `x` holds newer pricing than `r` (NEWER_PRICING, or a variant of it a rejected rule uses). */
+export type NewerPricing = (x: ModelRun, r: ModelRun) => boolean;
+
+export interface ModelOptions {
+  /** execute.ts's restart of a pricing transaction that a run which began later completed ahead of (default true). */
+  readonly orderGuard?: boolean;
+}
+
 interface OpenAcceptance {
   readonly rerunId: number;
   readonly startedAt: number;
@@ -79,12 +116,22 @@ export class RunModel {
   readonly lines: ModelLine[] = [];
   readonly releases: number[] = [1];
   readonly withdrawn = new Set<number>();
+  /** The place-of-service split in force: approvals counted from 1, 0 before the first. */
+  split = 0;
+  /** Pricing transactions begun again by execute.ts's restart. */
+  restarts = 0;
+  private readonly orderGuard: boolean;
   /** Mapping, contract-version, settings and location changes: inputs read at pricing, ordered by completed_at. */
   stateChanges = 0;
   private readonly open = new Map<number, OpenAcceptance>();
   private nextAcceptance = 0;
 
-  constructor(readonly rule: AcceptRule = PAID_WHOLE_RULE) {}
+  constructor(
+    readonly rule: AcceptRule = PAID_WHOLE_RULE,
+    options: ModelOptions = {},
+  ) {
+    this.orderGuard = options.orderGuard ?? true;
+  }
 
   private tick(): number {
     this.clock += 1;
@@ -137,28 +184,28 @@ export class RunModel {
     return best?.id ?? null;
   }
 
-  /** NEWER_PRICING: priced no earlier than complete run `r`, or pinned to a later release not withdrawn. */
+  /** NEWER_PRICING: priced no earlier than complete run `r`, or pinned to a later release not withdrawn or a later split. */
   newerPricing(x: ModelRun, r: ModelRun): boolean {
-    return (x.completedAt ?? Number.NaN) >= (r.completedAt ?? Number.NaN) || (x.release > r.release && !this.withdrawn.has(x.release));
+    return (x.completedAt ?? Number.NaN) >= (r.completedAt ?? Number.NaN) || (x.release > r.release && !this.withdrawn.has(x.release)) || x.split > r.split;
   }
 
-  supersedesRerun(x: ModelRun, rr: ModelRun, o: ModelRun): boolean {
+  supersedesRerun(x: ModelRun, rr: ModelRun, o: ModelRun, newer: NewerPricing = (a, b) => this.newerPricing(a, b)): boolean {
     return (
       x.id !== o.id &&
       x.id !== rr.id &&
       this.overlaps(x, rr) &&
       this.eligible(x) &&
       this.tookEffectAfter(x, o) &&
-      (this.newerPricing(x, rr) || (this.samePeriod(x, rr) && x.cutOff > rr.cutOff))
+      (newer(x, rr) || (this.samePeriod(x, rr) && x.cutOff > rr.cutOff))
     );
   }
 
-  rerunSuperseded(rr: ModelRun): boolean {
+  rerunSuperseded(rr: ModelRun, newer?: NewerPricing): boolean {
     const o = rr.rerunOf === null ? undefined : this.run(rr.rerunOf);
     if (o === undefined) {
       return false;
     }
-    return !this.eligible(o) || this.runs.some((x) => this.supersedesRerun(x, rr, o));
+    return !this.eligible(o) || this.runs.some((x) => this.supersedesRerun(x, rr, o, newer));
   }
 
   private overlappingFirstRun(r: ModelRun, statuses: readonly ModelStatus[]): boolean {
@@ -234,9 +281,30 @@ export class RunModel {
     this.tick();
   }
 
+  /** A contract specialist approves a place-of-service split: the split in force for every run created from now on. */
+  approveSplit(): number {
+    this.split += 1;
+    this.tick();
+    return this.split;
+  }
+
   createFirstRun(from: number, to: number): number {
     const at = this.tick();
-    const run: ModelRun = { id: this.runs.length, from, to, cutOff: at, release: this.inForce(), rerunOf: null, createdAt: at, status: 'queued', completedAt: null, acceptedAt: null, lines: new Set() };
+    const run: ModelRun = {
+      id: this.runs.length,
+      from,
+      to,
+      cutOff: at,
+      release: this.inForce(),
+      split: this.split,
+      rerunOf: null,
+      createdAt: at,
+      status: 'queued',
+      completedAt: null,
+      readAt: null,
+      acceptedAt: null,
+      lines: new Set(),
+    };
     this.runs.push(run);
     return run.id;
   }
@@ -263,10 +331,12 @@ export class RunModel {
       to: original.to,
       cutOff: original.cutOff,
       release: this.inForce(),
+      split: this.split,
       rerunOf: of,
       createdAt: at,
       status: 'queued',
       completedAt: null,
+      readAt: null,
       acceptedAt: null,
       lines: new Set(),
     };
@@ -274,34 +344,68 @@ export class RunModel {
     return { created: run.id };
   }
 
-  /** Whether the run's pricing can begin: queued, no run being priced, and no earlier first run of its period open. */
+  /** Whether the run can be set running: queued, and no earlier first run of its period open. */
   canStart(run: ModelRun): boolean {
     return (
       run.status === 'queued' &&
-      !this.runs.some((other) => other.status === 'running') &&
       (run.rerunOf !== null || !this.runs.some((other) => other.rerunOf === null && other.id < run.id && this.samePeriod(other, run) && (other.status === 'queued' || other.status === 'running')))
     );
   }
 
-  /** Pricing begins: running, completed_at stamped, the lines loaded by the cut-off read (not a superseded claim's). */
+  /** The price job's first transaction: the run is set running. */
   startPricing(id: number): boolean {
     const run = this.run(id);
     if (run === undefined || !this.canStart(run)) {
       return false;
     }
     run.status = 'running';
+    this.tick();
+    return true;
+  }
+
+  /** Its pricing transaction begins: completed_at is stamped (execute.ts: the transaction's now()). */
+  beginPricing(id: number): boolean {
+    const run = this.run(id);
+    if (run?.status !== 'running' || run.completedAt !== null) {
+      return false;
+    }
     run.completedAt = this.tick();
+    return true;
+  }
+
+  /** The run holding the practice's execution lock: it has read under it and not yet committed or failed. */
+  lockHolder(): ModelRun | undefined {
+    return this.runs.find((run) => run.status === 'running' && run.readAt !== null);
+  }
+
+  /**
+   * Under the execution lock, once no other run holds it: begun again when a run that began after it has completed
+   * (execute.ts's restart, unless `orderGuard` is off), otherwise the lines loaded by the cut-off (not a superseded
+   * claim's) and the live inputs are read.
+   */
+  readInputs(id: number): ReadOutcome {
+    const run = this.run(id);
+    if (run?.status !== 'running' || run.completedAt === null || run.readAt !== null || this.lockHolder() !== undefined) {
+      return 'blocked';
+    }
+    const stamp = run.completedAt;
+    if (this.orderGuard && this.runs.some((other) => other.status === 'complete' && (other.completedAt ?? 0) > stamp)) {
+      run.completedAt = this.tick();
+      this.restarts += 1;
+      return 'restarted';
+    }
+    run.readAt = this.tick();
     for (const line of this.lines) {
       if (line.month >= run.from && line.month <= run.to && line.loadedAt <= run.cutOff && !line.superseded) {
         run.lines.add(line.id);
       }
     }
-    return true;
+    return 'read';
   }
 
   commitPricing(id: number): boolean {
     const run = this.run(id);
-    if (run?.status !== 'running') {
+    if (run?.status !== 'running' || run.readAt === null) {
       return false;
     }
     run.status = 'complete';
@@ -316,13 +420,22 @@ export class RunModel {
     }
     run.status = 'failed';
     run.completedAt = null;
+    run.readAt = null;
     run.lines.clear();
     this.tick();
     return true;
   }
 
+  /** A whole execution with nothing else running: set running, begin, read (again after a restart) and commit. */
   price(id: number): boolean {
-    return this.startPricing(id) && this.commitPricing(id);
+    if (!this.startPricing(id) || !this.beginPricing(id)) {
+      return false;
+    }
+    let read = this.readInputs(id);
+    while (read === 'restarted') {
+      read = this.readInputs(id);
+    }
+    return read === 'read' && this.commitPricing(id);
   }
 
   beginAcceptance(rerunId: number): number {
@@ -393,9 +506,18 @@ export function lostLines(model: RunModel): number[] {
 }
 
 /**
- * (ii) Lines an acceptance moved, from the pricing in effect `before`, to a run with an older pricing stamp, or to an
- * older release that is not a reinstatement after a withdrawal. Only lines still priceable: a corrected claim is priced
- * through its correction, as intended.
+ * Whether run `b`'s pricing is older than run `a`'s in anything it read or pinned: it read the live inputs before
+ * `a` did, or pinned an input fixed at creation that is older. Judged from what the runs did, not from the rule's
+ * completed_at, so the invariants catch a stamp out of step with the reads and an input the rule leaves out.
+ */
+export function olderPricing(model: RunModel, b: ModelRun, a: ModelRun): boolean {
+  return (b.readAt ?? 0) < (a.readAt ?? 0) || FIXED_AT_CREATION.some((input) => input.older(model, b, a));
+}
+
+/**
+ * (ii) Lines an acceptance moved, from the pricing in effect `before`, to a run whose pricing is older in anything
+ * it read or pinned (olderPricing). Only lines still priceable: a corrected claim is priced through its correction,
+ * as intended.
  */
 export function regressions(model: RunModel, before: ReadonlyMap<number, number | null>): number[] {
   return model.lines
@@ -406,19 +528,16 @@ export function regressions(model: RunModel, before: ReadonlyMap<number, number 
         return false;
       }
       const [a, b] = [model.run(was), model.run(now)];
-      if (a === undefined || b === undefined) {
-        return true;
-      }
-      return (b.completedAt ?? 0) < (a.completedAt ?? 0) || (b.release < a.release && !model.withdrawn.has(a.release));
+      return a === undefined || b === undefined || olderPricing(model, b, a);
     })
     .map((line) => line.id);
 }
 
 /**
  * (iv) Re-runs that are freshest by every measure and yet the model's rule would refuse: complete, unaccepted, not
- * withdrawn, the original eligible, no overlapping first run being priced, priced after every other complete run of
- * overlapping dates, pinned to a release no older than any of theirs not withdrawn, with a cut-off no earlier than any
- * complete run of its period, judged by an acceptance that begins now.
+ * withdrawn, the original eligible, no overlapping first run being priced, newer than every other complete run of
+ * overlapping dates in all it read and pinned (each read its inputs before it, and pinned no newer input), with a
+ * cut-off no earlier than any complete run of its period, judged by an acceptance that begins now.
  */
 export function livenessViolations(model: RunModel, rule: AcceptRule = model.rule): number[] {
   const now = model.clock + 1;
@@ -433,7 +552,7 @@ export function livenessViolations(model: RunModel, rule: AcceptRule = model.rul
           x.id === r.id ||
           x.status !== 'complete' ||
           !model.overlaps(x, r) ||
-          ((x.completedAt ?? 0) < (r.completedAt ?? 0) && (x.release <= r.release || model.withdrawn.has(x.release)) && (!model.samePeriod(x, r) || x.cutOff <= r.cutOff)),
+          ((x.readAt ?? 0) < (r.readAt ?? 0) && !FIXED_AT_CREATION.some((input) => input.older(model, r, x)) && (!model.samePeriod(x, r) || x.cutOff <= r.cutOff)),
       );
       return freshest && rule(model, r, now) !== 'accepted';
     })

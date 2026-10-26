@@ -2,7 +2,7 @@
   "case": "PRC-25",
   "module": "PRC",
   "title": "A late line priced by a newer run of the month, then the older re-run accepted",
-  "assertion": "Refused as `superseded`, in the worker and through the screens. The late line keeps its pricing in effect and the newer run stays in effect. The re-run's page says a newer run of these service dates is in effect, links to it and offers no Accept button. When that run would price nothing differently now, the page says there is nothing more to accept and offers no re-run",
+  "assertion": "Refused as `superseded`, in the worker and through the screens. The late line keeps its pricing in effect and the newer run stays in effect. The re-run's page says a newer run of these service dates is in effect, links to it and offers no Accept button. When that run was priced after the re-run and would price nothing differently now, the page says there is nothing more to accept and offers no re-run; otherwise it offers the re-run of that run",
   "synthetic": true,
   "completesIn": 7,
   "assertedBy": [

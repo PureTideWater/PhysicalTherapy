@@ -44,9 +44,10 @@ recorded when a release row is permanent (ADR 0009), and what the console may re
   (`RUN_IN_EFFECT`, `apps/worker/src/price/in-effect.ts`, which the web app's reads share; the database's
   `pricing_run_in_effect()` holds the same rule for its own checks; ADR 0038).
   *Amended 2026-10-26 (`co-001/superseded-rerun`):* a re-run is accepted only while no run in effect for overlapping
-  service dates was priced after it, is pinned to a later release not withdrawn, or (for its own dates) holds lines it
-  lacks, no first run of those dates is being priced, and none took effect while it was being accepted; see the
-  amendment at the end.
+  service dates was priced after it, is pinned to a later release not withdrawn or a later place-of-service split, or
+  (for its own dates) holds lines it lacks, no first run of those dates is being priced, none took effect while it was
+  being accepted, and what it replaces is what its diff was shown against (the run it replaces, and the runs of other
+  dates holding its lines); its diff is exactly what accepting changes; see the amendment at the end.
 - **A diff is the stored lines, matched by service line** (`compareRuns`, `apps/worker/src/price/diff.ts`):
   exactly the lines whose expected allowed, unpriced reason, adjustments applied, dispute window (its last day,
   which decides whether the line is actionable, PRD 11 step 8), review flags (the trace's `outcome.review_flags`,
@@ -87,8 +88,8 @@ recorded when a release row is permanent (ADR 0009), and what the console may re
   `tools/release/synthetic.ts`; 900002 and 900003 were already the golden lines' releases.
 - **Screens.** Pricing runs: compare any two complete runs (`/p/[practiceId]/pricing-runs/compare?before&after`),
   re-run a complete run under the release in force from its page (*amended 2026-10-26:* the run in effect only), the
-  re-run's page with its diff and the Accept button (*amended 2026-10-26:* the diff against the pricing its acceptance
-  replaces, and in the button's place why it can no longer be accepted), run state badges (in effect, awaiting acceptance, release withdrawn), and a notice when runs in
+  re-run's page with its diff and the Accept button (*amended 2026-10-26:* exactly what accepting it changes, against each
+  line's pricing in effect, and in the button's place why it can no longer be accepted), run state badges (in effect, awaiting acceptance, release withdrawn), and a notice when runs in
   effect are pinned to another release. The customer release note (`/p/[practiceId]/releases?release=`): the
   release's notes and its record changes against the release before (by type, and the first 50 records with the
   fields that differ), whether it is in force or withdrawn, the practice's runs in effect pinned to another
@@ -150,11 +151,21 @@ period accepted after a single month was priced again, regress every shared line
 (`IN_EFFECT_SINCE`) and two runs overlap when they belong to the same practice and their periods share a service date:
 
 - **Newer pricing.** A run X's pricing is newer than R's when X was priced no earlier than R
-  (`X.completed_at >= R.completed_at`), or X is pinned to a later rule release that has not been withdrawn. Both
-  pricing transactions take the practice's execution lock (`pricing_run:<practice>`) before they read mappings,
-  contract versions, settings, location and the claim's live facts, so `completed_at` order is the order in which
-  they read them. A tie counts as newer. A withdrawn release is never newer: after a rollback, a re-run under the
-  reinstated release is the one wanted.
+  (`X.completed_at >= R.completed_at`), or X pinned, when it was created, an input newer than R's: a later rule
+  release that has not been withdrawn, or a place-of-service split approved later (ordered as
+  `place_of_service_split_in_force()` orders them, `approved_at` then ID; a run that pinned no split is older than
+  one that pinned a split). Both pricing transactions take the practice's execution lock (`pricing_run:<practice>`)
+  before they read mappings, contract versions, settings, location and the claim's live facts. `completed_at` is the
+  pricing transaction's `now()`, which begins before the lock is granted, so the price job checks, under the lock
+  and before it reads anything, that no run of the practice with a later `completed_at` has already completed; if
+  one has, the transaction begins again (`apps/worker/src/price/execute.ts`, at most five times in one attempt, then
+  the job retries). `completed_at` order is therefore the order in which runs read their inputs, for first runs and
+  re-runs alike. A tie counts as newer. A withdrawn release is never newer: after a rollback, a re-run under the
+  reinstated release is the one wanted. The split is read through `pricing_run_split()`, the definer that answers
+  for a run of a practice in scope (the application role cannot read the split table). The run's triage date (its
+  creation day, the engine's `as_of`) is fixed at creation too but is not compared: it sets only the trace's window
+  status as of that day; `window_ends_on` does not depend on it, no amount does, and triage judges every window on
+  its own date (`packages/triage/src/actionable.ts`, `WINDOW_PASSED`).
 - **Superseded.** R is superseded when O is not eligible (an unaccepted re-run, or not complete: R's diff is then
   against no pricing in effect), or when some eligible run X other than O and R overlaps R, took effect after O
   (`(since(X), X.id) > (since(O), O.id)`, the ordering `RUN_IN_EFFECT` and `PRICED_IN_EFFECT` use), and either holds
@@ -186,9 +197,15 @@ Accept is not the age of the pricing, so a re-run priced after the pricing it wo
 acceptance came first.
 
 **Refusal codes.** `RerunRefusedError` gains `superseded`, `newer_run_pending` (acceptance: a first run of overlapping
-dates is being priced; creation: one is queued or being priced), `changed_meanwhile` and `not_in_effect` (creation).
-`release_withdrawn` stays ahead of `superseded`, because its remedy is the more basic one. Each message names the
-state, never a value, and reads after the form's label ("This re-run: ...", "This run: ...").
+dates is being priced; creation: one is queued or being priced), `changed_meanwhile`, `diff_changed` (the pricing
+the acceptance would replace is not what the person's diff was against: another run replaced, or other runs holding
+its lines) and `not_in_effect` (creation).
+`release_withdrawn` stays ahead of `superseded`, because its remedy is the more basic one; `diff_changed` comes last,
+after the refusals that say the re-run cannot be accepted at all. Each message names the state, never a value, and
+reads after the form's label ("This re-run: ...", "This run: ..."); the older refusals (`not_found`, `not_rerun`,
+`not_complete`, `release_withdrawn`) are reworded to read the same way. `rerunBlock` exports the pages' acceptance
+state too (`RERUN_ACCEPTANCE`: `release_withdrawn`, `superseded`, `newer_run_pending` or `awaiting`, in that order),
+so no badge says "awaiting acceptance" beside a withdrawn release.
 
 **The lock and the race analysis.** `acceptRun` refuses any isolation level but READ COMMITTED (a plain `Error`, a
 programming fault, for the reason `pricing_current_read_lock()` gives), then takes the practice's `pricing_current`
@@ -212,32 +229,58 @@ completion holds `pricing_current` only from its completion UPDATE to commit.
   (row, then lock) and a new one (lock, then row) accepting the **same** re-run can deadlock once: Postgres aborts one
   with 40P01, no data is wrong, and a resubmit succeeds or finds it already accepted.
 
-**The residual window, accepted.** `completed_at` is when a pricing transaction began; it reads its inputs a few
-statements later, after the execution lock. For a first run X the window is closed: X's `running` commits before its
-pricing transaction begins, so a re-run created inside the window is refused `newer_run_pending`. For an X that is a
-re-run (later accepted), R would have to be created, queued, picked up and take the execution lock inside the gap
-between X's `BEGIN` and its lock statement, well under a millisecond; the damage would be a shared line keeping R's
-state where X's was a moment newer, never a lost line. Closing it would refuse a person's second re-run for as long
-as the first is being priced. A first run stuck in `running` blocks acceptance and re-runs of overlapping dates, and
-the refusal names it; a new price job for that run resumes and finishes it.
+**The execution order, closed.** `completed_at` is when a pricing transaction began, before it was granted the
+execution lock; it reads its inputs a few statements later. Two executions at once (a rolling deploy's overlap, or
+more than one worker task) could otherwise read in one order and be stamped in the other: a re-run R queued before an
+overlapping first run X, both picked up together, X's transaction beginning first and R's taking the lock first,
+would leave X, which read a mapping corrected in between, ranked as priced before R, and R accepted over it
+(payment-engine review of PR #50, F1). The price job's check under the lock closes this for first runs and re-runs
+alike: a run that began later and completed first makes the waiting transaction begin again, with a later `now()`,
+before it reads anything. The check reads committed rows at READ COMMITTED under the lock already held, so it holds
+for any caller of `executePricingRun`; a session-level lock taken before `BEGIN` would give the same order but needs
+the shared transaction helper to hold a lock across its transaction on a pooled connection, and every job context to
+pass it on. One window is left for the deploy that ships this check: a worker of the earlier version, executing at
+the same moment as a new one, does not check. Production runs one worker task today (`infra/lib/environments.ts`), so
+it needs an overlap of the deploy itself; the damage would be a shared line keeping older pricing, never a lost line.
+A first run stuck in `running` blocks acceptance and re-runs of overlapping dates, and the refusal names it; a new
+price job for that run resumes and finishes it.
 
 **PRD 9 step 4.** "A re-run of any earlier run under the new release" is read as the practice's runs in effect that
 are pinned to an earlier release, the ones the release note lists (`runsInEffect`). A run already replaced is priced
 again by re-running the run that replaced it, and the refusal names that run.
 
-**The diff base.** A re-run's page, and the compare page's Accept, list the changes against the pricing its acceptance
-replaces for its period: the original, or a run of the same period that took effect after the original but is not
-newer than the re-run (`rerunBlock`'s `replacesId`). The compare page offers Accept only against that run, and
-otherwise links to that comparison. `compareRuns` already compares any two complete runs, so `diff.ts` is unchanged.
-Over other periods the diff still lists changes against the original only: an accepted re-run that shares lines with
-a run of another period was priced after it (or under a later release), so those lines move to newer pricing.
+**The diff base: exactly what accepting changes.** A re-run's page, and the compare page where Accept is offered,
+list exactly what accepting it changes (`compareAcceptance`, `apps/worker/src/price/diff.ts`; payment-engine review
+of PR #50, F4): for each line the re-run or the run it replaces priced, the line's pricing in effect now
+(`PRICED_IN_EFFECT`, whichever run of any period holds it) against its pricing once the re-run is accepted (the
+re-run's line where it priced one, since accepted last it holds every line it priced; otherwise the pricing in effect
+of the runs left, those of other periods). The run it replaces is the run in effect for its period: the original, or
+a run of the same period that took effect after the original but is not newer than the re-run (`rerunBlock`'s
+`replacesId`). A line a run of other service dates holds is compared with that run, and the page names it; with
+none, the diff is the replaced run's and the re-run's, as before. No other line's pricing in effect moves, because
+the re-run takes effect for its own period only. The compare page offers Accept only against the run it replaces,
+and otherwise links to that comparison. The Accept forms post what the diff was against, the replaced run and the
+runs of other dates it read (`replacesId` and `heldByIds`), and `acceptRun` requires both of every caller. Under the
+lock it reads the replaced run again and the runs of other dates the diff would read now (`acceptanceHeldBy`, the
+same statement), and refuses `diff_changed` when either differs: another re-run of the same run accepted meanwhile
+(security review of PR #50, F1), or a re-run of other dates accepted meanwhile that is not newer than this one, so
+not superseding it, but now holding some of its lines. Priced lines never change, so those runs are everything the
+diff depends on. The page then refreshes to the diff that holds. An acceptance already recorded stays as it is,
+whatever the request names. A comparison of any two runs elsewhere stays the two runs' diff (`compareRuns`).
 
 **The screens.** A re-run that can no longer be accepted shows why in place of the Accept button, with a link to the
-run to use: the run in effect for its service dates (and, when that run would price nothing differently now, that
-there is nothing more to accept), the runs of other service dates priced after it (and a re-run of the original
-again), or the run being priced. Badges read "Can no longer be accepted" and "Re-run waiting for a newer run". A run
-not in effect offers no re-run, and links to the run in effect. A refusal refreshes the page (`ActionForm`'s
-`refreshOnError`), so the explanation replaces a stale button.
+run to use, and says which condition holds (`NEWER_BECAUSE`: priced after it, pinned to a later release or split, or
+holding lines loaded later): the run in effect for its service dates, and, only when that run was priced after the
+re-run and would price nothing differently now, that there is nothing more to accept (otherwise the re-run of that run
+is offered, since a re-run superseded by its cut-off, release or split alone may have read newer settings); the runs
+of other service dates holding newer pricing (and a re-run of the run in effect again); or the run being priced.
+Each run is named by a link that tells it from the others of the same dates (its period, release and the second it
+was priced). Badges read "Can no longer be accepted" (superseded, or pinned to a withdrawn release:
+`RERUN_ACCEPTANCE`) and "Re-run waiting for a newer run". A run not in effect offers no re-run, and links to the run in
+effect. A refusal refreshes the page (`ActionForm`'s `refreshOnError`), so the explanation replaces a stale button and
+takes the focus the refused form held; the explanations are notes (`role="status"`), never alerts announced on load,
+and a refusal whose only issue is a hidden field reads its issue under "Not done" without the generic "Check the fields
+marked below." (UX review of PR #50).
 
 **No migration.** Every input exists (`pricing_run`'s period, status, `rerun_of_id`, `release_no`,
 `lines_loaded_by`, `completed_at`, `accepted_at`, `created_at`, and `rule_release_withdrawal`), as do the lock key
@@ -259,19 +302,33 @@ already taken out of effect needs repair.
 | Refuse acceptance while a first run is queued, as well as running | Adds no safety, and a run stuck in `queued` would block acceptance indefinitely. Kept for re-run creation, where it avoids a wasted re-run |
 | Refuse re-run creation while any overlapping run, re-runs included, is running | Closes the residual window for re-runs too, but refuses a second re-run for as long as the first is being priced, to close a window of under a millisecond |
 | Judge newness by whether any input changed between the two pricings | Settings and location carry no change stamps the code reads; a wrong "nothing changed" would let a regression through. The pricing stamp is exact and conservative |
+| A session-level execution lock taken before the pricing transaction begins (fix round) | Gives the same order by construction, but the job's transaction helper (`withJobScope`, shared by every request and job) would hold a lock across its transaction on a pooled connection, which leaks unless the connection is destroyed when the unlock fails, and every job context and test double would have to pass the lock on or silently lose the order. The check under the lock tests the exact property on committed rows, whatever the caller |
+| Compare the triage date (the run's creation day) as an input fixed at creation (fix round) | It changes no amount and no window's end, only the trace's window status as of that day, and triage judges every window on its own date; refusing on it would refuse a re-run over a run created a day later for nothing it would regress |
+| `replacesId` optional, checked only when a caller gives it (fix round) | A caller that leaves it out would accept a change nobody saw; required, every caller states the diff it showed |
+| Keep the diff against the replaced run alone, and name the runs of other dates whose lines move (fix round) | The person would still not see the pricing those lines leave, or lines on which the replaced run and the re-run agree but the run holding them does not; J17 asks for exactly the lines that would change, which `compareAcceptance` lists at the cost of one more read of the lines in effect |
+| Bind an acceptance to the moment its page was read, refusing it when any overlapping run took effect since (fix round) | Simpler, but refuses for a run that holds none of the re-run's lines; the replaced run and the runs the diff read are exactly what it depends on |
 
 **Consequences (this amendment).**
 
 - The test matrix gains PRC-25 to PRC-28, asserted by `apps/worker/src/price/rerun.db.test.ts` (the late line, the
-  two orders and the two acceptances at once, with no 40P01, overlapping periods, a withdrawn release, a run being
-  priced or queued, the READ COMMITTED guard, and parity with `pricing_run_in_effect()`),
-  `apps/worker/src/price/rerun-rule.property.test.ts` (a model of runs, releases, withdrawals, corrections and
-  reversals: no priceable line loses pricing in effect, none regresses, an accepted re-run is in effect, a re-run
-  priced after every overlapping run is acceptable, and each rejected rule above is a named counter-example),
+  two orders and the two acceptances at once, with no 40P01, overlapping periods, a withdrawn release, a later release
+  or a later split priced before the re-run, the cut-off alone, two executions at once, a run being priced or queued,
+  an acceptance against a diff no longer current, the READ COMMITTED guard, and parity with `pricing_run_in_effect()`
+  and with the pages' acceptance state),
+  `apps/worker/src/price/rerun-rule.property.test.ts` (a model of runs, releases, splits, withdrawals, corrections,
+  reversals and executions at once, each begun, read under the lock and committed in its own step: no priceable line
+  loses pricing in effect, none regresses to pricing read or pinned earlier, judged from what each run read and
+  pinned rather than from the rule's stamp, an accepted re-run is in effect, a re-run newer than every overlapping run
+  is acceptable, and each rejected rule above, an execution without the restart and a rule without the split are
+  named counter-examples),
   `apps/web/src/lib/routes/reruns-routes.db.test.ts` (the screens' data and refusals) and `apps/web/e2e/pricing.spec.ts`.
 - Existing tests that accepted an older re-run after a newer run, or re-ran a run no longer in effect, are rewritten to
   accept or re-run the run in effect (`rerun.db.test.ts`'s PRC-19 tail, `diff-location.db.test.ts`,
   `reruns-routes.db.test.ts`).
+- Every caller of `acceptRun` names the run it replaces and the runs of other dates its diff read (`replacesId`,
+  `heldByIds`); the worker's tests that accept a re-run name its original, or the run the page would show, and read
+  the runs as the page does (`acceptanceHeldBy`). `rerun.db.test.ts` checks under overlapping periods that the diff
+  lists exactly the lines whose pricing in effect accepting then changes.
 - The rule lives in the service only. A path that sets `accepted_at` or inserts a re-run without `acceptRun` or
   `createRerun` is not checked; none exists today, and the application role's column grant is unchanged.
 

@@ -166,6 +166,18 @@ async function send(file: string): Promise<void> {
   await runQueue();
 }
 
+/**
+ * What a re-run's Accept form posts, read from its page as the form is rendered: the run, the run its diff was
+ * against and the runs of other dates that diff read (the hidden heldByIds[] fields, joined as form.ts joins them).
+ */
+async function acceptForm(runId: string): Promise<Record<string, string>> {
+  const page = ok(await call(pricingRunPage, manager, { ...P(), runId }));
+  if (page.acceptance?.state !== 'acceptable') {
+    throw new Error(`expected an acceptable re-run, got ${JSON.stringify(page.acceptance)}`);
+  }
+  return { runId, replacesId: page.acceptance.replaces.id, heldByIds: (page.heldBy ?? []).map((run) => run.id).join(',') };
+}
+
 const runFrom = (outcome: Outcome<MutationResult>) => /pricing-runs\/([0-9a-f-]{36})$/.exec(ok(outcome).redirect ?? '')?.[1] ?? '';
 
 beforeAll(async () => {
@@ -270,7 +282,7 @@ describe('a re-run under release 2 through the screens (PRC-19)', () => {
   it('re-runs the run, shows exactly the two 97110 lines with the relative value as the cause, and nothing reads the re-run until it is accepted', async () => {
     expect((await call(rerunPricingRunAction, viewer, P(), { runId: first, releaseNo: '900004' })).status).toBe('forbidden');
     expect(refusedWith(await call(rerunPricingRunAction, manager, P(), { runId: first, releaseNo: '900001' }))).toMatch(/^releaseNo: rule-release mismatch/);
-    expect(refusedWith(await call(rerunPricingRunAction, manager, P(), { runId: randomUUID(), releaseNo: '900004' }))).toMatch(/^runId: the run to price again is not one of the practice’s runs/);
+    expect(refusedWith(await call(rerunPricingRunAction, manager, P(), { runId: randomUUID(), releaseNo: '900004' }))).toMatch(/^runId: is not one of the practice’s runs$/);
     second = runFrom(await call(rerunPricingRunAction, manager, P(), { runId: first, releaseNo: '900004' }));
     expect(queue.jobs).toEqual([{ type: 'price', payload: { practice_id: practiceId, pricing_run_id: second } }]);
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: second })).diff).toBeNull();
@@ -303,10 +315,21 @@ describe('a re-run under release 2 through the screens (PRC-19)', () => {
     const before = ok(await call(claimsPage, manager, { ...P(), view: 'all' })).list.rows.filter((row) => row.procedureCode === '97110');
     expect(before.map((row) => row.pricing?.pricingRunId)).toEqual([first, first]);
 
-    expect((await call(acceptPricingRunAction, viewer, P(), { runId: second })).status).toBe('forbidden');
-    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: first }))).toMatch(/^runId: only a re-run is accepted/);
-    ok(await call(acceptPricingRunAction, manager, P(), { runId: second }));
-    ok(await call(acceptPricingRunAction, manager, P(), { runId: second }));
+    expect((await call(acceptPricingRunAction, viewer, P(), { runId: second, replacesId: first })).status).toBe('forbidden');
+    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: first, replacesId: first }))).toBe(
+      'runId: is a first run of its service dates, in effect once it completes; only a re-run is accepted',
+    );
+    // The page's diff is exactly what accepting changes: no run of other dates holds a February line, so it is the diff with the first run.
+    expect(page.heldBy).toEqual([]);
+    const form = await acceptForm(second);
+    expect(form).toEqual({ runId: second, replacesId: first, heldByIds: '' });
+    // A form naming runs its diff did not read is refused, and records nothing (security review of PR #50, F1).
+    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { ...form, heldByIds: randomUUID() }))).toBe(
+      'runId: was not accepted, because the pricing it would replace has changed since its changes were shown; check the changes again and accept it if it is still offered',
+    );
+    expect((await call(acceptPricingRunAction, manager, P(), { runId: second })).status).toBe('invalid');
+    ok(await call(acceptPricingRunAction, manager, P(), form));
+    ok(await call(acceptPricingRunAction, manager, P(), form));
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: second })).run).toMatchObject({ inEffect: true, acceptedAt: expect.any(String) as string });
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: first })).run.inEffect).toBe(false);
     expect(ok(await call(coveragePage, viewer, P())).run?.id).toBe(second);
@@ -345,7 +368,9 @@ describe('a re-run under release 2 through the screens (PRC-19)', () => {
     expect(flagged.lines).toEqual(before.lines);
     expect(flagged.release?.releaseNo).toBe(900001);
     expect(ok(await call(pricingRunsPage, manager, P())).pinnedElsewhere).toBe(1);
-    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: pending }))).toMatch(/^runId: the re-run is pinned to a withdrawn rule release/);
+    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: pending, replacesId: second }))).toBe(
+      'runId: is pinned to a withdrawn rule release, so it is not accepted; re-run the run in effect under the release in force',
+    );
     expect(ok(await call(comparePricingRunsPage, manager, { ...P(), before: second, after: pending })).canAccept).toBe(false);
     expect(ok(await call(releasesPage, viewer, { ...P(), release: '900004' })).note).toMatchObject({ inForce: false, withdrawal: { reinstatedReleaseNo: 900001 } });
   });
@@ -423,7 +448,7 @@ describe('PRC-25 to PRC-28: an older re-run can no longer be accepted over newer
   it('PRC-28: re-runs only the run in effect, and a replaced run or an unaccepted re-run names it instead', async () => {
     for (const runId of [first, pending]) {
       expect(refusedWith(await call(rerunPricingRunAction, manager, P(), { runId, releaseNo: '900001' }))).toBe(
-        'runId: is no longer the run in effect for its service dates, so it is not priced again; re-run the run in effect instead',
+        'runId: is not the run in effect for its service dates, so it is not priced again; re-run the run in effect instead',
       );
       const page = ok(await call(pricingRunPage, manager, { ...P(), runId }));
       expect(page.periodInEffect?.id).toBe(second);
@@ -455,8 +480,8 @@ describe('PRC-25 to PRC-28: an older re-run can no longer be accepted over newer
     await runQueue();
     expect(ok(await call(releasesPage, manager, P())).pendingByRun).toEqual({});
 
-    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: stale }))).toBe(
-      'runId: can no longer be accepted, because a newer run of these service dates is in effect; the page now names it',
+    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: stale, replacesId: second }))).toBe(
+      'runId: can no longer be accepted, because a newer run of these service dates is in effect; the page is updated to name it',
     );
     // The refusal rolled the request back: no acceptance was recorded, and the newer run stays in effect with the late lines.
     expect(await acceptances(stale)).toBe(0);
@@ -467,6 +492,9 @@ describe('PRC-25 to PRC-28: an older re-run can no longer be accepted over newer
 
     const page = ok(await call(pricingRunPage, viewer, { ...P(), runId: stale }));
     expect(page.acceptance).toMatchObject({ state: 'superseded', kind: 'same_period', superseding: [{ id: newer }], inEffect: { id: newer, rerun: [] }, inEffectPending: [] });
+    // The newer run was priced after the stale re-run, so the page names that, and (nothing changed since) there is nothing more to accept.
+    expect(page.acceptance?.state === 'superseded' ? page.acceptance.newerBy : null).toEqual({ [newer]: 'priced_after' });
+    expect(page.heldBy).toBeNull();
     expect(page.run.acceptance).toBe('superseded');
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: second })).reruns.find((run) => run.id === stale)?.acceptance).toBe('superseded');
     expect((await listed(stale))?.acceptance).toBe('superseded');
@@ -484,7 +512,15 @@ describe('PRC-25 to PRC-28: an older re-run can no longer be accepted over newer
     await runQueue();
     const two = runFrom(await call(rerunPricingRunAction, manager, P(), { runId: newer, releaseNo: '900001' }));
     await runQueue();
-    ok(await call(acceptPricingRunAction, manager, P(), { runId: one }));
+    // A page of two read before one is accepted: its diff is against the newer run.
+    const stalePage = await acceptForm(two);
+    expect(stalePage).toEqual({ runId: two, replacesId: newer, heldByIds: '' });
+    ok(await call(acceptPricingRunAction, manager, P(), await acceptForm(one)));
+    // Accepting two from that page would replace one, whose changes it never showed: refused, recording nothing (security review of PR #50, F1).
+    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), stalePage))).toBe(
+      'runId: was not accepted, because the pricing it would replace has changed since its changes were shown; check the changes again and accept it if it is still offered',
+    );
+    expect(await acceptances(two)).toBe(0);
 
     const page = ok(await call(pricingRunPage, manager, { ...P(), runId: two }));
     expect(page.acceptance).toMatchObject({ state: 'acceptable', replaces: { id: one } });
@@ -496,7 +532,8 @@ describe('PRC-25 to PRC-28: an older re-run can no longer be accepted over newer
     // Beside a run that is neither its original nor what it replaces, the comparison says nothing of acceptance.
     expect(ok(await call(comparePricingRunsPage, manager, { ...P(), before: second, after: two })).acceptance).toBeNull();
 
-    ok(await call(acceptPricingRunAction, manager, P(), { runId: two }));
+    ok(await call(acceptPricingRunAction, manager, P(), await acceptForm(two)));
+    expect(await acceptances(two)).toBe(1);
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: two })).run.inEffect).toBe(true);
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: one })).periodInEffect?.id).toBe(two);
     inEffectNow = two;
@@ -509,11 +546,11 @@ describe('PRC-25 to PRC-28: an older re-run can no longer be accepted over newer
     // Its price job is not run: the run stays queued.
     queue.jobs.splice(0);
 
-    const waitingRefusal = 'runId: is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; re-run once it finishes';
+    const waitingRefusal = 'runId: is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; once it finishes, re-run the run in effect';
     expect(refusedWith(await call(rerunPricingRunAction, manager, P(), { runId: inEffectNow, releaseNo: '900001' }))).toBe(waitingRefusal);
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: inEffectNow })).rerunPending.map((run) => [run.id, run.status])).toEqual([[queued, 'queued']]);
     const whileQueued = ok(await call(pricingRunPage, manager, { ...P(), runId: open }));
-    expect(whileQueued.acceptance).toMatchObject({ state: 'acceptable', replaces: { id: inEffectNow } });
+    expect(whileQueued.acceptance).toMatchObject({ state: 'acceptable', replaces: { id: inEffectNow }, queued: [{ id: queued }] });
     expect(whileQueued.run.acceptance).toBe('awaiting');
 
     await setStatus(queued, 'running');
@@ -521,14 +558,14 @@ describe('PRC-25 to PRC-28: an older re-run can no longer be accepted over newer
     expect(whileRunning.acceptance).toMatchObject({ state: 'newer_run_pending', running: [{ id: queued }] });
     expect(whileRunning.run.acceptance).toBe('newer_run_pending');
     expect(ok(await call(comparePricingRunsPage, manager, { ...P(), before: inEffectNow, after: open }))).toMatchObject({ canAccept: false, acceptance: { state: 'newer_run_pending' } });
-    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: open }))).toBe(
+    expect(refusedWith(await call(acceptPricingRunAction, manager, P(), { runId: open, replacesId: inEffectNow }))).toBe(
       'runId: cannot be accepted yet, because a newer run of these service dates is being priced; wait until it finishes',
     );
     expect(refusedWith(await call(rerunPricingRunAction, manager, P(), { runId: inEffectNow, releaseNo: '900001' }))).toBe(waitingRefusal);
 
     await setStatus(queued, 'failed');
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: inEffectNow })).rerunPending).toEqual([]);
-    ok(await call(acceptPricingRunAction, manager, P(), { runId: open }));
+    ok(await call(acceptPricingRunAction, manager, P(), await acceptForm(open)));
     // The refused request recorded nothing; the accepted one is recorded once.
     expect(await acceptances(open)).toBe(1);
     expect(ok(await call(pricingRunPage, manager, { ...P(), runId: open })).run).toMatchObject({ inEffect: true, acceptance: null });

@@ -2,7 +2,7 @@ import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { ActionForm } from '../../../../../components/action-form';
+import { ActionForm, RefusalTakeover } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { DiffSummaryText, DiffTable, SplitChangeText } from '../../../../../components/pricing/diff';
 import {
@@ -11,18 +11,23 @@ import {
   NotInEffectAlert,
   PatternTable,
   PendingRunsAlert,
+  QueuedRunsNote,
   RERUN_TEXT,
   RerunBlockedAlert,
   RunLink,
   RunStateBadges,
   RunStatusBadge,
   UnpricedReasons,
+  diffRunName,
+  nothingMoreToAccept,
+  runName,
   unacceptedRerunText,
 } from '../../../../../components/pricing/display';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import type { RerunAcceptanceView, RunSummary } from '../../../../../lib/pricing/queries';
+import type { DiffRun } from '@tp/worker/pricing';
 import { type CurrentRelease, pricingRunPage } from '../../../../../lib/routes/pricing';
 import { acceptPricingRunFormAction, rerunPricingRunFormAction } from '../actions';
 import { FormKeys } from '../../../../../components/form-keys';
@@ -35,39 +40,52 @@ const FILTER_NAMES: Readonly<Record<string, string>> = { all: 'All lines', price
 
 /**
  * The Re-run button for a run (the run in effect for its service dates; createRerun refuses any other), pinned to the
- * release in force, with the sentence of what a re-run does. A refusal reads after the run's label, "This run: ..." for
- * the page's own run and "That run: ..." for the run a superseded re-run's page offers instead, and "Rule release: ..."
- * for the release. It refreshes the page after a refusal, so a button another change has overtaken gives way to the
- * explanation.
+ * release in force, with the sentence of what a re-run does. On the run's own page it reads "Re-run under release N"
+ * and a refusal "This run: ..."; offered on a superseded re-run's page for the run in effect, its words name that run
+ * ("Re-run the run in effect under release N", "The run to re-run: ..."), so nobody reads it as re-running the page's
+ * own run (UX review of PR #50, UX-4). "Rule release: ..." for the release. It refreshes the page after a refusal
+ * (`takeover`: the key of the explanation that may take its place, which then takes the focus).
  */
 function RerunForm({
   practiceId,
   run,
   release,
   className,
-  subject = 'This run',
+  takeover,
+  target = 'this',
 }: {
   readonly practiceId: string;
   readonly run: RunSummary;
   readonly release: CurrentRelease;
   readonly className: string;
-  readonly subject?: 'This run' | 'That run';
+  readonly takeover: string;
+  readonly target?: 'this' | 'in_effect';
 }) {
   return (
     <ActionForm
       action={rerunPricingRunFormAction}
-      submit={`Re-run under release ${String(release.releaseNo)}`}
+      submit={target === 'this' ? `Re-run under release ${String(release.releaseNo)}` : `Re-run the run in effect under release ${String(release.releaseNo)}`}
       variant="outline"
       className={className}
-      labels={{ runId: subject, releaseNo: 'Rule release' }}
-      refreshOnError
+      labels={{ runId: target === 'this' ? 'This run' : 'The run to re-run', releaseNo: 'Rule release' }}
+      refreshOnError={takeover}
     >
       <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
       <input type="hidden" name="runId" value={run.id} />
       <input type="hidden" name="releaseNo" value={release.releaseNo} />
       <p className="text-sm text-muted-foreground">
-        A re-run prices the same lines again under rule release {release.releaseNo} and today&apos;s mappings and contract versions, and lists exactly the lines that change. {subject} never changes.
+        {target === 'this' ? (
+          <>
+            A re-run prices the same lines again under rule release {release.releaseNo} and today&apos;s mappings and contract versions, and lists exactly the lines that change. This run never
+            changes.
+          </>
+        ) : (
+          <>
+            A re-run of the run in effect, {runName(run)}, prices its lines again under rule release {release.releaseNo} and today&apos;s mappings and contract versions, and lists exactly the
+            lines that would change. The run in effect stays as it is until a person accepts the new re-run.
+          </>
+        )}
       </p>
     </ActionForm>
   );
@@ -75,34 +93,60 @@ function RerunForm({
 
 /**
  * What a superseded re-run's page offers instead of Accept: the Re-run button of the run in effect for its service
- * dates, for a person who may re-run. Not when that run already prices these lines under what is in force now
- * (same service dates, nothing changed since: "nothing more to accept"), nor for a re-run whose run in effect
- * waits for a first run of overlapping dates (named instead). For other service dates the run in effect is the
- * re-run's original unless a later run of its dates took effect, and re-running it again is always useful: the
- * new re-run is priced after the runs that superseded this one.
+ * dates, for a person who may re-run. Not when that run, priced after the re-run, already prices these lines under
+ * what is in force now ("nothing more to accept": nothingMoreToAccept), nor for a re-run whose run in effect waits
+ * for a first run of overlapping dates (named instead). Superseded by the cut-off, a release or a split alone, the
+ * re-run may have read newer settings, so the button is offered. For other service dates the run in effect is the
+ * re-run's original unless a later run of its dates took effect, and re-running it again is always useful: the new
+ * re-run is priced after the runs that superseded this one.
  */
 function SupersededRerunOffer({
   practiceId,
+  rerunId,
   acceptance,
   release,
   canRerun,
 }: {
   readonly practiceId: string;
+  readonly rerunId: string;
   readonly acceptance: Extract<RerunAcceptanceView, { state: 'superseded' }>;
   readonly release: CurrentRelease | null;
   readonly canRerun: boolean;
 }) {
   const target = acceptance.inEffect;
-  if (target === null || release === null) {
-    return null;
-  }
-  if (acceptance.kind === 'same_period' && target.rerun.length === 0) {
+  if (target === null || release === null || nothingMoreToAccept(acceptance)) {
     return null;
   }
   if (acceptance.inEffectPending.length > 0) {
-    return <PendingRunsAlert practiceId={practiceId} runs={acceptance.inEffectPending} />;
+    return (
+      <RefusalTakeover keys={[`rerun-from:${rerunId}`]}>
+        <PendingRunsAlert practiceId={practiceId} runs={acceptance.inEffectPending} />
+      </RefusalTakeover>
+    );
   }
-  return canRerun ? <RerunForm practiceId={practiceId} run={target} release={release} className="flex flex-col gap-2" subject="That run" /> : null;
+  return canRerun ? <RerunForm practiceId={practiceId} run={target} release={release} className="flex flex-col gap-2" takeover={`rerun-from:${rerunId}`} target="in_effect" /> : null;
+}
+
+/**
+ * The runs of other service dates whose pricing in effect the diff reads (payment-engine review of PR #50, F4): on
+ * the lines they hold, accepting this re-run replaces their pricing, so those lines are compared with them (J17:
+ * the diff lists exactly what accepting changes).
+ */
+function HeldByText({ practiceId, heldBy }: { readonly practiceId: string; readonly heldBy: readonly DiffRun[] }) {
+  return (
+    <p className="text-sm" data-state="held-by">
+      {heldBy.length === 1 ? 'Some of these lines are priced in effect by a run of other service dates, ' : 'Some of these lines are priced in effect by runs of other service dates: '}
+      {heldBy.map((held, index) => (
+        <span key={held.id}>
+          {index === 0 ? '' : index === heldBy.length - 1 ? ' and ' : ', '}
+          <Link className="underline" href={`/p/${practiceId}/pricing-runs/${held.id}`} data-run-link={held.id}>
+            {diffRunName(held)}
+          </Link>
+        </span>
+      ))}
+      . Accepting this re-run replaces that pricing too, so those lines are compared with {heldBy.length === 1 ? 'it' : 'them'}: the lines below are exactly what accepting changes.
+    </p>
+  );
 }
 
 /**
@@ -123,7 +167,7 @@ export default async function PricingRunPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="pricing_runs" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, run, names, filter, lines, reruns, diff, acceptance, periodInEffect, rerunPending, release, canRerun } = page.data;
+  const { practiceId, run, names, filter, lines, reruns, diff, heldBy, acceptance, periodInEffect, rerunPending, release, canRerun } = page.data;
   const pricingRuns = `/p/${practiceId}/pricing-runs`;
   const path = `${pricingRuns}/${run.id}`;
   const coverage = run.coverage;
@@ -172,7 +216,12 @@ export default async function PricingRunPage(props: Props) {
               <Link className="underline" href={`${pricingRuns}/${run.rerunOfId}`}>
                 an earlier run
               </Link>{' '}
-              again, under rule release {run.releaseNo}; that run stays as it was. Nothing of it is in effect until a person accepts it.
+              again, under rule release {run.releaseNo}; that run stays as it was.
+              {run.acceptedAt !== null
+                ? null
+                : run.acceptance === 'superseded' || run.acceptance === 'release_withdrawn'
+                  ? ' It was never accepted, and it is not in effect.'
+                  : ' Nothing of it is in effect until a person accepts it.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -182,15 +231,17 @@ export default async function PricingRunPage(props: Props) {
                 below are compared with it.
               </p>
             ) : null}
+            {acceptance?.state === 'acceptable' && heldBy !== null && heldBy.length > 0 ? <HeldByText practiceId={practiceId} heldBy={heldBy} /> : null}
+            {acceptance?.state === 'acceptable' && acceptance.queued.length > 0 ? <QueuedRunsNote practiceId={practiceId} runs={acceptance.queued} /> : null}
             {diff === null ? (
               <p className="text-sm text-muted-foreground">The diff appears once the run is complete.</p>
             ) : (
               <>
                 <p className="text-sm" data-state="diff-summary">
-                  <DiffSummaryText summary={diff.summary} />
+                  <DiffSummaryText summary={diff.summary} accepting={heldBy !== null} />
                 </p>
                 <SplitChangeText before={diff.before} after={diff.after} />
-                <DiffTable practiceId={practiceId} lines={diff.lines} beforeRunId={diff.before.id} afterRunId={diff.after.id} />
+                <DiffTable practiceId={practiceId} lines={diff.lines} beforeRunId={diff.before.id} afterRunId={diff.after.id} heldBy={heldBy ?? undefined} />
                 {diff.total > diff.lines.length ? (
                   <Link className="text-sm underline" href={`${pricingRuns}/compare?before=${diff.before.id}&after=${diff.after.id}`}>
                     All {diff.total} lines of the diff
@@ -204,10 +255,20 @@ export default async function PricingRunPage(props: Props) {
               </p>
             ) : acceptance === null ? null : acceptance.state === 'acceptable' ? (
               canRerun ? (
-                <ActionForm action={acceptPricingRunFormAction} submit="Accept this run" className="flex flex-col gap-2" labels={{ runId: 'This re-run' }} refreshOnError>
+                <ActionForm
+                  action={acceptPricingRunFormAction}
+                  submit="Accept this run"
+                  className="flex flex-col gap-2"
+                  labels={{ runId: 'This re-run', replacesId: 'The run it replaces' }}
+                  refreshOnError={`accept:${run.id}`}
+                >
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="runId" value={run.id} />
+                  <input type="hidden" name="replacesId" value={acceptance.replaces.id} />
+                  {(heldBy ?? []).map((held) => (
+                    <input key={held.id} type="hidden" name="heldByIds[]" value={held.id} />
+                  ))}
                   <p className="text-sm">Accepting makes this run the one in effect for its period: Claims and lines and Coverage read it from then on.</p>
                 </ActionForm>
               ) : (
@@ -215,8 +276,10 @@ export default async function PricingRunPage(props: Props) {
               )
             ) : (
               <>
-                <RerunBlockedAlert practiceId={practiceId} acceptance={acceptance} />
-                {acceptance.state === 'superseded' ? <SupersededRerunOffer practiceId={practiceId} acceptance={acceptance} release={release} canRerun={canRerun} /> : null}
+                <RefusalTakeover keys={[`accept:${run.id}`, `rerun-from:${run.id}`]}>
+                  <RerunBlockedAlert practiceId={practiceId} acceptance={acceptance} />
+                </RefusalTakeover>
+                {acceptance.state === 'superseded' ? <SupersededRerunOffer practiceId={practiceId} rerunId={run.id} acceptance={acceptance} release={release} canRerun={canRerun} /> : null}
               </>
             )}
           </CardContent>
@@ -244,13 +307,13 @@ export default async function PricingRunPage(props: Props) {
             {run.failureCode === null ? null : <Fact label="Failed">{FAILURE_TEXT[run.failureCode] ?? run.failureCode}</Fact>}
           </dl>
           {run.status !== 'complete' ? null : !run.inEffect ? (
-            <div className="pt-3">
+            <RefusalTakeover keys={[`rerun:${run.id}`]} className="mt-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <NotInEffectAlert practiceId={practiceId} inEffect={periodInEffect} />
-            </div>
+            </RefusalTakeover>
           ) : rerunPending.length > 0 ? (
-            <div className="pt-3">
+            <RefusalTakeover keys={[`rerun:${run.id}`]} className="mt-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <PendingRunsAlert practiceId={practiceId} runs={rerunPending} />
-            </div>
+            </RefusalTakeover>
           ) : (
             <>
               {run.rerun.length === 0 ? null : (
@@ -258,7 +321,7 @@ export default async function PricingRunPage(props: Props) {
                   Since this run, {run.rerun.map((reason) => RERUN_TEXT[reason]).join(' and ')}; this run stays as it was, and a re-run prices its lines under what is in force now.
                 </p>
               )}
-              {release !== null && canRerun ? <RerunForm practiceId={practiceId} run={run} release={release} className="flex flex-col gap-2 pt-3" /> : null}
+              {release !== null && canRerun ? <RerunForm practiceId={practiceId} run={run} release={release} className="flex flex-col gap-2 pt-3" takeover={`rerun:${run.id}`} /> : null}
             </>
           )}
           {reruns.length === 0 ? null : (

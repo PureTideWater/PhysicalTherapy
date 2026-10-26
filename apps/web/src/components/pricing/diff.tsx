@@ -4,19 +4,29 @@ import Link from 'next/link';
 import { causeText } from '../../lib/pricing/causes';
 import { utc } from '../format';
 import { Money } from '../remittances/display';
+import { diffRunName } from './display';
 
 /**
  * The diff of two pricing runs (PRD 7, Pricing runs: "compare two runs; re-run under a new release with a
  * diff"; PRD 9, step 4; docs/adr/0037): exactly the lines whose expected allowed, unpriced reason,
  * adjustments, dispute window, review flags or terms differ, each with what differs, both runs' results
  * and the cause read from the traces, and the lines one run priced and the other did not. Dollar figures
- * are expected allowed, never "recovered".
+ * are expected allowed, never "recovered". The same table shows what accepting a re-run changes (`heldBy` given:
+ * compareAcceptance), each line's pricing in effect now against its pricing once accepted, naming a run of other
+ * service dates where one holds the line.
  */
 
 const KIND_TEXT: Readonly<Record<DiffLine['kind'], string>> = {
   changed: 'Priced differently',
   only_before: 'In the first run only',
   only_after: 'In the second run only',
+};
+
+/** The kinds as what accepting a re-run changes. */
+const ACCEPTING_KIND_TEXT: Readonly<Record<DiffLine['kind'], string>> = {
+  changed: 'Priced differently',
+  only_before: 'No longer priced once accepted',
+  only_after: 'Priced only once accepted',
 };
 
 const CHANGE_TEXT: Readonly<Record<DiffChange, string>> = {
@@ -28,12 +38,18 @@ const CHANGE_TEXT: Readonly<Record<DiffChange, string>> = {
   terms: 'mapping or contract terms',
 };
 
-function SideCell({ side }: { readonly side: DiffSide | null }) {
+/** One side of a line; in what accepting changes (`accepting`), a side a run of other service dates holds names it (`from`). */
+function SideCell({ side, accepting = false, practiceId, from }: { readonly side: DiffSide | null; readonly accepting?: boolean; readonly practiceId: string; readonly from?: DiffRun }) {
   if (side === null) {
-    return <span className="text-muted-foreground">Not priced by this run</span>;
+    return <span className="text-muted-foreground">{accepting ? 'Not priced' : 'Not priced by this run'}</span>;
   }
   return (
     <div className="flex flex-col">
+      {from === undefined ? null : (
+        <Link className="text-xs underline" href={`/p/${practiceId}/pricing-runs/${from.id}`} data-held-by={from.id}>
+          From {diffRunName(from)}
+        </Link>
+      )}
       {side.unpricedReason === null ? <Money value={side.expectedAllowedCents} /> : <span className="font-mono text-xs">{side.unpricedReason}</span>}
       {side.adjustments.length === 0 ? null : (
         <span className="text-xs text-muted-foreground">{side.adjustments.map((adjustment) => adjustment.name).join(', ')}</span>
@@ -52,7 +68,20 @@ function SideCell({ side }: { readonly side: DiffSide | null }) {
   );
 }
 
-export function DiffSummaryText({ summary }: { readonly summary: DiffSummary }) {
+/** The diff's counts in a sentence; `accepting`: as what accepting a re-run changes, now against once accepted. */
+export function DiffSummaryText({ summary, accepting = false }: { readonly summary: DiffSummary; readonly accepting?: boolean }) {
+  if (accepting) {
+    return (
+      <span>
+        Accepting this re-run changes the pricing in effect of {summary.changed + summary.onlyBefore + summary.onlyAfter}{' '}
+        {summary.changed + summary.onlyBefore + summary.onlyAfter === 1 ? 'line' : 'lines'}: {summary.changed} of the {summary.compared} lines priced now and once accepted are priced differently
+        {summary.windowChanged === 0 ? '' : ` (${String(summary.windowChanged)} with another dispute window)`}
+        {summary.onlyBefore === 0 ? '' : `; ${String(summary.onlyBefore)} would no longer be priced`}
+        {summary.onlyAfter === 0 ? '' : `; ${String(summary.onlyAfter)} would be priced only once accepted`}. Expected allowed over the lines priced both now and once accepted:{' '}
+        <Money value={summary.beforeExpectedCents} /> now, <Money value={summary.afterExpectedCents} /> once accepted.
+      </span>
+    );
+  }
   return (
     <span>
       {summary.changed} of {summary.compared} lines both runs priced are priced differently
@@ -102,9 +131,33 @@ export function SplitChangeText({ before, after }: { readonly before: RunSplit; 
   );
 }
 
-export function DiffTable({ practiceId, lines, beforeRunId, afterRunId }: { readonly practiceId: string; readonly lines: readonly DiffLine[]; readonly beforeRunId: string; readonly afterRunId: string }) {
+/**
+ * The diff's lines. With `heldBy` (what accepting a re-run changes: compareAcceptance), the sides are the pricing in
+ * effect now and once accepted, a side held by a run of other service dates names that run, and each trace link
+ * opens the line under the run that priced that side.
+ */
+export function DiffTable({
+  practiceId,
+  lines,
+  beforeRunId,
+  afterRunId,
+  heldBy,
+}: {
+  readonly practiceId: string;
+  readonly lines: readonly DiffLine[];
+  readonly beforeRunId: string;
+  readonly afterRunId: string;
+  readonly heldBy?: readonly DiffRun[];
+}) {
+  const accepting = heldBy !== undefined;
+  const held = (side: DiffSide | null) => (side === null ? undefined : heldBy?.find((run) => run.id === side.pricingRunId));
   if (lines.length === 0) {
-    return (
+    return accepting ? (
+      <p className="text-sm text-muted-foreground" data-state="no-changes">
+        Accepting this re-run changes no line&apos;s pricing in effect: every line it prices is priced in effect now with the same expected allowed, unpriced reason, adjustments, dispute window,
+        review flags and terms.
+      </p>
+    ) : (
       <p className="text-sm text-muted-foreground" data-state="no-changes">
         No line is priced differently: the two runs agree on every line&apos;s expected allowed, unpriced reason, adjustments, dispute window, review flags and
         terms.
@@ -117,8 +170,8 @@ export function DiffTable({ practiceId, lines, beforeRunId, afterRunId }: { read
         <tr>
           <th className="py-1 pr-3 font-medium">Code and modifiers</th>
           <th className="py-1 pr-3 font-medium">Change</th>
-          <th className="py-1 pr-3 font-medium">First run</th>
-          <th className="py-1 pr-3 font-medium">Second run</th>
+          <th className="py-1 pr-3 font-medium">{accepting ? 'In effect now' : 'First run'}</th>
+          <th className="py-1 pr-3 font-medium">{accepting ? 'Once accepted' : 'Second run'}</th>
           <th className="py-1 pr-3 font-medium">Cause</th>
           <th className="py-1 font-medium">
             <span className="sr-only">Traces</span>
@@ -134,7 +187,7 @@ export function DiffTable({ practiceId, lines, beforeRunId, afterRunId }: { read
               {line.units === null ? '' : ` × ${line.units}`}
             </td>
             <td className="py-1 pr-3">
-              {KIND_TEXT[line.kind]}
+              {(accepting ? ACCEPTING_KIND_TEXT : KIND_TEXT)[line.kind]}
               {line.changes.length === 0 ? null : (
                 <span className="block text-xs text-muted-foreground" data-changes={line.changes.join(' ')}>
                   {line.changes.map((change) => CHANGE_TEXT[change]).join(', ')}
@@ -142,14 +195,14 @@ export function DiffTable({ practiceId, lines, beforeRunId, afterRunId }: { read
               )}
             </td>
             <td className="py-1 pr-3">
-              <SideCell side={line.before} />
+              <SideCell side={line.before} accepting={accepting} practiceId={practiceId} from={held(line.before)} />
             </td>
             <td className="py-1 pr-3">
-              <SideCell side={line.after} />
+              <SideCell side={line.after} accepting={accepting} practiceId={practiceId} from={held(line.after)} />
             </td>
             <td className="py-1 pr-3">
               {line.causes.length === 0 ? (
-                <span className="text-muted-foreground">Only one run priced the line</span>
+                <span className="text-muted-foreground">{accepting ? 'Priced on one side only' : 'Only one run priced the line'}</span>
               ) : (
                 <ul className="flex flex-col gap-0.5" aria-label="Causes">
                   {line.causes.map((cause, index) => (
@@ -163,13 +216,13 @@ export function DiffTable({ practiceId, lines, beforeRunId, afterRunId }: { read
             <td className="py-1 text-xs">
               <div className="flex flex-col">
                 {line.before === null ? null : (
-                  <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${beforeRunId}`}>
-                    First trace
+                  <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${accepting ? line.before.pricingRunId : beforeRunId}`}>
+                    {accepting ? 'Trace now' : 'First trace'}
                   </Link>
                 )}
                 {line.after === null ? null : (
-                  <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${afterRunId}`}>
-                    Second trace
+                  <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${accepting ? line.after.pricingRunId : afterRunId}`}>
+                    {accepting ? 'Trace once accepted' : 'Second trace'}
                   </Link>
                 )}
               </div>

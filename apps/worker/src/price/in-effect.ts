@@ -8,9 +8,9 @@
  *
  * A re-run is accepted only while nothing in effect for overlapping service dates is newer than it
  * (combined audit #10; docs/adr/0037, amendment of 2026-10-26; test matrix PRC-25 to PRC-28). Newer is
- * judged by when runs were priced and by their pinned rule release, never by when a person clicked
- * Accept: a run priced after the re-run, or pinned to a later release not withdrawn, or (for the
- * re-run's own period) holding lines loaded after its cut-off. Accepting it then could take a late
+ * judged by when runs were priced and by the inputs each pinned when it was created, never by when a
+ * person clicked Accept: a run priced after the re-run, or pinned to a later release not withdrawn or a
+ * later place-of-service split, or (for the re-run's own period) holding lines loaded after its cut-off. Accepting it then could take a late
  * line's pricing out of effect or put older pricing back on a line. Only the run in effect for its
  * period is re-run, so a re-run's diff is against the pricing its acceptance replaces. The fragments
  * below are read by rerun.ts under the practice's pricing_current lock and by the pages that say why
@@ -51,14 +51,26 @@ const SAME_PERIOD = (a: string, b: string) => `(${a}.period_from = ${b}.period_f
 /** The run's cut-off: the lines loaded by it are the run's (a re-run keeps its original's, create.ts). */
 const CUT_OFF = (a: string) => `coalesce(${a}.lines_loaded_by, ${a}.created_at)`;
 
+/** NEWER_PRICING's three clauses, which NEWER_BECAUSE names one by one. */
+const PRICED_AFTER = (x: string, r: string) => `${x}.completed_at >= ${r}.completed_at`;
+const LATER_RELEASE = (x: string, r: string) => `(${x}.release_no > ${r}.release_no AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = ${x}.release_no))`;
+const LATER_SPLIT = (x: string, r: string) => `EXISTS (SELECT 1 FROM pricing_run_split(${x}.id) xs
+                WHERE NOT EXISTS (SELECT 1 FROM pricing_run_split(${r}.id) rs WHERE (rs.approved_at, rs.place_of_service_split_id) >= (xs.approved_at, xs.place_of_service_split_id)))`;
+
 /**
  * Run `x` was priced no earlier than complete run `r` (both read their inputs under the practice's execution
- * lock, in the order of their completed_at, which is when each pricing transaction began), or is pinned to a
- * later rule release that is not withdrawn (after a content rollback the reinstated release is the one wanted).
- * A tie counts as newer, to stay on the safe side.
+ * lock, in the order of their completed_at, which execute.ts keeps to the order they were granted it), or pinned
+ * an input fixed at creation that is newer than `r`'s: a later rule release that is not withdrawn (after a content
+ * rollback the reinstated release is the one wanted), or a place-of-service split approved later, in the order
+ * place_of_service_split_in_force() reads (approved_at, then ID), where `r` pinned none at least as late. The split
+ * is read through pricing_run_split(), which answers in a practice scope only, as every caller reads. A tie counts
+ * as newer, to stay on the safe side. The run's triage date (its creation day) is fixed at creation too but is not
+ * compared: it changes no amount and no window's end, only the trace's window status as of that day, and triage
+ * judges every window on its own date (docs/adr/0037, amendment of 2026-10-26).
  */
-const NEWER_PRICING = (x: string, r: string) => `(${x}.completed_at >= ${r}.completed_at
-    OR (${x}.release_no > ${r}.release_no AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = ${x}.release_no)))`;
+const NEWER_PRICING = (x: string, r: string) => `(${PRICED_AFTER(x, r)}
+    OR ${LATER_RELEASE(x, r)}
+    OR ${LATER_SPLIT(x, r)})`;
 
 /**
  * Run `x` makes re-run `rr` (of original `o`) stale: eligible, neither of them, overlapping, in effect after the
@@ -68,6 +80,20 @@ const NEWER_PRICING = (x: string, r: string) => `(${x}.completed_at >= ${r}.comp
 export const SUPERSEDES_RERUN = (x: string, rr: string, o: string) => `(${x}.id <> ${o}.id AND ${x}.id <> ${rr}.id AND ${OVERLAPS(x, rr)} AND ${ELIGIBLE_RUN(x)}
     AND (${IN_EFFECT_SINCE(x)}, ${x}.id) > (${IN_EFFECT_SINCE(o)}, ${o}.id)
     AND (${NEWER_PRICING(x, rr)} OR (${SAME_PERIOD(x, rr)} AND ${CUT_OFF(x)} > ${CUT_OFF(rr)})))`;
+
+/** Why a run that supersedes a re-run (SUPERSEDES_RERUN) is newer than it, as NEWER_BECAUSE names it, its clauses in order. */
+export const NEWER_REASONS = ['priced_after', 'later_release', 'later_split', 'later_lines'] as const;
+export type NewerReason = (typeof NEWER_REASONS)[number];
+
+/**
+ * The first of SUPERSEDES_RERUN's newness clauses run `x` meets against re-run `rr`, one of NEWER_REASONS (NULL when
+ * none holds), so a page says which holds instead of listing them all: priced after it, pinned to a later release or
+ * split, or, for the same period, holding lines loaded after its cut-off. Read in a practice scope, as the split is.
+ */
+export const NEWER_BECAUSE = (x: string, rr: string) => `CASE WHEN ${PRICED_AFTER(x, rr)} THEN 'priced_after'
+       WHEN ${LATER_RELEASE(x, rr)} THEN 'later_release'
+       WHEN ${LATER_SPLIT(x, rr)} THEN 'later_split'
+       WHEN ${SAME_PERIOD(x, rr)} AND ${CUT_OFF(x)} > ${CUT_OFF(rr)} THEN 'later_lines' END`;
 
 /**
  * Re-run `rr` can no longer be accepted: its original is not eligible (a re-run of a re-run nobody accepted,
@@ -95,6 +121,22 @@ export const NEWER_RUN_RUNNING = (r: string) => `EXISTS (SELECT 1 FROM pricing_r
 
 /** A first run of a period overlapping run `r`'s is queued or being priced: a re-run of `r` waits for it. */
 export const NEWER_RUN_PENDING = (r: string) => `EXISTS (SELECT 1 FROM pricing_run x WHERE ${OVERLAPPING_FIRST_RUN('x', r, ['queued', 'running'])})`;
+
+/** Where a complete re-run nobody accepted stands (RERUN_ACCEPTANCE), in acceptRun's order of refusals. */
+export const RERUN_ACCEPTANCES = ['release_withdrawn', 'superseded', 'newer_run_pending', 'awaiting'] as const;
+export type RerunAcceptance = (typeof RERUN_ACCEPTANCES)[number];
+
+/**
+ * Where run `r` stands for acceptance, one of RERUN_ACCEPTANCES, or NULL for a run that is not a complete re-run
+ * nobody accepted: pinned to a withdrawn release (refused first), superseded, waiting for a first run of
+ * overlapping dates being priced, or awaiting a person. The run columns of the pages read it, so a badge says what
+ * acceptRun would; acceptRun alone reads what took effect during its own transaction.
+ */
+export const RERUN_ACCEPTANCE = (r: string) => `CASE WHEN ${r}.rerun_of_id IS NULL OR ${r}.status <> 'complete' OR ${r}.accepted_at IS NOT NULL THEN NULL
+       WHEN EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = ${r}.release_no) THEN 'release_withdrawn'
+       WHEN ${RERUN_SUPERSEDED(r)} THEN 'superseded'
+       WHEN ${NEWER_RUN_RUNNING(r)} THEN 'newer_run_pending'
+       ELSE 'awaiting' END`;
 
 /**
  * An eligible run overlapping re-run `rr` took effect at or after this transaction began: it committed while the

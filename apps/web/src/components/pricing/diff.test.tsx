@@ -2,7 +2,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { MonthsWaitingOnLocation } from './location';
-import { splitChangeText, SplitChangeText } from './diff';
+import type { DiffLine, DiffRun, DiffSide, DiffSummary } from '@tp/worker/pricing';
+
+import { DiffSummaryText, DiffTable, splitChangeText, SplitChangeText } from './diff';
 
 /**
  * What a re-run's diff says when the runs pinned different place-of-service splits (docs/adr/0064), and the months
@@ -67,5 +69,88 @@ describe('the months waiting on the billing ZIP', () => {
     );
     expect(html).toMatch(/^<div role="region" aria-label="Months waiting on the billing ZIP, scrolls sideways" tabindex="0"/);
     expect(html).toContain('<table class="w-full min-w-[36rem] text-left text-sm" aria-label="Months waiting on the billing ZIP">');
+  });
+});
+
+describe('what accepting a re-run changes (payment-engine review of PR #50, F4)', () => {
+  const PRACTICE = '00000000-0000-4000-8000-000000000001';
+  const run = (id: string, periodFrom: string, periodTo: string): DiffRun => ({
+    id,
+    periodFrom,
+    periodTo,
+    releaseNo: 900001,
+    engineVersion: 'engine-synthetic',
+    rerunOfId: null,
+    acceptedAt: null,
+    completedAt: new Date('2026-10-26T02:09:20Z'),
+    placeOfServiceSplitId: null,
+    placeOfServiceSplitApprovedAt: null,
+  });
+  const quarter = run('00000000-0000-4000-8000-0000000000b1', '2026-01-01', '2026-03-31');
+  const rerun = run('00000000-0000-4000-8000-0000000000b2', '2026-01-01', '2026-03-31');
+  const february = run('00000000-0000-4000-8000-0000000000b3', '2026-02-01', '2026-02-28');
+  const side = (pricingRunId: string, unpricedReason: string | null): DiffSide => ({
+    pricedLineId: `${pricingRunId}-line`,
+    pricingRunId,
+    method: unpricedReason === null ? 'MA_NONCONTRACTED' : null,
+    expectedAllowedCents: unpricedReason === null ? '5000' : null,
+    varianceCents: null,
+    unpricedReason,
+    adjustments: [],
+    windowEndsOn: null,
+    reviewFlags: [],
+    mappingId: 'mapping',
+    contractVersionId: null,
+    rateRecordId: null,
+  });
+  const line: DiffLine = {
+    serviceLineId: '00000000-0000-4000-8000-0000000000c1',
+    kind: 'changed',
+    procedureCode: '97110',
+    modifiers: [],
+    units: '1',
+    before: side(february.id, 'NO_AGREEMENT'),
+    after: side(rerun.id, null),
+    changes: ['expected_allowed', 'unpriced_reason'],
+    causes: [],
+  };
+  const summary: DiffSummary = {
+    compared: 4,
+    changed: 1,
+    onlyBefore: 1,
+    onlyAfter: 0,
+    mappingChanged: 0,
+    versionChanged: 0,
+    windowChanged: 0,
+    reviewFlagsChanged: 0,
+    beforeExpectedCents: '0',
+    afterExpectedCents: '5000',
+  };
+
+  it('compares each line’s pricing in effect now with its pricing once accepted, naming a run of other dates that holds a side', () => {
+    const html = renderToStaticMarkup(<DiffTable practiceId={PRACTICE} lines={[line]} beforeRunId={quarter.id} afterRunId={rerun.id} heldBy={[february]} />);
+    expect(text(html)).toContain('In effect now');
+    expect(text(html)).toContain('Once accepted');
+    expect(text(html)).toContain('From Pricing run, 2026-02-01 to 2026-02-28, rule release 900001, priced 2026-10-26 02:09:20 UTC');
+    expect(html).toContain(`data-held-by="${february.id}"`);
+    // Each trace opens under the run that priced that side, the February run's for the line it holds.
+    expect(html).toContain(`?run=${february.id}`);
+    expect(html).toContain(`?run=${rerun.id}`);
+    expect(html).not.toContain(`?run=${quarter.id}`);
+  });
+
+  it('says so when accepting changes no line, and keeps the two-run wording for a plain comparison', () => {
+    expect(text(renderToStaticMarkup(<DiffTable practiceId={PRACTICE} lines={[]} beforeRunId={quarter.id} afterRunId={rerun.id} heldBy={[]} />))).toContain(
+      'Accepting this re-run changes no line',
+    );
+    const plain = renderToStaticMarkup(<DiffTable practiceId={PRACTICE} lines={[line]} beforeRunId={february.id} afterRunId={rerun.id} />);
+    expect(text(plain)).toContain('First run');
+    expect(plain).not.toContain('data-held-by');
+  });
+
+  it('counts the lines whose pricing in effect accepting changes', () => {
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={summary} accepting />))).toBe(
+      'Accepting this re-run changes the pricing in effect of 2 lines: 1 of the 4 lines priced now and once accepted are priced differently; 1 would no longer be priced. Expected allowed over the lines priced both now and once accepted: $0.00 now, $50.00 once accepted.',
+    );
   });
 });

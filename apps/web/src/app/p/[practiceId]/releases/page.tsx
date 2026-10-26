@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState }
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { ActionForm } from '../../../../components/action-form';
+import { ActionForm, RefusalTakeover } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
 import { PendingRunsAlert, RunStateBadges } from '../../../../components/pricing/display';
 import { ReleaseChanges, ReleaseStatusText } from '../../../../components/releases/note';
@@ -95,7 +95,9 @@ export default async function ReleasesPage(props: Props) {
                             How many lines would change?
                           </Link>
                           {(pendingByRun[run.id] ?? []).length > 0 ? (
-                            <PendingRunsAlert practiceId={practiceId} runs={pendingByRun[run.id] ?? []} />
+                            <RefusalTakeover keys={[`rerun:${run.id}`]}>
+                              <PendingRunsAlert practiceId={practiceId} runs={pendingByRun[run.id] ?? []} />
+                            </RefusalTakeover>
                           ) : (
                             <ActionForm
                               action={rerunPricingRunFormAction}
@@ -103,7 +105,7 @@ export default async function ReleasesPage(props: Props) {
                               variant="outline"
                               className="flex flex-col gap-2"
                               labels={{ runId: 'This run', releaseNo: 'Rule release' }}
-                              refreshOnError
+                              refreshOnError={`rerun:${run.id}`}
                             >
                               <FormKeys />
                               <input type="hidden" name="practiceId" value={practiceId} />

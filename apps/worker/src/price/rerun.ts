@@ -1,6 +1,7 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 
 import { type CreatedPricingRun, recordRun } from './create';
+import { acceptanceHeldBy } from './diff';
 import { ELIGIBLE_RUN, NEWER_RUN_PENDING, OVERLAPPING_FIRST_RUN, RERUN_SUPERSEDED, RUN_IN_EFFECT, SUPERSEDES_RERUN_OF_PERIOD, TOOK_EFFECT_MEANWHILE } from './in-effect';
 import { RuleReleaseMismatchError, currentReleaseNo } from './release';
 
@@ -21,11 +22,11 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
  *   replaced, or a re-run nobody accepted, is not re-run (its diff would not be against the pricing a
  *   person replaces; the run in effect is re-run instead), nor any run while a first run of overlapping
  *   dates is queued or being priced (the re-run would be superseded as soon as that run completes).
- * - A re-run is in effect only once a person accepts it (acceptRun), having seen its diff (diff.ts):
- *   once, by the person acting, never for a run pinned to a withdrawn release, and only while nothing in
- *   effect for overlapping service dates is newer than it (rerunBlock; in-effect.ts): accepting an older
- *   re-run over newer pricing would take a late line's pricing out of effect or put older pricing back on
- *   a line. The check runs under the practice's pricing_current lock at READ COMMITTED, so two
+ * - A re-run is in effect only once a person accepts it (acceptRun), having seen its diff (diff.ts) against
+ *   the run it replaces, which the acceptance names (it replaces no other): once, by the person acting,
+ *   never for a run pinned to a withdrawn release, and only while nothing in effect for overlapping service
+ *   dates is newer than it (rerunBlock; in-effect.ts): accepting an older re-run over newer pricing would
+ *   take a late line's pricing out of effect or put older pricing back on a line. The check runs under the practice's pricing_current lock at READ COMMITTED, so two
  *   acceptances, or an acceptance and a completion, never both pass on what the other has not yet
  *   committed. Accepting changes nothing the run priced.
  */
@@ -55,14 +56,15 @@ export async function rerunReasons(client: ScopeClient, run: RunSince): Promise<
  * Why a re-run or an acceptance is refused. superseded: something in effect for overlapping service dates is
  * newer than the re-run; newer_run_pending: a first run of overlapping dates is being priced (or, for a new
  * re-run, queued); changed_meanwhile: a run of overlapping dates took effect while the acceptance waited, so
- * a new attempt judges it; not_in_effect: only the run in effect for its period is re-run.
+ * a new attempt judges it; diff_changed: the pricing the acceptance would replace is no longer what the person's
+ * diff was against (another run replaced, or other runs holding its lines); not_in_effect: only the run in effect for its period is re-run.
  */
-export const RERUN_REFUSALS = ['not_found', 'not_complete', 'not_rerun', 'release_withdrawn', 'superseded', 'newer_run_pending', 'changed_meanwhile', 'not_in_effect'] as const;
+export const RERUN_REFUSALS = ['not_found', 'not_complete', 'not_rerun', 'release_withdrawn', 'superseded', 'newer_run_pending', 'changed_meanwhile', 'diff_changed', 'not_in_effect'] as const;
 export type RerunRefusal = (typeof RERUN_REFUSALS)[number];
 
 /**
- * A re-run or an acceptance the plan does not allow. Messages name the state, never a value; those of the
- * acceptance and re-run rules read after the form's label ("This re-run: ...", "This run: ...").
+ * A re-run or an acceptance the plan does not allow. Messages name the state, never a value, and read after the
+ * form's label: an acceptance's after "This re-run: ", a re-run's after "This run: ".
  */
 export class RerunRefusedError extends Error {
   override readonly name = 'RerunRefusedError';
@@ -108,10 +110,16 @@ export function supersededKind(block: Extract<RerunBlock, { state: 'superseded' 
 
 /** The refusal's text for each kind, after the form's label "This re-run: ". */
 const SUPERSEDED_MESSAGES: Readonly<Record<SupersededKind, string>> = {
-  same_period: 'can no longer be accepted, because a newer run of these service dates is in effect; the page now names it',
-  other_period: 'can no longer be accepted, because a run of some of these service dates was priced after it; re-run the earlier run again',
+  same_period: 'can no longer be accepted, because a newer run of these service dates is in effect; the page is updated to name it',
+  other_period: 'can no longer be accepted, because a run of some of these service dates holds newer pricing; re-run the run in effect for these service dates',
   original_not_in_effect: 'can no longer be accepted, because the run it prices again was never in effect; re-run the run in effect for these service dates',
 };
+
+/** The refusals rerunBlock shares with acceptRun and createRerun, after the form's label. */
+const NOT_FOUND = 'is not one of the practice’s runs';
+const NOT_RERUN = 'is a first run of its service dates, in effect once it completes; only a re-run is accepted';
+const NOT_COMPLETE = 'has not completed yet; a re-run is accepted once it is complete and its changes can be read';
+const DIFF_CHANGED = 'was not accepted, because the pricing it would replace has changed since its changes were shown; check the changes again and accept it if it is still offered';
 
 interface BlockRow {
   readonly status: string;
@@ -150,13 +158,13 @@ export async function rerunBlock(client: ScopeClient, practiceId: string, rerunI
   );
   const run = rows[0];
   if (run === undefined) {
-    throw new RerunRefusedError('not_found', 'the run to accept is not one of the practice’s runs');
+    throw new RerunRefusedError('not_found', NOT_FOUND);
   }
   if (run.rerun_of_id === null) {
-    throw new RerunRefusedError('not_rerun', 'only a re-run is accepted; a first run of a period is in effect when it completes');
+    throw new RerunRefusedError('not_rerun', NOT_RERUN);
   }
   if (run.status !== 'complete') {
-    throw new RerunRefusedError('not_complete', 'a re-run is accepted once it is complete and its diff can be read');
+    throw new RerunRefusedError('not_complete', NOT_COMPLETE);
   }
   if (run.superseded) {
     return {
@@ -217,16 +225,16 @@ export async function createRerun(scope: PracticeScope<ScopeClient>, input: Crea
   );
   const original = rows[0];
   if (original === undefined) {
-    throw new RerunRefusedError('not_found', 'the run to price again is not one of the practice’s runs');
+    throw new RerunRefusedError('not_found', NOT_FOUND);
   }
   if (original.status !== 'complete') {
-    throw new RerunRefusedError('not_complete', 'only a complete run is priced again; this one has not completed');
+    throw new RerunRefusedError('not_complete', 'has not completed, and only a complete run is priced again');
   }
   if (!original.in_effect) {
-    throw new RerunRefusedError('not_in_effect', 'is no longer the run in effect for its service dates, so it is not priced again; re-run the run in effect instead');
+    throw new RerunRefusedError('not_in_effect', 'is not the run in effect for its service dates, so it is not priced again; re-run the run in effect instead');
   }
   if (original.newer_run_pending) {
-    throw new RerunRefusedError('newer_run_pending', 'is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; re-run once it finishes');
+    throw new RerunRefusedError('newer_run_pending', 'is not priced again yet, because a newer run of these service dates is waiting to be priced or being priced; once it finishes, re-run the run in effect');
   }
   const current = await currentReleaseNo(scope.client);
   if (current === null || current !== input.releaseNo) {
@@ -245,6 +253,18 @@ export async function createRerun(scope: PracticeScope<ScopeClient>, input: Crea
 export interface AcceptRunInput {
   readonly practiceId: string;
   readonly pricingRunId: string;
+  /**
+   * The run the person's diff was against: the run acceptance replaces as the page showed it (rerunBlock's
+   * replacesId when the page was read). Accepting replaces only that run (J17: the diff a person accepts is the
+   * change accepting makes); when another run has taken its place since, the acceptance is refused (diff_changed).
+   */
+  readonly replacesId: string;
+  /**
+   * The runs of other service dates whose pricing in effect that diff read (compareAcceptance's heldBy, by ID; none
+   * when every line's pricing in effect was the replaced run's). Accepting changes exactly what the person saw only
+   * while they are the same runs (acceptanceHeldBy); otherwise the acceptance is refused (diff_changed).
+   */
+  readonly heldByIds: readonly string[];
 }
 
 export interface AcceptedRun {
@@ -269,14 +289,16 @@ const READ_COMMITTED = 'read committed';
 /**
  * Accepts a complete re-run in the actor's name, so it is in effect from now on (Claims and lines,
  * Coverage and the line trace read it in place of the run it prices again). Accepting it again changes
- * nothing. Refused for a run pinned to a withdrawn release, and while it is superseded (something in effect
- * for overlapping service dates is newer), while a first run of overlapping dates is being priced, or when
- * a run of overlapping dates took effect while this transaction waited (its accepted_at would rank before
- * that run; a new attempt judges it). The checks run under the practice's pricing_current lock, the one
- * every acceptance and completion takes at its UPDATE (the database's pricing_current_change_lock()), taken
- * first in a statement of its own at READ COMMITTED, so each later statement reads every acceptance and
- * completion that committed before it: an earlier snapshot would read past one, so any other isolation is a
- * programming fault, refused before anything is read. Lock order: the advisory lock, then the re-run's row;
+ * nothing, whatever replacesId and heldByIds say. Refused for a run pinned to a withdrawn release, and while it is
+ * superseded (something in effect for overlapping service dates is newer), while a first run of overlapping
+ * dates is being priced, when a run of overlapping dates took effect while this transaction waited (its
+ * accepted_at would rank before that run; a new attempt judges it), and when the run it would replace is not
+ * the one the person's diff was against, or other runs hold its lines than the diff read (replacesId and
+ * heldByIds: an acceptance replaces only what the person saw). The checks run under the practice's pricing_current lock, the one every acceptance and completion takes at its
+ * UPDATE (the database's pricing_current_change_lock()), taken first in a statement of its own at READ
+ * COMMITTED, so each later statement reads every acceptance and completion that committed before it: an
+ * earlier snapshot would read past one, so any other isolation is a programming fault, refused before anything
+ * is read. Lock order: the advisory lock, then the re-run's row;
  * a completion holds its own run's row, then the lock, and neither needs the other's row, so nothing waits
  * in a cycle. The database checks the withdrawn release, and that the actor may map plans (mapping.edit).
  */
@@ -295,19 +317,19 @@ export async function acceptRun(scope: PracticeScope<ScopeClient>, input: Accept
   );
   const run = rows[0];
   if (run === undefined) {
-    throw new RerunRefusedError('not_found', 'the run to accept is not one of the practice’s runs');
+    throw new RerunRefusedError('not_found', NOT_FOUND);
   }
   if (run.rerun_of_id === null) {
-    throw new RerunRefusedError('not_rerun', 'only a re-run is accepted; a first run of a period is in effect when it completes');
+    throw new RerunRefusedError('not_rerun', NOT_RERUN);
   }
   if (run.status !== 'complete') {
-    throw new RerunRefusedError('not_complete', 'a re-run is accepted once it is complete and its diff can be read');
+    throw new RerunRefusedError('not_complete', NOT_COMPLETE);
   }
   if (run.accepted_at !== null && run.accepted_by !== null) {
     return { pricingRunId: input.pricingRunId, acceptedAt: run.accepted_at, acceptedBy: run.accepted_by, alreadyAccepted: true };
   }
   if (run.withdrawn) {
-    throw new RerunRefusedError('release_withdrawn', 'the re-run is pinned to a withdrawn rule release; price the run again under the release in force');
+    throw new RerunRefusedError('release_withdrawn', 'is pinned to a withdrawn rule release, so it is not accepted; re-run the run in effect under the release in force');
   }
   const block = await rerunBlock(scope.client, input.practiceId, input.pricingRunId);
   if (block.state === 'superseded') {
@@ -325,6 +347,11 @@ export async function acceptRun(scope: PracticeScope<ScopeClient>, input: Accept
       'changed_meanwhile',
       'was not accepted, because a run of these service dates took effect while it was being accepted; check the page again and accept it if it is still offered',
     );
+  }
+  const shown = [...new Set(input.heldByIds.map((id) => id.toLowerCase()))].sort();
+  const held = block.replacesId === input.replacesId ? await acceptanceHeldBy(scope.client, input.practiceId, input.pricingRunId, block.replacesId) : [];
+  if (block.replacesId !== input.replacesId || held.length !== shown.length || held.some((id, index) => id !== shown[index])) {
+    throw new RerunRefusedError('diff_changed', DIFF_CHANGED);
   }
   const { rows: accepted } = await scope.client.query<{ accepted_at: Date }>(
     'UPDATE pricing_run SET accepted_by = $3, accepted_at = now() WHERE id = $1 AND practice_id = $2 AND accepted_at IS NULL RETURNING accepted_at',
