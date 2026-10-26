@@ -30,6 +30,7 @@ Both lanes read this file before starting any pull request. They change it only 
    - Before a merge, merge the latest `claude/build-platform` into the PR branch with a merge commit. Never rebase or force-push.
    - Let CI go green on that head, then merge with a merge commit.
    - When both lanes changed the same document (reconciliation-001, `test-matrix.md`, an ADR, `packages/synth/src/cases/registry.ts`, a runbook), the PR merged second resolves the conflict and keeps both lanes' changes.
+   - Generated files (`pnpm-lock.yaml`, `tools/screening-capacity/watched-paths.txt`, `packages/db/functions/*.sql`) are never hand-merged or hand-edited. Each PR commits what its generator writes, and the PR merged second runs the generator again on the merged tree (`pnpm install`, `watched.ts --write`, `pnpm db:domain-model --out`). Added 2026-10-26 by Lane B, under the co-founder's Q2 of 2026-10-25.
 7. **Who may merge, and when.**
    - **Non-schema PRs:** merge on green CI once the fresh-clone verification has passed (ADR 0063, D4 (a)). This holds until the founder's runbook 3i and `APPROVAL_REVIEW_REQUIRED`.
    - **Schema PRs (Lane A):** also need the founder's committed approval line.
