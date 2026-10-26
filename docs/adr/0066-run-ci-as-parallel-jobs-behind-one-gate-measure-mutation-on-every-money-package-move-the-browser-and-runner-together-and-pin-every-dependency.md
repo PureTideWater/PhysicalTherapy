@@ -502,8 +502,8 @@ into `main`. Its alerts and security updates read the default branch's lockfile 
   per-dependency `min(semver days, default-days)`. With 14 days for majors and 7 for minors, a major would be dropped
   silently whenever any locked direct dependency was under 14 days old, most weeks. Actions and images take
   `default-days: 7`, the only cooldown key those ecosystems support.
-- **Groups**, in this order: `browser-tests` (Playwright and axe, red on the `browser.json` check by design until ADR
-  0058's baseline procedure runs), `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`, and
+- **Groups**, in this order: `browser-tests` (Playwright and axe, red by design on the brand journey's baselines, and
+  from Part 3 on the `browser.json` check, until ADR 0058's regeneration runs with a person's inspection), `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`, and
   `security` (security updates); npm opens at most 8. Every action in one pull request. The node image and compose's
   postgres in one multi-ecosystem group, `container-images`.
 - **Majors ignored**, each a deliberate pull request instead: `@types/node`, `typescript`, `next`,
