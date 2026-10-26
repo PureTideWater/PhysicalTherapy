@@ -14,6 +14,9 @@ bumps, the delta review, the full local suite, one push, CI, the fresh-clone ver
 the orchestrator). Re-subscribed to #48. **ci-browser and P1, P2, P4 stay stopped at their recorded points** below. If
 this session stops before the merge, the handoff below still holds.
 
+### 2026-10-26 15:25 UTC: base merge and login pin running
+On 123b8fa all four required checks but `all green` passed (`mutation`, `screening-capacity gate`, `approval-of-record`); `all green` is red on `static`'s CQ3 alone. The base moved by nine PRs (#46, #54, #53, #55, #50, #52, #56, #51, #49; now d725977); the merge conflicts in `reconciliation-001.md` and `workflows.test.ts`, and the base adds `content-calendar.yml` and `release-capacity.yml`, which take ci-deps' rules (pins, timeouts, persist-credentials, overwrite, BuildKit, the release cache rule if it applies). Workflow wf_c7faec69-54e: the merge, the two workflows, the login v4.7.0 commit, the checks, one push. No lockfile change (the base's manifests changed only exports).
+
 ## Handoff (2026-10-26 10:20 UTC): held by the orchestrator's wind-down; for whoever finishes it
 
 The account's weekly usage reached 90% and Lane B goes to Lane A on 2026-10-27. This session stopped at a clean point:
