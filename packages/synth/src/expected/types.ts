@@ -6,7 +6,7 @@
  */
 import { type OracleSummary } from '../x12/summary';
 
-export const CASE_MODULES = ['PAR', 'MAP', 'CON', 'PRC', 'CAS', 'LED', 'SEC', 'SCR', 'JOB', 'MOD', 'BIL', 'CI'] as const;
+export const CASE_MODULES = ['PAR', 'MAP', 'CON', 'PRC', 'CAS', 'LED', 'SEC', 'SCR', 'JOB', 'MOD', 'BIL', 'CI', 'DBF'] as const;
 export type CaseModule = (typeof CASE_MODULES)[number];
 
 /** The typed parser errors of PRD section 10 (packages/edi835 EDI_ERROR_CODES). */

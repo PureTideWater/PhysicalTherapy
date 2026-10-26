@@ -12,6 +12,9 @@
 /packages/db/migrations/ @PureTideWater
 /docs/product/domain-model.md @PureTideWater
 /packages/db/domain-model/ @PureTideWater
+# The generated function files: each migration's changes to a function, read as diffs beside the document
+# (docs/adr/0068).
+/packages/db/functions/ @PureTideWater
 
 # The code that decides an approval: a pull request could otherwise pass the gate by changing its judge.
 /packages/db/src/domain-model/ @PureTideWater

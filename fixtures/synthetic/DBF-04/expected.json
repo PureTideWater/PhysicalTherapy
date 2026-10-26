@@ -1,0 +1,20 @@
+{
+  "case": "DBF-04",
+  "module": "DBF",
+  "title": "Writing and checking the directory",
+  "assertion": "`--out` checks the directory before writing anything, removes only stale generated `*.sql` (the banner first), refuses any other `*.sql`, a symlink or a custom FILE without `--functions`, and leaves the README; `--check` reports the document and each file with its first differing line, then exits 1, and exits 2 on an error; the document's text and SHA-256 are the same with the files as without",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "packages/db/src/domain-model/function-files.test.ts",
+    "packages/db/src/domain-model/function-files.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The directory is written and checked in a temporary directory, and the CLI run against a scratch database; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
