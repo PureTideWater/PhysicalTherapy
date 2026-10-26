@@ -37,7 +37,7 @@ pnpm build           # web (Next.js standalone) and worker (esbuild bundle)
 pnpm dev             # Postgres and MinIO in Docker, then the web app and the worker
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
 pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
-pnpm db:domain-model --check --strict   # docs/product/domain-model.md against the migrated database (--out rewrites it)
+pnpm db:domain-model --check --strict   # the domain model and its function files against the migrated database (--out rewrites both)
 pnpm db:domain-model --summary-since origin/claude/build-platform   # what changed since the last approved document (no database)
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
 pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case <id>, --large for PAR-29)
@@ -104,9 +104,20 @@ writes it, and only with a commit of 7 to 40 hexadecimal digits (or `unknown`) a
 (letters, digits, `.`, `_`, `/`, `-`); the tool refuses any other `--commit` or `--branch` (exit 2), and a provenance
 line moved elsewhere or with other text in those fields is compared and hashed like any other line. `pnpm test:db` makes
 the same comparison on its own scratch database (`domain-model.db.test.ts`), so a migration merged without regenerating
-the document fails. The approval is CI's `domain model` check, which runs `pnpm db:domain-model --check --strict
---require-approval` on a freshly migrated database (docs/adr/0066): the founder's name, a `YYYY-MM-DD` date (from
-2026-10-16, when the change order was issued, to today) and the document's SHA-256 on the "Approved by" line
+the document fails. The same `--out` writes one file per database function name to `packages/db/functions`
+(docs/adr/0068; its README), every overload's definition, owner and grants as PostgreSQL holds them, and `--check` and
+the drift case compare those files too, so a pull request shows each changed function as a diff and `git log -p` on a
+file is that function's history; they are generated, never edited, and outside the approved text. They are read in the
+same READ ONLY transaction as the document, on a database nothing else is migrating, under pinned settings
+(`quote_all_identifiers`, `extra_float_digits` and the rest; the ADR's "Determinism"), and `.gitattributes` gives them
+`text eol=lf`, so they are the same bytes on every machine. `--out` checks the directory before it writes anything and
+removes a stale `*.sql` only when it opens with the generator's banner; a function in a schema other than `public`, a
+symlinked directory, a refused file name or a `*.sql` without the banner exits 2, as does any git or file-system
+failure, and a custom `--out FILE` or `--check FILE` needs `--functions DIR` (exit 2 without), so a preview written
+elsewhere never touches the repository's files. The approval is
+CI's `domain model` check, which runs `pnpm db:domain-model --check --strict --require-approval` on a freshly
+migrated database (docs/adr/0066): the founder's name, a `YYYY-MM-DD` date (from 2026-10-16, when the change order was
+issued, to today) and the document's SHA-256 on the "Approved by" line
 (`--require-approval` prints the hash to sign when it refuses), so an unsigned document turns that check red and leaves
 the database suite to report on the database alone. The name must be exactly an entry of the reviewed approver list,
 `packages/db/domain-model/approvers.json` (apart from spaces at either end, in the same case), and never a placeholder
@@ -130,8 +141,15 @@ Each approval opens with the changes since the last approved document (docs/adr/
 --summary-since <ref>` compares the document at a git ref (the base branch, whose document is approved) with the working
 tree's, or with the text `--out` or `--check` generates, and prints one line per change, row-level security, policies,
 the PHI registry and grants first, then tables, columns, constraints, functions, triggers and the divergence rows, with
-both documents' SHA-256 and approval state. CI's `domain model` job writes it into its job summary and its log, and a
-pull request that regenerates the document opens its description with it.
+both documents' SHA-256 and approval state, then "Function definitions changed since <ref>" (docs/adr/0068), which
+compares the files at `git merge-base <ref> HEAD` and has three parts: one line saying these are the committed (or
+generated) files and that `--check` proves they equal the migrated catalog; a compact list of every changed file under
+`packages/db/functions` with `+N/-M` and its flags, those flagged "SECURITY DEFINER, tenant scope, privileges or
+PUBLIC" first; and "Diffs", each file's unified diff in that order until a 900,000-byte budget, then one line
+naming the files left out (see "Files changed"). CI's `domain model` job writes the full form into its job summary and
+its log; a pull request that regenerates the document opens its description with the `--function-diffs list` form,
+the same output without the Diffs part, since GitHub caps a description at 65,536 characters, and the founder checks
+that its list matches the CI copy's.
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
 thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds

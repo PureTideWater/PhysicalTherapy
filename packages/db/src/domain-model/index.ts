@@ -18,7 +18,18 @@ export {
   provenanceLine,
   provenanceProblems,
 } from './approval';
-export { type GenerateOptions, type GeneratedDomainModel, generateDomainModel } from './generate';
+export { type DatabaseRead, type GenerateOptions, type GeneratedDomainModel, generateDomainModel, generateFromCatalog, readDatabase } from './generate';
+export { FUNCTION_FILE_BANNER, FUNCTIONS_README, functionFileNameProblem, renderFunctionFiles } from './functions';
+export {
+  type DirectoryDifference,
+  compareFunctionDirectory,
+  type DirectoryPlan,
+  describeDifference,
+  planFunctionDirectory,
+  readFunctionDirectory,
+  sameDirectory,
+  writeFunctionDirectory,
+} from './function-files';
 export {
   APPROVERS_FILE,
   APPROVERS_FORMAT,
@@ -27,16 +38,22 @@ export {
   DOMAIN_MODEL_DOCUMENT,
   DomainModelError,
   type DomainModelSources,
+  FUNCTIONS_DIRECTORY,
+  GENERATOR_INPUTS,
   GITHUB_LOGIN,
   REPO_ROOT,
   readApproverRecords,
   readApprovers,
 } from './sources';
-export { type DocumentAtRef, documentAtRef } from './history';
+export { type DocumentAtRef, FUNCTION_DIFF_OPTIONS, documentAtRef, functionBaseCommit, functionFilesAtCommit, hasUncommittedInputs, isolatedGitEnv, unifiedDiffs } from './history';
 export {
   type DocumentChange,
   type DocumentFact,
   type DocumentReading,
+  FUNCTION_DIFFS_MODES,
+  FUNCTION_SECTION_BUDGET,
+  type FunctionChangesInput,
+  type FunctionDiffsMode,
   SUMMARY_CATEGORIES,
   type SummaryCategory,
   type SummaryInput,
@@ -45,5 +62,6 @@ export {
   documentChanges,
   readDocument,
   readingChanges,
+  renderFunctionChanges,
   renderSummary,
 } from './summary';

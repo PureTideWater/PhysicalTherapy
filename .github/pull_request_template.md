@@ -56,8 +56,11 @@ pipeline, the security program, or the milestones and their gates without an exc
 ## Domain model
 
 <!-- Only when a migration changes docs/product/domain-model.md: the document's SHA-256 before and after, as
-`pnpm db:domain-model --summary-since <base>` prints them, and that summary; the copy in the `domain model` check's job
-summary is the one that counts. The build posts the approval line as a suggested change and never writes it. Otherwise:
+`pnpm -s db:domain-model --summary-since <base> --function-diffs list` prints them, and that summary whole, ending with
+the compact list of changed function files (packages/db/functions; docs/adr/0068) without their diffs, since GitHub
+caps a description at 65,536 characters. The copy in the `domain model` check's job summary is the one that counts: it
+carries the same list and the diffs, and the founder requests changes if the two lists differ; "Files changed" shows
+every diff. The build posts the approval line as a suggested change and never writes it. Otherwise:
 "No migration; the document is unchanged." -->
 
 ## The founder's approval

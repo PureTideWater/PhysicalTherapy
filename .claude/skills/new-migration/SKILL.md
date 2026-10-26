@@ -13,9 +13,40 @@ whether the migration is safe with the previous image running (add, backfill, re
 
 Regenerate docs/product/domain-model.md in the same pull request (pnpm db:domain-model --out --strict on a freshly
 migrated database) and open the pull request's description with the output of
-`pnpm -s db:domain-model --summary-since origin/<base branch>` (docs/adr/0063). Never write the "Approved by:" line:
-post the line `--check --require-approval` names (the founder's name, the date, the hash) as a suggested change for
-the founder to commit, and ask for their review of that commit (docs/runbooks/github-governance.md, step 6).
+`pnpm -s db:domain-model --summary-since origin/<base branch> --function-diffs list` (docs/adr/0063; docs/adr/0068):
+the summary with its function section's compact list and without the diffs, which would pass GitHub's 65,536-character
+limit on a description. CI's `domain model` job writes the full form, diffs included, to its job summary; that copy
+counts, and the founder checks that the description's list matches its list, so paste the output whole and unedited.
+Never write the "Approved by:" line: post the line `--check --require-approval` names (the founder's name, the date,
+the hash) as a suggested change for the founder to commit, and ask for their review of that commit
+(docs/runbooks/github-governance.md, step 6).
+
+The same `--out` also writes packages/db/functions: one generated file per database function name, every overload of
+it in that file (docs/adr/0068; packages/db/functions/README.md). Use the default directory: a custom `--out FILE`
+needs `--functions DIR` and is refused without it (exit 2). Commit every file it writes or removes in the same pull
+request, before the founder signs, since any later commit dismisses the approval; never edit one by hand (`--check`
+and the database suite's drift case fail a hand edit and a missing regeneration alike). If `--out` refuses the
+directory (exit 2: a symlink, a stray entry, a refused name, a `*.sql` without the generator's banner), it has written
+nothing; fix what it names and run it again. Report each changed function as its file's diff
+(`git diff -- packages/db/functions`; the CI copy of the summary prints the diffs under "Function definitions changed
+since <base>"), not as the migration's `CREATE OR REPLACE FUNCTION` block: a recreation that changes nothing
+changes no file. Read every changed file's diff, the files the summary flags "SECURITY DEFINER, tenant scope,
+privileges or PUBLIC" first, for these hazards and name every one you find in the pull request's description:
+
+- SECURITY DEFINER without `SET search_path` naming `pg_catalog` first and `pg_temp` explicitly last;
+- a new `set_config` or `SET` of `app.practice_ids` or `app.actor_id`, or one with `is_local` false;
+- `EXECUTE` of built SQL in a SECURITY DEFINER function without `format()`'s `%I`/`%L` or `quote_ident`/`quote_literal`;
+- `LEAKPROOF` added; `STRICT` removed;
+- a volatility change on a function a policy calls (its `-- Called by policy:` lines name the policies that call it
+  directly);
+- any `GRANT ... TO PUBLIC`, or a grant to a role that did not have one;
+- an owner change (`ALTER FUNCTION ... OWNER TO`);
+- a new overload of a scope function (`allowed_practice_ids`, `effective_practice_access`, `practice_in_scope`,
+  `open_practice_scope`, the `app_actor_*` functions);
+- a read of `app.practice_ids` or `app.actor_id` removed or changed, or a scope check removed.
+
+A `-- Trigger function of:`, `-- Called by policy:` or `-- Event trigger:` line added is a new caller, not a change to
+the function. Keep functions in schema `public`: the generator refuses a function in any other schema (exit 2).
 
 The route: `.claude/hooks/protect-github.sh` refuses the GitHub connector's review tools, so post the suggestion with
 the GitHub API as one pull-request comment on the approval line, the last line of docs/product/domain-model.md in the
