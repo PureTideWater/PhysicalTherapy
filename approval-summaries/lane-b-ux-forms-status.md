@@ -13,6 +13,7 @@ session (Lane A or Lane B) continues from here.
   `docs/product/test-matrix.md`, `packages/synth/src/cases/{matrix,registry}.ts`), synth MODULE_NUMBER 16 for FRM
   (confirmed by the orchestrator 09:27; `common.ts`, fixtures `fixtures/synthetic/FRM-01..08`).
 - **No migration**, no new dependency, no #42 file (only the three shared documents, LANES.md rule 6).
+- **Builders' notes:** `designs/lane-b-ux-forms/build/` (the API spec, each slice's log, both integration checks).
 - **Workflow scripts:** `workflow-scripts/lane-b-ux-forms-{design,build-1,build-2a}-*.js`. The component API every
   slice codes against: section 3 of the design, as built in `apps/web/src/components/form-issues.tsx`, `field.tsx`,
   `password-field.tsx`.
@@ -33,7 +34,7 @@ session (Lane A or Lane B) continues from here.
 ### What remains, in the landing order
 1. **When #50 (co-001/superseded-rerun) merges** (it was open at a3c583d, CI green, at 10:09): merge
    claude/build-platform into the branch with a merge commit (rule 6), `pnpm install`, then slice A's last three files
-   (design 7.1; details in the build-2a check, scratchpad `progress/build-2a-check.md`, summarised here):
+   (design 7.1; details in the build-2a check, `designs/lane-b-ux-forms/build/build-2a-check.md`, summarised here):
    - `components/action-form.tsx`: keep every #50 export (`refreshOnError`, `RefreshAfterRefusal`, `RefusalTakeover`,
      `noteRefusal`, `takesFocus`, `summaryLead` (re-export from form-issues), `takesOrphanedRefusal`,
      `RefusalFallback`); adopt `useGuardedSubmit`, `FormIssues`, `RefusalSummary`, `PendingStatus` (inside the button's
@@ -49,8 +50,8 @@ session (Lane A or Lane B) continues from here.
    #51: `abstraction/ledger` (input + the hint `form-hints.test.ts` asserts, text area, `CheckboxField`),
    `cases/[caseId]` (write-off Reason select, checkbox as `CheckboxField errorName="Confirmation"`, inputs, text area),
    `cases/[caseId]/submissions` (selects, inputs, checkboxes, text area), `reconciliation` (reverse reason
-   `TextAreaField`, checkbox); and `e2e/packets.spec.ts`'s refused "Partially accepted" step (exact steps in scratchpad
-   `progress/build-E.md`), then add it to FRM-01's `assertedBy`.
+   `TextAreaField`, checkbox); and `e2e/packets.spec.ts`'s refused "Partially accepted" step (exact steps in
+   `designs/lane-b-ux-forms/build/build-E.md`), then add it to FRM-01's `assertedBy`.
    #52: `cases/[caseId]/packet` (text area), `packet/[versionId]/review` (`CheckboxGroup` "Confirm each item before you
    attest"), `lines/[lineId]` (text area); `words.ts` merges trivially with #52's.
    #49: `coverage` (add the missing `<FormKeys />` to the review form, a real defect: every submit is refused today;
