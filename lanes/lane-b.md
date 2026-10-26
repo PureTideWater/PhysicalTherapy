@@ -838,7 +838,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
 - **2026-10-26 ~04:57 UTC: ux-forms gets its own session.** #111's session finished: its push runs on 4d99df8 are green (ci, mutation, screening-capacity). It declined ux-forms, rightly, because its brief was one PR, and a message from another session does not widen a brief. So `co-001/ux-forms` runs in a new parallel session (session_01VNsi2Kru6pfk8CAbQ2AaYB, created 04:56:47 UTC), with the full brief and the standing rulings, the same as the first eight.
   - Its PG18 note, for every session: after a container restart, PostgreSQL 18 on 5433 can keep a stale `/root/pgdata18/postmaster.pid`. Re-running `tools/setup-container.sh` clears it.
   - LANES rule 6 now names the generated files (the lockfile, `watched-paths.txt`, `packages/db/functions`): the PR merged second regenerates them. #38's session needed it for `watched-paths.txt`, and it applies to every migration PR's function files.
-- **2026-10-26 ~05:03 UTC: all eleven reviewers done; the synthesis started (wf_3582cebc-d2b).**
+- **2026-10-26 ~04:58 UTC: all eleven reviewers done; the synthesis started (wf_3582cebc-d2b).**
   - **335 raw findings, 23 blocking,** before deduplication. words-practice came last: 56 findings (3 blocking), the form reset and the materiality cents among them, and Actionable disagreeing between the home tile and the ROI statement.
   - Archived on this branch as `designs/lane-b-ux-review/raw-findings.md`: markdown, ids in backticks; gitleaks passed it.
   - **The synthesis, in order:**
@@ -849,7 +849,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     5. one adversarial reviewer on the rules and a fact checker on the code, in parallel;
     6. a reviser.
   - Every agent keeps a progress file (SAVE rule), and a monitor raises a 10-minute stall alarm. The script is archived in `workflow-scripts/`.
-- **2026-10-26 ~05:25 UTC: the UX review's screenshot galleries are published, private.** One version holds at most 511 files, so each width has its own gallery; each links to the other:
+- **2026-10-26 ~05:11 UTC: the UX review's screenshot galleries are published, private.** One version holds at most 511 files, so each width has its own gallery; each links to the other:
   - 1280 px, light and dark (468 shots): https://claude.ai/artifact/NmJco1UsT631vdmXts8HHD
   - 390 px (389 shots): https://claude.ai/artifact/V1vzMZc3BrJ8mtw1HXG5jh
   - **What they do:** filter by area, role, state, theme and the checker's verdict; open a shot full size with its route, role and the checker's note. `#shot-id` links straight to a shot.
