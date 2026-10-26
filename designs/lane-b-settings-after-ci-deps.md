@@ -19,6 +19,7 @@ Request Desktop Website; Chrome: ⋮ → Desktop site).
 - F1: `gh api repos/PureTideWater/PhysicalTherapy --jq .default_branch` prints `claude/build-platform`.
 - F2: `gh api repos/PureTideWater/PhysicalTherapy/vulnerability-alerts -i` answers 204, and
   `gh api repos/PureTideWater/PhysicalTherapy/automated-security-fixes --jq .enabled` prints `true`.
-- F3: `gh api repos/PureTideWater/PhysicalTherapy/actions/permissions --jq .sha_pinning_required` prints `true`.
+- F3: this session's proxy refuses `gh api .../actions/permissions` (403, 2026-10-26), so the person who ticks it
+  confirms it, and the next workflow run that starts after it shows it holds (an unpinned action would fail to start).
 
 Then the ci-deps session reads Dependabot's first runs after the switch (§3.2.5 step 12) and logs them.
