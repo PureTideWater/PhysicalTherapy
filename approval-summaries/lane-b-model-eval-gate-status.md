@@ -6,6 +6,8 @@ Session: the parallel Lane B session started by the orchestrator (session_01Cntu
 None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize." Every choice takes the recommended option (security: the safer one), recorded with its reasons here and in the design and PR description. Founder-kept matters stay out of scope; Lane B still opens no migration PR (LANES rule 2).
 
 ## Stage
+**PR 1 (#84): merged as 88a0e4e9 on 2026-10-26 09:51 UTC. PR 2 (#120): starting.**
+
 - 2026-10-25 23:40 UTC: machine set up (`tools/setup-container.sh` printed OK; `gh api user` is PureTideWater).
 - 2026-10-25 23:55 UTC: read LANES.md, lane-b.md, CLAUDE.md, reconciliation-001's checks, audit #84 and #120. #42's files: none of this item's (only the shared test-matrix and synth registry, rule 6).
 - 2026-10-26 ~00:00 UTC: **Design** in progress: `designs/lane-b-model-eval-gate.md`, one adversarial reviewer (workflow).
@@ -36,7 +38,11 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 
 - 2026-10-26 ~09:20 UTC: **Fix round done** (wf_441cf1ff-868): every finding fixed or dispositioned (table in `lane-b-model-eval-gate-fix-suite.md`; fixers' notes in `lane-b-model-eval-gate-fix-round.md`). Full local suite once at 75954972: typecheck; lint, lint:logs, lint:copy; unit 5,211 passed / 3 skipped (one failure of this PR's, `env.test.ts` on a new message, fixed and rerun); golden 221; oracle 637; test:db 4 shards 9,071 passed / 1 skipped; build + e2e 51 passed; no mutation shard affected; synth idempotent; check:fixtures, verify-content, engine freeze pass. Commits 6b02d05e, bbc13e91, 0e2f7ed9, 75954972.
 - 2026-10-26 ~09:35 UTC: base moved (7ef421b, #54); merged with no conflict (rule 6); typecheck, unit 5,231 passed / 3 skipped, console/models/gateway db 54 passed. **Pushed once: head f8e0bb17.** PR description updated (findings table, checks, the new "Not stated" rows reported as wording).
-- Next: CI on f8e0bb17, then the fresh-clone verification that reads CI, then merge.
+- 2026-10-26 09:45 UTC: CI green on f8e0bb17: every check, the required ones included. Totals from the CI logs: unit 335 files, 5,233 passed, 1 skipped; golden 221; db 4 shards, 120 files, 9,074 passed, 1 skipped; e2e 51.
+- 2026-10-26 09:46 UTC: **Fresh-clone verification** (wf_680d870c-6ad, `lane-b-model-eval-gate-verify-summary.md`): code, tests, boundaries and CI pass. It found five description errors (fixed and proved byte for byte) and one #42 file outside the shared list, `infra/test/compute.test.ts` (one line; it merges cleanly with #42's head 13f59b12). The orchestrator ruled at 09:48 UTC to keep it under rule 6, and it is recorded in the description.
+- 2026-10-26 09:51 UTC: **#53 merged as 88a0e4e9** (merge commit, expectedHeadSha f8e0bb17). Unsubscribed; worktree and local branch removed; main checkout fast-forwarded and installed.
+- Next: **the second PR, `co-001/contract-phi-check`** (#120, ADR 0070 Part 3, MOD-12), from 88a0e4e9.
+- 2026-10-26 ~10:00 UTC: worktree `/home/user/contract-phi-check` at 88a0e4e9; **builders** running (wf_f44416d7-444): the gateway screen and its synthetic twins, the web and worker call paths, the upload panel; then an integrator (docs, full suite once, commits). #42's overlap: only the shared docs (its e2e helpers are left alone).
 
 ## Proposals outside this PR
 - `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).

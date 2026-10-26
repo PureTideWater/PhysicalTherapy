@@ -1,0 +1,105 @@
+{
+ "verdict": "build with changes",
+ "needsMigration": false,
+ "findings": [
+  {
+   "id": "SS-01",
+   "severity": "blocking",
+   "area": "states / truth (firm kind)",
+   "claim": "For kind=firm, every suspension notice says something false. The design's two suspended states tell a firm principal that new runs have stopped, and today's code says the same. The route wrapper (apps/web/src/lib/http/invoke.ts:500-504) and the database refuse new work through practice_run_refusal \u2192 organization_run_refusal(p.organization_id) (packages/db/migrations/20261029150000_billing.sql:266-292). That is the practice's owning organization, and only a group can own a practice (packages/db/migrations/20261015140000_tenancy.sql:333). So a firm that is suspended, whether by PaidWhole or for nonpayment, still starts runs on its clients' practices. ADR 0050:118 defers a firm's suspension rules to milestone 12, but console.ts:99 still lets an operator suspend a firm, and the console card (console/organizations/[organizationId]/page.tsx:59-61) claims runs are refused 'for every practice of the organization'. BIL-05 as written never tests kind.",
+   "fix": "Add kind to the design's state table. For a firm, accountStanding must not say runs have stopped. Until Lane A makes a firm's suspension refuse work on its granted practices (a migration to organization_run_refusal/practice_run_refusal), the firm's label is still 'Suspended by PaidWhole', and its notice says 'PaidWhole has suspended the organization. Open a support ticket to find out why.' with no claim about runs. The nonpayment case cannot arise for a firm until M12 bills firms, so say so in the design. File the firm refusal gap with Lane A as a blocking product defect: it changes the console card's claim and dunning's wording too. BIL-05 asserts the firm rows."
+  },
+  {
+   "id": "SS-02",
+   "severity": "blocking",
+   "area": "states (combined holds)",
+   "claim": "'Suspended by PaidWhole whatever billing says' drops a real next step. A record suspended by PaidWhole can also be billing past_due or billing suspended, since billing_standing is computed from invoices alone (20261029150000_billing.sql:248-260). In suspended\u00d7suspended the notice says 'Paying an invoice does not lift this suspension.' That is true, but the reader takes it to mean paying is not needed. In fact reinstatement alone will not restart runs: organization_run_refusal still returns the nonpayment reason (billing.sql:270-273). In suspended\u00d7past_due, the design does not say whether today's past-due alert (page.tsx:52-59) still shows. If it shows, it says 'New runs stop 30 days after the failed payment', but runs have already stopped.",
+   "fix": "Give accountStanding a secondary billing hold. Return { kind, label, tone, notice, nextSteps: NextStep[], billingHold: null | { kind: 'past_due' | 'suspended_nonpayment', since, invoiceNumber } }. When the record is suspended or closed and billing is not good, the notice adds: 'An invoice is also unpaid since <date>; new runs stay stopped until it is paid as well.' The next steps are the ticket and 'Pay <invoice>'. The past-due alert never renders on its own while the record is suspended. BIL-05 covers all 9 status\u00d7standing pairs for group (and the firm rows, SS-01). Each one asserts the label, the notice, the next steps, and that the result is never 'good' unless the record is active and billing is good."
+  },
+  {
+   "id": "SS-03",
+   "severity": "should-fix",
+   "area": "words (ACH truth)",
+   "claim": "'Runs start again as soon as it is paid' and the next step 'pay the open invoice' are only true for a card. A bank (ACH) payment leaves the invoice open until the bank settles it, a few days later (page.tsx:120 says so). billing_standing keeps the organization suspended until the invoice is paid (billing.sql:256-258). Bank is the preferred method (ADR 0073), so the likeliest payer presses Pay and stays suspended for days with no explanation.",
+   "fix": "The suspended_nonpayment next step reads: 'Pay <invoice number> below. A card payment restarts runs at once; a bank (ACH) payment restarts them once the bank settles it, usually within a few days.' Keep the DB refusal string as it is (Lane A can align it later). Run pnpm lint:copy over the new strings."
+  },
+  {
+   "id": "SS-04",
+   "severity": "should-fix",
+   "area": "next step names the invoice",
+   "claim": "The nonpayment next step points at 'the page's existing Pay buttons'. Those buttons render only for invoices in the newest 24 (account.ts:124-127, LIMIT $2 with invoiceLimit=24). The invoice that is holding the organization suspended is billing_standing.invoice_id (billing.sql:259), and organizationBilling never selects it (account.ts:113). The raw finding asks for 'Pay invoice SIM-0002'.",
+   "fix": "In organizationBilling, select s.invoice_id and add holdingInvoice { id, number, amountRemainingCents } to OrganizationBilling. account.ts is not on #42's list, but check again before editing. The next step names that invoice, and the page renders its Pay form even when it falls outside the 24. BIL-05 asserts the invoice number appears in the next step."
+  },
+  {
+   "id": "SS-05",
+   "severity": "should-fix",
+   "area": "closed organization forms",
+   "claim": "Decision 3 shows the note 'does not lift a suspension by PaidWhole' while the organization is closed. A closed organization is not suspended, so the words are wrong. Keeping 'Choose plan' usable also lets a closed organization start a new paid subscription: subscribe() refuses only internal organizations, existing plans and a missing method (account.ts:185-248), never a closed one.",
+   "fix": "For closed: hide the Plan form and show 'A closed organization takes no new plan; open a support ticket to reopen it.' Keep the payment method form and the Pay buttons so open invoices can still be settled. Add a BillingRefusedError('plan', 'a closed organization takes no new plan') to subscribe, checked against organization.status. The suspended-by-PaidWhole note stays only for that state. Also drop the sentence 'A closed organization wins over a suspended one': organization.status holds one value (tenancy.sql:24), so the two can never be true at once."
+  },
+  {
+   "id": "SS-06",
+   "severity": "should-fix",
+   "area": "page rendering",
+   "claim": "page.tsx:43-44 adds ' since <pastDueSince>' after the badge whatever the standing. Once the label carries its own date ('Suspended for nonpayment since <suspendedSince>'), the page would print two 'since' dates, the second one the failure date. Note that suspendedSince is the billing suspension only: first_failed_at + 30 days (billing.sql:254). It is never the date PaidWhole suspended the organization, and no such date is stored today.",
+   "fix": "Have the design say the page drops the pastDueSince span and renders only label. Say that suspendedSince is billing's, and that 'Suspended by PaidWhole' carries no date until Lane A stores the suspension time."
+  },
+  {
+   "id": "SS-07",
+   "severity": "should-fix",
+   "area": "consistency: other places that show standing",
+   "claim": "The console billing page shows the same contradiction to operators. It shows a status badge 'suspended' beside a Standing badge 'Good' (console/billing/page.tsx:17, 54-63). consoleBillingStatus sorts by billing standing alone, so organizations PaidWhole suspended sort with the good ones (account.ts:348). The practice home promises 'The organization's administrator sees why in Settings, Billing' (app/p/[practiceId]/page.tsx:165-170), but the billing page cannot say why, since no reason is stored. The customer-facing label says 'PaidWhole', while the DB refusal shown on run refusals and the practice home says 'a platform administrator reinstates it' (billing.sql:271).",
+   "fix": "Split accountStanding. Put the pure derivation, standingKind(status, standing, kind), in a new non-#42 file apps/worker/src/billing/standing.ts, exported through @tp/worker/billing, so the console billing page and (later, Lane A) dunning can share it. Keep the audience words in web: lib/routes/billing.ts for customers ('Suspended by PaidWhole'), and the console page for operators ('Suspended (platform)' / 'Suspended for nonpayment'). In this PR, use the kind in the console billing page's Standing cell and its sort order (account.ts ORDER BY CASE over the combined kind). Change the practice home's last sentence (the page file, not #42's practice.ts) to 'The organization's administrator sees the standing and what to do next in Settings, Billing.' Hand Lane A the DB refusal wording (PaidWhole, not 'a platform administrator') as part of its migration."
+  },
+  {
+   "id": "SS-08",
+   "severity": "should-fix",
+   "area": "dunning mail (#42, Lane A)",
+   "claim": "dunning.ts:82 and :90 send 'New runs have started again' when the last unpaid invoice is paid. They skip that mail only when another invoice still holds billing suspended (dunning.ts:121), and never check organization.status. An organization PaidWhole suspended, which pays its overdue invoice, is told by email that runs have restarted when they have not.",
+   "fix": "Out of this PR (dunning.ts is #42's). Record it in the PR and the status file as a Lane A follow-up: the reinstated notice is sent only when organization_run_refusal(organization) IS NULL after payment, or else says 'The invoice is paid; new runs stay stopped while PaidWhole's suspension lasts.' Name it as the agreeing consumer of standingKind."
+  },
+  {
+   "id": "SS-09",
+   "severity": "should-fix",
+   "area": "tests: BIL-06 e2e isolation",
+   "claim": "The plan to suspend through the console and then reinstate would race with other journeys. playwright.config.ts:79 sets fullyParallel: true. The seeded group (practice-admin) is shared with billing.spec.ts's own ACH journey, and other_group owns every journeyPractice (e2e/journeys.ts:61-85, used by ten specs). Suspending either one makes concurrent uploads and pricing runs fail. CI retries (journeys.ts:41-45) would make that flaky, not deterministic. No console helper exists, and the existing db test suspends by a direct owner UPDATE (billing-routes.db.test.ts:440).",
+   "fix": "BIL-06 uses an organization no other journey touches. Best: a dedicated seeded persona (for example 'suspended-admin') with its own group, 'SYNTHETIC SUSPENDED GROUP', added in apps/web/scripts/synthetic-personas.ts and the seed (neither is #42's; check seed.db.test.ts). The seed holds the group suspended, so nothing is reinstated and nothing races, and a retry is a no-op. Do not use the firm: firm-principal has no e2e journey today, but SS-01's fix would change what its suspension means. Extend billing-routes.db.test.ts:436-447 to assert standing.kind 'suspended_by_paidwhole', the label, the link and the note, and add the combined case suspended plus a 31-day failed invoice (SS-02). Update billing.spec.ts's header, which says nothing suspends there, to name the dedicated organization."
+  },
+  {
+   "id": "SS-10",
+   "severity": "nit",
+   "area": "tests: matrix and registry conventions",
+   "claim": "BIL-01 to BIL-04 follow a fixed pattern: test-matrix.md:217-220 rows, matrix.ts:293-316 entries with id, title and assertion, and registry.ts:460-470 none(11, '<why no file>', [test files]). The design does not name the registry's 'no file' reason or the files.",
+   "fix": "BIL-05: none(11, 'accountStanding is a pure function of values the test passes in memory; no file.', ['apps/web/src/lib/routes/billing.test.ts' (or the worker standing.test.ts per SS-07), 'apps/web/src/lib/routes/billing-routes.db.test.ts']). BIL-06: none(11, 'A synthetic organization held suspended by the seed; no file.', ['apps/web/e2e/billing.spec.ts', 'apps/web/src/lib/routes/billing-routes.db.test.ts']). Keep the matrix.ts and test-matrix.md assertion text identical, as BIL-01 to BIL-04 do."
+  },
+  {
+   "id": "SS-11",
+   "severity": "nit",
+   "area": "next step: /support?from=billing",
+   "claim": "This works. The screenKey regex accepts 'billing' (apps/web/src/lib/routes/support.ts:196, 214). The shell's help link already sends /support?from=billing from this section (components/shell.tsx:291, 340). The route is a selfRoute that is termsExempt, so any signed-in firm principal or group administrator can open it. But the page ignores where the reader came from: the category select defaults to 'A question' (app/support/page.tsx:51-52), and the form says nothing about the suspension.",
+   "fix": "Optional, in this PR (support.ts and support/page.tsx are not #42's): when from is 'billing', preselect the 'Billing' category (CATEGORY_LABELS.billing). Keep the link as /support?from=billing so the screen key matches the shell's."
+  },
+  {
+   "id": "SS-12",
+   "severity": "nit",
+   "area": "words: who PaidWhole is",
+   "claim": "'Suspended by PaidWhole' is right for the customer. A firm principal or group administrator knows the vendor, not a 'platform administrator', and the page already speaks of PaidWhole ('until PaidWhole confirms its prices', page.tsx:113). The brand-copy scanner forbids nothing here (tools/brand-copy/scan.ts:116-126). The design's notice drops the existing 'new runs start again once it is reinstated', which is the one sentence saying the suspension can be lifted.",
+   "fix": "Notice: 'PaidWhole has suspended the organization: new runs have stopped until PaidWhole lifts it, and its data stays readable. Paying an invoice does not lift this suspension.' Use the firm variant per SS-01. Leave 'platform administrator' in console copy only."
+  },
+  {
+   "id": "SS-13",
+   "severity": "nit",
+   "area": "reviews: the second lens",
+   "claim": "A security-reviewer pass would find little. The change adds no input, no query, no permission and no PHI path: the route stays phi:false with the same permission and tp_billing. The real risk is telling a customer something false about runs and money, and SS-01 to SS-03 are all of that kind. A 'tenancy' review would also look in the wrong place.",
+   "fix": "Keep correctness as the second adversarial lens, but name it 'correctness against the database's refusal'. The reviewer checks each accountStanding state, for every kind, against organization_run_refusal/practice_run_refusal and billing_standing. The reviewer also checks that the BIL-06 seed adds a persona without weakening sign-in fixtures. Add a security-reviewer pass only if subscribe gains its closed-organization refusal (SS-05) or the seed adds a persona."
+  },
+  {
+   "id": "SS-14",
+   "severity": "nit",
+   "area": "design inputs",
+   "claim": "/home/user/ops/designs/lane-b-ux-review.md does not exist after the pull, so \u00a73.2 PR 2 and UX-004 could not be re-read. Only raw finding flows-other-11 was checked (raw-findings.md:1154-1163). The raw finding's 'needs a migration' flag applies only to the stored reason, which the design correctly leaves to Lane A.",
+   "fix": "Have the builders re-read \u00a73.2 PR 2 and UX-004 once the review document lands, as the design's header already says. Record in the status file that this review checked the raw finding only."
+  }
+ ],
+ "summary": "Verdict: build with changes. This PR needs no migration. The two migrations involved belong to Lane A: making a firm's suspension refuse runs, and storing the suspension's reason and time.\n\nThe design is right about the defect, and right to compute one standing in one place and let the record's status beat billing's. But the state table breaks in three ways.\n\n1. **Firms (SS-01).** A firm's suspension stops nothing. practice_run_refusal checks only the practice's owning group (20261029150000_billing.sql:266-292, tenancy.sql:333), and ADR 0050:118 defers a firm's suspension rules to milestone 12. Yet the console can suspend a firm, and both today's page and the design tell the firm principal that new runs have stopped.\n2. **Combined holds (SS-02).** 'Suspended by PaidWhole whatever billing says' hides an unpaid invoice that would keep runs stopped even after PaidWhole reinstates the organization.\n3. **Bank payments (SS-03).** 'Runs start again as soon as it is paid' is false for a bank (ACH) payment until the bank settles it, a few days later.\n\nSmaller fixes:\n- Name the invoice that is holding the organization suspended, from billing_standing.invoice_id.\n- Stop a closed organization from choosing a new plan, and give it its own note instead of the suspension note.\n- Drop the second 'since' date on the page.\n- Share the state logic with the console billing page.\n- Fix the practice home's promise that the administrator 'sees why' on the billing page.\n- Hand Lane A dunning's 'New runs have started again' email, which ignores PaidWhole's suspension (dunning.ts is #42's).\n\nThe support link works. /support?from=billing is accepted (support.ts:196), the shell already uses it, and any signed-in user can open /support; preselecting the Billing category there is optional.\n\nBIL-06 must not suspend a shared organization. Playwright runs fully parallel, and both seeded groups are shared by other journeys. Use a dedicated seeded organization held suspended by the seed, with no reinstate step.\n\nKeep correctness as the second review lens, aimed at whether each state's words match the database's refusal. A security pass adds little unless subscribe gains the closed-organization refusal or the seed adds a persona.\n\nThe UX review document (lane-b-ux-review.md) was not there after the pull, so this review checked the raw finding (flows-other-11) only. Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/ss-design-review.md"
+}

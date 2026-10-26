@@ -8,4 +8,6 @@ Open questions: none (the co-founder's standing ruling of 2026-10-26 ~00:20 UTC:
 
 | 2026-10-26 03:52 | Paused | The design workflow wf_98ca48d8-64c was stopped by the session limit (~03:15 UTC); the agents' partial progress is in the scratchpad (`progress/up-design-*.md`). It resumes with resumeFromRunId once #50 merges (the orchestrator's priority of 2026-10-26 ~02:16 UTC). |
 
+| 2026-10-26 09:29 | Design resumed | wf_98ca48d8-64c resumed while #50 is in its final verification. |
+
 **Next step:** the design `designs/lane-b-unmapped-plan.md`, confirming no migration.
