@@ -41,6 +41,42 @@ and 2026-10-26 ~00:20 UTC)
    those of the same kind in this PR (inside files not in #42's list); list every place checked in the PR description;
    record anything in #42's files as a hand-over to Lane A.
 
+6. **The console's model budget is entered in dollars** (the orchestrator's addition, ~04:22 UTC, from the UX review's
+   words finding words-other-21). `/console/models` sets `model.daily_budget_cents` through one generic "Value" field
+   whose hint reads "whole cents for a budget (500 is $5.00)": a platform administrator types cents where every screen
+   shows dollars, and typing "5" sets a budget of five cents. The route is `apps/web/src/lib/routes/console-models.ts`
+   (not a #42 file). Fix: for the budget key the field takes dollars and cents ("5.00"), converted with the same
+   `parseAmount` the settings save uses, and still stored as whole cents in the flag's value; the hint says so; the
+   table already shows dollars through `formatUsd`. Exact parse (no float), refused above the stored limit, and a test
+   first that "5.00" stores 500 and "5" stores 500 (not 5).
+
+## After the design review (wf_1712850b-a63, ~04:40 UTC: build with changes, no migration; F1 to F9 all accepted; `designs/lane-b-materiality-cents-review.json`)
+These replace the text above where they differ:
+- **F1, one module, not components/format.ts:** `apps/web/src/lib/money-input.ts` exports `dollarsField` (the one zod
+  schema: trim, `^\d{1,9}(\.\d{1,2})?$`, `parseAmount`) and `dollarsForInput(centsText)` (`formatCents(parseCents(…))`),
+  documented as each other's inverse over [0, 99,999,999,999] cents. Moved onto it in this PR: `workbench.ts:136`,
+  `console/practice-settings.ts:33` and `:140` (`asDollars` keeps its guard), `cases/page.tsx:22`, the defaults page and
+  the model budget. `settings.ts:271` (a #42 file) is handed to Lane A: import `dollarsField` once #42 merges.
+- **F2:** the property test runs fast-check over `dollarsField.parse(dollarsForInput(String(c))) === c`.
+- **F3:** CAS-39's db test is a new `apps/web/src/lib/routes/defaults-routes.db.test.ts` (CI-02's twelve generated files
+  untouched), through `defaultsSettingsPage`, `settingsMaterialityAction` and `settingsPursuitAction`, with the
+  boundaries 0, 1, 99, 100, 500, 4500, 25000 and 99,999,999,999 through the real settings.ts parser.
+- **F4:** `apps/web/e2e/triage.spec.ts` (not #42's) gains the cases page's "100.00" pre-fill and a visit to Settings →
+  Defaults ("$5.00 per line and $100.00 per case", fields 5.00 and 100.00, the figures in the mono face, an unchanged
+  save keeps $100.00).
+- **F5:** CAS-38 and CAS-39 in test-matrix.md (Cases, after the last CAS row), matrix.ts (same words) and registry.ts
+  (`none(…)` with assertedBy).
+- **F6, the same class of bug in uploads:** `uploads/[documentId]/page.tsx:83` shows the PLB total as `'$' + centsText`
+  ("$-1.00", not mono); it renders `<Money>`; `receipt-labels.ts` `:257` and `:386` use `formatUsd(parseCents(…))`;
+  `centsText` goes; a unit assertion for a negative PLB ("-$1.00").
+- **F7, brand mono:** the defaults card's minutes in mono; `lines/[lineId]` `:69` and `:76` cents in mono spans (the
+  unrounded value stays in cents beside the rounded `<Money>`); console `:91` and cases `:166` defaults from
+  `DEFAULT_TRIAGE_SETTINGS` through `<Money>`; `workbench.ts:77` through `formatUsd`.
+- **F8:** the helper's domain is [0, 99,999,999,999]; the 12-digit stored versus 11-digit saved gap goes to Lane A.
+- **F9:** line references corrected (save at `settings.ts:271-275`, pursuit `:331`, `:341`); open cases keep the
+  thresholds and pursuit cost snapshotted when they opened (`apps/worker/src/triage/execute.ts:374`); the PR gives a
+  read-only query for synthetic environments listing practices whose thresholds are 100 times the defaults.
+
 ## Tests (CAS-38 to CAS-39, reserved in the claim)
 | ID | Case | Assertion |
 | --- | --- | --- |

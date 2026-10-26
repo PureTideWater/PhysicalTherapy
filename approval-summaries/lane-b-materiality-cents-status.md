@@ -2,7 +2,7 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC.*
 
-- **Stage:** design written (2026-10-26 ~04:30); design review next.
+- **Stage:** design reviewed (wf_1712850b-a63, ~04:40: build with changes, no migration, F1 to F9 accepted); model budget added (orchestrator, ~04:22); builders next.
 - **Branch / PR:** `co-001/materiality-cents`, cut from c5195ee, worktree /home/user/materiality-cents / no PR yet.
 - **Migration:** none. No #42 file: the route (`apps/web/src/lib/routes/settings.ts`, a #42 file) already returns what
   the page needs and is not touched. `packages/money` unchanged (`formatCents(parseCents(…))` already exists).

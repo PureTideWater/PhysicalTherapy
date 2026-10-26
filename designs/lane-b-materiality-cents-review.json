@@ -1,0 +1,105 @@
+{
+ "verdict": "build with changes",
+ "needsMigration": false,
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "should-fix",
+   "area": "helper / reuse",
+   "claim": "The design adds a third copy of something that already exists. apps/web/src/lib/console/practice-settings.ts:140 `asDollars` is already formatCents(parseCents(v)), and cases/page.tsx:22 has another local `dollars`. The save-side parser is also copied three times, word for word: settings.ts:271-275 (#42, not exported), workbench.ts:136-140 and console/practice-settings.ts:33-36. Both settings.ts and workbench.ts save the same thresholds (practice.settings.materiality and practice.cases.materiality). components/format.ts only formats dates and roles (no 'use client', imported by about 40 server pages), so it is a weak home for something that only makes sense paired with its parser.",
+   "fix": "Put the helper in one new pure module, apps/web/src/lib/money-input.ts. It exports `dollarsField` (the single zod schema: trim, ^\\d{1,9}(\\.\\d{1,2})?$, parseAmount) and `dollarsForInput(centsText)` (formatCents(parseCents)), documented as each other's inverse. In this PR, move workbench.ts:136, console/practice-settings.ts:33 and :140 (asDollars keeps its own guard for blank or non-string values and calls dollarsForInput inside it), cases/page.tsx:22 and the defaults page onto it. settings.ts:271 goes to Lane A as a hand-over: import dollarsField once #42 merges. Drop the components/format.ts placement."
+  },
+  {
+   "id": "F2",
+   "severity": "should-fix",
+   "area": "tests / CAS-39 property test",
+   "claim": "The property test cannot be written as designed: 'the helper against the save's parser'. settings.ts's `dollars` is a module-private const in a #42 file. A Route does not expose its input schema (lib/http/invoke.ts:343-369 returns id, kind, path, method and so on, plus invoke). A unit test could only copy the regex, which proves nothing.",
+   "fix": "Run the property test (fast-check) against the shared `dollarsField` from F1: for every cents value c in [0, 99_999_999_999], dollarsField.parse(dollarsForInput(String(c))) === c. That schema is what workbench and the console save through, and what settings.ts will use after the hand-over. Prove the real settings.ts parser in the db test (F3) at the boundaries: 0, 1, 99, 100, 500, 4500, 25000 and 99_999_999_999."
+  },
+  {
+   "id": "F3",
+   "severity": "should-fix",
+   "area": "tests / CAS-39 db test location (CI-02)",
+   "claim": "The design leaves the db test's file to 'the route-test partition'. But route-tests/route-tests.0-11.db.test.ts are generated authorization suites (route-tests/partition.ts; each file is just defineRouteTests(k)). Hand-written behaviour tests never go in them, and CI-02 does not apply. The defaults routes (defaultsSettingsPage, settingsMaterialityAction, settingsPursuitAction) have no behaviour test today: settings-routes.db.test.ts covers only the pricing location. Neither file is in #42's list. A new db file needs no registration (vitest.config.ts:82 db include glob; shards go by path hash; tools/test/db-shards.test.ts pins no file list).",
+   "fix": "Write CAS-39 as a new apps/web/src/lib/routes/defaults-routes.db.test.ts, or a new describe block in settings-routes.db.test.ts (a heavy pricing world, so a new file is better). Seed 500, 25000 and 4500. Read defaultsSettingsPage. Post settingsMaterialityAction and settingsPursuitAction with dollarsForInput(each returned value) and the minutes. Assert that practice.settings still holds '500', '25000' and '4500', and that triageSettings() reads the same cents. Include the F2 boundaries. Say in the design that CI-02's twelve files are untouched."
+  },
+  {
+   "id": "F4",
+   "severity": "should-fix",
+   "area": "tests / e2e",
+   "claim": "No e2e opens Settings \u2192 Defaults: grep finds no 'defaults' or 'Materiality and pursuit' in apps/web/e2e. copy.spec.ts checks only the descriptor and sign-in, and brand.spec.ts checks only the tiles and variance cells for mono. So the design's 'e2e or brand copy check' has nothing to extend. triage.spec.ts is not in #42's list. It already seeds case_materiality_cents '10000' (:31) and uses the cases page form (:77-81). The cases-page half of CAS-38 cannot be unit-rendered, because the page is async through loadPage.",
+   "fix": "Add a step to triage.spec.ts. Before the fill at :79, expect getByLabel('Per case (dollars)') toHaveValue('100.00') on the cases page. Then goto /p/{id}/settings/defaults and expect the text '$5.00 per line and $100.00 per case', the fields at 5.00 and 100.00, and the figures to have CSS font-family /mono/. Save unchanged, and expect the cases page to still show $100.00. Touch no #42 e2e file (env.ts, prepare.ts, screening/mail specs)."
+  },
+  {
+   "id": "F5",
+   "severity": "should-fix",
+   "area": "shared documents",
+   "claim": "The design reserves CAS-38 and CAS-39 but never names the three shared files they need. packages/synth/src/fixtures.test.ts:33 requires TEST_MATRIX (matrix.ts) to equal docs/product/test-matrix.md row for row, word for word, and every matrix row needs a registry entry.",
+   "fix": "Add both rows to docs/product/test-matrix.md (Cases section, after CAS-29) and to packages/synth/src/cases/matrix.ts with the same words. Add `none(...)` entries in registry.ts, each with a no-file reason ('A practice setting read and saved: no file.') and assertedBy: components/settings/defaults.test.tsx, lib/money-input.test.ts, the db test file and e2e/triage.spec.ts. These are the shared-file exceptions to #42; the PR merged second keeps both lanes' rows (LANES rule 6)."
+  },
+  {
+   "id": "F6",
+   "severity": "should-fix",
+   "area": "sweep / same class of bug",
+   "claim": "Another money figure appears outside <Money>/formatUsd: uploads/[documentId]/page.tsx:83 prints `adjustments ${centsText(parse.plbTotalCents)}`. lib/uploads/receipt-labels.ts:242 `centsText` reinvents formatCents. It is not in the mono face, has no thousands grouping, and puts the sign after the dollar sign ('$-1.00', where formatUsd gives '-$1.00'). The remittance page shows the same PLB total correctly with <Money> (remittances/[remittanceId]/page.tsx:85). receipt-labels.ts:257 and :386 build '$'+centsText sentences the same way. None of these is a #42 file.",
+   "fix": "In this PR: render <Money value={parse.plbTotalCents} /> at uploads/[documentId]/page.tsx:83. Have receipt-labels.ts:257 and :386 use formatUsd(parseCents(...)). Delete centsText or make it a thin alias for formatCents. Add a unit assertion for a negative PLB ('-$1.00')."
+  },
+  {
+   "id": "F7",
+   "severity": "nit",
+   "area": "sweep / brand mono",
+   "claim": "Brand rule .claude/rules/brand.md:36 puts every money figure, unit count and rate in mono. Breaches: lines/[lineId]/page.tsx:69 '(unrounded N cents)' and :76 '(X to Y cents)' print raw cents, correctly labelled, in body type. console/practices/[practiceId]/page.tsx:91 hardcodes '$5.00 per line, $250.00 per case \u2026 $5.00' as plain text. cases/page.tsx:166 hardcodes <Money value=\"500\"/> and \"25000\" rather than DEFAULT_TRIAGE_SETTINGS. workbench.ts:77 says 'total 1234.00' with no dollar sign. On the defaults card itself, the minutes per packet and per follow-up are unit counts and should be mono too.",
+   "fix": "On the defaults card, put the minutes in <span className=\"font-mono tabular-nums\">. Fix lines/[lineId] :69 and :76 with a mono span: the unrounded value stays in cents beside the rounded <Money>, as rule 2 wants. In this PR, make the console :91 and cases :166 defaults use <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.lineMaterialityCents)} /> and so on, and workbench.ts:77 use formatUsd. Record each in the PR's sweep list."
+  },
+  {
+   "id": "F8",
+   "severity": "nit",
+   "area": "helper domain / max digits",
+   "claim": "Stored values can be longer than the save allows. triageSettings (packages/triage/src/settings.ts:56-59) and both SQL setters (case_workbench.sql:160, customer_sign_in_and_readiness.sql:722) accept up to 12 digits of cents (999_999_999_999). Every save path (settings.ts:274, workbench.ts:139, console practice-settings.ts:35) caps at 9 whole dollars (99_999_999_999 cents). A value from 10^11 cents up, which only seeding or direct SQL could store, would pre-fill as 10 whole digits and fail the unchanged save. Negative values cannot be stored. Zero round-trips ('0' to '0.00' to 0n).",
+   "fix": "State the helper's domain as [0, 99_999_999_999] (what any app path can store) and test exactly that range (F2). Do not widen the save regex here: it is a #42 file and a product choice. Record the 12-versus-11-digit gap as a Lane A hand-over: the readers and setters should agree, which means tightening the SQL regex in a migration or widening the save to 10 digits."
+  },
+  {
+   "id": "F9",
+   "severity": "nit",
+   "area": "design accuracy / risk",
+   "claim": "The design cites the save at settings.ts:269-272; it is :271-275 (the pursuit save is at :331 and :341). The Risks section leaves out that a case keeps the materiality_cents and pursuit_cost_cents in force when it opened (apps/worker/src/triage/execute.ts:374). So a synthetic or demo case opened after an unchanged save keeps 100-fold figures even after the fix.",
+   "fix": "Correct the line references. In Risks, say that open cases keep the values snapshotted when they opened, and that the PR description includes a read-only check query, run against synthetic environments, for practices whose stored thresholds are 100 times the defaults."
+  }
+ ],
+ "sweep": [
+  "apps/web/src/app/p/[practiceId]/settings/defaults/page.tsx:40,48-49,62,70: BUG confirmed (cents printed after a $ and pre-filled into dollar fields; the subject of this PR; not #42)",
+  "apps/web/src/lib/routes/settings.ts:292-299 (route returns canonical cents text; right as data), :271-275 and :331,:341 (save parses dollars): no change needed; in #42 (hand-over: use the shared dollarsField)",
+  "apps/web/src/app/p/[practiceId]/cases/page.tsx:22,177,181 pre-fill via formatCents(parseCents): OK. :95,:166,:276,:281 <Money>: OK. :166 hardcoded default figures: nit (F7). Not #42",
+  "apps/web/src/lib/routes/workbench.ts:136-140 duplicate dollars schema (F1), :77 refusal message without $ (F7): not #42",
+  "apps/web/src/lib/routes/triage.ts:292 materiality as cents text, read by the cases page through <Money> and the helper: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx:75-101,170 materiality, pursuit cost, net expected and variance through <Money>: OK; not #42",
+  "apps/web/src/lib/triage/queries.ts:341-395 pursuit_cost_cents passed through as cents text: OK; not #42",
+  "apps/web/src/app/console/practices/[practiceId]/page.tsx:100-104 pre-fill via asDollars (formatCents): OK. :91 hardcoded defaults as plain text: nit (F7). Not #42",
+  "apps/web/src/lib/console/practice-settings.ts:33-36 duplicate schema, :140 asDollars, the existing helper (F1): not #42 (its route lib/routes/console.ts is #42)",
+  "apps/web/src/app/console/models/page.tsx:73,106,135-136 budget via formatUsd in mono: OK. :81 budget typed as whole cents with the hint '500 is $5.00': correctly labelled, not this class; not #42",
+  "apps/web/src/app/console/billing/page.tsx:66 formatUsd in mono: OK; not #42",
+  "apps/web/src/app/settings/billing/[organizationId]/page.tsx:152 formatUsd in mono: OK. :101-102 formatUsd inside native <option> labels, which cannot take the mono face: acceptable; not #42",
+  "apps/web/src/app/p/[practiceId]/uploads/[documentId]/page.tsx:83 '$'+centsText outside Money, not mono, '$-1.00': BUG of the same class (F6); not #42",
+  "apps/web/src/lib/uploads/receipt-labels.ts:242,257,386 centsText reinvents formatCents, '$'+centsText in sentences (F6): not #42",
+  "apps/web/src/app/p/[practiceId]/remittances/[remittanceId]/page.tsx:85 and remittances/page.tsx: <Money>: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx:69 unrounded cents and :76 adjustment cents, labelled cents but not mono: brand nit (F7); not #42",
+  "apps/web/src/components/packets/display.tsx:307,317 calculation steps and unrounded in cents, labelled cents, mono; rounded via <Money>: OK; not #42",
+  "apps/web/src/components/packets/pricing.tsx:27-128 NowFigure/TotalNow via <Money>: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx, packet/[versionId]/review/page.tsx, submissions/page.tsx:417 (amount via Money; :321 dollars input not pre-filled): OK; not #42",
+  "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx:31 dollars input not pre-filled; LedgerTotals (components/reconciliation/display.tsx:68) via Money: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx and components/reconciliation/template-mapper.tsx:192 (formatUsd in mono): OK; not #42",
+  "apps/web/src/app/p/[practiceId]/reports/roi/page.tsx, reports/roi/[statementId]/page.tsx, components/reports/roi.tsx: no unwrapped cents: OK; not #42",
+  "apps/web/src/components/reports/display.tsx:67-279 (headline, pursuit cost, net expected via Money; settings only shows the cohort count) and components/reports/documents.tsx:153 StageDollars via Money: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/page.tsx:202-359 dashboard via <Money>: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/digests/[digestId]/page.tsx: text only, no unwrapped amounts: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/anomalies/page.tsx:41 threshold via Money: OK; not #42",
+  "apps/web/src/app/p/[practiceId]/claims/page.tsx, pricing-runs pages, mapping pages, coverage page, contracts pages, components/contracts/display.tsx:38, components/pricing/display.tsx, diff.tsx, location.tsx, components/coverage/share.tsx: Money or share text only: OK; not #42",
+  "apps/web/src/lib/contracts/display.ts:151-158 formatUsd inside term sentences: correct dollars, plain face in prose: OK; not #42",
+  "apps/web/src/components/screening/result-summary.tsx:83 ScreeningMoney (formatUsd, mono), anomalies.tsx, coverage.tsx: OK; not #42. components/screening/upload-form.tsx:136-139 cents sent as form data, not shown: OK; in #42",
+  "apps/web/src/app/screening/page.tsx and lib/screening/messages.ts:134,170 formatUsd in sentences, correct dollars: OK; in #42",
+  "apps/web/src/components/monitoring/display.tsx:23 formatUsd in mono: OK; in #42",
+  "apps/web/src/app/console/mail/page.tsx, console/support/page.tsx, support-access/[supportGrantId]/page.tsx: no amounts: OK; in #42",
+  "apps/web/e2e/*: no spec opens /settings/defaults. triage.spec.ts:31,77-81 (not #42) is the place for the $5.00/$100.00 assertions. brand.spec.ts, copy.spec.ts, layout-1280.spec.ts (not #42) do not cover the page. env.ts, prepare.ts, screening.spec.ts, mail specs are #42 files and are not needed"
+ ],
+ "summary": "Verdict: build with changes. No migration is needed.\n\n**The bug is confirmed as stated.**\n- The route returns the thresholds and the staff rate as cents text (`settings.ts:292-299`).\n- The defaults page prints that text after a dollar sign and pre-fills its dollar fields with it (`page.tsx:40`, `:48-49`, `:62`, `:70`).\n- The saves read those fields as dollars (`settings.ts:271-275`, `:331`, `:341`), so saving the form unchanged multiplies all three values by 100.\n- Triage reads all three in cents:\n  - the line test in `packages/triage/src/actionable.ts:146`\n  - the case test in `packages/triage/src/patterns.ts:123`\n  - the pursuit cost in `packages/triage/src/cases.ts:84`, cents an hour times minutes divided by 60, rounded half up\n\n**The round trip holds.** `formatCents(parseCents(text))` comes back exactly through the save for every value from 0 to 99,999,999,999 cents. Zero works and negative values cannot be stored. One edge case: triage and the database setters accept 12 digits of cents, but the save only accepts 11, so a value of $1,000,000,000.00 or more could be shown but never saved. Only seeding or direct SQL could store one; this goes to Lane A.\n\n**Main changes to the design:**\n- **Helper:** one already exists at `apps/web/src/lib/console/practice-settings.ts:140` (`asDollars`), and the save's parser is copied three times. Put one parser and its inverse in a new `apps/web/src/lib/money-input.ts`, not in `components/format.ts`. Lane A then points `settings.ts` at it after #42 merges.\n- **Property test:** CAS-39's test cannot reach the `settings.ts` parser. It is private to a #42 file and routes do not expose their schemas. Test the shared parser instead, and test the real save in the db test.\n- **Db test:** the twelve CI-02 route-test files are generated access-control suites, not a place for this test. Put CAS-39 in a new `apps/web/src/lib/routes/defaults-routes.db.test.ts`; the defaults routes have no behaviour test today.\n- **E2e:** no e2e opens Settings \u2192 Defaults. Add the \"$5.00\" and \"$100.00\" checks to `apps/web/e2e/triage.spec.ts`, which is not a #42 file.\n- **Test matrix:** add CAS-38 and CAS-39 to `docs/product/test-matrix.md`, `packages/synth/src/cases/matrix.ts` and `registry.ts`. `fixtures.test.ts:33` fails if they are missing.\n\n**The sweep found one more bug of the same kind.** The upload page prints the provider adjustments as `$` plus a home-made `centsText` (`uploads/[documentId]/page.tsx:83`). It is outside `<Money>`, not in the mono face, and shows a negative as \"$-1.00\". It is not a #42 file, so fix it in this PR.\n\nSmaller points:\n- Brand misses on the line page.\n- Defaults hard-coded on the console and cases pages.\n- Minutes on the defaults card should be in the mono face.\n- Line references and risk wording in the design need correcting.\n\nThe checks are recorded in `/tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-design-review.md`."
+}
