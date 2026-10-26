@@ -860,3 +860,11 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Inputs:** the brand's rules and the 335 raw findings, or the synthesis if it lands first. The checklist targets recurring defect classes, not single bugs.
   - **Q4 applies:** the `model:` key follows the other reviewer files, and the suite is documentation-only.
   - **Next:** the draft PR, two adversarial reviews (brand and copy; consistency with the other reviewer files and the brief's "Then"), the fix round with the documentation-only suite, a fresh-clone verification reading CI, then the merge.
+- **2026-10-26 ~06:15 to 08:40 UTC: the account's 5-hour limit stopped every session again; recovered at 08:58.**
+  - **What stopped:** the synthesis's planner, the checklist's reviser, and six of the parallel sessions (ux-forms, #38, the release content checks, #84/#120, #10, 15b). Every one stopped with its progress files written. The container restarted too, so PostgreSQL was down.
+  - **Recovery, at 08:58-08:59:**
+    - `tools/setup-container.sh` re-run (OK);
+    - both workflows resumed with `resumeFromRunId` (the completed agents replay from cache);
+    - the six stopped sessions sent a resume message. ci-deps was idle with its own check-ins scheduled (merge at ~15:15, the lockfile re-resolve after 19:20), and the #135 session resumed on its own.
+  - **materiality-cents merged as #54 (7ef421b, 08:56:17 UTC):** the third parallel item, after its fresh-clone verification. The main checkout is fast-forwarded to it.
+  - **Lesson kept:** the limit now stops the account about every two to three hours of eight-session work. Two things keep that from losing work: every agent's progress file, and a resume message sent the moment the limit resets.
