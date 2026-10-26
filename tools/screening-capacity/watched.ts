@@ -68,6 +68,8 @@ export const WATCHED_FIXED = [
   'apps/worker/Dockerfile',
   'apps/worker/build.ts',
   'apps/worker/package.json',
+  // The harness's PostgreSQL image (containers.ts reads it from here), so a digest bump is measured.
+  'docker-compose.yml',
   'fixtures/synthetic/rules/release-synth-900001/*',
   'infra/lib/constructs/compute.ts',
   'infra/lib/constructs/database.ts',
