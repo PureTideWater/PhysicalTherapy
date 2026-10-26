@@ -203,8 +203,8 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
-- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~01:30 UTC:
-  - ADR **0077** (0065 is #42's, 0066 the CI series', and 0067 to 0076 are claimed);
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~04:55 UTC:
+  - ADR **0078** (0065 is #42's, 0066 the CI series', and 0067 to 0077 are claimed; 0077 by ux-forms at ~04:55);
   - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
   - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', and 900100 is the screening's scale release);
   - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
