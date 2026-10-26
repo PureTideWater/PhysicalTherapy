@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RerunAcceptanceView, RunSummary } from '../../lib/pricing/queries';
 import {
+  HeldByLimitNote,
   NotInEffectAlert,
   PatternTable,
   PendingRunsAlert,
@@ -179,14 +180,25 @@ describe('a run’s state badges and a re-run’s words in a list', () => {
 });
 
 describe('the notes in a Re-run button’s place', () => {
-  it('name the run waiting, and send the person to the run in effect once it finishes, never to this run (UX-7)', () => {
-    const one = textOf(renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED]} />));
-    expect(one).toBe(`A newer run of these service dates is waiting to be priced: ${runName(QUEUED)}. Once it finishes, re-run the run in effect for these service dates.`);
-    expect(textOf(renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[RUNNING]} />))).toContain('is being priced: ');
-    const two = textOf(renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED, RUNNING]} />));
+  it('name the run waiting, and send the person to the run that will be in effect once it finishes (UX-7, recheck N5)', () => {
+    // A run of the same dates takes effect in the run in effect's place: that run is the one to re-run, never this one.
+    const one = textOf(renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED]} inEffect={NEWER} self />));
+    expect(one).toBe(`A newer run of these service dates is waiting to be priced: ${runName(QUEUED)}. Once it finishes, re-run that run.`);
+    expect(textOf(renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[RUNNING]} inEffect={NEWER} />))).toContain('is being priced: ');
+    const two = textOf(renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED, RUNNING]} inEffect={NEWER} />));
     expect(two).toBe(
       `Newer runs of these service dates are waiting to be priced or being priced: ${runName(QUEUED)} and ${runName(RUNNING)}. Once they finish, re-run the run in effect for these service dates.`,
     );
+  });
+
+  it('send the person back to the run in effect when the run waiting is of other dates, which leaves it in effect (recheck N5)', () => {
+    // OTHER (the quarter) is in effect; QUEUED prices February only.
+    expect(textOf(renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED]} inEffect={OTHER} self />))).toBe(
+      `A newer run of these service dates is waiting to be priced: ${runName(QUEUED)}. Once it finishes, re-run this run.`,
+    );
+    const elsewhere = renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED]} inEffect={OTHER} />);
+    expect(textOf(elsewhere)).toBe(`A newer run of these service dates is waiting to be priced: ${runName(QUEUED)}. Once it finishes, re-run ${runName(OTHER)}, which stays in effect for its service dates.`);
+    expect(elsewhere).toContain(`data-run-link="${OTHER.id}"`);
   });
 
   it('name the run in effect instead of a run that is not, or say only the rule when none is', () => {
@@ -196,7 +208,7 @@ describe('the notes in a Re-run button’s place', () => {
 
   it('are status notes, not alerts: on the page from the start, they are never announced on load (UX-5)', () => {
     for (const html of [
-      renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED]} />),
+      renderToStaticMarkup(<PendingRunsAlert practiceId={PRACTICE} runs={[QUEUED]} inEffect={NEWER} />),
       renderToStaticMarkup(<NotInEffectAlert practiceId={PRACTICE} inEffect={NEWER} />),
       renderToStaticMarkup(<RerunBlockedAlert practiceId={PRACTICE} acceptance={superseded()} />),
     ]) {
@@ -205,11 +217,19 @@ describe('the notes in a Re-run button’s place', () => {
     }
   });
 
-  it('tell the person, before accepting, that runs still queued take effect after the re-run', () => {
+  it('tell the person, before accepting, that runs still queued take effect in the re-run’s place once priced (recheck N5)', () => {
     expect(textOf(renderToStaticMarkup(<QueuedRunsNote practiceId={PRACTICE} runs={[QUEUED]} />))).toBe(
-      `A newer run of these service dates is waiting to be priced: ${runName(QUEUED)}. This re-run can be accepted now, and that run takes effect after it once priced.`,
+      `A newer run of these service dates is waiting to be priced: ${runName(QUEUED)}. This re-run can be accepted now. Once that run is priced, it takes effect in place of this re-run.`,
     );
-    expect(textOf(renderToStaticMarkup(<QueuedRunsNote practiceId={PRACTICE} runs={[QUEUED, QUEUED]} />))).toContain('those runs take effect after it once priced.');
+    expect(textOf(renderToStaticMarkup(<QueuedRunsNote practiceId={PRACTICE} runs={[QUEUED, QUEUED]} />))).toContain('Once those runs are priced, they take effect in place of this re-run.');
+  });
+
+  it('say why no Accept form is offered past the runs one acceptance names, a status note (re-review N1)', () => {
+    const html = renderToStaticMarkup(<HeldByLimitNote count={201} limit={200} />);
+    expect(html).toContain('role="status"');
+    expect(html).toContain('data-state="held-by-limit"');
+    expect(textOf(html)).toContain('This re-run cannot be accepted here');
+    expect(textOf(html)).toContain('Accepting it would replace pricing that 201 runs of other service dates hold, and one acceptance names at most 200.');
   });
 });
 

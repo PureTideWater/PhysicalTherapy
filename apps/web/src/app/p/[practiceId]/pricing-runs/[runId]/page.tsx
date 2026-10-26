@@ -4,10 +4,11 @@ import Link from 'next/link';
 
 import { ActionForm, RefusalTakeover } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
-import { DiffSummaryText, DiffTable, SplitChangeText } from '../../../../../components/pricing/diff';
+import { DiffSummaryText, DiffTable, SplitChangeText, acceptingChanges } from '../../../../../components/pricing/diff';
 import {
   CoverageShares,
   FAILURE_TEXT,
+  HeldByLimitNote,
   NotInEffectAlert,
   PatternTable,
   PendingRunsAlert,
@@ -28,9 +29,10 @@ import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import type { RerunAcceptanceView, RunSummary } from '../../../../../lib/pricing/queries';
 import type { DiffRun } from '@tp/worker/pricing';
-import { type CurrentRelease, pricingRunPage } from '../../../../../lib/routes/pricing';
+import { ACCEPT_HELD_BY_LIMIT, type CurrentRelease, pricingRunPage } from '../../../../../lib/routes/pricing';
 import { acceptPricingRunFormAction, rerunPricingRunFormAction } from '../actions';
 import { FormKeys } from '../../../../../components/form-keys';
+import { ScrollTable } from '../../../../../components/scroll-table';
 
 export const metadata: Metadata = { title: 'Pricing run' };
 
@@ -43,8 +45,9 @@ const FILTER_NAMES: Readonly<Record<string, string>> = { all: 'All lines', price
  * release in force, with the sentence of what a re-run does. On the run's own page it reads "Re-run under release N"
  * and a refusal "This run: ..."; offered on a superseded re-run's page for the run in effect, its words name that run
  * ("Re-run the run in effect under release N", "The run to re-run: ..."), so nobody reads it as re-running the page's
- * own run (UX review of PR #50, UX-4). "Rule release: ..." for the release. It refreshes the page after a refusal
- * (`takeover`: the key of the explanation that may take its place, which then takes the focus).
+ * own run (UX review of PR #50, UX-4); that longer button wraps at a phone's width (UX recheck, N1). "Rule release:
+ * ..." for the release. It refreshes the page after a refusal (`takeover`: the key of the explanation that may take
+ * its place, which then takes the focus).
  */
 function RerunForm({
   practiceId,
@@ -69,6 +72,7 @@ function RerunForm({
       className={className}
       labels={{ runId: target === 'this' ? 'This run' : 'The run to re-run', releaseNo: 'Rule release' }}
       refreshOnError={takeover}
+      wrapSubmit={target === 'in_effect'}
     >
       <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
@@ -120,7 +124,7 @@ function SupersededRerunOffer({
   if (acceptance.inEffectPending.length > 0) {
     return (
       <RefusalTakeover keys={[`rerun-from:${rerunId}`]}>
-        <PendingRunsAlert practiceId={practiceId} runs={acceptance.inEffectPending} />
+        <PendingRunsAlert practiceId={practiceId} runs={acceptance.inEffectPending} inEffect={target} />
       </RefusalTakeover>
     );
   }
@@ -167,7 +171,8 @@ export default async function PricingRunPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="pricing_runs" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, run, names, filter, lines, reruns, diff, heldBy, acceptance, periodInEffect, rerunPending, release, canRerun } = page.data;
+  const { practiceId, run, names, filter, lines, reruns, diff, heldBy, acceptance, original, periodInEffect, rerunPending, release, canRerun } = page.data;
+  const heldByOverLimit = heldBy !== null && heldBy.length > ACCEPT_HELD_BY_LIMIT;
   const pricingRuns = `/p/${practiceId}/pricing-runs`;
   const path = `${pricingRuns}/${run.id}`;
   const coverage = run.coverage;
@@ -213,9 +218,13 @@ export default async function PricingRunPage(props: Props) {
             <CardTitle>Re-run</CardTitle>
             <CardDescription>
               It prices the lines of{' '}
-              <Link className="underline" href={`${pricingRuns}/${run.rerunOfId}`}>
-                an earlier run
-              </Link>{' '}
+              {original === null ? (
+                <Link className="underline" href={`${pricingRuns}/${run.rerunOfId}`}>
+                  an earlier run
+                </Link>
+              ) : (
+                <RunLink practiceId={practiceId} run={original} />
+              )}{' '}
               again, under rule release {run.releaseNo}; that run stays as it was.
               {run.acceptedAt !== null
                 ? null
@@ -237,9 +246,11 @@ export default async function PricingRunPage(props: Props) {
               <p className="text-sm text-muted-foreground">The diff appears once the run is complete.</p>
             ) : (
               <>
-                <p className="text-sm" data-state="diff-summary">
-                  <DiffSummaryText summary={diff.summary} accepting={heldBy !== null} />
-                </p>
+                {heldBy !== null && acceptingChanges(diff.summary) === 0 ? null : (
+                  <p className="text-sm" data-state="diff-summary">
+                    <DiffSummaryText summary={diff.summary} accepting={heldBy !== null} />
+                  </p>
+                )}
                 <SplitChangeText before={diff.before} after={diff.after} />
                 <DiffTable practiceId={practiceId} lines={diff.lines} beforeRunId={diff.before.id} afterRunId={diff.after.id} heldBy={heldBy ?? undefined} />
                 {diff.total > diff.lines.length ? (
@@ -254,12 +265,14 @@ export default async function PricingRunPage(props: Props) {
                 Accepted {utc(run.acceptedAt)} by {run.acceptedBy}.
               </p>
             ) : acceptance === null ? null : acceptance.state === 'acceptable' ? (
-              canRerun ? (
+              heldByOverLimit ? (
+                <HeldByLimitNote count={heldBy.length} limit={ACCEPT_HELD_BY_LIMIT} />
+              ) : canRerun ? (
                 <ActionForm
                   action={acceptPricingRunFormAction}
                   submit="Accept this run"
                   className="flex flex-col gap-2"
-                  labels={{ runId: 'This re-run', replacesId: 'The run it replaces' }}
+                  labels={{ runId: 'This re-run', replacesId: 'The run it replaces', heldByIds: 'The runs of other service dates holding its lines' }}
                   refreshOnError={`accept:${run.id}`}
                 >
                   <FormKeys />
@@ -312,7 +325,7 @@ export default async function PricingRunPage(props: Props) {
             </RefusalTakeover>
           ) : rerunPending.length > 0 ? (
             <RefusalTakeover keys={[`rerun:${run.id}`]} className="mt-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <PendingRunsAlert practiceId={practiceId} runs={rerunPending} />
+              <PendingRunsAlert practiceId={practiceId} runs={rerunPending} inEffect={run} self />
             </RefusalTakeover>
           ) : (
             <>
@@ -411,47 +424,49 @@ export default async function PricingRunPage(props: Props) {
         {lines.total === 0 ? (
           <p className="text-sm text-muted-foreground">No line of this run matches.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Run lines">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Code and modifiers</th>
-                <th className="py-1 pr-3 text-right font-medium">Units</th>
-                <th className="py-1 pr-3 text-right font-medium">Expected allowed</th>
-                <th className="py-1 pr-3 text-right font-medium">Observed allowed</th>
-                <th className="py-1 pr-3 text-right font-medium">Variance</th>
-                <th className="py-1 pr-3 font-medium">Method or reason</th>
-                <th className="py-1 font-medium">
-                  <span className="sr-only">Open</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.lines.map((line) => (
-                <tr key={line.pricedLineId} className="border-t" data-line={line.serviceLineId}>
-                  <td className="py-1 pr-3 font-mono text-xs">
-                    {line.procedureCode}
-                    {line.modifiers.length === 0 ? '' : ` ${line.modifiers.join(' ')}`}
-                  </td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{line.units ?? '—'}</td>
-                  <td className="py-1 pr-3 text-right">
-                    <Money value={line.expectedAllowedCents} />
-                  </td>
-                  <td className="py-1 pr-3 text-right">
-                    <Money value={line.observedAllowedCents} />
-                  </td>
-                  <td className="py-1 pr-3 text-right">
-                    <Money value={line.varianceCents} />
-                  </td>
-                  <td className="py-1 pr-3 font-mono text-xs">{line.unpricedReason ?? line.method ?? '—'}</td>
-                  <td className="py-1 text-xs">
-                    <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${run.id}`}>
-                      Line trace
-                    </Link>
-                  </td>
+          <ScrollTable label="Run lines">
+            <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Run lines">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Code and modifiers</th>
+                  <th className="py-1 pr-3 text-right font-medium">Units</th>
+                  <th className="py-1 pr-3 text-right font-medium">Expected allowed</th>
+                  <th className="py-1 pr-3 text-right font-medium">Observed allowed</th>
+                  <th className="py-1 pr-3 text-right font-medium">Variance</th>
+                  <th className="py-1 pr-3 font-medium">Method or reason</th>
+                  <th className="py-1 font-medium">
+                    <span className="sr-only">Open</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {lines.lines.map((line) => (
+                  <tr key={line.pricedLineId} className="border-t" data-line={line.serviceLineId}>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      {line.procedureCode}
+                      {line.modifiers.length === 0 ? '' : ` ${line.modifiers.join(' ')}`}
+                    </td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{line.units ?? '—'}</td>
+                    <td className="py-1 pr-3 text-right">
+                      <Money value={line.expectedAllowedCents} />
+                    </td>
+                    <td className="py-1 pr-3 text-right">
+                      <Money value={line.observedAllowedCents} />
+                    </td>
+                    <td className="py-1 pr-3 text-right">
+                      <Money value={line.varianceCents} />
+                    </td>
+                    <td className="py-1 pr-3 font-mono text-xs">{line.unpricedReason ?? line.method ?? '—'}</td>
+                    <td className="py-1 text-xs">
+                      <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${run.id}`}>
+                        Line trace
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         <Pager path={path} query={{ lines: filter }} page={lines.page} pages={lines.pages} total={lines.total} noun="lines" />
       </section>

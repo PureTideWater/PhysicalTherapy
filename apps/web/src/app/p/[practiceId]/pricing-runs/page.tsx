@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
-import { utc } from '../../../../components/format';
-import { CoverageShares, FAILURE_TEXT, RERUN_TEXT, RunStateBadges, RunStatusBadge } from '../../../../components/pricing/display';
+import { utc, utcSeconds } from '../../../../components/format';
+import { CoverageShares, FAILURE_TEXT, RERUN_TEXT, RunStateBadges, RunStatusBadge, runName } from '../../../../components/pricing/display';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
@@ -33,7 +33,7 @@ export default async function PricingRunsPage(props: Props) {
   const { practiceId, list, release, readiness, canCreate, options, pinnedElsewhere } = page.data;
   const path = `/p/${practiceId}/pricing-runs`;
   const optionLabel = (option: (typeof options)[number]) =>
-    `${option.periodFrom} to ${option.periodTo}, release ${String(option.releaseNo)}${option.rerunOfId === null ? '' : ', re-run'}${option.inEffect ? ', in effect' : ''} (complete ${utc(option.completedAt)})`;
+    `${option.periodFrom} to ${option.periodTo}, release ${String(option.releaseNo)}${option.rerunOfId === null ? '' : ', re-run'}${option.inEffect ? ', in effect' : ''} (complete ${utcSeconds(option.completedAt)})`;
   return (
     <AppShell shell={page.shell} section="pricing_runs">
       <div className="flex flex-col gap-1">
@@ -147,7 +147,7 @@ export default async function PricingRunsPage(props: Props) {
               <li key={run.id} className="rounded-md border p-4" data-run={run.id} data-status={run.status}>
                 <div className="flex flex-wrap items-center gap-2">
                   <Link className="font-medium underline" href={`${path}/${run.id}`}>
-                    {run.periodFrom} to {run.periodTo}
+                    {runName(run, false)}
                   </Link>
                   <RunStatusBadge status={run.status} />
                   <RunStateBadges run={run} />
@@ -158,7 +158,6 @@ export default async function PricingRunsPage(props: Props) {
                   )}
                   <span className="text-xs text-muted-foreground">
                     Release {run.releaseNo}, engine {run.engineVersion}; created {utc(run.createdAt)} by {run.createdBy}
-                    {run.completedAt === null ? '' : `; complete ${utc(run.completedAt)}`}
                   </span>
                 </div>
                 {run.failureCode === null ? null : <p className="pt-2 text-sm text-destructive">{FAILURE_TEXT[run.failureCode] ?? run.failureCode}</p>}

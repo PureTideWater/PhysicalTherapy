@@ -149,20 +149,49 @@ function pendingWords(runs: readonly RunSummary[]): string {
 }
 
 /**
- * The first runs of overlapping dates queued or being priced, in place of a Re-run button (the re-run would be
- * refused, newer_run_pending): "A newer run of these service dates is being priced: [run]. Once it finishes, re-run
- * the run in effect for these service dates." Which run that is then depends on the pending run's dates (a run of
- * the same dates takes effect in this one's place; one of other dates leaves it in effect), so the step names the
- * run in effect, never this run. A note, not an alert: it is on the page from the start (a refused Re-run form that
- * refreshes into it hands it the focus; RefusalTakeover).
+ * The first runs of overlapping dates queued or being priced, in place of the Re-run button of `inEffect`, the run in
+ * effect for its service dates (the re-run would be refused, newer_run_pending): "A newer run of these service dates
+ * is being priced: [run]." and the step once it finishes, which depends on the pending runs' dates. One of the same
+ * dates as `inEffect` takes effect in its place, so that run is re-run ("re-run that run"); runs of other dates leave
+ * `inEffect` in effect, so it is re-run, named "this run" on its own page (`self`) and by its link elsewhere; for
+ * several of the same dates, or of both, the step names the run in effect for these service dates (UX recheck of
+ * PR #50, N5). A note, not an alert: it is on the page from the start (a refused Re-run form that refreshes into it
+ * hands it the focus; RefusalTakeover).
  */
-export function PendingRunsAlert({ practiceId, runs }: { readonly practiceId: string; readonly runs: readonly RunSummary[] }) {
+export function PendingRunsAlert({
+  practiceId,
+  runs,
+  inEffect,
+  self = false,
+}: {
+  readonly practiceId: string;
+  readonly runs: readonly RunSummary[];
+  readonly inEffect: RunSummary;
+  readonly self?: boolean;
+}) {
+  const one = runs.length === 1;
+  const sameDates = (run: RunSummary) => run.periodFrom === inEffect.periodFrom && run.periodTo === inEffect.periodTo;
+  const step = runs.every((run) => !sameDates(run)) ? (
+    self ? (
+      ' re-run this run.'
+    ) : (
+      <>
+        {' '}
+        re-run <RunLink practiceId={practiceId} run={inEffect} />, which stays in effect for its service dates.
+      </>
+    )
+  ) : one ? (
+    ' re-run that run.'
+  ) : (
+    ' re-run the run in effect for these service dates.'
+  );
   return (
     <Alert role="status" data-state="rerun-pending">
       <AlertDescription>
         <p>
-          {runs.length === 1 ? `A newer run of these service dates is ${pendingWords(runs)}: ` : `Newer runs of these service dates are ${pendingWords(runs)}: `}
-          <RunLinks practiceId={practiceId} runs={runs} />. {runs.length === 1 ? 'Once it finishes' : 'Once they finish'}, re-run the run in effect for these service dates.
+          {one ? `A newer run of these service dates is ${pendingWords(runs)}: ` : `Newer runs of these service dates are ${pendingWords(runs)}: `}
+          <RunLinks practiceId={practiceId} runs={runs} />. {one ? 'Once it finishes,' : 'Once they finish,'}
+          {step}
         </p>
       </AlertDescription>
     </Alert>
@@ -171,14 +200,35 @@ export function PendingRunsAlert({ practiceId, runs }: { readonly practiceId: st
 
 /**
  * A re-run that can be accepted while first runs of overlapping dates are still queued: acceptance does not wait for
- * them, and each takes effect after it once priced, so the person knows before accepting (UX review of PR #50, UX-7).
+ * them, and each takes effect in its place once priced, so the person knows before accepting (UX review of PR #50,
+ * UX-7; wording, UX recheck N5).
  */
 export function QueuedRunsNote({ practiceId, runs }: { readonly practiceId: string; readonly runs: readonly RunSummary[] }) {
   return (
     <p className="text-sm" data-state="rerun-queued">
       {runs.length === 1 ? 'A newer run of these service dates is waiting to be priced: ' : 'Newer runs of these service dates are waiting to be priced: '}
-      <RunLinks practiceId={practiceId} runs={runs} />. This re-run can be accepted now, and {runs.length === 1 ? 'that run takes' : 'those runs take'} effect after it once priced.
+      <RunLinks practiceId={practiceId} runs={runs} />. This re-run can be accepted now.{' '}
+      {runs.length === 1 ? 'Once that run is priced, it takes effect in place of this re-run.' : 'Once those runs are priced, they take effect in place of this re-run.'}
     </p>
+  );
+}
+
+/**
+ * In place of an Accept form that could not succeed (re-review of PR #50, N1): accepting this re-run would replace
+ * the pricing of more runs of other service dates than one acceptance names (`limit`, the Accept route's bound on
+ * heldByIds), so it is not offered. Nothing is in effect from the re-run, and the lines keep their pricing in effect.
+ */
+export function HeldByLimitNote({ count, limit }: { readonly count: number; readonly limit: number }) {
+  return (
+    <Alert role="status" data-state="held-by-limit">
+      <AlertTitle>This re-run cannot be accepted here</AlertTitle>
+      <AlertDescription>
+        <p>
+          Accepting it would replace pricing that {count} runs of other service dates hold, and one acceptance names at most {limit}. Its lines keep the pricing in effect now. To price these service
+          dates under what is in force now, create a new run of them on Pricing runs: it takes effect for every line it prices once complete.
+        </p>
+      </AlertDescription>
+    </Alert>
   );
 }
 

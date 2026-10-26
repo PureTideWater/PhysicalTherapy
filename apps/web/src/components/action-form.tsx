@@ -32,6 +32,7 @@ export function ActionForm({
   className,
   labels = {},
   refreshOnError,
+  wrapSubmit = false,
 }: {
   readonly action: (state: ActionState, form: FormData) => Promise<ActionState>;
   /** The button's words; may hold a figure in the mono face (<Money/>). */
@@ -43,6 +44,11 @@ export function ActionForm({
   readonly labels?: Readonly<Record<string, string>>;
   /** Read the page again after a refusal, for a form a change elsewhere can overtake: the key an explanation that may take its place names. */
   readonly refreshOnError?: string;
+  /**
+   * Let the button's words wrap, for a label long enough to outrun its card at a phone's width (WCAG 1.4.10, reflow
+   * at 320 px): the Button is one line by default (UX recheck of PR #50, N1).
+   */
+  readonly wrapSubmit?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -81,7 +87,7 @@ export function ActionForm({
   }, [state, issueId]);
   return (
     <form ref={formRef} action={formAction} className={className ?? 'flex flex-col gap-4'}>
-      {refreshOnError === undefined ? null : <RefreshAfterRefusal state={state} takeover={refreshOnError} />}
+      {refreshOnError === undefined ? null : <RefreshAfterRefusal state={state} takeover={refreshOnError} labels={labels} />}
       {children}
       {state.error === undefined ? null : (
         <Alert variant="destructive" data-state={state.locked === true ? 'locked' : 'error'} ref={summaryRef} tabIndex={-1}>
@@ -102,7 +108,7 @@ export function ActionForm({
         </Alert>
       )}
       <div>
-        <Button type="submit" variant={variant} disabled={pending}>
+        <Button type="submit" variant={variant} disabled={pending} className={wrapSubmit ? 'h-auto min-h-9 whitespace-normal text-left' : undefined}>
           {pending ? 'Working…' : submit}
         </Button>
       </div>
@@ -124,12 +130,15 @@ export function summaryLead(state: ActionState, marked: boolean): string | null 
 /** How long after a refusal's refresh an explanation may still take the focus: the refresh's round trip, with room. */
 const TAKEOVER_MS = 15_000;
 
-/** The form refused last that asked for a refresh, by its key, and when: one per page, in this browser tab's memory. */
-let refused: { readonly key: string; readonly at: number } | null = null;
+/**
+ * The form refused last that asked for a refresh, by its key, when, and its refusal as the form showed it (each issue
+ * after its field's label): one per page, in this browser tab's memory.
+ */
+let refused: { readonly key: string; readonly at: number; readonly lines: readonly string[] } | null = null;
 
-/** Records a refusal of the form with this key, before its refresh (RefreshAfterRefusal). */
-export function noteRefusal(key: string, at: number): void {
-  refused = { key, at };
+/** Records a refusal of the form with this key, before its refresh (RefreshAfterRefusal), with its lines. */
+export function noteRefusal(key: string, at: number, lines: readonly string[] = []): void {
+  refused = { key, at, lines };
 }
 
 /**
@@ -143,6 +152,20 @@ export function takesFocus(keys: readonly string[], at: number, focusLost: boole
   }
   refused = null;
   return true;
+}
+
+/**
+ * The refusal of a form whose key starts with `prefix` but names none of `present` (its row left the list on the
+ * refresh, so no explanation takes its place), within TAKEOVER_MS, when the focus fell to the page: its lines, which
+ * ends the hand-off. Null otherwise (an explanation of its own took it, or none is due).
+ */
+export function takesOrphanedRefusal(prefix: string, present: readonly string[], at: number, focusLost: boolean): readonly string[] | null {
+  if (refused === null || !focusLost || !refused.key.startsWith(prefix) || present.includes(refused.key) || at - refused.at > TAKEOVER_MS) {
+    return null;
+  }
+  const { lines } = refused;
+  refused = null;
+  return lines;
 }
 
 /**
@@ -167,15 +190,78 @@ export function RefusalTakeover({ keys, children, className }: { readonly keys: 
 }
 
 /**
+ * Where a list's rows carry forms with `refreshOnError` keys starting with `prefix` (`present`: the keys of the rows
+ * listed now), what a refused form's row says when the refresh removed it (UX recheck of PR #50, N6): no explanation
+ * of its own takes its place, so this note shows the refusal as the form showed it, after `lead`, and takes the focus.
+ * Otherwise it is an empty wrapper (the page whose focus it reads). A row still listed keeps its own explanation
+ * (RefusalTakeover) or form.
+ */
+export function RefusalFallback({ prefix, present, lead }: { readonly prefix: string; readonly present: readonly string[]; readonly lead: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [lines, setLines] = useState<readonly string[] | null>(null);
+  const presentList = present.join(' ');
+  // Read from the page the wrapper is in (its document's focus), after the list's own explanations had their turn.
+  useLayoutEffect(() => {
+    const page = ref.current?.ownerDocument;
+    if (page === undefined) {
+      return;
+    }
+    const active = page.activeElement;
+    const taken = takesOrphanedRefusal(prefix, presentList.split(' '), Date.now(), active === null || active === page.body);
+    if (taken !== null) {
+      setLines(taken);
+    }
+  }, [prefix, presentList]);
+  useEffect(() => {
+    if (lines !== null) {
+      ref.current?.focus();
+    }
+  }, [lines]);
+  return (
+    <div
+      ref={ref}
+      tabIndex={lines === null ? undefined : -1}
+      data-takes-over={lines === null ? undefined : `${prefix}*`}
+      className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {lines === null ? null : (
+        <Alert variant="destructive" data-state="refused-row-gone">
+          <AlertTitle>Not done</AlertTitle>
+          <AlertDescription>
+            <p>{lead}</p>
+            {lines.length === 0 ? null : (
+              <ul className="mt-1 list-disc pl-5">
+                {lines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
+  );
+}
+
+/**
  * Reads the page again after each refusal (ActionForm's `refreshOnError`). A component of its own, rendered only for
  * a form that asks, so the router is read only there: every other form renders, as before, outside the app router
  * too (a component test's renderToString).
  */
-function RefreshAfterRefusal({ state, takeover }: { readonly state: ActionState; readonly takeover: string }) {
+function RefreshAfterRefusal({ state, takeover, labels }: { readonly state: ActionState; readonly takeover: string; readonly labels: Readonly<Record<string, string>> }) {
   const router = useRouter();
+  // The labels as rendered last, read when a refusal arrives: a new object each render, so never a reason to refresh again.
+  const labelsRef = useRef(labels);
+  useLayoutEffect(() => {
+    labelsRef.current = labels;
+  });
   useEffect(() => {
     if (state.error !== undefined) {
-      noteRefusal(takeover, Date.now());
+      noteRefusal(
+        takeover,
+        Date.now(),
+        (state.issues ?? []).map((issue) => `${labelsRef.current[issue.field] ?? issue.field}: ${issue.message}`),
+      );
       router.refresh();
     }
   }, [state, router, takeover]);

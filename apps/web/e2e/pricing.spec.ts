@@ -152,22 +152,25 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     await page.goto(`/p/${other}/pricing-runs`);
     const firstRun = page.getByRole('list', { name: 'Pricing runs' }).getByRole('listitem').first();
     const firstId = (await firstRun.getAttribute('data-run')) ?? '';
-    await firstRun.getByRole('link', { name: '2026-02-01 to 2026-02-28' }).click();
+    // Each run's link reads alone, priced to the second (UX recheck of PR #50, N4).
+    await firstRun.getByRole('link', { name: /^Pricing run, 2026-02-01 to 2026-02-28, priced \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$/ }).click();
     const local = await startLocalWorker();
     try {
       await page.getByRole('button', { name: 'Re-run under release 900001' }).click();
       await expect(page.getByRole('region', { name: 'Re-run' })).toBeVisible();
       await expect(async () => {
         await page.reload();
-        await expect(page.locator('[data-state="diff-summary"]')).toBeVisible({ timeout: 1_000 });
+        // The diff, or (accepting it changing nothing) its one no-changes line.
+        await expect(page.locator('[data-state="diff-summary"], [data-state="no-changes"]').first()).toBeVisible({ timeout: 1_000 });
       }).toPass({ timeout: 90_000 });
     } finally {
       await local.close();
     }
     const rerunUrl = page.url();
     // The diff is exactly what accepting changes (payment-engine review of PR #50, F4): nothing, under the same release and mapping.
-    await expect(page.locator('[data-state="diff-summary"]')).toContainText('Accepting this re-run changes the pricing in effect of 0 lines: 0 of the 3 lines priced now and once accepted');
-    await expect(page.locator('[data-state="no-changes"]')).toBeVisible();
+    // Said once: the no-changes line alone, no summary of zero changes above it (UX recheck of PR #50, N2).
+    await expect(page.locator('[data-state="no-changes"]')).toContainText("Accepting this re-run changes no line's pricing in effect");
+    await expect(page.locator('[data-state="diff-summary"]')).toHaveCount(0);
     await expect(page.locator('[data-state="awaiting-acceptance"]')).toBeVisible();
     // Until a person accepts the re-run, Coverage reads the first run.
     await page.goto(`/p/${other}/coverage`);
@@ -194,7 +197,7 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     await page.goto(`/p/${other}/pricing-runs`);
     const firstId = (await page.getByRole('list', { name: 'Pricing runs' }).getByRole('listitem').last().getAttribute('data-run')) ?? '';
     const inEffect = page.getByRole('list', { name: 'Pricing runs' }).getByRole('listitem').filter({ has: page.locator('[data-state="in-effect"]') });
-    await inEffect.getByRole('link', { name: '2026-02-01 to 2026-02-28' }).click();
+    await inEffect.getByRole('link', { name: /^Pricing run, 2026-02-01 to 2026-02-28, priced / }).click();
     await expect(page.locator('[data-state="accepted"]')).toBeVisible();
     const inEffectUrl = page.url();
     let local = await startLocalWorker();
@@ -205,7 +208,8 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
       await expect(page.locator('[data-state="accepted"]')).toHaveCount(0);
       await expect(async () => {
         await page.reload();
-        await expect(page.locator('[data-state="diff-summary"]')).toBeVisible({ timeout: 1_000 });
+        // The diff, or (accepting it changing nothing) its one no-changes line.
+        await expect(page.locator('[data-state="diff-summary"], [data-state="no-changes"]').first()).toBeVisible({ timeout: 1_000 });
       }).toPass({ timeout: 90_000 });
     } finally {
       await local.close();

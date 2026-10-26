@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { MonthsWaitingOnLocation } from './location';
 import type { DiffLine, DiffRun, DiffSide, DiffSummary } from '@tp/worker/pricing';
 
-import { DiffSummaryText, DiffTable, splitChangeText, SplitChangeText } from './diff';
+import { DiffSummaryText, DiffTable, acceptingChanges, splitChangeText, SplitChangeText } from './diff';
 
 /**
  * What a re-run's diff says when the runs pinned different place-of-service splits (docs/adr/0064), and the months
@@ -148,9 +148,29 @@ describe('what accepting a re-run changes (payment-engine review of PR #50, F4)'
     expect(plain).not.toContain('data-held-by');
   });
 
-  it('counts the lines whose pricing in effect accepting changes', () => {
+  it('counts the lines whose pricing in effect accepting changes first, then the totals (UX recheck N2)', () => {
     expect(text(renderToStaticMarkup(<DiffSummaryText summary={summary} accepting />))).toBe(
-      'Accepting this re-run changes the pricing in effect of 2 lines: 1 of the 4 lines priced now and once accepted are priced differently; 1 would no longer be priced. Expected allowed over the lines priced both now and once accepted: $0.00 now, $50.00 once accepted.',
+      'Accepting this re-run changes the pricing in effect of 2 lines: 1 priced differently and 1 no longer priced. Expected allowed on the 4 lines priced both now and once accepted: $0.00 now, $50.00 once accepted.',
     );
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={{ ...summary, onlyBefore: 0, windowChanged: 1 }} accepting />))).toBe(
+      'Accepting this re-run changes the pricing in effect of 1 line: 1 priced differently (1 with another dispute window). Expected allowed on the 4 lines priced both now and once accepted: $0.00 now, $50.00 once accepted.',
+    );
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={{ ...summary, compared: 0, changed: 0, onlyBefore: 1, onlyAfter: 2 }} accepting />))).toBe(
+      'Accepting this re-run changes the pricing in effect of 3 lines: 1 no longer priced and 2 priced only once accepted.',
+    );
+  });
+
+  it('says nothing when accepting changes no line, leaving the table’s one no-changes line (UX recheck N2)', () => {
+    const none = { ...summary, changed: 0, onlyBefore: 0, onlyAfter: 0 };
+    expect(acceptingChanges(none)).toBe(0);
+    expect(renderToStaticMarkup(<DiffSummaryText summary={none} accepting />)).toBe('');
+    // The two-run wording is unchanged.
+    expect(text(renderToStaticMarkup(<DiffSummaryText summary={none} />))).toContain('0 of 4 lines both runs priced are priced differently');
+  });
+
+  it('scrolls sideways inside a named region the keyboard reaches at a phone’s width (UX recheck N3)', () => {
+    const html = renderToStaticMarkup(<DiffTable practiceId={PRACTICE} lines={[line]} beforeRunId={quarter.id} afterRunId={rerun.id} heldBy={[february]} />);
+    expect(html).toMatch(/^<div role="region" aria-label="Changed lines, scrolls sideways" tabindex="0"/);
+    expect(html).toContain('<table class="w-full min-w-[40rem] text-left text-sm" aria-label="Changed lines">');
   });
 });

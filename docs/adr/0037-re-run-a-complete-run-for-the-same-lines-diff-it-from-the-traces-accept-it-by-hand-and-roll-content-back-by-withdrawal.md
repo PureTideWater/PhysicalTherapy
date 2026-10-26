@@ -202,7 +202,7 @@ the acceptance would replace is not what the person's diff was against: another 
 its lines) and `not_in_effect` (creation).
 `release_withdrawn` stays ahead of `superseded`, because its remedy is the more basic one; `diff_changed` comes last,
 after the refusals that say the re-run cannot be accepted at all. Each message names the state, never a value, and
-reads after the form's label ("This re-run: ...", "This run: ..."); the older refusals (`not_found`, `not_rerun`,
+reads after the form's label ("This re-run: ...", "This run: ...", the route ending it with a full stop); the older refusals (`not_found`, `not_rerun`,
 `not_complete`, `release_withdrawn`) are reworded to read the same way. `rerunBlock` exports the pages' acceptance
 state too (`RERUN_ACCEPTANCE`: `release_withdrawn`, `superseded`, `newer_run_pending` or `awaiting`, in that order),
 so no badge says "awaiting acceptance" beside a withdrawn release.
@@ -267,6 +267,10 @@ same statement), and refuses `diff_changed` when either differs: another re-run 
 not superseding it, but now holding some of its lines. Priced lines never change, so those runs are everything the
 diff depends on. The page then refreshes to the diff that holds. An acceptance already recorded stays as it is,
 whatever the request names. A comparison of any two runs elsewhere stays the two runs' diff (`compareRuns`).
+`acceptRun` compares the two sets whole and has no bound; the Accept route takes at most 200 `heldByIds`
+(`ACCEPT_HELD_BY_LIMIT`), which keeps a request, and the page that names each run, a sane size. Past it neither page
+offers an Accept form the route would refuse every time: each says why in its place, and that a new run of these
+service dates prices them under what is in force now (re-review of PR #50, N1).
 
 **The screens.** A re-run that can no longer be accepted shows why in place of the Accept button, with a link to the
 run to use, and says which condition holds (`NEWER_BECAUSE`: priced after it, pinned to a later release or split, or
@@ -280,7 +284,11 @@ was priced). Badges read "Can no longer be accepted" (superseded, or pinned to a
 effect. A refusal refreshes the page (`ActionForm`'s `refreshOnError`), so the explanation replaces a stale button and
 takes the focus the refused form held; the explanations are notes (`role="status"`), never alerts announced on load,
 and a refusal whose only issue is a hidden field reads its issue under "Not done" without the generic "Check the fields
-marked below." (UX review of PR #50).
+marked below." (UX review of PR #50). A refused Re-run on the releases page whose run leaves the list on the refresh is
+said after the list, which takes the focus. The Re-run button a superseded re-run's page offers names the run in effect
+and wraps at a phone's width; the runs list and the compare page name each run to the second; what accepting changes
+leads with its count, and when it changes nothing says so once; a note in place of a Re-run button while a first run is
+being priced names the run to re-run once it finishes, which depends on that run's dates (UX recheck of PR #50).
 
 **No migration.** Every input exists (`pricing_run`'s period, status, `rerun_of_id`, `release_no`,
 `lines_loaded_by`, `completed_at`, `accepted_at`, `created_at`, and `rule_release_withdrawal`), as do the lock key

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { causeText } from '../../lib/pricing/causes';
 import { utc } from '../format';
 import { Money } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 import { diffRunName } from './display';
 
 /**
@@ -68,17 +69,37 @@ function SideCell({ side, accepting = false, practiceId, from }: { readonly side
   );
 }
 
-/** The diff's counts in a sentence; `accepting`: as what accepting a re-run changes, now against once accepted. */
+/** How many lines accepting a re-run changes the pricing in effect of: the lines priced differently, and those priced on one side only. */
+export function acceptingChanges(summary: DiffSummary): number {
+  return summary.changed + summary.onlyBefore + summary.onlyAfter;
+}
+
+/**
+ * The diff's counts in a sentence; `accepting`: as what accepting a re-run changes, now against once accepted, the
+ * count first, then the totals (UX recheck of PR #50, N2). Accepting that changes nothing is said once, by the table's
+ * no-changes line, so the summary is then null.
+ */
 export function DiffSummaryText({ summary, accepting = false }: { readonly summary: DiffSummary; readonly accepting?: boolean }) {
   if (accepting) {
+    const changes = acceptingChanges(summary);
+    if (changes === 0) {
+      return null;
+    }
+    const parts = [
+      summary.changed === 0 ? null : `${String(summary.changed)} priced differently${summary.windowChanged === 0 ? '' : ` (${String(summary.windowChanged)} with another dispute window)`}`,
+      summary.onlyBefore === 0 ? null : `${String(summary.onlyBefore)} no longer priced`,
+      summary.onlyAfter === 0 ? null : `${String(summary.onlyAfter)} priced only once accepted`,
+    ].filter((part) => part !== null);
     return (
       <span>
-        Accepting this re-run changes the pricing in effect of {summary.changed + summary.onlyBefore + summary.onlyAfter}{' '}
-        {summary.changed + summary.onlyBefore + summary.onlyAfter === 1 ? 'line' : 'lines'}: {summary.changed} of the {summary.compared} lines priced now and once accepted are priced differently
-        {summary.windowChanged === 0 ? '' : ` (${String(summary.windowChanged)} with another dispute window)`}
-        {summary.onlyBefore === 0 ? '' : `; ${String(summary.onlyBefore)} would no longer be priced`}
-        {summary.onlyAfter === 0 ? '' : `; ${String(summary.onlyAfter)} would be priced only once accepted`}. Expected allowed over the lines priced both now and once accepted:{' '}
-        <Money value={summary.beforeExpectedCents} /> now, <Money value={summary.afterExpectedCents} /> once accepted.
+        Accepting this re-run changes the pricing in effect of {changes} {changes === 1 ? 'line' : 'lines'}: {parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${String(parts.at(-1))}`}.
+        {summary.compared === 0 ? null : (
+          <>
+            {' '}
+            Expected allowed on the {summary.compared} {summary.compared === 1 ? 'line' : 'lines'} priced both now and once accepted: <Money value={summary.beforeExpectedCents} /> now,{' '}
+            <Money value={summary.afterExpectedCents} /> once accepted.
+          </>
+        )}
       </span>
     );
   }
@@ -164,72 +185,76 @@ export function DiffTable({
       </p>
     );
   }
+  // Six columns, a run's name in a cell: at a phone's width the table scrolls inside a region the keyboard reaches
+  // (UX recheck of PR #50, N3), as the months waiting on the billing ZIP do.
   return (
-    <table className="w-full text-left text-sm" aria-label="Changed lines">
-      <thead className="text-muted-foreground">
-        <tr>
-          <th className="py-1 pr-3 font-medium">Code and modifiers</th>
-          <th className="py-1 pr-3 font-medium">Change</th>
-          <th className="py-1 pr-3 font-medium">{accepting ? 'In effect now' : 'First run'}</th>
-          <th className="py-1 pr-3 font-medium">{accepting ? 'Once accepted' : 'Second run'}</th>
-          <th className="py-1 pr-3 font-medium">Cause</th>
-          <th className="py-1 font-medium">
-            <span className="sr-only">Traces</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {lines.map((line) => (
-          <tr key={line.serviceLineId} className="border-t align-top" data-line={line.serviceLineId} data-kind={line.kind}>
-            <td className="py-1 pr-3 font-mono text-xs">
-              {line.procedureCode}
-              {line.modifiers.length === 0 ? '' : ` ${line.modifiers.join(' ')}`}
-              {line.units === null ? '' : ` × ${line.units}`}
-            </td>
-            <td className="py-1 pr-3">
-              {(accepting ? ACCEPTING_KIND_TEXT : KIND_TEXT)[line.kind]}
-              {line.changes.length === 0 ? null : (
-                <span className="block text-xs text-muted-foreground" data-changes={line.changes.join(' ')}>
-                  {line.changes.map((change) => CHANGE_TEXT[change]).join(', ')}
-                </span>
-              )}
-            </td>
-            <td className="py-1 pr-3">
-              <SideCell side={line.before} accepting={accepting} practiceId={practiceId} from={held(line.before)} />
-            </td>
-            <td className="py-1 pr-3">
-              <SideCell side={line.after} accepting={accepting} practiceId={practiceId} from={held(line.after)} />
-            </td>
-            <td className="py-1 pr-3">
-              {line.causes.length === 0 ? (
-                <span className="text-muted-foreground">{accepting ? 'Priced on one side only' : 'Only one run priced the line'}</span>
-              ) : (
-                <ul className="flex flex-col gap-0.5" aria-label="Causes">
-                  {line.causes.map((cause, index) => (
-                    <li key={`${cause.kind}:${String(index)}`} data-cause={cause.kind}>
-                      {causeText(cause)}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </td>
-            <td className="py-1 text-xs">
-              <div className="flex flex-col">
-                {line.before === null ? null : (
-                  <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${accepting ? line.before.pricingRunId : beforeRunId}`}>
-                    {accepting ? 'Trace now' : 'First trace'}
-                  </Link>
-                )}
-                {line.after === null ? null : (
-                  <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${accepting ? line.after.pricingRunId : afterRunId}`}>
-                    {accepting ? 'Trace once accepted' : 'Second trace'}
-                  </Link>
-                )}
-              </div>
-            </td>
+    <ScrollTable label="Changed lines">
+      <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Changed lines">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="py-1 pr-3 font-medium">Code and modifiers</th>
+            <th className="py-1 pr-3 font-medium">Change</th>
+            <th className="py-1 pr-3 font-medium">{accepting ? 'In effect now' : 'First run'}</th>
+            <th className="py-1 pr-3 font-medium">{accepting ? 'Once accepted' : 'Second run'}</th>
+            <th className="py-1 pr-3 font-medium">Cause</th>
+            <th className="py-1 font-medium">
+              <span className="sr-only">Traces</span>
+            </th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr key={line.serviceLineId} className="border-t align-top" data-line={line.serviceLineId} data-kind={line.kind}>
+              <td className="py-1 pr-3 font-mono text-xs">
+                {line.procedureCode}
+                {line.modifiers.length === 0 ? '' : ` ${line.modifiers.join(' ')}`}
+                {line.units === null ? '' : ` × ${line.units}`}
+              </td>
+              <td className="py-1 pr-3">
+                {(accepting ? ACCEPTING_KIND_TEXT : KIND_TEXT)[line.kind]}
+                {line.changes.length === 0 ? null : (
+                  <span className="block text-xs text-muted-foreground" data-changes={line.changes.join(' ')}>
+                    {line.changes.map((change) => CHANGE_TEXT[change]).join(', ')}
+                  </span>
+                )}
+              </td>
+              <td className="py-1 pr-3">
+                <SideCell side={line.before} accepting={accepting} practiceId={practiceId} from={held(line.before)} />
+              </td>
+              <td className="py-1 pr-3">
+                <SideCell side={line.after} accepting={accepting} practiceId={practiceId} from={held(line.after)} />
+              </td>
+              <td className="py-1 pr-3">
+                {line.causes.length === 0 ? (
+                  <span className="text-muted-foreground">{accepting ? 'Priced on one side only' : 'Only one run priced the line'}</span>
+                ) : (
+                  <ul className="flex flex-col gap-0.5" aria-label="Causes">
+                    {line.causes.map((cause, index) => (
+                      <li key={`${cause.kind}:${String(index)}`} data-cause={cause.kind}>
+                        {causeText(cause)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </td>
+              <td className="py-1 text-xs">
+                <div className="flex flex-col">
+                  {line.before === null ? null : (
+                    <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${accepting ? line.before.pricingRunId : beforeRunId}`}>
+                      {accepting ? 'Trace now' : 'First trace'}
+                    </Link>
+                  )}
+                  {line.after === null ? null : (
+                    <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${accepting ? line.after.pricingRunId : afterRunId}`}>
+                      {accepting ? 'Trace once accepted' : 'Second trace'}
+                    </Link>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ScrollTable>
   );
 }

@@ -3,14 +3,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm, RefusalTakeover } from '../../../../../components/action-form';
-import { utc } from '../../../../../components/format';
-import { DiffSummaryText, DiffTable, SplitChangeText } from '../../../../../components/pricing/diff';
-import { RerunBlockedBody, RunLink, RunStateBadges, diffRunName, rerunBlockedTitle } from '../../../../../components/pricing/display';
+import { DiffSummaryText, DiffTable, SplitChangeText, acceptingChanges } from '../../../../../components/pricing/diff';
+import { HeldByLimitNote, RerunBlockedBody, RunLink, RunStateBadges, diffRunName, rerunBlockedTitle, runName } from '../../../../../components/pricing/display';
 import { Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import type { RunSummary } from '../../../../../lib/pricing/queries';
-import { comparePricingRunsPage } from '../../../../../lib/routes/pricing';
+import { ACCEPT_HELD_BY_LIMIT, comparePricingRunsPage } from '../../../../../lib/routes/pricing';
 import { acceptPricingRunFormAction } from '../actions';
 import { FormKeys } from '../../../../../components/form-keys';
 
@@ -25,17 +24,17 @@ const FILTER_NAMES: Readonly<Record<string, string>> = {
   only_after: 'In the second run only',
 };
 
+/** One run of the two, named by runName, so two runs of the same dates priced in one minute read apart (UX recheck of PR #50, N4). */
 function RunHead({ label, practiceId, run }: { readonly label: string; readonly practiceId: string; readonly run: RunSummary }) {
   return (
     <div className="flex flex-col gap-1 rounded-md border p-3 text-sm" data-run={run.id}>
       <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
       <Link className="font-medium underline" href={`/p/${practiceId}/pricing-runs/${run.id}`}>
-        {run.periodFrom} to {run.periodTo}
+        {runName(run, false)}
       </Link>
       <span>
         Rule release {run.releaseNo}, engine <span className="font-mono text-xs">{run.engineVersion}</span>
       </span>
-      <span className="text-xs text-muted-foreground">Complete {utc(run.completedAt)}</span>
       <div className="flex flex-wrap gap-1">
         <RunStateBadges run={run} />
       </div>
@@ -84,9 +83,11 @@ export default async function ComparePricingRunsPage(props: Props) {
       <Card role="region" aria-label="Diff">
         <CardHeader>
           <CardTitle>What changed</CardTitle>
-          <CardDescription data-state="diff-summary">
-            <DiffSummaryText summary={diff.summary} accepting={heldBy !== null} />
-          </CardDescription>
+          {heldBy !== null && acceptingChanges(diff.summary) === 0 ? null : (
+            <CardDescription data-state="diff-summary">
+              <DiffSummaryText summary={diff.summary} accepting={heldBy !== null} />
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {heldBy === null || heldBy.length === 0 ? null : (
@@ -136,7 +137,7 @@ export default async function ComparePricingRunsPage(props: Props) {
             <ActionForm
               action={acceptPricingRunFormAction}
               submit="Accept the second run"
-              labels={{ runId: 'This re-run', replacesId: 'The run it replaces' }}
+              labels={{ runId: 'This re-run', replacesId: 'The run it replaces', heldByIds: 'The runs of other service dates holding its lines' }}
               refreshOnError={`accept:${after.id}`}
             >
               <FormKeys />
@@ -150,7 +151,11 @@ export default async function ComparePricingRunsPage(props: Props) {
           </CardContent>
         </Card>
       ) : acceptance === null ? null : acceptance.state === 'acceptable' ? (
-        acceptance.replaces.id === before.id ? null : (
+        acceptance.replaces.id === before.id ? (
+          heldBy !== null && heldBy.length > ACCEPT_HELD_BY_LIMIT ? (
+            <HeldByLimitNote count={heldBy.length} limit={ACCEPT_HELD_BY_LIMIT} />
+          ) : null
+        ) : (
           <RefusalTakeover keys={[`accept:${after.id}`]}>
             <Card role="region" aria-label="Compare with the run in effect" data-state="compare-with-in-effect">
               <CardHeader>

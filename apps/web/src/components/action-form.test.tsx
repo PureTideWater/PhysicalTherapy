@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { RefusalTakeover, noteRefusal, summaryLead, takesFocus } from './action-form';
+import { ActionForm, RefusalFallback, RefusalTakeover, noteRefusal, summaryLead, takesFocus, takesOrphanedRefusal } from './action-form';
 
 /**
  * A refused form's first line, and the hand-off of the focus from a refused form to the explanation that takes its
@@ -49,5 +49,42 @@ describe('the focus after a refused form’s refresh', () => {
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain('data-takes-over="accept:run-3"');
     expect(html).not.toContain('role=');
+  });
+});
+
+describe('a refused row that leaves the list on the refresh (UX recheck of PR #50, N6)', () => {
+  it('hands its refusal, as the form showed it, to the note after the list, once, only when no row of it is left', () => {
+    noteRefusal('rerun:run-4', 1_000, ['This run: is not the run in effect for its service dates.']);
+    // Its row is still listed: the row's own explanation (or the form itself) is offered, never the note.
+    expect(takesOrphanedRefusal('rerun:', ['rerun:run-4', 'rerun:run-5'], 1_100, true)).toBeNull();
+    expect(takesOrphanedRefusal('accept:', ['accept:run-5'], 1_100, true)).toBeNull();
+    expect(takesOrphanedRefusal('rerun:', ['rerun:run-5'], 1_100, false)).toBeNull();
+    expect(takesOrphanedRefusal('rerun:', ['rerun:run-5'], 1_200, true)).toEqual(['This run: is not the run in effect for its service dates.']);
+    // Taken once.
+    expect(takesOrphanedRefusal('rerun:', ['rerun:run-5'], 1_300, true)).toBeNull();
+  });
+
+  it('expires as the hand-off does, and renders nothing until it takes a refusal', () => {
+    noteRefusal('rerun:run-6', 1_000, []);
+    expect(takesOrphanedRefusal('rerun:', [], 1_000 + 16_000, true)).toBeNull();
+    const idle = renderToStaticMarkup(<RefusalFallback prefix="rerun:" present={[]} lead="Gone." />);
+    expect(idle).not.toContain('Gone.');
+    expect(idle).not.toContain('tabindex');
+    expect(idle).not.toContain('data-takes-over');
+  });
+});
+
+describe('a long button label (UX recheck of PR #50, N1)', () => {
+  const action = async () => Promise.resolve({});
+
+  it('wraps inside its card at a phone’s width when the form asks, and stays one line otherwise', () => {
+    const wrapped = renderToStaticMarkup(<ActionForm action={action} submit="Re-run the run in effect under release 900001" wrapSubmit />);
+    expect(wrapped).toMatch(/<button[^>]*class="[^"]*\bwhitespace-normal\b/);
+    // The size's fixed height gives way, so a second line grows the button instead of running out of it.
+    expect(wrapped).not.toMatch(/<button[^>]*class="(?:[^"]* )?h-9[ "]/);
+    expect(wrapped).toMatch(/<button[^>]*class="[^"]*\bh-auto\b/);
+    expect(wrapped).not.toMatch(/<button[^>]*class="[^"]*\bwhitespace-nowrap\b/);
+    const plain = renderToStaticMarkup(<ActionForm action={action} submit="Accept this run" />);
+    expect(plain).toMatch(/<button[^>]*class="[^"]*\bwhitespace-nowrap\b/);
   });
 });

@@ -143,6 +143,8 @@ export interface PricingRunPageData {
   readonly heldBy: readonly DiffRun[] | null;
   /** For a complete re-run nobody accepted, not pinned to a withdrawn release: whether it can be accepted now, and the runs to name. */
   readonly acceptance: RerunAcceptanceView | null;
+  /** For a complete re-run: the run it prices again, named by the Re-run card. */
+  readonly original: RunSummary | null;
   /** For a complete run that is not the run in effect for its period: the one that is, which is re-run instead (null when none is). */
   readonly periodInEffect: RunSummary | null;
   /** For a complete run in effect: the first runs of overlapping periods queued or being priced, which it waits for before it is re-run. */
@@ -185,6 +187,7 @@ export const pricingRunPage = practiceRoute({
         (original?.status === 'complete' ? await compareRuns(scope, { practiceId, beforeRunId: original.id, afterRunId: run.id, requestId: request.requestId, filter: 'all', page: 1 }) : null),
       heldBy: accepting?.heldBy ?? null,
       acceptance,
+      original: original ?? null,
       periodInEffect: run.status === 'complete' && !run.inEffect ? await periodRunInEffect(scope, practiceId, run.periodFrom, run.periodTo, request.requestId) : null,
       rerunPending: run.status === 'complete' && run.inEffect ? await pendingFirstRuns(scope, practiceId, run.id, request.requestId) : [],
       release: current === null ? null : await releaseHeader(scope.client, current),
@@ -195,6 +198,13 @@ export const pricingRunPage = practiceRoute({
 });
 
 export const DIFF_FILTERS = ['all', ...DIFF_KINDS] as const;
+
+/**
+ * The most runs of other service dates one acceptance names (the Accept route's bound on heldByIds, which keeps a
+ * request and the page that lists them a sane size; acceptRun itself compares the sets whole). Past it the pages show
+ * why in place of an Accept form, which the route would refuse every time (re-review of PR #50, N1).
+ */
+export const ACCEPT_HELD_BY_LIMIT = 200;
 
 export interface RunComparisonPageData {
   readonly practiceId: string;
@@ -208,7 +218,7 @@ export interface RunComparisonPageData {
   readonly diff: RunDiff | null;
   /** Where the second run is accepted here: the runs of other service dates the diff reads, which the Accept form posts. Null otherwise. */
   readonly heldBy: readonly DiffRun[] | null;
-  /** Whether the actor may accept the second run here: an acceptable re-run, compared with exactly the run its acceptance replaces. */
+  /** Whether the actor may accept the second run here: an acceptable re-run, compared with exactly the run its acceptance replaces, whose diff names at most ACCEPT_HELD_BY_LIMIT runs of other service dates. */
   readonly canAccept: boolean;
   /**
    * For a second run that is a complete re-run nobody accepted, not pinned to a withdrawn release, compared with its
@@ -268,7 +278,7 @@ export const comparePricingRunsPage = practiceRoute({
       after,
       diff,
       heldBy,
-      canAccept: diff !== null && rolesPermit(access.roles, 'mapping.edit') && accepting,
+      canAccept: diff !== null && rolesPermit(access.roles, 'mapping.edit') && accepting && (heldBy?.length ?? 0) <= ACCEPT_HELD_BY_LIMIT,
       acceptance,
     };
   },
@@ -284,17 +294,18 @@ const LOCATION_WAITING = `${locationStatusText('zip_missing')} A run waits until
  * (superseded, newer_run_pending, changed_meanwhile, diff_changed) and the re-run rule's (not_in_effect,
  * newer_run_pending) are worded to read after the form's label, "This re-run: ..." on the Accept forms and "This
  * run: ..." (or "The run in effect: ...", for the run a superseded re-run's page offers instead) on the Re-run forms
- * (docs/adr/0037, amendment of 2026-10-26). The release mismatch reads after "Rule release".
+ * (docs/adr/0037, amendment of 2026-10-26), and each ends with a full stop here (UX recheck of PR #50, N5). The release
+ * mismatch reads after "Rule release".
  */
 function refusal(error: unknown): InputError | undefined {
   if (error instanceof PricingLocationWaiting) {
     return new InputError([{ field: 'releaseNo', message: LOCATION_WAITING }]);
   }
   if (error instanceof RuleReleaseMismatchError) {
-    return new InputError([{ field: 'releaseNo', message: `${error.message}; reload the page to price under the release in force` }]);
+    return new InputError([{ field: 'releaseNo', message: `${error.message}; reload the page to price under the release in force.` }]);
   }
   if (error instanceof RerunRefusedError) {
-    return new InputError([{ field: 'runId', message: error.message }]);
+    return new InputError([{ field: 'runId', message: `${error.message}.` }]);
   }
   return undefined;
 }
@@ -336,12 +347,12 @@ export const rerunPricingRunAction = practiceRoute({
   },
 });
 
-/** The runs of other service dates an Accept form's diff read, each a hidden heldByIds[] field (form.ts joins them). */
+/** The runs of other service dates an Accept form's diff read, each a hidden heldByIds[] field (form.ts joins them), at most ACCEPT_HELD_BY_LIMIT. */
 const heldByIds = z
   .string()
   .default('')
   .transform((value) => value.split(',').filter((part) => part !== ''))
-  .pipe(z.array(opaqueId).max(200));
+  .pipe(z.array(opaqueId).max(ACCEPT_HELD_BY_LIMIT));
 
 /**
  * Accepts a complete re-run after its diff (J17: "before anyone accepts it"): from then on it is the run
