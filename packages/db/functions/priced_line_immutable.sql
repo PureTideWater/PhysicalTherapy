@@ -4,6 +4,7 @@
 -- priced_line_immutable()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4d2d626ed295e33c
 -- Trigger function of: priced_line.priced_line_immutable
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.priced_line_immutable()
  RETURNS trigger
  LANGUAGE plpgsql

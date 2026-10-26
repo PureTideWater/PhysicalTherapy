@@ -4,6 +4,7 @@
 -- plan_payer_of_practice()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6e80cf334ea6cc0f
 -- Trigger function of: plan.plan_payer_of_practice
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.plan_payer_of_practice()
  RETURNS trigger
  LANGUAGE plpgsql

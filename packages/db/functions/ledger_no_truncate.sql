@@ -8,6 +8,7 @@
 -- Trigger function of: ledger_match.ledger_match_no_truncate
 -- Trigger function of: posting_row.posting_row_no_truncate
 -- Trigger function of: roi_statement.roi_statement_no_truncate
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_no_truncate()
  RETURNS trigger
  LANGUAGE plpgsql

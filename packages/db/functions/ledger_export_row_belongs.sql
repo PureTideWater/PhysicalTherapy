@@ -5,6 +5,7 @@
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 29c7670a2e40ee0d
 -- Trigger function of: eft_row.eft_row_belongs
 -- Trigger function of: posting_row.posting_row_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_export_row_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

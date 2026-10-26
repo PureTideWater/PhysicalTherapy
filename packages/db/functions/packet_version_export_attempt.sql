@@ -4,6 +4,7 @@
 -- packet_version_export_attempt(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4a69c934296ccd37
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_export_attempt(target uuid)
  RETURNS TABLE(state text, code text, requested_at timestamp with time zone, at timestamp with time zone)
  LANGUAGE sql

@@ -24,7 +24,7 @@ import { DEFAULT_SOURCES, DomainModelError, type DomainModelSources, readAreaFil
  * database name, no timestamp, no collation-dependent order; the commit and branch go on the
  * provenance line, which `--check` and the approval hash ignore.
  *
- * From the same catalog read, in the same snapshot, it also renders the function files (functions.ts,
+ * From the same catalog read, in the same READ ONLY transaction, it also renders the function files (functions.ts,
  * docs/adr/0068): one file per function name, its definition, owner and privileges, which `--out` writes to
  * packages/db/functions. The document's renderer ignores what only the files print, so the document's text
  * is the same with them as without.
@@ -62,12 +62,31 @@ export interface GeneratedDomainModel {
 }
 
 export async function generateDomainModel(options: GenerateOptions): Promise<GeneratedDomainModel> {
-  const sources: DomainModelSources = { ...DEFAULT_SOURCES, ...definedOnly(options) };
+  // The provenance is checked before the database is read, so a bad --commit or --branch exits 2 first.
   const provenance = { commit: options.commit ?? '', branch: options.branch ?? '', uncommitted: options.uncommitted === true };
   const wrong = provenanceProblems(provenance);
   if (wrong.length) throw new DomainModelError(`the provenance line cannot be written: ${wrong.join('; ')} (give --commit SHA and --branch NAME in that form)`);
 
-  const { catalog, crossCheckReport } = await readDatabase(options.databaseUrl);
+  return generateFromCatalog(await readDatabase(options.databaseUrl), options);
+}
+
+/** What readDatabase reads: the catalog and the cross-checks' report. */
+export interface DatabaseRead {
+  readonly catalog: Catalog;
+  readonly crossCheckReport: string;
+}
+
+/**
+ * The document and the function files from a catalog already read (generateDomainModel's second half, apart so a
+ * test can render the document from a catalog changed in memory: docs/adr/0068's "the document is the same with the
+ * function files as without").
+ */
+export function generateFromCatalog(read: DatabaseRead, options: Omit<GenerateOptions, 'databaseUrl'>): GeneratedDomainModel {
+  const { catalog, crossCheckReport } = read;
+  const sources: DomainModelSources = { ...DEFAULT_SOURCES, ...definedOnly(options) };
+  const provenance = { commit: options.commit ?? '', branch: options.branch ?? '', uncommitted: options.uncommitted === true };
+  const wrong = provenanceProblems(provenance);
+  if (wrong.length) throw new DomainModelError(`the provenance line cannot be written: ${wrong.join('; ')} (give --commit SHA and --branch NAME in that form)`);
 
   const migrations = readMigrationText(sources.migrationsDir);
   const areaFile = readAreaFile(sources.areasPath);
@@ -122,16 +141,23 @@ export async function generateDomainModel(options: GenerateOptions): Promise<Gen
 }
 
 /** The catalog and the cross-checks, in one READ ONLY transaction that is rolled back. */
-async function readDatabase(databaseUrl: string): Promise<{ catalog: Catalog; crossCheckReport: string }> {
+export async function readDatabase(databaseUrl: string): Promise<DatabaseRead> {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    // What pg_get_expr, pg_get_viewdef, pg_get_functiondef, regprocedure and format_type print depends on these; pin them.
+    // What pg_get_expr, pg_get_viewdef, pg_get_functiondef, regprocedure, quote_ident and format_type print depends on
+    // these; pin them, each at PostgreSQL's default, so a database's or role's own setting never shows. quote_all_identifiers
+    // quotes every name; standard_conforming_strings decides how a backslash in a literal prints (and functions.ts's
+    // literal() assumes it on); extra_float_digits and bytea_output decide how a float or bytea default prints.
     await client.query('SET LOCAL search_path = public');
     await client.query("SET LOCAL IntervalStyle = 'postgres'");
     await client.query("SET LOCAL DateStyle = 'ISO, MDY'");
     await client.query("SET LOCAL TimeZone = 'UTC'");
+    await client.query('SET LOCAL quote_all_identifiers = off');
+    await client.query('SET LOCAL standard_conforming_strings = on');
+    await client.query('SET LOCAL extra_float_digits = 1');
+    await client.query("SET LOCAL bytea_output = 'hex'");
     const catalog = await readCatalog(client, { managedRoles: managedRoles({ devLogin: false }), ownerRole: OWNER_ROLE });
     const crossCheckReport = await crossCheck(client);
     await client.query('ROLLBACK');

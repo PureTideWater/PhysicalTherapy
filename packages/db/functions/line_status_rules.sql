@@ -4,6 +4,7 @@
 -- line_status_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6d34625159838cf3
 -- Trigger function of: line_status.line_status_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.line_status_rules()
  RETURNS trigger
  LANGUAGE plpgsql

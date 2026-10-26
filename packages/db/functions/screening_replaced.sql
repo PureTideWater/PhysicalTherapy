@@ -4,6 +4,7 @@
 -- screening_replaced(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0447db227547c072
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_replaced(prospect uuid)
  RETURNS boolean
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- pricing_current_read_lock(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8d7f18dc2fe222ae
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_current_read_lock(target_practice uuid)
  RETURNS void
  LANGUAGE plpgsql

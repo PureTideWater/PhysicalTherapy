@@ -4,6 +4,7 @@
 -- priced_line_visit_variance_cents(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ff2bbd148b2eb4ad
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.priced_line_visit_variance_cents(line_id uuid)
  RETURNS bigint
  LANGUAGE sql

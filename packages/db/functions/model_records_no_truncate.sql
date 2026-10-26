@@ -6,6 +6,7 @@
 -- Trigger function of: eval_example.eval_example_no_truncate
 -- Trigger function of: model_call.model_call_no_truncate
 -- Trigger function of: model_proposal.model_proposal_no_truncate
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.model_records_no_truncate()
  RETURNS trigger
  LANGUAGE plpgsql

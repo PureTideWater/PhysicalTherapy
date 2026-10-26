@@ -4,6 +4,7 @@
 -- billing_usage_counts()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 82e27747d11f1494
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.billing_usage_counts()
  RETURNS TABLE(organization_id uuid, granted_practices integer, active_practices integer)
  LANGUAGE sql

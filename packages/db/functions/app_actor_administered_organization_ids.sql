@@ -4,6 +4,11 @@
 -- app_actor_administered_organization_ids()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2de7ac183bc20342
 -- Trigger function of: (none)
+-- Called by policy: invitation.invitation_administrators_and_invitee
+-- Called by policy: membership.membership_administrators_insert
+-- Called by policy: membership.membership_administrators_update
+-- Called by policy: membership.membership_self_and_administrators
+-- Called by policy: user.user_invited_by_administrators
 CREATE OR REPLACE FUNCTION public.app_actor_administered_organization_ids()
  RETURNS uuid[]
  LANGUAGE sql

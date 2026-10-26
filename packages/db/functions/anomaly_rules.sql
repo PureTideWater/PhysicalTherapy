@@ -4,6 +4,7 @@
 -- anomaly_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 39f030b525ce0648
 -- Trigger function of: anomaly.anomaly_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.anomaly_rules()
  RETURNS trigger
  LANGUAGE plpgsql

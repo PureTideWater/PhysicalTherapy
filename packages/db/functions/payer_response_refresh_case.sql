@@ -4,6 +4,7 @@
 -- payer_response_refresh_case()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b3c23aa01144ad5c
 -- Trigger function of: payer_response.payer_response_refresh_case
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.payer_response_refresh_case()
  RETURNS trigger
  LANGUAGE plpgsql

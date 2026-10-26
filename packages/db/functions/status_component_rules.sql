@@ -4,6 +4,7 @@
 -- status_component_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 82c436362d600ad2
 -- Trigger function of: status_component.status_component_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.status_component_rules()
  RETURNS trigger
  LANGUAGE plpgsql

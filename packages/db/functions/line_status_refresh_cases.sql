@@ -4,6 +4,7 @@
 -- line_status_refresh_cases()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 02c5548a429bb9c2
 -- Trigger function of: line_status.line_status_refresh_cases
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.line_status_refresh_cases()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- organization_kind_of(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9ba89ea8163257bc
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.organization_kind_of(target_organization uuid)
  RETURNS text
  LANGUAGE sql

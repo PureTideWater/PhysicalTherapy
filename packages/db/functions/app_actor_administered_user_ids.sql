@@ -4,6 +4,7 @@
 -- app_actor_administered_user_ids()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e0d0de37b8b4437f
 -- Trigger function of: (none)
+-- Called by policy: user.user_self_and_administrators
 CREATE OR REPLACE FUNCTION public.app_actor_administered_user_ids()
  RETURNS uuid[]
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- console_release_runs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: adc1da81e4e077a8
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_release_runs()
  RETURNS TABLE(release_no integer, practice_id uuid, name text, runs bigint, runs_in_effect bigint, reruns bigint, reruns_accepted bigint, changed_lines bigint)
  LANGUAGE plpgsql

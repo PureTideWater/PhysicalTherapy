@@ -4,6 +4,7 @@
 -- user_settings_valid(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 190fcd1474751d06
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_settings_valid(settings jsonb)
  RETURNS boolean
  LANGUAGE sql

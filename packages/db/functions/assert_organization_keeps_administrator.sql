@@ -4,6 +4,7 @@
 -- assert_organization_keeps_administrator(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 16bb83822a4c4c15
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.assert_organization_keeps_administrator(target_organization uuid)
  RETURNS void
  LANGUAGE plpgsql

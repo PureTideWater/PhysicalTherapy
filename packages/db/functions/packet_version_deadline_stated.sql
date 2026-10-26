@@ -4,6 +4,7 @@
 -- packet_version_deadline_stated()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6c614d04965a83e4
 -- Trigger function of: packet_version.packet_version_deadline_stated
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_deadline_stated()
  RETURNS trigger
  LANGUAGE plpgsql

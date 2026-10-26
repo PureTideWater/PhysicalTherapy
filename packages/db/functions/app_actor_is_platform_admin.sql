@@ -4,6 +4,20 @@
 -- app_actor_is_platform_admin()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e2e7c04621feca40
 -- Trigger function of: (none)
+-- Called by policy: agreement.agreement_parties
+-- Called by policy: agreement.agreement_read_by_parties
+-- Called by policy: membership.membership_administrators_update
+-- Called by policy: membership.membership_self_and_administrators
+-- Called by policy: organization.organization_members
+-- Called by policy: organization.organization_platform_admin_insert
+-- Called by policy: organization.organization_platform_admin_update
+-- Called by policy: practice.practice_platform_admin_insert
+-- Called by policy: support_grant.support_grant_created_by_platform_administrator
+-- Called by policy: support_grant.support_grant_platform_administrators_read
+-- Called by policy: support_grant.support_grant_read_by_practice_and_platform
+-- Called by policy: user.user_invited_by_administrators
+-- Called by policy: user.user_self_and_administrators
+-- Called by policy: user.user_self_and_platform_admin_update
 CREATE OR REPLACE FUNCTION public.app_actor_is_platform_admin()
  RETURNS boolean
  LANGUAGE sql

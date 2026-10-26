@@ -17,6 +17,9 @@ import { DomainModelError } from './sources';
  *     between the dollar quotes only", or for a SQL-standard body, which has none, "the SQL-standard body only, from
  *     RETURN or BEGIN ATOMIC"), and
  *     "Trigger function of" with one `table.trigger` per line in C order, so a new trigger adds exactly one line;
+ *     "Called by policy" with one `table.policy` per line in C order (the policies whose USING or WITH CHECK calls it
+ *     directly, from pg_depend), so a reviewer sees which policies a volatility or body change reaches; and, only
+ *     when there is one, "Event trigger" with one `name ON event` per line in C order;
  *   - the definition as pg_get_functiondef prints it (arguments with defaults, return type, language, volatility,
  *     SECURITY DEFINER, LEAKPROOF, strictness, parallel safety, cost, rows, every SET, and the body as the catalog
  *     holds it), its one trailing newline taken off and a semicolon put on, so the file is SQL that would recreate it;
@@ -33,8 +36,10 @@ import { DomainModelError } from './sources';
  * prints does depend on the PostgreSQL major version, as the document already does.
  *
  * Refused (DomainModelError, exit 2), never guessed: a name outside `^[a-z_][a-z0-9_]*$` or longer than 63 bytes,
- * so no name can leave the directory or collide with another by case, and an aggregate, which pg_get_functiondef
- * cannot print. A member of an extension is left out: its definition belongs to the extension's version.
+ * so no name can leave the directory or collide with another by case; an aggregate, which pg_get_functiondef
+ * cannot print; and any function in a schema other than public (pg_catalog, information_schema and the pg_toast and
+ * pg_temp schemas aside), which would have no file and so no diff: a tripwire, since none exists today. A member of
+ * an extension is left out: its definition belongs to the extension's version.
  *
  * The banner avoids the conventional "generated" markers that make GitHub collapse a diff: these diffs exist to be
  * read.
@@ -84,14 +89,24 @@ export function privilegeLines(f: Pick<FunctionRow, 'signature' | 'kind' | 'owne
   return lines;
 }
 
+/** What the header lists of one overload beside its signature and body hash, each list in C order. */
+interface Callers {
+  readonly triggers: readonly string[];
+  readonly policies: readonly string[];
+  readonly eventTriggers: readonly string[];
+}
+
 /** One overload as its file prints it: header, definition, owner, privileges and comment. */
-function overloadText(f: FunctionRow, triggers: readonly string[]): string[] {
+function overloadText(f: FunctionRow, callers: Callers): string[] {
+  const { triggers, policies, eventTriggers } = callers;
   if (f.definition === null) throw new Error(`pg_get_functiondef printed nothing for ${f.signature}`);
   const target = `${routineKeyword(f.kind)} public.${f.signature}`;
   return [
     `-- ${f.signature}`,
     `-- Body SHA-256 (${f.sql_standard_body ? 'the SQL-standard body only, from RETURN or BEGIN ATOMIC' : 'the text between the dollar quotes only'}), as Appendix C prints it: ${bodySha256(f.src).slice(0, 16)}`,
     ...(triggers.length === 0 ? ['-- Trigger function of: (none)'] : triggers.map((t) => `-- Trigger function of: ${t}`)),
+    ...(policies.length === 0 ? ['-- Called by policy: (none)'] : policies.map((p) => `-- Called by policy: ${p}`)),
+    ...eventTriggers.map((e) => `-- Event trigger: ${e}`),
     `${f.definition.endsWith('\n') ? f.definition.slice(0, -1) : f.definition};`,
     `ALTER ${target} OWNER TO ${f.owner_ident};`,
     ...privilegeLines(f),
@@ -107,10 +122,26 @@ export function fileNameProblem(name: string): string | null {
 }
 
 /**
+ * Why a file name, read from a directory or a git tree, is not a function file's (`<name>.sql`, the name passing
+ * fileNameProblem), or null. Every name the summary diffs or the directory reads passes it, so none can leave a
+ * directory, collide by case, or be quoted or cut by git's diff headers.
+ */
+export function functionFileNameProblem(file: string): string | null {
+  if (!file.endsWith('.sql')) return 'does not end in .sql';
+  const problem = fileNameProblem(file.slice(0, -'.sql'.length));
+  return problem === null ? null : `is not a function file's name: ${problem}`;
+}
+
+/**
  * The function files, file name (`<name>.sql`) to content, in C order of the names, from the catalog's functions
  * and triggers (see the module comment).
  */
-export function renderFunctionFiles(catalog: Pick<Catalog, 'functions' | 'triggers'>): Map<string, string> {
+export function renderFunctionFiles(catalog: Pick<Catalog, 'functions' | 'triggers' | 'functionPolicies' | 'eventTriggers' | 'otherSchemaFunctions'>): Map<string, string> {
+  if (catalog.otherSchemaFunctions.length) {
+    throw new DomainModelError(
+      `a function outside schema public would have no function file and no diff: ${[...catalog.otherSchemaFunctions].sort(cOrder).join(', ')}; add support for its schema to packages/db/src/domain-model/functions.ts before a migration creates one (docs/adr/0068)`,
+    );
+  }
   const functions = catalog.functions.filter((f) => !f.extension_member);
   const aggregates = functions.filter((f) => f.kind === 'a').map((f) => f.signature);
   if (aggregates.length) {
@@ -126,19 +157,25 @@ export function renderFunctionFiles(catalog: Pick<Catalog, 'functions' | 'trigge
   });
   if (badNames.length) throw new DomainModelError(`a function name cannot name its file under packages/db/functions: ${badNames.sort(cOrder).join('; ')}`);
 
-  const triggersOf = new Map<string, string[]>();
-  for (const t of catalog.triggers) {
-    const list = triggersOf.get(t.function_signature) ?? [];
-    list.push(`${t.table_name}.${t.name}`);
-    triggersOf.set(t.function_signature, list);
-  }
+  /** signature to the sorted lines the header lists, from rows in any order. */
+  const listOf = <T>(rows: readonly T[], signature: (row: T) => string, line: (row: T) => string): Map<string, string[]> => {
+    const out = new Map<string, string[]>();
+    for (const row of rows) out.set(signature(row), [...(out.get(signature(row)) ?? []), line(row)]);
+    for (const list of out.values()) list.sort(cOrder);
+    return out;
+  };
+  const triggersOf = listOf(catalog.triggers, (t) => t.function_signature, (t) => `${t.table_name}.${t.name}`);
+  const policiesOf = listOf(catalog.functionPolicies, (p) => p.function_signature, (p) => `${p.table_name}.${p.policy_name}`);
+  const eventTriggersOf = listOf(catalog.eventTriggers, (e) => e.function_signature, (e) => `${e.name} ON ${e.event}`);
   const byName = new Map<string, FunctionRow[]>();
   for (const f of functions) byName.set(f.name, [...(byName.get(f.name) ?? []), f]);
 
   const files = new Map<string, string>();
   for (const name of [...byName.keys()].sort(cOrder)) {
     const overloads = [...(byName.get(name) ?? [])].sort((a, b) => cOrder(a.signature, b.signature));
-    const blocks = overloads.map((f) => overloadText(f, [...(triggersOf.get(f.signature) ?? [])].sort(cOrder)).join('\n'));
+    const blocks = overloads.map((f) =>
+      overloadText(f, { triggers: [...new Set(triggersOf.get(f.signature))], policies: [...new Set(policiesOf.get(f.signature))], eventTriggers: [...new Set(eventTriggersOf.get(f.signature))] }).join('\n'),
+    );
     files.set(`${name}.sql`, `${[...FUNCTION_FILE_BANNER, '', blocks.join('\n\n')].join('\n')}\n`);
   }
   return files;

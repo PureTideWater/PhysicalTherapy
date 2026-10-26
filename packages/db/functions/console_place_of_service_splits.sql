@@ -4,6 +4,7 @@
 -- console_place_of_service_splits()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 43a1900cd1033483
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_place_of_service_splits()
  RETURNS TABLE(id uuid, settings jsonb, approved_by uuid, approved_by_email text, approved_at timestamp with time zone, in_force boolean)
  LANGUAGE plpgsql

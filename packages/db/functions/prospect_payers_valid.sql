@@ -4,6 +4,7 @@
 -- prospect_payers_valid(text[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7cf431c07bbe1f8f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.prospect_payers_valid(payers text[])
  RETURNS boolean
  LANGUAGE sql

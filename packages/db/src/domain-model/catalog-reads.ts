@@ -1,7 +1,8 @@
 /**
  * The catalog reads behind the domain model (CO-02). Every query reads the PostgreSQL catalog
  * (pg_class, pg_attribute, pg_constraint, pg_index, pg_policy, pg_trigger with each trigger's enabled
- * state, pg_proc with each function's body, definition, owner, ACL and comment, pg_rules, pg_default_acl,
+ * state, pg_proc with each function's body, definition, owner, ACL and comment, the policies (pg_depend) and event
+ * triggers (pg_event_trigger) that call each function, the functions outside public, pg_rules, pg_default_acl,
  * privileges) or the two tables
  * that are themselves catalog data, phi_table_registry and schema_migrations (each applied file's name
  * and SHA-256); none reads a row of any other table. The generator runs them in one READ ONLY
@@ -122,6 +123,20 @@ export interface FunctionRow {
    */
   readonly sql_standard_body: boolean;
 }
+/** A policy whose USING or WITH CHECK expression calls a function in public directly (pg_depend from pg_policy). */
+export interface FunctionPolicyRow {
+  /** The function's signature as Appendix C prints it. */
+  readonly function_signature: string;
+  readonly table_name: string;
+  readonly policy_name: string;
+}
+/** An event trigger and the function in public it runs (pg_event_trigger). */
+export interface EventTriggerRow {
+  readonly function_signature: string;
+  readonly name: string;
+  /** pg_event_trigger.evtevent: ddl_command_start, ddl_command_end, sql_drop, table_rewrite or login. */
+  readonly event: string;
+}
 /** One entry of a function's ACL (aclexplode), EXECUTE being the only privilege a function has. */
 export interface FunctionAclRow {
   /** The grantee's name, or null for PUBLIC (grantee 0). */
@@ -202,6 +217,17 @@ export interface Catalog {
   readonly policies: readonly PolicyRow[];
   readonly triggers: readonly TriggerRow[];
   readonly functions: readonly FunctionRow[];
+  /** The policies that call each function, for the function files (functions.ts); the document does not print them. */
+  readonly functionPolicies: readonly FunctionPolicyRow[];
+  /** The event triggers, for the function files; the document does not print them. */
+  readonly eventTriggers: readonly EventTriggerRow[];
+  /**
+   * Every function, procedure or aggregate in a schema other than public, pg_catalog, information_schema and the
+   * pg_toast and pg_temp schemas, extension members aside, as `schema.signature` (regprocedure under the pinned
+   * search_path, public, qualifies every other schema's name): the function files refuse to be
+   * written while one exists (functions.ts), since it would have no file and no diff. None exists today.
+   */
+  readonly otherSchemaFunctions: readonly string[];
   readonly privileges: readonly PrivilegeRow[];
   readonly columnPrivileges: readonly ColumnPrivilegeRow[];
   readonly enumTypes: readonly EnumTypeRow[];
@@ -348,6 +374,38 @@ export async function readCatalog(client: Queryable, options: { readonly managed
       ORDER BY p.oid::regprocedure::text COLLATE "C"`,
   );
 
+  const functionPolicies = await rows<FunctionPolicyRow>(
+    client,
+    `SELECT function_signature, table_name, policy_name FROM (
+       SELECT DISTINCT p.oid::regprocedure::text AS function_signature, c.relname::text AS table_name, pol.polname::text AS policy_name
+         FROM pg_depend d
+         JOIN pg_policy pol ON pol.oid = d.objid
+         JOIN pg_class c ON c.oid = pol.polrelid
+         JOIN pg_proc p ON p.oid = d.refobjid
+         JOIN pg_namespace pn ON pn.oid = p.pronamespace
+        WHERE d.classid = 'pg_policy'::regclass AND d.refclassid = 'pg_proc'::regclass AND pn.nspname = 'public') called
+      ORDER BY function_signature COLLATE "C", table_name COLLATE "C", policy_name COLLATE "C"`,
+  );
+
+  const eventTriggers = await rows<EventTriggerRow>(
+    client,
+    `SELECT p.oid::regprocedure::text AS function_signature, e.evtname AS name, e.evtevent AS event
+       FROM pg_event_trigger e JOIN pg_proc p ON p.oid = e.evtfoid JOIN pg_namespace pn ON pn.oid = p.pronamespace
+      WHERE pn.nspname = 'public'
+      ORDER BY p.oid::regprocedure::text COLLATE "C", e.evtname COLLATE "C"`,
+  );
+
+  const otherSchemaFunctions = (
+    await rows<{ signature: string }>(
+      client,
+      `SELECT p.oid::regprocedure::text AS signature
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname NOT IN ('public', 'information_schema') AND n.nspname NOT LIKE 'pg\\_%'
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+        ORDER BY p.oid::regprocedure::text COLLATE "C"`,
+    )
+  ).map((r) => r.signature);
+
   const privileges = await rows<PrivilegeRow>(
     client,
     `SELECT c.relname AS table_name, r.rolname AS role,
@@ -432,6 +490,9 @@ export async function readCatalog(client: Queryable, options: { readonly managed
     policies,
     triggers,
     functions,
+    functionPolicies,
+    eventTriggers,
+    otherSchemaFunctions,
     privileges,
     columnPrivileges,
     enumTypes,

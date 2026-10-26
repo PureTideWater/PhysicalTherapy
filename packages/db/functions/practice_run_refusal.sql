@@ -4,6 +4,7 @@
 -- practice_run_refusal(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9d53dc3cbf35b67a
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_run_refusal(target_practice uuid)
  RETURNS text
  LANGUAGE plpgsql

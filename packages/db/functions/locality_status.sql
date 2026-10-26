@@ -4,6 +4,7 @@
 -- locality_status(integer,text,text,date,date)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 93f19de141f69e25
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.locality_status(release integer, zip5 text, plus_four text, period_from date, period_to date)
  RETURNS TABLE(status text, carrier text, locality text)
  LANGUAGE sql

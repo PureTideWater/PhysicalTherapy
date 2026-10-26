@@ -4,6 +4,7 @@
 -- data_rights_permit(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 97a340475b983d2f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.data_rights_permit(target_agreement uuid, target_practice uuid)
  RETURNS boolean
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- priced_line_pricing_check(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: a42d8a0f7b9a9f73
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.priced_line_pricing_check(target uuid)
  RETURNS text
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- ledger_line_net(uuid,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f151e27ea09f28c1
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_line_net(line uuid, counted text)
  RETURNS bigint
  LANGUAGE sql

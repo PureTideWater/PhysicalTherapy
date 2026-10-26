@@ -4,6 +4,7 @@
 -- practice_location_status(uuid,integer,date,date)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 98ceb3d63dddd6dc
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_location_status(target uuid, release integer, period_from date, period_to date)
  RETURNS text
  LANGUAGE sql

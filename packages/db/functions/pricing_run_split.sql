@@ -4,6 +4,7 @@
 -- pricing_run_split(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 47bf3d098473fe75
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_run_split(run uuid)
  RETURNS TABLE(place_of_service_split_id uuid, settings jsonb, approved_at timestamp with time zone)
  LANGUAGE sql

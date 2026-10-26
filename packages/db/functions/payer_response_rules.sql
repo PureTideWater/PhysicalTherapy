@@ -4,6 +4,7 @@
 -- payer_response_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3d3936c48b8d9488
 -- Trigger function of: payer_response.payer_response_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.payer_response_rules()
  RETURNS trigger
  LANGUAGE plpgsql

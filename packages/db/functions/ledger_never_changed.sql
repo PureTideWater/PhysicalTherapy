@@ -5,6 +5,7 @@
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4e6328f4a28594a0
 -- Trigger function of: eft_row.eft_row_never_changed
 -- Trigger function of: posting_row.posting_row_never_changed
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_never_changed()
  RETURNS trigger
  LANGUAGE plpgsql

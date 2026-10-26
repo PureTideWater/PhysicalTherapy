@@ -52,6 +52,7 @@
 -- Trigger function of: user.user_updated_at
 -- Trigger function of: user_device.user_device_updated_at
 -- Trigger function of: user_session.user_session_updated_at
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql

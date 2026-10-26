@@ -4,6 +4,7 @@
 -- report_document_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ae5caa9ac79ee5fe
 -- Trigger function of: report_document.report_document_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.report_document_rules()
  RETURNS trigger
  LANGUAGE plpgsql

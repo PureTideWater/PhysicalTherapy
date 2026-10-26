@@ -4,6 +4,7 @@
 -- practice_fees_paid(uuid,date,date)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: a9a64e6bfca4d954
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_fees_paid(target_practice uuid, period_from date, period_to date)
  RETURNS bigint
  LANGUAGE plpgsql

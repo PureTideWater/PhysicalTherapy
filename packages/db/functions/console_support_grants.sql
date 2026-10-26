@@ -4,6 +4,7 @@
 -- console_support_grants()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b335e4849f0c246b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_support_grants()
  RETURNS TABLE(support_grant_id uuid, practice_id uuid, user_id uuid, ticket text, reason text, created_at timestamp with time zone, expires_at timestamp with time zone, notified_at timestamp with time zone, reads bigint)
  LANGUAGE sql

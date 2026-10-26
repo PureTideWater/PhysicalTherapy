@@ -4,6 +4,7 @@
 -- practice_export_count(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f08f20c5004940fd
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_export_count(target uuid)
  RETURNS integer
  LANGUAGE sql

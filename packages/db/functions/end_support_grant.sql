@@ -4,6 +4,7 @@
 -- end_support_grant(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 81470c8d2b42a2b3
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.end_support_grant(target uuid)
  RETURNS boolean
  LANGUAGE plpgsql

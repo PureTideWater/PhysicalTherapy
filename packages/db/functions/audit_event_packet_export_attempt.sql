@@ -4,6 +4,7 @@
 -- audit_event_packet_export_attempt()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 980bc6bb1ce69ba4
 -- Trigger function of: audit_event.audit_event_packet_export_attempt
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.audit_event_packet_export_attempt()
  RETURNS trigger
  LANGUAGE plpgsql

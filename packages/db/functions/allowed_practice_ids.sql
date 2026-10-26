@@ -4,6 +4,7 @@
 -- allowed_practice_ids()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f2ef1aad2276f6cd
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.allowed_practice_ids()
  RETURNS uuid[]
  LANGUAGE sql

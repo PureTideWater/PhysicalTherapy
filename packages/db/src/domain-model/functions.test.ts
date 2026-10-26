@@ -1,8 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type FunctionAclRow, type FunctionRow, type TriggerRow } from './catalog-reads';
-import { FUNCTION_FILE_BANNER, cOrder, fileNameProblem, privilegeLines, renderFunctionFiles } from './functions';
+import { type EventTriggerRow, type FunctionAclRow, type FunctionPolicyRow, type FunctionRow, type TriggerRow } from './catalog-reads';
+import { FUNCTION_FILE_BANNER, cOrder, fileNameProblem, functionFileNameProblem, privilegeLines, renderFunctionFiles } from './functions';
 import { bodySha256 } from './model';
 import { DomainModelError } from './sources';
 
@@ -60,7 +60,17 @@ const trigger = (table: string, name: string, signature: string): TriggerRow => 
   function_src: null,
 });
 
-const render = (functions: readonly FunctionRow[], triggers: readonly TriggerRow[] = []): Map<string, string> => renderFunctionFiles({ functions, triggers });
+const policy = (table: string, name: string, signature: string): FunctionPolicyRow => ({ function_signature: signature, table_name: table, policy_name: name });
+const eventTrigger = (name: string, event: string, signature: string): EventTriggerRow => ({ function_signature: signature, name, event });
+
+/** What renderFunctionFiles reads of the catalog beside the functions and triggers, empty unless a case gives it. */
+interface Others {
+  readonly functionPolicies?: readonly FunctionPolicyRow[];
+  readonly eventTriggers?: readonly EventTriggerRow[];
+  readonly otherSchemaFunctions?: readonly string[];
+}
+const render = (functions: readonly FunctionRow[], triggers: readonly TriggerRow[] = [], others: Others = {}): Map<string, string> =>
+  renderFunctionFiles({ functions, triggers, functionPolicies: others.functionPolicies ?? [], eventTriggers: others.eventTriggers ?? [], otherSchemaFunctions: others.otherSchemaFunctions ?? [] });
 const fileOf = (functions: readonly FunctionRow[], file: string, triggers: readonly TriggerRow[] = []): string => render(functions, triggers).get(file) ?? '';
 
 describe('DBF-03: one file per function name', () => {
@@ -95,6 +105,22 @@ describe('DBF-03: one file per function name', () => {
     expect(() => render([fn(`${'g'.repeat(64)}()`)])).toThrow(/is longer than 63 bytes/);
   });
 
+  it("a file name read from a directory or a tree is a function file's only when it is <name>.sql with a name that passes", () => {
+    expect(functionFileNameProblem('gate_probe.sql')).toBeNull();
+    expect(functionFileNameProblem(`${'g'.repeat(63)}.sql`)).toBeNull();
+    expect(functionFileNameProblem(`${'g'.repeat(64)}.sql`)).toMatch(/longer than 63 bytes/);
+    for (const name of ['gate probe.sql', 'Gate.sql', '"gate".sql', 'gate\tprobe.sql', 'gate\nprobe.sql', '.sql', '../gate.sql', 'gate.SQL', 'gate.sql.bak', 'README.md', 'gate-probe.sql']) {
+      expect(functionFileNameProblem(name), JSON.stringify(name)).not.toBeNull();
+    }
+  });
+
+  it('refuses any function outside schema public, naming each, since it would have no file and no diff', () => {
+    expect(() => render([fn('gate_probe()')], [], { otherSchemaFunctions: ['priv.gate_probe_leak()', 'audit.gate_probe_b(integer)'] })).toThrow(DomainModelError);
+    expect(() => render([fn('gate_probe()')], [], { otherSchemaFunctions: ['priv.gate_probe_leak()', 'audit.gate_probe_b(integer)'] })).toThrow(
+      /a function outside schema public would have no function file and no diff: audit\.gate_probe_b\(integer\), priv\.gate_probe_leak\(\)/,
+    );
+  });
+
   it('refuses an aggregate, naming it, rather than calling pg_get_functiondef on it or guessing', () => {
     const aggregate = fn('gate_probe_sum(integer)', { kind: 'a', definition: null, src: 'aggregate_dummy' });
     expect(() => render([fn('gate_probe()'), aggregate])).toThrow(DomainModelError);
@@ -122,12 +148,21 @@ describe('DBF-03: one file per function name', () => {
       fn('gate_probe_other()', { comment: 'a synthetic note' }),
     ];
     const triggers = [trigger('remittance', 'gate_probe_b', 'gate_probe_touch()'), trigger('line_note', 'gate_probe_a', 'gate_probe_touch()'), trigger('adjustment', 'gate_probe_c', 'gate_probe_touch()')];
-    const expected = [...render(functions, triggers)];
+    const policies = [policy('remittance', 'tenant', 'gate_probe(integer)'), policy('line_note', 'tenant', 'gate_probe(integer)'), policy('adjustment', 'tenant_insert', 'gate_probe(text)')];
+    const events = [eventTrigger('gate_probe_ddl_b', 'ddl_command_end', 'gate_probe_other()'), eventTrigger('gate_probe_ddl_a', 'sql_drop', 'gate_probe_other()')];
+    const expected = [...render(functions, triggers, { functionPolicies: policies, eventTriggers: events })];
     fc.assert(
-      fc.property(fc.shuffledSubarray(functions, { minLength: functions.length }), fc.shuffledSubarray(triggers, { minLength: triggers.length }), fc.boolean(), (fs, ts, reverseAcl) => {
-        const shuffled = fs.map((f) => ({ ...f, acl: reverseAcl ? [...f.acl].reverse() : f.acl }));
-        expect([...render(shuffled, ts)]).toEqual(expected);
-      }),
+      fc.property(
+        fc.shuffledSubarray(functions, { minLength: functions.length }),
+        fc.shuffledSubarray(triggers, { minLength: triggers.length }),
+        fc.shuffledSubarray(policies, { minLength: policies.length }),
+        fc.shuffledSubarray(events, { minLength: events.length }),
+        fc.boolean(),
+        (fs, ts, ps, es, reverseAcl) => {
+          const shuffled = fs.map((f) => ({ ...f, acl: reverseAcl ? [...f.acl].reverse() : f.acl }));
+          expect([...render(shuffled, ts, { functionPolicies: ps, eventTriggers: es })]).toEqual(expected);
+        },
+      ),
     );
   });
 });
@@ -142,6 +177,7 @@ describe('DBF-05: what each file says of a function', () => {
         '-- gate_probe()',
         `-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ${bodySha256(' SELECT 1 ').slice(0, 16)}`,
         '-- Trigger function of: (none)',
+        '-- Called by policy: (none)',
         'CREATE OR REPLACE FUNCTION public.gate_probe()',
         ' RETURNS integer',
         ' LANGUAGE sql',
@@ -230,5 +266,24 @@ describe('DBF-05: what each file says of a function', () => {
       '-- Trigger function of: remittance.gate_probe_touch',
       '-- Trigger function of: (none)',
     ]);
+  });
+
+  it('lists each policy that calls the function as table.policy, one per line in C order, and (none) when none does', () => {
+    const files = render([fn('gate_probe_scope()'), fn('gate_probe_scope(integer)'), fn('gate_probe_other()')], [], {
+      functionPolicies: [policy('remittance', 'tenant', 'gate_probe_scope()'), policy('line_note', 'tenant_update', 'gate_probe_scope()'), policy('line_note', 'tenant', 'gate_probe_scope()')],
+    });
+    const lines = (files.get('gate_probe_scope.sql') ?? '').split('\n').filter((line) => line.startsWith('-- Called by policy:'));
+    expect(lines).toEqual(['-- Called by policy: line_note.tenant', '-- Called by policy: line_note.tenant_update', '-- Called by policy: remittance.tenant', '-- Called by policy: (none)']);
+    expect(files.get('gate_probe_other.sql')).toContain('\n-- Trigger function of: (none)\n-- Called by policy: (none)\nCREATE OR REPLACE FUNCTION');
+  });
+
+  it('lists each event trigger that runs the function as name ON event, one per line in C order, and nothing when none does', () => {
+    const files = render([fn('gate_probe_ddl()', { returns: 'event_trigger' }), fn('gate_probe()')], [], {
+      eventTriggers: [eventTrigger('gate_probe_ddl_b', 'sql_drop', 'gate_probe_ddl()'), eventTrigger('gate_probe_ddl_a', 'ddl_command_end', 'gate_probe_ddl()')],
+    });
+    expect(files.get('gate_probe_ddl.sql')).toContain(
+      '\n-- Trigger function of: (none)\n-- Called by policy: (none)\n-- Event trigger: gate_probe_ddl_a ON ddl_command_end\n-- Event trigger: gate_probe_ddl_b ON sql_drop\nCREATE OR REPLACE FUNCTION',
+    );
+    expect(files.get('gate_probe.sql')).not.toContain('-- Event trigger:');
   });
 });

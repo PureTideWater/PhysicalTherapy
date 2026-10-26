@@ -4,6 +4,7 @@
 -- packet_version_pricing_check(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: dc57d582efc46783
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_pricing_check(content jsonb)
  RETURNS text
  LANGUAGE plpgsql

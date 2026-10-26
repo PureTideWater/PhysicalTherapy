@@ -4,6 +4,7 @@
 -- operator_screening_due(integer,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fdc77fa72cba256f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_due(min_queued_age_seconds integer, at_most integer)
  RETURNS TABLE(run_id uuid, status text, attempts integer, queue_priority smallint)
  LANGUAGE sql

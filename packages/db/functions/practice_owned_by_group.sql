@@ -4,6 +4,7 @@
 -- practice_owned_by_group()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 000c12c0e426949e
 -- Trigger function of: practice.practice_owned_by_group
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_owned_by_group()
  RETURNS trigger
  LANGUAGE plpgsql

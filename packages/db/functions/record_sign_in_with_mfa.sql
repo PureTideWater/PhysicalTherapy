@@ -4,6 +4,7 @@
 -- record_sign_in_with_mfa()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 33357d6149a90f6c
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.record_sign_in_with_mfa()
  RETURNS boolean
  LANGUAGE plpgsql

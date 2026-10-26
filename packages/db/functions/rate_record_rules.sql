@@ -4,6 +4,7 @@
 -- rate_record_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: dd7f474c2f4ab695
 -- Trigger function of: rate_record.rate_record_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.rate_record_rules()
  RETURNS trigger
  LANGUAGE plpgsql

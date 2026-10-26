@@ -4,6 +4,7 @@
 -- app_actor_memberships()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 236b8f478ee6b790
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.app_actor_memberships()
  RETURNS TABLE(organization_id uuid, organization_kind text, role text)
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- operator_screening_queue()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 884f39ad7f695d34
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_queue()
  RETURNS TABLE(queued integer, queued_waiting integer, pricing integer, oldest_queued_ms bigint)
  LANGUAGE sql

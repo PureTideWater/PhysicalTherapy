@@ -4,6 +4,7 @@
 -- operator_screening_reminders_due(integer,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8f34240464dd59d1
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_reminders_due(within_days integer, at_most integer)
  RETURNS TABLE(lead_id uuid, contact_email text, expires_at timestamp with time zone)
  LANGUAGE sql

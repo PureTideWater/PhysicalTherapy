@@ -4,6 +4,7 @@
 -- console_support_tickets(text,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 581668ca764c385c
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_support_tickets(of_status text, at_most integer)
  RETURNS TABLE(ticket_id uuid, number bigint, requester_email text, organizations text[], screen text, category text, subject text, message text, status text, created_at timestamp with time zone, status_changed_at timestamp with time zone)
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- payer_plan_mapping_in_force(uuid,date)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 80a161b250f57333
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.payer_plan_mapping_in_force(target_plan uuid, on_date date)
  RETURNS uuid
  LANGUAGE sql

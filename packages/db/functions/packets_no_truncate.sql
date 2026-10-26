@@ -7,6 +7,7 @@
 -- Trigger function of: packet_version.packet_version_no_truncate
 -- Trigger function of: payer_response.payer_response_no_truncate
 -- Trigger function of: submission.submission_no_truncate
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packets_no_truncate()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- report_document_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1f2bfc271aad9a0c
 -- Trigger function of: report_document.report_document_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.report_document_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

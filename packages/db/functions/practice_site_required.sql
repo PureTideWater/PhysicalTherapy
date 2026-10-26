@@ -4,6 +4,7 @@
 -- practice_site_required()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f9a3ef86d82aa7fc
 -- Trigger function of: practice.practice_has_site
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_site_required()
  RETURNS trigger
  LANGUAGE plpgsql

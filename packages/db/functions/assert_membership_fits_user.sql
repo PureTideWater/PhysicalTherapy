@@ -4,6 +4,7 @@
 -- assert_membership_fits_user(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e9b1e3a862e37508
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.assert_membership_fits_user(target_organization uuid, target_user uuid)
  RETURNS void
  LANGUAGE plpgsql

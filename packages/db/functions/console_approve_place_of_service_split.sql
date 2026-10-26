@@ -4,6 +4,7 @@
 -- console_approve_place_of_service_split(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f330f4ac65a5e2e6
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_approve_place_of_service_split(settings jsonb)
  RETURNS uuid
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- user_guarded_columns()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9dc981bc2908f316
 -- Trigger function of: user.user_guarded_columns
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_guarded_columns()
  RETURNS trigger
  LANGUAGE plpgsql

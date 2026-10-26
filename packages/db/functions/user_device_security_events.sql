@@ -4,6 +4,7 @@
 -- user_device_security_events()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 17e866106b038a58
 -- Trigger function of: user_device.user_device_security_events
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_device_security_events()
  RETURNS trigger
  LANGUAGE plpgsql

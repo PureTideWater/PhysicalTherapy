@@ -4,6 +4,7 @@
 -- membership_security_events()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e3cb30f2adcd0012
 -- Trigger function of: membership.membership_security_events
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.membership_security_events()
  RETURNS trigger
  LANGUAGE plpgsql

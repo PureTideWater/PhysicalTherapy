@@ -18,12 +18,14 @@ export {
   provenanceLine,
   provenanceProblems,
 } from './approval';
-export { type GenerateOptions, type GeneratedDomainModel, generateDomainModel } from './generate';
-export { FUNCTION_FILE_BANNER, FUNCTIONS_README, renderFunctionFiles } from './functions';
+export { type DatabaseRead, type GenerateOptions, type GeneratedDomainModel, generateDomainModel, generateFromCatalog, readDatabase } from './generate';
+export { FUNCTION_FILE_BANNER, FUNCTIONS_README, functionFileNameProblem, renderFunctionFiles } from './functions';
 export {
   type DirectoryDifference,
   compareFunctionDirectory,
+  type DirectoryPlan,
   describeDifference,
+  planFunctionDirectory,
   readFunctionDirectory,
   sameDirectory,
   writeFunctionDirectory,
@@ -43,12 +45,15 @@ export {
   readApproverRecords,
   readApprovers,
 } from './sources';
-export { type DocumentAtRef, documentAtRef, functionFilesAtCommit, hasUncommittedInputs, unifiedDiffs } from './history';
+export { type DocumentAtRef, FUNCTION_DIFF_OPTIONS, documentAtRef, functionBaseCommit, functionFilesAtCommit, hasUncommittedInputs, isolatedGitEnv, unifiedDiffs } from './history';
 export {
   type DocumentChange,
   type DocumentFact,
   type DocumentReading,
+  FUNCTION_DIFFS_MODES,
+  FUNCTION_SECTION_BUDGET,
   type FunctionChangesInput,
+  type FunctionDiffsMode,
   SUMMARY_CATEGORIES,
   type SummaryCategory,
   type SummaryInput,

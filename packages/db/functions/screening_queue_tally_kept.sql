@@ -4,6 +4,7 @@
 -- screening_queue_tally_kept()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fde98694f4ae27a6
 -- Trigger function of: screening_queue_tally.screening_queue_tally_kept
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_queue_tally_kept()
  RETURNS trigger
  LANGUAGE plpgsql

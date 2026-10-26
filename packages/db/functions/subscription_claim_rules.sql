@@ -4,6 +4,7 @@
 -- subscription_claim_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 24615116b611dcb0
 -- Trigger function of: subscription_claim.subscription_claim_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.subscription_claim_rules()
  RETURNS trigger
  LANGUAGE plpgsql

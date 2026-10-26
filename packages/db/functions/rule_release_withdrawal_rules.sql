@@ -4,6 +4,7 @@
 -- rule_release_withdrawal_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c0f7ed15484f7fd1
 -- Trigger function of: rule_release_withdrawal.rule_release_withdrawal_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.rule_release_withdrawal_rules()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,15 @@
 -- app_actor_permitted(uuid,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ba1bea731502d75b
 -- Trigger function of: (none)
+-- Called by policy: audit_report.audit_report_requested_by_case_workers
+-- Called by policy: case.case_opened_by_case_workers
+-- Called by policy: case_line.case_line_added_by_case_workers
+-- Called by policy: contract_calendar_event.contract_calendar_event_by_sign_off
+-- Called by policy: grant.grant_approved_by_practice_administrator
+-- Called by policy: grant.grant_revoked_by_practice_administrator
+-- Called by policy: line_status.line_status_set_by_case_workers
+-- Called by policy: pricing_run.pricing_run_accepted_by_actor
+-- Called by policy: pricing_run.pricing_run_created_by_mappers
 CREATE OR REPLACE FUNCTION public.app_actor_permitted(target_practice uuid, wanted text)
  RETURNS boolean
  LANGUAGE sql

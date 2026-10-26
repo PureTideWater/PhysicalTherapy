@@ -4,6 +4,7 @@
 -- unlock_user(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: dcb9d4ff9b6626f1
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.unlock_user(target_user uuid)
  RETURNS boolean
  LANGUAGE plpgsql

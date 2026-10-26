@@ -4,6 +4,7 @@
 -- ledger_entry_within_line()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 559ce266b8f75722
 -- Trigger function of: ledger_entry.ledger_entry_within_line
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_entry_within_line()
  RETURNS trigger
  LANGUAGE plpgsql

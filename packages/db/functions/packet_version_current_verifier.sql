@@ -4,6 +4,7 @@
 -- packet_version_current_verifier()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4cc472bdc3162e89
 -- Trigger function of: packet_version.packet_version_current_verifier
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_current_verifier()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- grant_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1daf6a68e1b51eac
 -- Trigger function of: grant.grant_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.grant_rules()
  RETURNS trigger
  LANGUAGE plpgsql

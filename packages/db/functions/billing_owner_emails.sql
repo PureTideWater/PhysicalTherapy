@@ -4,6 +4,7 @@
 -- billing_owner_emails(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 98dafc8c17d7f83b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.billing_owner_emails(target_organization uuid)
  RETURNS TABLE(email text)
  LANGUAGE sql

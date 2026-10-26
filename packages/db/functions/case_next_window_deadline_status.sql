@@ -4,6 +4,7 @@
 -- case_next_window_deadline_status(uuid,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c33a8d25322b362f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_next_window_deadline_status(target_case uuid, minimum_level text DEFAULT 'L2'::text)
  RETURNS text
  LANGUAGE plpgsql

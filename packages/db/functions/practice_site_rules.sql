@@ -4,6 +4,7 @@
 -- practice_site_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b607cf637160b58a
 -- Trigger function of: practice_site.practice_site_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_site_rules()
  RETURNS trigger
  LANGUAGE plpgsql

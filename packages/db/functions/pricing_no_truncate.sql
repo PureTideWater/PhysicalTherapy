@@ -5,6 +5,7 @@
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 66bbf3bfbb28631b
 -- Trigger function of: priced_line.priced_line_no_truncate
 -- Trigger function of: pricing_run.pricing_run_no_truncate
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_no_truncate()
  RETURNS trigger
  LANGUAGE plpgsql

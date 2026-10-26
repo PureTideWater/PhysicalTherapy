@@ -4,6 +4,7 @@
 -- practice_export_history(uuid,integer,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f07d977a669d671b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_export_history(target uuid, page_size integer, page_offset integer)
  RETURNS TABLE(event_id uuid, action text, object_type text, object_id uuid, purpose text, actor_id uuid, at timestamp with time zone)
  LANGUAGE sql

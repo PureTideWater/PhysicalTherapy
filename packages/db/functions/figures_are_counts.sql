@@ -4,6 +4,7 @@
 -- figures_are_counts(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: cf797676e6189c60
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.figures_are_counts(figures jsonb)
  RETURNS boolean
  LANGUAGE sql

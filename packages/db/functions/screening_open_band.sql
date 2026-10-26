@@ -4,6 +4,7 @@
 -- screening_open_band(timestamp with time zone,timestamp with time zone)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5378a847ee1b6828
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_open_band(uploaded timestamp with time zone, opened timestamp with time zone)
  RETURNS text
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- contract_calendar_event_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9d49e01ff62b1725
 -- Trigger function of: contract_calendar_event.contract_calendar_event_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.contract_calendar_event_rules()
  RETURNS trigger
  LANGUAGE plpgsql

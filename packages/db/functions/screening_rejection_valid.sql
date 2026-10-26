@@ -4,6 +4,7 @@
 -- screening_rejection_valid(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9c24ac2e08f6742b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_rejection_valid(reason jsonb)
  RETURNS boolean
  LANGUAGE sql

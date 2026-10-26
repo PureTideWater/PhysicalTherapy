@@ -4,6 +4,7 @@
 -- effective_practice_access()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 53666b6ed9d54a7f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.effective_practice_access()
  RETURNS TABLE(practice_id uuid, via text, grant_id uuid, role text)
  LANGUAGE sql

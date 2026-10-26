@@ -4,6 +4,7 @@
 -- packet_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2176280110c4aa2b
 -- Trigger function of: packet.packet_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

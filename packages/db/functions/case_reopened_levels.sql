@@ -4,6 +4,7 @@
 -- case_reopened_levels(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9e04003e8f9e60cf
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_reopened_levels(target_case uuid)
  RETURNS integer
  LANGUAGE sql

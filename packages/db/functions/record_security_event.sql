@@ -4,6 +4,7 @@
 -- record_security_event(text,uuid,uuid,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3a91f6d2aa7d0e61
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.record_security_event(target_type text, target uuid, target_practice uuid, what text)
  RETURNS void
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- screening_standing(bigint,bigint,bigint,bigint)
 -- Body SHA-256 (the SQL-standard body only, from RETURN or BEGIN ATOMIC), as Appendix C prints it: d8feb37d697d3992
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_standing(expected bigint, reduced bigint, observed bigint, claim_lines bigint)
  RETURNS text
  LANGUAGE sql

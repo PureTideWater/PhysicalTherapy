@@ -4,6 +4,7 @@
 -- audit_report_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3e46c1342db1a9db
 -- Trigger function of: audit_report.audit_report_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.audit_report_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

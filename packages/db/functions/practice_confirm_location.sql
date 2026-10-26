@@ -4,6 +4,7 @@
 -- practice_confirm_location(uuid,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: cf9ad079d556842b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_confirm_location(target uuid, shown_zip text, shown_zip_plus_four text)
  RETURNS text
  LANGUAGE plpgsql

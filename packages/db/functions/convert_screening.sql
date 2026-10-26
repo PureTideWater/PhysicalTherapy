@@ -4,6 +4,7 @@
 -- convert_screening(text,text,integer,text[],text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ae9476bcd4ee8b04
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.convert_screening(token_sha256 text, contact text, location_count integer, payer_names text[], arrangement text, request text)
  RETURNS uuid
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- screening_result_coverage(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d0ded51d5c43a4fd
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_result_coverage(token_sha256 text)
  RETURNS TABLE(payer_product text, disposition text, unpriced_reason text, unpriced_detail text, rows integer, claim_lines bigint, observed_cents bigint)
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- operator_screening_complete(uuid,text,text,text,text,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8220d43ccceb8bb4
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_complete(run uuid, token_sha256 text, withdrawal_token_sha256 text, engine text, request text, attempt integer)
  RETURNS TABLE(contact_email text, row_count integer, kept_with text, received_at timestamp with time zone, wait_reason text)
  LANGUAGE plpgsql

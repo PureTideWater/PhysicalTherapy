@@ -4,6 +4,7 @@
 -- line_status_ledger_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 146f2bd81224539e
 -- Trigger function of: line_status.line_status_ledger_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.line_status_ledger_rules()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- app_actor_terms_required()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ef5705187db37687
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.app_actor_terms_required()
  RETURNS boolean
  LANGUAGE sql

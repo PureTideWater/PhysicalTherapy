@@ -4,6 +4,7 @@
 -- organization_administrator_count(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 45fcaf44bc28ae33
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.organization_administrator_count(target_organization uuid)
  RETURNS bigint
  LANGUAGE sql

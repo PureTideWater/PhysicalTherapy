@@ -4,6 +4,7 @@
 -- screening_result_opened(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e002cbad4fce3ed8
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_result_opened(token_sha256 text)
  RETURNS void
  LANGUAGE plpgsql

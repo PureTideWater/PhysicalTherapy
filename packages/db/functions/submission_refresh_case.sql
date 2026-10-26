@@ -4,6 +4,7 @@
 -- submission_refresh_case()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 220ce03d1ea0f31f
 -- Trigger function of: submission.submission_refresh_case
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submission_refresh_case()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- subscription_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9bff8d1f6d16f0e6
 -- Trigger function of: subscription.subscription_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.subscription_rules()
  RETURNS trigger
  LANGUAGE plpgsql

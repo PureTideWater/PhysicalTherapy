@@ -4,6 +4,7 @@
 -- submission_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c05aaefa59906f3b
 -- Trigger function of: submission.submission_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submission_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

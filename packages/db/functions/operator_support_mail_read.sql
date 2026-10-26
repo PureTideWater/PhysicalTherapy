@@ -4,6 +4,7 @@
 -- operator_support_mail_read(text[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: da2a6ab110478618
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_support_mail_read(refs text[])
  RETURNS TABLE(mail_ref text)
  LANGUAGE plpgsql

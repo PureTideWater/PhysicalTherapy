@@ -4,6 +4,7 @@
 -- model_review_permission(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4771b6912529196b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.model_review_permission(call_purpose text)
  RETURNS text
  LANGUAGE sql

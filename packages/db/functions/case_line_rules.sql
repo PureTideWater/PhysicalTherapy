@@ -4,6 +4,7 @@
 -- case_line_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8390200e0d5563a1
 -- Trigger function of: case_line.case_line_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_line_rules()
  RETURNS trigger
  LANGUAGE plpgsql

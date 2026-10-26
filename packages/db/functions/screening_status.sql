@@ -4,6 +4,7 @@
 -- screening_status()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 00660ad1e09bf1da
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_status()
  RETURNS TABLE(release_no integer, place_of_service_split_id uuid)
  LANGUAGE sql

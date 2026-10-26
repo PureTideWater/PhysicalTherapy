@@ -4,6 +4,7 @@
 -- practice_setting_keys()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 43b5d4392b24804a
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_setting_keys()
  RETURNS text[]
  LANGUAGE sql

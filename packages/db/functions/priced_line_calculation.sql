@@ -4,6 +4,7 @@
 -- priced_line_calculation(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c6d660b35b41b796
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.priced_line_calculation(trace jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql

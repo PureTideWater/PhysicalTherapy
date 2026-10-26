@@ -4,6 +4,7 @@
 -- maintenance_on()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1a688a810ac58550
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.maintenance_on()
  RETURNS boolean
  LANGUAGE sql

@@ -6,6 +6,7 @@
 -- Trigger function of: screening_prospect.screening_prospect_kept_until_expiry
 -- Trigger function of: screening_run.screening_run_kept_until_expiry
 -- Trigger function of: screening_upload.screening_upload_kept_until_expiry
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_kept_until_expiry()
  RETURNS trigger
  LANGUAGE plpgsql

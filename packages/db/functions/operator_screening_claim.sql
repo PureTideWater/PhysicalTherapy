@@ -4,6 +4,7 @@
 -- operator_screening_claim(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: a35a25f1df1aa1c8
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_claim(run uuid)
  RETURNS TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, zip_plus_four text, settings jsonb, as_of date, row_count integer, attempt integer)
  LANGUAGE plpgsql

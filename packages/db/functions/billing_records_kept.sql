@@ -10,6 +10,7 @@
 -- Trigger function of: subscription_claim.subscription_claim_no_truncate
 -- Trigger function of: usage_snapshot.usage_snapshot_kept
 -- Trigger function of: usage_snapshot.usage_snapshot_no_truncate
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.billing_records_kept()
  RETURNS trigger
  LANGUAGE plpgsql

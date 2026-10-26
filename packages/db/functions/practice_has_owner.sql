@@ -4,6 +4,7 @@
 -- practice_has_owner()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 244ca9126c121a10
 -- Trigger function of: practice.practice_has_owner
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_has_owner()
  RETURNS trigger
  LANGUAGE plpgsql

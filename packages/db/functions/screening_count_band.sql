@@ -4,6 +4,7 @@
 -- screening_count_band(bigint)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3c43fb92e0243276
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_count_band(n bigint)
  RETURNS text
  LANGUAGE sql

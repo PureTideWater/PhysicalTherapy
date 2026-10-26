@@ -4,6 +4,7 @@
 -- support_grant_grantee()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: decdf5063e0c761f
 -- Trigger function of: support_grant.support_grant_grantee
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.support_grant_grantee()
  RETURNS trigger
  LANGUAGE plpgsql

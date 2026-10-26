@@ -4,6 +4,7 @@
 -- line_stage_rank(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 581989dfa3733186
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.line_stage_rank(stage text)
  RETURNS integer
  LANGUAGE sql

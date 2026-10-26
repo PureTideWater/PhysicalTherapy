@@ -4,6 +4,7 @@
 -- organization_kind_fixed()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d5a3d13bd118aac9
 -- Trigger function of: organization.organization_kind_fixed
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.organization_kind_fixed()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- ledger_match_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 442d6a755ca70c28
 -- Trigger function of: ledger_match.ledger_match_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_match_rules()
  RETURNS trigger
  LANGUAGE plpgsql

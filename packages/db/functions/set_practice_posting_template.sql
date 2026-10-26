@@ -4,6 +4,7 @@
 -- set_practice_posting_template(uuid,jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1d457cde477eec93
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.set_practice_posting_template(target uuid, template jsonb)
  RETURNS boolean
  LANGUAGE plpgsql

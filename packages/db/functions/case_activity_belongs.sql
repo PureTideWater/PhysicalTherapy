@@ -4,6 +4,7 @@
 -- case_activity_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 692cbfcfb09ab88d
 -- Trigger function of: case_activity.case_activity_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_activity_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

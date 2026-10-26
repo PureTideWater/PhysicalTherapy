@@ -1,5 +1,7 @@
 # GitHub collapses a generated file's diff in a pull request's "Files changed", judging "generated" by this attribute
 # or, without it, by Linguist's own heuristics. The database function files are generated (pnpm db:domain-model --out),
 # but their diffs are how a schema pull request shows which lines of which function it changes (docs/adr/0068), so
-# they are marked not generated, explicitly, and always show open (tools/test/function-files.test.ts).
-packages/db/functions/*.sql linguist-generated=false
+# they are marked not generated, explicitly, and always show open. They are text with LF line ends in every checkout,
+# whatever core.autocrlf says, since --check compares them byte for byte with what the generator writes
+# (tools/test/function-files.test.ts).
+packages/db/functions/*.sql linguist-generated=false text eol=lf

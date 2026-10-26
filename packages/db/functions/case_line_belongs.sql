@@ -4,6 +4,7 @@
 -- case_line_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 502a1f501004cfdb
 -- Trigger function of: case_line.case_line_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_line_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

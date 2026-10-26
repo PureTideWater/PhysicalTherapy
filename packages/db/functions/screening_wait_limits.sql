@@ -4,6 +4,7 @@
 -- screening_wait_limits()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9366f730bda41f40
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_wait_limits()
  RETURNS TABLE(account_rows integer, daily_rows integer)
  LANGUAGE sql

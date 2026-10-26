@@ -4,6 +4,7 @@
 -- notification_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f5d86ea89ea32c5c
 -- Trigger function of: notification.notification_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.notification_rules()
  RETURNS trigger
  LANGUAGE plpgsql

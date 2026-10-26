@@ -4,6 +4,7 @@
 -- monitoring_figure_valid(jsonb,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: db1a5da1e003b307
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.monitoring_figure_valid(figure jsonb, leaf text)
  RETURNS boolean
  LANGUAGE sql

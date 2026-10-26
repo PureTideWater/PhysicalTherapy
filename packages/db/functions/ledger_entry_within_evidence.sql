@@ -4,6 +4,7 @@
 -- ledger_entry_within_evidence()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d0bb740ca00d3883
 -- Trigger function of: ledger_entry.ledger_entry_within_evidence
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_entry_within_evidence()
  RETURNS trigger
  LANGUAGE plpgsql

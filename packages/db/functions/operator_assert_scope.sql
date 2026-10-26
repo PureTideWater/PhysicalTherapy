@@ -4,6 +4,7 @@
 -- operator_assert_scope(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 533c2fbe71370114
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_assert_scope(target_practice uuid)
  RETURNS void
  LANGUAGE plpgsql

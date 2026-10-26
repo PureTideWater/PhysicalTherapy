@@ -4,6 +4,7 @@
 -- user_is_support_engineer(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: feeb17d9d1c34e9d
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_is_support_engineer(target_user uuid)
  RETURNS boolean
  LANGUAGE sql

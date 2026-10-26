@@ -4,6 +4,7 @@
 -- case_owner_eligible(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b8dacedadc46c5e7
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_owner_eligible(target_user uuid, target_practice uuid)
  RETURNS boolean
  LANGUAGE sql

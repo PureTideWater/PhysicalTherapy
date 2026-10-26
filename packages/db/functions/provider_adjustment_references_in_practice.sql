@@ -4,6 +4,7 @@
 -- provider_adjustment_references_in_practice()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d679b25d16c44132
 -- Trigger function of: provider_adjustment.provider_adjustment_references_in_practice
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.provider_adjustment_references_in_practice()
  RETURNS trigger
  LANGUAGE plpgsql

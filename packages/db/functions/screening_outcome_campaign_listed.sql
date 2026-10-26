@@ -4,6 +4,7 @@
 -- screening_outcome_campaign_listed()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2f4aca68279c8f28
 -- Trigger function of: screening_outcome.screening_outcome_campaign_listed
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_outcome_campaign_listed()
  RETURNS trigger
  LANGUAGE plpgsql

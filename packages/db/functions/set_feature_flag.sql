@@ -4,6 +4,7 @@
 -- set_feature_flag(text,text,uuid,jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ab0833dc69f73120
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.set_feature_flag(flag_key text, flag_scope text, flag_scope_id uuid, flag_value jsonb)
  RETURNS uuid
  LANGUAGE plpgsql

@@ -4,6 +4,8 @@
 -- app_actor_group_practice_ids()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e8aecee1dd00dc17
 -- Trigger function of: (none)
+-- Called by policy: agreement.agreement_read_by_parties
+-- Called by policy: support_grant.support_grant_read_by_practice_and_platform
 CREATE OR REPLACE FUNCTION public.app_actor_group_practice_ids()
  RETURNS uuid[]
  LANGUAGE sql

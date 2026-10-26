@@ -4,6 +4,7 @@
 -- user_is_practice_admin(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 358c3cd0bbf46335
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_is_practice_admin(target_practice uuid, target_user uuid)
  RETURNS boolean
  LANGUAGE sql

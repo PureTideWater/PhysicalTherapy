@@ -4,6 +4,7 @@
 -- console_register_marketing_campaign(text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 77e5b8145f5d7a10
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_register_marketing_campaign(code text, label text)
  RETURNS void
  LANGUAGE plpgsql

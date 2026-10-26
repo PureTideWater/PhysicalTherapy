@@ -4,6 +4,7 @@
 -- practice_notification_recipients()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e3494721e080025a
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_notification_recipients()
  RETURNS TABLE(user_id uuid, email text, digest_email boolean, in_app boolean)
  LANGUAGE plpgsql

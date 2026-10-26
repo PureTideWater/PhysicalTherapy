@@ -4,6 +4,7 @@
 -- model_citations_valid(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9e885a47c2ab3c5e
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.model_citations_valid(citations jsonb)
  RETURNS boolean
  LANGUAGE sql

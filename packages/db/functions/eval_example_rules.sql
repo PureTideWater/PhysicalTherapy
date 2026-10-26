@@ -4,6 +4,7 @@
 -- eval_example_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 11a31add3dfa4c6d
 -- Trigger function of: eval_example.eval_example_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.eval_example_rules()
  RETURNS trigger
  LANGUAGE plpgsql

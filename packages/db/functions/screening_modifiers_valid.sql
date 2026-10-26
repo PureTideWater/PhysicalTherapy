@@ -4,6 +4,7 @@
 -- screening_modifiers_valid(text[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5ce982845defbad6
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_modifiers_valid(modifiers text[])
  RETURNS boolean
  LANGUAGE sql

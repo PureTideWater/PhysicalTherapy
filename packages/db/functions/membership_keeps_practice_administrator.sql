@@ -4,6 +4,7 @@
 -- membership_keeps_practice_administrator()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 974ecfab878a2e77
 -- Trigger function of: membership.membership_keeps_practice_administrator
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.membership_keeps_practice_administrator()
  RETURNS trigger
  LANGUAGE plpgsql

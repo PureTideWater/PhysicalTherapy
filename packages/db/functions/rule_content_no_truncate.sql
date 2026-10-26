@@ -6,6 +6,7 @@
 -- Trigger function of: rule_record.rule_record_no_truncate
 -- Trigger function of: rule_release.rule_release_no_truncate
 -- Trigger function of: rule_release_withdrawal.rule_release_withdrawal_no_truncate
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.rule_content_no_truncate()
  RETURNS trigger
  LANGUAGE plpgsql

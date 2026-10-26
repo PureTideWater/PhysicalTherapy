@@ -4,6 +4,7 @@
 -- pricing_run_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 938278884e08d472
 -- Trigger function of: pricing_run.pricing_run_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_run_rules()
  RETURNS trigger
  LANGUAGE plpgsql

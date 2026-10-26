@@ -4,6 +4,7 @@
 -- marketing_campaign_kept(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fc3ead84269c9c23
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.marketing_campaign_kept(given text)
  RETURNS text
  LANGUAGE sql

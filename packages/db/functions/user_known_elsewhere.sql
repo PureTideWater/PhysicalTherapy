@@ -4,6 +4,7 @@
 -- user_known_elsewhere(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 35d6cc736c81cd02
 -- Trigger function of: (none)
+-- Called by policy: membership.membership_administrators_insert
 CREATE OR REPLACE FUNCTION public.user_known_elsewhere(target_user uuid, target_organization uuid)
  RETURNS boolean
  LANGUAGE sql

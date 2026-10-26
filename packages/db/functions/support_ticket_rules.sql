@@ -4,6 +4,7 @@
 -- support_ticket_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4a090c61fdc7f2e9
 -- Trigger function of: support_ticket.support_ticket_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.support_ticket_rules()
  RETURNS trigger
  LANGUAGE plpgsql

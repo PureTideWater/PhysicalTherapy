@@ -4,6 +4,7 @@
 -- compliance_workforce()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7cc132ead4ab0ff3
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.compliance_workforce()
  RETURNS TABLE(user_id uuid, email text, roles text[])
  LANGUAGE plpgsql

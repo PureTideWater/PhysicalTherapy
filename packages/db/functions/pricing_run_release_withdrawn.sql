@@ -4,6 +4,7 @@
 -- pricing_run_release_withdrawn(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1297cd9fd72f4ee7
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_run_release_withdrawn(run uuid)
  RETURNS boolean
  LANGUAGE sql

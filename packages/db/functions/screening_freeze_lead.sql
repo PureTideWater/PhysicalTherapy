@@ -4,6 +4,7 @@
 -- screening_freeze_lead(uuid,uuid,text,boolean,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0621e0dd445907d7
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_freeze_lead(run uuid, request_id uuid, withdrawal_token_sha256 text, keep_consent boolean, request text)
  RETURNS uuid
  LANGUAGE plpgsql

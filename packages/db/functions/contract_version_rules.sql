@@ -4,6 +4,7 @@
 -- contract_version_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 84ee4071d9947f3d
 -- Trigger function of: contract_version.contract_version_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.contract_version_rules()
  RETURNS trigger
  LANGUAGE plpgsql

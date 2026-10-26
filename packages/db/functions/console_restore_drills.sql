@@ -4,6 +4,7 @@
 -- console_restore_drills(integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 399a93a1a8318075
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_restore_drills(at_most integer)
  RETURNS TABLE(started_at timestamp with time zone, completed_at timestamp with time zone, duration_ms bigint, outcome text, catalog_problems integer, error_code text)
  LANGUAGE plpgsql

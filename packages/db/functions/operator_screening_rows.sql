@@ -4,6 +4,7 @@
 -- operator_screening_rows(uuid,integer,integer,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ad7e736c4810324f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_rows(run uuid, after_row integer, at_most integer, attempt integer)
  RETURNS TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint)
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- source_document_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b77558b4de441f4f
 -- Trigger function of: source_document.source_document_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.source_document_rules()
  RETURNS trigger
  LANGUAGE plpgsql

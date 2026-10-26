@@ -4,6 +4,7 @@
 -- audit_report_download_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: dcc9fa8b0d88cd5c
 -- Trigger function of: audit_report_download.audit_report_download_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.audit_report_download_rules()
  RETURNS trigger
  LANGUAGE plpgsql

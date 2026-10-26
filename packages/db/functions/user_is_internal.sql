@@ -4,6 +4,7 @@
 -- user_is_internal(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: de0ae9bc719ff3fd
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_is_internal(target_user uuid)
  RETURNS boolean
  LANGUAGE sql

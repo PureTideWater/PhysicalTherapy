@@ -4,6 +4,7 @@
 -- case_activity_sets_owner()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: bf9900a96bfa0fec
 -- Trigger function of: case_activity.case_activity_sets_owner
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_activity_sets_owner()
  RETURNS trigger
  LANGUAGE plpgsql

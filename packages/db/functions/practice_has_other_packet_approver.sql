@@ -4,6 +4,7 @@
 -- practice_has_other_packet_approver(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d1920a7b04d32ef7
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_has_other_packet_approver(target_practice uuid, excluded uuid)
  RETURNS boolean
  LANGUAGE sql

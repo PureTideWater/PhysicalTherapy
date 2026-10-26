@@ -4,6 +4,7 @@
 -- packet_version_unattested_reason(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 05ff40e2f2b243ae
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_unattested_reason(target uuid)
  RETURNS text
  LANGUAGE plpgsql

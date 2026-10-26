@@ -4,6 +4,7 @@
 -- operator_record_support_mail(text,text,text,text,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2903a95e22531e32
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_record_support_mail(ref text, verdict text, sender text, subject text, message text, request text)
  RETURNS TABLE(outcome text, ticket_number bigint)
  LANGUAGE plpgsql

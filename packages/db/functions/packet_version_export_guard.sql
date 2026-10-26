@@ -4,6 +4,7 @@
 -- packet_version_export_guard()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7d2abcd182a2a48a
 -- Trigger function of: packet_version.packet_version_export_guard
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_export_guard()
  RETURNS trigger
  LANGUAGE plpgsql

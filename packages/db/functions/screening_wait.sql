@@ -4,6 +4,7 @@
 -- screening_wait(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8b60abe3ed17d2aa
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_wait(run uuid)
  RETURNS TABLE(queue_priority smallint, wait_reason text, pricing integer, queued_ahead integer)
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- packet_version_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5f8e981349178774
 -- Trigger function of: packet_version.packet_version_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

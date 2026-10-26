@@ -4,6 +4,7 @@
 -- submission_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 918129137c88ee12
 -- Trigger function of: submission.submission_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submission_rules()
  RETURNS trigger
  LANGUAGE plpgsql

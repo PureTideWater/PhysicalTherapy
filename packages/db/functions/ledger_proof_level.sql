@@ -4,6 +4,7 @@
 -- ledger_proof_level(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9830a2f9478006bf
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_proof_level(target_practice uuid)
  RETURNS text
  LANGUAGE sql

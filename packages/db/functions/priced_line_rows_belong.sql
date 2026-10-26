@@ -4,6 +4,7 @@
 -- priced_line_rows_belong()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0c2beafb3c63d2f3
 -- Trigger function of: priced_line.priced_line_rows_belong
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.priced_line_rows_belong()
  RETURNS trigger
  LANGUAGE plpgsql

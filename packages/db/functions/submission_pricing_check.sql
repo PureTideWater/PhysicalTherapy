@@ -4,6 +4,7 @@
 -- submission_pricing_check()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e7191244a18fc56c
 -- Trigger function of: submission.submission_pricing_check
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submission_pricing_check()
  RETURNS trigger
  LANGUAGE plpgsql

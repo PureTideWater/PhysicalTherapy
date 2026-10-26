@@ -4,6 +4,7 @@
 -- parse_report_references_in_practice()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 377d9e5cdfe2b80c
 -- Trigger function of: parse_report.parse_report_references_in_practice
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.parse_report_references_in_practice()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- case_latest_submission(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6d8281aceebf0c78
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_latest_submission(target_case uuid)
  RETURNS uuid
  LANGUAGE sql

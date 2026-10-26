@@ -4,6 +4,7 @@
 -- practice_administrator_count(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 398bbc1606ac3e31
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_administrator_count(target_practice uuid)
  RETURNS bigint
  LANGUAGE sql

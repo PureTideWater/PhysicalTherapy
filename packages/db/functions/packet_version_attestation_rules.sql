@@ -4,6 +4,7 @@
 -- packet_version_attestation_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2ce013b23d374234
 -- Trigger function of: packet_version.packet_version_attestation_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_attestation_rules()
  RETURNS trigger
  LANGUAGE plpgsql

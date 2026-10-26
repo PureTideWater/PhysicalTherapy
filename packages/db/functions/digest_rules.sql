@@ -4,6 +4,7 @@
 -- digest_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ece3b3718d970e66
 -- Trigger function of: digest.digest_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.digest_rules()
  RETURNS trigger
  LANGUAGE plpgsql

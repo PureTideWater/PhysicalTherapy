@@ -4,6 +4,7 @@
 -- screening_result_inserted()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f556a1e47dc13dee
 -- Trigger function of: screening_result.screening_result_inserted
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_result_inserted()
  RETURNS trigger
  LANGUAGE plpgsql

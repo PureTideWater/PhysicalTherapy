@@ -4,6 +4,7 @@
 -- practice_case_workers(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7a62bdc2457b55fb
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_case_workers(target_practice uuid)
  RETURNS TABLE(user_id uuid, email text)
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- sign_in_account(text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1a888c9484d2ed7a
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.sign_in_account(by_email text, by_sub text)
  RETURNS TABLE(user_id uuid, cognito_sub text, email text, status text, mfa_enrolled boolean, locked boolean, hardware_key_required boolean)
  LANGUAGE sql

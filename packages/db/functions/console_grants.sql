@@ -4,6 +4,7 @@
 -- console_grants(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 99b8bdc1d3dee83b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_grants(of_organization uuid)
  RETURNS TABLE(grant_id uuid, organization_id uuid, practice_id uuid, scope jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, agreement_id uuid, approved_by_user_id uuid, revoked_at timestamp with time zone, created_at timestamp with time zone)
  LANGUAGE sql

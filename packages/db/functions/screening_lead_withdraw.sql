@@ -4,6 +4,7 @@
 -- screening_lead_withdraw(text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 788ee69fa361503e
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_lead_withdraw(token_sha256 text, request text)
  RETURNS void
  LANGUAGE plpgsql

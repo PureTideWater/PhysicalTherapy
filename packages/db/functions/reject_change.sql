@@ -31,6 +31,7 @@
 -- Trigger function of: support_mail_receipt.support_mail_receipt_append_only
 -- Trigger function of: terms_acceptance.terms_acceptance_append_only
 -- Trigger function of: terms_version.terms_version_append_only
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.reject_change()
  RETURNS trigger
  LANGUAGE plpgsql

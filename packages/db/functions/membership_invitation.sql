@@ -4,6 +4,7 @@
 -- membership_invitation()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5101211402a5e23c
 -- Trigger function of: membership.membership_invitation
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.membership_invitation()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- rate_record_evidence_complete(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: dd3b8e4585a95c30
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.rate_record_evidence_complete(evidence jsonb)
  RETURNS boolean
  LANGUAGE sql

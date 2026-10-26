@@ -4,6 +4,7 @@
 -- app_actor_practice_directory()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 907cf26442af3589
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.app_actor_practice_directory()
  RETURNS TABLE(practice_id uuid, name text, organization_id uuid)
  LANGUAGE sql

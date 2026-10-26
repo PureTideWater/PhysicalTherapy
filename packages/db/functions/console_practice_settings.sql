@@ -4,6 +4,7 @@
 -- console_practice_settings(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7a2eef20ce73d1ac
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_practice_settings(target uuid)
  RETURNS TABLE(practice_id uuid, organization_id uuid, name text, zip text, zip_plus_four text, settings jsonb)
  LANGUAGE sql

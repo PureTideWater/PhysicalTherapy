@@ -4,6 +4,7 @@
 -- packet_export_downloads_of_actor(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: dc26a79c8d0152e2
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_export_downloads_of_actor(target uuid)
  RETURNS text[]
  LANGUAGE sql

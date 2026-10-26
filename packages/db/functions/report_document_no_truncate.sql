@@ -4,6 +4,7 @@
 -- report_document_no_truncate()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: a4415278b751e6c5
 -- Trigger function of: report_document.report_document_no_truncate
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.report_document_no_truncate()
  RETURNS trigger
  LANGUAGE plpgsql

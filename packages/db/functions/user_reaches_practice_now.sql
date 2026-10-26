@@ -4,6 +4,7 @@
 -- user_reaches_practice_now(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9c88797ed038db3b
 -- Trigger function of: (none)
+-- Called by policy: notification.notification_written_for
 CREATE OR REPLACE FUNCTION public.user_reaches_practice_now(target_user uuid, target_practice uuid)
  RETURNS boolean
  LANGUAGE sql

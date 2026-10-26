@@ -4,6 +4,7 @@
 -- current_rule_release()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 888c946804c94d4f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.current_rule_release()
  RETURNS integer
  LANGUAGE sql

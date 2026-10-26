@@ -4,6 +4,7 @@
 -- practice_in_scope(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7d65da587ce34ce4
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_in_scope(target_practice uuid)
  RETURNS boolean
  LANGUAGE sql

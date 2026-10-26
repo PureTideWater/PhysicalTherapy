@@ -4,6 +4,7 @@
 -- contract_version_retired_by(contract_version,contract_version,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d28cf1aa50ff68a3
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.contract_version_retired_by(prior contract_version, retired contract_version, successor_status text)
  RETURNS boolean
  LANGUAGE sql

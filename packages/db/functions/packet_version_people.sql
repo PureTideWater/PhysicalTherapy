@@ -4,6 +4,7 @@
 -- packet_version_people(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fef22ffd1c2ffb18
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_people(target uuid)
  RETURNS TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)
  LANGUAGE sql

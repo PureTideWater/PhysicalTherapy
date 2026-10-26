@@ -4,6 +4,7 @@
 -- packet_version_deadline_status(uuid,jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1341aa1b7f092b15
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_deadline_status(target_case uuid, content jsonb)
  RETURNS text
  LANGUAGE plpgsql

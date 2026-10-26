@@ -4,6 +4,7 @@
 -- packet_export_refusal_codes()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c04b1fb3fd5f66af
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_export_refusal_codes()
  RETURNS text[]
  LANGUAGE sql

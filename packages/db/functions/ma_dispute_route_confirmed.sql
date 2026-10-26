@@ -4,6 +4,7 @@
 -- ma_dispute_route_confirmed()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b7b976b0230f8b43
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ma_dispute_route_confirmed()
  RETURNS boolean
  LANGUAGE sql

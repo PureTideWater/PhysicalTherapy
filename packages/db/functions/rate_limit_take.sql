@@ -4,6 +4,7 @@
 -- rate_limit_take(text,text,integer,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: bf108aba360585e7
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.rate_limit_take(target_bucket text, target_subject text, max_hits integer, window_seconds integer)
  RETURNS TABLE(allowed boolean, hits integer, retry_after_seconds integer)
  LANGUAGE plpgsql

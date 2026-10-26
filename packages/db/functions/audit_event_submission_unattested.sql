@@ -4,6 +4,7 @@
 -- audit_event_submission_unattested()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8d18da3beb942ba9
 -- Trigger function of: audit_event.audit_event_submission_unattested
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.audit_event_submission_unattested()
  RETURNS trigger
  LANGUAGE plpgsql

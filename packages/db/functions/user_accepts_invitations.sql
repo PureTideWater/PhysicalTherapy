@@ -4,6 +4,7 @@
 -- user_accepts_invitations()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 787335bc653af7bb
 -- Trigger function of: user.user_accepts_invitations
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_accepts_invitations()
  RETURNS trigger
  LANGUAGE plpgsql

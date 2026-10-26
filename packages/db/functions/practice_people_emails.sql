@@ -4,6 +4,7 @@
 -- practice_people_emails(uuid,uuid[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6c4da6036fd47a24
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_people_emails(target_practice uuid, people uuid[])
  RETURNS TABLE(user_id uuid, email text)
  LANGUAGE sql

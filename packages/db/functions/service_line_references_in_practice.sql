@@ -4,6 +4,7 @@
 -- service_line_references_in_practice()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4a5052e6217f6e34
 -- Trigger function of: service_line.service_line_references_in_practice
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.service_line_references_in_practice()
  RETURNS trigger
  LANGUAGE plpgsql

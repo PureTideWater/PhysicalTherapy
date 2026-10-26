@@ -4,6 +4,7 @@
 -- user_session_end_is_final()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 31742acfa66c6d74
 -- Trigger function of: user_session.user_session_end_is_final
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_session_end_is_final()
  RETURNS trigger
  LANGUAGE plpgsql

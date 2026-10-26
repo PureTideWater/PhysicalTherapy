@@ -4,6 +4,7 @@
 -- operator_screening_fail(uuid,text,text,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c5ba2ca4ccd650be
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_fail(run uuid, failure text, request text, attempt integer)
  RETURNS TABLE(contact_email text)
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- ledger_line_stage(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fe8938ec3ec27c76
 -- Trigger function of: (none)
+-- Called by policy: line_status.line_status_set_by_case_workers
 CREATE OR REPLACE FUNCTION public.ledger_line_stage(line uuid)
  RETURNS text
  LANGUAGE sql

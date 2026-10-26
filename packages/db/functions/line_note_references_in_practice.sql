@@ -4,6 +4,7 @@
 -- line_note_references_in_practice()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f03b3369f30abb6f
 -- Trigger function of: line_note.line_note_references_in_practice
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.line_note_references_in_practice()
  RETURNS trigger
  LANGUAGE plpgsql

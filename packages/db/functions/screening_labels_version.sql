@@ -4,6 +4,7 @@
 -- screening_labels_version()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c0bcf4254ca8ca9f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_labels_version()
  RETURNS text
  LANGUAGE sql

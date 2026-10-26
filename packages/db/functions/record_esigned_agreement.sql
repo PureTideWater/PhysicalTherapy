@@ -4,6 +4,7 @@
 -- record_esigned_agreement(text,text,uuid,uuid,text,text,timestamp with time zone,text,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c35a793ea76cc0b8
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.record_esigned_agreement(event_id text, envelope text, target_organization uuid, target_practice uuid, agreement_kind text, agreement_version text, signed timestamp with time zone, signed_by text, document_sha256 text, request text)
  RETURNS TABLE(agreement_id uuid, duplicate boolean)
  LANGUAGE plpgsql

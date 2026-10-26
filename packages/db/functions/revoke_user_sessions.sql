@@ -4,6 +4,7 @@
 -- revoke_user_sessions(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 49398f19386615ff
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.revoke_user_sessions(target_user uuid)
  RETURNS integer
  LANGUAGE plpgsql

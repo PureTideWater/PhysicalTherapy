@@ -4,6 +4,7 @@
 -- screening_refusal_codes_valid(text[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0a9bdc2eb83f380b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_refusal_codes_valid(codes text[])
  RETURNS boolean
  LANGUAGE sql

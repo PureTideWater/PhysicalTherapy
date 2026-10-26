@@ -4,6 +4,7 @@
 -- operator_practice_administrator_emails(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e66800658c20c850
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_practice_administrator_emails(target_practice uuid)
  RETURNS TABLE(email text)
  LANGUAGE plpgsql

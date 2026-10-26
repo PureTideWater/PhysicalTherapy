@@ -4,6 +4,7 @@
 -- console_contract_queue()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 34782bbb84bc92d2
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_contract_queue()
  RETURNS TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)
  LANGUAGE plpgsql

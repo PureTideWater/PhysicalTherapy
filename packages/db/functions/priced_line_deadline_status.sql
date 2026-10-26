@@ -4,6 +4,7 @@
 -- priced_line_deadline_status(uuid,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 789fac53eeaccf36
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.priced_line_deadline_status(target uuid, minimum_level text DEFAULT 'L2'::text)
  RETURNS text
  LANGUAGE plpgsql

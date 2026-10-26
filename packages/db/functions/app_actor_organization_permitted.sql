@@ -4,6 +4,10 @@
 -- app_actor_organization_permitted(uuid,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4cabd5e628041cb6
 -- Trigger function of: (none)
+-- Called by policy: agreement.agreement_recorded_by_signers
+-- Called by policy: invoice.invoice_owners_read
+-- Called by policy: subscription.subscription_owners_read
+-- Called by policy: usage_snapshot.usage_snapshot_owners_read
 CREATE OR REPLACE FUNCTION public.app_actor_organization_permitted(target_organization uuid, wanted text)
  RETURNS boolean
  LANGUAGE sql

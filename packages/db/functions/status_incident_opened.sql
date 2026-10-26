@@ -4,6 +4,7 @@
 -- status_incident_opened()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 92eec267bf1252eb
 -- Trigger function of: status_incident.status_incident_opened
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.status_incident_opened()
  RETURNS trigger
  LANGUAGE plpgsql

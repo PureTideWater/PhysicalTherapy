@@ -4,6 +4,7 @@
 -- operator_due_support_notices(integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 26a8da73c49fe312
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_due_support_notices(at_most integer)
  RETURNS TABLE(support_grant_id uuid, practice_id uuid, notice text)
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8ea4e5450dbe8708
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submit_screening(practice text, state_code text, zip5 text, plus_four text, email text, codes text[], modifier_sets text[], unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[], rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, rows_outside_content integer, claim_lines_outside_content bigint, allowed_cents_outside_content bigint, heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text, consent_sha256 text, terms_sha256 text, received timestamp with time zone, rate_account_subject text, request text)
  RETURNS uuid
  LANGUAGE plpgsql

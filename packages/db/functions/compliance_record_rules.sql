@@ -4,6 +4,7 @@
 -- compliance_record_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7f1e947036b56ec1
 -- Trigger function of: compliance_record.compliance_record_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.compliance_record_rules()
  RETURNS trigger
  LANGUAGE plpgsql

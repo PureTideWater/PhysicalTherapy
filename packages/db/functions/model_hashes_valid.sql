@@ -4,6 +4,7 @@
 -- model_hashes_valid(text[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 67115b68576eb415
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.model_hashes_valid(hashes text[])
  RETURNS boolean
  LANGUAGE sql

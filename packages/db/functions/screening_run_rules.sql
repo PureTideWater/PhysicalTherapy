@@ -4,6 +4,7 @@
 -- screening_run_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f15d5e31592d5d9e
 -- Trigger function of: screening_run.screening_run_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_run_rules()
  RETURNS trigger
  LANGUAGE plpgsql

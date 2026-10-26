@@ -4,6 +4,9 @@
 -- app_actor_admin_practice_ids()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 728d8dae3d1ee057
 -- Trigger function of: (none)
+-- Called by policy: audit_event.audit_event_access_log
+-- Called by policy: grant.grant_practice_administrators_and_grantee_read
+-- Called by policy: practice.practice_administrators_update
 CREATE OR REPLACE FUNCTION public.app_actor_admin_practice_ids()
  RETURNS uuid[]
  LANGUAGE sql

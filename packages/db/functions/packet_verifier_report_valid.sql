@@ -4,6 +4,7 @@
 -- packet_verifier_report_valid(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 47fde3846263f974
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_verifier_report_valid(report jsonb)
  RETURNS boolean
  LANGUAGE plpgsql

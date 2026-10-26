@@ -4,6 +4,7 @@
 -- operator_screening_run_keys(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1e83fdac05e34b0c
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_run_keys(run uuid)
  RETURNS TABLE(codes text[], zip text)
  LANGUAGE sql

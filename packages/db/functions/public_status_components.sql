@@ -4,6 +4,7 @@
 -- public_status_components()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 79a7ae3915c12b37
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.public_status_components()
  RETURNS TABLE(key text, name text, status text, changed_at timestamp with time zone)
  LANGUAGE sql

@@ -7,6 +7,7 @@
 -- Trigger function of: payer_plan_mapping.payer_plan_mapping_pricing_current_lock
 -- Trigger function of: pricing_run.pricing_run_pricing_current_lock
 -- Trigger function of: rule_release_withdrawal.rule_release_withdrawal_pricing_current_lock
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_current_change_lock()
  RETURNS trigger
  LANGUAGE plpgsql

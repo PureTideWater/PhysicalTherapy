@@ -4,6 +4,7 @@
 -- practice_baa_on_file(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b240837ccdc53a0e
 -- Trigger function of: (none)
+-- Called by policy: source_document.source_document_requires_baa
 CREATE OR REPLACE FUNCTION public.practice_baa_on_file(target_practice uuid)
  RETURNS boolean
  LANGUAGE sql

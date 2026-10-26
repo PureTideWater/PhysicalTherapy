@@ -4,6 +4,7 @@
 -- priced_line_shortfall_cents(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1980a29c53080675
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.priced_line_shortfall_cents(line_id uuid)
  RETURNS bigint
  LANGUAGE sql

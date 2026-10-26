@@ -4,6 +4,7 @@
 -- grant_security_events()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 24f79113967c9b5c
 -- Trigger function of: grant.grant_security_events
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.grant_security_events()
  RETURNS trigger
  LANGUAGE plpgsql

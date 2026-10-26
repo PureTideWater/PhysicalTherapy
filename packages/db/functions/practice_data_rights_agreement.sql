@@ -4,6 +4,7 @@
 -- practice_data_rights_agreement(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 015cd610493859a5
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_data_rights_agreement(target_practice uuid)
  RETURNS uuid
  LANGUAGE sql

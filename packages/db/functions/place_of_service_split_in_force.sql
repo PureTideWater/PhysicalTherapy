@@ -4,6 +4,7 @@
 -- place_of_service_split_in_force()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3b0a914b290badc9
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.place_of_service_split_in_force()
  RETURNS uuid
  LANGUAGE sql

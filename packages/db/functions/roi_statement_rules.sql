@@ -4,6 +4,7 @@
 -- roi_statement_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5a8bc6319828acb2
 -- Trigger function of: roi_statement.roi_statement_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.roi_statement_rules()
  RETURNS trigger
  LANGUAGE plpgsql

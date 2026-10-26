@@ -4,6 +4,7 @@
 -- reject_screening_upload(text,text,text,text,integer,jsonb,text,text,text,text,text,text,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c1a6345eced698e8
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.reject_screening_upload(practice text, state_code text, zip5 text, email text, row_count integer, reasons jsonb, heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text, terms_sha256 text, request text)
  RETURNS uuid
  LANGUAGE plpgsql

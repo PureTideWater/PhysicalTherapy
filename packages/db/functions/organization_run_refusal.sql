@@ -4,6 +4,7 @@
 -- organization_run_refusal(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 28088464051fab99
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.organization_run_refusal(target_organization uuid)
  RETURNS text
  LANGUAGE sql

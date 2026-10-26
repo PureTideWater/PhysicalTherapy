@@ -4,6 +4,7 @@
 -- invoice_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7c926f90860ad20e
 -- Trigger function of: invoice.invoice_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.invoice_rules()
  RETURNS trigger
  LANGUAGE plpgsql

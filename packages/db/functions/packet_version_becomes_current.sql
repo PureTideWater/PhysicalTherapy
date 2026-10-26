@@ -4,6 +4,7 @@
 -- packet_version_becomes_current()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3842998ab0d8a17a
 -- Trigger function of: packet_version.packet_version_becomes_current
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_becomes_current()
  RETURNS trigger
  LANGUAGE plpgsql

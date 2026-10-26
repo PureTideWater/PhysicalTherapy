@@ -4,6 +4,7 @@
 -- public_status_incidents(timestamp with time zone)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7678a79b3367ec80
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.public_status_incidents(since timestamp with time zone)
  RETURNS TABLE(incident_id uuid, title text, impact text, components text[], status text, started_at timestamp with time zone, resolved_at timestamp with time zone, updates jsonb)
  LANGUAGE sql

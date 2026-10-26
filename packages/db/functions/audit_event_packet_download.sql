@@ -4,6 +4,7 @@
 -- audit_event_packet_download()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5d9ff171f092c4f1
 -- Trigger function of: audit_event.audit_event_packet_download
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.audit_event_packet_download()
  RETURNS trigger
  LANGUAGE plpgsql

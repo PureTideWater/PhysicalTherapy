@@ -4,6 +4,7 @@
 -- open_practice_scope(uuid[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e21550df4fb65689
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.open_practice_scope(requested uuid[])
  RETURNS TABLE(practice_id uuid, via text, grant_id uuid, role text)
  LANGUAGE plpgsql

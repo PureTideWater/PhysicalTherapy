@@ -10,6 +10,7 @@
 -- Trigger function of: report_document.report_document_refused_while_suspended
 -- Trigger function of: roi_statement.roi_statement_refused_while_suspended
 -- Trigger function of: source_document.source_document_refused_while_suspended
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.refuse_new_work_while_suspended()
  RETURNS trigger
  LANGUAGE plpgsql

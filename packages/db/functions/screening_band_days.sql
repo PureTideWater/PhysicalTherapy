@@ -4,6 +4,7 @@
 -- screening_band_days(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f912bb8d6e15fdd1
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_band_days(band text)
  RETURNS daterange
  LANGUAGE sql

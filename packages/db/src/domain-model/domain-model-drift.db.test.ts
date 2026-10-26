@@ -23,7 +23,11 @@ import { type GeneratedDomainModel, generateDomainModel } from './generate';
  * Synthetic schema only: a probe migration appended to a copy of the migrations directory.
  */
 const PROBE = '29991231000000_gate_probe.sql';
-/** The probe function: a plpgsql body over several lines, of which `statement` is the one the edit changes. */
+/**
+ * The probe function: a plpgsql body over several lines, of which `statement` is the one the edit changes. Beside it,
+ * unchanged by the edit, a procedure with a comment and a grant WITH GRANT OPTION, and a function with a BEGIN ATOMIC
+ * body, so DBF-02 renders each kind through pg_get_functiondef and aclexplode, not only from hand-written rows.
+ */
 const probe = (statement: string): string =>
   [
     '-- The domain model drift probe (domain-model-drift.db.test.ts); never a real migration.',
@@ -33,6 +37,12 @@ const probe = (statement: string): string =>
     'END',
     '$$;',
     'REVOKE ALL ON FUNCTION gate_probe() FROM PUBLIC;',
+    "CREATE PROCEDURE gate_probe_proc(n integer) LANGUAGE plpgsql AS $$ BEGIN PERFORM n; END $$;",
+    "COMMENT ON PROCEDURE gate_probe_proc(integer) IS 'the probe''s procedure';",
+    'REVOKE ALL ON PROCEDURE gate_probe_proc(integer) FROM PUBLIC;',
+    'GRANT EXECUTE ON PROCEDURE gate_probe_proc(integer) TO tp_app WITH GRANT OPTION;',
+    'CREATE FUNCTION gate_probe_atomic(a integer) RETURNS integer LANGUAGE sql IMMUTABLE STRICT BEGIN ATOMIC SELECT a + 1; END;',
+    'REVOKE ALL ON FUNCTION gate_probe_atomic(integer) FROM PUBLIC;',
     '',
   ].join('\n');
 
@@ -178,7 +188,7 @@ describe('DBF-02: the function files and an edited function', () => {
     expect(standard).toContain(`-- Body SHA-256 (the SQL-standard body only, from RETURN or BEGIN ATOMIC), as Appendix C prints it: ${sha16(body ?? '')}\n`);
   });
 
-  it('a grant added, a SECURITY DEFINER flip and a SET search_path removed each change the file', async () => {
+  it('a grant added, a SECURITY DEFINER flip, a SET search_path removed, a grant by another grantor and a calling policy each change the file', async () => {
     if (first === undefined) throw new Error('the probe database was not migrated');
     const { database, migrationsDir } = first;
     const client = new pg.Client({ connectionString: database.url });
@@ -203,8 +213,57 @@ describe('DBF-02: the function files and an edited function', () => {
       expect(await change('GRANT EXECUTE ON FUNCTION gate_probe() TO tp_app', 'gate_probe.sql')).toEqual(['+GRANT EXECUTE ON FUNCTION public.gate_probe() TO tp_app;']);
       expect(await change('ALTER FUNCTION gate_probe() SECURITY DEFINER', 'gate_probe.sql')).toEqual([[expect.any(Number), ' IMMUTABLE', ' IMMUTABLE SECURITY DEFINER']]);
       expect(await change('ALTER FUNCTION allowed_practice_ids() RESET search_path', 'allowed_practice_ids.sql')).toEqual(["- SET search_path TO 'pg_catalog', 'public', 'pg_temp'"]);
+      // A grant by a grantee holding the grant option, not the owner, says GRANTED BY.
+      expect(await change('SET ROLE tp_app; GRANT EXECUTE ON PROCEDURE gate_probe_proc(integer) TO tp_operator; RESET ROLE', 'gate_probe_proc.sql')).toEqual([
+        '+GRANT EXECUTE ON PROCEDURE public.gate_probe_proc(integer) TO tp_operator GRANTED BY tp_app;',
+      ]);
+      // A policy that calls the function names it in the function's header (pg_depend), which a reviewer reads
+      // before changing its volatility or body.
+      expect(await change('CREATE POLICY gate_probe_policy ON agreement_event USING (gate_probe() = 2)', 'gate_probe.sql')).toEqual([
+        [expect.any(Number), '-- Called by policy: (none)', '-- Called by policy: agreement_event.gate_probe_policy'],
+      ]);
     } finally {
       await client.end();
     }
   }, 60_000);
 });
+
+describe('DBF-02: a procedure and a BEGIN ATOMIC body, through pg_get_functiondef and aclexplode (T16)', () => {
+  it('renders the procedure with its keyword, comment and grantable grant, and the SQL-standard body with its hash', () => {
+    const { after } = both();
+    const procedure = after.functionFiles.get('gate_probe_proc.sql') ?? '';
+    expect(procedure.split('\n').slice(3)).toEqual([
+      '-- gate_probe_proc(integer)',
+      `-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ${sha16(' BEGIN PERFORM n; END ')}`,
+      '-- Trigger function of: (none)',
+      '-- Called by policy: (none)',
+      'CREATE OR REPLACE PROCEDURE public.gate_probe_proc(IN n integer)',
+      ' LANGUAGE plpgsql',
+      'AS $procedure$ BEGIN PERFORM n; END $procedure$;',
+      'ALTER PROCEDURE public.gate_probe_proc(integer) OWNER TO tp_owner;',
+      'REVOKE ALL ON PROCEDURE public.gate_probe_proc(integer) FROM PUBLIC;',
+      'GRANT EXECUTE ON PROCEDURE public.gate_probe_proc(integer) TO tp_app WITH GRANT OPTION;',
+      "COMMENT ON PROCEDURE public.gate_probe_proc(integer) IS 'the probe''s procedure';",
+      '',
+    ]);
+    expect(appendixHash(after.text, 'gate_probe_proc(integer)')).toBe(sha16(' BEGIN PERFORM n; END '));
+    const atomic = after.functionFiles.get('gate_probe_atomic.sql') ?? '';
+    const body = 'BEGIN ATOMIC\n SELECT (a + 1);\nEND';
+    expect(atomic.split('\n').slice(3)).toEqual([
+      '-- gate_probe_atomic(integer)',
+      `-- Body SHA-256 (the SQL-standard body only, from RETURN or BEGIN ATOMIC), as Appendix C prints it: ${sha16(body)}`,
+      '-- Trigger function of: (none)',
+      '-- Called by policy: (none)',
+      'CREATE OR REPLACE FUNCTION public.gate_probe_atomic(a integer)',
+      ' RETURNS integer',
+      ' LANGUAGE sql',
+      ' IMMUTABLE STRICT',
+      ...`${body};`.split('\n'),
+      'ALTER FUNCTION public.gate_probe_atomic(integer) OWNER TO tp_owner;',
+      'REVOKE ALL ON FUNCTION public.gate_probe_atomic(integer) FROM PUBLIC;',
+      '',
+    ]);
+    expect(appendixHash(after.text, 'gate_probe_atomic(integer)')).toBe(sha16(body));
+  });
+});
+

@@ -4,6 +4,7 @@
 -- operator_record_support_notice(uuid,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: cd723eaf7325fa60
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_record_support_notice(target uuid, notice text, request text)
  RETURNS TABLE(recorded boolean, reads bigint)
  LANGUAGE plpgsql

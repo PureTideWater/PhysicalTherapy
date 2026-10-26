@@ -4,6 +4,7 @@
 -- line_status_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7ff9c809c72d6495
 -- Trigger function of: line_status.line_status_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.line_status_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

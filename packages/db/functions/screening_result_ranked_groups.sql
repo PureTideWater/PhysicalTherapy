@@ -4,6 +4,7 @@
 -- screening_result_ranked_groups(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2ae6e52259eb8e4b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_result_ranked_groups(token_sha256 text)
  RETURNS TABLE(group_no integer, payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, lowest_cents bigint, observed_cents bigint, difference_cents bigint, lowest_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, standing text)
  LANGUAGE sql

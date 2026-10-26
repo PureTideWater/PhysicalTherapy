@@ -4,6 +4,7 @@
 -- resolve_session(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1dc349b28fbd9045
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.resolve_session(token text)
  RETURNS TABLE(outcome text, ended_now boolean, session_id uuid, user_id uuid, device_id uuid, mfa_method text, started_at timestamp with time zone, expires_at timestamp with time zone, last_seen_at timestamp with time zone, user_status text, mfa_enrolled boolean, hardware_key_required boolean)
  LANGUAGE plpgsql

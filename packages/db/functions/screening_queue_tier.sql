@@ -4,6 +4,7 @@
 -- screening_queue_tier(text,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0e24d0369e589961
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_queue_tier(subject text, row_count integer)
  RETURNS TABLE(wait_reason text, queue_priority smallint)
  LANGUAGE sql

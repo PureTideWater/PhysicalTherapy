@@ -7,6 +7,7 @@
 -- Trigger function of: packet_version.packet_version_never_deleted
 -- Trigger function of: payer_response.payer_response_never_deleted
 -- Trigger function of: submission.submission_never_deleted
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packets_never_deleted()
  RETURNS trigger
  LANGUAGE plpgsql

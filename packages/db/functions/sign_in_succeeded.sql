@@ -4,6 +4,7 @@
 -- sign_in_succeeded(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 60e683f0dc8ba129
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.sign_in_succeeded(target_user uuid)
  RETURNS void
  LANGUAGE sql

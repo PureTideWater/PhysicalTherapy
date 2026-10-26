@@ -4,6 +4,7 @@
 -- app_session_is_job()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 485a9f8002babbb6
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.app_session_is_job()
  RETURNS boolean
  LANGUAGE sql

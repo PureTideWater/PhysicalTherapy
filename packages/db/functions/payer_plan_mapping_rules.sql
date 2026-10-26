@@ -4,6 +4,7 @@
 -- payer_plan_mapping_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 06a465c2d5277fc6
 -- Trigger function of: payer_plan_mapping.payer_plan_mapping_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.payer_plan_mapping_rules()
  RETURNS trigger
  LANGUAGE plpgsql

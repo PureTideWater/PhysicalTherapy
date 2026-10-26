@@ -4,6 +4,7 @@
 -- screening_practice_key(text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8908831954ae9c4f
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_practice_key(practice text)
  RETURNS text
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- user_is_customer(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6ab6e9ff0f52272b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_is_customer(target_user uuid)
  RETURNS boolean
  LANGUAGE sql

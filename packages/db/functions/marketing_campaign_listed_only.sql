@@ -6,6 +6,7 @@
 -- Trigger function of: prospect_request.prospect_request_campaign_listed
 -- Trigger function of: screening_lead.screening_lead_campaign_listed
 -- Trigger function of: screening_prospect.screening_prospect_campaign_listed
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.marketing_campaign_listed_only()
  RETURNS trigger
  LANGUAGE plpgsql

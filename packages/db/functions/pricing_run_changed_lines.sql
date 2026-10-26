@@ -4,6 +4,7 @@
 -- pricing_run_changed_lines(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5ddaf57baabe280e
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_run_changed_lines(before_run uuid, after_run uuid)
  RETURNS bigint
  LANGUAGE sql

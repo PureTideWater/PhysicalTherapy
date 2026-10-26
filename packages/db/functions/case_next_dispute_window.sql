@@ -4,6 +4,7 @@
 -- case_next_dispute_window(uuid,integer,date)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: a6d8aaca2860bcf5
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_next_dispute_window(target_case uuid, denied_level integer, denied_on date)
  RETURNS date
  LANGUAGE plpgsql

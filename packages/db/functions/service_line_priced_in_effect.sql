@@ -4,6 +4,7 @@
 -- service_line_priced_in_effect(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 25da75c9275ad787
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.service_line_priced_in_effect(target uuid)
  RETURNS uuid
  LANGUAGE sql

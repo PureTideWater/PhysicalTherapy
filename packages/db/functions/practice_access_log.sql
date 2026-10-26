@@ -4,6 +4,7 @@
 -- practice_access_log(uuid,text,uuid,timestamp with time zone,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e3a2a4b7018f631c
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_access_log(target_practice uuid, of_type text, of_object uuid, before_at timestamp with time zone, at_most integer)
  RETURNS TABLE(event_id uuid, at timestamp with time zone, actor_label text, via text, action text, object_type text, object_id uuid, purpose text, ticket text)
  LANGUAGE plpgsql

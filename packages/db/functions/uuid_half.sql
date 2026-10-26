@@ -4,6 +4,7 @@
 -- uuid_half(uuid,boolean)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2f6916880f7cf611
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.uuid_half(value uuid, first_half boolean)
  RETURNS int8range
  LANGUAGE sql

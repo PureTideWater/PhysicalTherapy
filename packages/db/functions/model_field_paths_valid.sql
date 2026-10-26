@@ -4,6 +4,7 @@
 -- model_field_paths_valid(text[])
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4b1eb8673b5b4828
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.model_field_paths_valid(paths text[])
  RETURNS boolean
  LANGUAGE sql

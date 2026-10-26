@@ -4,6 +4,7 @@
 -- user_device_revocation_is_final()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6febf97093b3e8de
 -- Trigger function of: user_device.user_device_revocation_is_final
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.user_device_revocation_is_final()
  RETURNS trigger
  LANGUAGE plpgsql

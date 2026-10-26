@@ -4,6 +4,7 @@
 -- anomaly_belongs()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5ef71bf25d7d04c3
 -- Trigger function of: anomaly.anomaly_belongs
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.anomaly_belongs()
  RETURNS trigger
  LANGUAGE plpgsql

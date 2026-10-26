@@ -4,6 +4,7 @@
 -- operator_screening_expire(integer,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 75da8d8d50eeb330
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_expire(at_most integer, request text)
  RETURNS TABLE(prospects integer, runs integer, leads integer)
  LANGUAGE plpgsql

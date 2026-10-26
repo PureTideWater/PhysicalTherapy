@@ -4,6 +4,7 @@
 -- packet_version_approval_pricing()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c0513475dbcaa671
 -- Trigger function of: packet_version.packet_version_approval_pricing
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_version_approval_pricing()
  RETURNS trigger
  LANGUAGE plpgsql

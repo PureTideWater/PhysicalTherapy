@@ -4,6 +4,7 @@
 -- rule_release_content_span(integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5ba92e5a9f4149f6
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.rule_release_content_span(release integer)
  RETURNS TABLE(content text, loaded datemultirange)
  LANGUAGE sql

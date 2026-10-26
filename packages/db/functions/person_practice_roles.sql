@@ -4,6 +4,7 @@
 -- person_practice_roles(uuid,uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8276436b74bd81b0
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.person_practice_roles(target_user uuid, target_practice uuid)
  RETURNS text[]
  LANGUAGE sql

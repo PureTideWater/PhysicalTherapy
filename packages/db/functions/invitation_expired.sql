@@ -4,6 +4,7 @@
 -- invitation_expired(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0e48c829be83ab97
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.invitation_expired(target_user uuid)
  RETURNS boolean
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- submission_needs_attested_export()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 20d7fd6636be6827
 -- Trigger function of: submission.submission_needs_attested_export
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submission_needs_attested_export()
  RETURNS trigger
  LANGUAGE plpgsql

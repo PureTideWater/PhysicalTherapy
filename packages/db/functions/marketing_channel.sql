@@ -4,6 +4,7 @@
 -- marketing_channel(text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b07290ad9961ab28
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.marketing_channel(utm_medium text, paid_click text)
  RETURNS text
  LANGUAGE sql

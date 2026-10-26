@@ -4,6 +4,7 @@
 -- submit_prospect_request(text,text,text,integer,text[],text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e2ae418d0e1c59c6
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submit_prospect_request(contact text, email text, organization text, location_count integer, payer_names text[], arrangement text)
  RETURNS uuid
  LANGUAGE sql
@@ -21,6 +22,7 @@ GRANT EXECUTE ON FUNCTION public.submit_prospect_request(text,text,text,integer,
 -- submit_prospect_request(text,text,text,integer,text[],text,text,text,text,text,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e227f669a9295eeb
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.submit_prospect_request(contact text, email text, organization text, location_count integer, payer_names text[], arrangement text, heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text)
  RETURNS uuid
  LANGUAGE sql

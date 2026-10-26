@@ -4,6 +4,7 @@
 -- screening_lead_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4cacbc9f27720745
 -- Trigger function of: screening_lead.screening_lead_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_lead_rules()
  RETURNS trigger
  LANGUAGE plpgsql

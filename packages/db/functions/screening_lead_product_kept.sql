@@ -4,6 +4,7 @@
 -- screening_lead_product_kept()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5918c9fea644753d
 -- Trigger function of: screening_lead_product.screening_lead_product_kept
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_lead_product_kept()
  RETURNS trigger
  LANGUAGE plpgsql

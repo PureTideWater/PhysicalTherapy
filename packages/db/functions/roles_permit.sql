@@ -4,6 +4,7 @@
 -- roles_permit(text[],text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1e0aed05610a51f5
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.roles_permit(held text[], wanted text)
  RETURNS boolean
  LANGUAGE sql

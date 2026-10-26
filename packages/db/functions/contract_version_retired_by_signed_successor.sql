@@ -4,6 +4,7 @@
 -- contract_version_retired_by_signed_successor()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7d19fbe631239fef
 -- Trigger function of: contract_version.contract_version_retired_by_signed_successor
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.contract_version_retired_by_signed_successor()
  RETURNS trigger
  LANGUAGE plpgsql

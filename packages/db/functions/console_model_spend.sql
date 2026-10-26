@@ -4,6 +4,7 @@
 -- console_model_spend(date)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e376a7bc2663c81e
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_model_spend(spend_day date)
  RETURNS TABLE(practice_id uuid, organization_id uuid, name text, calls integer, spent_unrounded numeric)
  LANGUAGE plpgsql

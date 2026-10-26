@@ -5,6 +5,7 @@
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: bcffaf3b76e2a516
 -- Trigger function of: case_line.case_line_refresh_inserted
 -- Trigger function of: case_line.case_line_refresh_updated
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_line_refresh_cases()
  RETURNS trigger
  LANGUAGE plpgsql

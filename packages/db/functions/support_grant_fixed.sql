@@ -4,6 +4,7 @@
 -- support_grant_fixed()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4e2ccf3fc52ddc22
 -- Trigger function of: support_grant.support_grant_fixed
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.support_grant_fixed()
  RETURNS trigger
  LANGUAGE plpgsql

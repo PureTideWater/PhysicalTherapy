@@ -4,6 +4,7 @@
 -- membership_role_fits_organization()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 114480521bb0ddf4
 -- Trigger function of: membership.membership_role_fits_organization
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.membership_role_fits_organization()
  RETURNS trigger
  LANGUAGE plpgsql

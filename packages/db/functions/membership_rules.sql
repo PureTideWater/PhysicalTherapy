@@ -4,6 +4,7 @@
 -- membership_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: efb897223d48b728
 -- Trigger function of: membership.membership_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.membership_rules()
  RETURNS trigger
  LANGUAGE plpgsql

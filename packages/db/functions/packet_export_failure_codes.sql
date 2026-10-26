@@ -4,6 +4,7 @@
 -- packet_export_failure_codes()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fb4f86f1d8355c05
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_export_failure_codes()
  RETURNS text[]
  LANGUAGE sql

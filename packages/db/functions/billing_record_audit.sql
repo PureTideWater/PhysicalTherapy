@@ -4,6 +4,7 @@
 -- billing_record_audit(text,text,uuid,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f9a85d22da427ca1
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.billing_record_audit(event_action text, target_type text, target_id uuid, event_purpose text, request text)
  RETURNS void
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- pricing_run_in_effect(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 886a648f977b072d
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.pricing_run_in_effect(run uuid)
  RETURNS boolean
  LANGUAGE sql

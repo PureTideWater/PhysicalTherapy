@@ -4,6 +4,7 @@
 -- sign_in_failed(uuid,text,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: a209dae56d884725
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.sign_in_failed(target_user uuid, stage text, request text)
  RETURNS TABLE(failures integer, locked boolean, newly_locked boolean, burst boolean)
  LANGUAGE plpgsql

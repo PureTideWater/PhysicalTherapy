@@ -4,6 +4,7 @@
 -- rule_record_immutable()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f638f6a6b42be99a
 -- Trigger function of: rule_record.rule_record_immutable
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.rule_record_immutable()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- practice_grants(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0dfe26d16ca76ef3
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.practice_grants(target_practice uuid)
  RETURNS TABLE(grant_id uuid, grantee_name text, grantee_kind text, roles jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, revoked_at timestamp with time zone, agreement_id uuid)
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- console_set_practice_settings(uuid,text,jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 16e2b183396953b5
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_set_practice_settings(target uuid, new_zip text, new_settings jsonb)
  RETURNS boolean
  LANGUAGE plpgsql

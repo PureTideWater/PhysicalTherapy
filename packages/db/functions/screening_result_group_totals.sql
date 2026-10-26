@@ -4,6 +4,7 @@
 -- screening_result_group_totals(text,integer,integer)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 05273a55a84f7373
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.screening_result_group_totals(token_sha256 text, page integer, per_page integer)
  RETURNS TABLE(groups integer, anomaly_groups integer, within_reduction_groups integer, page_size integer, pages integer, page_no integer, first_group integer, last_group integer, other_groups integer, other_anomaly_groups integer, other_rows integer, other_claim_lines bigint, other_expected_cents bigint, other_lowest_cents bigint, other_observed_cents bigint, other_difference_cents bigint, other_lowest_difference_cents bigint)
  LANGUAGE sql

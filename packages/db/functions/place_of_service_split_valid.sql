@@ -4,6 +4,7 @@
 -- place_of_service_split_valid(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 44ae8e24ea5d8386
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.place_of_service_split_valid(settings jsonb)
  RETURNS boolean
  LANGUAGE sql

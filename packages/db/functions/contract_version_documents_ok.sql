@@ -4,6 +4,7 @@
 -- contract_version_documents_ok(contract_version)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fa43e7f02e96754b
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.contract_version_documents_ok(v contract_version)
  RETURNS boolean
  LANGUAGE sql

@@ -4,6 +4,7 @@
 -- case_activity_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7730d96a2329a3c1
 -- Trigger function of: case_activity.case_activity_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_activity_rules()
  RETURNS trigger
  LANGUAGE plpgsql

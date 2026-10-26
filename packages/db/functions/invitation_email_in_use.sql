@@ -4,6 +4,7 @@
 -- invitation_email_in_use(uuid,text)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4110c31e01ded551
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.invitation_email_in_use(target_organization uuid, address text)
  RETURNS boolean
  LANGUAGE plpgsql

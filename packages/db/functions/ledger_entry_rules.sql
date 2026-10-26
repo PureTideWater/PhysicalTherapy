@@ -4,6 +4,7 @@
 -- ledger_entry_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: abbcba68f46fd135
 -- Trigger function of: ledger_entry.ledger_entry_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_entry_rules()
  RETURNS trigger
  LANGUAGE plpgsql

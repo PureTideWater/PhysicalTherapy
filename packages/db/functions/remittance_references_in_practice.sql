@@ -4,6 +4,7 @@
 -- remittance_references_in_practice()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e23bac606a695625
 -- Trigger function of: remittance.remittance_references_in_practice
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.remittance_references_in_practice()
  RETURNS trigger
  LANGUAGE plpgsql

@@ -4,6 +4,7 @@
 -- contract_question_rules()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8aae4f70b8112e03
 -- Trigger function of: contract_question.contract_question_rules
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.contract_question_rules()
  RETURNS trigger
  LANGUAGE plpgsql

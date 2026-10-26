@@ -4,6 +4,7 @@
 -- terms_published_now()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f63274938b5accb0
 -- Trigger function of: terms_version.terms_version_published_now
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.terms_published_now()
  RETURNS trigger
  LANGUAGE plpgsql

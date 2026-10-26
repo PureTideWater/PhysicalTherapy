@@ -4,6 +4,7 @@
 -- resend_invitation(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3a38c7bc37517a80
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.resend_invitation(target uuid)
  RETURNS boolean
  LANGUAGE plpgsql

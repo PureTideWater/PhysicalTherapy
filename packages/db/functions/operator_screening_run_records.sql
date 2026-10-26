@@ -4,6 +4,7 @@
 -- operator_screening_run_records(uuid)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9ace505ceb4a0be2
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_screening_run_records(run uuid)
  RETURNS TABLE(record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)
  LANGUAGE sql

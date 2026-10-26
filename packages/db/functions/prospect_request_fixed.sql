@@ -4,6 +4,7 @@
 -- prospect_request_fixed()
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: deb5e1b28d963590
 -- Trigger function of: prospect_request.prospect_request_fixed
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.prospect_request_fixed()
  RETURNS trigger
  LANGUAGE plpgsql

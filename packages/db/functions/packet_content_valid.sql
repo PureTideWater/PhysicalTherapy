@@ -4,6 +4,7 @@
 -- packet_content_valid(jsonb)
 -- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 619ece8c25a26b04
 -- Trigger function of: (none)
+-- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.packet_content_valid(content jsonb)
  RETURNS boolean
  LANGUAGE plpgsql
