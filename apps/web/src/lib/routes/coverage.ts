@@ -5,7 +5,7 @@ import { type ContractOption, type QuestionView, contractOptions, listQuestions 
 import { OBTAIN_TOPICS } from '../contracts/display';
 import { type UnconfirmedFormatSource, unconfirmedFormatSources } from '../contracts/format-sources';
 import { letterCodes, requestToPayerLetter } from '../contracts/letter';
-import { type ContentWaitMonth, contentHeadline, monthsWaitingOnContent } from '../pricing/content';
+import { type ContentHeadline, type ContentWaitMonth, contentHeadline, monthsWaitingOnContent } from '../pricing/content';
 import { type MonthWaitingOnLocation, monthsWaitingOnLocation } from '../pricing/location';
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
@@ -73,7 +73,7 @@ export interface CoveragePageData {
   readonly waitingOnLocation: readonly MonthWaitingOnLocation[];
   /** The months waiting on Medicare content PaidWhole has not loaded (audit #7; docs/adr/0071), and their lines' totals added up. */
   readonly waitingOnContent: readonly ContentWaitMonth[];
-  readonly contentHeadline: Totals;
+  readonly contentHeadline: ContentHeadline;
   /** The fee-schedule periods the release in force does not load, with the lines in effect unpriced for them (audit #7 and #59). */
   readonly feeScheduleNotLoaded: readonly { readonly period: FeeSchedulePeriod; readonly lines: number; readonly chargeCents: string }[];
   readonly readiness: PricingReadiness;

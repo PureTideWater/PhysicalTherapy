@@ -73,7 +73,7 @@ function quartersOf(ranges: readonly DateRange[]): string[] {
 }
 
 /** A family's short name, as Medicare publishes it. */
-const FAMILY_NAME: Readonly<Record<ContentFamily, string>> = { mppr: 'MPPR', mue: 'MUE' };
+export const FAMILY_NAME: Readonly<Record<ContentFamily, string>> = { mppr: 'MPPR', mue: 'MUE' };
 
 /**
  * What a month waits on, in words: "the 2027-Q1 Medicare content (MPPR, MUE)", with only the families its run's code
@@ -172,14 +172,17 @@ export async function monthsWaitingOnContent(scope: PracticeScope<ScopeClient>, 
   return months;
 }
 
+/** The card's headline: the waiting months' lines and billed and paid dollars, never their claims. */
+export type ContentHeadline = Omit<Totals, 'claims'>;
+
 /**
- * The waiting months' lines, claims and billed and paid dollars added up, for the card's headline. Lines and dollars add
- * across months (a line is in one month); claims are summed per month, as each month counts its own.
+ * The waiting months' lines and billed and paid dollars added up, for the card's headline: they add across months (a
+ * line is in one month). Claims do not (a claim can span two months), so each month shows its own, as the location
+ * card's headline leaves them out (int-surfaces improvement 3).
  */
-export function contentHeadline(months: readonly ContentWaitMonth[]): Totals {
+export function contentHeadline(months: readonly ContentWaitMonth[]): ContentHeadline {
   return {
     lines: months.reduce((sum, month) => sum + month.totals.lines, 0),
-    claims: months.reduce((sum, month) => sum + month.totals.claims, 0),
     chargeCents: months.reduce((sum, month) => sum + BigInt(month.totals.chargeCents), 0n).toString(),
     paidCents: months.reduce((sum, month) => sum + BigInt(month.totals.paidCents), 0n).toString(),
   };

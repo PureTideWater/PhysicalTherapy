@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
-import { type ContentWaitMonth, waitingOnText } from '../../lib/pricing/content';
+import { type ContentWaitMonth, FAMILY_NAME, waitingOnText } from '../../lib/pricing/content';
 import type { FamilyThrough } from '../../lib/releases/content-through';
 import { Money } from '../remittances/display';
 import { ScrollTable } from '../scroll-table';
@@ -8,7 +8,8 @@ import { ScrollTable } from '../scroll-table';
 /**
  * The months that wait on Medicare content PaidWhole has not loaded (audit #7; docs/adr/0071), as Coverage lists them,
  * beside the months waiting on the billing ZIP (location.tsx) and in the same table shape: each month's lines and billed
- * dollars, and what it waits on in words, never a color alone. Money in the mono face. At a phone's width the table
+ * dollars, and what it waits on in words, never a color alone. Money, quarters, family codes and release numbers in the
+ * mono face, as the Coverage fee-schedule sentence sets its quarters (review S9). At a phone's width the table
  * scrolls inside a region the keyboard reaches (ScrollTable).
  */
 export function MonthsWaitingOnContent({ months, label }: { readonly months: readonly ContentWaitMonth[]; readonly label: string }) {
@@ -27,7 +28,9 @@ export function MonthsWaitingOnContent({ months, label }: { readonly months: rea
           {months.map((month) => (
             <tr key={month.periodFrom} className="border-t align-top" data-waiting-month={month.periodFrom.slice(0, 7)} data-kind={month.kind} data-code={month.failureCode}>
               <td className="py-1 pr-3 font-mono tabular-nums">{month.periodFrom.slice(0, 7)}</td>
-              <td className="py-1 pr-3">{waitingOnText(month)}</td>
+              <td className="py-1 pr-3">
+                <WaitingOn month={month} />
+              </td>
               <td className="py-1 pr-3 text-right font-mono tabular-nums">{month.totals.lines}</td>
               <td className="py-1 text-right">
                 <Money value={month.totals.chargeCents} />
@@ -37,6 +40,36 @@ export function MonthsWaitingOnContent({ months, label }: { readonly months: rea
         </tbody>
       </table>
     </ScrollTable>
+  );
+}
+
+const mono = (text: string) => <span className="font-mono tabular-nums">{text}</span>;
+
+/** Each item, mono, joined by commas. */
+function listed(items: readonly string[]): ReactNode {
+  return items.map((item, index) => (
+    <Fragment key={item}>
+      {index > 0 ? ', ' : ''}
+      {mono(item)}
+    </Fragment>
+  ));
+}
+
+/** waitingOnText's words, with its quarters, family codes and release number in the mono face. */
+function WaitingOn({ month }: { readonly month: ContentWaitMonth }) {
+  if (month.kind === 'repricing') {
+    return <>being priced again under release {mono(String(month.releaseInForce))}</>;
+  }
+  if (month.kind === 'terms_changed') {
+    return <>{waitingOnText(month)}</>;
+  }
+  const families = listed(month.families.map((family) => FAMILY_NAME[family]));
+  return month.quarters.length === 0 ? (
+    <>the Medicare content ({families})</>
+  ) : (
+    <>
+      the {listed(month.quarters)} Medicare content ({families})
+    </>
   );
 }
 

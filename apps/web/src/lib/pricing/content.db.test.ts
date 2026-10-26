@@ -177,7 +177,6 @@ describe('the months waiting on Medicare content (RCC-05)', () => {
     ]);
     expect(contentHeadline(months)).toEqual({
       lines: 3,
-      claims: 1,
       chargeCents: '32600',
       paidCents: '17641',
     });
