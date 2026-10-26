@@ -66,7 +66,8 @@ Once a week, after Thursday's npm batch:
    - `browser-tests`: red by design (below);
    - a group that moves a money closure's packages runs mutation in full; read its survivors like any other.
 3. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below);
-   `pnpm toolchain:check` warns of each on every run until then. Read the audit exceptions likewise.
+   `pnpm toolchain:check` warns of each on every run until then. Read the audit exceptions likewise: an entry nearing
+   30 days is fixed or renewed (below).
 4. **`check-toolchain`'s warnings.** A newer pnpm 10.x at least three days old: make the `packageManager` pull request
    (below). An action whose tag moved under an unchanged pin (a push run's warning from `pnpm actions:check`): read
    why upstream moved it; a pin is a commit, so nothing we run changed, but a moved tag on a security tool is reported
@@ -111,6 +112,18 @@ without the project's pipeline. An exclude is for one fixed old version only, ne
 and date; `check-toolchain` holds the two equal and fails an entry the lockfile no longer resolves. Today it holds
 `semver@6.3.1` (2023, no provenance, after 7.5.1 with it), reached through `@babel/core` (the co-founder's CQ2 (a)). A
 new trust failure on a recent version is a security question for the founder, not an exclude.
+
+## Audit exceptions
+
+`static` runs `pnpm audit --prod` and `pnpm audit --audit-level=high`. When an advisory has no fixed version yet, or
+the fix cannot land at once, it may be ignored for a bounded time, never silently:
+1. In `pnpm-workspace.yaml`, add the GHSA id to `auditConfig.ignoreGhsas`.
+2. In `tools/check-toolchain/audit-exceptions.json`, add the same entry: `ghsa`, `reason` (why the advisory does not
+   reach what we run, or why the fix must wait), and `added` and `expires` as UTC instants, at most 30 days apart.
+3. Say in the pull request's description what was read and when the entry goes.
+
+`check-toolchain` holds the two lists equal and fails an entry added more than 30 days ago, so an exception is fixed
+or renewed by a person, with a new reason, at least monthly. The list is empty.
 
 ## Transitive packages and overrides
 

@@ -365,14 +365,19 @@ holds release.yml to those inputs by name, offline. What the actions nest is `ch
 it reads their files: it follows each nested `actions/cache*` of every action release.yml uses to the top-level input
 that gates it, which must be `false` in release.yml, and fails an ungated one, naming the chain. Its three uploads set
 `overwrite: true`, as ci.yml's per-run uploads do (Part 1, "Artifacts"), so a re-run of a tag's failed job replaces
-what the first attempt left.
+what the first attempt left. Every upload of every workflow overwrites, screening-capacity's per-run report
+included, which had the same re-run conflict. release.yml and the dry run run their scripts under
+`defaults: run: shell: bash`, GitHub's bash with `pipefail`: the default `bash -e` has none, so a failed `docker save`
+piped to `gzip` would pass its step. action-setup's `cache: false` is written out rather than left to its default, so a
+later default cannot turn the cache back on.
 
 **`.github/workflows/release-dry-run.yml`** (new, advisory, outside the ruleset) runs on every pull request and push
 that changes release.yml, itself, `tools/screening-capacity/image-id.ts` or either Dockerfile. Its `build` job
 (`contents: read`) builds the web image as release.yml does, saves it with its identity and uploads it (v7,
 `overwrite: true`, kept a day); its `push` job (`contents: read`, `packages: read`) downloads it with
 `merge-multiple` (v8), runs release.yml's identity check, loads it and logs in to ghcr.io with the job's own token. It
-never tags, pushes or attests. A test holds every step it shares with release.yml to the same action and the same
+names its image `ghcr.io/<repository>/web:dry-run-<run id>`, since a pull request's ref name (`<n>/merge`) is no image
+tag, and never tags, pushes or attests. A test holds every step it shares with release.yml to the same action and the same
 `with:` keys, with `overwrite` and the cache inputs equal in value, so the dry run cannot drift from what a tag runs.
 The new majors of upload, download, login, build-push and setup-buildx therefore run on a pull request, not first on
 the founder's tag.
