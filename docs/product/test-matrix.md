@@ -239,3 +239,17 @@ reserved for the series' later pull requests; CI-15 to CI-17 are the mutation wo
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
 
+
+## Database function diffs (DBF)
+
+The generated function files of combined audit item 111 (docs/adr/0068): one file per function name in
+`packages/db/functions`, written by `pnpm db:domain-model --out`, checked beside the domain model, and shown as diffs in
+the summary that opens each approval.
+
+| ID | Case | Assertion |
+| --- | --- | --- |
+| DBF-01 | Function files of a freshly migrated database | Regenerated exactly, no file missing, extra or different, under any search_path, DateStyle, IntervalStyle, TimeZone, identifier quoting, float digits and bytea output of the connection; a stray file fails `--check` |
+| DBF-02 | A function changed by one line | Only that function's file changes, by that line and its body-hash line, the hash of the body alone (between the dollar quotes, or the SQL-standard body) equal to Appendix C's for a plpgsql and a SQL-standard body; a grant added or given by another grantor, SECURITY DEFINER flipped, `SET search_path` removed or a calling policy added each changes the file; a procedure and a BEGIN ATOMIC body render as the catalog holds them |
+| DBF-03 | Function file names | One file per name, overloads in one file in signature order; a name outside `^[a-z_][a-z0-9_]*$` or over 63 bytes, an aggregate, or a function outside schema public, refused; output the same for any input order |
+| DBF-04 | Writing and checking the directory | `--out` checks the directory before writing anything, removes only stale generated `*.sql` (the banner first), refuses any other `*.sql`, a symlink or a custom FILE without `--functions`, and leaves the README; `--check` reports the document and each file with its first differing line, then exits 1, and exits 2 on an error; the document's text and SHA-256 are the same with the files as without |
+| DBF-05 | Privileges, triggers and the summary | PUBLIC revoked or granted, grant option, grantor, sorted grantees and owner each one line; comment, trigger, policy and event-trigger lines; the summary lists each changed file, SECURITY DEFINER, scope, PUBLIC and privilege changes first, then its diffs within a budget, the list form a prefix of the full one, or one line when the base has none |

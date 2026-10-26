@@ -1,0 +1,20 @@
+{
+  "case": "DBF-03",
+  "module": "DBF",
+  "title": "Function file names",
+  "assertion": "One file per name, overloads in one file in signature order; a name outside `^[a-z_][a-z0-9_]*$` or over 63 bytes, an aggregate, or a function outside schema public, refused; output the same for any input order",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "packages/db/src/domain-model/functions.test.ts",
+    "packages/db/src/domain-model/function-files.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The files are rendered from catalog rows the test builds in memory, and from a scratch database; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
