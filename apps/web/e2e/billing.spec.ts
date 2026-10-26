@@ -87,7 +87,7 @@ test('an organization administrator pays by test ACH: the bank account, the mont
   expect(foreign).toEqual([]);
 });
 
-test('a group suspended by PaidWhole reads "Suspended by PaidWhole", never "In good standing", with the notice, the support ticket’s link and the note that payment does not lift it (BIL-06)', async ({ page }) => {
+test('a group suspended by PaidWhole reads "Suspended by PaidWhole", never "In good standing", with the notice, the support ticket’s link and the note that payment does not reinstate it (BIL-06)', async ({ page }) => {
   const group = await withDatabase(async (client) => (await client.query<{ id: string; status: string }>('SELECT id, status FROM organization WHERE name = $1', [SYNTHETIC_SUSPENDED_GROUP])).rows);
   expect(group.map((row) => row.status)).toEqual(['suspended']);
   const organizationId = group[0]?.id ?? '';
@@ -99,11 +99,11 @@ test('a group suspended by PaidWhole reads "Suspended by PaidWhole", never "In g
   await expect(page.locator('[data-standing]')).toContainText('Standing: Suspended by PaidWhole');
   await expect(page.getByText('In good standing')).toHaveCount(0);
   const notice = page.getByRole('alert').filter({ hasText: 'PaidWhole has suspended the organization' });
-  await expect(notice).toContainText('PaidWhole has suspended the organization: new runs have stopped until PaidWhole lifts it, and its data stays readable. Paying an invoice does not lift this suspension.');
-  await expect(notice).toContainText('Open a support ticket to find out why and what lifts it.');
+  await expect(notice).toContainText('PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.');
+  await expect(notice).toContainText('Open a support ticket to find out why and what reinstates it.');
   const ticket = notice.getByRole('link', { name: 'Open a support ticket' });
   await expect(ticket).toHaveAttribute('href', '/support?from=billing');
-  await expect(page.locator('[data-notice="forms"]')).toHaveText('Changing the plan or payment method does not lift a suspension by PaidWhole.');
+  await expect(page.locator('[data-notice="forms"]')).toHaveText('Changing the plan or payment method does not reinstate an organization suspended by PaidWhole.');
   await expectAccessible(page, 'Organization billing, suspended by PaidWhole');
 
   // The link opens the support form on the Billing category, from the billing screen.

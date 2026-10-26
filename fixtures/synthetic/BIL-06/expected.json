@@ -2,7 +2,7 @@
   "case": "BIL-06",
   "module": "BIL",
   "title": "A suspended organization's billing page",
-  "assertion": "With the organization suspended by PaidWhole and its billing in good standing, its administrator's billing page shows \"Suspended by PaidWhole\", never \"In good standing\", the notice, a link to open a support ticket (`/support?from=billing`) that opens the form on the Billing category, and the note that payment does not lift it; the page passes axe; the seed holds SYNTHETIC SUSPENDED GROUP suspended for this journey alone, so nothing suspends or reinstates an organization another journey shares",
+  "assertion": "With the organization suspended by PaidWhole and its billing in good standing, its administrator's billing page shows \"Suspended by PaidWhole\", never \"In good standing\", the notice that PaidWhole reinstates it, a link to open a support ticket (`/support?from=billing`) that opens the form on the Billing category, and the note that payment does not reinstate it; the page passes axe; the seed holds SYNTHETIC SUSPENDED GROUP suspended for this journey alone, so nothing suspends or reinstates an organization another journey shares",
   "synthetic": true,
   "completesIn": 11,
   "assertedBy": [

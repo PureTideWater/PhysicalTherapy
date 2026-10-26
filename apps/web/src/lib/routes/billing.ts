@@ -175,7 +175,8 @@ export interface BillingHold {
 
 /**
  * The organization's one standing as its administrator reads it: the badge's label and tone, the alert's title and
- * notice (an alert while runs are stopped or the organization is suspended or closed; a status while only past due),
+ * notice (an alert while runs are stopped, the organization is suspended, or a closed organization still owes an
+ * invoice; a status while only past due or closed with nothing owed),
  * the next steps, billing's own hold beside a suspension or closure by PaidWhole, the note above the payment and plan
  * forms while PaidWhole's suspension lasts, and what stands in for the plan form once the organization is closed.
  */
@@ -196,6 +197,8 @@ export interface AccountStanding {
 export const BILLING_TICKET = '/support?from=billing';
 
 const day = (date: Date | null): string => (date === null ? '' : date.toISOString().slice(0, 10));
+/** An instant as the pages print one (components/format.ts utc): UTC, to the minute. */
+const instant = (date: Date): string => `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 const since = (date: Date | null): string => (date === null ? '' : ` since ${day(date)}`);
 const ticket = (detail: string): NextStep => ({ action: 'Open a support ticket', href: BILLING_TICKET, detail });
 const pay = (invoice: BillingHold['invoice'], detail: string): NextStep => ({
@@ -204,22 +207,35 @@ const pay = (invoice: BillingHold['invoice'], detail: string): NextStep => ({
   detail,
 });
 const PAYMENT_METHOD: NextStep = { action: 'Update the payment method', href: null, detail: ' above.' };
-/** A bank (ACH) payment leaves the invoice open until the bank settles it, so runs restart only then (docs/adr/0073). */
-const RESTARTS = ' below. A card payment restarts runs at once; a bank (ACH) payment restarts them once the bank settles it, usually within a few days.';
+/** A closed organization's one step, beside its standing and where the plan form was: no path reopens one. */
+export const CLOSURE_TICKET: NextStep = ticket(' if you have a question about the closure.');
+/** A bank (ACH) payment leaves the invoice open until the bank settles it, so it counts only then (docs/adr/0073). */
+const ACH_SETTLES = 'a bank (ACH) payment counts once the bank settles it, usually within a few days';
+/** The step to pay what holds a group suspended for nonpayment: every invoice unpaid for 30 days, since paying one moves the hold to the next. */
+function restarts(count: number): string {
+  return count > 1
+    ? ` and the other ${count - 1 === 1 ? 'invoice' : `${String(count - 1)} invoices`} unpaid for 30 days below. Runs restart once all of them are paid: at once by card, or once the bank settles a bank (ACH) payment, usually within a few days.`
+    : ' below. A card payment restarts runs at once; a bank (ACH) payment restarts them once the bank settles it, usually within a few days.';
+}
 
 /**
  * The standing from the record's status and billing's (standingKind, @tp/billing/standing), in the customer's words.
  * The record wins: a suspended or closed organization never reads good, and an invoice unpaid beside it is named with
- * what it holds, since lifting the suspension alone restarts nothing while billing still holds the organization. A
- * firm's suspension, closure or unpaid invoice refuses no run before milestone 12 (docs/adr/0050), so a firm is told
- * nothing about runs. "Suspended by PaidWhole" carries no date: none is stored; suspendedSince is billing's (30 days
- * after the first failed payment).
+ * what it holds, since reinstating the organization alone restarts nothing while billing still holds it. Closed is
+ * final (the console changes no closed status), so nothing promises a reopening, and it reads in the neutral tone
+ * unless an invoice is still owed. A firm's suspension, closure or unpaid invoice refuses no run before milestone 12
+ * (docs/adr/0050), so a firm is told nothing about runs. "Suspended by PaidWhole" carries no date: none is stored;
+ * suspendedSince is billing's (30 days after the first failed payment). Runs restart only once every invoice unpaid
+ * for 30 days is paid (holdingCount, billing_standing's own predicate).
  */
-export function accountStanding(billing: Pick<BillingView, 'kind' | 'status' | 'standing' | 'pastDueSince' | 'suspendedSince' | 'holdingInvoice'>): AccountStanding {
+export function accountStanding(
+  billing: Pick<BillingView, 'kind' | 'status' | 'standing' | 'pastDueSince' | 'suspendedSince' | 'holdingInvoice' | 'holdingCount'>,
+): AccountStanding {
   const kind = standingKind(billing.status, billing.standing, billing.kind);
   const firm = billing.kind === 'firm';
   const invoice = billing.holdingInvoice;
-  const stops = billing.pastDueSince === null ? '' : day(suspensionAt(billing.pastDueSince));
+  const several = billing.holdingCount > 1;
+  const stops = billing.pastDueSince === null ? '' : instant(suspensionAt(billing.pastDueSince));
   const quiet = { billingHold: null, formsNote: null, planRefusal: null };
   if (kind === 'good') {
     return { kind, label: 'In good standing', tone: 'neutral', title: null, notice: null, alert: false, nextSteps: [], ...quiet };
@@ -227,7 +243,7 @@ export function accountStanding(billing: Pick<BillingView, 'kind' | 'status' | '
   if (kind === 'past_due') {
     const notice = firm
       ? `An invoice is unpaid since its payment failed on ${day(billing.pastDueSince)}.`
-      : `New runs stop 30 days after the failed payment (${stops}) until it is paid; your data stays readable.`;
+      : `New runs stop at ${stops}, 30 days after the failed payment, until the invoice is paid; ${ACH_SETTLES}. Your data stays readable.`;
     return { kind, label: `Past due${since(billing.pastDueSince)}`, tone: 'danger', title: 'A payment failed', notice, alert: false, nextSteps: [PAYMENT_METHOD, pay(invoice, ' below.')], ...quiet };
   }
   if (kind === 'suspended_nonpayment') {
@@ -236,39 +252,44 @@ export function accountStanding(billing: Pick<BillingView, 'kind' | 'status' | '
       label: `Suspended for nonpayment${since(billing.suspendedSince)}`,
       tone: 'danger',
       title: 'New runs have stopped',
-      notice: 'New runs have stopped because an invoice has been unpaid for 30 days since its payment failed; your data stays readable.',
+      notice: several
+        ? `New runs have stopped because ${String(billing.holdingCount)} invoices have been unpaid for 30 days since their payments failed; your data stays readable.`
+        : 'New runs have stopped because an invoice has been unpaid for 30 days since its payment failed; your data stays readable.',
       alert: true,
-      nextSteps: [pay(invoice, RESTARTS), ticket(' if you have a question about the invoice.')],
+      nextSteps: [pay(invoice, restarts(billing.holdingCount)), ticket(' if you have a question about the invoice.')],
       ...quiet,
     };
   }
   // Suspended by PaidWhole or closed, and perhaps held by billing as well.
   const holdKind = billing.standing === 'good' ? null : standingKind('active', billing.standing, billing.kind);
   const billingHold = holdKind === 'past_due' || holdKind === 'suspended_nonpayment' ? { kind: holdKind, since: billing.pastDueSince, invoice } : null;
-  const lifted = kind === 'closed' ? 'the organization is reopened' : 'PaidWhole lifts the suspension';
+  const paying = billingHold === null ? [] : [pay(invoice, ' below.')];
+  if (kind === 'closed') {
+    // Nothing restarts runs for a closed organization, so its unpaid invoice is named as owed, with no clause about runs.
+    const owed = billingHold === null ? '' : ` An invoice is also unpaid since ${day(billingHold.since)}; it is still owed.`;
+    return {
+      kind,
+      label: 'Closed',
+      tone: billingHold === null ? 'neutral' : 'danger',
+      title: 'The organization is closed',
+      notice: `${firm ? 'Its data stays readable.' : 'Its data stays readable, and no new run starts.'}${owed}`,
+      alert: billingHold !== null,
+      nextSteps: [CLOSURE_TICKET, ...paying],
+      billingHold,
+      formsNote: null,
+      planRefusal: 'A closed organization takes no new plan.',
+    };
+  }
   const held =
     billingHold === null
       ? ''
       : firm
         ? ` An invoice is also unpaid since ${day(billingHold.since)}.`
         : billingHold.kind === 'suspended_nonpayment'
-          ? ` An invoice is also unpaid since ${day(billingHold.since)}; new runs stay stopped until it is paid as well.`
-          : ` An invoice is also unpaid since ${day(billingHold.since)}; unless it is paid by ${stops}, new runs stay stopped even once ${lifted}.`;
-  const paying = billingHold === null ? [] : [pay(invoice, ' below.')];
-  if (kind === 'closed') {
-    return {
-      kind,
-      label: 'Closed',
-      tone: 'danger',
-      title: 'The organization is closed',
-      notice: `${firm ? 'The organization is closed: its data stays readable.' : 'The organization is closed: its data stays readable, and no new run starts.'}${held}`,
-      alert: true,
-      nextSteps: [ticket(' to reopen it.'), ...paying],
-      billingHold,
-      formsNote: null,
-      planRefusal: 'A closed organization takes no new plan; open a support ticket to reopen it.',
-    };
-  }
+          ? several
+            ? ` ${String(billing.holdingCount)} invoices are also unpaid 30 days after their payments failed, the oldest since ${day(billingHold.since)}; new runs stay stopped until all of them are paid as well.`
+            : ` An invoice is also unpaid since ${day(billingHold.since)}; new runs stay stopped until it is paid as well.`
+          : ` An invoice is also unpaid since ${day(billingHold.since)}; if it is still unpaid at ${stops}, new runs stop then, even if PaidWhole has reinstated the organization; ${ACH_SETTLES}.`;
   return {
     kind,
     label: 'Suspended by PaidWhole',
@@ -276,11 +297,11 @@ export function accountStanding(billing: Pick<BillingView, 'kind' | 'status' | '
     title: firm ? 'The organization is suspended' : 'New runs have stopped',
     notice: firm
       ? `PaidWhole has suspended the organization.${held}`
-      : `PaidWhole has suspended the organization: new runs have stopped until PaidWhole lifts it, and its data stays readable. Paying an invoice does not lift this suspension.${held}`,
+      : `PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.${held}`,
     alert: true,
-    nextSteps: [ticket(firm ? ' to find out why.' : ' to find out why and what lifts it.'), ...paying],
+    nextSteps: [ticket(firm ? ' to find out why.' : ' to find out why and what reinstates it.'), ...paying],
     billingHold,
-    formsNote: 'Changing the plan or payment method does not lift a suspension by PaidWhole.',
+    formsNote: 'Changing the plan or payment method does not reinstate an organization suspended by PaidWhole.',
     planRefusal: null,
   };
 }

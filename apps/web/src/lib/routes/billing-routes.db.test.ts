@@ -469,6 +469,30 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     expect(page.standing.nextSteps[0]).toMatchObject({ action: 'Pay SIM-HAND-0045', href: `#pay-${holding}` });
   });
 
+  it('with two invoices unpaid for 30 days, paying the holding one keeps runs refused and the standing names the second (BIL-05)', async () => {
+    const world = await createTenantWorld(owner, 'SYNTHETIC BILLING TWO HOLDS');
+    const P = { practiceId: world.practiceId };
+    const uploader = await createUser(owner);
+    await addMembership(owner, world.organizationId, uploader, 'billing_manager');
+    const older = await failedInvoice(world, 45, 'SIM-HAND-0045');
+    const newer = await failedInvoice(world, 31, 'SIM-HAND-0031');
+    const upload = async () => call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] });
+
+    const before = ok(await call(organizationBillingPage, world.adminUserId, { organizationId: world.organizationId }));
+    expect(before.billing).toMatchObject({ standing: 'suspended', holdingCount: 2, holdingInvoice: { id: older, number: 'SIM-HAND-0045' } });
+    expect(before.standing.notice).toBe('New runs have stopped because 2 invoices have been unpaid for 30 days since their payments failed; your data stays readable.');
+    expect(before.standing.nextSteps[0]).toMatchObject({ action: 'Pay SIM-HAND-0045', href: `#pay-${older}`, detail: expect.stringMatching(/^ and the other invoice unpaid for 30 days below\. Runs restart once all of them are paid/) as string });
+    expect(JSON.stringify(before.standing)).not.toContain('A card payment restarts runs at once');
+
+    // Paying the holding invoice moves billing's hold to the second, and the database still refuses new work.
+    await owner.query("UPDATE invoice SET status = 'paid', paid_at = now(), amount_paid_cents = amount_due_cents, amount_remaining_cents = 0 WHERE id = $1", [older]);
+    expect(await upload()).toEqual({ status: 'suspended', reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string });
+    const after = ok(await call(organizationBillingPage, world.adminUserId, { organizationId: world.organizationId }));
+    expect(after.billing).toMatchObject({ standing: 'suspended', holdingCount: 1, holdingInvoice: { id: newer, number: 'SIM-HAND-0031' } });
+    expect(after.standing).toMatchObject({ kind: 'suspended_nonpayment', nextSteps: [{ action: 'Pay SIM-HAND-0031', href: `#pay-${newer}` }, { action: 'Open a support ticket' }] });
+    expect(after.standing.nextSteps[0]?.detail).toMatch(/^ below\. A card payment restarts runs at once/);
+  });
+
   it('refuses new work while a platform administrator holds the organization suspended', async () => {
     const world = await createTenantWorld(owner, 'SYNTHETIC BILLING HELD');
     const uploader = await createUser(owner);
@@ -482,7 +506,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     expect((await call(pricingRunsPage, world.adminUserId, P)).status).toBe('ok');
 
     // Its billing page never reads "In good standing": "Suspended by PaidWhole", the notice, the ticket's link and the
-    // note that a plan or payment method does not lift it (BIL-05, BIL-06).
+    // note that a plan or payment method does not reinstate it (BIL-05, BIL-06).
     const organizationId = world.organizationId;
     const held = ok(await call(organizationBillingPage, world.adminUserId, { organizationId }));
     expect(held.billing).toMatchObject({ status: 'suspended', standing: 'good', holdingInvoice: null });
@@ -492,11 +516,11 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       label: 'Suspended by PaidWhole',
       tone: 'danger',
       title: 'New runs have stopped',
-      notice: 'PaidWhole has suspended the organization: new runs have stopped until PaidWhole lifts it, and its data stays readable. Paying an invoice does not lift this suspension.',
+      notice: 'PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.',
       alert: true,
-      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing', detail: ' to find out why and what lifts it.' }],
+      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing', detail: ' to find out why and what reinstates it.' }],
       billingHold: null,
-      formsNote: 'Changing the plan or payment method does not lift a suspension by PaidWhole.',
+      formsNote: 'Changing the plan or payment method does not reinstate an organization suspended by PaidWhole.',
       planRefusal: null,
     });
 
@@ -519,7 +543,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       billingHold: { kind: 'suspended_nonpayment', invoice: { id: unpaid, number: 'SIM-HAND-HELD' } },
       nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing' }, { action: 'Pay SIM-HAND-HELD', href: `#pay-${unpaid}`, detail: ' below.' }],
     });
-    expect(both.standing.notice).toMatch(/Paying an invoice does not lift this suspension\. An invoice is also unpaid since \d{4}-\d{2}-\d{2}; new runs stay stopped until it is paid as well\.$/);
+    expect(both.standing.notice).toMatch(/Paying an invoice does not reinstate it\. An invoice is also unpaid since \d{4}-\d{2}-\d{2}; new runs stay stopped until it is paid as well\.$/);
     await owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [organizationId]);
     expect(await call(requestUploads, uploader, P, { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] })).toEqual({
       status: 'suspended',
@@ -544,9 +568,17 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     expect(page.standing).toMatchObject({
       kind: 'closed',
       label: 'Closed',
+      tone: 'neutral',
+      alert: false,
       formsNote: null,
-      planRefusal: 'A closed organization takes no new plan; open a support ticket to reopen it.',
-      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing', detail: ' to reopen it.' }],
+      planRefusal: 'A closed organization takes no new plan.',
+      nextSteps: [{ action: 'Open a support ticket', href: '/support?from=billing', detail: ' if you have a question about the closure.' }],
     });
+    // An invoice unpaid for 31 days is named as still owed, with no promise that paying it restarts anything.
+    const owed = await failedInvoice(world, 31, 'SIM-HAND-CLOSED');
+    const closedOwing = ok(await call(organizationBillingPage, world.adminUserId, { organizationId })).standing;
+    expect(closedOwing).toMatchObject({ kind: 'closed', tone: 'danger', alert: true, billingHold: { kind: 'suspended_nonpayment', invoice: { id: owed } } });
+    expect(closedOwing.notice).toMatch(/^Its data stays readable, and no new run starts\. An invoice is also unpaid since \d{4}-\d{2}-\d{2}; it is still owed\.$/);
+    expect(JSON.stringify(closedOwing)).not.toMatch(/reopen/i);
   });
 });

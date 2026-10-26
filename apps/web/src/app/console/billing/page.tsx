@@ -1,3 +1,4 @@
+import { standingKind } from '@tp/billing/standing';
 import { formatUsd, parseCents } from '@tp/money';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -19,10 +20,9 @@ const STANDING: Readonly<Record<string, string>> = {
   good: 'Good',
   past_due: 'Past due',
   suspended_nonpayment: 'Suspended for nonpayment',
-  suspended_by_paidwhole: 'Suspended (PaidWhole)',
+  suspended_by_paidwhole: 'Suspended by PaidWhole',
   closed: 'Closed',
 };
-const BILLING_STANDING: Readonly<Record<string, string>> = { past_due: 'past due', suspended: 'suspended for nonpayment' };
 const KIND: Readonly<Record<string, string>> = { group: 'Practice group', firm: 'Billing firm' };
 
 /**
@@ -63,14 +63,18 @@ export default async function ConsoleBillingPage() {
                     {row.name} <span className="text-xs text-muted-foreground">({KIND[row.kind] ?? row.kind})</span>
                   </td>
                   <td className="py-1 pr-3">
-                    <Badge variant={row.standingKind === 'good' ? 'outline' : 'destructive'}>{STANDING[row.standingKind] ?? row.standingKind}</Badge>
+                    <Badge variant={row.standingKind === 'good' || row.standingKind === 'closed' ? 'outline' : 'destructive'}>{STANDING[row.standingKind] ?? row.standingKind}</Badge>
                     {row.standingKind === 'suspended_nonpayment' && row.suspendedSince !== null ? (
                       <span className="ml-2 text-xs">since {utcDate(row.suspendedSince)}</span>
                     ) : row.pastDueSince === null ? null : row.standingKind === 'past_due' ? (
                       <span className="ml-2 text-xs">since {utcDate(row.pastDueSince)}</span>
                     ) : row.standingKind === 'suspended_by_paidwhole' || row.standingKind === 'closed' ? (
+                      // Billing's own hold in the firm-aware words the customer page uses (a firm's billing suspension reads past due).
                       <span className="ml-2 text-xs">
-                        billing {BILLING_STANDING[row.standing] ?? row.standing} since {utcDate(row.suspendedSince ?? row.pastDueSince)}
+                        billing{' '}
+                        {standingKind('active', row.standing, row.kind) === 'suspended_nonpayment' && row.suspendedSince !== null
+                          ? `suspended for nonpayment since ${utcDate(row.suspendedSince)}`
+                          : `past due since ${utcDate(row.pastDueSince)}`}
                       </span>
                     ) : null}
                   </td>

@@ -3,14 +3,14 @@ import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Empty
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../../components/action-form';
-import { AccountStandingSummary } from '../../../../components/billing/account-standing';
+import { AccountStandingSummary, NextStepText } from '../../../../components/billing/account-standing';
 import { PAYMENT_METHOD_NAME, PaymentMethodCard } from '../../../../components/billing/payment-method-card';
 import { SelectField } from '../../../../components/field';
 import { utc, utcDate } from '../../../../components/format';
 import { Money } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
-import { organizationBillingPage } from '../../../../lib/routes/billing';
+import { CLOSURE_TICKET, organizationBillingPage } from '../../../../lib/routes/billing';
 import { addSimulatedPaymentMethod, choosePlan, payInvoice, settleSimulatedPayments } from '../actions';
 import { FormKeys } from '../../../../components/form-keys';
 import { pageCsrfToken } from '../../../../lib/http/csrf-page';
@@ -27,7 +27,8 @@ const KIND: Readonly<Record<string, string>> = { subscription: 'Subscription', a
  * and shown first, or a card: Stripe Elements in production, the local simulator's test values in development;
  * components/billing/payment-method-card.tsx, docs/adr/0073), then the plan (monthly or annual), which needs a
  * method on file (with none, the plans' prices and a sentence asking for one stand in for the form; for a closed
- * organization, a sentence that it takes none), and the invoices, with a Pay form for each unpaid one and for the
+ * organization, a sentence that it takes none and the ticket for a question about the closure; the note that the
+ * amounts are placeholders shows only beside amounts), and the invoices, with a Pay form for each unpaid one and for the
  * invoice holding the standing even when it is older than the newest shown. What is chosen here happens at Stripe
  * and shows once Stripe reports it.
  */
@@ -69,7 +70,9 @@ export default async function OrganizationBillingPage(props: { readonly params: 
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">
           {billing.subscription === null && standing.planRefusal !== null ? (
-            <p data-plan="closed">{standing.planRefusal}</p>
+            <p data-plan="closed">
+              {standing.planRefusal} <NextStepText step={CLOSURE_TICKET} />
+            </p>
           ) : billing.subscription === null && paymentMethod === null ? (
             // A plan is refused until a method is on file, so the form waits for one; the prices still show.
             <div className="flex flex-col gap-2" data-plan="needs-method">
@@ -105,7 +108,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
               {billing.subscription.cancelAtPeriodEnd ? <> (ends then)</> : null}
             </p>
           )}
-          {catalog.confirmed ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until PaidWhole confirms its prices.</p>}
+          {catalog.confirmed || (billing.subscription === null && standing.planRefusal !== null) ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until PaidWhole confirms its prices.</p>}
         </CardContent>
       </Card>
 
@@ -116,7 +119,16 @@ export default async function OrganizationBillingPage(props: { readonly params: 
         </CardHeader>
         <CardContent>
           {billing.invoices.length === 0 ? (
-            <EmptyState title="No invoices yet" nextStep={billing.subscription === null ? 'Add a payment method, then choose a plan.' : 'The first invoice appears once Stripe issues it.'} />
+            <EmptyState
+              title="No invoices yet"
+              nextStep={
+                standing.planRefusal !== null
+                  ? 'Nothing is owed; a closed organization takes no new plan.'
+                  : billing.subscription === null
+                    ? 'Add a payment method, then choose a plan.'
+                    : 'The first invoice appears once Stripe issues it.'
+              }
+            />
           ) : (
             <table className="w-full text-left text-sm" aria-label="Invoices">
               <thead className="text-muted-foreground">
@@ -158,8 +170,8 @@ export default async function OrganizationBillingPage(props: { readonly params: 
           {open.length === 0 ? null : (
             <div className="mt-4 flex flex-col gap-2">
               {open.map((invoice) => (
-                // The standing's next step links here (#pay-<invoice>).
-                <div key={invoice.id} id={`pay-${invoice.id}`}>
+                // The standing's next step links here (#pay-<invoice>); the margin keeps the Pay button clear of the sticky header.
+                <div key={invoice.id} id={`pay-${invoice.id}`} className="scroll-mt-20">
                   <ActionForm
                     action={payInvoice}
                     submit={
