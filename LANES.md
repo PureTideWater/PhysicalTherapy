@@ -224,6 +224,10 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **`apps/web/src/lib/routes/settings.ts` adopts the shared money-input helper.** #54 added `dollarsField` and `dollarsForInput`, now used by Settings → Defaults, the cases page, the workbench, the console's practice settings and the model budget. It left `settings.ts` alone because the file is in #42. Its materiality save should take `dollarsField` too, so every dollar field parses one way.
   - **One limit for amounts.** The stores accept 12 digits of cents, but `settings.ts`'s save takes 11 (`\d{1,9}(\.\d{1,2})?`). The fix is the same helper, with the stores' limit.
   - Status: `approval-summaries/lane-b-materiality-cents-status.md`.
+- **2026-10-26, from Lane B's model evaluation gate (#84, PR #53): one line in a #42 file, for #42's next base merge; no decision needed.**
+  - **The change:** `infra/test/compute.test.ts` pins the permitted CLI's call. #53 changes the pinned call from `readGatewayConfig()` to `readGatewayConfig(process.env, { serving: 'evaluable' })`, because the default now refuses to serve in production until a feature passes the gate.
+  - **For #42:** `git merge-tree` of #53's head with #42's head 13f59b1 merges the file cleanly (#42 edits other hunks). Whichever merges second keeps both and re-runs the test (rule 6, under the co-founder's Q2 precedent for #42-shared files; allowed by the orchestrator, 2026-10-26 09:48 UTC).
+  - Status: `approval-summaries/lane-b-model-eval-gate-status.md`.
 
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
