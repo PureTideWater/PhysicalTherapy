@@ -171,14 +171,19 @@ dependencies.<child>`.
 Dependabot never moves `packageManager` (it reads it only to choose the pnpm it runs), so a person does, in a one-line
 pull request:
 1. When `pnpm toolchain:check` warns that a newer 10.x is at least three days old (the weekly triage), set
-   `packageManager` to `pnpm@<that version>`. Both Dockerfiles install the version it names, and the workflows'
+   `packageManager` to `pnpm@<that version>+sha512.<hex>`, the hex of the registry's `dist.integrity` for that
+   version's tarball: set the version alone, run `pnpm toolchain:check`, and its `pnpm integrity` error names the exact
+   value from the registry. Both Dockerfiles install the version it names through
+   `tools/check-toolchain/install-pnpm.sh`, which refuses a tarball whose sha512 differs, and the workflows'
    `pnpm/action-setup` switches to it, so nothing else names a version.
 2. Run `pnpm install --lockfile-only` under the new pnpm (with `--fix-lockfile` if `tools/check-licenses`' libc rule
    names an entry written before pnpm wrote libc fields), then `pnpm licenses:check` and `pnpm toolchain:check`.
 
 `check-toolchain` refuses a `packageManager` pnpm under three days old unless that exact version has a live exclude in
 both lists (CQ3 (a)): `pnpm/action-setup` switches to it with `pnpm self-update` in its own directory, where the
-workspace's release age never applies.
+workspace's release age never applies. It also refuses a `packageManager` without the `+sha512` suffix, or with one
+that is not the registry's: only the images check the suffix (pnpm's own switch and `pnpm/action-setup` strip it), so
+it is held equal to the registry where it is written.
 
 **The outage this prevents.** An advisory published against the pinned pnpm turns `static` red on every pull request of
 both lanes. The remedy is the same pull request to the first fixed version, with its dated exclude if it is under three

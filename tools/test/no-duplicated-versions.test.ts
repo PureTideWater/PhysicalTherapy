@@ -10,13 +10,14 @@ import { repositoryRoot } from '../content-files';
  * the source moves everything, and a Dependabot pull request that rewrites the source alone cannot leave a stale copy:
  * - the node image: the Dockerfiles' FROM lines, one image for all of them;
  * - the postgres image: docker-compose.yml;
- * - pnpm: package.json's packageManager, from which both images derive theirs;
+ * - pnpm: package.json's packageManager, version and sha512, from which both images derive and verify theirs;
  * - mutation.yml's exact Node: tools/stryker/unicode.json, which workflows.test.ts holds its node-version values to;
  * - the worker image's playwright-core: the version the lockfile resolves, until ci-browser derives it from
  *   apps/worker/package.json.
- * The scan reads the whole text, comments included, of every workflow, both Dockerfiles, docker-compose.yml, README.md and
- * CLAUDE.md. ADRs and dated runbook entries record what was, and are not scanned. The CI files are read through CI_TREE
- * when it is set (workflows.test.ts, the simulated rewrite).
+ * The scan reads the whole text, comments included, of every workflow, both Dockerfiles, docker-compose.yml, README.md,
+ * CLAUDE.md and the images' pnpm installer (tools/check-toolchain/install-pnpm.sh). ADRs and dated runbook entries record
+ * what was, and are not scanned. The CI files are read through CI_TREE when it is set (workflows.test.ts, the simulated
+ * rewrite).
  */
 
 const CI_ROOT = process.env.CI_TREE ?? repositoryRoot;
@@ -29,7 +30,7 @@ function scanned(): Map<string, string> {
     .map((file) => `.github/workflows/${file}`);
   return new Map([
     ...[...workflows, ...DOCKERFILES, 'docker-compose.yml'].map((file) => [file, readFileSync(path.join(CI_ROOT, file), 'utf8')] as const),
-    ...['README.md', 'CLAUDE.md'].map((file) => [file, readFileSync(path.join(repositoryRoot, file), 'utf8')] as const),
+    ...['README.md', 'CLAUDE.md', 'tools/check-toolchain/install-pnpm.sh'].map((file) => [file, readFileSync(path.join(repositoryRoot, file), 'utf8')] as const),
   ]);
 }
 
@@ -49,9 +50,12 @@ const fromImages = (text: string) =>
 describe('no duplicated versions (A4 (b))', () => {
   it('names pnpm’s version only in packageManager: neither image installs a pnpm literal, and no workflow or document repeats one', () => {
     const manager = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { packageManager?: string }).packageManager ?? '';
-    expect(manager).toMatch(/^pnpm@\d+\.\d+\.\d+$/);
+    // pnpm@x.y.z+sha512.<hex>: the version and the tarball's digest, which both images verify (install-pnpm.sh).
+    const [, version, digest] = /^pnpm@(\d+\.\d+\.\d+)\+sha512\.([0-9a-f]{128})$/.exec(manager) ?? [];
+    expect(version, manager).toBeDefined();
     expect(where(scanned(), /\bpnpm(?:@|\s+v?)\d+\.\d+/i)).toEqual([]);
-    expect(where(scanned(), new RegExp(`\\b${manager.replace('pnpm@', '').replaceAll('.', '\\.')}\\b`))).toEqual([]);
+    expect(where(scanned(), new RegExp(`\\b${(version ?? '').replaceAll('.', '\\.')}\\b`))).toEqual([]);
+    expect(where(scanned(), new RegExp((digest ?? '').slice(0, 16)))).toEqual([]);
   });
 
   it('names the node image in the Dockerfiles alone, one image for every stage of both', () => {

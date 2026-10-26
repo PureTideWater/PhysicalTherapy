@@ -10,12 +10,14 @@ ARG STATIC_ASSET_ORIGIN=""
 ENV NEXT_TELEMETRY_DISABLED=1 \
     STATIC_ASSET_ORIGIN=${STATIC_ASSET_ORIGIN}
 WORKDIR /repo
-# pnpm at the exact version package.json's packageManager names, so no version is written here
-# (tools/check-toolchain refuses one). npm installs it, checking the registry's integrity hash: the base
-# image's corepack would need its signing keys current, and Node 25 and later no longer bundle it.
+# pnpm at the exact version package.json's packageManager names, so no version is written here (tools/check-toolchain
+# refuses one). install-pnpm.sh packs that version from the registry and installs the tarball only when its sha512
+# equals packageManager's +sha512 suffix, which check-toolchain holds to the registry's dist.integrity: the bytes are
+# the ones committed, not only the ones the registry's answer vouches for. The base image's corepack would need its
+# signing keys current, and Node 25 and later no longer bundle it.
 COPY package.json ./
-RUN pnpm_version="$(node -p "const m = /^pnpm@(\d+\.\d+\.\d+)(\+sha\d+\.[0-9a-f]+)?$/.exec(require('./package.json').packageManager ?? ''); if (m === null) throw new Error('package.json: packageManager is not pnpm@x.y.z'); m[1]")" \
- && npm install --global --no-audit --no-fund "pnpm@${pnpm_version}"
+COPY tools/check-toolchain/install-pnpm.sh /tmp/install-pnpm.sh
+RUN sh /tmp/install-pnpm.sh package.json && rm /tmp/install-pnpm.sh
 COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/web..."
 RUN pnpm --filter @tp/web build

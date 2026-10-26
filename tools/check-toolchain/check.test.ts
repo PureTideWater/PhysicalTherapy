@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
@@ -30,6 +32,11 @@ const TIMES: Record<string, Record<string, string>> = {
 type Facts = Record<string, Record<string, Partial<VersionFacts>>>;
 const DEFAULT_FACTS: VersionFacts = { integrity: 'sha512-synthetic', evidence: null, dependencies: {} };
 
+/** A synthetic pnpm tarball's sha512 for each version, as hex (packageManager's suffix) and as the registry's integrity. */
+const pnpmDigest = (version: string) => createHash('sha512').update(`synthetic pnpm ${version}`).digest();
+/** packageManager for a pnpm version, with the sha512 suffix the registry's synthetic integrity matches. */
+const pm = (version: string) => `pnpm@${version}+sha512.${pnpmDigest(version).toString('hex')}`;
+
 /** Bulk advisory answers by `name@version`. */
 type AdvisoryTable = Record<string, Advisory[]>;
 
@@ -53,7 +60,9 @@ function fakeRegistry(
       if (time === undefined) {
         return Promise.reject(new NetworkReadError(`registry.npmjs.org: reading ${name}'s registry document failed (HTTP 404); check-toolchain fails closed`));
       }
-      const facts = Object.fromEntries(Object.keys(time).map((version) => [version, { ...DEFAULT_FACTS, ...options.facts?.[name]?.[version] }]));
+      const facts = Object.fromEntries(
+        Object.keys(time).map((version) => [version, { ...DEFAULT_FACTS, ...(name === 'pnpm' ? { integrity: `sha512-${pnpmDigest(version).toString('base64')}` } : {}), ...options.facts?.[name]?.[version] }]),
+      );
       return Promise.resolve({ name, versions: Object.keys(time), time, facts });
     },
     advisories(packages) {
@@ -77,7 +86,8 @@ function fakeRegistry(
 const DOCKERFILE = [
   'FROM node:24-trixie-slim@sha256:' + 'a'.repeat(64) + ' AS build',
   'COPY package.json ./',
-  `RUN pnpm_version="$(node -p "require('./package.json').packageManager")" && npm install --global "pnpm@\${pnpm_version}"`,
+  'COPY tools/check-toolchain/install-pnpm.sh /tmp/install-pnpm.sh',
+  'RUN sh /tmp/install-pnpm.sh package.json && rm /tmp/install-pnpm.sh',
 ].join('\n');
 
 interface Shape {
@@ -101,7 +111,7 @@ interface Shape {
 }
 
 /** packageManager as the tree holds it. */
-const PACKAGE_MANAGER = 'pnpm@10.34.8';
+const PACKAGE_MANAGER = pm('10.34.8');
 
 const TRUST = [{ package: 'semver@6.3.1', reason: 'published without provenance after a version with it, reached through @babel/core', added: '2026-10-26' }];
 
@@ -142,7 +152,7 @@ describe('check-toolchain', () => {
     const findings = await run(tree());
     expect(problems(findings)).toEqual([]);
     expect(problems(findings, 'warning')).toEqual([]);
-    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'Dockerfiles', 'audit exceptions', 'release-age excludes', 'lockfile resolutions', 'lockfile release age', 'lockfile integrity', 'lockfile trust', 'trust excludes', 'overrides']);
+    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'pnpm integrity', 'Dockerfiles', 'audit exceptions', 'release-age excludes', 'lockfile resolutions', 'lockfile release age', 'lockfile integrity', 'lockfile trust', 'trust excludes', 'overrides']);
   });
 
   it('fails on a moderate or worse advisory against packageManager’s pnpm, and warns on a low one', async () => {
@@ -156,12 +166,17 @@ describe('check-toolchain', () => {
     expect(problems(low, 'warning')).toHaveLength(1);
   });
 
-  it('fails on a pnpm literal in a Dockerfile, or one that does not derive pnpm', () => {
-    const literal = dockerfileRule({ 'apps/web/Dockerfile': 'FROM node:24\nRUN npm install --global pnpm@10.28.0\n# packageManager' }, '10.34.8');
-    expect(literal.map((finding) => finding.message)).toEqual(["apps/web/Dockerfile:2 names a pnpm version; derive it from package.json's packageManager, so one field moves every pnpm"]);
+  it('fails on a pnpm literal in a Dockerfile, or one that installs pnpm other than through install-pnpm.sh (N1)', () => {
+    const literal = dockerfileRule({ 'apps/web/Dockerfile': `${DOCKERFILE}\nRUN npm install --global pnpm@10.28.0` }, '10.34.8');
+    expect(literal.map((finding) => finding.message)).toEqual([
+      "apps/web/Dockerfile:5 names a pnpm version; derive it from package.json's packageManager, so one field moves every pnpm",
+      'apps/web/Dockerfile:5 installs pnpm other than through tools/check-toolchain/install-pnpm.sh, which alone checks the tarball against packageManager\'s sha512',
+    ]);
     expect(dockerfileRule({ 'apps/worker/Dockerfile': 'RUN corepack enable && corepack prepare pnpm 10.34.8 --activate # packageManager' }, '10.34.8')[0]?.level).toBe('error');
-    expect(dockerfileRule({ 'apps/worker/Dockerfile': 'RUN corepack prepare pnpm@latest --activate' }, '10.34.8').map((finding) => finding.message)).toEqual([
-      "apps/worker/Dockerfile does not derive its pnpm from package.json's packageManager",
+    const unverified = 'FROM node:24\nCOPY package.json ./\n# packageManager\nRUN npm install --global "pnpm@$(node -p "require(\'./package.json\').packageManager.slice(5)")"';
+    expect(dockerfileRule({ 'apps/worker/Dockerfile': unverified }, '10.34.8').map((finding) => finding.message)).toEqual([
+      'apps/worker/Dockerfile:4 installs pnpm other than through tools/check-toolchain/install-pnpm.sh, which alone checks the tarball against packageManager\'s sha512',
+      "apps/worker/Dockerfile does not install pnpm with tools/check-toolchain/install-pnpm.sh (COPY it, then RUN sh <it> package.json), which checks the tarball against packageManager's sha512",
     ]);
     expect(dockerfileRule({}, '10.34.8')[0]?.message).toBe('no Dockerfile found under apps/*/');
     expect(dockerfileRule({ 'apps/web/Dockerfile': DOCKERFILE }, '10.34.8')[0]?.level).toBe('ok');
@@ -270,15 +285,31 @@ describe('check-toolchain', () => {
     expect(problems(findings, 'warning')).toEqual([expect.stringMatching(/^newer pnpm: pnpm 10\.34\.9 \(published 2026-10-25T17:54:00\.000Z\) is newer than packageManager's 10\.34\.8 and at least three days old/)]);
   });
 
+  it('fails a packageManager without the registry tarball’s sha512, or with another one (N1)', async () => {
+    const want = pm('10.34.8');
+    expect(problems(await run(tree({ packageManager: 'pnpm@10.34.8' })))).toEqual([
+      `pnpm integrity: package.json: packageManager "pnpm@10.34.8" carries no +sha512.<hex>; set it to "${want}", the registry's dist.integrity for pnpm 10.34.8 in hex, which both Dockerfiles check the tarball against (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
+    ]);
+    const otherHex = pnpmDigest('10.34.9').toString('hex');
+    expect(problems(await run(tree({ packageManager: `pnpm@10.34.8+sha512.${otherHex}` })))).toEqual([
+      `pnpm integrity: package.json: packageManager's sha512 ${otherHex} is not the registry's dist.integrity for pnpm 10.34.8 (${pnpmDigest('10.34.8').toString('hex')}); set packageManager to "${want}"`,
+    ]);
+    expect(problems(await run(tree({ packageManager: `pnpm@10.34.8+sha256.${'a'.repeat(64)}` })))).toEqual([
+      `pnpm integrity: package.json: packageManager "pnpm@10.34.8+sha256.${'a'.repeat(64)}" carries no +sha512.<hex>; set it to "${want}", the registry's dist.integrity for pnpm 10.34.8 in hex, which both Dockerfiles check the tarball against (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
+    ]);
+    const noIntegrity = fakeRegistry({ facts: { pnpm: { '10.34.8': { integrity: null } } } });
+    expect(problems(await run(tree(), tree(), { registry: noIntegrity }))).toEqual(['pnpm integrity: registry.npmjs.org gives no sha512 dist.integrity for pnpm 10.34.8; check-toolchain fails closed']);
+  });
+
   it('fails a packageManager pnpm under three days old, and passes it only with its exclude in both lists (CQ3 (a))', async () => {
-    const young = tree({ packageManager: 'pnpm@10.34.9' });
+    const young = tree({ packageManager: pm('10.34.9') });
     expect(problems(await run(young))).toEqual([
       expect.stringMatching(/^pnpm release age: packageManager's pnpm 10\.34\.9 was published 2026-10-25T17:54:00\.000Z, under three days ago; it is old enough from 2026-10-28T17:54:00\.000Z\. .*add "pnpm@10\.34\.9" to/),
     ]);
     const exclude = { package: 'pnpm@10.34.9', advisory: 'GHSA-2222-3333-4444', reason: 'synthetic: the first pnpm that fixes an advisory against the pinned one', added: '2026-10-25T20:00:00.000Z', expires: '2026-10-29T00:00:00.000Z' };
-    expect(problems(await run(tree({ packageManager: 'pnpm@10.34.9', workspace: { minimumReleaseAgeExclude: ['pnpm@10.34.9'] }, releaseAge: [exclude] })))).toEqual([]);
+    expect(problems(await run(tree({ packageManager: pm('10.34.9'), workspace: { minimumReleaseAgeExclude: ['pnpm@10.34.9'] }, releaseAge: [exclude] })))).toEqual([]);
     // In one list only: the age rule still fails, and so does the lists' equality.
-    const half = problems(await run(tree({ packageManager: 'pnpm@10.34.9', releaseAge: [exclude] })));
+    const half = problems(await run(tree({ packageManager: pm('10.34.9'), releaseAge: [exclude] })));
     expect(half).toHaveLength(2);
     expect(half[0]).toMatch(/^pnpm release age: /);
     expect(half[1]).toMatch(/^release-age excludes: tools\/check-toolchain\/release-age-exceptions\.json lists pnpm@10\.34\.9, which/);
@@ -487,7 +518,9 @@ describe('the committed lists', () => {
     const real = readWorkingTree(repositoryRoot);
     const findings = checkOffline(real);
     expect(problems(findings)).toEqual([]);
-    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'lockfile resolutions', 'trust excludes', 'overrides']);
+    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'Dockerfiles', 'lockfile resolutions', 'trust excludes', 'overrides']);
+    // packageManager carries the tarball's sha512 the images check (N1); the networked rule holds it to the registry.
+    expect(JSON.parse(real.packageJson ?? '{}')).toMatchObject({ packageManager: expect.stringMatching(/^pnpm@\d+\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/) as unknown });
     // The phase-2 slip it exists to catch: an override written in pnpm-workspace.yaml without its overrides.json entry.
     const { parse, stringify: yaml } = await import('yaml');
     const workspace = { ...(parse(real.workspace ?? '') as Record<string, unknown>), overrides: { 'typed-rest-client>qs': '6.16.1' } };

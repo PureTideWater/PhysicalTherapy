@@ -18,10 +18,12 @@ import {
   parseJsonFile,
   parseSelector,
   parseYamlFile,
+  pnpmDigest,
   pnpmVersion,
   rangeHolds,
   releaseAgeExceptionsSchema,
   type ReleaseAgeException,
+  sha512Hex,
   snapshotSpec,
   splitSpec,
   trustExceptionsSchema,
@@ -272,7 +274,15 @@ function settingsRule(head: Config): Finding[] {
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `every package resolves from ${NPMJS}; no pnpmfile or config dependency` }];
 }
 
-function pnpmRules(version: string, pnpm: Packument | Error, advisories: Awaited<ReturnType<Registry['advisories']>> | Error, live: ReadonlySet<string>, minutes: number, now: Date): Finding[] {
+function pnpmRules(
+  packageManager: string,
+  version: string,
+  pnpm: Packument | Error,
+  advisories: Awaited<ReturnType<Registry['advisories']>> | Error,
+  live: ReadonlySet<string>,
+  minutes: number,
+  now: Date,
+): Finding[] {
   const findings: Finding[] = [];
   // Advisories: moderate or worse fails, a low one warns.
   if (advisories instanceof Error) {
@@ -332,10 +342,43 @@ function pnpmRules(version: string, pnpm: Packument | Error, advisories: Awaited
           message: `pnpm ${newer} (published ${pnpm.time[newer] ?? '?'}) is newer than packageManager's ${version} and at least ${ageWords(minutes)} old; Dependabot never moves packageManager, so bump it by hand at the weekly triage (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
         },
   );
+  findings.push(pnpmIntegrityRule(packageManager, version, pnpm));
   return findings;
 }
 
-/** Neither Dockerfile names a pnpm version: both derive it from package.json's packageManager. */
+/**
+ * N1: packageManager carries `+sha512.<hex>` of the registry's tarball for its pnpm, which both Dockerfiles check the
+ * tarball they install against (tools/check-toolchain/install-pnpm.sh). Neither pnpm's own switch nor action-setup
+ * reads the suffix (each strips it), so it is held here, equal to the registry's dist.integrity.
+ */
+function pnpmIntegrityRule(packageManager: string, version: string, pnpm: Packument): Finding {
+  const rule = 'pnpm integrity';
+  const registry = sha512Hex(pnpm.facts[version]?.integrity);
+  if (registry === null) {
+    return { level: 'error', rule, message: `registry.npmjs.org gives no sha512 dist.integrity for pnpm ${version}; check-toolchain fails closed` };
+  }
+  const want = `pnpm@${version}+sha512.${registry}`;
+  const digest = pnpmDigest(packageManager);
+  if (digest === null) {
+    return {
+      level: 'error',
+      rule,
+      message: `${FILES.packageJson}: packageManager ${JSON.stringify(packageManager)} carries no +sha512.<hex>; set it to "${want}", the registry's dist.integrity for pnpm ${version} in hex, which both Dockerfiles check the tarball against (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
+    };
+  }
+  if (digest !== registry) {
+    return { level: 'error', rule, message: `${FILES.packageJson}: packageManager's sha512 ${digest} is not the registry's dist.integrity for pnpm ${version} (${registry}); set packageManager to "${want}"` };
+  }
+  return { level: 'ok', rule, message: `packageManager's sha512 is the registry's dist.integrity for pnpm ${version}` };
+}
+
+/** The one way an image installs pnpm: install-pnpm.sh, which checks the tarball against packageManager's sha512 (N1). */
+export const PNPM_INSTALLER = 'tools/check-toolchain/install-pnpm.sh';
+
+/**
+ * Neither Dockerfile names a pnpm version, and each installs pnpm only by copying install-pnpm.sh and running it on
+ * package.json, which derives the version from packageManager and checks the tarball against its sha512.
+ */
 export function dockerfileRule(dockerfiles: Readonly<Record<string, string>>, version: string | null): Finding[] {
   const rule = 'Dockerfiles';
   const findings: Finding[] = [];
@@ -350,12 +393,19 @@ export function dockerfileRule(dockerfiles: Readonly<Record<string, string>>, ve
       if (literal) {
         findings.push({ level: 'error', rule, message: `${file}:${String(index + 1)} names a pnpm version; derive it from package.json's packageManager, so one field moves every pnpm` });
       }
+      const instruction = line.trim();
+      const other = !instruction.startsWith('#') && /\bpnpm\b/.test(instruction) && (/\b(?:npm|yarn)\s+(?:install|i|add)\b/.test(instruction) || /\bcorepack\b/.test(instruction) || /\bnpx\s+(?:-y\s+)?pnpm\b/.test(instruction));
+      if (other) {
+        findings.push({ level: 'error', rule, message: `${file}:${String(index + 1)} installs pnpm other than through ${PNPM_INSTALLER}, which alone checks the tarball against packageManager's sha512` });
+      }
     });
-    if (!text.includes('packageManager')) {
-      findings.push({ level: 'error', rule, message: `${file} does not derive its pnpm from package.json's packageManager` });
+    const copied = /^COPY\s+(?:--\S+\s+)*tools\/check-toolchain\/install-pnpm\.sh\s+(\S+)\s*$/m.exec(text)?.[1];
+    const runs = copied !== undefined && new RegExp(`^RUN\\s+sh\\s+${copied.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}\\s+package\\.json\\b`, 'm').test(text);
+    if (!runs) {
+      findings.push({ level: 'error', rule, message: `${file} does not install pnpm with ${PNPM_INSTALLER} (COPY it, then RUN sh <it> package.json), which checks the tarball against packageManager's sha512` });
     }
   }
-  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${files.join(' and ')} derive pnpm from packageManager; no pnpm literal` }];
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${files.join(' and ')} install pnpm with ${PNPM_INSTALLER}, from packageManager and checked against its sha512; no pnpm literal` }];
 }
 
 function auditRule(head: Config, now: Date): Finding[] {
@@ -697,8 +747,8 @@ function overridesRule(head: Config): Finding[] {
 }
 
 /**
- * The rules that read only the tree, with no base and no registry: the gates, the settings, every lockfile entry's
- * resolution, the trust excludes and the overrides. The unit tests run them on the repository's real tree, so a list
+ * The rules that read only the tree, with no base and no registry: the gates, the settings, the Dockerfiles' pnpm
+ * install, every lockfile entry's resolution, the trust excludes and the overrides. The unit tests run them on the repository's real tree, so a list
  * out of step with pnpm's settings fails offline as well as in static's networked run (ci-infra N3).
  */
 export function checkOffline(tree: Tree): Finding[] {
@@ -706,7 +756,8 @@ export function checkOffline(tree: Tree): Finding[] {
   if (head.problems.length > 0) {
     return head.problems.map((message) => ({ level: 'error', rule: 'files', message }));
   }
-  return [...gatesRule(head), ...settingsRule(head), ...lockfileResolutionRule(head.lockfile), ...trustRule(head), ...overridesRule(head)];
+  const dockerfiles = dockerfileRule(tree.dockerfiles ?? {}, pnpmVersion(head.packageJson.packageManager));
+  return [...gatesRule(head), ...settingsRule(head), ...dockerfiles, ...lockfileResolutionRule(head.lockfile), ...trustRule(head), ...overridesRule(head)];
 }
 
 /** Every rule, in order. Never throws for a network failure: each fails closed as an error finding. */
@@ -729,7 +780,7 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
       registry.packument('pnpm').catch((error: unknown) => (error instanceof Error ? error : new Error(String(error)))),
       registry.advisories({ pnpm: [version] }).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error)))),
     ]);
-    findings.push(...pnpmRules(version, pnpm, advisories, live, minutes, input.now));
+    findings.push(...pnpmRules(head.packageJson.packageManager ?? '', version, pnpm, advisories, live, minutes, input.now));
   }
   findings.push(...dockerfileRule(input.head.dockerfiles ?? {}, version));
   findings.push(...auditRule(head, input.now));

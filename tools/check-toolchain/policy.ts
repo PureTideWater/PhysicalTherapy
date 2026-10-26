@@ -59,6 +59,20 @@ export function pnpmVersion(packageManager: unknown): string | null {
   return /^pnpm@(\d+\.\d+\.\d+)(?:\+sha\d+\.[0-9a-f]+)?$/.exec(packageManager)?.[1] ?? null;
 }
 
+/** packageManager's corepack-style integrity suffix, `+sha512.<128 hex>`, as hex; null when it carries none or another. */
+export function pnpmDigest(packageManager: unknown): string | null {
+  if (typeof packageManager !== 'string') {
+    return null;
+  }
+  return /^pnpm@\d+\.\d+\.\d+\+sha512\.([0-9a-f]{128})$/.exec(packageManager)?.[1] ?? null;
+}
+
+/** A Subresource Integrity string's sha512 digest as hex (`sha512-<base64>`), or null when it holds none. */
+export function sha512Hex(integrity: string | null | undefined): string | null {
+  const match = /^sha512-([A-Za-z0-9+/]{86}==)$/.exec(integrity?.trim() ?? '');
+  return match?.[1] === undefined ? null : Buffer.from(match[1], 'base64').toString('hex');
+}
+
 const overridesSchema = z.record(z.string(), z.string());
 
 export const packageJsonSchema = z.looseObject({

@@ -388,7 +388,10 @@ the founder's tag.
   `node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea`, the index digest
   (Node 24.22.1, pushed 2026-10-21T17:39Z): Debian 13 trixie, where `24-slim` was Debian 12 bookworm (notice N7). Each
   installs the pnpm `package.json`'s `packageManager` names, read after `COPY package.json`, so no image carries a pnpm
-  version of its own.
+  version of its own, and only through `tools/check-toolchain/install-pnpm.sh`: it packs that version from the
+  registry (`npm pack`, which checks the registry's own integrity) and installs the tarball only when its sha512
+  equals `packageManager`'s `+sha512.<hex>` suffix, so the bytes are the ones committed, not only the ones one
+  registry answer vouches for (security review N1).
 - `docker-compose.yml` pins
   `postgres:18-trixie@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6` (pushed
   2026-10-21T19:08Z), the index `postgres:18` already resolved to, so the pin changes no bits for CI or the capacity
@@ -412,7 +415,8 @@ the founder's tag.
 
 #### pnpm 10.34.8, its lockfile and the licence fix
 
-`packageManager` moves to `pnpm@10.34.8` (published 2026-10-23T18:06:37Z), which fixes all 23 advisories and has none
+`packageManager` moves to `pnpm@10.34.8+sha512.f627a8e9…c5a8` (published 2026-10-23T18:06:37Z; the suffix is the hex
+of the registry's `dist.integrity` for its tarball, in corepack's form), which fixes all 23 advisories and has none
 (npm's bulk advisory endpoint, 2026-10-25). It is kept over 10.34.9 (`latest-10` from 2026-10-25T17:54Z), whose one
 change concerns a switch to pnpm 11 or 12 that a 10.x `packageManager` never makes, and on which the licence diff was
 measured. pnpm stays on major 10, not 12.15.0 (notice N10): GitHub's list of the pnpm versions Dependabot supports
@@ -487,7 +491,13 @@ in `static`, networked, against the range step's base reduced with `git merge-ba
   under three days old unless that exact version has a live exclude, as any version the lockfile adds would (CQ3 (a):
   action-setup's `self-update` escapes the workspace's gate, and without the rule a hand bump could make every CI job
   run a pnpm published minutes before); and it warns when a newer 10.x is at least three days old;
-- neither Dockerfile carries a pnpm literal;
+- `packageManager` carries `+sha512.<hex>` equal to the registry's `dist.integrity` for its pnpm, and neither
+  Dockerfile carries a pnpm literal or installs pnpm other than by `install-pnpm.sh`, which checks the tarball against
+  that suffix. Changing the suffix resolves nothing, so it landed in phase 1. Nothing else reads it: pnpm 10.34.8's own
+  switch (`parsePackageManager`) and action-setup v6.1.0 (`readTargetVersion` at `ea17c68`) strip it, and pnpm switched
+  to 10.34.7 under a wrong digest (2026-10-26), so CI's pnpm rests on the registry's integrity as before;
+  dependabot-core reads the version with `^pnpm@(\d+.\d+.\d+)` and treats any `pnpm@` value as a pin, so the suffix
+  changes nothing for it; and a frozen install under 10.34.8 accepts it;
 - every lockfile entry resolves from registry.npmjs.org by its sha512 integrity alone (`{integrity}`, or with a tarball
   under `https://registry.npmjs.org/`; a git, directory or other host's resolution fails, since a frozen install fetches
   whatever `tarball` names and checks only the lockfile's own integrity), and each entry the change adds carries the
