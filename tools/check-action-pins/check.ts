@@ -107,6 +107,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
       );
       errors.push(...verdict.problems);
       notes.push(...verdict.notes);
+      warnings.push(...verdict.warnings);
     } catch (error) {
       errors.push(`${ref}: ${error instanceof Error ? error.message : String(error)}`);
     }

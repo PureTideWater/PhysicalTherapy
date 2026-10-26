@@ -151,7 +151,7 @@ jobs:
     steps:
 ${Array.from({ length: 10 }, (_, i) => `      - uses: octo/a${String(i)}@${sha(seed + String(i))} # v1.0.${String(i)}\n`).join('')}`;
     const repo = repository({ baseWorkflow: many('a'), headWorkflow: many('a'), baseChecker: true });
-    const tags = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`octo/a${String(i)}`, HANG]));
+    const tags: Record<string, typeof HANG> = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`octo/a${String(i)}`, HANG]));
     const hung = recordedTransport({ tags });
     const started = Date.now();
     const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: hung, pushDeadlineMs: 200 });

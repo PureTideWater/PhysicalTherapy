@@ -128,6 +128,22 @@ describe('a pin’s inputs', () => {
   });
 });
 
+describe('a pin’s runtime', () => {
+  it('warns when the action runs on a deprecated Node.js runtime (node20 or older), and not on node24 or a composite', async () => {
+    const at = (using: string) => {
+      const transport = recordedTransport({ tags: { 'octo/old': lightweight('v3.7.0', sha('3')) }, files: { [blob('octo/old', sha('3'))]: `name: n\nruns:\n  using: ${using}\n  main: x.js\n` } });
+      const step: ActionUse = { file: 'release.yml', job: 'push', step: 2, uses: `octo/old@${sha('3')}`, with: {} };
+      return verifyPin(transport, new ActionReader(transport), step.uses, 'v3.7.0', [step]);
+    };
+    for (const using of ['node20', 'node16', 'node12']) {
+      const verdict = await at(using);
+      expect(verdict.problems, using).toEqual([]);
+      expect(verdict.warnings, using).toEqual([`octo/old@${sha('3')}: v3.7.0 runs on ${using}, a Node.js runtime GitHub has deprecated; move to a release that runs on node24`]);
+    }
+    for (const using of ['node24', 'node26', 'composite', 'docker']) expect((await at(using)).warnings, using).toEqual([]);
+  });
+});
+
 describe('a composite’s nested actions', () => {
   it('are followed at their pinned commits, each pinned by SHA at every depth', async () => {
     const transport = network();
