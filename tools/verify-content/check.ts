@@ -2,25 +2,46 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  COVERAGE_FILE,
+  COVERAGE_WITHDRAWN_FILE,
+  type ContentId,
+  type ContentSummary,
+  type CoverageLoss,
+  type CoverageMap,
   FIRST_SYNTHETIC_RELEASE,
   MANIFEST_FILE,
+  QUARTERLY_RECORD_TYPES,
+  type ReleaseCoverage,
   type RuleRecord,
   type RuleRecordType,
+  UNDATED_RECORD_TYPES,
   canonicalJson,
   compareManifest,
+  contentGaps,
+  contentOf,
+  contentSummaries,
+  coverageMap,
+  coverageRegression,
+  coverageWithdrawnNoteSchema,
   decodeSourceText,
   describeIssues,
   diffTranscriptions,
   findOverlaps,
+  insideOneYear,
   isSecondPassFile,
   isSyntheticReleaseNumber,
+  lookBackCutoff,
   manifestSchema,
+  quarterLabel,
   quoteIndex,
+  readJsonBlock,
   recordLabel,
+  releaseCoverageSchema,
   secondPassPathFor,
   sha256,
   syntheticMarkers,
   unquotedValues,
+  windowQuarter,
   zipFileQuarter,
 } from '@tp/rules';
 import {
@@ -33,27 +54,6 @@ import {
   readSecondPassFile,
   releaseDirOf,
 } from '@tp/rules/content';
-
-// The release content checks' helpers (docs/adr/0071), which @tp/rules's entry point does not re-export yet.
-import {
-  COVERAGE_FILE,
-  COVERAGE_WITHDRAWN_FILE,
-  type ContentId,
-  type ContentSummary,
-  type CoverageLoss,
-  type CoverageMap,
-  type ReleaseCoverage,
-  contentGaps,
-  contentOf,
-  contentSummaries,
-  coverageMap,
-  coverageRegression,
-  coverageWithdrawnNoteSchema,
-  lookBackCutoff,
-  readJsonBlock,
-  releaseCoverageSchema,
-} from '../../packages/rules/src/records';
-import { QUARTERLY_RECORD_TYPES, UNDATED_RECORD_TYPES, insideOneYear, quarterLabel, windowQuarter } from '../../packages/rules/src/schema';
 
 /**
  * `pnpm verify-content`: the content checker (PRD section 9). For each content set (the drafts,

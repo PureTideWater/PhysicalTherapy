@@ -2,12 +2,21 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { type RuleRecord, type RuleRecordOf, buildManifest, serializeManifest, serializeRecords, sha256 } from '@tp/rules';
+import {
+  type ReleaseCoverage,
+  type RuleRecord,
+  type RuleRecordOf,
+  buildManifest,
+  contentSummaries,
+  lookBackCutoff,
+  renderCoverageFile,
+  serializeManifest,
+  serializeRecords,
+  sha256,
+} from '@tp/rules';
 import { previousReleaseNumber } from '@tp/rules/content';
 import { exampleRecord } from '@tp/rules/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-
-import { type ReleaseCoverage, contentSummaries, lookBackCutoff, renderCoverageFile } from '../../packages/rules/src/records';
 
 import { repositoryRoot } from '../content-files';
 import { checkContent, checkContentSet, contentSetAt, defaultContentSets } from './check';
