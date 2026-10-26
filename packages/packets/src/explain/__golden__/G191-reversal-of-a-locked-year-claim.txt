@@ -3,15 +3,15 @@
 ## Line 1, internal
 Not priced: The claim was reversed and not corrected.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 2 units billed, taken as billed. MUE not checked (flag off). 2 × $22.134637903 = $44.269275806.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $22.134637903 = $44.269275806.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] Ranked by practice-expense part on the claim’s day (2026-02-10), the first unit is claim line 2’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.5970366232; unit 2 (rank 3) loses $5.5970366232. $44.269275806 becomes $33.0752025596.
   [contract_adjustment] The rate record pays 97.5% of the amount: $33.0752025596 becomes $32.24832249561.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Not reached.
-  [observed] Observed allowed -$41.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed -$41.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Not priced: The claim was reversed and not corrected. The line stopped at the claim’s status. Remedy: None.
@@ -19,15 +19,15 @@ Not priced: The claim was reversed and not corrected.
 ## Line 1, viewer
 Not priced: The claim was reversed and not corrected.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 2 units billed, taken as billed. MUE not checked (flag off). 2 × $22.134637903 = $44.269275806.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $22.134637903 = $44.269275806.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 2’s ($16.96071704). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.5970366232; unit 2 (rank 3) loses $5.5970366232. $44.269275806 becomes $33.0752025596.
   [contract_adjustment] The rate record pays 97.5% of the amount: $33.0752025596 becomes $32.24832249561.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Not reached.
-  [observed] Observed allowed -$41.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed -$41.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Not priced: The claim was reversed and not corrected. The line stopped at the claim’s status. Remedy: None.
@@ -35,15 +35,15 @@ Not priced: The claim was reversed and not corrected.
 ## Line 2, internal
 Not priced: The claim was reversed and not corrected.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $26.1921285885 = $26.1921285885.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $26.1921285885 = $26.1921285885.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($16.96071704) and is kept whole; $26.1921285885 is unchanged.
   [contract_adjustment] The rate record pays 97.5% of the amount: $26.1921285885 becomes $25.5373253737875.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Not reached.
-  [observed] Observed allowed -$26.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed -$26.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Not priced: The claim was reversed and not corrected. The line stopped at the claim’s status. Remedy: None.
@@ -51,15 +51,15 @@ Not priced: The claim was reversed and not corrected.
 ## Line 2, viewer
 Not priced: The claim was reversed and not corrected.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 115% of the Medicare physician fee schedule, locked to 2025, the latest records in force during that year, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The rate record pays 97.5% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the latest records in force during 2025, the year the rate record locks. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $26.1921285885 = $26.1921285885.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $26.1921285885 = $26.1921285885.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($16.96071704) and is kept whole; $26.1921285885 is unchanged.
   [contract_adjustment] The rate record pays 97.5% of the amount: $26.1921285885 becomes $25.5373253737875.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Not reached.
-  [observed] Observed allowed -$26.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed -$26.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Not priced: The claim was reversed and not corrected. The line stopped at the claim’s status. Remedy: None.

@@ -3,14 +3,14 @@
 ## Line 1, internal
 Not priced: Timed-units rule unknown for the payer.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. The timed-units rule is not known for the payer.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. The timed-units rule is not known for the payer.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 2 units billed, taken as billed. MUE not checked (flag off). 2 × $23.232 = $46.464.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $23.232 = $46.464.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $42.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $42.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
@@ -18,14 +18,14 @@ Not priced: Timed-units rule unknown for the payer.
 ## Line 1, viewer
 Not priced: Timed-units rule unknown for the payer.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. The timed-units rule is not known for the payer.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. The timed-units rule is not known for the payer.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 2 units billed, taken as billed. MUE not checked (flag off). 2 × $23.232 = $46.464.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $23.232 = $46.464.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $42.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $42.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
@@ -33,14 +33,14 @@ Not priced: Timed-units rule unknown for the payer.
 ## Line 2, internal
 Not priced: Timed-units rule unknown for the payer.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. The timed-units rule is not known for the payer.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. The timed-units rule is not known for the payer.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $27.038 = $27.038.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $27.038 = $27.038.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $24.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $24.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
@@ -48,14 +48,14 @@ Not priced: Timed-units rule unknown for the payer.
 ## Line 2, viewer
 Not priced: Timed-units rule unknown for the payer.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. The timed-units rule is not known for the payer.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. The timed-units rule is not known for the payer.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $27.038 = $27.038.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $27.038 = $27.038.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $24.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $24.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
@@ -63,14 +63,14 @@ Not priced: Timed-units rule unknown for the payer.
 ## Line 3, internal
 1 unit × $29.70 = $29.70 under the contract’s clause on page 1; rounded once to $29.70; observed allowed $26.50; short $3.20.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $29.70 = $29.70.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $29.70 = $29.70.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($19.855) and is kept whole; $29.70 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 becomes $29.70. The unrounded amount is kept beside it.
-  [observed] Observed allowed $26.50, the payer’s allowed amount (AMT B6). Expected $29.70, observed allowed $26.50: short $3.20.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 needed no rounding.
+  [observed] Observed allowed $26.50, the allowed amount the payer states for the line (AMT B6). Expected $29.70, observed allowed $26.50: short $3.20.
   [window] No dispute window applies to this line.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $29.70 expected, $29.70 before the one rounding.
@@ -78,26 +78,26 @@ Not priced: Timed-units rule unknown for the payer.
 ## Line 3, viewer
 1 unit × $29.70 = $29.70 under the contract’s clause on page 1; rounded once to $29.70; observed allowed $26.50; short $3.20.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction. Not applied (flag off): the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $29.70 = $29.70.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $29.70 = $29.70.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($19.855) and is kept whole; $29.70 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 becomes $29.70. The unrounded amount is kept beside it.
-  [observed] Observed allowed $26.50, the payer’s allowed amount (AMT B6). Expected $29.70, observed allowed $26.50: short $3.20.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 needed no rounding.
+  [observed] Observed allowed $26.50, the allowed amount the payer states for the line (AMT B6). Expected $29.70, observed allowed $26.50: short $3.20.
   [window] No dispute window applies to this line.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $29.70 expected, $29.70 before the one rounding.
 
 ## Line 3, payer
 1 unit × $29.70 = $29.70 under the contract’s clause on page 1; rounded once to $29.70; observed allowed $26.50; short $3.20.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the multiple procedure payment reduction.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($19.855) and is kept whole; $29.70 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $29.70 becomes $29.70. The unrounded amount is kept beside it.
-  [observed] Observed allowed $26.50, the allowed amount the remittance states. Expected $29.70, observed allowed $26.50: short $3.20.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $29.70 needed no rounding.
+  [observed] Observed allowed $26.50, the allowed amount the remittance states.
 
 ## Worksheets, internal
 Fee schedule worksheet 1: code 97110, 2026, carrier 99999 locality 01, non-facility

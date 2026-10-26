@@ -166,15 +166,29 @@ describe('step 1, the agreement', () => {
 describe('step 2, the terms', () => {
   it('words a fixed schedule, its flags off and its timed-units rule', () => {
     expect(step(trace(AUDIT_LINE), 'terms')).toBe(
-      'Fixed schedule: $50.00 per unit. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.',
+      'Fixed schedule: $50.00 per unit. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.',
     );
     expect(step(trace(AUDIT_LINE), 'terms', 'payer')).toBe('Fixed schedule: $50.00 per unit.');
+  });
+
+  it('tells the payer which Medicare reductions the contract applies, and never names a flag or NCCI (finding: payer copy and flags)', () => {
+    const flags = { apply_mppr: true, apply_assistant_reduction: true, apply_sequestration: false, apply_ncci: true };
+    const line = trace({ procedureCode: '97110', modifiers: ['GP', 'CQ'], agreement: contract(percentTerms({ percentage: '110', flags })) });
+    expect(wordsOf(line, 'payer').steps.find((item) => item.step === 'terms')?.sentences.map(plainText)).toEqual([
+      'Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.',
+      'The contract applies these Medicare reductions: the multiple procedure payment reduction and the assistant reduction.',
+    ]);
+    expect(step(trace({ agreement: contract(fixedTerms(5000n, { flags: { apply_sequestration: true } })) }), 'terms', 'payer')).toBe(
+      'Fixed schedule: $50.00 per unit. The contract applies these Medicare reductions: sequestration.',
+    );
+    expect(step(trace({ agreement: contract(fixedTerms(5000n, { flags: { apply_ncci: true } })) }), 'terms', 'payer')).toBe('Fixed schedule: $50.00 per unit.');
+    expect(wordsOf(trace(), 'payer').steps.find((item) => item.step === 'terms')?.sentences).toHaveLength(1);
   });
 
   it('words a percent of Medicare on the records in force on the service date (CURRENT)', () => {
     const line = trace({ agreement: contract(percentTerms({ percentage: '110', flags: { apply_sequestration: true, timed_units_rule: 'MEDICARE_POOLED' } })) });
     expect(step(line, 'terms')).toBe(
-      'Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and NCCI edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.',
+      'Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.',
     );
   });
 
@@ -222,7 +236,7 @@ describe('step 2, the terms', () => {
     const line = trace();
     const words = step(line, 'terms') as string;
     expect(words).toBe(
-      'Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.',
+      'Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; Medicare’s pooled timed-units rule applies.',
     );
     for (const audience of ['internal', 'viewer'] as const) {
       const sentences = wordsOf(line, audience).steps.find((item) => item.step === 'terms')?.sentences ?? [];
@@ -280,20 +294,20 @@ describe('step 2, the fee schedule', () => {
 describe('step 3, the units and the medically unlikely edit', () => {
   it('words the units, the edit checked and within, and the product', () => {
     expect(step(trace({ units: '2', agreement: contract(fixedTerms(5000n, { flags: { apply_ncci: true } })) }), 'units')).toBe(
-      '2 units billed, taken as billed. The MUE for code 97110 is 7; the units are within it. 2 × $50.00 = $100.00.',
+      '2 units billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are within it. 2 × $50.00 = $100.00.',
     );
   });
 
   it('words a code with no edit in force, dated for the practice', () => {
     const line = trace({ procedureCode: '97750', agreement: contract(fixedTerms(5000n, { codes: ['97750'], flags: { apply_ncci: true } })) });
-    expect(step(line, 'units')).toBe('1 unit billed, taken as billed. No MUE is in force for code 97750 on 2026-03-10. 1 × $50.00 = $50.00.');
-    expect(step(line, 'units', 'viewer')).toBe('1 unit billed, taken as billed. No MUE is in force for the code on the service date. 1 × $50.00 = $50.00.');
+    expect(step(line, 'units')).toBe('1 unit billed, taken as billed. No medically unlikely edit (MUE) is in force for code 97750 on 2026-03-10. 1 × $50.00 = $50.00.');
+    expect(step(line, 'units', 'viewer')).toBe('1 unit billed, taken as billed. No medically unlikely edit (MUE) is in force for the code on the service date. 1 × $50.00 = $50.00.');
   });
 
   it('words the edit not checked, and units above it, which stop the line', () => {
-    expect(step(trace(AUDIT_LINE), 'units')).toBe('2 units billed, taken as billed. MUE not checked (flag off). 2 × $50.00 = $100.00.');
+    expect(step(trace(AUDIT_LINE), 'units')).toBe('2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $50.00 = $100.00.');
     const over = trace({ units: '8', agreement: contract(fixedTerms(5000n, { flags: { apply_ncci: true } })) });
-    expect(step(over, 'units')).toBe('8 units billed, taken as billed. The MUE for code 97110 is 7; the units are above it. 8 × $50.00 = $400.00.');
+    expect(step(over, 'units')).toBe('8 units billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are above it. 8 × $50.00 = $400.00.');
     expect(summaryOf(over)).toBe('Not priced: Units above the MUE with NCCI on.');
     expect(() => explainLine(over, CONTRACT, 'payer')).toThrow(ExplainShapeError);
   });
@@ -304,7 +318,7 @@ describe('step 3, the units and the medically unlikely edit', () => {
   });
 
   it('words a per-visit amount, which the units do not multiply', () => {
-    expect(step(trace({ agreement: contract(perVisitTerms(8000n)) }), 'units')).toBe('1 unit billed, taken as billed. MUE not checked (flag off). $80.00 per visit; units do not multiply it.');
+    expect(step(trace({ agreement: contract(perVisitTerms(8000n)) }), 'units')).toBe('1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). $80.00 per visit; units do not multiply it.');
   });
 });
 
@@ -329,22 +343,22 @@ describe('step 3, the NCCI procedure-to-procedure edits', () => {
   const ncci = contract(fixedTerms(5000n, { codes: ['97140', '97530', '97161'], flags: { apply_ncci: true } }));
 
   it('words the edits off, and none pairing the code', () => {
-    expect(step(trace(AUDIT_LINE), 'ncci_ptp')).toBe('NCCI edits not checked (flag off).');
-    expect(step(trace({ agreement: contract(fixedTerms(5000n, { flags: { apply_ncci: true } })) }), 'ncci_ptp')).toBe('No NCCI edit pairs this code with another line of the claim on its date.');
+    expect(step(trace(AUDIT_LINE), 'ncci_ptp')).toBe('National Correct Coding Initiative (NCCI) edits are not checked (flag off).');
+    expect(step(trace({ agreement: contract(fixedTerms(5000n, { flags: { apply_ncci: true } })) }), 'ncci_ptp')).toBe('No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.');
   });
 
   it('words an edit that stands, a review flag that does not change the amount', () => {
     const [, column2] = traces([lineFacts({ procedureCode: '97140', agreement: ncci }), lineFacts({ lineNo: 2, procedureCode: '97530', agreement: ncci })]) as [PricingTrace, PricingTrace];
-    expect(step(column2, 'ncci_ptp')).toBe('Claim line 1’s code 97140 is the first-column code of an NCCI edit with this code: the edit stands. It is a review flag and does not change the amount.');
-    expect(step(column2, 'outcome')).toBe('Priced: $50.00 expected, $50.00 before the one rounding. An NCCI edit stands: a review flag, which does not change the amount.');
+    expect(step(column2, 'ncci_ptp')).toBe('Claim line 1’s code 97140 is the first-column code of a National Correct Coding Initiative (NCCI) edit with this code: the edit stands. It is a review flag and does not change the amount.');
+    expect(step(column2, 'outcome')).toBe('Priced: $50.00 expected, $50.00 before the one rounding. A National Correct Coding Initiative (NCCI) edit stands: a review flag, which does not change the amount.');
     expect(step(column2, 'ncci_ptp', 'payer')).toBeUndefined();
   });
 
   it('words an edit bypassed by a modifier on this line or on the first-column line', () => {
     const [, own] = traces([lineFacts({ procedureCode: '97140', agreement: ncci }), lineFacts({ lineNo: 2, procedureCode: '97530', modifiers: ['GP', 'XS'], agreement: ncci })]) as [PricingTrace, PricingTrace];
-    expect(step(own, 'ncci_ptp')).toBe('Claim line 1’s code 97140 is the first-column code of an NCCI edit with this code: bypassed by modifier XS on claim line 2, as the edit’s modifier indicator is 1.');
+    expect(step(own, 'ncci_ptp')).toBe('Claim line 1’s code 97140 is the first-column code of a National Correct Coding Initiative (NCCI) edit with this code: bypassed by modifier XS on claim line 2, as the edit’s modifier indicator is 1.');
     const [, other] = traces([lineFacts({ procedureCode: '97140', modifiers: ['59'], agreement: ncci }), lineFacts({ lineNo: 2, procedureCode: '97530', agreement: ncci })]) as [PricingTrace, PricingTrace];
-    expect(step(other, 'ncci_ptp')).toBe('Claim line 1’s code 97140 is the first-column code of an NCCI edit with this code: bypassed by modifier 59 on claim line 1, as the edit’s modifier indicator is 1.');
+    expect(step(other, 'ncci_ptp')).toBe('Claim line 1’s code 97140 is the first-column code of a National Correct Coding Initiative (NCCI) edit with this code: bypassed by modifier 59 on claim line 1, as the edit’s modifier indicator is 1.');
     expect(slots(other, 'ncci_ptp')).toEqual(['ncci_ptp.column1_line', 'ncci_ptp.column1_code', 'ncci_ptp.column1_modifier', 'ncci_ptp.column1_line', 'ncci_ptp.indicator']);
   });
 });
@@ -464,8 +478,15 @@ describe('step 5, the patient share', () => {
         { groupCode: 'PR', reasonCode: '3', amountCents: cents(500n) },
       ],
     });
-    expect(step(line, 'patient_share', 'viewer')).toBe('Patient share $19.00 (PR 2 $14.00 and PR 3 $5.00), reported beside the expected amount and never subtracted from it.');
+    expect(step(line, 'patient_share', 'viewer')).toBe('Patient share $19.00, reported beside the expected amount and never subtracted from it. It is the remittance’s patient responsibility adjustments (group PR): reason code 2, $14.00; reason code 3, $5.00. The Adjustments table lists each.');
     expect(step(line, 'patient_share', 'payer')).toBe('Patient share $19.00, reported beside the expected amount and never subtracted from it.');
+  });
+
+  it('refuses an adjustment of another group than PR, which it would misname', () => {
+    const line = trace({ ...AUDIT_LINE, patientShareAdjustments: [{ groupCode: 'PR', reasonCode: '1', amountCents: cents(500n) }] });
+    const other = { ...line, line: { ...line.line, patient_share_adjustments: [{ group_code: 'CO', reason_code: '45', amount_cents: '500' }] } };
+    expect(() => explainLine(other, CONTRACT, 'internal')).toThrow('a patient share adjustment is of group PR');
+    expect(step(line, 'patient_share', 'payer')).toBe('Patient share $5.00, reported beside the expected amount and never subtracted from it.');
   });
 });
 
@@ -490,21 +511,35 @@ describe('step 6, the one rounding', () => {
       'Rounded once, half up to the cent, under the default rule, as the practice names none: $57.3949 becomes $57.39. The unrounded amount is kept beside it.',
     );
   });
+
+  it('words an amount already in whole cents as needing no rounding, never as becoming itself', () => {
+    expect(step(trace(AUDIT_LINE), 'rounding')).toBe('Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $100.00 needed no rounding.');
+    expect(step(trace(AUDIT_LINE), 'rounding', 'payer')).toBe('Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $100.00 needed no rounding.');
+  });
+
+  it('refuses a Medicare Advantage line that says it rounded under a rate record’s rule, which such a line has none of', () => {
+    const line = trace();
+    const rounding = line.steps.rounding as NonNullable<PricingTrace['steps']['rounding']>;
+    const claimed = { ...line, steps: { ...line.steps, rounding: { ...rounding, origin: 'rate_record' as const } } };
+    for (const audience of ['internal', 'viewer', 'payer'] as const) {
+      expect(() => explainLine(claimed, REGULATION, audience)).toThrow('a Medicare Advantage non-contracted line rounds under no rate record’s rule');
+    }
+  });
 });
 
 describe('step 7, observed and the variance', () => {
   it('words a short line, by the basis, for each audience', () => {
-    expect(step(trace(AUDIT_LINE), 'observed')).toBe('Observed allowed $70.00, the payer’s allowed amount (AMT B6). Expected $100.00, observed allowed $70.00: short $30.00.');
+    expect(step(trace(AUDIT_LINE), 'observed')).toBe('Observed allowed $70.00, the allowed amount the payer states for the line (AMT B6). Expected $100.00, observed allowed $70.00: short $30.00.');
     expect(step(trace({ ...AUDIT_LINE, observedAllowedBasis: 'paid_plus_pr' }), 'observed', 'payer')).toBe(
-      'Observed allowed $70.00, the amount paid plus the patient’s responsibility. Expected $100.00, observed allowed $70.00: short $30.00.',
+      'Observed allowed $70.00, the amount paid plus the patient’s responsibility.',
     );
-    expect(step(trace(AUDIT_LINE), 'observed', 'payer')).toBe('Observed allowed $70.00, the allowed amount the remittance states. Expected $100.00, observed allowed $70.00: short $30.00.');
+    expect(step(trace(AUDIT_LINE), 'observed', 'payer')).toBe('Observed allowed $70.00, the allowed amount the remittance states.');
   });
 
   it('words no variance and an overpaid line, signed as the trace holds it', () => {
-    expect(step(trace({ ...AUDIT_LINE, observedAllowedCents: cents(10000n) }), 'observed')).toBe('Observed allowed $100.00, the payer’s allowed amount (AMT B6). Expected $100.00, observed allowed $100.00: no variance.');
+    expect(step(trace({ ...AUDIT_LINE, observedAllowedCents: cents(10000n) }), 'observed')).toBe('Observed allowed $100.00, the allowed amount the payer states for the line (AMT B6). Expected $100.00, observed allowed $100.00: no variance.');
     expect(step(trace({ ...AUDIT_LINE, observedAllowedCents: cents(10500n) }), 'observed')).toBe(
-      'Observed allowed $105.00, the payer’s allowed amount (AMT B6). Expected $100.00, observed allowed $105.00: variance -$5.00 (overpaid: recorded, never pursued).',
+      'Observed allowed $105.00, the allowed amount the payer states for the line (AMT B6). Expected $100.00, observed allowed $105.00: variance -$5.00 (overpaid: recorded, never pursued).',
     );
   });
 });
@@ -534,6 +569,11 @@ describe('step 8, the dispute window', () => {
 
   it('words a line with no window', () => {
     expect(step(trace(AUDIT_LINE, { claim: { remittanceDate: null } }), 'window')).toBe('No dispute window applies to this line.');
+  });
+
+  it('groups a window’s length by thousands (UX finding: counts without a separator)', () => {
+    const windows = { timely_filing_days: null, dispute_window_days: 3650, appeal_levels: [] };
+    expect(step(trace({ agreement: contract(fixedTerms(5000n), { windows }) }), 'window', 'viewer')).toBe('Dispute window: 3,650 days from the payment date, under the contract.');
   });
 });
 
@@ -607,7 +647,7 @@ describe('an unpriced line', () => {
       ['units', 'Not reached.'],
       ['patient_share', 'Not reached.'],
       ['rounding', 'Not reached.'],
-      ['observed', 'Observed allowed $20.00, the payer’s allowed amount (AMT B6).'],
+      ['observed', 'Observed allowed $20.00, the allowed amount the payer states for the line (AMT B6).'],
       ['window', 'Not reached.'],
       ['release', 'Priced under rule release 900001 by engine phase-two/2.'],
       ['outcome', 'Not priced: The payer and plan have no mapping on the service date. The line stopped at the agreement. Remedy: Map the plan.'],
@@ -639,7 +679,7 @@ describe('the flag rule', () => {
     ['apply_mppr', 'the multiple procedure payment reduction', 'mppr'],
     ['apply_assistant_reduction', 'the assistant reduction', 'assistant_reduction'],
     ['apply_sequestration', 'sequestration', 'sequestration'],
-    ['apply_ncci', 'NCCI edits', 'ncci_ptp'],
+    ['apply_ncci', 'National Correct Coding Initiative (NCCI) edits', 'ncci_ptp'],
   ] as const;
 
   it.each(FLAGS)('words %s off as not applied, never as the contract’s position, and says nothing of it to the payer', (flag, name, kind) => {

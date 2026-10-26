@@ -7,7 +7,7 @@ Not priced: Mapped as out of network or no agreement.
   [units] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $20.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $20.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Not priced: Mapped as out of network or no agreement. The line stopped at the agreement. Remedy: None; anomaly screening only.
@@ -19,7 +19,7 @@ Not priced: Mapped as out of network or no agreement.
   [units] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $20.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $20.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Not priced: Mapped as out of network or no agreement. The line stopped at the agreement. Remedy: None; anomaly screening only.

@@ -54,10 +54,29 @@ describe('the display forms', () => {
     expect(formatFigure(2026, 'verbatim')).toBe('2026');
   });
 
-  it('count is an array’s length, and of nothing else', () => {
+  it('count is an array’s length, grouped by thousands, and of nothing else', () => {
     expect(formatFigure(['rr-1', 'rr-2'], 'count')).toBe('2');
     expect(formatFigure([], 'count')).toBe('0');
+    expect(formatFigure(Array.from({ length: 1000 }, () => 'rr'), 'count')).toBe('1,000');
     expect(() => formatFigure('2', 'count')).toThrow(ExplainShapeError);
+  });
+
+  it.each([
+    [1, '1'],
+    [999, '999'],
+    [1000, '1,000'],
+    [3650, '3,650'],
+    [1234567, '1,234,567'],
+    ['3650', '3,650'],
+    ['0', '0'],
+  ] as const)('integer: %s is %s, grouped by thousands', (value, text) => {
+    expect(formatFigure(value, 'integer')).toBe(text);
+  });
+
+  it('integer refuses anything but a whole number', () => {
+    for (const value of [-5, 2 ** 60, '-5', '1.5', '1,000', '', null, ['x']]) {
+      expect(() => formatFigure(value, 'integer'), String(value)).toThrow('an integer figure is a whole number');
+    }
   });
 
   it('refuses a value of a kind its form does not print', () => {

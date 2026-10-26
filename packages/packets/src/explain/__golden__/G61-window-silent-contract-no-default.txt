@@ -3,13 +3,13 @@
 ## Line 1, internal
 1 unit × $29.70 = $29.70 under the contract’s clause on page 1; rounded once to $29.70; observed allowed $25.00; short $4.70.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $29.70 = $29.70.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $29.70 = $29.70.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 becomes $29.70. The unrounded amount is kept beside it.
-  [observed] Observed allowed $25.00, the payer’s allowed amount (AMT B6). Expected $29.70, observed allowed $25.00: short $4.70.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 needed no rounding.
+  [observed] Observed allowed $25.00, the allowed amount the payer states for the line (AMT B6). Expected $29.70, observed allowed $25.00: short $4.70.
   [window] No dispute window applies to this line.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $29.70 expected, $29.70 before the one rounding.
@@ -17,13 +17,13 @@
 ## Line 1, viewer
 1 unit × $29.70 = $29.70 under the contract’s clause on page 1; rounded once to $29.70; observed allowed $25.00; short $4.70.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). 1 × $29.70 = $29.70.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $29.70 = $29.70.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 becomes $29.70. The unrounded amount is kept beside it.
-  [observed] Observed allowed $25.00, the payer’s allowed amount (AMT B6). Expected $29.70, observed allowed $25.00: short $4.70.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $29.70 needed no rounding.
+  [observed] Observed allowed $25.00, the allowed amount the payer states for the line (AMT B6). Expected $29.70, observed allowed $25.00: short $4.70.
   [window] No dispute window applies to this line.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $29.70 expected, $29.70 before the one rounding.
@@ -33,8 +33,8 @@
   [terms] Percent of Medicare: 110% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $29.70 becomes $29.70. The unrounded amount is kept beside it.
-  [observed] Observed allowed $25.00, the allowed amount the remittance states. Expected $29.70, observed allowed $25.00: short $4.70.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $29.70 needed no rounding.
+  [observed] Observed allowed $25.00, the allowed amount the remittance states.
 
 ## Worksheets, internal
 Fee schedule worksheet 1: code 97530, 2026, carrier 99999 locality 01, non-facility

@@ -101,9 +101,11 @@ export const PAYER_ROUNDING_ORIGIN_TEXT: Readonly<Record<RoundingOrigin, string>
   engine_default: 'the default rule, as neither the contract nor the practice names one',
 };
 
-/** The same on a Medicare Advantage non-contracted line, which has no contract or rate record to name a rule. */
-export const MEDICARE_ROUNDING_ORIGIN_TEXT: Readonly<Record<RoundingOrigin, string>> = {
-  rate_record: 'the rate record’s rule',
+/**
+ * The same on a Medicare Advantage non-contracted line, which has no contract or rate record to name a rule: a trace
+ * that says it rounded under a rate record's rule is refused (./line.ts), never worded as one.
+ */
+export const MEDICARE_ROUNDING_ORIGIN_TEXT: Readonly<Record<Exclude<RoundingOrigin, 'rate_record'>, string>> = {
   practice_default: 'the practice’s default rule',
   engine_default: 'the default rule, as the practice names none',
 };
@@ -140,7 +142,7 @@ export const FLAG_TEXT: Readonly<Record<FlagName, string>> = {
   apply_mppr: 'the multiple procedure payment reduction',
   apply_assistant_reduction: 'the assistant reduction',
   apply_sequestration: 'sequestration',
-  apply_ncci: 'NCCI edits',
+  apply_ncci: 'National Correct Coding Initiative (NCCI) edits',
 };
 
 /** The adjustments by the name the trace gives them, as the summary names each. */
@@ -153,7 +155,7 @@ export const ADJUSTMENT_TEXT: Readonly<Record<PricingTrace['steps']['adjustments
 
 /** How the observed allowed amount was read (a string of the line facts), for the practice's own readers. */
 export const OBSERVED_BASIS_TEXT: Readonly<Record<string, string>> = {
-  amt_b6: 'the payer’s allowed amount (AMT B6)',
+  amt_b6: 'the allowed amount the payer states for the line (AMT B6)',
   paid_plus_pr: 'paid plus patient responsibility',
 };
 

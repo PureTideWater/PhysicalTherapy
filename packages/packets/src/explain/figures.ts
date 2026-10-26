@@ -10,17 +10,20 @@ import { CODES } from './words';
  * words allow) is the only one that is not a value written out. Pure and browser-safe.
  *
  * - `dollars`: whole cents as integer text, as US dollars ("10000" is "$100.00", "-500" is "-$5.00").
- * - `exact_dollars`: cents as decimal text that may keep a fraction of a cent, every fraction digit kept ("2323.2" is
- *   "$23.232"); whole cents read as `dollars` does.
+ * - `exact_dollars`: cents as decimal text that may keep a fraction of a cent, as US dollars ("2323.2" is "$23.232"),
+ *   the trailing zeros of the fraction of a cent dropped ("2323.20" is "$23.232" too; the value is unchanged); whole
+ *   cents read as `dollars` does.
  * - `percent`: the percentage as the trace writes it, and "%" ("110" is "110%").
  * - `per_rvu`: a conversion factor, dollars as the release writes them, per relative value unit ("20.0000" is
  *   "$20.0000 per RVU": the trailing zeros kept).
  * - `verbatim`: the text as the trace holds it ("0.31", "97110", "2026-03-10"), or an integer the trace holds (a line
  *   number, a rank, a page) in its decimal digits.
- * - `count`: how many items an array of the trace holds.
+ * - `integer`: a quantity the trace holds as a whole number (a dispute window's length), its digits grouped by
+ *   thousands as the practice's US English reads them ("3650" is "3,650").
+ * - `count`: how many items an array of the trace holds, grouped as `integer` is.
  */
 
-export const FIGURE_FORMS = ['dollars', 'exact_dollars', 'percent', 'per_rvu', 'verbatim', 'count'] as const;
+export const FIGURE_FORMS = ['dollars', 'exact_dollars', 'percent', 'per_rvu', 'verbatim', 'integer', 'count'] as const;
 export type FigureForm = (typeof FIGURE_FORMS)[number];
 
 /** The value a figure prints: where it is (the trace or the citation, and its path there), its slot and its form. */
@@ -62,13 +65,23 @@ export class ExplainShapeError extends TypeError {
   }
 }
 
+/** An integer's decimal digits grouped by thousands ("3650" is "3,650"): a comma before each run of three digits that ends the text. */
+const grouped = (digits: string) => digits.replace(/\B(?=(\d{3})+$)/g, ',');
+
 /** A value in a form: the text the figure prints. */
 export function formatFigure(value: unknown, form: FigureForm): string {
   if (form === 'count') {
     if (!Array.isArray(value)) {
       throw new ExplainShapeError('a count is of an array');
     }
-    return String(value.length);
+    return grouped(String(value.length));
+  }
+  if (form === 'integer') {
+    const digits = typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : typeof value === 'string' ? value : null;
+    if (digits === null || !/^\d+$/.test(digits)) {
+      throw new ExplainShapeError('an integer figure is a whole number');
+    }
+    return grouped(digits);
   }
   if (typeof value === 'number') {
     if (form !== 'verbatim' || !Number.isSafeInteger(value)) {

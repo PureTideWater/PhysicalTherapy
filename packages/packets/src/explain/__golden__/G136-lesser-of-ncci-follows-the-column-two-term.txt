@@ -3,14 +3,14 @@
 ## Line 1, internal
 Lesser of the schedule $55.35 and the line charge $90.00: $55.35 under the contract’s clause on page 1; rounded once to $55.35; observed allowed $55.35; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-06-04. Code 97164 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97164 is 1; the units are within it. Lesser of the schedule $55.35 and the line charge $90.00: $55.35.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97164 is 1; the units are within it. Lesser of the schedule $55.35 and the line charge $90.00: $55.35.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $55.35 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $55.35 becomes $55.35. The unrounded amount is kept beside it.
-  [observed] Observed allowed $55.35, the payer’s allowed amount (AMT B6). Expected $55.35, observed allowed $55.35: no variance.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $55.35 needed no rounding.
+  [observed] Observed allowed $55.35, the allowed amount the payer states for the line (AMT B6). Expected $55.35, observed allowed $55.35: no variance.
   [window] Dispute window: 4 months from the service date 2026-06-04, under the release’s record; it ends on 2026-10-04; on 2026-10-15 it is passed.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $55.35 expected, $55.35 before the one rounding.
@@ -18,38 +18,38 @@ Lesser of the schedule $55.35 and the line charge $90.00: $55.35 under the contr
 ## Line 1, viewer
 Lesser of the schedule $55.35 and the line charge $90.00: $55.35 under the contract’s clause on page 1; rounded once to $55.35; observed allowed $55.35; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97164 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97164 is 1; the units are within it. Lesser of the schedule $55.35 and the line charge $90.00: $55.35.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97164 is 1; the units are within it. Lesser of the schedule $55.35 and the line charge $90.00: $55.35.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $55.35 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $55.35 becomes $55.35. The unrounded amount is kept beside it.
-  [observed] Observed allowed $55.35, the payer’s allowed amount (AMT B6). Expected $55.35, observed allowed $55.35: no variance.
+  [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $55.35 needed no rounding.
+  [observed] Observed allowed $55.35, the allowed amount the payer states for the line (AMT B6). Expected $55.35, observed allowed $55.35: no variance.
   [window] Dispute window: 4 months from the service date, under the release’s record.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $55.35 expected, $55.35 before the one rounding.
 
 ## Line 1, payer
 Lesser of the schedule $55.35 and the line charge $90.00: $55.35 under the contract’s clause on page 1; rounded once to $55.35; observed allowed $55.35; no variance.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the assistant reduction.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97164 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $55.35 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, truncated to the cent, under the contract’s rule: $55.35 becomes $55.35. The unrounded amount is kept beside it.
-  [observed] Observed allowed $55.35, the allowed amount the remittance states. Expected $55.35, observed allowed $55.35: no variance.
+  [rounding] Rounded once, truncated to the cent, under the contract’s rule: $55.35 needed no rounding.
+  [observed] Observed allowed $55.35, the allowed amount the remittance states.
 
 ## Line 2, internal
 Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.32; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and NCCI edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
   [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.32, the payer’s allowed amount (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
+  [observed] Observed allowed $32.32, the allowed amount the payer states for the line (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
   [window] Dispute window: 4 months from the service date 2026-06-04, under the release’s record; it ends on 2026-10-04; on 2026-10-15 it is passed.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $32.32 expected, $32.3204 before the one rounding.
@@ -57,38 +57,38 @@ Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contr
 ## Line 2, viewer
 Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.32; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and NCCI edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
   [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.32, the payer’s allowed amount (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
+  [observed] Observed allowed $32.32, the allowed amount the payer states for the line (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
   [window] Dispute window: 4 months from the service date, under the release’s record.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $32.32 expected, $32.3204 before the one rounding.
 
 ## Line 2, payer
 Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.32; no variance.
-  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The contract applies these Medicare reductions: sequestration.
   [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
   [contract_adjustment] The contract pays 98% of the amount: $32.98 becomes $32.3204.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the contract’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.32, the allowed amount the remittance states. Expected $32.32, observed allowed $32.32: no variance.
+  [observed] Observed allowed $32.32, the allowed amount the remittance states.
 
 ## Line 3, internal
 Not priced: Units above the MUE with NCCI on.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-06-04. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 6 units billed, taken as billed. The MUE for code 97530 is 5; the units are above it. Lesser of the schedule $202.50 and the line charge $210.00: $202.50.
+  [units] 6 units billed, taken as billed. The medically unlikely edit (MUE) for code 97530 is 5; the units are above it. Lesser of the schedule $202.50 and the line charge $210.00: $202.50.
   [ncci_ptp] Not reached.
   [assistant_reduction] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $150.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $150.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Not priced: Units above the MUE with NCCI on. The line stopped at the units. Remedy: Review the claim.
@@ -96,14 +96,14 @@ Not priced: Units above the MUE with NCCI on.
 ## Line 3, viewer
 Not priced: Units above the MUE with NCCI on.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 6 units billed, taken as billed. The MUE for code 97530 is 5; the units are above it. Lesser of the schedule $202.50 and the line charge $210.00: $202.50.
+  [units] 6 units billed, taken as billed. The medically unlikely edit (MUE) for code 97530 is 5; the units are above it. Lesser of the schedule $202.50 and the line charge $210.00: $202.50.
   [ncci_ptp] Not reached.
   [assistant_reduction] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $150.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $150.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Not priced: Units above the MUE with NCCI on. The line stopped at the units. Remedy: Review the claim.
@@ -111,14 +111,14 @@ Not priced: Units above the MUE with NCCI on.
 ## Line 4, internal
 Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.32; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and NCCI edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
   [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.32, the payer’s allowed amount (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
+  [observed] Observed allowed $32.32, the allowed amount the payer states for the line (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
   [window] Dispute window: 4 months from the service date 2026-06-04, under the release’s record; it ends on 2026-10-04; on 2026-10-15 it is passed.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $32.32 expected, $32.3204 before the one rounding.
@@ -126,26 +126,26 @@ Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contr
 ## Line 4, viewer
 Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.32; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and NCCI edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 1 unit billed, taken as billed. MUE not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
-  [ncci_ptp] NCCI edits not checked (flag off).
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The rate record pays 98% of the amount after the Medicare reductions. Applied, as the rate record’s flags are on: sequestration. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction and National Correct Coding Initiative (NCCI) edits. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). Lesser of the schedule $34.00 and the line charge $50.00: $34.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
   [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
   [contract_adjustment] The rate record pays 98% of the amount: $32.98 becomes $32.3204.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.32, the payer’s allowed amount (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
+  [observed] Observed allowed $32.32, the allowed amount the payer states for the line (AMT B6). Expected $32.32, observed allowed $32.32: no variance.
   [window] Dispute window: 4 months from the service date, under the release’s record.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $32.32 expected, $32.3204 before the one rounding.
 
 ## Line 4, payer
 Lesser of the schedule $34.00 and the line charge $50.00: $34.00 under the contract’s clause on page 1; after sequestration $32.98; after the contract’s adjustment $32.3204; rounded once to $32.32; observed allowed $32.32; no variance.
-  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit.
+  [terms] Lesser of the line charge and a fixed schedule of $34.00 per unit. The contract applies these Medicare reductions: sequestration.
   [sequestration] Sequestration: the payer’s share is $34.00 less the patient share $0.00, which is $34.00; 3% of it, $1.02, is withheld. $34.00 becomes $32.98.
   [contract_adjustment] The contract pays 98% of the amount: $32.98 becomes $32.3204.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the contract’s rule: $32.3204 becomes $32.32. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.32, the allowed amount the remittance states. Expected $32.32, observed allowed $32.32: no variance.
+  [observed] Observed allowed $32.32, the allowed amount the remittance states.
 
 ## Worksheets, internal
 Fee schedule worksheet 1: code 97164, 2026, carrier 99999 locality 01, non-facility

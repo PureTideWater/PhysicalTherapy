@@ -3,13 +3,13 @@
 ## Line 1, internal
 2 units × $42.50 = $85.00 under the contract’s clause on page 1; rounded once to $85.00; observed allowed $80.00; short $5.00.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 2 units billed, taken as billed. No MUE is in force for code 97750 on 2026-09-10. 2 × $42.50 = $85.00.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 2 units billed, taken as billed. No medically unlikely edit (MUE) is in force for code 97750 on 2026-09-10. 2 × $42.50 = $85.00.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $85.00 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $85.00 becomes $85.00. The unrounded amount is kept beside it.
-  [observed] Observed allowed $80.00, the payer’s allowed amount (AMT B6). Expected $85.00, observed allowed $80.00: short $5.00.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $85.00 needed no rounding.
+  [observed] Observed allowed $80.00, the allowed amount the payer states for the line (AMT B6). Expected $85.00, observed allowed $80.00: short $5.00.
   [window] Dispute window: 120 days from the payment date 2026-09-29, under the contract; it ends on 2027-01-27; on 2026-10-15 it is open.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $85.00 expected, $85.00 before the one rounding.
@@ -17,35 +17,35 @@
 ## Line 1, viewer
 2 units × $42.50 = $85.00 under the contract’s clause on page 1; rounded once to $85.00; observed allowed $80.00; short $5.00.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 2 units billed, taken as billed. No MUE is in force for the code on the service date. 2 × $42.50 = $85.00.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 2 units billed, taken as billed. No medically unlikely edit (MUE) is in force for the code on the service date. 2 × $42.50 = $85.00.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $85.00 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $85.00 becomes $85.00. The unrounded amount is kept beside it.
-  [observed] Observed allowed $80.00, the payer’s allowed amount (AMT B6). Expected $85.00, observed allowed $80.00: short $5.00.
+  [rounding] Rounded once, half even to the cent, under the rate record’s rule: $85.00 needed no rounding.
+  [observed] Observed allowed $80.00, the allowed amount the payer states for the line (AMT B6). Expected $85.00, observed allowed $80.00: short $5.00.
   [window] Dispute window: 120 days from the payment date, under the contract.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $85.00 expected, $85.00 before the one rounding.
 
 ## Line 1, payer
 2 units × $42.50 = $85.00 under the contract’s clause on page 1; rounded once to $85.00; observed allowed $80.00; short $5.00.
-  [terms] Fixed schedule: $42.50 per unit.
+  [terms] Fixed schedule: $42.50 per unit. The contract applies these Medicare reductions: the assistant reduction.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $85.00 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half even to the cent, under the contract’s rule: $85.00 becomes $85.00. The unrounded amount is kept beside it.
-  [observed] Observed allowed $80.00, the allowed amount the remittance states. Expected $85.00, observed allowed $80.00: short $5.00.
+  [rounding] Rounded once, half even to the cent, under the contract’s rule: $85.00 needed no rounding.
+  [observed] Observed allowed $80.00, the allowed amount the remittance states.
 
 ## Line 2, internal
 1 unit × $42.50 = $42.50 under the contract’s clause on page 1; after the assistant reduction $32.725; rounded once to $32.72; observed allowed $32.72; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 1 unit billed, taken as billed. No MUE is in force for code 97750 on 2026-09-10. 1 × $42.50 = $42.50.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. No medically unlikely edit (MUE) is in force for code 97750 on 2026-09-10. 1 × $42.50 = $42.50.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] Modifier CQ (services by a therapy assistant): the release pays 77% of the amount. $42.50 becomes $32.725.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.725 becomes $32.72. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.72, the payer’s allowed amount (AMT B6). Expected $32.72, observed allowed $32.72: no variance.
+  [observed] Observed allowed $32.72, the allowed amount the payer states for the line (AMT B6). Expected $32.72, observed allowed $32.72: no variance.
   [window] Dispute window: 120 days from the payment date 2026-09-29, under the contract; it ends on 2027-01-27; on 2026-10-15 it is open.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $32.72 expected, $32.725 before the one rounding.
@@ -53,21 +53,21 @@
 ## Line 2, viewer
 1 unit × $42.50 = $42.50 under the contract’s clause on page 1; after the assistant reduction $32.725; rounded once to $32.72; observed allowed $32.72; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
-  [units] 1 unit billed, taken as billed. No MUE is in force for the code on the service date. 1 × $42.50 = $42.50.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [terms] Fixed schedule: $42.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; the contract follows Medicare’s pooled timed-units rule.
+  [units] 1 unit billed, taken as billed. No medically unlikely edit (MUE) is in force for the code on the service date. 1 × $42.50 = $42.50.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] Modifier CQ (services by a therapy assistant): the release pays 77% of the amount. $42.50 becomes $32.725.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the rate record’s rule: $32.725 becomes $32.72. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.72, the payer’s allowed amount (AMT B6). Expected $32.72, observed allowed $32.72: no variance.
+  [observed] Observed allowed $32.72, the allowed amount the payer states for the line (AMT B6). Expected $32.72, observed allowed $32.72: no variance.
   [window] Dispute window: 120 days from the payment date, under the contract.
   [release] Priced under rule release 900001 by engine phase-two/2.
   [outcome] Priced: $32.72 expected, $32.725 before the one rounding.
 
 ## Line 2, payer
 1 unit × $42.50 = $42.50 under the contract’s clause on page 1; after the assistant reduction $32.725; rounded once to $32.72; observed allowed $32.72; no variance.
-  [terms] Fixed schedule: $42.50 per unit.
+  [terms] Fixed schedule: $42.50 per unit. The contract applies these Medicare reductions: the assistant reduction.
   [assistant_reduction] Modifier CQ (services by a therapy assistant): Medicare’s assistant percentage is 77% of the amount. $42.50 becomes $32.725.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, half even to the cent, under the contract’s rule: $32.725 becomes $32.72. The unrounded amount is kept beside it.
-  [observed] Observed allowed $32.72, the allowed amount the remittance states. Expected $32.72, observed allowed $32.72: no variance.
+  [observed] Observed allowed $32.72, the allowed amount the remittance states.

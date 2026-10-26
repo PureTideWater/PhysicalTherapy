@@ -294,8 +294,13 @@ function valueAt(root: unknown, path: readonly (string | number)[]): unknown {
 
 /** A form written out again, independently of ./explain/figures.ts, for the by-source check. */
 function formAgain(value: unknown, form: string): string | undefined {
+  const thousands = (digits: string) => digits.replace(/\B(?=(\d{3})+$)/g, ',');
   if (form === 'count') {
-    return Array.isArray(value) ? String(value.length) : undefined;
+    return Array.isArray(value) ? thousands(String(value.length)) : undefined;
+  }
+  if (form === 'integer') {
+    const digits = typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value;
+    return typeof digits === 'string' && /^\d+$/.test(digits) ? thousands(digits) : undefined;
   }
   if (typeof value === 'number') {
     return form === 'verbatim' ? String(value) : undefined;
@@ -377,19 +382,22 @@ function canonical(text: string): string {
   return decimal(text).toString();
 }
 
-const TOKEN = /(-?\$[\d,]+(?:\.\d+)?(?: per RVU)?)|(\d+(?:\.\d+)?%)|(\d{4}-\d{2}-\d{2})|(?<![A-Za-z0-9.-])(-?\d+(?:\.\d+)?)(?![A-Za-z0-9]|\.\d)/g;
+const TOKEN =
+  /(-?\$[\d,]+(?:\.\d+)?(?: per RVU)?)|(\d+(?:\.\d+)?%)|(\d{4}-\d{2}-\d{2})|(?<![A-Za-z0-9.,-])(\d{1,3}(?:,\d{3})+)(?![A-Za-z0-9]|[.,]\d)|(?<![A-Za-z0-9.-])(-?\d+(?:\.\d+)?)(?![A-Za-z0-9]|\.\d)/g;
 
-/** Every number a text states, canonicalised: dollars as cents, a conversion factor and a percent as their number, a date as written. */
+/** Every number a text states, canonicalised: dollars as cents, a conversion factor and a percent as their number, a count grouped by thousands ("3,650") as its digits, a date as written. */
 export function numberTokens(text: string): string[] {
   const tokens: string[] = [];
   for (const match of text.matchAll(TOKEN)) {
-    const [, dollars, percent, date, number] = match;
+    const [, dollars, percent, date, thousands, number] = match;
     if (dollars !== undefined) {
       tokens.push(dollars.endsWith(' per RVU') ? canonical(dollars.replace(/^\$/, '').replace(' per RVU', '').replaceAll(',', '')) : centsOfDollars(dollars));
     } else if (percent !== undefined) {
       tokens.push(canonical(percent.slice(0, -1)));
     } else if (date !== undefined) {
       tokens.push(date);
+    } else if (thousands !== undefined) {
+      tokens.push(canonical(thousands.replaceAll(',', '')));
     } else if (number !== undefined) {
       tokens.push(canonical(number));
     }

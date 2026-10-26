@@ -3,14 +3,14 @@
 ## Line 1, internal
 Not priced: No RVU for the code in the basis year.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-04-16.
   [units] Not reached.
   [ncci_ptp] Not reached.
   [assistant_reduction] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $40.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $40.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Not priced: No RVU for the code in the basis year. No relative value for the code in the basis year. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.
@@ -18,14 +18,14 @@ Not priced: No RVU for the code in the basis year.
 ## Line 1, viewer
 Not priced: No RVU for the code in the basis year.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date.
   [units] Not reached.
   [ncci_ptp] Not reached.
   [assistant_reduction] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $40.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $40.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Not priced: No RVU for the code in the basis year. No relative value for the code in the basis year. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.
@@ -33,14 +33,14 @@ Not priced: No RVU for the code in the basis year.
 ## Line 2, internal
 Not priced: No RVU for the code in the basis year.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-04-16. Code G0283 at the facility rate: place of service 22 is facility in the practice’s settings.
   [units] Not reached.
   [ncci_ptp] Not reached.
   [assistant_reduction] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $8.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $8.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Not priced: No RVU for the code in the basis year. No practice-expense value for the code in the setting. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.
@@ -48,14 +48,14 @@ Not priced: No RVU for the code in the basis year.
 ## Line 2, viewer
 Not priced: No RVU for the code in the basis year.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code G0283 at the facility rate: place of service 22 is facility in the practice’s settings.
   [units] Not reached.
   [ncci_ptp] Not reached.
   [assistant_reduction] Not reached.
   [patient_share] Not reached.
   [rounding] Not reached.
-  [observed] Observed allowed $8.00, the payer’s allowed amount (AMT B6).
+  [observed] Observed allowed $8.00, the allowed amount the payer states for the line (AMT B6).
   [window] Not reached.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Not priced: No RVU for the code in the basis year. No practice-expense value for the code in the setting. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.
@@ -63,14 +63,14 @@ Not priced: No RVU for the code in the basis year.
 ## Line 3, internal
 Lesser of the schedule $17.125 and the line charge $70.00: $17.125 under the contract’s clause on page 1; rounded once to $17.12; observed allowed $17.00; short $0.12.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-04-16. Code 97530 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. Lesser of the schedule $17.125 and the line charge $70.00: $17.125.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97530 is 5; the units are within it. Lesser of the schedule $17.125 and the line charge $70.00: $17.125.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $17.125 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $17.125 becomes $17.12. The unrounded amount is kept beside it.
-  [observed] Observed allowed $17.00, the payer’s allowed amount (AMT B6). Expected $17.12, observed allowed $17.00: short $0.12.
+  [observed] Observed allowed $17.00, the allowed amount the payer states for the line (AMT B6). Expected $17.12, observed allowed $17.00: short $0.12.
   [window] Dispute window: 4 months from the service date 2026-04-16, under the release’s record; it ends on 2026-08-16; on 2026-10-15 it is passed.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $17.12 expected, $17.125 before the one rounding.
@@ -78,26 +78,26 @@ Lesser of the schedule $17.125 and the line charge $70.00: $17.125 under the con
 ## Line 3, viewer
 Lesser of the schedule $17.125 and the line charge $70.00: $17.125 under the contract’s clause on page 1; rounded once to $17.12; observed allowed $17.00; short $0.12.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. Lesser of the schedule $17.125 and the line charge $70.00: $17.125.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97530 is 5; the units are within it. Lesser of the schedule $17.125 and the line charge $70.00: $17.125.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $17.125 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $17.125 becomes $17.12. The unrounded amount is kept beside it.
-  [observed] Observed allowed $17.00, the payer’s allowed amount (AMT B6). Expected $17.12, observed allowed $17.00: short $0.12.
+  [observed] Observed allowed $17.00, the allowed amount the payer states for the line (AMT B6). Expected $17.12, observed allowed $17.00: short $0.12.
   [window] Dispute window: 4 months from the service date, under the release’s record.
   [release] Priced under rule release 900003 by engine phase-two/2.
   [outcome] Priced: $17.12 expected, $17.125 before the one rounding.
 
 ## Line 3, payer
 Lesser of the schedule $17.125 and the line charge $70.00: $17.125 under the contract’s clause on page 1; rounded once to $17.12; observed allowed $17.00; short $0.12.
-  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
+  [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the assistant reduction.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the facility rate: place of service 22 is facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $17.125 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the contract’s rule: $17.125 becomes $17.12. The unrounded amount is kept beside it.
-  [observed] Observed allowed $17.00, the allowed amount the remittance states. Expected $17.12, observed allowed $17.00: short $0.12.
+  [observed] Observed allowed $17.00, the allowed amount the remittance states.
 
 ## Worksheets, internal
 Fee schedule worksheet 1: code 97530, 2026, carrier 99999 locality 01, facility

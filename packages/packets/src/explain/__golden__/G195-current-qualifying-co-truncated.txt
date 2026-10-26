@@ -3,16 +3,16 @@
 ## Line 1, internal
 1 unit × $29.64348 = $29.64348 under the contract’s clause on page 1; after sequestration $28.7541756; rounded once to $28.75; observed allowed $28.75; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-07-14. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. 1 × $29.64348 = $29.64348.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97140 is 6; the units are within it. 1 × $29.64348 = $29.64348.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($19.24776) and is kept whole; $29.64348 is unchanged.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $29.64348 is unchanged.
   [sequestration] Sequestration: the payer’s share is $29.64348 less the patient share $0.00, which is $29.64348; 3% of it, $0.8893044, is withheld. $29.64348 becomes $28.7541756.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $28.7541756 becomes $28.75. The unrounded amount is kept beside it.
-  [observed] Observed allowed $28.75, the payer’s allowed amount (AMT B6). Expected $28.75, observed allowed $28.75: no variance.
+  [observed] Observed allowed $28.75, the allowed amount the payer states for the line (AMT B6). Expected $28.75, observed allowed $28.75: no variance.
   [window] Dispute window: 180 days from the payment date 2026-08-04, under the contract; it ends on 2027-01-31; on 2026-10-15 it is open.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Priced: $28.75 expected, $28.7541756 before the one rounding.
@@ -20,44 +20,44 @@
 ## Line 1, viewer
 1 unit × $29.64348 = $29.64348 under the contract’s clause on page 1; after sequestration $28.7541756; rounded once to $28.75; observed allowed $28.75; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. 1 × $29.64348 = $29.64348.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97140 is 6; the units are within it. 1 × $29.64348 = $29.64348.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($19.24776) and is kept whole; $29.64348 is unchanged.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $29.64348 is unchanged.
   [sequestration] Sequestration: the payer’s share is $29.64348 less the patient share $0.00, which is $29.64348; 3% of it, $0.8893044, is withheld. $29.64348 becomes $28.7541756.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $28.7541756 becomes $28.75. The unrounded amount is kept beside it.
-  [observed] Observed allowed $28.75, the payer’s allowed amount (AMT B6). Expected $28.75, observed allowed $28.75: no variance.
+  [observed] Observed allowed $28.75, the allowed amount the payer states for the line (AMT B6). Expected $28.75, observed allowed $28.75: no variance.
   [window] Dispute window: 180 days from the payment date, under the contract.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Priced: $28.75 expected, $28.7541756 before the one rounding.
 
 ## Line 1, payer
 1 unit × $29.64348 = $29.64348 under the contract’s clause on page 1; after sequestration $28.7541756; rounded once to $28.75; observed allowed $28.75; no variance.
-  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants.
+  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the multiple procedure payment reduction, the assistant reduction and sequestration.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97140 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($19.24776) and is kept whole; $29.64348 is unchanged.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $29.64348 is unchanged.
   [sequestration] Sequestration: the payer’s share is $29.64348 less the patient share $0.00, which is $29.64348; 3% of it, $0.8893044, is withheld. $29.64348 becomes $28.7541756.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the contract’s rule: $28.7541756 becomes $28.75. The unrounded amount is kept beside it.
-  [observed] Observed allowed $28.75, the allowed amount the remittance states. Expected $28.75, observed allowed $28.75: no variance.
+  [observed] Observed allowed $28.75, the allowed amount the remittance states.
 
 ## Line 2, internal
 1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after the multiple procedure payment reduction $18.123768; after the assistant reduction $13.95530136; after sequestration $13.5366423192; rounded once to $13.53; observed allowed $13.00; short $0.53.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-07-14. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97112 is 6; the units are within it. 1 × $23.80644 = $23.80644.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97112 is 6; the units are within it. 1 × $23.80644 = $23.80644.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [mppr] Ranked by practice-expense part on the claim’s day (2026-07-14), the first unit is claim line 1’s ($19.24776). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.682672. $23.80644 becomes $18.123768.
   [assistant_reduction] Modifier CO (services by a therapy assistant): the release pays 77% of the amount. $18.123768 becomes $13.95530136.
   [sequestration] Sequestration: the payer’s share is $13.95530136 less the patient share $0.00, which is $13.95530136; 3% of it, $0.4186590408, is withheld. $13.95530136 becomes $13.5366423192.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $13.5366423192 becomes $13.53. The unrounded amount is kept beside it.
-  [observed] Observed allowed $13.00, the payer’s allowed amount (AMT B6). Expected $13.53, observed allowed $13.00: short $0.53.
+  [observed] Observed allowed $13.00, the allowed amount the payer states for the line (AMT B6). Expected $13.53, observed allowed $13.00: short $0.53.
   [window] Dispute window: 180 days from the payment date 2026-08-04, under the contract; it ends on 2027-01-31; on 2026-10-15 it is open.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Priced: $13.53 expected, $13.5366423192 before the one rounding.
@@ -65,30 +65,30 @@
 ## Line 2, viewer
 1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after the multiple procedure payment reduction $18.123768; after the assistant reduction $13.95530136; after sequestration $13.5366423192; rounded once to $13.53; observed allowed $13.00; short $0.53.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
+  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
-  [units] 1 unit billed, taken as billed. The MUE for code 97112 is 6; the units are within it. 1 × $23.80644 = $23.80644.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97112 is 6; the units are within it. 1 × $23.80644 = $23.80644.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 1’s ($19.24776). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.682672. $23.80644 becomes $18.123768.
   [assistant_reduction] Modifier CO (services by a therapy assistant): the release pays 77% of the amount. $18.123768 becomes $13.95530136.
   [sequestration] Sequestration: the payer’s share is $13.95530136 less the patient share $0.00, which is $13.95530136; 3% of it, $0.4186590408, is withheld. $13.95530136 becomes $13.5366423192.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the rate record’s rule: $13.5366423192 becomes $13.53. The unrounded amount is kept beside it.
-  [observed] Observed allowed $13.00, the payer’s allowed amount (AMT B6). Expected $13.53, observed allowed $13.00: short $0.53.
+  [observed] Observed allowed $13.00, the allowed amount the payer states for the line (AMT B6). Expected $13.53, observed allowed $13.00: short $0.53.
   [window] Dispute window: 180 days from the payment date, under the contract.
   [release] Priced under rule release 900002 by engine phase-two/2.
   [outcome] Priced: $13.53 expected, $13.5366423192 before the one rounding.
 
 ## Line 2, payer
 1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after the multiple procedure payment reduction $18.123768; after the assistant reduction $13.95530136; after sequestration $13.5366423192; rounded once to $13.53; observed allowed $13.00; short $0.53.
-  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants.
+  [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. The contract applies these Medicare reductions: the multiple procedure payment reduction, the assistant reduction and sequestration.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] Ranked by practice-expense part on the claim’s day, the first unit is claim line 1’s ($19.24776). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 1 (rank 2) loses $5.682672. $23.80644 becomes $18.123768.
   [assistant_reduction] Modifier CO (services by a therapy assistant): Medicare’s assistant percentage is 77% of the amount. $18.123768 becomes $13.95530136.
   [sequestration] Sequestration: the payer’s share is $13.95530136 less the patient share $0.00, which is $13.95530136; 3% of it, $0.4186590408, is withheld. $13.95530136 becomes $13.5366423192.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
   [rounding] Rounded once, truncated to the cent, under the contract’s rule: $13.5366423192 becomes $13.53. The unrounded amount is kept beside it.
-  [observed] Observed allowed $13.00, the allowed amount the remittance states. Expected $13.53, observed allowed $13.00: short $0.53.
+  [observed] Observed allowed $13.00, the allowed amount the remittance states.
 
 ## Worksheets, internal
 Fee schedule worksheet 1: code 97140, 2026, carrier 99999 locality 01, non-facility

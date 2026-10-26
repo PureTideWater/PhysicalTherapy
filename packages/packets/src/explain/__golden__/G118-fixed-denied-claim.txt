@@ -3,12 +3,12 @@
 ## Line 1, internal
 1 unit × $32.50 = $32.50 under the contract’s clause on page 1; rounded once to $32.50; observed allowed $0.00; short $32.50.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Fixed schedule: $32.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
-  [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. 1 × $32.50 = $32.50.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [terms] Fixed schedule: $32.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are within it. 1 × $32.50 = $32.50.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $32.50 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $32.50 becomes $32.50. The unrounded amount is kept beside it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $32.50 needed no rounding.
   [observed] Observed allowed $0.00, paid plus patient responsibility. Expected $32.50, observed allowed $0.00: short $32.50.
   [window] Dispute window: 90 days from the payment date 2026-05-19, under the contract; it ends on 2026-08-17; on 2026-10-15 it is passed.
   [release] Priced under rule release 900001 by engine phase-two/2.
@@ -17,12 +17,12 @@
 ## Line 1, viewer
 1 unit × $32.50 = $32.50 under the contract’s clause on page 1; rounded once to $32.50; observed allowed $0.00; short $32.50.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
-  [terms] Fixed schedule: $32.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
-  [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. 1 × $32.50 = $32.50.
-  [ncci_ptp] No NCCI edit pairs this code with another line of the claim on its date.
+  [terms] Fixed schedule: $32.50 per unit. Applied, as the rate record’s flags are on: the assistant reduction and National Correct Coding Initiative (NCCI) edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) for code 97110 is 7; the units are within it. 1 × $32.50 = $32.50.
+  [ncci_ptp] No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $32.50 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $32.50 becomes $32.50. The unrounded amount is kept beside it.
+  [rounding] Rounded once, half up to the cent, under the rate record’s rule: $32.50 needed no rounding.
   [observed] Observed allowed $0.00, paid plus patient responsibility. Expected $32.50, observed allowed $0.00: short $32.50.
   [window] Dispute window: 90 days from the payment date, under the contract.
   [release] Priced under rule release 900001 by engine phase-two/2.
@@ -30,8 +30,8 @@
 
 ## Line 1, payer
 1 unit × $32.50 = $32.50 under the contract’s clause on page 1; rounded once to $32.50; observed allowed $0.00; short $32.50.
-  [terms] Fixed schedule: $32.50 per unit.
+  [terms] Fixed schedule: $32.50 per unit. The contract applies these Medicare reductions: the assistant reduction.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $32.50 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
-  [rounding] Rounded once, half up to the cent, under the contract’s rule: $32.50 becomes $32.50. The unrounded amount is kept beside it.
-  [observed] Observed allowed $0.00, the amount paid plus the patient’s responsibility. Expected $32.50, observed allowed $0.00: short $32.50.
+  [rounding] Rounded once, half up to the cent, under the contract’s rule: $32.50 needed no rounding.
+  [observed] Observed allowed $0.00, the amount paid plus the patient’s responsibility.

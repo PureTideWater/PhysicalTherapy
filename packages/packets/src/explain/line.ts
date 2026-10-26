@@ -330,6 +330,12 @@ function termsStep(words: Words): StepResult {
   }
   const sentences = [methodSentence(words, terms)];
   if (words.audience === 'payer') {
+    // The Medicare reductions the contract adopts, as the contract's own terms (never a flag, and nothing of one that is
+    // off); NCCI is a review note the payer's words leave out. A Medicare Advantage line's method sentence names them.
+    const adopted = words.medicare ? [] : PAYER_FLAGS.filter((flag) => terms.flags[flag]).map((flag) => FLAG_TEXT[flag]);
+    if (adopted.length !== 0) {
+      sentences.push(say('The contract applies these Medicare reductions: ', listOf(adopted), '.'));
+    }
     return sentences;
   }
   const adjustment = terms.contract_adjustment;
@@ -357,6 +363,9 @@ function termsStep(words: Words): StepResult {
   sentences.push(say(wordsOf(words.medicare ? MEDICARE_TIMED_UNITS_TEXT : TIMED_UNITS_TEXT, flags.timed_units_rule, 'timed-units rule')));
   return sentences;
 }
+
+/** The flags whose reductions the payer's words name when the contract applies them. */
+const PAYER_FLAGS = ['apply_mppr', 'apply_assistant_reduction', 'apply_sequestration'] as const;
 
 function methodSentence(words: Words, terms: NonNullable<PricingTrace['terms']>): Sentence {
   if (words.medicare) {
@@ -459,16 +468,16 @@ function unitsStep(words: Words): StepResult {
   const sentences = [say(figure(words, 'units.units', 'verbatim'), unitsWord(units.units), ' billed, taken as billed.')];
   const { mue } = units;
   if (!mue.checked) {
-    sentences.push(say('MUE not checked (flag off).'));
+    sentences.push(say('The medically unlikely edit (MUE) is not checked (flag off).'));
   } else if (mue.value === null) {
     sentences.push(
       dated(words)
-        ? say('No MUE is in force for code ', figure(words, 'units.mue_code', 'verbatim'), ' on ', figure(words, 'units.service_date', 'verbatim'), '.')
-        : say('No MUE is in force for the code on the service date.'),
+        ? say('No medically unlikely edit (MUE) is in force for code ', figure(words, 'units.mue_code', 'verbatim'), ' on ', figure(words, 'units.service_date', 'verbatim'), '.')
+        : say('No medically unlikely edit (MUE) is in force for the code on the service date.'),
     );
   } else {
     const exceeded = trace.outcome.result === 'unpriced' && trace.outcome.reason === 'MUE_EXCEEDED';
-    sentences.push(say('The MUE for code ', figure(words, 'units.mue_code', 'verbatim'), ' is ', figure(words, 'units.mue_value', 'verbatim'), exceeded ? '; the units are above it.' : '; the units are within it.'));
+    sentences.push(say('The medically unlikely edit (MUE) for code ', figure(words, 'units.mue_code', 'verbatim'), ' is ', figure(words, 'units.mue_value', 'verbatim'), exceeded ? '; the units are above it.' : '; the units are within it.'));
   }
   if (units.schedule_cents === null) {
     sentences.push(say(figure(words, 'units.unit', 'exact_dollars'), ' per visit; units do not multiply it.'));
@@ -503,17 +512,19 @@ function procedureToProcedureStep(words: Words): StepResult {
     return null;
   }
   if (!trace.terms.flags.apply_ncci) {
-    return [say('NCCI edits not checked (flag off).')];
+    return [say('National Correct Coding Initiative (NCCI) edits are not checked (flag off).')];
   }
   const ptp = trace.steps.ncci_ptp;
   if (ptp === null) {
     return NOT_REACHED;
   }
   if (ptp.edits.length === 0) {
-    return [say('No NCCI edit pairs this code with another line of the claim on its date.')];
+    return [say('No National Correct Coding Initiative (NCCI) edit pairs this code with another line of the claim on its date.')];
   }
   return ptp.edits.map((edit, index) => {
-    const column1 = ['Claim line ', figure(words, 'ncci_ptp.column1_line', 'verbatim', [index]), '’s code ', figure(words, 'ncci_ptp.column1_code', 'verbatim', [index]), ' is the first-column code of an NCCI edit with this code'];
+    // The initialism written out at its first use in the step.
+    const named = index === 0 ? 'a National Correct Coding Initiative (NCCI) edit' : 'an NCCI edit';
+    const column1 = ['Claim line ', figure(words, 'ncci_ptp.column1_line', 'verbatim', [index]), '’s code ', figure(words, 'ncci_ptp.column1_code', 'verbatim', [index]), ' is the first-column code of ', named, ' with this code'];
     if (!edit.bypassed) {
       return say(column1, ': the edit stands. It is a review flag and does not change the amount.');
     }
@@ -673,28 +684,35 @@ function contractAdjustmentStep(words: Words): StepResult {
   );
 }
 
+/**
+ * The patient share, reported beside the expected amount. For the practice's own readers, the remittance's adjustments
+ * it is made of, named in words with their codes after them: the engine counts only group PR (patient responsibility)
+ * toward it, so an adjustment of another group is refused rather than named as one.
+ */
 function patientShareStep(words: Words): StepResult {
   const { trace } = words;
   if (trace.steps.patient_share_cents === null) {
     return NOT_REACHED;
   }
-  const adjustments =
-    words.audience === 'payer' || trace.line.patient_share_adjustments.length === 0
-      ? null
-      : [
-          ' (',
-          listOf(
-            trace.line.patient_share_adjustments.map((_, index) => [
-              figure(words, 'patient_share.group', 'verbatim', [index]),
-              ' ',
-              figure(words, 'patient_share.reason', 'verbatim', [index]),
-              ' ',
-              figure(words, 'patient_share.adjustment', 'dollars', [index]),
-            ]),
-          ),
-          ')',
-        ];
-  return [say('Patient share ', figure(words, 'patient_share.amount', 'dollars'), adjustments, ', reported beside the expected amount and never subtracted from it.')];
+  const share = say('Patient share ', figure(words, 'patient_share.amount', 'dollars'), ', reported beside the expected amount and never subtracted from it.');
+  const items = trace.line.patient_share_adjustments;
+  if (words.audience === 'payer' || items.length === 0) {
+    return [share];
+  }
+  if (items.some((item) => item.group_code !== 'PR')) {
+    throw new ExplainShapeError('a patient share adjustment is of group PR');
+  }
+  const reasons = items.map((_, index) => ['reason code ', figure(words, 'patient_share.reason', 'verbatim', [index]), ', ', figure(words, 'patient_share.adjustment', 'dollars', [index])]);
+  return [
+    share,
+    say(
+      'It is the remittance’s patient responsibility adjustments (group ',
+      figure(words, 'patient_share.group', 'verbatim', [0]),
+      '): ',
+      reasons.flatMap((reason, at) => (at === 0 ? reason : ['; ', ...reason])),
+      '. The Adjustments table lists each.',
+    ),
+  ];
 }
 
 function roundingStep(words: Words): StepResult {
@@ -702,20 +720,22 @@ function roundingStep(words: Words): StepResult {
   if (rounding === null) {
     return NOT_REACHED;
   }
-  const origins = words.medicare ? MEDICARE_ROUNDING_ORIGIN_TEXT : words.audience === 'payer' ? PAYER_ROUNDING_ORIGIN_TEXT : ROUNDING_ORIGIN_TEXT;
-  return [
-    say(
-      'Rounded once, ',
-      ROUNDING_TEXT[rounding.rule],
-      ', under ',
-      origins[rounding.origin],
-      ': ',
-      figure(words, 'rounding.unrounded', 'exact_dollars'),
-      ' becomes ',
-      figure(words, 'rounding.rounded', 'dollars'),
-      '. The unrounded amount is kept beside it.',
-    ),
-  ];
+  let origin: string;
+  if (words.medicare) {
+    // A Medicare Advantage non-contracted line has no rate record, so no rule of one: such a trace is refused.
+    if (rounding.origin === 'rate_record') {
+      throw new ExplainShapeError('a Medicare Advantage non-contracted line rounds under no rate record’s rule');
+    }
+    origin = MEDICARE_ROUNDING_ORIGIN_TEXT[rounding.origin];
+  } else {
+    origin = (words.audience === 'payer' ? PAYER_ROUNDING_ORIGIN_TEXT : ROUNDING_ORIGIN_TEXT)[rounding.origin];
+  }
+  const head = ['Rounded once, ', ROUNDING_TEXT[rounding.rule], ', under ', origin, ': '];
+  // Already in whole cents (the engine's two texts equal): nothing changed, so no "becomes" and no unrounded amount beside it.
+  if (rounding.unrounded_cents === rounding.rounded_cents) {
+    return [say(head, figure(words, 'rounding.rounded', 'dollars'), ' needed no rounding.')];
+  }
+  return [say(head, figure(words, 'rounding.unrounded', 'exact_dollars'), ' becomes ', figure(words, 'rounding.rounded', 'dollars'), '. The unrounded amount is kept beside it.')];
 }
 
 function observedStep(words: Words): StepResult {
@@ -723,7 +743,8 @@ function observedStep(words: Words): StepResult {
   const basis = wordsOf(words.audience === 'payer' ? PAYER_OBSERVED_BASIS_TEXT : OBSERVED_BASIS_TEXT, trace.line.observed_allowed_basis, 'observed allowed basis');
   const sentences = [say('Observed allowed ', figure(words, 'observed.observed', 'dollars'), ', ', basis, '.')];
   const variance = trace.steps.variance_cents;
-  if (trace.outcome.result === 'priced' && variance !== null) {
+  // The payer reads the short in the summary just above; its step states only how the observed amount was read.
+  if (words.audience !== 'payer' && trace.outcome.result === 'priced' && variance !== null) {
     sentences.push(say('Expected ', figure(words, 'observed.expected', 'dollars'), ', observed allowed ', figure(words, 'observed.observed', 'dollars'), ': ', varianceWords(words, variance, 'observed.variance'), '.'));
   }
   return sentences;
@@ -741,7 +762,7 @@ function windowStep(words: Words): StepResult {
     throw new ExplainShapeError('a dispute window has its length, unit, start and source');
   }
   const unit = String(window.length) === '1' ? WINDOW_UNIT_ONE_TEXT[window.unit] : WINDOW_UNIT_TEXT[window.unit];
-  const head = ['Dispute window: ', figure(words, 'window.length', 'verbatim'), ' ', unit, ' from the ', WINDOW_START_TEXT[window.measured_from]];
+  const head = ['Dispute window: ', figure(words, 'window.length', 'integer'), ' ', unit, ' from the ', WINDOW_START_TEXT[window.measured_from]];
   const source = [', under ', WINDOW_SOURCE_TEXT[window.source]];
   if (!dated(words)) {
     return [say(head, source, '.')];
@@ -770,7 +791,7 @@ function releaseStep(words: Words): StepResult {
 function outcomeStep(words: Words): StepResult {
   const { outcome } = words.trace;
   if (outcome.result === 'priced') {
-    const flagged = outcome.review_flags.length !== 0 ? say('An NCCI edit stands: a review flag, which does not change the amount.') : null;
+    const flagged = outcome.review_flags.length !== 0 ? say('A National Correct Coding Initiative (NCCI) edit stands: a review flag, which does not change the amount.') : null;
     return [say('Priced: ', figure(words, 'outcome.expected', 'dollars'), ' expected, ', figure(words, 'outcome.unrounded', 'exact_dollars'), ' before the one rounding.'), ...(flagged === null ? [] : [flagged])];
   }
   const sentences = [
