@@ -1,5 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
 import { ImageArchiveError, imageIdentity } from './image-id';
+import { CONFIG, INDEX_TYPE, LAYER, MANIFEST_TYPE, PAX_STAND_IN, attestedArchive, blobEntry, descriptor, manifestOf, sha, tar } from './test-support/image-archive';
 
 /**
  * tools/screening-capacity/image-id.ts on synthetic archives this test writes: docker-archive and OCI layouts, plain and
@@ -23,72 +23,6 @@ beforeAll(() => {
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
-
-const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
-
-interface TarEntry {
-  readonly path: string;
-  readonly data: Buffer | string;
-  /** Write the path in a pax header, leaving a stand-in in the ustar name field. */
-  readonly pax?: boolean;
-}
-
-/** One ustar header block. */
-function header(name: string, size: number, type: string): Buffer {
-  const block = Buffer.alloc(512);
-  block.write(name.slice(0, 100), 0, 'utf8');
-  block.write('0000644\0', 100);
-  block.write('0000000\0', 108);
-  block.write('0000000\0', 116);
-  block.write(`${size.toString(8).padStart(11, '0')}\0`, 124);
-  block.write('00000000000\0', 136);
-  block.write(type, 156);
-  block.write('ustar\0', 257);
-  block.write('00', 263);
-  block.fill(0x20, 148, 156);
-  let sum = 0;
-  for (const byte of block) sum += byte;
-  block.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148);
-  return block;
-}
-
-const padded = (data: Buffer) => Buffer.concat([data, Buffer.alloc((512 - (data.length % 512)) % 512)]);
-
-/** A tar archive of these entries, as docker save and buildx write one. */
-function tar(entries: readonly TarEntry[]): Buffer {
-  const blocks: Buffer[] = [];
-  for (const entry of entries) {
-    const data = Buffer.from(entry.data);
-    if (entry.pax === true) {
-      const body = (length: number) => `${String(length)} path=${entry.path}\n`;
-      let length = body(0).length;
-      while (body(length).length !== length) length = body(length).length;
-      const record = Buffer.from(body(length));
-      blocks.push(header('PaxHeaders/stand-in', record.length, 'x'), padded(record));
-      blocks.push(header('stand-in-name-that-is-not-the-path', data.length, '0'), padded(data));
-    } else {
-      blocks.push(header(entry.path, data.length, '0'), padded(data));
-    }
-  }
-  blocks.push(Buffer.alloc(1024));
-  return Buffer.concat(blocks);
-}
-
-/** A blob entry at its content's digest. */
-const blobEntry = (data: string, pax = false): TarEntry & { digest: string } => ({ path: `blobs/sha256/${sha(data)}`, data, digest: `sha256:${sha(data)}`, pax });
-
-const CONFIG = JSON.stringify({ architecture: 'amd64', os: 'linux', config: { User: 'node' }, rootfs: { type: 'layers', diff_ids: [] } });
-const LAYER = 'synthetic layer bytes';
-
-/** An image manifest naming CONFIG and one layer. */
-function manifestOf(config: string): string {
-  return JSON.stringify({ schemaVersion: 2, mediaType: 'application/vnd.oci.image.manifest.v1+json', config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: `sha256:${sha(config)}`, size: config.length }, layers: [{ mediaType: 'application/vnd.oci.image.layer.v1.tar', digest: `sha256:${sha(LAYER)}`, size: LAYER.length }] });
-}
-
-const descriptor = (mediaType: string, data: string, platform?: { os: string; architecture: string }) => ({ mediaType, digest: `sha256:${sha(data)}`, size: data.length, ...(platform === undefined ? {} : { platform }) });
-
-const MANIFEST_TYPE = 'application/vnd.oci.image.manifest.v1+json';
-const INDEX_TYPE = 'application/vnd.oci.image.index.v1+json';
 
 function write(name: string, bytes: Buffer): string {
   const file = path.join(scratch, name);
@@ -134,16 +68,9 @@ describe('an image archive’s identity', () => {
     const multi = tar([config, blobEntry(armConfig), amd64, arm64, platformIndex, { path: 'index.json', data: top(platforms) }]);
     expect(await imageIdentity(write('multi.tar', multi))).toEqual({ config: config.digest, manifest: amd64.digest, target: platformIndex.digest });
     // buildx's provenance: the amd64 manifest beside an attestation manifest of platform unknown/unknown.
-    const attestation = JSON.stringify({ schemaVersion: 2, mediaType: MANIFEST_TYPE, config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: `sha256:${sha('{}')}`, size: 2 }, layers: [] });
-    const attested = JSON.stringify({
-      schemaVersion: 2,
-      mediaType: INDEX_TYPE,
-      manifests: [descriptor(MANIFEST_TYPE, manifestOf(CONFIG), { os: 'linux', architecture: 'amd64' }), { ...descriptor(MANIFEST_TYPE, attestation, { os: 'unknown', architecture: 'unknown' }), annotations: { 'vnd.docker.reference.type': 'attestation-manifest' } }],
-    });
-    const attestedIndex = blobEntry(attested);
-    const archive = tar([config, amd64, blobEntry(attestation), blobEntry('{}'), attestedIndex, { path: 'index.json', data: top(attested) }]);
-    const identity = await imageIdentity(write('attested.tar', archive));
-    expect(identity).toEqual({ config: config.digest, manifest: amd64.digest, target: attestedIndex.digest });
+    const attested = attestedArchive();
+    const identity = await imageIdentity(write('attested.tar', attested.archive));
+    expect(identity).toEqual({ config: attested.config, manifest: attested.manifest, target: attested.target });
     expect(identity.target).not.toBe(identity.manifest);
   });
 
@@ -171,7 +98,7 @@ describe('an image archive’s identity', () => {
     const archive = tar([{ path: `blobs/sha256/${sha(layer)}`, data: layer }, config, { path: 'manifest.json', data: JSON.stringify([{ Config: config.path, RepoTags: [], Layers: [] }]), pax: true }]);
     expect(await imageIdentity(write('pax.tar.gz', gzipSync(archive)))).toEqual({ config: config.digest });
     // The ustar name fields hold a stand-in, so the entries were found by the pax headers' paths alone.
-    expect(archive.toString('latin1')).toContain('stand-in-name-that-is-not-the-path');
+    expect(archive.toString('latin1')).toContain(PAX_STAND_IN);
     expect(archive.toString('latin1')).not.toContain(`\0${config.path}\0`);
   });
 

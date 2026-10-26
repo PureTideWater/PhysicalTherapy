@@ -244,6 +244,11 @@ export function identityOf(entries: ReadonlyMap<string, Entry>): ImageIdentity {
   return { config, ...(manifest === undefined ? {} : { manifest }), ...(target === undefined ? {} : { target }) };
 }
 
+/** The identity of a plain tar stream of a saved image, as `docker save <tag>` writes one to its stdout. */
+export async function tarStreamIdentity(source: Readable): Promise<ImageIdentity> {
+  return identityOf(await smallEntries(source));
+}
+
 /** The identity of a saved image archive, plain or gzipped, read as a stream. */
 export async function imageIdentity(file: string): Promise<ImageIdentity> {
   const raw = createReadStream(file);
@@ -255,7 +260,7 @@ export async function imageIdentity(file: string): Promise<ImageIdentity> {
     });
     source = gunzip;
   }
-  return identityOf(await smallEntries(source));
+  return tarStreamIdentity(source);
 }
 
 if (import.meta.main) {
