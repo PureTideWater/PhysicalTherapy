@@ -1314,8 +1314,9 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
 
   it('runs on every pull request and push that changes the release, its dry run or the images’ Dockerfiles, outside the required checks', () => {
     expect(dry().on).toEqual({ pull_request: { paths: PATHS }, push: { branches: ['claude/build-platform'], paths: PATHS } });
-    expect(Object.keys(dry().jobs)).toEqual(['build', 'push']);
+    expect(Object.keys(dry().jobs)).toEqual(['build', 'push', 'capacity']);
     expect(dry().jobs.push?.needs).toBe('build');
+    expect(dry().jobs.capacity?.needs).toBe('build');
     expect(REQUIRED_CHECKS.filter((check) => check.workflow === 'release-dry-run.yml')).toEqual([]);
   });
 
@@ -1344,6 +1345,36 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
       }
     }
     expect(dry().jobs.build?.steps.find((step) => usesAction(step, 'actions/upload-artifact'))?.with?.overwrite).toBe(true);
+  });
+
+  it('runs the capacity job’s setup as release.yml does, with no cache, up to its frozen install and no further (the ci-infra review’s N4)', () => {
+    // The steps a tag runs first in its capacity job: the checkout, a download by name, pnpm and Node with no cache and
+    // the frozen install, each with release.yml's own inputs; the measurement itself stays the tag's.
+    const theirs = release().jobs.capacity?.steps ?? [];
+    const ours = dry().jobs.capacity?.steps ?? [];
+    expect(ours.map((step) => step.run ?? step.uses?.split('@')[0])).toEqual(['actions/checkout', 'actions/download-artifact', 'pnpm/action-setup', 'actions/setup-node', 'pnpm install --frozen-lockfile']);
+    for (const step of ours) {
+      // The download names the dry run's one image where the tag names the production web image; every other input is
+      // release.yml's own.
+      const inputs = usesAction(step, 'actions/download-artifact') ? { ...step.with, name: 'image-web-production' } : step.with;
+      const match = theirs.find((candidate) => (step.run !== undefined ? candidate.run === step.run : candidate.uses === step.uses && isDeepStrictEqual(candidate.with, inputs)));
+      expect(match, `${step.run ?? step.uses ?? ''} with ${JSON.stringify(step.with)}`).toBeDefined();
+    }
+    expect(ours.find((step) => usesAction(step, 'actions/download-artifact'))?.with).toEqual({ name: 'image-web', path: '${{ runner.temp }}/image' });
+    expect(dry().jobs.capacity?.permissions).toBeUndefined();
+  });
+
+  it('writes the software bill of materials with release.yml’s own step, cut to this run’s image, and checks it is SPDX', () => {
+    const sbom = (entry: Job | undefined) => entry?.steps.find((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
+    const theirs = sbom(release().jobs.build);
+    const ours = sbom(dry().jobs.build);
+    expect(ours?.uses).toBe(theirs?.uses);
+    expect(ours?.with).toEqual({ ...theirs?.with, output: 'sbom-web-dry-run.spdx.json' });
+    expect(theirs?.with?.output).toBe('sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json');
+    const steps = dry().jobs.build?.steps ?? [];
+    const index = steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
+    expect(index).toBeGreaterThan(steps.findIndex((step) => usesAction(step, 'docker/build-push-action')));
+    expect(steps[index + 1]?.run).toBe("jq -e '.spdxVersion and (.packages | length > 0)' sbom-web-dry-run.spdx.json > /dev/null");
   });
 
   it('saves the image and checks its identity with release.yml’s own scripts, cut to the web image and this run’s tag', () => {
@@ -1640,7 +1671,7 @@ describe('job timeouts (CI-10)', () => {
       // Its one run took 21 s; the work of the static job's band (the founder's F4, which allows this one line).
       'publish-content.yml': { publish: 15 },
       // Each about three times its expected time (docs/adr/0066, Part 2).
-      'release-dry-run.yml': { build: 20, push: 10 },
+      'release-dry-run.yml': { build: 20, push: 10, capacity: 15 },
       // The release's own table is held in its describe block above; S4 three times in the capacity job.
       'release.yml': { build: 60, capacity: 100, push: 30, report: 10 },
       // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8), S4 three
