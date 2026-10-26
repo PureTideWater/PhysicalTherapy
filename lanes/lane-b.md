@@ -833,3 +833,4 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - a planner: ranks, groups into PRs in landing order, writes `designs/lane-b-ux-review.md`;
     - one adversarial reviewer on the rules and one fact checker on the code;
     - a reviser.
+- **2026-10-26 ~04:38 UTC: #111 merged as PR #46 (4d99df8, 04:37:35 UTC).** Readable database-function diffs, one generated file per function (ADR 0068). It is the second of the parallel items. Its session reads the push runs, then takes `co-001/ux-forms`, the UX review's first PR (claimed ~04:35; its brief was sent by message).
