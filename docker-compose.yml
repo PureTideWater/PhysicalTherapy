@@ -1,40 +1,24 @@
-# Local services for `pnpm dev` (PRD section 15, the dev environment): PostgreSQL 18, the version CI
-# uses, and MinIO standing in for S3. Synthetic data only. Nothing in the test suites needs Docker;
-# database tests run against whatever DATABASE_URL points at.
+# PostgreSQL 18 for `pnpm dev` (PRD section 15, the dev environment), for CI's database jobs (tools/ci/postgres.sh)
+# and for the screening-capacity harness, from this one image reference, pinned by digest and updated by Dependabot's
+# docker-compose entry. Synthetic data only. The dev and e2e document store is local, so no S3 stand-in runs here.
 name: therapy-platform
 
 services:
   postgres:
-    image: postgres:18
+    image: postgres:18-trixie@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
     environment:
       POSTGRES_PASSWORD: test
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
+    # On TCP: the image's first-run setup serves the Unix socket before the server listens on TCP, so a check on the
+    # socket can report healthy while a client on port 5432 is still refused (the form ci.yml's services proved).
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres"]
       interval: 2s
-      timeout: 3s
-      retries: 30
-
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      MINIO_ROOT_USER: tpdev
-      MINIO_ROOT_PASSWORD: tpdev-local-only
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio-data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 2s
-      timeout: 3s
+      timeout: 5s
       retries: 30
 
 volumes:
   postgres-data:
-  minio-data:

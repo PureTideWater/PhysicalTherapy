@@ -398,7 +398,7 @@ const CONFIG_TYPES: ReadonlySet<string> = new Set(['application/vnd.oci.image.co
 
 /**
  * The platform the images are built for and ECS runs: both workflows build them on ubuntu-24.04's native linux/amd64 with
- * no platform named (release.yml, screening-capacity.yml; FROM node:24-slim), and every task definition declares X86_64
+ * no platform named (release.yml, screening-capacity.yml; FROM node:24-trixie-slim by digest), and every task definition declares X86_64
  * on Linux (infra/lib/constructs/compute.ts).
  */
 const IMAGE_PLATFORM = { os: 'linux', architecture: 'amd64' } as const;

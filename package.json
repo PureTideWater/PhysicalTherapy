@@ -2,7 +2,7 @@
   "name": "therapy-platform",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.28.0",
+  "packageManager": "pnpm@10.34.8+sha512.f627a8e971343afe49dfd0f63d028234201dfa831d5cb588733e1e5f8db26bf16989a32161ab5c1b4db3b1fdbc373160606b5b89e002df6dd19a85adf91fc5a8",
   "engines": {
     "node": ">=24"
   },
@@ -34,23 +34,25 @@
     "screening:capacity": "tsx tools/screening-capacity/run.ts",
     "cdk:diff": "pnpm --filter @tp/infra cdk:diff",
     "licenses:check": "tsx tools/check-licenses/index.ts",
+    "actions:check": "tsx tools/check-action-pins/index.ts",
+    "toolchain:check": "tsx tools/check-toolchain/index.ts",
     "stryker": "stryker"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@next/eslint-plugin-next": "^16.4.1",
+    "@next/eslint-plugin-next": "^16.4.3",
     "@stryker-mutator/api": "^10.1.1",
     "@stryker-mutator/core": "^10.1.1",
     "@stryker-mutator/vitest-runner": "^10.1.1",
-    "@types/node": "^24.19.2",
-    "@vitest/coverage-v8": "^5.0.4",
-    "eslint": "^10.12.0",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "eslint": "catalog:",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "fast-check": "^4.10.2",
+    "fast-check": "catalog:",
     "globals": "^17.13.0",
-    "tsx": "^4.23.15",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.2",
-    "vitest": "^5.0.4"
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
   }
 }

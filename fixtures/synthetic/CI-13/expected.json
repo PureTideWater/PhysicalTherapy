@@ -1,0 +1,23 @@
+{
+  "case": "CI-13",
+  "module": "CI",
+  "title": "Images pinned by digest from one source",
+  "assertion": "Every base and service image carries a digest; CI and the capacity harness take Postgres from docker-compose.yml",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/test/workflows.test.ts",
+    "tools/test/no-duplicated-versions.test.ts",
+    "tools/ci/postgres.test.ts",
+    "tools/screening-capacity/measure.test.ts",
+    "tools/screening-capacity/watched.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The Dockerfiles, docker-compose.yml and the workflows are read; the Postgres script runs against a stub docker in a temporary directory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

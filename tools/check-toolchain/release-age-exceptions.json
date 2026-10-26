@@ -1,0 +1,4 @@
+{
+  "$comment": "Exact versions excused from the three-day release age (F2 (b)), equal to pnpm-workspace.yaml's minimumReleaseAgeExclude (tools/check-toolchain): package (name@x.y.z), advisory (GHSA), reason, added and expires as UTC instants. An added entry expires no earlier than the version's publish time plus three days and no later than seven days after it was added; the weekly triage removes expired ones (docs/runbooks/dependency-upgrades.md).",
+  "entries": []
+}

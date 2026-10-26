@@ -17,12 +17,28 @@ name: release
 # output exists. Images are pushed to the repository's GitHub container registry; no workflow has credentials to an
 # environment that holds PHI. A capacity run that fails does not stop the push, because a security fix must ship: it
 # keeps production's screening closed instead (no passing report, no launch value).
+#
+# It restores no cache: a tag's run may restore caches its default branch saved, which the build branch is until launch
+# (the founder's F1), so a cached scale release, scanner, vulnerability database, buildx binary or pnpm store would let
+# another run's bytes into what is scanned, measured and attested. Every one is made in this run (docs/adr/0062;
+# docs/adr/0066, Part 2): no actions/cache step, setup-node without a cache, setup-buildx without its binary cache, no
+# build cache, and Trivy with its cache off. tools/check-action-pins follows every actions/cache step a composite nests
+# to the input that turns it off, failing closed where it cannot follow; a JavaScript action's built-in cache is code it
+# cannot read, so tools/test/workflows.test.ts holds the explicit inputs that turn each one off. Its uploads overwrite,
+# so a re-run of a failed job replaces what its first attempt left. A pull request that changes this file runs its
+# actions in release-dry-run.yml.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
+
+# GitHub's bash with pipefail (bash --noprofile --norc -eo pipefail), so a failed docker save fails its step rather than
+# leave gzip's success.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
@@ -32,11 +48,17 @@ jobs:
       matrix:
         image: [web, web-staging, web-production, worker]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
+      # moby/buildkit:buildx-stable-1 by tag; Dependabot cannot update this string, so tools/check-action-pins warns when a
+      # newer release is three days old (docs/runbooks/dependency-upgrades.md).
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cache-binary: false
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
 
       - id: image
         name: Name the image, its Dockerfile and its static host
@@ -58,7 +80,7 @@ jobs:
           echo "origin=$origin" >> "$GITHUB_OUTPUT"
 
       - name: Build the image without pushing it
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ${{ steps.image.outputs.dockerfile }}
@@ -80,6 +102,8 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          cache: false
+          cache-dir: ${{ runner.temp }}/trivy
 
       - name: Write the software bill of materials
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -88,12 +112,15 @@ jobs:
           format: spdx-json
           output: sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json
           exit-code: "0"
+          cache: false
+          cache-dir: ${{ runner.temp }}/trivy
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-${{ matrix.image }}-${{ github.ref_name }}
           path: sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json
           if-no-files-found: error
+          overwrite: true
 
       # The image as scanned, kept for the jobs below, which load it and never build: docker save and docker load keep
       # its ID, so what is measured and pushed is what was scanned.
@@ -107,7 +134,7 @@ jobs:
           docker image inspect -f '{{.Id}}' "$REF" > "$RUNNER_TEMP/image/$IMAGE.id"
           echo "$IMAGE: $(cat "$RUNNER_TEMP/image/$IMAGE.id")"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-${{ matrix.image }}
           path: |
@@ -116,6 +143,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
+          overwrite: true
 
   # Decision 13: the capacity test with time enforced and binding, on the production web image and the worker image
   # exactly as built and scanned (their IDs are the report's), on the same runner as
@@ -131,15 +159,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: image-web-production
           path: ${{ runner.temp }}/image
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: image-worker
           path: ${{ runner.temp }}/image
@@ -150,20 +178,20 @@ jobs:
             docker load --input "$RUNNER_TEMP/image/$image.tar.gz"
           done
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with: { node-version: 24, cache: pnpm }
+      # pnpm and Node with no cache: the store is filled from the registry by the lockfile's integrity hashes.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
 
-      - name: Restore the scale release
-        id: scale-release
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ runner.temp }}/scale-release
-          key: screening-scale-release-${{ hashFiles('packages/synth/src/release/**', 'tools/release/scale.ts', 'packages/rules/src/**', 'fixtures/synthetic/rules/release-synth-900001/**') }}
+      # The SYNTHETIC scale release, built in this run from this commit's generator, never one another run cached (about
+      # 22 seconds).
       - name: Build the scale release
-        if: steps.scale-release.outputs.cache-hit != 'true'
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm exec tsx tools/release/scale.ts --out "$RUNNER_TEMP/scale-release"
@@ -185,7 +213,7 @@ jobs:
           fi
           taskset -c "$cpus" pnpm screening:capacity "$@"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: screening-capacity-${{ github.ref_name }}
@@ -196,6 +224,7 @@ jobs:
             ${{ runner.temp }}/screening-capacity/logs/
           if-no-files-found: ignore
           retention-days: 90
+          overwrite: true
 
   # The images as built and scanned, never a rebuild: loaded from the build's artifacts and pushed under the tag and the
   # commit. It does not wait for the capacity run (a security fix ships whatever the measurement says).
@@ -207,13 +236,13 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: image-*
           path: ${{ runner.temp }}/image
           merge-multiple: true
 
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -255,7 +284,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: screening-capacity-${{ github.ref_name }}
           path: ${{ runner.temp }}/screening-capacity

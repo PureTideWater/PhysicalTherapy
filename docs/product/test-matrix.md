@@ -250,8 +250,9 @@ preferred, cards still accepted, and the customer's default payment method the o
 ## Continuous integration (CI)
 
 The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
-test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-14 and CI-18 to CI-20 are
-reserved for the series' later pull requests; CI-15 to CI-17 are the mutation workflow's (docs/adr/0066, Part 4).
+test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-14 are the pins, the
+Dependabot configuration, the images and the toolchain (docs/adr/0066, Part 2); CI-15 to CI-17 are the mutation
+workflow's (Part 4); CI-18 to CI-20 are reserved for the browser and runner pull request (Part 3).
 
 | ID | Case | Assertion |
 | --- | --- | --- |
@@ -265,6 +266,10 @@ reserved for the series' later pull requests; CI-15 to CI-17 are the mutation wo
 | CI-08 | Lint in memory-bounded groups | The groups cover every linted file exactly once; the scheduler fits 16 GiB and 8 GiB hosts and always runs at least one group; any group's warning or error fails the run |
 | CI-09 | The domain model's approval as its own check | `domain model` runs `--check --strict --require-approval`; the database suite carries no approval case |
 | CI-10 | A timeout on every job | Every job of every workflow has the timeout its table names |
+| CI-11 | Actions pinned to their release | Every `uses:` is a full SHA with its version, one SHA per action; the SHA is the tag's and every input is declared; every action nested in a composite is pinned by SHA too; the release restores no cache |
+| CI-12 | Dependabot's configuration | Groups in order, majors ignored for the Node image, its types, TypeScript, Next and pg-boss, and for the compose file's postgres; cooldowns; staggered days; and an entry per ecosystem in use |
+| CI-13 | Images pinned by digest from one source | Every base and service image carries a digest; CI and the capacity harness take Postgres from docker-compose.yml |
+| CI-14 | A toolchain without known advisories | The pinned pnpm has no moderate or worse advisory; both images derive it; every musl package in the lockfile carries libc; every version the lockfile adds is at least three days old or a dated exclude |
 | CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score |
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |

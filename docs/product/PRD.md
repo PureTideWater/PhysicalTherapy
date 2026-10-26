@@ -642,7 +642,7 @@ therapy-platform/
 
 ### Environments
 
-`dev` (local Docker Postgres and MinIO; synthetic data only; no AWS PHI services), `staging` (a full AWS copy with synthetic data and the same policies, used for restore drills and rehearsals), `production` (PHI; access only through the application and the break-glass path; no developer database access without a ticket and a time-boxed role). Promotion is by tagged image through CI; migrations run as a job before the new image receives traffic; every deploy is reversible by redeploying the previous image, and a migration that cannot be rolled forward safely is split into add, backfill and remove steps.
+`dev` (local Docker Postgres and documents on local disk; synthetic data only; no AWS PHI services), `staging` (a full AWS copy with synthetic data and the same policies, used for restore drills and rehearsals), `production` (PHI; access only through the application and the break-glass path; no developer database access without a ticket and a time-boxed role). Promotion is by tagged image through CI; migrations run as a job before the new image receives traffic; every deploy is reversible by redeploying the previous image, and a migration that cannot be rolled forward safely is split into add, backfill and remove steps.
 
 ### Request path for a PHI page
 
