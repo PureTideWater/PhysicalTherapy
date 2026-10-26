@@ -34,13 +34,13 @@ HANDOFF.md; LANES.md rule 10).
   | #54 | the materiality settings' cents shown as dollars, a money bug the UX review found (CAS-38, CAS-39) | 7ef421b | 2026-10-26 08:56 |
   | #53 | #84, the model evaluation gate (ADR 0070 Parts 1 and 2, MOD-07 to MOD-11) | 88a0e4e | 2026-10-26 09:50 |
   | #55 | the UX and brand reviewer checklist, `.claude/agents/ux-brand-reviewer.md` | 6070e41 | 2026-10-26 10:30 |
+  | #50 | #10, a superseded re-run cannot be accepted (amends ADR 0037; PRC-25 to PRC-28) | 9d3ab33 | 2026-10-26 11:06 |
 
 - **Open Lane B PRs at this writing**, each run by its own Lane B session, each told to finish to its merge or stop at
   a clean, recorded step. The status file says exactly where it is:
 
   | PR | Item | Head | Status file | Next step |
   | --- | --- | --- | --- | --- |
-  | #50 | #10, a superseded re-run cannot be accepted (amends ADR 0037; PRC-25 to PRC-28) | 7f17d62 | `lane-b-superseded-rerun-status.md` | its third fix round's push, CI, merge |
   | #51 | PR 15b, ledger amounts in payment terms (#12; ADR 0067, LED-14 to LED-18) | 0e086ed | `lane-b-pr15b-status.md` | fix round 2's push, CI, verification, merge |
   | #52 | #38, every figure explained in words (ADR 0072, CAS-30 to CAS-34) | a2eee98 | `lane-b-figures-in-words-status.md` | fix round, then the base merge (it conflicts), CI, verification, merge |
   | #49 | the release content checks (#7, #30, #31, #59; ADR 0071, RCC-01 to RCC-08) | ac162d6 | `lane-b-release-content-checks-status.md` | reviews' fix round, CI, verification, merge |
@@ -101,13 +101,13 @@ HANDOFF.md; LANES.md rule 10).
   everything they built is on GitHub.
 
 ### Next actions, in order (for whoever continues Lane B's work)
-1. **Read the status files** of the open PRs above. Finish any that are still open, in this order: #50, #51, #52, #49,
+1. **Read the status files** of the open PRs above. Finish any that are still open, in this order: #51, #52, #49,
    #56, then #48 after 19:18 UTC. Follow "Merging" below: base merged in with a merge commit, CI green on that head,
    the fresh-clone verification, ready, then `merge_pull_request` with `expectedHeadSha`.
 2. **When #48 merges,** the founder clicks the three settings in `designs/lane-b-settings-after-ci-deps.md`; then
    ci-browser (`co-001/ci-browser`, phase 2) and the follow-ups P1, P2 and P4.
 3. **The stopped branches:**
-   - `co-001/ux-forms` after #50, #51 and #52;
+   - `co-001/ux-forms` after #51 and #52 (#50 merged; its slice A can start);
    - `co-001/contract-phi-check`;
    - then #32's build, the narrative draft, #46.
 4. **The UX review's queue,** from PR 3, in landing order. A PR marked "after #42" waits for #42; a migration part is
@@ -882,3 +882,4 @@ HANDOFF.md; LANES.md rule 10).
     - Its verification: a fresh-clone check that it changes exactly the two files, the frontmatter matches security-reviewer.md's, and every required check is green on f8a795d.
     - Its review's blocking point, how Lane A takes the shots, is fixed on this branch: the tour README's "From another lane" section and `tile.py`.
   - Merged today: #47, #46, #54, #53, #55.
+- **2026-10-26 11:06 UTC: #10 merged as PR #50 (9d3ab33).** A superseded re-run cannot be accepted. Head c4f2742, after three fix rounds and the fresh-clone verification. ux-forms' slice A, which waited on it, can start.
