@@ -1,0 +1,23 @@
+{
+  "case": "CI-14",
+  "module": "CI",
+  "title": "A toolchain without known advisories",
+  "assertion": "The pinned pnpm has no moderate or worse advisory; both images derive it; every musl package in the lockfile carries libc; every version the lockfile adds is at least three days old or a dated exclude",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/check-toolchain/check.test.ts",
+    "tools/check-toolchain/registry.test.ts",
+    "tools/check-toolchain/tree.test.ts",
+    "tools/check-licenses/check.test.ts",
+    "tools/test/no-duplicated-versions.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The lockfile, the manifests and the exception lists are read; the registry's answers and the base's tree are built in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
