@@ -9,8 +9,8 @@ import { repositoryRoot } from '../content-files';
 
 /**
  * .github/CODEOWNERS (docs/adr/0063): the founder's review on every path (the ruling of 2026-10-20), and by name on
- * the schema and its approval, the code that decides an approval, the engine freeze (docs/adr/0064), the releases,
- * CLAUDE.md, .claude and .github, once
+ * the schema and its approval, the code that decides an approval, the engine freeze (docs/adr/0064), the files that
+ * decide which model features production serves (docs/adr/0070, Part 2), the releases, CLAUDE.md, .claude and .github, once
  * the ruleset requires code owners' review. GitHub reads the first CODEOWNERS it finds (.github/, the root, docs/),
  * and a line it cannot read is ignored, so these tests hold the file to what GitHub reads.
  */
@@ -67,6 +67,9 @@ describe('.github/CODEOWNERS', () => {
       '/packages/synth/src/guard/',
       '/tools/check-releases-immutable.sh',
       '/tools/engine-freeze/',
+      '/packages/model-gateway/eval/baseline.json',
+      '/packages/model-gateway/eval/floors.json',
+      '/packages/model-gateway/eval/reports/',
       '/content/releases/',
       '/fixtures/synthetic/rules/release-*/',
       '/CLAUDE.md',
@@ -120,6 +123,20 @@ describe('.github/CODEOWNERS', () => {
       expect(existsSync(path.join(repositoryRoot, file)), file).toBe(true);
       expect(owned(file), file).toBe(true);
     }
+  });
+
+  it('covers the model serving switch: the baseline, every report an entry names and the floors (docs/adr/0070, Part 2; session ruling 10)', () => {
+    // Held by named lines: a pull request that would serve a model feature in production takes the founder's review.
+    const owned = (file: string): boolean => rules().some(({ pattern }) => pattern !== EVERY_PATH && matcher(pattern).test(file));
+    const baseline = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/model-gateway/eval/baseline.json'), 'utf8')) as { entries: { report_sha256: string }[] };
+    const reports = baseline.entries.map((entry) => `packages/model-gateway/eval/reports/${entry.report_sha256}.json`);
+    expect(reports.length).toBeGreaterThan(0);
+    for (const file of ['packages/model-gateway/eval/baseline.json', 'packages/model-gateway/eval/floors.json', ...reports]) {
+      expect(existsSync(path.join(repositoryRoot, file)), file).toBe(true);
+      expect(owned(file), file).toBe(true);
+    }
+    // The gate's code beside them is not one of these lines (the line for every path holds it).
+    expect(owned('packages/model-gateway/eval/baseline.ts')).toBe(false);
   });
 
   it('uses only patterns GitHub reads, each matching a tracked file but the releases directory publish-content creates', () => {

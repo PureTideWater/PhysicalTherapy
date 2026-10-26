@@ -2,8 +2,10 @@ import { parseRateTerms } from '@tp/contracts';
 import { draftNarrative, narrativeFacts, verifyNarrative } from '@tp/packets';
 import { price } from '@tp/pricing';
 import { contractAgreement, lineFacts, pricingInput, syntheticRelease } from '@tp/pricing/testing';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import type * as EvaluatedModule from './evaluated';
+import { gatewayServing } from './evaluated';
 import { DuplicateModelCallError, GatewayError, InputRefusedError, ModelBudgetExceededError, ModelBusyError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
 import { CallLimiter } from './limiter';
 import type { FlagRow } from './flags';
@@ -13,8 +15,10 @@ import type { ModelPrice } from './prices';
 import { PROMPTS, modelFor } from './prompts';
 import { type ModelProvider, type ModelRequest, type ModelResponse, ProviderFailure } from './provider';
 import { LocalDeterministicProvider } from './providers/local';
-import { MODEL_PURPOSES, type ModelPurpose } from './purposes';
+import { ALL_SERVED, MODEL_PURPOSES, type ModelPurpose, type ServedKey, type ServedSet, offeredPurposes } from './purposes';
+import { PURPOSE_SPECS } from './specs';
 import { type PurposeInputs, requestFor } from './specs';
+import type { CallActor } from './store';
 import {
   SYNTHETIC_CONTRACT_PAGES,
   SYNTHETIC_IDS,
@@ -36,6 +40,17 @@ import {
  * document's embedded instructions (MOD-04), and the model_call row. On the local provider and the
  * memory store; synthetic material only.
  */
+
+/**
+ * What a production gateway on a real provider serves is worked out by the gateway itself from the committed
+ * files (./evaluated.ts gatewayServing); as the repository ships, nothing. A test that needs a production
+ * gateway to serve something gives that one construction its set (mockReturnValueOnce), never an option.
+ */
+vi.mock('./evaluated', async (importOriginal) => {
+  const actual = await importOriginal<typeof EvaluatedModule>();
+  return { ...actual, gatewayServing: vi.fn(actual.gatewayServing) };
+});
+const serveOnce = (...keys: ServedKey[]) => vi.mocked(gatewayServing).mockReturnValueOnce({ keys: new Set(keys) } satisfies ServedSet);
 
 const CONTEXT = { practiceId: SYNTHETIC_IDS.practice, requestKey: 'request-1' };
 const DENIAL_ON: FlagRow = { key: 'model.read_denial_letter', scope: 'global', scopeId: null, value: true };
@@ -221,6 +236,8 @@ describe('the PHI boundary', () => {
     await expect(evaluationGateway.proposeContractTerms({ practiceId: null, requestKey: 'eval-1' }, syntheticContractInput())).resolves.toMatchObject({ passed: true });
     expect(evaluation.store.calls[0]).toMatchObject({ practiceId: null, actorKind: 'evaluation', actorId: null, provider: 'bedrock' });
     const production = localGateway({ production: true });
+    // Served as if contract proposals had passed their evaluation on Bedrock (the committed baseline serves nothing there).
+    serveOnce('proposeContractTerms/default');
     const productionGateway = new ModelGateway({ provider: new ScriptedProvider('bedrock', [answer(syntheticContractOutput())]), store: production.store, logger: production.logger, production: true, prices });
     await expect(productionGateway.proposeContractTerms(CONTEXT, syntheticContractInput())).resolves.toMatchObject({ passed: true });
   });
@@ -239,6 +256,124 @@ describe('the PHI boundary', () => {
     const claims = [...syntheticLetterInput().claims, { claimId: SYNTHETIC_IDS.claimTwo, patientPseudonym: 'another-patient', claimNumbers: ['SYNCLAIM0002'] }];
     await expect(harness.gateway.readDenialLetter(CONTEXT, syntheticLetterInput({ claims }))).rejects.toBeInstanceOf(InputRefusedError);
     expect(harness.local.requests).toEqual([]);
+  });
+});
+
+describe('serving each feature on its own evaluation (docs/adr/0070, Part 2)', () => {
+  const confirmedPrices: ModelPrice[] = (['default', 'ambiguous'] as const).map((variant) => ({
+    provider: 'bedrock',
+    modelId: modelFor(PROMPTS.proposeContractTerms, 'bedrock', variant),
+    inputCentsPerMillion: 0n,
+    outputCentsPerMillion: 0n,
+    confirmed: true,
+  }));
+
+  /** A production gateway on a Bedrock-kind stand-in, over a memory store whose flag reads are counted. */
+  function production(options: { readonly actor?: CallActor; readonly serving?: 'served' | 'evaluable'; readonly answers?: number } = {}) {
+    const base = localGateway({ production: true, flags: [DENIAL_ON], ...(options.actor === undefined ? {} : { actor: options.actor }) });
+    const provider = new ScriptedProvider('bedrock', Array.from({ length: options.answers ?? 4 }, () => answer(syntheticContractOutput())));
+    const flagReads = vi.spyOn(base.store, 'features');
+    const build = () =>
+      new ModelGateway({ provider, store: base.store, logger: base.logger, production: true, prices: confirmedPrices, ...(options.serving === undefined ? {} : { serving: options.serving }) });
+    return { ...base, provider, flagReads, build };
+  }
+
+  it('refuses every purpose that has not passed on a production gateway built with no serving option: as the repository ships, all four (review B1)', async () => {
+    const harness = production();
+    const gateway = harness.build();
+    const calls = [
+      () => gateway.proposeContractTerms(CONTEXT, syntheticContractInput()),
+      () => gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true })),
+      () => gateway.readDenialLetter(CONTEXT, syntheticLetterInput()),
+      () => gateway.draftPacketNarrative(CONTEXT, syntheticNarrativeInput()),
+      () => gateway.suggestEvidenceRequests(CONTEXT, syntheticEvidenceInput()),
+    ];
+    for (const made of calls) {
+      await expect(made()).rejects.toBeInstanceOf(ModelFeatureOffError);
+      await expect(made()).rejects.toMatchObject({ reason: 'not_evaluated', code: 'not_evaluated', message: 'this model feature has not passed its evaluation for the configured model; enter the record by hand' });
+    }
+    // Refused before the flags are read, with nothing sent and no model_call row.
+    expect(harness.flagReads).not.toHaveBeenCalled();
+    expect(harness.provider.requests).toEqual([]);
+    expect(harness.store.calls).toEqual([]);
+    expect(Object.values(await gateway.features(SYNTHETIC_IDS.practice))).toEqual([false, false, false, false]);
+    // The same stand-in outside production (synthetic material only) and the local provider in production serve every key.
+    expect(vi.mocked(gatewayServing).mock.results.at(-1)?.value).toEqual({ keys: new Set() });
+    expect(gatewayServing(false, 'bedrock')).toBe(ALL_SERVED);
+    expect(gatewayServing(true, 'local')).toBe(ALL_SERVED);
+    expect(gatewayServing(true, 'anthropic', 'evaluable').keys.size).toBe(0);
+  });
+
+  it('accepts the evaluable set only for a job’s store: no request path can ask for the permitted run’s wider set (review B1)', () => {
+    for (const actor of [{ kind: 'user', userId: SYNTHETIC_IDS.user }, { kind: 'evaluation' }] as const) {
+      expect(() => production({ actor, serving: 'evaluable' }).build(), actor.kind).toThrow(expect.objectContaining({ code: 'serving_invalid' }) as Error);
+      expect(() => production({ actor, serving: 'evaluable' }).build()).toThrow(GatewayError);
+    }
+    // Outside production too: the option is refused for the actor whatever the set would be.
+    const local = localGateway({ actor: { kind: 'user', userId: SYNTHETIC_IDS.user } });
+    expect(() => new ModelGateway({ provider: local.provider, store: local.store, logger: local.logger, production: false, serving: 'evaluable' })).toThrow(GatewayError);
+    const job = production({ actor: { kind: 'job', jobId: SYNTHETIC_IDS.user }, serving: 'evaluable' });
+    expect(() => job.build()).not.toThrow();
+    expect(vi.mocked(gatewayServing)).toHaveBeenLastCalledWith(true, 'bedrock', 'evaluable');
+    production({ actor: { kind: 'job', jobId: SYNTHETIC_IDS.user } }).build();
+    expect(vi.mocked(gatewayServing)).toHaveBeenLastCalledWith(true, 'bedrock', 'served');
+  });
+
+  it('lets the permitted run’s job call the model for an evaluable key, and any other gateway of the job not', async () => {
+    const job = production({ actor: { kind: 'job', jobId: SYNTHETIC_IDS.user }, serving: 'evaluable' });
+    serveOnce('proposeContractTerms/default');
+    await expect(job.build().proposeContractTerms(CONTEXT, syntheticContractInput())).resolves.toMatchObject({ passed: true });
+    expect(job.store.calls).toHaveLength(1);
+    expect(job.store.calls[0]).toMatchObject({ actorKind: 'service', provider: 'bedrock' });
+    // The same job's gateway with no option serves what has passed: nothing, as the repository ships.
+    await expect(production({ actor: { kind: 'job', jobId: SYNTHETIC_IDS.user } }).build().proposeContractTerms(CONTEXT, syntheticContractInput())).rejects.toMatchObject({ reason: 'not_evaluated' });
+  });
+
+  it('serves the default contract model while the larger one is off: only the ambiguous call is refused, after its preparation and before any screen (review m3, N10)', async () => {
+    const harness = production();
+    serveOnce('proposeContractTerms/default');
+    const gateway = harness.build();
+    const spec = PURPOSE_SPECS.proposeContractTerms as { screen?: (...args: unknown[]) => Promise<void> };
+    const before = spec.screen;
+    const screen = vi.fn(() => Promise.resolve());
+    // The contract purpose has no screen of its own yet; one stands in to show the order.
+    spec.screen = screen;
+    try {
+      await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true }))).rejects.toMatchObject({ reason: 'not_evaluated' });
+      expect(screen).not.toHaveBeenCalled();
+      // The variant is checked after the input is prepared: an input the purpose refuses is refused as that first.
+      await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true, pages: [] }))).rejects.toBeInstanceOf(InputRefusedError);
+      expect(harness.provider.requests).toEqual([]);
+      expect(harness.store.calls).toEqual([]);
+      // The purpose is served, so the flags were read; the default call runs, screened.
+      expect(harness.flagReads).toHaveBeenCalled();
+      await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput())).resolves.toMatchObject({ passed: true });
+      expect(screen).toHaveBeenCalledTimes(1);
+      expect(harness.provider.requests.map((request) => request.modelId)).toEqual([modelFor(PROMPTS.proposeContractTerms, 'bedrock')]);
+    } finally {
+      if (before === undefined) {
+        delete spec.screen;
+      } else {
+        spec.screen = before;
+      }
+    }
+    // The other purposes stay off; the screens offer contracts, and hand entry for the rest.
+    await expect(gateway.draftPacketNarrative(CONTEXT, syntheticNarrativeInput())).rejects.toMatchObject({ reason: 'not_evaluated' });
+    expect(await gateway.features(SYNTHETIC_IDS.practice)).toEqual({ proposeContractTerms: true, readDenialLetter: false, draftPacketNarrative: false, suggestEvidenceRequests: false });
+  });
+
+  it('answers features() with offeredPurposes: one rule for the gateway and the web', async () => {
+    const KILL: FlagRow = { key: 'model.kill_switch', scope: 'global', scopeId: null, value: true };
+    for (const flags of [[], [DENIAL_ON], [DENIAL_ON, KILL]]) {
+      const harness = localGateway({ flags });
+      const features = await harness.store.features(SYNTHETIC_IDS.practice);
+      expect(await harness.gateway.features(SYNTHETIC_IDS.practice)).toEqual(offeredPurposes(features, ALL_SERVED));
+    }
+    const harness = production();
+    serveOnce('draftPacketNarrative/default', 'readDenialLetter/default');
+    const gateway = harness.build();
+    expect(await gateway.features(SYNTHETIC_IDS.practice)).toEqual(offeredPurposes(await harness.store.features(SYNTHETIC_IDS.practice), { keys: new Set(['draftPacketNarrative/default', 'readDenialLetter/default'] as const) }));
+    expect(await gateway.features(SYNTHETIC_IDS.practice)).toEqual({ proposeContractTerms: false, readDenialLetter: true, draftPacketNarrative: true, suggestEvidenceRequests: false });
   });
 });
 

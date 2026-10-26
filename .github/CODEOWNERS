@@ -34,6 +34,12 @@
 # request declares in exception.json, so declaring one takes the founder's review.
 /tools/engine-freeze/ @PureTideWater
 
+# The switch that decides which model features a real provider serves in production (docs/adr/0070, Part 2; session
+# ruling 10): the committed baseline, the reports each entry is recomputed from, and the recall and precision floors.
+/packages/model-gateway/eval/baseline.json @PureTideWater
+/packages/model-gateway/eval/floors.json @PureTideWater
+/packages/model-gateway/eval/reports/ @PureTideWater
+
 # The published rule releases (content/releases is created by publish-content.yml) and the synthetic releases.
 /content/releases/ @PureTideWater
 /fixtures/synthetic/rules/release-*/ @PureTideWater
