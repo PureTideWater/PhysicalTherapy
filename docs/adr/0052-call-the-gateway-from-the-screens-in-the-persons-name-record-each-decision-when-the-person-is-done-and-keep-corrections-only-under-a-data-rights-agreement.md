@@ -1,6 +1,9 @@
 # 0052. Call the gateway from the screens in the person's name, record each decision when the person is done, and keep corrections only under a data-rights agreement
 
-- **Status:** accepted for the build; the real-model run waits on model access inside the PHI boundary (see Consequences)
+- **Status:** accepted for the build; the real-model run waits on model access inside the PHI boundary (see Consequences);
+  amended 2026-10-26 by [0070](0070-gate-models-on-wrong-but-verified-fields-and-people-set-floors-serve-each-model-feature-on-its-own-evaluation-and-check-contracts-against-the-practices-records-before-the-model.md), Part 1: an example's expectation holds its own document's records and the
+  decision, and keeping an accepted proposal waits on the founder's F2 ("Amendment (`co-001/model-eval-gate`,
+  2026-10-26)", below)
 - **Date:** 2026-10-16
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Purposes: proposeContractTerms, draftPacketNarrative, suggestEvidenceRequests; Logging and
@@ -112,3 +115,23 @@ records the server reads and writes the output it expects.
 - The reader of denial letters (`readDenialLetter`) is v1.5 and stays off behind its flag; no screen calls it.
 - A console screen to set the flags does not exist yet; a platform administrator sets them through
   `set_feature_flag()` as ADR 0048 says.
+
+## Amendment (`co-001/model-eval-gate`, 2026-10-26): an example's records are its own document's
+
+Combined audit #84, adopted by the founder with the whole audit on 2026-10-20, changes what "Under the data-rights
+terms" above keeps (docs/adr/0070, Part 1). The text above stays as it was decided; where it differs, this amendment
+holds.
+
+- **Which proposals are kept.** "A contract proposal that was corrected or rejected" above becomes "a reviewed contract
+  proposal, under the founder's ruling F2". Until F2 is answered, `reviewVersionProposals` keeps corrected and
+  rejected proposals only, as before: whether the data-rights addendum covers keeping an accepted, uncorrected
+  proposal's document is the agreement's text, which is legal text and the founder's (ADR 0070, session ruling 7).
+- **What an example's expectation holds.** "Its expectation the version's final records with their citations" above
+  becomes the final records whose citation is the proposal's own document, each with its `citation.document_id`, with
+  the decision (`accepted`, `accepted_with_changes` or `rejected`) and the changed fields
+  (`tp-eval-correction/2`). A final entered with no citation belongs to no document's expectation and is counted
+  (`uncited_finals`), never scored. An example written before this change (`tp-eval-correction/1`) is still read and
+  scored on all its records, and the permitted report counts it apart.
+- **How a contract proposal is decided** ("A contract proposal is decided when its version is approved" above). The
+  comparison takes only the proposal's own document's final records, so a contract proposal in a version that also
+  has an exhibit is accepted when its own records stand, and the exhibit's records are not its misses.

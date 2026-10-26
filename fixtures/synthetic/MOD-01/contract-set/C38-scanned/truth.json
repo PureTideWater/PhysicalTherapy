@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C38",
   "layout": "scanned",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": "textract.json",
   "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Exhibit A: 97530",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -49,6 +56,7 @@
     },
     {
       "label": "Exhibit A: 97166",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -86,6 +94,7 @@
     },
     {
       "label": "Exhibit A: 97116",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -123,6 +132,7 @@
     },
     {
       "label": "Exhibit A: 97750 CO GO",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",

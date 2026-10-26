@@ -29,7 +29,7 @@ import {
 } from './model';
 
 /** Luhn check digit over the NPI with its 80840 prefix. */
-function npiCheckDigit(nine: string): string {
+export function npiCheckDigit(nine: string): string {
   const digits = `80840${nine}`.split('').map((digit) => Number.parseInt(digit, 10));
   let sum = 0;
   for (let index = 0; index < digits.length; index += 1) {
@@ -46,6 +46,25 @@ function npiCheckDigit(nine: string): string {
   return String((10 - (sum % 10)) % 10);
 }
 
+/**
+ * A ten-digit NPI-shaped identifier starting 99, which no real NPI does (real NPIs start with 1 or 2),
+ * with a valid check digit: the one rule every generator draws a synthetic NPI by, SynthWorld.npi()'s
+ * and the evaluation sets' boilerplate alike, so none can be a real provider's number.
+ */
+export function syntheticNpi(random: Random): string {
+  const nine = `99${random.digits(7)}`;
+  return `${nine}${npiCheckDigit(nine)}`;
+}
+
+/**
+ * A taxpayer identification number written as an EIN (NN-NNNNNNN) under the prefix 00, which the IRS
+ * never assigns, so it cannot be a real business's number. For text that states a TIN the way a
+ * contract does; the 835's TJ reference keeps its own SynthWorld form.
+ */
+export function syntheticTin(random: Random): string {
+  return `00-${random.digits(7)}`;
+}
+
 export class SynthWorld {
   readonly random: Random;
   private counter = 0;
@@ -56,8 +75,7 @@ export class SynthWorld {
 
   /** A ten-digit NPI-shaped identifier starting 99, which no real NPI does, with a valid check digit. */
   npi(): string {
-    const nine = `99${this.random.digits(7)}`;
-    return `${nine}${npiCheckDigit(nine)}`;
+    return syntheticNpi(this.random);
   }
 
   /** A short sequence-numbered identifier, unique within this world. */

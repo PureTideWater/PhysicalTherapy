@@ -7,14 +7,29 @@ import { fileURLToPath } from 'node:url';
 import { RATE_RECORD_FIELDS, createContract, createDraftVersion } from '@tp/contracts';
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
-import { LocalDeterministicProvider, type ModelProvider, type ModelPurpose, type ModelRequest, type ModelResponse, PROMPTS, type PurposeInputs, modelFor, requestFor, setFeatureFlag } from '@tp/model-gateway';
+import {
+  LocalDeterministicProvider,
+  type ModelProvider,
+  type ModelPurpose,
+  type ModelRequest,
+  type ModelResponse,
+  PROMPTS,
+  type PurposeInputs,
+  type ServedKey,
+  correctionSchema,
+  gatewayServing,
+  modelFor,
+  requestFor,
+  scoredFinals,
+  setFeatureFlag,
+} from '@tp/model-gateway';
 import { createLogger } from '@tp/observability';
 import { WORDS_VERSION, dollars, draftNarrative } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetDraftInputs } from '@tp/worker/packets';
 import type { Practice } from '@tp/worker/testing';
 import { TriageWorld } from '@tp/worker/testing/triage';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
@@ -32,6 +47,16 @@ import { draftNarrativeAction, proposeTermsAction, rejectProposalAction, reviewE
 import { approvePacketVersionAction, packetPage, requestApprovalAction, writeVersionAction } from './packets';
 import { CONTRACT_PAGES, storeContractDocument } from './test-support/contract-world';
 import { csrfTokenFor } from '../http/csrf';
+
+// A production gateway on a real provider works out what it serves from the committed baseline, floors and prices
+// (packages/model-gateway/src/evaluated.ts, docs/adr/0070, Part 2), and as the repository ships that is nothing. A test
+// that needs a production stand-in to be served says so for the one gateway it builds (serveOnce), never through an
+// option: no caller can widen what the gateway serves.
+vi.mock('../../../../../packages/model-gateway/src/evaluated', async (importOriginal) => {
+  const actual = await importOriginal<{ readonly gatewayServing: typeof gatewayServing }>();
+  return { ...actual, gatewayServing: vi.fn(actual.gatewayServing) };
+});
+const serveOnce = (...keys: ServedKey[]) => vi.mocked(gatewayServing).mockReturnValueOnce({ keys: new Set(keys) });
 
 /**
  * The model features on their screens, through the routes against PostgreSQL (PRD 14; PRD 5, J5 in v1
@@ -324,14 +349,19 @@ describe('the specialist’s proposal of a draft version’s terms (MOD-01, MOD-
     expect(after.proposals[0]?.decision).toEqual({ decision: 'accepted_with_changes', changedFields: ['candidates[1].amount'] });
     expect(await callOf(practiceId, proposal?.modelCallId ?? '')).toMatchObject({ reviewer_decision: 'accepted_with_changes', reviewer_changed_fields: ['candidates[1].amount'] });
     // The correction is an evaluation example under the practice's data-rights agreement, with the final records as its expectation.
-    const examples = await rows<{ id: string; source: string; purpose: string; permission_ref: string; input_ref: string; expected: { format: string; changed_fields: string[]; records: { scope: { codes: string[] } }[] } }>(
+    const examples = await rows<{ id: string; source: string; purpose: string; permission_ref: string; input_ref: string; expected: { format: string; changed_fields: string[]; records: { scope: { codes: string[] }; citation: { document_id: string; page: number } | null }[] } }>(
       practiceId,
       'SELECT id, source, purpose, permission_ref, input_ref, expected FROM eval_example WHERE practice_id = $1',
       [practiceId],
     );
     expect(examples.map((example) => [example.source, example.purpose, example.permission_ref, example.input_ref])).toEqual([['permitted', 'proposeContractTerms', agreementId, `model_call:${proposal?.modelCallId ?? ''}`]]);
-    expect(examples[0]?.expected).toMatchObject({ format: 'tp-eval-correction/1', changed_fields: ['candidates[1].amount'] });
-    expect(examples[0]?.expected.records.map((record) => record.scope.codes).sort()).toEqual([['97110'], ['97140']]);
+    expect(examples[0]?.expected).toMatchObject({ format: 'tp-eval-correction/2', document_id: draft.documentId, contract_version_id: draft.versionId, decision: 'accepted_with_changes', changed_fields: ['candidates[1].amount'], uncited_finals: 0 });
+    expect(examples[0]?.expected.records.map((record) => [record.scope.codes, record.citation?.document_id, record.citation?.page]).sort()).toEqual([
+      [['97110'], draft.documentId, 2],
+      [['97140'], draft.documentId, 2],
+    ]);
+    // The gateway's permitted run reads the expectation exactly as written.
+    expect(correctionSchema.safeParse(examples[0]?.expected).success).toBe(true);
     expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1 AND eval_example_id = $2', [practiceId, examples[0]?.id])).toHaveLength(1);
     // The specialist reads the agreement's ID through the function, for a practice in the request's scope only, and never the agreement.
     const agreementOf = (practiceIds: string[]) =>
@@ -391,6 +421,73 @@ describe('the specialist’s proposal of a draft version’s terms (MOD-01, MOD-
   });
 });
 
+describe('a version of a contract and its exhibit: each proposal is decided on its own document’s records (docs/adr/0070)', () => {
+  /** A SYNTHETIC exhibit beside the agreement, with a code the agreement does not hold. */
+  const EXHIBIT_B: readonly (readonly string[])[] = [['SYNTHETIC EXHIBIT B - INVENTED TERMS', '97112 Neuromuscular reeducation $33.00 per unit']];
+  const Q97112 = '97112 Neuromuscular reeducation $33.00 per unit';
+
+  async function enterExhibit97112(draft: DraftContract & { readonly extraIds: readonly string[] }): Promise<void> {
+    const redirect = redirectOf(
+      await call(addRateRecordAction, draft.specialist, { practiceId: draft.practice.practiceId }, { versionId: draft.versionId, method: 'FIXED_SCHEDULE', codes: '97112', amount: '33.00', timedUnitsRule: 'UNKNOWN', documentId: draft.extraIds[0], page: '1', quote: Q97112 }),
+    );
+    await approveEveryField(draft, /record=([0-9a-f-]{36})/.exec(redirect)?.[1] ?? '');
+  }
+
+  async function withAgreement(draft: DraftContract): Promise<void> {
+    await asOwner(w.owner, [draft.practice.practiceId], () =>
+      w.owner.query(
+        `INSERT INTO agreement (id, organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256) VALUES ($1, $2, $3, 'data_rights', '1', now() - interval '1 day', 'SYNTHETIC SIGNER', 'esign:synthetic-data-rights', $4)`,
+        [randomUUID(), draft.practice.world.organizationId, draft.practice.practiceId, randomBytes(32).toString('hex')],
+      ),
+    );
+  }
+
+  it('accepts the contract’s proposal when its own records stand, though the version also holds the exhibit’s, and keeps no example of it', async () => {
+    const draft = await draftContract('MODELS PAIR ACCEPT', [{ pages: EXHIBIT_B, kind: 'exhibit' }]);
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    await withAgreement(draft);
+    answer('proposeContractTerms', await pagesInput(draft), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    ok(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }));
+    const [proposal] = ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId })).proposals;
+    await approveEveryField(draft, proposal?.candidates[0]?.rateRecordId ?? '');
+    // The exhibit's record, entered by hand from the exhibit, is not one the contract's proposal missed.
+    await enterExhibit97112(draft);
+    ok(await call(approveVersionAction, draft.specialist, P, { versionId: draft.versionId }));
+    expect(await callOf(practiceId, proposal?.modelCallId ?? '')).toMatchObject({ reviewer_decision: 'accepted', reviewer_changed_fields: [] });
+    expect(await rows(practiceId, 'SELECT 1 FROM eval_example WHERE practice_id = $1', [practiceId])).toEqual([]);
+  });
+
+  it('keeps a corrected contract proposal’s example with the contract’s records only: the exhibit’s are neither missed nor expected', async () => {
+    const draft = await draftContract('MODELS PAIR CORRECT', [{ pages: EXHIBIT_B, kind: 'exhibit' }]);
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    await withAgreement(draft);
+    // 97140's amount cites words page 2 does not hold, so it is held and entered by hand.
+    answer('proposeContractTerms', await pagesInput(draft), { candidates: [fixed('97110', Q97110, '$32.00'), fixed('97140', Q97140, '$30.50', '97140 Manual therapy $31.50 per unit')] });
+    ok(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }));
+    const [proposal] = ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId })).proposals;
+    await approveEveryField(draft, proposal?.candidates[0]?.rateRecordId ?? '');
+    await approveEveryField(draft, await enter97140(draft));
+    await enterExhibit97112(draft);
+    ok(await call(approveVersionAction, draft.specialist, P, { versionId: draft.versionId }));
+    // Not missed[0] for the exhibit's 97112: only the held candidate changed.
+    expect(await callOf(practiceId, proposal?.modelCallId ?? '')).toMatchObject({ reviewer_decision: 'accepted_with_changes', reviewer_changed_fields: ['candidates[1].amount'] });
+    const [example] = await rows<{ expected: unknown }>(practiceId, 'SELECT expected FROM eval_example WHERE practice_id = $1', [practiceId]);
+    const correction = correctionSchema.parse(example?.expected);
+    expect(correction).toMatchObject({ format: 'tp-eval-correction/2', document_id: draft.documentId, decision: 'accepted_with_changes', uncited_finals: 0 });
+    if (correction.format !== 'tp-eval-correction/2') {
+      throw new Error('the example is not written as /2');
+    }
+    // The expectation holds the contract's two records, cited from it; the exhibit's record is left out, and the scorer scores both.
+    expect(correction.records.map((record) => [record.scope.codes, record.citation?.document_id]).sort()).toEqual([
+      [['97110'], draft.documentId],
+      [['97140'], draft.documentId],
+    ]);
+    expect(scoredFinals(correction)).toHaveLength(2);
+  });
+});
+
 describe('what a contract proposal reads (PRD 14, PHI minimization; Provider and data path)', () => {
   it('refuses a payer letter the version names before anything is sent or logged: a letter is PHI, read only through readDenialLetter', async () => {
     const draft = await draftContract('MODELS LETTER', [{ pages: SYNTHETIC_PAYER_LETTER, kind: 'payer_letter' }]);
@@ -414,8 +511,10 @@ describe('what a contract proposal reads (PRD 14, PHI minimization; Provider and
     const { practiceId } = draft.practice;
     const P = { practiceId };
     const standIn = new RecordingStandIn({ candidates: [fixed('97110', Q97110, '$32.00')] });
-    // Only a production model path sends a practice's material to a provider other than the local one.
-    assignModelPath(services, { kind: 'available', production: true, provider: () => standIn });
+    // Only a production model path sends a practice's material to a provider other than the local one, and only for
+    // what it serves: here both of the contract prompt's variants, for the one gateway the request builds.
+    assignModelPath(services, { kind: 'available', production: true, provider: () => standIn, served: { keys: new Set(['proposeContractTerms/default', 'proposeContractTerms/ambiguous']) } });
+    serveOnce('proposeContractTerms/default', 'proposeContractTerms/ambiguous');
     try {
       ok(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId, ambiguous: 'on' }));
     } finally {
@@ -594,6 +693,46 @@ describe('the coverage screen’s evidence checklist (MOD-04)', () => {
     const elsewhere = await w.practice('MODELS COVERAGE ELSEWHERE');
     expect((await call(reviewEvidenceAction, elsewhere.manager, { practiceId: elsewhere.practiceId }, { proposalId: again.objectId })).status).toBe('not_found');
     expect((await call(reviewEvidenceAction, elsewhere.manager, P, { proposalId: again.objectId })).status).toBe('not_found');
+  });
+});
+
+describe('a model feature not evaluated for the configured model (docs/adr/0070, Part 2; MOD-11)', () => {
+  it('is not offered on its screen, sends nothing when asked for, says why, and leaves hand entry working', async () => {
+    const draft = await draftContract('MODELS NOT EVALUATED');
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    const standIn = new RecordingStandIn({ candidates: [fixed('97110', Q97110, '$32.00')] });
+    ok(await call(askQuestionAction, draft.specialist, P, { contractId: draft.contractId, versionId: draft.versionId, topic: 'missing_schedule', question: 'SYNTHETIC QUESTION: exhibit B' }));
+    // A production path on a real provider with the committed baseline, floors and prices: nothing has passed, so the
+    // path serves nothing and the gateway it builds serves nothing either (no option, no mock).
+    assignModelPath(services, { kind: 'available', production: true, provider: () => standIn });
+    try {
+      expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId })).canPropose).toBe(false);
+      expect(ok(await call(coveragePage, draft.practice.manager, P)).canSuggest).toBe(false);
+      expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=not_evaluated`);
+      expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId, ambiguous: 'on' }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=not_evaluated`);
+      expect(redirectOf(await call(suggestEvidenceAction, draft.practice.manager, P, {}))).toBe(`/p/${practiceId}/coverage?model=not_evaluated`);
+      expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId, model: 'not_evaluated' })).modelNotice).toBe('not_evaluated');
+
+      // Served for the default variant only (the contract prompt's default model passed, its larger one did not): the
+      // screen offers the proposal, and an ambiguous request is refused with the same notice, before anything is sent.
+      assignModelPath(services, { kind: 'available', production: true, provider: () => standIn, served: { keys: new Set(['proposeContractTerms/default']) } });
+      expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId })).canPropose).toBe(true);
+      expect(ok(await call(coveragePage, draft.practice.manager, P)).canSuggest).toBe(false);
+      serveOnce('proposeContractTerms/default');
+      expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId, ambiguous: 'on' }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=not_evaluated`);
+    } finally {
+      assignModelPath(services, { kind: 'available', production: false, provider: () => provider });
+    }
+    expect(standIn.requests).toEqual([]);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
+
+    // By hand: the record entered, approved field by field, the version approved.
+    const hand = await enter97140(draft);
+    await approveEveryField(draft, hand);
+    ok(await call(approveVersionAction, draft.specialist, P, { versionId: draft.versionId }));
+    expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId })).review.version.status).toBe('approved');
   });
 });
 

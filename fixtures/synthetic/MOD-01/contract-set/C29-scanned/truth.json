@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C29",
   "layout": "scanned",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": "textract.json",
   "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Article 3: 97140, 97530, 97164 POS 11",
+      "role": "term",
       "fields": {
         "method": {
           "value": "PER_VISIT",

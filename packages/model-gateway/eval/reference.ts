@@ -8,16 +8,26 @@ import type { ContractCase, NarrativeCase } from './sets';
 
 /**
  * The reference answers: what a model that read every document and every pattern statement perfectly
- * would answer, in the prompt's output schema. For a contract, the true records as candidates, every
- * field copied as the document writes it with its page and quote (built from truth.json); for a
- * narrative, the reference narrative packages/synth wrote from its own sums. The local deterministic
- * provider answers with these in CI (it is not a model and reads nothing), so the gate there proves the
- * path the answers take: framing, the schema, the verifiers, the scoring and the baseline.
+ * would answer, in the prompt's output schema. For a contract, the true records as candidates (terms,
+ * amendments and decoys alike: each is a record the document states), every field copied as the
+ * document writes it with its page and quote (built from truth.json); for a narrative, the reference
+ * narrative packages/synth wrote from its own sums. The local deterministic provider answers with these
+ * in CI (it is not a model and reads nothing), so the gate there proves the path the answers take:
+ * framing, the schema, the verifiers, the scoring and the baseline.
+ *
+ * On a case whose page text as read is unfaithful (docs/adr/0070), the reference is a faithful copier of
+ * the text it is given, not of the page a person sees: where a field carries `asRead`, it writes and
+ * quotes that, so every quote is on its page as read and the reference scores wrong or rejected exactly
+ * where any reader of that text would. The gate holds every provider to no more wrong-but-verified
+ * fields than this on each unfaithful case. An injected twin is answered with its clean twin's records,
+ * so on the local provider the twins' answers are equal by construction and CI proves the pairing, the
+ * key and the gate, not a model's resistance to the injection.
  */
 
-const cite = (value: TruthFieldValue) => ({ page: value.page, quote: value.quote });
-const text = (value: TruthFieldValue | undefined) => (value === undefined ? null : { written: value.written as string, ...cite(value) });
-const list = (value: TruthFieldValue | undefined) => (value === undefined ? null : { written: [...(value.written as readonly string[])], ...cite(value) });
+const cite = (value: TruthFieldValue) => ({ page: value.page, quote: value.asRead?.quote ?? value.quote });
+const writtenOf = (value: TruthFieldValue) => (value.asRead === undefined ? value.written : value.asRead.written);
+const text = (value: TruthFieldValue | undefined) => (value === undefined ? null : { written: writtenOf(value) as string, ...cite(value) });
+const list = (value: TruthFieldValue | undefined) => (value === undefined ? null : { written: [...(writtenOf(value) as readonly string[])], ...cite(value) });
 
 export function referenceCandidate(record: TruthRecord): ContractTermsCandidate {
   const { fields } = record;
@@ -52,8 +62,13 @@ export function referenceNarrativeOutput(item: NarrativeCase): NarrativeOutput {
 
 /** Registers every case's reference answer with the local provider, under the request the gateway will send for it. */
 export function registerReferences(provider: LocalDeterministicProvider, contracts: readonly ContractCase[], narratives: readonly NarrativeCase[]): LocalDeterministicProvider {
+  const truths = new Map(contracts.map((item) => [item.id, item.truth]));
   for (const item of contracts) {
-    registerOutput(provider, 'proposeContractTerms', item.input, referenceContractOutput(item.truth));
+    const clean = item.truth.twinOf === null ? item.truth : truths.get(item.truth.twinOf);
+    if (clean === undefined) {
+      throw new Error(`${item.id}: its clean twin is not among the cases given`);
+    }
+    registerOutput(provider, 'proposeContractTerms', item.input, referenceContractOutput(clean));
   }
   for (const item of narratives) {
     registerOutput(provider, 'draftPacketNarrative', item.input, referenceNarrativeOutput(item));
