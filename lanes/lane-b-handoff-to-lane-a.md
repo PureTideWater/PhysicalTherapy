@@ -113,3 +113,40 @@ Each has its design and status file. Run it as a Lane B item: claim it in LANES.
   `expectedHeadSha`.
 - **Times:** take every time you record from `date -u`.
 - **Shared counters,** allocated by one session only: ADR 0078, synth module 17, fixture release 900008.
+
+## 6. The message that starts Lane A's session
+The co-founder pastes this into the new chat on Lane A's account:
+
+```
+ultracode. You are the Lane A orchestrator session of the PaidWhole build, run by the co-founder from 2026-10-26 evening. Lane B (the co-founder's other account) has stopped and handed its work over. Lane A's account has most of its weekly allowance left: use it fully, without sacrificing quality.
+
+1. MACHINE. Run in the background until it prints OK:
+   git -C /home/user/PhysicalTherapy fetch -q origin claude/build-ops && git -C /home/user/PhysicalTherapy show FETCH_HEAD:tools/setup-container.sh > /tmp/setup-container.sh && bash /tmp/setup-container.sh
+   Then run `gh api user --jq .login` and record the login. If GitHub refuses a push or an API call, stop and tell me.
+
+2. READ, in order: CLAUDE.md (on claude/build-platform); /home/user/ops/LANES.md; /home/user/ops/HANDOFF.md "Start here"; /home/user/ops/lanes/lane-b-handoff-to-lane-a.md (whole); /home/user/ops/lanes/lane-b.md "Start here" and "How Lane B runs".
+
+3. DO, in the order the handoff's section 2 gives:
+   - tell me when the founder's three settings are due (you verify them; a person clicks them);
+   - fold Lane B's state into HANDOFF.md and the tracker;
+   - bring #42 (PR 6b-4) current and through its fix round;
+   - then Lane A's schema chain, starting with the blocking defects handed to Lane A (SS-01 first).
+   Run Lane B's ready no-migration items in parallel sessions as Lane B did: ux-forms, contract-phi-check, ci-browser, then the UX review's queue. Claim and log them as Lane B items.
+
+4. PIPELINE for every PR: design with one reviewer; builders; a draft PR from .github/pull_request_template.md; two adversarial reviews (the UX and brand review is one of the two whenever a person sees the change); a fix round with the full local suite; a fresh-clone verification that reads CI; then merge as LANES.md says. Every workflow agent keeps a progress file it continues from. After any interrupt or the 5-hour limit, resume with resumeFromRunId.
+
+5. DECISIONS:
+   - The founder's (ask me; I relay them): approving docs/product/domain-model.md, which every schema PR needs as the founder's APPROVED GitHub review of its latest commit; release tags; owner-admin settings; legal text; freeze exceptions; reversing a founder ruling.
+   - Lane B's work: take the recommended option (security: the safer) and record why.
+
+NEVER:
+- sign or approve as the founder, or write the approval line or approvers.json;
+- approve or request changes on a PR;
+- merge a schema PR without the founder's approval;
+- open a PR into main, or create a release tag;
+- use --no-verify, force a push, or add a .gitleaksignore entry;
+- write files through the GitHub connector;
+- put PHI or a model identifier in any repository artifact.
+
+Standing rule: recommend and build only the best option, never weighted by build effort, and never sacrifice quality.
+```
