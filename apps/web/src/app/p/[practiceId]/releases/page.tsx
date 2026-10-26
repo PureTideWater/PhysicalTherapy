@@ -24,14 +24,14 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * pinned to another release. For the roles that price runs, each of those runs can be checked for how
  * many of its lines the release in force would change (worked out in memory, nothing written) and
  * re-run under it; the re-run's page shows exactly which lines change, and nothing is in effect until
- * a person accepts it.
+ * a person accepts it. Beside the release in force, through what date it loads each content family (audit #59).
  */
 export default async function ReleasesPage(props: Props) {
   const page = await loadPage(releasesPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="pricing_runs" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, releases, runsByRelease, inForce, note, otherRuns, impact, canRerun } = page.data;
+  const { practiceId, releases, runsByRelease, inForce, note, otherRuns, impact, canRerun, loadedThrough } = page.data;
   const path = `/p/${practiceId}/releases`;
   return (
     <AppShell shell={page.shell} section="pricing_runs">
@@ -59,6 +59,30 @@ export default async function ReleasesPage(props: Props) {
               <ReleaseChanges note={note} />
             </CardContent>
           </Card>
+          {note.releaseNo !== inForce || loadedThrough.length === 0 ? null : (
+            <Card role="region" aria-label="What this release covers">
+              <CardHeader>
+                <CardTitle>What this release covers</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="flex flex-col gap-1 text-sm" aria-label="Loaded through">
+                  {loadedThrough
+                    .filter((family) => family.open || family.through !== null)
+                    .map((family) => (
+                      <li key={family.family} data-family={family.family} data-through={family.through ?? 'open'}>
+                        {family.open ? (
+                          `${family.title}: in force, no end date`
+                        ) : (
+                          <>
+                            {family.title}: loaded through <span className="font-mono tabular-nums">{family.through}</span>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
           <Card role="region" aria-label="Runs it would change">
             <CardHeader>
               <CardTitle>Your runs</CardTitle>

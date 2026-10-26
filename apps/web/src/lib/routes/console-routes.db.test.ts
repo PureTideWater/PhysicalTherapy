@@ -35,6 +35,7 @@ import {
 } from './console';
 import { consoleModelsPage, setModelFlag } from './console-models';
 import { practiceHome, supportAccessPage } from './practice';
+import { ruleReleasesPage } from './rule-releases';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
@@ -666,5 +667,33 @@ describe('suspending and reinstating an organization (docs/adr/0055)', () => {
     // A customer may not.
     const customer = await sessionFor(target.adminUserId, 'totp');
     expect((await run(setOrganizationStatus, customer, { organizationId: target.organizationId, status: 'active' })).status).not.toBe('ok');
+  });
+});
+
+describe('Content due on the console’s Rule releases page (audit #59; docs/adr/0071; test matrix RCC-08)', () => {
+  /** The page as the platform administrator reads it, with the clock at `at`. */
+  const dueAt = async (at: string) => {
+    const page = await ruleReleasesPage.invoke({ cookies: new Jar(admin.token), params: {}, input: undefined, requestId: `test-${randomUUID()}`, userAgent: null }, { ...services, now: () => new Date(at) });
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    return page.data.contentDue;
+  };
+
+  it('judges the content calendar against the release in force on the injected date: at 2026-11-20 under 900001, the MUE ends within 45 days', async () => {
+    const due = await dueAt('2026-11-20T15:00:00Z');
+    expect(due.releaseNo).toBe(900001);
+    expect(due.items).toContainEqual(
+      expect.objectContaining({ family: 'ncci_mue', stage: 'ends_in_45', loadedThrough: '2026-12-31', title: 'Content due: Medicare unit limits (MUE), loaded content ends within 45 days (2026-12-31)' }),
+    );
+    expect(due.items.find((item) => item.family === 'ncci_mue')?.commands.at(-2)).toBe('pnpm verify-content');
+    expect(due.families).toContainEqual({ family: 'ncci_mue', title: 'Medicare unit limits (MUE)', loadedThrough: '2026-12-31', open: false });
+    // Every calendar entry ships unreviewed, and this server has no checkout: nothing is read from one.
+    expect(due.items.map((item) => item.stage)).toContain('calendar_unreviewed');
+    expect(due.problems).toEqual([]);
+  });
+
+  it('reads the MUE as ended on a day after it runs out', async () => {
+    expect((await dueAt('2027-01-05T15:00:00Z')).items.find((item) => item.family === 'ncci_mue')).toMatchObject({ stage: 'ended', loadedThrough: '2026-12-31' });
   });
 });

@@ -119,3 +119,54 @@ export async function contractCoverage(scope: Scope, practiceId: string, contrac
   );
   return new Map(rows.map((row) => [row.contract_id, { of: { lines: row.lines, chargeCents: row.billed }, priced: { lines: row.priced_lines, chargeCents: row.priced_billed } }]));
 }
+
+/** A fee-schedule period PaidWhole has not loaded: a CMS quarter ("2026-Q4") for terms priced on the date of service, a year ("2027") for terms locked to one. */
+export interface FeeSchedulePeriod {
+  readonly kind: 'quarter' | 'year';
+  readonly label: string;
+}
+
+/**
+ * The fee-schedule periods the release in force does not load, with the lines in effect left unpriced for want of them
+ * (audit #7 and #59; docs/adr/0071): lines at their pricing in effect unpriced NO_PFS_VALUE because no relative value
+ * was found as the engine looked (no_rvu_in_basis_year), judged as the price job's content alert judges them
+ * (isLoudContentGap, apps/worker/src/price/release.ts): terms priced on the date of service (in_force_on_service_date)
+ * when that date is outside every pfs_rvu window, grouped by its CMS quarter; terms locked to a year
+ * (latest_in_basis_year) when no window meets that year, grouped by it. A line whose date is loaded and whose code
+ * simply has no relative value is not one: it keeps the reason's own remedy. `rvuLoaded` is the release in force's
+ * pfs_rvu windows as a datemultirange literal (lib/releases/content-through.ts). Periods in date order, with their
+ * billed dollars in integer cents as text.
+ */
+export async function feeSchedulePeriodsNotLoaded(
+  scope: Scope,
+  practiceId: string,
+  rvuLoaded: string,
+): Promise<{ readonly period: FeeSchedulePeriod; readonly lines: number; readonly chargeCents: string }[]> {
+  const { rows } = await scope.client.query<{ kind: 'quarter' | 'year'; year: number; quarter: number | null; lines: number; charge_cents: string }>(
+    `WITH gaps AS (
+       SELECT l.charge_cents, latest.trace -> 'steps' -> 'fee_schedule' ->> 'lookup' AS lookup,
+              (latest.trace -> 'line' ->> 'service_date')::date AS service_date,
+              (latest.trace -> 'steps' -> 'fee_schedule' ->> 'basis_year')::int AS basis_year
+         FROM ${IN_EFFECT} JOIN service_line l ON l.id = latest.service_line_id
+        WHERE latest.unpriced_reason = 'NO_PFS_VALUE' AND latest.trace -> 'outcome' ->> 'detail' = 'no_rvu_in_basis_year'
+     ), periods AS (
+       SELECT 'quarter' AS kind, extract(year FROM g.service_date)::int AS year, extract(quarter FROM g.service_date)::int AS quarter, g.charge_cents
+         FROM gaps g
+        WHERE g.lookup = 'in_force_on_service_date' AND NOT ($2::datemultirange @> g.service_date)
+       UNION ALL
+       SELECT 'year', g.basis_year, NULL, g.charge_cents
+         FROM gaps g
+        WHERE g.lookup = 'latest_in_basis_year' AND NOT ($2::datemultirange && daterange(make_date(g.basis_year, 1, 1), make_date(g.basis_year, 12, 31), '[]'))
+     )
+     SELECT kind, year, quarter, count(*)::int AS lines, coalesce(sum(charge_cents), 0)::text AS charge_cents
+       FROM periods
+      GROUP BY kind, year, quarter
+      ORDER BY make_date(year, coalesce(quarter * 3 - 2, 1), 1), kind`,
+    [practiceId, rvuLoaded],
+  );
+  return rows.map((row) => ({
+    period: row.kind === 'quarter' ? { kind: 'quarter', label: `${String(row.year)}-Q${String(row.quarter)}` } : { kind: 'year', label: String(row.year) },
+    lines: row.lines,
+    chargeCents: row.charge_cents,
+  }));
+}

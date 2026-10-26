@@ -35,6 +35,15 @@ export const FAILURE_TEXT: Readonly<Record<string, string>> = {
   job_failed: 'The price job failed three times and the operator was alerted; create a new run once it is fixed.',
   // Audit #33 (docs/adr/0064): a line needed the location, so no line was kept and the month waits for it.
   location_not_ready: 'A line of the period needs the practice’s billing ZIP or ZIP+4: fix it in Pricing settings. Waiting months are priced by themselves once it is set.',
+  // Audit #7 (docs/adr/0071): a line read the MPPR or the MUE on a date its release does not load them for, so no line
+  // was kept and the month waits for that content; the code names the families exactly.
+  waiting_on_content_mue: 'A line of the period needs Medicare’s unit limits (MUE) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
+  waiting_on_content_mppr:
+    'A line of the period needs Medicare’s multiple-procedure reduction list (MPPR) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
+  waiting_on_content_mppr_mue:
+    'Lines of the period need Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
+  // Audit #31: the price job looked up a key outside the ones it fetched for its batch, which is PaidWhole's defect.
+  release_read_outside_fetch: 'The price job read rule content it had not fetched, so no line was kept and the operator was alerted; create a new run once it is fixed.',
 } satisfies Readonly<Record<FailureCode, string>>;
 
 export const RERUN_TEXT: Readonly<Record<RerunReason, string>> = {

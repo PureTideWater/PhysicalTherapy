@@ -1,3 +1,4 @@
+import { CONTENT_CALENDAR, type ContentFamilyId, type DueItem } from '@tp/rules/calendar';
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -7,13 +8,88 @@ import { utc } from '../../../components/format';
 import { ReleaseChanges, ReleaseStatusText } from '../../../components/releases/note';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
-import { ruleReleasesPage } from '../../../lib/routes/rule-releases';
+import { type ContentDue, ruleReleasesPage } from '../../../lib/routes/rule-releases';
 import { prepareRuleReleaseFormAction } from './actions';
 import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Rule releases' };
 
 type Props = { readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
+
+/** A family's stages in words, in the order the calendar lists them; "—" when nothing is due. */
+function dueStatus(family: ContentFamilyId, items: readonly DueItem[]): string {
+  const words = items.flatMap((item): string[] => {
+    if (item.stage === 'calendar_unreviewed') {
+      return CONTENT_CALENDAR.some((entry) => entry.family === family && entry.review === null) ? ['calendar entry not reviewed'] : [];
+    }
+    if (item.family !== family) {
+      return [];
+    }
+    switch (item.stage) {
+      case 'ends_in_45':
+        return ['ends within 45 days'];
+      case 'ends_in_14':
+        return ['ends within 14 days'];
+      case 'ended':
+        return [`ended ${item.loadedThrough ?? ''}`.trim()];
+      case 'no_draft':
+        return [`${item.period?.label ?? ''} has no draft (due ${item.dueOn ?? ''})`];
+      case 'overdue':
+        return [`${item.period?.label ?? ''} files not loaded`];
+      case 'not_loaded':
+        return ['not loaded'];
+      case 'calendar_review_due':
+        return ['calendar entry due for review'];
+      case 'no_release':
+        return [];
+    }
+  });
+  return words.length === 0 ? '—' : words.join('; ');
+}
+
+/**
+ * Content due (audit #59; docs/adr/0071; docs/runbooks/content-updates.md): one row per family of the content calendar
+ * with the date the release in force loads it through and its stage in words, then each finding's exact commands.
+ */
+function ContentDueSection({ due }: { readonly due: ContentDue }) {
+  const withCommands = due.items.filter((item) => item.commands.length > 0);
+  return (
+    <section aria-label="Content due" className="flex flex-col gap-2">
+      <h2 className="text-xl font-bold tracking-display">Content due</h2>
+      {due.releaseNo === null ? <p className="text-sm text-muted-foreground">No rule release is published.</p> : null}
+      {due.items.length === 0 ? <p className="text-sm text-muted-foreground">Nothing is due.</p> : null}
+      <table className="w-full text-left text-sm" aria-label="Content due by family">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="py-1 pr-3 font-medium">Content</th>
+            <th className="py-1 pr-3 font-medium">Loaded through</th>
+            <th className="py-1 font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {due.families.map((family) => (
+            <tr key={family.family} className="border-t align-top" data-family={family.family}>
+              <td className="py-1 pr-3">{family.title}</td>
+              <td className="py-1 pr-3">{family.open ? 'in force, no end date' : family.loadedThrough === null ? '—' : <span className="font-mono tabular-nums">{family.loadedThrough}</span>}</td>
+              <td className="py-1">{dueStatus(family.family, due.items)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {withCommands.map((item) => (
+        <div key={item.title} className="flex flex-col gap-1" data-stage={item.stage}>
+          <p className="text-sm font-medium">{item.title}</p>
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-muted p-3 font-mono text-xs">{item.commands.join('\n')}</pre>
+        </div>
+      ))}
+      {due.problems.length === 0 ? null : (
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-muted p-3 font-mono text-xs" data-state="due-problems">
+          {due.problems.join('\n')}
+        </pre>
+      )}
+    </section>
+  );
+}
 
 /**
  * Rule releases (PRD 7, Internal console: "Drafts, checks, published releases, release notes,
@@ -22,14 +98,15 @@ type Props = { readonly searchParams: Promise<Record<string, string | string[] |
  * the database, with each release's notes and record changes and, per practice, the runs pinned to it
  * and what the re-runs made under it changed, as counts (no run, line or claim is read). The drafts, the
  * content checker and preparing the next release work in the content checkout the server is given.
- * Publishing is never here: CI publishes a prepared release when its pull request merges.
+ * Publishing is never here: CI publishes a prepared release when its pull request merges. Above the list, what content
+ * is due under the content calendar (audit #59).
  */
 export default async function RuleReleasesPage(props: Props) {
   const page = await loadPage(ruleReleasesPage, { searchParams: props.searchParams });
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="rule_releases" roles={page.roles} message={page.message} nextStep="Rule releases are the platform administrators'." />;
   }
-  const { releases, runs, note, elsewhere, workspace, check, nextRelease, prepared } = page.data;
+  const { releases, runs, note, elsewhere, workspace, check, nextRelease, prepared, contentDue } = page.data;
   const shownRuns = note === null ? [] : runs.filter((row) => row.releaseNo === note.releaseNo);
   return (
     <AppShell shell={page.shell} section="rule_releases">
@@ -48,6 +125,7 @@ export default async function RuleReleasesPage(props: Props) {
           </AlertDescription>
         </Alert>
       )}
+      <ContentDueSection due={contentDue} />
       <section aria-label="Published releases" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Published releases</h2>
         {releases.length === 0 ? (

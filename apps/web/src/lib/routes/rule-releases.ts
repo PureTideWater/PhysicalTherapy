@@ -1,8 +1,12 @@
+import type { ScopeClient } from '@tp/db/runtime';
+import { CONTENT_CALENDAR, type ContentFamilyId, type DueItem, contentDue } from '@tp/rules/calendar';
+import { readPendingStates } from '@tp/tools/content-calendar';
 import { type CheckResult, type ContentWorkspace, ReleaseToolError, checkWorkspace, nextReleaseNumber, prepareRelease, readWorkspace } from '@tp/tools/workspace';
 import { z } from 'zod';
 
 import { platformRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { contentStatesOf, contentWindowsOf, familiesLoadedThrough } from '../releases/content-through';
 import { type PublishedRelease, type ReleaseNote, publishedReleases, releaseNote } from '../releases/queries';
 
 /**
@@ -16,7 +20,8 @@ import { type PublishedRelease, type ReleaseNote, publishedReleases, releaseNote
  * the server is given (services.contentRoot): the drafts by file, type and verification level, the
  * releases prepared in content/outgoing, the content checker's result on request, and preparing the
  * next release from the drafts at L2 or higher (`pnpm release:assemble`). Publishing is never here:
- * CI publishes a prepared release on merge, and the release commands load and roll back.
+ * CI publishes a prepared release on merge, and the release commands load and roll back. Above the list, what content
+ * is due under the content calendar, with the exact import commands (audit #59; docs/adr/0071).
  */
 
 const releaseNumber = z.coerce.number().int().min(1).max(2_147_483_647);
@@ -58,6 +63,46 @@ async function releaseRuns(client: { query: <R extends object>(text: string) => 
   }));
 }
 
+/**
+ * What content is due (audit #59; docs/adr/0071; docs/runbooks/content-updates.md): the content calendar
+ * (@tp/rules/calendar) judged on today's date against the release in force in the database, with the drafts and the
+ * prepared releases of the checkout, when the server has one, as what is on its way (read as the content-calendar CLI
+ * reads them, @tp/tools/content-calendar). The workflow's issues judge the newest published release in the repository
+ * instead; the two agree once that release is loaded.
+ */
+export interface ContentDue {
+  /** The release in force the families are judged on; null when none is published. */
+  readonly releaseNo: number | null;
+  /** What is due, in the calendar's stage order, with the exact commands. */
+  readonly items: readonly DueItem[];
+  /** Every family of the calendar, in its order, with the date the release in force loads it through. */
+  readonly families: readonly { readonly family: ContentFamilyId; readonly title: string; readonly loadedThrough: string | null; readonly open: boolean }[];
+  /** Drafts or prepared releases of the checkout that cannot be read; what is due is judged on the rest, and the page shows these. */
+  readonly problems: readonly string[];
+}
+
+/** The calendar judged on `today` against the release in force and, with a checkout, the drafts and prepared releases. */
+async function dueContent(client: ScopeClient, inForce: PublishedRelease | undefined, root: string | null, nextRelease: number | null, today: string): Promise<ContentDue> {
+  const windows = inForce === undefined ? null : await contentWindowsOf(client, inForce.releaseNo, inForce.manifestSha256);
+  const pending = root === null ? null : readPendingStates(root);
+  const items = contentDue(
+    CONTENT_CALENDAR,
+    {
+      releaseNo: inForce?.releaseNo ?? null,
+      inForce: windows === null ? {} : contentStatesOf(windows),
+      ...(pending === null ? {} : { pending: pending.pending }),
+      ...(nextRelease === null ? {} : { nextReleaseNo: nextRelease }),
+    },
+    today,
+  );
+  return {
+    releaseNo: inForce?.releaseNo ?? null,
+    items,
+    families: familiesLoadedThrough(windows, today, { onChange: true }).map((row) => ({ family: row.family, title: row.title, loadedThrough: row.through, open: row.open })),
+    problems: pending?.problems ?? [],
+  };
+}
+
 export interface RuleReleasesPageData {
   readonly releases: readonly PublishedRelease[];
   readonly runs: readonly ReleaseRuns[];
@@ -73,6 +118,7 @@ export interface RuleReleasesPageData {
   readonly nextRelease: number | null;
   /** The release just prepared, from the redirect. */
   readonly prepared: number | null;
+  readonly contentDue: ContentDue;
 }
 
 export const ruleReleasesPage = platformRoute({
@@ -101,6 +147,7 @@ export const ruleReleasesPage = platformRoute({
       elsewhere.set(row.practiceId, entry);
     }
     const root = services.contentRoot;
+    const nextRelease = root === null ? null : nextReleaseNumber(root, releases.map((release) => release.releaseNo));
     return {
       releases,
       runs,
@@ -108,8 +155,15 @@ export const ruleReleasesPage = platformRoute({
       elsewhere: note === null ? [] : [...elsewhere.values()],
       workspace: root === null ? null : readWorkspace(root),
       check: root === null || params.check === undefined ? null : checkWorkspace(root),
-      nextRelease: root === null ? null : nextReleaseNumber(root, releases.map((release) => release.releaseNo)),
+      nextRelease,
       prepared: params.prepared ?? null,
+      contentDue: await dueContent(
+        scope.client,
+        releases.find((release) => release.inForce),
+        root,
+        nextRelease,
+        services.now().toISOString().slice(0, 10),
+      ),
     };
   },
   sample: { params: () => ({ release: '900001', check: '1' }) },

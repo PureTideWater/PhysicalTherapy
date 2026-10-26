@@ -5,13 +5,15 @@ import { type ContractOption, type QuestionView, contractOptions, listQuestions 
 import { OBTAIN_TOPICS } from '../contracts/display';
 import { type UnconfirmedFormatSource, unconfirmedFormatSources } from '../contracts/format-sources';
 import { letterCodes, requestToPayerLetter } from '../contracts/letter';
+import { type ContentWaitMonth, contentHeadline, monthsWaitingOnContent } from '../pricing/content';
 import { type MonthWaitingOnLocation, monthsWaitingOnLocation } from '../pricing/location';
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
-import { coverageInEffect } from '../coverage/in-effect';
+import { type FeeSchedulePeriod, coverageInEffect, feeSchedulePeriodsNotLoaded } from '../coverage/in-effect';
 import { practiceRoute } from '../http/invoke';
 import { type ChecklistView, latestChecklist } from '../models/evidence-checklist';
 import { modelFeatures } from '../models/path';
+import { multirangeLiteral, windowsInForce } from '../releases/content-through';
 import { latestRunInEffect, runCount } from '../pricing/queries';
 import { type Download, InputError, NotFoundError } from '../http/route';
 import { type PayerOption, payerOptions } from '../remittances/queries';
@@ -30,7 +32,9 @@ import { opaqueId, optionalText } from './schemas';
  * plan), whether a pricing run over every line would be refused for an unmapped plan (the run's own
  * guard), and the specialist's open questions that ask the practice to obtain a document. The letter is
  * plain text from a fixed template (no model), downloaded as a file. Lines read from an ERA export whose
- * format is unconfirmed are flagged with the format's name and why (CO-03; docs/adr/0060).
+ * format is unconfirmed are flagged with the format's name and why (CO-03; docs/adr/0060). The months waiting on
+ * Medicare content PaidWhole has not loaded, and each fee-schedule quarter or locked year the release in force does not
+ * load with the lines left unpriced for it, are listed too (audit #7 and #59; docs/adr/0071).
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
@@ -67,6 +71,11 @@ export interface CoveragePageData {
   readonly waitingPlans: WaitingPage;
   /** The months waiting on the practice's pricing location (audit #33; docs/adr/0064), with their lines' totals and the location's status. */
   readonly waitingOnLocation: readonly MonthWaitingOnLocation[];
+  /** The months waiting on Medicare content PaidWhole has not loaded (audit #7; docs/adr/0071), and their lines' totals added up. */
+  readonly waitingOnContent: readonly ContentWaitMonth[];
+  readonly contentHeadline: Totals;
+  /** The fee-schedule periods the release in force does not load, with the lines in effect unpriced for them (audit #7 and #59). */
+  readonly feeScheduleNotLoaded: readonly { readonly period: FeeSchedulePeriod; readonly lines: number; readonly chargeCents: string }[];
   readonly readiness: PricingReadiness;
   /** For each unconfirmed ERA export format the practice has loaded remittances from: its counts, billed dollars and payers (CO-03). */
   readonly unconfirmedFormats: readonly UnconfirmedFormatSource[];
@@ -96,6 +105,8 @@ export const coveragePage = practiceRoute({
     const coverage = latest?.coverage ?? null;
     const inEffect = await coverageInEffect(scope, practiceId);
     const counts = new Map(inEffect.reasons.map((entry) => [entry.reason, entry.lines]));
+    const waitingOnContent = await monthsWaitingOnContent(scope, practiceId);
+    const inForce = await windowsInForce(scope.client);
     return {
       practiceId,
       lines: await lineTotals(scope, practiceId),
@@ -110,6 +121,9 @@ export const coveragePage = practiceRoute({
       waiting: await waitingTotals(scope, practiceId),
       waitingPlans: await waitingPlans(scope, practiceId, params.page, request.requestId),
       waitingOnLocation: await monthsWaitingOnLocation(scope.client, practiceId),
+      waitingOnContent,
+      contentHeadline: contentHeadline(waitingOnContent),
+      feeScheduleNotLoaded: inForce === null ? [] : await feeSchedulePeriodsNotLoaded(scope, practiceId, multirangeLiteral(inForce.windows.get('pfs_rvu')?.loaded ?? [])),
       readiness: await pricingReadiness(scope, practiceId, request.requestId),
       unconfirmedFormats: await unconfirmedFormatSources(scope, practiceId),
       obtain: await listQuestions(scope, practiceId, cipher, request.requestId, { openOnly: true, topics: OBTAIN_TOPICS }),

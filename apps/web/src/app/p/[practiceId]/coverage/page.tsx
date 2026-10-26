@@ -7,6 +7,7 @@ import { QuestionList, TotalsText } from '../../../../components/contracts/displ
 import { Figure } from '../../../../components/coverage/share';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
+import { MonthsWaitingOnContent } from '../../../../components/pricing/content';
 import { MonthsWaitingOnLocation } from '../../../../components/pricing/location';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -86,15 +87,39 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
  * a fixed template). Shares and counts are each line's result in its pricing in effect, across every
  * run in effect (lib/coverage/in-effect.ts, as the dashboard and the digest read them), with the run
  * that took effect last named beside them; until a run takes effect, they are zero. Lines read from an
- * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03).
+ * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03). The months waiting on
+ * Medicare content PaidWhole has not loaded have their own card, and each fee-schedule period not loaded its sentence
+ * below the reasons, whose remedies stay as they are (audit #7 and #59; docs/adr/0071).
  */
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, share, run, pricingRuns, reasons, waiting, waitingPlans, waitingOnLocation, readiness, unconfirmedFormats, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } =
-    page.data;
+  const {
+    practiceId,
+    lines,
+    priced,
+    share,
+    run,
+    pricingRuns,
+    reasons,
+    waiting,
+    waitingPlans,
+    waitingOnLocation,
+    waitingOnContent,
+    contentHeadline,
+    feeScheduleNotLoaded,
+    readiness,
+    unconfirmedFormats,
+    obtain,
+    payers,
+    contracts,
+    canGenerateReport,
+    checklist,
+    canSuggest,
+    modelNotice,
+  } = page.data;
   const locationHeadline = waitingHeadline(waitingOnLocation);
   // The shares are of every line a run in effect priced; before one takes effect, of every line the practice holds.
   const inEffect = share.runs > 0;
@@ -176,6 +201,22 @@ export default async function CoveragePage(props: Props) {
           </CardHeader>
           <CardContent className="text-sm">
             <MonthsWaitingOnLocation months={waitingOnLocation} label="Months waiting on the billing ZIP" />
+          </CardContent>
+        </Card>
+      )}
+      {waitingOnContent.length === 0 ? null : (
+        <Card role="region" aria-label="Months waiting on Medicare content">
+          <CardHeader>
+            <CardTitle>
+              Months waiting on Medicare content: <Money value={contentHeadline.chargeCents} /> billed
+            </CardTitle>
+            <CardDescription>
+              <span className="font-mono tabular-nums">{contentHeadline.lines}</span> {contentHeadline.lines === 1 ? 'line' : 'lines'} in months whose terms apply Medicare’s multiple-procedure reduction or
+              unit limits on dates PaidWhole has not loaded that content for yet. They are priced by themselves once it is loaded; nothing is priced without it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <MonthsWaitingOnContent months={waitingOnContent} label="Months waiting on Medicare content" />
           </CardContent>
         </Card>
       )}
@@ -265,6 +306,16 @@ export default async function CoveragePage(props: Props) {
             ))}
           </tbody>
         </table>
+        {feeScheduleNotLoaded.map((gap) => (
+          <p key={gap.period.label} className="text-sm" data-fee-schedule-not-loaded={gap.period.label}>
+            PaidWhole has not loaded the <span className="font-mono tabular-nums">{gap.period.label}</span> Medicare fee schedule yet. <span className="font-mono tabular-nums">{gap.lines}</span>{' '}
+            {gap.lines === 1 ? 'line' : 'lines'} (<Money value={gap.chargeCents} /> billed) {gap.lines === 1 ? 'is' : 'are'} unpriced until it is; once it is loaded,{' '}
+            <Link className="underline" href={`/p/${practiceId}/pricing-runs`}>
+              Pricing runs
+            </Link>{' '}
+            offers to price their months again.
+          </p>
+        ))}
       </section>
       <section aria-label="What to obtain" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">What to obtain</h2>
