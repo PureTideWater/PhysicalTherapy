@@ -466,8 +466,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The generated function files of the combined audit's item 111 (docs/adr/0068).
   'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
   'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),
-  'DBF-03': none(0, 'The files are rendered from catalog rows the test builds in memory; no file.', ['packages/db/src/domain-model/functions.test.ts']),
-  'DBF-04': none(0, 'The directory is written and checked in a temporary directory; no file.', ['packages/db/src/domain-model/function-files.test.ts']),
+  'DBF-03': none(0, 'The files are rendered from catalog rows the test builds in memory, and from a scratch database; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-04': none(0, 'The directory is written and checked in a temporary directory, and the CLI run against a scratch database; no file.', ['packages/db/src/domain-model/function-files.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
   'DBF-05': none(0, 'The files and the summary are rendered from catalog rows and directories the test builds; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/summary.test.ts']),
 };
 

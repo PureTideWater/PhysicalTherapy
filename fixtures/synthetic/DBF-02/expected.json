@@ -2,7 +2,7 @@
   "case": "DBF-02",
   "module": "DBF",
   "title": "A function changed by one line",
-  "assertion": "Only that function's file changes, by that line and its body-hash line, the hash of the body alone (between the dollar quotes, or the SQL-standard body) equal to Appendix C's for a plpgsql and a SQL-standard body; a grant added, SECURITY DEFINER flipped or `SET search_path` removed each changes the file",
+  "assertion": "Only that function's file changes, by that line and its body-hash line, the hash of the body alone (between the dollar quotes, or the SQL-standard body) equal to Appendix C's for a plpgsql and a SQL-standard body; a grant added or given by another grantor, SECURITY DEFINER flipped, `SET search_path` removed or a calling policy added each changes the file; a procedure and a BEGIN ATOMIC body render as the catalog holds them",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": ["packages/db/src/domain-model/domain-model-drift.db.test.ts"],

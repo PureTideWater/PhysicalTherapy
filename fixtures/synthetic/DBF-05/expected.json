@@ -2,7 +2,7 @@
   "case": "DBF-05",
   "module": "DBF",
   "title": "Privileges, triggers and the summary",
-  "assertion": "PUBLIC revoked or granted, grant option, grantor, sorted grantees and owner each one line; comment and trigger lines; the summary's diff of each changed file, SECURITY DEFINER and scope functions first, or one line when the base has none",
+  "assertion": "PUBLIC revoked or granted, grant option, grantor, sorted grantees and owner each one line; comment, trigger, policy and event-trigger lines; the summary lists each changed file, SECURITY DEFINER, scope, PUBLIC and privilege changes first, then its diffs within a budget, the list form a prefix of the full one, or one line when the base has none",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": ["packages/db/src/domain-model/functions.test.ts","packages/db/src/domain-model/summary.test.ts"],
