@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { MonthsWaitingOnLocation } from './location';
 import type { DiffLine, DiffRun, DiffSide, DiffSummary } from '@tp/worker/pricing';
 
-import { DiffSummaryText, DiffTable, acceptingChanges, splitChangeText, SplitChangeText } from './diff';
+import { DiffSummaryText, DiffTable, acceptingChanges, kindText, splitChangeText, SplitChangeText } from './diff';
 
 /**
  * What a re-run's diff says when the runs pinned different place-of-service splits (docs/adr/0064), and the months
@@ -208,6 +208,24 @@ describe('what accepting a re-run changes (payment-engine review of PR #50, F4)'
     );
     expect(text(renderToStaticMarkup(<DiffSummaryText summary={mixed} />))).toBe(
       '1 of 2 lines both runs priced is priced differently; 2 unpriced by the first run (NO_AGREEMENT, NO_MAPPING) and priced by the second; 1 unpriced by both, under another reason or terms. Expected allowed over the lines both priced: $75.67 before, $80.00 after.',
+    );
+  });
+
+  it('never labels a line unpriced on either side as priced differently (UX confirm, NEW-B, the rows)', () => {
+    const priced = side(rerun.id, null);
+    const noAgreement = side(rerun.id, 'NO_AGREEMENT');
+    const noMapping = side(rerun.id, 'NO_MAPPING');
+    expect(kindText({ kind: 'changed', before: priced, after: noAgreement }, true)).toBe('Priced now, unpriced once accepted');
+    expect(kindText({ kind: 'changed', before: priced, after: noAgreement }, false)).toBe('Priced by the first run, unpriced by the second');
+    expect(kindText({ kind: 'changed', before: noAgreement, after: priced }, true)).toBe('Unpriced now, priced once accepted');
+    expect(kindText({ kind: 'changed', before: noAgreement, after: priced }, false)).toBe('Unpriced by the first run, priced by the second');
+    expect(kindText({ kind: 'changed', before: noAgreement, after: noMapping }, true)).toBe('Unpriced both now and once accepted, under another reason or terms');
+    expect(kindText({ kind: 'changed', before: noAgreement, after: noMapping }, false)).toBe('Unpriced by both, under another reason or terms');
+    expect(kindText({ kind: 'changed', before: priced, after: priced }, true)).toBe('Priced differently');
+    expect(kindText({ kind: 'only_before', before: priced, after: null }, true)).toBe('No longer priced once accepted');
+    expect(kindText({ kind: 'only_after', before: null, after: priced }, false)).toBe('In the second run only');
+    expect(text(renderToStaticMarkup(<DiffTable practiceId={PRACTICE} lines={[line]} beforeRunId={quarter.id} afterRunId={rerun.id} heldBy={[february]} />))).toContain(
+      'Unpriced now, priced once accepted',
     );
   });
 

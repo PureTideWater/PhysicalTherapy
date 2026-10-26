@@ -31,6 +31,27 @@ const ACCEPTING_KIND_TEXT: Readonly<Record<DiffLine['kind'], string>> = {
   only_after: 'Priced only once accepted',
 };
 
+/**
+ * A changed line's label, in the summary's words: a line left unpriced on either side is never called "priced
+ * differently", since it has no price there to differ.
+ */
+export function kindText(line: Pick<DiffLine, 'kind' | 'before' | 'after'>, accepting: boolean): string {
+  if (line.kind === 'changed' && line.before !== null && line.after !== null) {
+    const pricedBefore = line.before.unpricedReason === null;
+    const pricedAfter = line.after.unpricedReason === null;
+    if (pricedBefore && !pricedAfter) {
+      return accepting ? 'Priced now, unpriced once accepted' : 'Priced by the first run, unpriced by the second';
+    }
+    if (!pricedBefore && pricedAfter) {
+      return accepting ? 'Unpriced now, priced once accepted' : 'Unpriced by the first run, priced by the second';
+    }
+    if (!pricedBefore && !pricedAfter) {
+      return accepting ? 'Unpriced both now and once accepted, under another reason or terms' : 'Unpriced by both, under another reason or terms';
+    }
+  }
+  return (accepting ? ACCEPTING_KIND_TEXT : KIND_TEXT)[line.kind];
+}
+
 const CHANGE_TEXT: Readonly<Record<DiffChange, string>> = {
   expected_allowed: 'expected allowed',
   unpriced_reason: 'unpriced reason',
@@ -283,7 +304,7 @@ export function DiffTable({
                 {line.units === null ? '' : ` × ${line.units}`}
               </td>
               <td className="py-1 pr-3">
-                {(accepting ? ACCEPTING_KIND_TEXT : KIND_TEXT)[line.kind]}
+                {kindText(line, accepting)}
                 {line.changes.length === 0 ? null : (
                   <span className="block text-xs text-muted-foreground" data-changes={line.changes.join(' ')}>
                     {line.changes.map((change) => CHANGE_TEXT[change]).join(', ')}
