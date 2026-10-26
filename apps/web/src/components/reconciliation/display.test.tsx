@@ -73,6 +73,58 @@ const BALANCE: CorrectionView = {
 };
 const balance = (billable: Partial<Billable>): CorrectionView => ({ ...BALANCE, billable: { ...(BALANCE.billable as Billable), ...billable } });
 
+/** An earlier correction raised the deductible 10.00; the latest raised the allowed amount and other reductions took it (RX2-1). */
+const CUMULATIVE_SHARE_ROSE: CorrectionView = {
+  kind: 'other_reductions',
+  billable: { billableCents: '1000', allowedIncreaseCents: '5000', paymentIncreaseCents: '0', otherReductionCents: '4000', shareChangeCents: '1000', reasons: { deductible: '1000', coinsurance: '0', copay: '0', other: '0' }, allocation: null },
+};
+/** The latest correction's deductible rose, but across the corrections the share fell 10.00: nothing billable (RX2-2). */
+const CUMULATIVE_SHARE_FELL: CorrectionView = {
+  kind: 'patient_balance',
+  billable: { billableCents: '0', allowedIncreaseCents: '3000', paymentIncreaseCents: '0', otherReductionCents: '4000', shareChangeCents: '-1000', reasons: { deductible: '-1000', coinsurance: '0', copay: '0', other: '0' }, allocation: null },
+};
+/** A paid correction whose other reductions fell 5.00 (RX2-4). */
+const OTHER_FELL: CorrectionView = { kind: null, billable: { ...(COINSURANCE.billable as Billable), allowedIncreaseCents: '2500', otherReductionCents: '-500' } };
+/** One correction other reductions took whole. */
+const OTHER_ONE: CorrectionView = {
+  kind: 'other_reductions',
+  billable: { billableCents: '0', allowedIncreaseCents: '3000', paymentIncreaseCents: '0', otherReductionCents: '3000', shareChangeCents: '0', reasons: { deductible: '0', coinsurance: '0', copay: '0', other: '0' }, allocation: null },
+};
+
+/** "$1,234.56" as integer cents, from the text alone. */
+const centsOf = (usd: string): bigint => BigInt(usd.replace(/[$,.]/g, ''));
+const AMOUNT = '(\\$[\\d,]+\\.\\d{2})';
+const amount = (shown: string, pattern: string): bigint | null => {
+  const found = new RegExp(pattern.replace('$X', AMOUNT)).exec(shown);
+  return found?.[1] === undefined ? null : centsOf(found[1]);
+};
+/** The amounts a correction sentence names, signed by its words ("fell by" below zero): the allowed increase and its three parts. */
+function amountsOf(shown: string): { allowed: bigint; paid: bigint; share: bigint; other: bigint } {
+  const raised = amount(shown, 'raised the allowed amount by $X');
+  const lowered = amount(shown, 'lowered the allowed amount by $X');
+  const allowed = raised ?? (lowered === null ? null : -lowered);
+  if (allowed === null) {
+    throw new Error(`no allowed amount in: ${shown}`);
+  }
+  const pays = amount(shown, 'pays $X of it');
+  const paidFell = amount(shown, 'its payment fell by $X');
+  if (pays === null && paidFell === null && !shown.includes('pays nothing more')) {
+    throw new Error(`no payment in: ${shown}`);
+  }
+  const paid = pays ?? (paidFell === null ? 0n : -paidFell);
+  const reduced = amount(shown, '$X was reduced by the payer') ?? amount(shown, 'reduced its payment by $X');
+  const reductionsFell = amount(shown, 'other reductions fell by $X');
+  const other = reduced ?? (reductionsFell === null ? 0n : -reductionsFell);
+  const shareRose = amount(shown, '$X is the patient’s share');
+  const shareFell = amount(shown, 'patient’s share fell by $X');
+  const share = shown.includes('took all of it')
+    ? allowed
+    : shown.includes('the rest is the patient’s share')
+      ? allowed - paid - other
+      : (shareRose ?? (shareFell === null ? 0n : -shareFell));
+  return { allowed, paid, share, other };
+}
+
 describe('a case line’s corrections beside the ledger', () => {
   it('says what is billable to the patient by reason, the allowed amount, then the payer’s payment, counted in no total', () => {
     const shown = text(<LineCorrectionWords correction={COINSURANCE} />);
@@ -123,7 +175,7 @@ describe('a case line’s corrections beside the ledger', () => {
     );
     // An earlier correction the payer paid part of: what it pays, never "nothing more".
     expect(text(<LineCorrectionWords correction={balance({ paymentIncreaseCents: '1000', billableCents: '2000', shareChangeCents: '2000', reasons: { deductible: '2000', coinsurance: '0', copay: '0', other: '0' } })} />)).toContain(
-      'The payer raised the allowed amount by $30.00 and pays $10.00 of it: $20.00 is the patient’s share.',
+      'Across its corrections the payer raised the allowed amount by $30.00 and pays $10.00 of it (already in the ledger): $20.00 is the patient’s share. This correction writes no ledger entry; counted in no total.',
     );
   });
 
@@ -152,8 +204,83 @@ describe('a case line’s corrections beside the ledger', () => {
     // An earlier correction paid 10.00 of the allowed 30.00 (RX-2): the words name it, so 10.00 + 20.00 adds up to 30.00.
     const part: CorrectionView = { kind: 'other_reductions', billable: { ...(other.billable as Billable), paymentIncreaseCents: '1000', otherReductionCents: '2000' } };
     expect(text(<LineCorrectionWords correction={part} />)).toBe(
-      'Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by $30.00, pays $10.00 of it, and reduced its payment by $20.00 for other reasons, not billable to the patient. No ledger entry is written; counted in no total.',
+      'Payer corrected; this correction pays nothing more (other reductions). Across its corrections the payer raised the allowed amount by $30.00 and pays $10.00 of it (already in the ledger): $20.00 was reduced by the payer for other reasons, not billable. This correction writes no ledger entry; counted in no total.',
     );
+  });
+
+  it('adds up every correction sentence: allowed increase = pays + the patient’s share + other reductions, a part below zero as “fell by” (RX2-1, RX2-2, RX2-4)', () => {
+    const cases: readonly CorrectionView[] = [
+      COINSURANCE,
+      BALANCE,
+      { kind: null, billable: { ...(COINSURANCE.billable as Billable), paymentIncreaseCents: '1400', otherReductionCents: '1000' } },
+      balance({ billableCents: '2000', otherReductionCents: '1000', shareChangeCents: '2000', reasons: { deductible: '2000', coinsurance: '0', copay: '0', other: '0' } }),
+      balance({ billableCents: '4000', otherReductionCents: '-1000', shareChangeCents: '4000', reasons: { deductible: '4000', coinsurance: '0', copay: '0', other: '0' } }),
+      balance({ paymentIncreaseCents: '1000', billableCents: '2000', shareChangeCents: '2000', reasons: { deductible: '2000', coinsurance: '0', copay: '0', other: '0' } }),
+      CUMULATIVE_SHARE_ROSE,
+      CUMULATIVE_SHARE_FELL,
+      OTHER_FELL,
+      { kind: 'other_reductions', billable: { ...(OTHER_FELL.billable as Billable), billableCents: '0', allowedIncreaseCents: '3000', paymentIncreaseCents: '0', otherReductionCents: '4000', shareChangeCents: '-1000', reasons: { deductible: '-1000', coinsurance: '0', copay: '0', other: '0' } } },
+      { kind: 'other_reductions', billable: { ...(OTHER_FELL.billable as Billable), billableCents: '0', allowedIncreaseCents: '3000', paymentIncreaseCents: '1000', otherReductionCents: '2000', shareChangeCents: '0', reasons: { deductible: '0', coinsurance: '0', copay: '0', other: '0' } } },
+    ];
+    for (const correction of cases) {
+      const billable = correction.billable as Billable;
+      const parts = amountsOf(text(<LineCorrectionWords correction={correction} />));
+      // What the words say is what the view holds, and the parts sum to the allowed increase.
+      expect(parts).toEqual({ allowed: BigInt(billable.allowedIncreaseCents), paid: BigInt(billable.paymentIncreaseCents), share: BigInt(billable.shareChangeCents), other: BigInt(billable.otherReductionCents) });
+      expect(parts.paid + parts.share + parts.other).toBe(parts.allowed);
+    }
+  });
+
+  it('names the patient’s share an earlier correction raised when the latest one other reductions took (RX2-1)', () => {
+    const shown = text(<LineCorrectionWords correction={CUMULATIVE_SHARE_ROSE} />);
+    expect(shown).toBe(
+      `Billable to the patient: $10.00 (deductible${NB}+$10.00). Payer corrected; this correction pays nothing more (other reductions). Across its corrections the payer raised the allowed amount by $50.00 and pays nothing more: $10.00 is the patient’s share, and $40.00 was reduced by the payer for other reasons, not billable. This correction writes no ledger entry; counted in no total.`,
+    );
+    expect(renderToStaticMarkup(<LineCorrectionWords correction={CUMULATIVE_SHARE_ROSE} />)).toContain('data-billable="1000"');
+    expect(shown).not.toContain('balance is the patient’s');
+  });
+
+  it('says “balance is the patient’s” and the next step only when something is billable (RX2-2)', () => {
+    const shown = text(<LineCorrectionWords correction={CUMULATIVE_SHARE_FELL} />);
+    expect(shown).toBe(
+      'Payer corrected; this correction pays nothing more, and its corrections leave the patient nothing to bill. Across its corrections the payer raised the allowed amount by $30.00 and pays nothing more: the patient’s share fell by $10.00, and $40.00 was reduced by the payer for other reasons, not billable. This correction writes no ledger entry; counted in no total.',
+    );
+    expect(shown).not.toContain('balance is the patient’s');
+    expect(shown).not.toContain(PATIENT_BALANCE_NEXT_STEP);
+    expect(shown).not.toContain('Billable to the patient');
+    expect(renderToStaticMarkup(<LineCorrectionWords correction={CUMULATIVE_SHARE_FELL} />)).toContain('data-billable="0"');
+    // Something billable: both stand, once.
+    const billed = text(<LineCorrectionWords correction={BALANCE} />);
+    expect(billed.split('balance is the patient’s').length).toBe(2);
+    expect(billed.split(PATIENT_BALANCE_NEXT_STEP).length).toBe(2);
+  });
+
+  it('names the scope when the figures run across corrections, and keeps a single correction’s words (RX2-3)', () => {
+    const across = [CUMULATIVE_SHARE_ROSE, CUMULATIVE_SHARE_FELL, balance({ paymentIncreaseCents: '1000', billableCents: '2000', shareChangeCents: '2000', reasons: { deductible: '2000', coinsurance: '0', copay: '0', other: '0' } })];
+    for (const correction of across) {
+      const shown = text(<LineCorrectionWords correction={correction} />);
+      expect(shown).toContain('Across its corrections the payer');
+      expect(shown).toContain('This correction writes no ledger entry');
+      expect(shown).not.toContain('No ledger entry is written');
+      expect(shown).not.toContain('; it pays nothing more');
+    }
+    for (const correction of [BALANCE, OTHER_ONE]) {
+      const shown = text(<LineCorrectionWords correction={correction} />);
+      expect(shown).not.toContain('Across its corrections');
+      expect(shown).toContain('No ledger entry is written; counted in no total.');
+    }
+  });
+
+  it('says other reductions that fell in words, never a bare minus, and no “of the rest” when nothing is left (RX2-4)', () => {
+    const shown = text(<LineCorrectionWords correction={OTHER_FELL} />);
+    expect(shown).toBe(
+      `Billable to the patient: $6.00 (coinsurance${NB}+$6.00). The payer raised the allowed amount by $25.00 and pays $24.00 of it: $6.00 is the patient’s share, counted in no total, and the payer’s other reductions fell by $5.00.`,
+    );
+    expect(shown).not.toMatch(/-\$|−\$5|of the rest/);
+    // The payment took the whole increase and the share is matched by fallen reductions: nothing left, no "of the rest".
+    const none = text(<LineCorrectionWords correction={{ kind: null, billable: { ...(OTHER_FELL.billable as Billable), allowedIncreaseCents: '2400', otherReductionCents: '-600' } }} />);
+    expect(none).toContain('The payer raised the allowed amount by $24.00 and pays $24.00 of it: $6.00 is the patient’s share, counted in no total, and the payer’s other reductions fell by $6.00.');
+    expect(none).not.toContain('of the rest');
   });
 
   it('puts each signed amount’s sign inside its mono figure, a non-breaking space before it (UX-6)', () => {

@@ -2,7 +2,7 @@ import type { DocumentStatus } from '@tp/db/runtime';
 import { recoveredLabel as ledgerRecoveredLabel } from '@tp/ledger';
 import { cents, formatUsd } from '@tp/money';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 import type { BillableView, CorrectionView, MatchView } from '../../lib/reconciliation/queries';
 import { Money } from '../remittances/display';
@@ -256,31 +256,108 @@ function Allocation({ billable }: { readonly billable: BillableView }) {
 /** What to do with a correction the patient's share took (UX-3): on the line's words and the case's Packet and dispute card. */
 export const PATIENT_BALANCE_NEXT_STEP = 'Bill the balance to the patient in the practice-management system; a packet would ask the payer for what it has already allowed.';
 
-/** The payer's other reductions after the patient's share: reduced (not billable), or fallen. */
-function OtherReductions({ cents: text }: { readonly cents: string }) {
-  if (text === '0') {
-    return null;
+const isNegative = (text: string): boolean => text.startsWith('-');
+const isPositive = (text: string): boolean => text !== '0' && !isNegative(text);
+const magnitude = (text: string): string => (isNegative(text) ? text.slice(1) : text);
+
+/**
+ * Whether a pays-nothing-more correction's figures run across more than one correction: they run from the original
+ * claim's line, while its kind is read from the latest match alone, whose payment increase is never above zero and
+ * whose share rose ("patient_balance") or did not ("other_reductions"; patient-share.ts readingOf). A payment above
+ * zero, or a share that moved the other way, came from an earlier correction (RX2-3).
+ */
+function spansCorrections(kind: NonNullable<CorrectionView['kind']>, billable: BillableView): boolean {
+  if (isPositive(billable.paymentIncreaseCents)) {
+    return true;
   }
-  return text.startsWith('-') ? (
+  return kind === 'other_reductions' ? isPositive(billable.shareChangeCents) : !isPositive(billable.shareChangeCents);
+}
+
+/**
+ * The allowed amount's change and every part it is made of, so the amounts add up: the allowed increase is the payer's
+ * payment, plus the patient's share, plus the payer's other reductions, a part below zero in words ("fell by"), never a
+ * bare minus (RX2-1, RX2-2, RX2-4). Across corrections the figures are cumulative, and the words say so, the payment
+ * already in the ledger (RX2-3). "Took all of it" only when the patient's share is the whole increase (UX-1).
+ */
+function AllowedSum({ billable, cumulative, shareNote = '' }: { readonly billable: BillableView; readonly cumulative: boolean; readonly shareNote?: string }) {
+  const { allowedIncreaseCents: allowed, paymentIncreaseCents: paid, shareChangeCents: share, otherReductionCents: other } = billable;
+  const parts: ReactNode[] = [];
+  if (isPositive(allowed) && share === allowed && paid === '0' && other === '0') {
+    parts.push(<>the patient’s {roseWords(billable.reasons)} took all of it</>);
+  } else {
+    if (isPositive(share)) {
+      parts.push(
+        <>
+          <Money value={share} /> is the patient’s share{shareNote}
+        </>,
+      );
+    } else if (isNegative(share)) {
+      parts.push(
+        <>
+          the patient’s share fell by <Money value={magnitude(share)} />
+        </>,
+      );
+    }
+    if (isPositive(other)) {
+      parts.push(
+        <>
+          <Money value={other} /> was reduced by the payer for other reasons, not billable
+        </>,
+      );
+    } else if (isNegative(other)) {
+      parts.push(
+        <>
+          the payer’s other reductions fell by <Money value={magnitude(other)} />
+        </>,
+      );
+    }
+  }
+  return (
     <>
-      , and the payer’s other reductions fell by <Money value={text.slice(1)} />
-    </>
-  ) : (
-    <>
-      , and <Money value={text} /> was reduced by the payer for other reasons, not billable
+      {cumulative ? 'Across its corrections the payer' : 'The payer'}{' '}
+      {isNegative(allowed) ? (
+        <>
+          lowered the allowed amount by <Money value={magnitude(allowed)} />
+        </>
+      ) : (
+        <>
+          raised the allowed amount by <Money value={allowed} />
+        </>
+      )}
+      {paid === '0' ? (
+        ' and pays nothing more'
+      ) : isNegative(paid) ? (
+        <>
+          , and its payment fell by <Money value={magnitude(paid)} />
+          {cumulative ? ' (in the ledger)' : ''}
+        </>
+      ) : (
+        <>
+          {' '}
+          and pays <Money value={paid} /> of it{cumulative ? ' (already in the ledger)' : ''}
+        </>
+      )}
+      {parts.length === 0 ? (
+        '.'
+      ) : (
+        <>
+          :{' '}
+          {parts.map((part, index) => (
+            <Fragment key={index}>
+              {index === 0 ? '' : ', and '}
+              {part}
+            </Fragment>
+          ))}
+          .
+        </>
+      )}
     </>
   );
 }
 
-/** "pays nothing more", or what the payer pays of the allowed increase. */
-function Pays({ billable }: { readonly billable: BillableView }) {
-  return billable.paymentIncreaseCents === '0' ? (
-    <>pays nothing more</>
-  ) : (
-    <>
-      pays <Money value={billable.paymentIncreaseCents} /> of it
-    </>
-  );
+/** Whether a correction that paid nothing more wrote an entry: never, but an earlier correction it is summed with may have (RX2-3). */
+function noEntryWords(cumulative: boolean): string {
+  return cumulative ? 'This correction writes no ledger entry; counted in no total.' : 'No ledger entry is written; counted in no total.';
 }
 
 /**
@@ -308,61 +385,77 @@ export function LineCorrectionWords({ correction, className = '' }: { readonly c
     return null;
   }
   const box = `rounded-md border border-dashed p-2 text-sm ${className}`.trim();
+  const billed = isPositive(billable.billableCents);
+  const billableLead = (
+    <>
+      Billable to the patient: <Money value={billable.billableCents} /> (<ShareReasons reasons={billable.reasons} />
+      ).
+    </>
+  );
   if (correction.kind === 'patient_balance') {
-    // "took all of it" only when the patient's share is the whole allowed increase (UX-1); else what is the patient's and what is not.
-    const whole = billable.billableCents === billable.allowedIncreaseCents && billable.otherReductionCents === '0' && billable.paymentIncreaseCents === '0';
+    const cumulative = spansCorrections(correction.kind, billable);
+    // "balance is the patient's" and its next step only when the corrections leave the patient something to bill (RX2-2).
     return (
       <p className={box} data-correction="patient_balance" data-billable={billable.billableCents}>
-        Billable to the patient: <Money value={billable.billableCents} /> (<ShareReasons reasons={billable.reasons} />
-        ). Payer corrected; balance is the patient’s. The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and <Pays billable={billable} />:{' '}
-        {whole ? (
-          <>the patient’s {roseWords(billable.reasons)} took all of it.</>
+        {billed ? (
+          <>{billableLead} Payer corrected; balance is the patient’s.</>
         ) : (
-          <>
-            <Money value={billable.billableCents} /> is the patient’s share
-            <OtherReductions cents={billable.otherReductionCents} />.
-          </>
+          'Payer corrected; this correction pays nothing more, and its corrections leave the patient nothing to bill.'
         )}{' '}
-        No ledger entry is written; counted in no total.
-        <Allocation billable={billable} /> {PATIENT_BALANCE_NEXT_STEP}
+        <AllowedSum billable={billable} cumulative={cumulative} /> {noEntryWords(cumulative)}
+        <Allocation billable={billable} />
+        {billed ? ` ${PATIENT_BALANCE_NEXT_STEP}` : null}
       </p>
     );
   }
   if (correction.kind === 'other_reductions') {
-    const fell = billable.shareChangeCents.startsWith('-') ? billable.shareChangeCents.slice(1) : null;
+    const cumulative = spansCorrections(correction.kind, billable);
+    if (cumulative) {
+      // An earlier correction paid part, or raised the patient's share (RX-2, RX2-1, RX2-3): every part of the cumulative increase, named.
+      return (
+        <p className={box} data-correction="other_reductions" data-billable={billable.billableCents}>
+          {billed ? <>{billableLead} </> : null}
+          Payer corrected; this correction pays nothing more (other reductions). <AllowedSum billable={billable} cumulative /> {noEntryWords(true)}
+          <Allocation billable={billable} />
+        </p>
+      );
+    }
+    const fell = isNegative(billable.shareChangeCents) ? magnitude(billable.shareChangeCents) : null;
     return (
       <p className={box} data-correction="other_reductions">
-        Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} />
-        {billable.paymentIncreaseCents === '0' ? null : (
-          // An earlier correction paid part (RX-2): name it, so the allowed increase adds up.
-          <>
-            , <Pays billable={billable} />,
-          </>
-        )}{' '}
-        and reduced its payment by <Money value={billable.otherReductionCents} /> for other reasons, not billable to the patient
+        Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and reduced its payment by{' '}
+        <Money value={billable.otherReductionCents} /> for other reasons, not billable to the patient
         {fell === null ? null : (
           <>
             ; the patient’s share fell by <Money value={fell} />
           </>
         )}
-        . No ledger entry is written; counted in no total.
+        . {noEntryWords(false)}
       </p>
     );
   }
-  if (billable.billableCents === '0') {
+  if (!billed) {
     return null;
   }
+  // "Of the rest" only when something is left after the payment and both parts of it are above zero (RX2-4).
+  const plain = isPositive(billable.paymentIncreaseCents) && isPositive(billable.allowedIncreaseCents) && !isNegative(billable.otherReductionCents);
   return (
     <p className={box} data-billable={billable.billableCents}>
-      Billable to the patient: <Money value={billable.billableCents} /> (<ShareReasons reasons={billable.reasons} />
-      ). The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and pays <Money value={billable.paymentIncreaseCents} /> of it;{' '}
-      {billable.otherReductionCents === '0' ? (
-        'the rest is the patient’s share, counted in no total.'
-      ) : (
+      {billableLead}{' '}
+      {plain ? (
         <>
-          of the rest, <Money value={billable.billableCents} /> is the patient’s share, counted in no total, and <Money value={billable.otherReductionCents} /> was reduced by the payer for other
-          reasons, not billable.
+          The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and pays <Money value={billable.paymentIncreaseCents} /> of it;{' '}
+          {billable.otherReductionCents === '0' ? (
+            'the rest is the patient’s share, counted in no total.'
+          ) : (
+            <>
+              of the rest, <Money value={billable.billableCents} /> is the patient’s share, counted in no total, and <Money value={billable.otherReductionCents} /> was reduced by the payer for other
+              reasons, not billable.
+            </>
+          )}
         </>
+      ) : (
+        <AllowedSum billable={billable} cumulative={false} shareNote=", counted in no total" />
       )}
       <Allocation billable={billable} />
     </p>
