@@ -23,7 +23,7 @@
 - **Improvement found:** the card brand shows lowercase ("visa") on the page; capitalized in this PR.
 - **Proposal (outside this PR):** show a bank account still waiting on Stripe's micro-deposit on later visits (needs the
   provider to list open SetupIntents).
-- **CI on 744e1d6 (final):** all 22 runs green (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record` among them); unit 322 files, 5,015 passed, 1 skipped; db 118 files, 9,050 passed, 1 skipped; e2e 51 passed (`e2e (2/2)` on its one re-run after the known screening flake handed to #42). Push runs on c5195ee (ci, mutation, screening-capacity) started at merge.
+- **CI on 744e1d6 (final):** all 22 runs green (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record` among them); unit 322 files, 5,015 passed, 1 skipped; db 118 files, 9,050 passed, 1 skipped; e2e 51 passed (`e2e (2/2)` on its one re-run after the known screening flake handed to #42). Push runs on c5195ee: ci, mutation and screening-capacity all success.
 - **Local checks before the first push:** typecheck 22 projects; lint 0/0; lint:copy, lint:logs pass; unit 5,006 passed,
   3 skipped, 2 failed in tools/screening-capacity/watched.test.ts (the new methods.ts was not in #42's watched list),
   fixed by moving the order into `types.ts`, which the list already holds (affected files then 397/397); billing db
