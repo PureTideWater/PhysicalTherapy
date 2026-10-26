@@ -144,7 +144,7 @@ describe('receipts of parsed 835s (PRD 10, step 10)', () => {
     expect(receiptState({ ...base, status: 'loaded' }).detail).toBe('Loaded.');
   });
 
-  it('say a negative provider adjustment as -$1.00, the sign before the dollar sign, as <Money> shows it on the remittance', () => {
+  it('say which way the provider adjustments moved the payment, and by how much; none is not said', () => {
     // The 835 subtracts the PLB total from the payment: negative (interest) was added to it, positive withheld; none is not said.
     expect(receiptState({ ...base, status: 'loaded', parse: { ...parsed, plbTotalCents: '-100' } }).detail).toBe('Loaded 1 remittance, 2 claims and 3 lines; provider adjustments added $1.00 to the payment.');
     expect(receiptState({ ...base, status: 'loaded', parse: { ...parsed, plbTotalCents: '123456' } }).detail).toBe('Loaded 1 remittance, 2 claims and 3 lines; provider adjustments withheld $1,234.56 from the payment.');

@@ -10,7 +10,8 @@ export function moneyLabel(label: string, unit = 'dollars'): string {
 /**
  * A labelled input for an amount in dollars (PRD 6, Cross-cutting: integer cents, typed as dollars): the label says
  * the unit, the keyboard is the decimal one, and the figure is set in the mono face with tabular numerals, as
- * <Money> sets the same amount beside it (brand: every money figure in mono). The save reads it with dollarsField.
+ * <Money> sets the same amount beside it (brand: every money figure in mono). Pre-filled with dollarsForInput, it
+ * reads back through the save as the same cents (test matrix CAS-39).
  */
 export function MoneyField({
   label,

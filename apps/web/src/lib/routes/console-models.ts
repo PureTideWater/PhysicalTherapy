@@ -35,7 +35,7 @@ const MODEL_FLAG_KEYS = Object.keys(MODEL_FLAGS) as ModelFlagKey[];
 /** What the flag form's one value field takes, under it: the budget's unit is said here, not in the flag's name. */
 export const MODEL_VALUE_HINT = 'on or off for a switch; a daily budget in dollars, such as 5.00';
 
-/** The longest value the field takes: the largest budget written with "$" and commas ("$ 9,999,999,999.99"). */
+/** The longest value the field takes: room for the largest budget written with "$" and commas ("$ 9,999,999,999.99", 18 characters). */
 export const MODEL_VALUE_LENGTH = 24;
 
 export interface ModelFlagView {
