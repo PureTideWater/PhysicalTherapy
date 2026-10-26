@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C37",
   "layout": "scanned",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": "textract.json",
   "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Article 3: 97163",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",
@@ -59,6 +66,7 @@
     },
     {
       "label": "Article 3: 97542",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",

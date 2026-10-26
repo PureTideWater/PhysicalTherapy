@@ -12,7 +12,7 @@ import * as par from './par';
 import * as pricing from './pricing';
 import { VARIANTS } from './variants';
 import * as workflow from './workflow';
-import { addContractSet, addNarrativeSet } from '../eval/cases';
+import { addContractSet, addContractSetV2, addNarrativeSet } from '../eval/cases';
 
 type Build = (b: CaseBuilder) => void;
 
@@ -447,6 +447,22 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/models-routes.db.test.ts',
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/models.spec.ts',
+  ]),
+  // The model evaluation gate and per-feature serving (combined audit #84; docs/adr/0070 Parts 1 and 2).
+  'MOD-07': none(10, 'The gate’s counting rule, scored on the MOD-09 set and on permitted examples; no file of its own.', [
+    'packages/model-gateway/eval/score.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'packages/model-gateway/src/permitted.test.ts',
+    'apps/worker/src/models/permitted.db.test.ts',
+  ]),
+  'MOD-08': none(10, 'Faults injected into the MOD-09 set’s reference answers.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/contract-terms.test.ts']),
+  'MOD-09': { completesIn: 10, build: addContractSetV2, assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/synth/src/eval/eval.test.ts'] },
+  'MOD-10': none(10, 'The twins and decoys are cases of the MOD-09 set.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/eval/score.test.ts']),
+  'MOD-11': none(10, 'Serving is read from eval/baseline.json and eval/floors.json; no file.', [
+    'packages/model-gateway/src/config.test.ts',
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
   // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
   'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),

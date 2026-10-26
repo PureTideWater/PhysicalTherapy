@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C32",
   "layout": "scanned",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": "textract.json",
   "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Exhibit A: 97032 CO",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",
@@ -53,6 +60,7 @@
     },
     {
       "label": "Exhibit A: 97542 POS 19",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",
@@ -94,6 +102,7 @@
     },
     {
       "label": "Exhibit A: 97033 POS 12",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",
@@ -135,6 +144,7 @@
     },
     {
       "label": "Exhibit A: 97165 CO POS 19",
+      "role": "term",
       "fields": {
         "method": {
           "value": "LESSER_OF",

@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C04",
   "layout": "table",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": null,
   "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Exhibit A: 97140, 97530, 97542",
+      "role": "term",
       "fields": {
         "method": {
           "value": "PER_VISIT",
@@ -59,6 +66,7 @@
     },
     {
       "label": "Exhibit A: 97150, 97116, 97162",
+      "role": "term",
       "fields": {
         "method": {
           "value": "PER_VISIT",

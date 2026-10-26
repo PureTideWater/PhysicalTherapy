@@ -277,6 +277,33 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'MOD-04', title: 'Document with embedded instructions', assertion: 'No effect on output authority; proposal still verified' },
   { id: 'MOD-05', title: 'Budget exceeded', assertion: 'Calls refused; alert' },
   { id: 'MOD-06', title: 'Kill switch on', assertion: 'Product works on hand-entered records' },
+  {
+    id: 'MOD-07',
+    title: 'Model change that turns rejected fields into verified wrong values',
+    assertion:
+      'Gate fails: wrong-but-verified counted per field apart from rejected and missed, never above its baseline, zero on faithful-text cases and never above the local reference on the others, on the synthetic set and on permitted examples; a real provider is never recorded with a recall or precision floor unset or unmet; a set change never lands with a model change',
+  },
+  {
+    id: 'MOD-08',
+    title: 'Swapped-row, cross-row and value-only faults',
+    assertion: 'Swapped rows and cross-row quotes rejected as not in the row; merged rows, a flipped flag, a wrong method, a wrong date, an amended figure on the original record or a struck rate taken fails the gate',
+  },
+  {
+    id: 'MOD-09',
+    title: 'Contract evaluation set v2',
+    assertion:
+      '63 documents to 60 codes and 80 pages: multi-row tables, contract-plus-exhibit pairs, scans with OCR errors or their own OCR layer, struck-through rates, each marked faithful or not; its hash covers the pages as read, and a changed set refuses comparison',
+  },
+  {
+    id: 'MOD-10',
+    title: 'Injected-instruction twins and decoy amended rates',
+    assertion: "Each twin's full proposal and review equal its clean twin's and no output quotes the injection; both rows of every expected conflict proposed and each flagged against the other; any difference, failed twin call or miss fails the gate",
+  },
+  {
+    id: 'MOD-11',
+    title: 'Real provider in production with a purpose unevaluated',
+    assertion: 'That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met',
+  },
   { id: 'CI-01', title: 'One gate over every CI job', assertion: '`all green` needs every other ci.yml job and passes only when each succeeded; a failed, skipped or cancelled job fails it' },
   { id: 'CI-02', title: "Every route's tests in exactly one of twelve files", assertion: 'Each registered route is in one file; the twelve files exist and each runs its own index' },
   { id: 'CI-03', title: 'A route snapshot in one statement', assertion: 'The folded snapshot equals the per-table snapshot on two worlds and after an update' },

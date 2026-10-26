@@ -1,0 +1,886 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V05",
+  "layout": "scanned",
+  "drawnAs": "table",
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": "textract.json",
+  "pages": 6,
+  "tier": "medium",
+  "pageText": "unfaithful",
+  "unfaithfulBecause": "ocr_errors",
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Exhibit A: 97033 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97033"],"written":["97033"],"page":5,"quote":"97033 - 19 $83.85 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":5,"quote":"97033 - 19 $83.85 per unit"},
+        "amount": {"value":"8385","written":"$83.85","page":5,"quote":"97033 - 19 $83.85 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97761 CQ POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97761"],"written":["97761"],"page":5,"quote":"97761 CQ 22 $39.52 per unit"},
+        "modifiers": {"value":["CQ"],"written":["CQ"],"page":5,"quote":"97761 CQ 22 $39.52 per unit"},
+        "places_of_service": {"value":["22"],"written":["22"],"page":5,"quote":"97761 CQ 22 $39.52 per unit"},
+        "amount": {"value":"3952","written":"$39.52","page":5,"quote":"97761 CQ 22 $39.52 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97546",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97546"],
+          "written": ["97546"],
+          "page": 5,
+          "quote": "97546 - - $49.79 per unit",
+          "asRead": {"written":["97546"],"quote":"97546 - - $4979 per unit"}
+        },
+        "amount": {
+          "value": "4979",
+          "written": "$49.79",
+          "page": 5,
+          "quote": "97546 - - $49.79 per unit",
+          "asRead": {"written":"$4979","quote":"97546 - - $4979 per unit"}
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92606",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["92606"],"written":["92606"],"page":5,"quote":"92606 - - $88.40 per unit"},
+        "amount": {"value":"8840","written":"$88.40","page":5,"quote":"92606 - - $88.40 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97024",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97024"],"written":["97024"],"page":5,"quote":"97024 - - $64.71 per unit"},
+        "amount": {"value":"6471","written":"$64.71","page":5,"quote":"97024 - - $64.71 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97165 GO POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97165"],"written":["97165"],"page":5,"quote":"97165 GO 19 $82.59 per unit"},
+        "modifiers": {"value":["GO"],"written":["GO"],"page":5,"quote":"97165 GO 19 $82.59 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":5,"quote":"97165 GO 19 $82.59 per unit"},
+        "amount": {"value":"8259","written":"$82.59","page":5,"quote":"97165 GO 19 $82.59 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97014",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97014"],"written":["97014"],"page":5,"quote":"97014 - - $81.80 per unit"},
+        "amount": {"value":"8180","written":"$81.80","page":5,"quote":"97014 - - $81.80 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92608 GO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["92608"],"written":["92608"],"page":5,"quote":"92608 GO - $22.92 per unit"},
+        "modifiers": {"value":["GO"],"written":["GO"],"page":5,"quote":"92608 GO - $22.92 per unit"},
+        "amount": {"value":"2292","written":"$22.92","page":5,"quote":"92608 GO - $22.92 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97542 CQ",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97542"],
+          "written": ["97542"],
+          "page": 5,
+          "quote": "97542 CQ - $25.85 per unit",
+          "asRead": {"written":["97542"],"quote":"97542 CQ - $25.8S per unit"}
+        },
+        "modifiers": {
+          "value": ["CQ"],
+          "written": ["CQ"],
+          "page": 5,
+          "quote": "97542 CQ - $25.85 per unit",
+          "asRead": {"written":["CQ"],"quote":"97542 CQ - $25.8S per unit"}
+        },
+        "amount": {
+          "value": "2585",
+          "written": "$25.85",
+          "page": 5,
+          "quote": "97542 CQ - $25.85 per unit",
+          "asRead": {"written":"$25.8S","quote":"97542 CQ - $25.8S per unit"}
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92610 59",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["92610"],"written":["92610"],"page":5,"quote":"92610 59 - $79.86 per unit"},
+        "modifiers": {"value":["59"],"written":["59"],"page":5,"quote":"92610 59 - $79.86 per unit"},
+        "amount": {"value":"7986","written":"$79.86","page":5,"quote":"92610 59 - $79.86 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97035",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97035"],"written":["97035"],"page":6,"quote":"97035 - - $111.12 per unit"},
+        "amount": {"value":"11112","written":"$111.12","page":6,"quote":"97035 - - $111.12 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97016",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97016"],"written":["97016"],"page":6,"quote":"97016 - - $28.93 per unit"},
+        "amount": {"value":"2893","written":"$28.93","page":6,"quote":"97016 - - $28.93 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97018",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97018"],
+          "written": ["97018"],
+          "page": 6,
+          "quote": "97018 - - $103.79 per unit",
+          "asRead": {"written":["97018"],"quote":"97018 - - $10379 per unit"}
+        },
+        "amount": {
+          "value": "10379",
+          "written": "$103.79",
+          "page": 6,
+          "quote": "97018 - - $103.79 per unit",
+          "asRead": {"written":"$10379","quote":"97018 - - $10379 per unit"}
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92609",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["92609"],"written":["92609"],"page":6,"quote":"92609 - - $64.13 per unit"},
+        "amount": {"value":"6413","written":"$64.13","page":6,"quote":"92609 - - $64.13 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97804",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97804"],
+          "written": ["97804"],
+          "page": 6,
+          "quote": "97804 - - $78.42 per unit",
+          "asRead": {"written":["97804"],"quote":"97804 - - $7842 per unit"}
+        },
+        "amount": {
+          "value": "7842",
+          "written": "$78.42",
+          "page": 6,
+          "quote": "97804 - - $78.42 per unit",
+          "asRead": {"written":"$7842","quote":"97804 - - $7842 per unit"}
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97533",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97533"],"written":["97533"],"page":6,"quote":"97533 - - $64.94 per unit"},
+        "amount": {"value":"6494","written":"$64.94","page":6,"quote":"97533 - - $64.94 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97116 GP POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97116"],
+          "written": ["97116"],
+          "page": 6,
+          "quote": "97116 GP 22 $70.30 per unit",
+          "asRead": {"written":["97116"],"quote":"97116 GP 22 $7030 per unit"}
+        },
+        "modifiers": {
+          "value": ["GP"],
+          "written": ["GP"],
+          "page": 6,
+          "quote": "97116 GP 22 $70.30 per unit",
+          "asRead": {"written":["GP"],"quote":"97116 GP 22 $7030 per unit"}
+        },
+        "places_of_service": {
+          "value": ["22"],
+          "written": ["22"],
+          "page": 6,
+          "quote": "97116 GP 22 $70.30 per unit",
+          "asRead": {"written":["22"],"quote":"97116 GP 22 $7030 per unit"}
+        },
+        "amount": {
+          "value": "7030",
+          "written": "$70.30",
+          "page": 6,
+          "quote": "97116 GP 22 $70.30 per unit",
+          "asRead": {"written":"$7030","quote":"97116 GP 22 $7030 per unit"}
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97110",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97110"],
+          "written": ["97110"],
+          "page": 6,
+          "quote": "97110 - - $128.02 per unit",
+          "asRead": {"written":["97110"],"quote":"97110 - - $l28.02 per unit"}
+        },
+        "amount": {
+          "value": "12802",
+          "written": "$128.02",
+          "page": 6,
+          "quote": "97110 - - $128.02 per unit",
+          "asRead": {"written":"$l28.02","quote":"97110 - - $l28.02 per unit"}
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97124",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97124"],"written":["97124"],"page":6,"quote":"97124 - - $152.40 per unit"},
+        "amount": {"value":"15240","written":"$152.40","page":6,"quote":"97124 - - $152.40 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97028 GP GO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97028"],"written":["97028"],"page":6,"quote":"97028 GP GO - $117.83 per unit"},
+        "modifiers": {
+          "value": ["GP","GO"],
+          "written": ["GP","GO"],
+          "page": 6,
+          "quote": "97028 GP GO - $117.83 per unit"
+        },
+        "amount": {"value":"11783","written":"$117.83","page":6,"quote":"97028 GP GO - $117.83 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

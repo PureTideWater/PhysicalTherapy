@@ -82,4 +82,10 @@ describe('collectChecks', () => {
     ]);
     expect([...declared]).toEqual(['PAR-01/remit.835', 'variants/V01-x/remit.835']);
   });
+
+  it('leaves out a generated file that declares no oracle (MOD-09\'s large contracts are not 835s)', () => {
+    mkdirSync(path.join(root, 'MOD-09'), { recursive: true });
+    writeFileSync(path.join(root, 'MOD-09/expected.json'), JSON.stringify({ files: [], generated: [{ path: 'MOD-09/generated/L01-table/document.pdf', sha256: '0'.repeat(64) }] }));
+    expect(collectChecks(root).checks).toEqual([]);
+  });
 });
