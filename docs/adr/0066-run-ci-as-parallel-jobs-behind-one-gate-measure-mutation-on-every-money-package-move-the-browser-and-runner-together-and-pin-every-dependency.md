@@ -483,6 +483,10 @@ exclude:
 | fast-uri (through ajv), by refresh | 3.1.8 | 3.1.9 | 2026-10-19 |
 | qs (through typed-rest-client), by override | 6.15.1 | 6.16.1 | 2026-10-14 |
 
+The fast-uri refresh re-resolves the graph, and three moves come with it, each inside its parent's existing range and
+past the release age: rolldown 1.2.14 to 1.2.15 (vite's bundler), its fifteen `@rolldown/binding-*` platform packages
+1.2.14 to 1.2.15, and `@oxc-project/types` 0.154.0 to 0.155.0 (rolldown's).
+
 typescript-eslint moves with eslint, in lockstep. qs needs an override, `"typed-rest-client>qs": "6.16.1"` in
 `pnpm-workspace.yaml`, because Stryker 10.1.1's `typed-rest-client ~2.3.0` pins qs to exactly 6.15.1; it closes qs's
 three moderate advisories, and `check-toolchain` keeps it with its reason and its removal trigger, failing an override
@@ -491,9 +495,9 @@ whose target has left the lockfile. The selector carries no version scope: typed
 applying on a move to either and bring them back under `--audit-level=high`, which passes moderates. Only
 typed-rest-client 3.1.1 (2026-09-08) and later declare `qs: ^6.16.0`, so the trigger is Stryker on typed-rest-client
 3.1.1 or later (registry, read 2026-10-26). eslint and
-typescript-eslint join the catalog, and every manifest names each package the catalog holds as `catalog:`, root's five
-literal copies (`@types/node`, fast-check, tsx, typescript, vitest) and `tools/`'s eslint and typescript-eslint among
-them, so a Dependabot catalog update moves one line; `no-duplicated-versions.test.ts` holds it.
+typescript-eslint join the catalog, and every manifest names each package the catalog holds as `catalog:`, root's eight
+literal copies (`@types/node`, `@vitest/coverage-v8`, eslint, fast-check, tsx, typescript, typescript-eslint, vitest)
+and `tools/`'s eslint and typescript-eslint among them, so a Dependabot catalog update moves one line; `no-duplicated-versions.test.ts` holds it.
 Not taken here: Playwright and axe (Part 3); the Anthropic SDK, Node 26 and `@types/node` 26, and TypeScript 7, each a
 deliberate pull request (notice N8; typescript-eslint 8.72.0 declares `typescript <6.1.0`); stripe, aws-cdk and
 `@aws-sdk/*`, which their Dependabot groups bring.
