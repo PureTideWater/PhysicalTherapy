@@ -158,7 +158,8 @@ export interface DirectoryPlan {
  * the directory a symlink or not a directory; a symlink, directory or other non-regular entry where a file is to be
  * written or under a `*.sql` name; and a `*.sql` file no function produces that is not the generator's (its first
  * line not the banner, or its name not a function file's), which the writer would otherwise delete: a `--functions`
- * slip such as the migrations directory, or a hand-made file.
+ * slip such as the migrations directory, or a hand-made file; and any other entry git would commit but the README (a
+ * stray file, a directory, a symlink), which the check would report.
  */
 export function planFunctionDirectory(directory: string, expected: ReadonlyMap<string, string>): DirectoryPlan {
   const found = entries(directory);
@@ -168,6 +169,15 @@ export function planFunctionDirectory(directory: string, expected: ReadonlyMap<s
   const kept = new Set(found.kept.map((e) => e.name));
   const blocked = all.filter((e) => e.kind !== 'file' && (expected.has(e.name) || (kept.has(e.name) && e.name.endsWith('.sql')))).map((e) => e.name);
   if (blocked.length) throw new DomainModelError(`${directory}: ${blocked.join(', ')} ${blocked.length === 1 ? 'is' : 'are'} not a regular file; remove ${blocked.length === 1 ? 'it' : 'them'} and regenerate`);
+  // Any other entry git would commit (a stray file, a directory, a symlink) is refused too, as --check reports it.
+  const strays = found.kept
+    .filter((e) => !(e.name === FUNCTIONS_README && e.kind === 'file') && !expected.has(e.name) && !(e.kind === 'file' && e.name.endsWith('.sql')) && !blocked.includes(e.name))
+    .map((e) => e.name);
+  if (strays.length) {
+    throw new DomainModelError(
+      `${directory}: ${strays.join(', ')} ${strays.length === 1 ? 'is' : 'are'} neither a generated function file nor ${FUNCTIONS_README}; move ${strays.length === 1 ? 'it' : 'them'} away, or check --functions, and regenerate`,
+    );
+  }
   const candidates = found.kept.filter((e) => e.kind === 'file' && e.name.endsWith('.sql') && !expected.has(e.name)).map((e) => e.name);
   const foreign = candidates.filter((name) => functionFileNameProblem(name) !== null || !carriesBanner(path.join(directory, name)));
   if (foreign.length) {
@@ -181,7 +191,7 @@ export function planFunctionDirectory(directory: string, expected: ReadonlyMap<s
 /**
  * Writes `expected` into the directory: each file whose content differs, or that has an executable bit, created or
  * replaced through a descriptor opened with O_NOFOLLOW and set to mode 644, and each stale generated `*.sql` file
- * removed. The README and every other entry are left alone. Everything planFunctionDirectory refuses is refused
+ * removed. The README is left alone. Everything planFunctionDirectory refuses is refused
  * before anything changes. Returns the names written and removed.
  */
 export function writeFunctionDirectory(directory: string, expected: ReadonlyMap<string, string>): { readonly written: readonly string[]; readonly removed: readonly string[] } {

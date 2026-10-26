@@ -46,8 +46,9 @@ import {
  *            leaves it awaiting. In the functions directory it writes each changed file, removes each
  *            stale generated `*.sql` (one whose first line is the generator's banner), and never follows a
  *            symlink or touches the README. It checks the directory before writing anything: a symlink, a
- *            non-regular entry, or a `*.sql` file that is not the generator's refuses the run (exit 2) and
- *            leaves the document and the directory as they were.
+ *            non-regular entry, a `*.sql` file that is not the generator's, or any other entry git would
+ *            commit but the README (a stray file, a directory) refuses the run (exit 2) and leaves the
+ *            document and the directory as they were.
  *   --check  regenerates and compares with the document, ignoring the "Approved by:" line and the
  *            provenance line (commit and branch, the document's fifth line), so a pull request that
  *            changes no schema passes whatever its commit, and compares the functions directory: every

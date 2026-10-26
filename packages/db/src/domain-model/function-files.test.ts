@@ -144,15 +144,14 @@ describe('DBF-04: comparing the functions directory', () => {
 });
 
 describe('DBF-04: writing the functions directory (--out)', () => {
-  it('writes changed files only, removes stale generated *.sql, and leaves the README and other entries alone', () => {
+  it('writes changed files only, removes stale generated *.sql, and leaves the README alone', () => {
     const dir = tempDir();
     expect(writeFunctionDirectory(dir, expected)).toEqual({ written: ['gate_probe_a.sql', 'gate_probe_b.sql'], removed: [] });
     writeFileSync(path.join(dir, 'README.md'), '# hand-written\n');
     writeFileSync(path.join(dir, 'gate_probe_stale.sql'), generatedFile('-- stale'));
-    writeFileSync(path.join(dir, 'notes.txt'), 'kept\n');
     const next = new Map([...expected, ['gate_probe_b.sql', '-- b\nSELECT 3;\n']]);
     expect(writeFunctionDirectory(dir, next)).toEqual({ written: ['gate_probe_b.sql'], removed: ['gate_probe_stale.sql'] });
-    expect(readdirSync(dir).sort()).toEqual(['README.md', 'gate_probe_a.sql', 'gate_probe_b.sql', 'notes.txt']);
+    expect(readdirSync(dir).sort()).toEqual(['README.md', 'gate_probe_a.sql', 'gate_probe_b.sql']);
     expect(readFileSync(path.join(dir, 'README.md'), 'utf8')).toBe('# hand-written\n');
     expect(readFileSync(path.join(dir, 'gate_probe_b.sql'), 'utf8')).toBe('-- b\nSELECT 3;\n');
     expect(writeFunctionDirectory(dir, next)).toEqual({ written: [], removed: [] });
@@ -205,6 +204,21 @@ describe('DBF-04: writing the functions directory (--out)', () => {
     rmSync(path.join(dir, 'gate_probe_hand.sql'));
     expect(planFunctionDirectory(dir, next)).toEqual({ stale: ['gate_probe_stale.sql'] });
     expect(writeFunctionDirectory(dir, next)).toEqual({ written: ['gate_probe_b.sql'], removed: ['gate_probe_stale.sql'] });
+  });
+
+  it('refuses any other entry git would commit (a stray file, a directory), changing nothing, as --check reports it', () => {
+    const dir = tempDir();
+    writeFunctionDirectory(dir, expected);
+    writeFileSync(path.join(dir, 'notes.txt'), 'stray\n');
+    mkdirSync(path.join(dir, 'subdir'));
+    const next = new Map([...expected, ['gate_probe_b.sql', 'changed\n']]);
+    expect(() => planFunctionDirectory(dir, next)).toThrow(DomainModelError);
+    expect(() => writeFunctionDirectory(dir, next)).toThrow(`${dir}: notes.txt, subdir are neither a generated function file nor README.md; move them away, or check --functions, and regenerate`);
+    expect(readFileSync(path.join(dir, 'gate_probe_b.sql'), 'utf8')).toBe('-- b\nSELECT 2;\n');
+    expect(compareFunctionDirectory(dir, next)).toMatchObject({ extra: ['notes.txt'], refused: ['subdir'] });
+    rmSync(path.join(dir, 'notes.txt'));
+    rmSync(path.join(dir, 'subdir'), { recursive: true });
+    expect(writeFunctionDirectory(dir, next)).toEqual({ written: ['gate_probe_b.sql'], removed: [] });
   });
 
   it('a stale file with the banner but a name no function could have is refused too', () => {

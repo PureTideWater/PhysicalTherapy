@@ -95,7 +95,8 @@ symlinked directory, an entry git would commit that is neither a generated file 
 match, or a `*.sql` file that does not open with the generator's banner. It then writes each changed file and removes
 each stale `*.sql` no function produces, only when that file's first line is the banner; a `*.sql` without the banner
 refuses the run (exit 2) and names every such file, so `--functions` pointed by mistake at `packages/db/migrations` or
-any other directory of SQL deletes nothing. It never follows a symlink and touches no other entry.
+any other directory of SQL deletes nothing. It never follows a symlink, and it refuses (exit 2) any other entry git
+would commit but the README (a stray file, a directory), as `--check` reports it, before writing anything.
 
 `--check` compares the directory as well as the document, reports both, and exits 1 if either differs, listing every
 missing, extra and differing file with its first differing line and the command that regenerates it; any entry git
@@ -249,7 +250,7 @@ regeneration is its own pull request, reviewed as layout alone.
 | A "Defined by" line naming every migration that creates the function (the design's first draft; review finding R1) | Read from migration text, it sees CREATE statements only, so for the tenancy functions it would name the wrong migration and miss the hardening that set their `search_path`; `git log -p` on the file gives the true history, from the catalog |
 | The body-hash line as the binding to the approved document | It covers the body alone, not the header or the privileges, and a reader cannot recompute it from the file without knowing which text it hashes; the drift check and Appendix D's migration hashes already bind the files to what was signed |
 | A pointer per changed function in the summary (`(diff: packages/db/functions/<name>.sql)`) | Sends the founder to a second place, which the GitHub app shows less well; the summary carries the diffs themselves |
-| Every diff in the pull request's description, with no budget (this pull request's first draft; review findings T1 and S4) | A migration like #42's prints about 98,000 characters of function diffs, past GitHub's 65,536-character description limit, and a PostgreSQL major-version regeneration would pass the 1 MiB job summary; the description carries the list, the job summary the diffs up to a budget, and "Files changed" all of them |
+| Every diff in the pull request's description, with no budget (this pull request's first draft; review findings T1 and S4) | A migration like #42's prints about 105,000 characters of function section (about 150,000 for the whole summary), past GitHub's 65,536-character description limit, and a PostgreSQL major-version regeneration would pass the 1 MiB job summary; the description carries the list, the job summary the diffs up to a budget, and "Files changed" all of them |
 | Only the diffs of sensitive functions in the summary | Picks for the founder which changes to read; every changed file is listed, and every diff is shown up to the budget |
 | Regenerating the files inside the summary step | CI's summary runs before the job migrates its database; `--check` in the same job already proves the committed files equal the migrated catalog, which the section says in its first line |
 
@@ -277,7 +278,7 @@ regeneration is its own pull request, reviewed as layout alone.
   (ADR 0063, step 5).
 - `packages/db/functions/*.sql` is never edited by hand; a hand edit fails `--check`. A guard in
   `.claude/hooks/protect-content.sh` and a CLAUDE.md "Never" line would refuse it at the edit; both are the founder's
-  to add, and are proposed in the pull request.
+  to add, and are proposed in the pull request's description and in Lane B's status file.
 - A move to a new PostgreSQL major version may regenerate every file for layout alone.
 - The checks that prove this holds: DBF-01 to DBF-05 (`docs/product/test-matrix.md`), the drift file
   `function-files.db.test.ts` (which also runs the command itself against a scratch database for its exit codes and

@@ -32,7 +32,8 @@ import { DomainModelError } from './sources';
  *
  * Deterministic: no timestamp, commit, database name or OID, and every order is C order over the catalog's text,
  * whatever order the rows arrive in. The definitions are read under the generator's pinned search_path, DateStyle,
- * IntervalStyle and TimeZone (generate.ts), so the connection's own settings do not show; what pg_get_functiondef
+ * IntervalStyle, TimeZone, quote_all_identifiers, standard_conforming_strings, extra_float_digits and bytea_output
+ * (generate.ts), so the connection's own settings do not show; what pg_get_functiondef
  * prints does depend on the PostgreSQL major version, as the document already does.
  *
  * Refused (DomainModelError, exit 2), never guessed: a name outside `^[a-z_][a-z0-9_]*$` or longer than 63 bytes,
