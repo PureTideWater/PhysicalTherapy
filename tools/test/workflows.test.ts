@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -1901,11 +1901,12 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
   /** vitest on these assertions with CI_TREE set to the copy: a vitest of its own, as collection.test.ts runs one. */
   function assertionsOn(dir: string, extra: readonly string[] = []) {
     const vitest = path.join(path.dirname(createRequire(import.meta.url).resolve('vitest/package.json')), 'vitest.mjs');
-    const env: NodeJS.ProcessEnv = { ...process.env, CI_TREE: dir };
-    for (const name of Object.keys(env).filter((key) => key.startsWith('VITEST'))) Reflect.deleteProperty(env, name);
+    // Plain text: CI's runner sets FORCE_COLOR, whose colour codes would break the counts read from the output.
+    const env: NodeJS.ProcessEnv = { ...process.env, CI_TREE: dir, NO_COLOR: '1' };
+    for (const name of Object.keys(env).filter((key) => key.startsWith('VITEST') || key === 'FORCE_COLOR')) Reflect.deleteProperty(env, name);
     const ran = spawnSync(process.execPath, [vitest, 'run', '--project', 'unit', ...TESTS, ...extra], { cwd: repositoryRoot, env, encoding: 'utf8', timeout: 280_000 });
     expect(ran.error).toBeUndefined();
-    return { status: ran.status, output: `${ran.stdout}${ran.stderr}` };
+    return { status: ran.status, output: stripVTControlCharacters(`${ran.stdout}${ran.stderr}`) };
   }
 
   // Skipped inside the run it starts, which sets CI_TREE, so it never recurses.
