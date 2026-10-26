@@ -120,7 +120,7 @@ export async function contractCoverage(scope: Scope, practiceId: string, contrac
   return new Map(rows.map((row) => [row.contract_id, { of: { lines: row.lines, chargeCents: row.billed }, priced: { lines: row.priced_lines, chargeCents: row.priced_billed } }]));
 }
 
-/** A fee-schedule period PaidWhole has not loaded: a CMS quarter ("2026-Q4") for terms priced on the date of service, a year ("2027") for terms locked to one. */
+/** A fee-schedule period PaidWhole has not loaded: a CMS quarter ("2026-Q4", which Coverage says as "Q4 2026 (Oct–Dec)") for terms priced on the date of service, a year ("2027") for terms locked to one. */
 export interface FeeSchedulePeriod {
   readonly kind: 'quarter' | 'year';
   readonly label: string;

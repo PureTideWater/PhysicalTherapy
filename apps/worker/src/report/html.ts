@@ -45,12 +45,21 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   VERSION_NOT_SIGNED_OFF: 'Contract version corrected since it was priced',
   VERSION_NOT_IN_FORCE: 'Contract version no longer covers the service date (amended since it was priced)',
   RELEASE_WITHDRAWN: 'Rule release withdrawn since it was priced',
-  CONTENT_NOT_LOADED: 'Priced before PaidWhole loaded the Medicare content for its date (MPPR or MUE): held until it is priced again',
+  CONTENT_NOT_LOADED:
+    'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) or unit limits (MUE) for its date; held until a re-run under a release that loads them',
   PER_VISIT_REVIEW: 'Per-visit line, judged with its visit: held for the specialist’s review',
   NCCI_REVIEW: 'An NCCI procedure-to-procedure edit stands: held for review',
   BELOW_CASE_MATERIALITY: 'Pattern below the case materiality (accumulating)',
   CASE_LINE_FROM_OTHER_RUN: 'In a case through another run’s pricing of the line (counted in that run’s report)',
 } satisfies Readonly<Record<Exclude<NotActionableReason, 'WRITTEN_OFF'> | 'BELOW_CASE_MATERIALITY' | 'CASE_LINE_FROM_OTHER_RUN', string>>;
+
+/** CONTENT_NOT_LOADED by the content the line's trace read (content.ts, contentNotLoadedReason()), named (UX-10). */
+const CONTENT_REASON_TEXT: Readonly<Record<string, string>> = {
+  'CONTENT_NOT_LOADED:mppr': 'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) for its date; held until a re-run under a release that loads it',
+  'CONTENT_NOT_LOADED:mue': 'Priced before PaidWhole loaded Medicare’s unit limits (MUE) for its date; held until a re-run under a release that loads them',
+  'CONTENT_NOT_LOADED:mppr_mue':
+    'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for its date; held until a re-run under a release that loads them',
+};
 
 /**
  * A case's submissions sent without sign-off, in the founder's words (2026-10-20; docs/adr/0061), as the report's
@@ -91,7 +100,7 @@ export function reasonText(reason: string): string {
   if (reason.startsWith('written_off:')) {
     return `Written off: ${WRITE_OFF_TEXT[reason.slice('written_off:'.length) as WriteOffReason]}`;
   }
-  return REASON_TEXT[reason] ?? reason;
+  return REASON_TEXT[reason] ?? CONTENT_REASON_TEXT[reason] ?? reason;
 }
 
 /** A table; `figures` names its columns (1-based) of codes and of amounts or counts, set in the mono face. */

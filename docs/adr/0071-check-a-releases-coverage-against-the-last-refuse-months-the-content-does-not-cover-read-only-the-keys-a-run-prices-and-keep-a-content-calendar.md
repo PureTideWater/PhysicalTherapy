@@ -159,15 +159,19 @@ reads the line yet.
 
 The monitor does not plan such a month again while the release in force is the failed run's own, or covers no more of
 the month for the code's families, and the practice's mappings and contract versions are unchanged since the run; a
-release that covers more, a newer line or changed terms plan it again. Coverage shows the waiting months with their
-quarter, families, lines and billed dollars, and one sentence per fee-schedule quarter (terms priced on the service
-date) or year (terms locked to a year) not loaded; it is the same computation as #59's banner, and reads only the
-`pfs_rvu` windows of the release in force. Its headline adds the waiting months' lines and dollars, never their
+release that covers more, a newer line or changed terms plan it again. Coverage shows the waiting months in the
+billing-ZIP card's shape, with their lines, claims, billed and paid dollars and, last, their status: the quarter
+("Q4 2026 (Oct–Dec)") and families each waits on, or that it is being priced again. Above the unpriced reasons it puts
+one sentence per fee-schedule quarter (terms priced on the service date) or year (terms locked to a year) not loaded,
+and the `NO_PFS_VALUE` row says how many of its lines wait on that fee schedule, with nothing for the practice to
+check; it is the same computation as #59's banner, and reads only the `pfs_rvu` windows of the release in force. On
+Pricing runs, a run refused for content not loaded (or for the billing ZIP) reads "Waiting", neutrally, with its words
+labelled "Waiting on Medicare content", never in the danger colour. Its headline adds the waiting months' lines and dollars, never their
 claims, which a claim spanning two months would count twice. A content gap on a GPCI or a conversion factor under
 `LOCKED:<year>` terms is judged, as the engine looked it up, against that basis year (any window meeting it); the
 locality and the plus-four keep the service date. Triage holds a priced
 line whose trace read MPPR or MUE outside its release's spans as `CONTENT_NOT_LOADED`, never actionable, and the audit
-report names it. The remedy tables and `docs/product/unpriced-reasons.md` are unchanged.
+report names it and which content its trace read (the MPPR, the MUE or both). The remedy tables and `docs/product/unpriced-reasons.md` are unchanged.
 
 **One content alert per run:** a run refused `waiting_on_content_*`, or a complete run with lines stopped by other
 content not loaded for their dates, logs `CONTENT_NOT_LOADED` once with a line count (warn, "pricing run found lines
@@ -220,8 +224,10 @@ entry's contents). Before any release is published the
 drafts are judged, and the titles say so. The entries ship unreviewed, and the workflow reports that until a reviewer
 confirms each against its source page: dates that cannot be checked from here are never presented as reviewed. The
 console shows "Content due" from the release in force, reading the checkout's drafts again only once a file under
-them or the prepared releases changes; the customer's Releases page lists every dated family of the release in force,
-loaded through a date, in force with no end, loaded only from a later date, only partly loaded, or not loaded, reading
+them or the prepared releases changes: one row per family, and every item due with its title, what happened, what to
+do and its commands, the calendar's review said once; the customer's Releases page lists every dated family of the
+release in force, loaded through a date (saying so when it has ended), in force with no end, loaded only from a later
+date, only partly loaded (with what waits for it, on Coverage), or not loaded, reading
 only those families' record types (the content-through cache is keyed by release, manifest and record-type set). `docs/runbooks/content-updates.md` holds the calendar's table (held equal to it by a test) and the
 target time to load: in a published release 14 days before the period starts, or within 3 business days of a late
 publication.

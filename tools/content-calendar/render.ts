@@ -70,7 +70,7 @@ export function dueBody(item: DueItem, calendar: ContentCalendar, basis: Basis):
     lines.push(`Loaded through: ${item.loadedThrough}, in ${heldIn(basis)}`);
   }
   if (item.period !== null) {
-    lines.push(`Period: ${item.period.label} (${item.period.from} to ${item.period.to})`);
+    lines.push(`Period: ${item.period.label}, ${item.period.from} to ${item.period.to}`);
   }
   if (item.dueOn !== null) {
     lines.push(`Due by: ${item.dueOn}`);

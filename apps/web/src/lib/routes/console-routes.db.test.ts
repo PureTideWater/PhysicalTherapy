@@ -716,7 +716,7 @@ describe('Content due on the console’s Rule releases page (audit #59; docs/adr
       expect.objectContaining({ family: 'ncci_mue', stage: 'ends_in_45', loadedThrough: '2026-12-31', title: 'Content due: Medicare unit limits (MUE), loaded content ends within 45 days (2026-12-31)' }),
     );
     expect(due.items.find((item) => item.family === 'ncci_mue')?.commands.at(-2)).toBe('pnpm verify-content');
-    expect(due.families).toContainEqual({ family: 'ncci_mue', title: 'Medicare unit limits (MUE)', loadedThrough: '2026-12-31', open: false });
+    expect(due.families).toContainEqual({ family: 'ncci_mue', title: 'Medicare unit limits (MUE)', loadedThrough: '2026-12-31', open: false, partly: false, loadedFrom: null, loaded: true });
     // Every calendar entry ships unreviewed, and this server has no checkout: nothing is read from one.
     expect(due.items.map((item) => item.stage)).toContain('calendar_unreviewed');
     expect(due.problems).toEqual([]);

@@ -516,10 +516,10 @@ describe('the findings file', () => {
       {
         title: 'Content due: Medicare unit limits (MUE), loaded content ends within 45 days (2026-12-31)',
         body: [
-          'Medicare unit limits (MUE) is loaded through 2026-12-31, 30 days after 2026-12-01. 2027-Q1 starts on 2027-01-01 and is due in a published release by 2026-12-18.',
+          'Medicare unit limits (MUE) is loaded through 2026-12-31, 30 days after 2026-12-01. Q1 2027 (Jan–Mar) starts on 2027-01-01 and is due in a published release by 2026-12-18.',
           '',
           'Loaded through: 2026-12-31, in the newest published release (3)',
-          'Period: 2027-Q1 (2027-01-01 to 2027-03-31)',
+          'Period: Q1 2027 (Jan–Mar), 2027-01-01 to 2027-03-31',
           'Due by: 2026-12-18',
           'Source: CMS, Medicare NCCI Medically Unlikely Edits (MUEs) (https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits)',
           '',

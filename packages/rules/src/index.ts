@@ -39,6 +39,8 @@ export {
   isRuleRecordType,
   parseRuleRecord,
   quarterLabel,
+  quarterName,
+  quarterNameOf,
   quarterWindowProblem,
   recordTypesDated,
   ruleRecordSchema,

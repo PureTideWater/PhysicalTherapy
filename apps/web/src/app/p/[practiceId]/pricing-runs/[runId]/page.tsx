@@ -23,6 +23,7 @@ import {
   nothingMoreToAccept,
   runName,
   unacceptedRerunText,
+  waitingLabel,
 } from '../../../../../components/pricing/display';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
@@ -187,7 +188,7 @@ export default async function PricingRunPage(props: Props) {
           Pricing run, {run.periodFrom} to {run.periodTo}
         </h1>
         <div className="flex flex-wrap items-center gap-2">
-          <RunStatusBadge status={run.status} />
+          <RunStatusBadge status={run.status} failureCode={run.failureCode} />
           <RunStateBadges run={run} />
           {run.status === 'complete' ? <span className="text-xs text-muted-foreground">Complete runs never change.</span> : null}
         </div>
@@ -317,7 +318,7 @@ export default async function PricingRunPage(props: Props) {
             </Fact>
             <Fact label="Completed">{run.completedAt === null ? '—' : utc(run.completedAt)}</Fact>
             <Fact label="Triage date">{run.createdAt.slice(0, 10)} (windows are judged on the day the run was created)</Fact>
-            {run.failureCode === null ? null : <Fact label="Failed">{FAILURE_TEXT[run.failureCode] ?? run.failureCode}</Fact>}
+            {run.failureCode === null ? null : <Fact label={waitingLabel(run.failureCode) ?? 'Failed'}>{FAILURE_TEXT[run.failureCode] ?? run.failureCode}</Fact>}
           </dl>
           {run.status !== 'complete' ? null : !run.inEffect ? (
             <RefusalTakeover keys={[`rerun:${run.id}`]} className="mt-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring">

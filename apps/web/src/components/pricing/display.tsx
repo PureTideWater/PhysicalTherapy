@@ -26,11 +26,51 @@ const STATUS_TEXT: Readonly<Record<RunStatus, string>> = {
   failed: 'Failed',
 };
 
-export function RunStatusBadge({ status }: { readonly status: RunStatus }) {
+/**
+ * A run's state. A run refused because its month waits on something to come (the billing ZIP, or Medicare content
+ * PaidWhole has not loaded) is a system state, not a failure: neutral, "Waiting", never the danger colour (ADR
+ * 0056:89-92; fix round 2 of PR #49, UX-9). Its record still reads failed (data-status).
+ */
+export function RunStatusBadge({ status, failureCode = null }: { readonly status: RunStatus; readonly failureCode?: string | null }) {
+  if (status === 'failed' && waitingLabel(failureCode) !== null) {
+    return (
+      <Badge variant="secondary" data-status={status} data-waiting="true">
+        Waiting
+      </Badge>
+    );
+  }
   return (
     <Badge variant={status === 'failed' ? 'destructive' : status === 'complete' ? 'default' : 'secondary'} data-status={status}>
       {STATUS_TEXT[status]}
     </Badge>
+  );
+}
+
+/** What a refused run's month waits on, as the label its words take; for the other failure codes, none. */
+export const WAITING_LABEL: Readonly<Partial<Record<FailureCode, string>>> = {
+  location_not_ready: 'Waiting on the billing ZIP',
+  waiting_on_content_mue: 'Waiting on Medicare content',
+  waiting_on_content_mppr: 'Waiting on Medicare content',
+  waiting_on_content_mppr_mue: 'Waiting on Medicare content',
+};
+
+export function waitingLabel(code: string | null): string | null {
+  return code === null ? null : ((WAITING_LABEL as Readonly<Record<string, string>>)[code] ?? null);
+}
+
+/**
+ * Why a run failed, under its row on the Pricing runs list: a failure in the danger colour, a month that waits on the
+ * billing ZIP or on Medicare content neutrally, with its label (UX-9).
+ */
+export function RunFailureText({ code }: { readonly code: string }) {
+  const label = waitingLabel(code);
+  const text = FAILURE_TEXT[code] ?? code;
+  return label === null ? (
+    <p className="pt-2 text-sm text-destructive">{text}</p>
+  ) : (
+    <p className="pt-2 text-sm" data-state="waiting" data-code={code}>
+      <span className="font-medium">{label}:</span> {text}
+    </p>
   );
 }
 
@@ -43,16 +83,16 @@ export const FAILURE_TEXT: Readonly<Record<string, string>> = {
   location_not_ready: 'A line of the period needs the practice’s billing ZIP or ZIP+4: fix it in Pricing settings. Waiting months are priced by themselves once it is set.',
   // Audit #7 (docs/adr/0071): a line read the MPPR or the MUE on a date its release does not load them for, so no line
   // was kept and the month waits for that content; the code names the families exactly.
-  waiting_on_content_mue: 'A line of the period needs Medicare’s unit limits (MUE) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
+  waiting_on_content_mue: 'A line of the period needs Medicare’s unit limits (MUE) for dates PaidWhole has not loaded them for yet, so no line was kept. The month is priced by itself once that content is loaded.',
   waiting_on_content_mppr:
-    'A line of the period needs Medicare’s multiple-procedure reduction list (MPPR) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
+    'A line of the period needs Medicare’s multiple-procedure reduction list (MPPR) for dates PaidWhole has not loaded it for yet, so no line was kept. The month is priced by itself once that content is loaded.',
   waiting_on_content_mppr_mue:
-    'Lines of the period need Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
+    'Lines of the period need Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for dates PaidWhole has not loaded them for yet, so no line was kept. The month is priced by itself once that content is loaded.',
   // Audit #31: the price job looked up a key outside the ones it fetched for its batch, which is PaidWhole's defect. The
-  // run logs RELEASE_READ_OUTSIDE_FETCH for the operator (its alarm comes later: say "alerted" only then), and the
+  // run logs RELEASE_READ_OUTSIDE_FETCH for PaidWhole's team (its alarm comes later: say "alerted" only then), and the
   // monitor plans the month again at each trigger, so it prices by itself once the defect is fixed.
   release_read_outside_fetch:
-    'The price job read rule content it had not fetched, which is PaidWhole’s defect, so no line was kept and it was logged for the operator. The month is priced again by itself once it is fixed.',
+    'The price job read rule content it had not fetched, which is PaidWhole’s defect, so no line was kept and it was logged for PaidWhole’s team. The month is priced again by itself once it is fixed.',
 } satisfies Readonly<Record<FailureCode, string>>;
 
 export const RERUN_TEXT: Readonly<Record<RerunReason, string>> = {

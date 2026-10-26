@@ -195,6 +195,22 @@ export function quarterLabel(q: CmsQuarter): string {
   return `${String(q.year)}-Q${String(q.quarter)}`;
 }
 
+const QUARTER_MONTHS = ['Jan–Mar', 'Apr–Jun', 'Jul–Sep', 'Oct–Dec'] as const;
+
+/**
+ * "Q4 2026 (Oct–Dec)", the form a person reads (UX baseline UX-167): the console, the content calendar's issues, the
+ * Releases page and Coverage. quarterLabel's "2026-Q4" stays the machine form (data attributes, commands, COVERAGE.md).
+ */
+export function quarterName(q: CmsQuarter): string {
+  return `Q${String(q.quarter)} ${String(q.year)} (${QUARTER_MONTHS[q.quarter - 1] ?? ''})`;
+}
+
+/** quarterName of a quarterLabel ("2026-Q4" → "Q4 2026 (Oct–Dec)"); any other text is returned as it is. */
+export function quarterNameOf(label: string): string {
+  const match = /^(\d{4})-Q([1-4])$/.exec(label);
+  return match === null ? label : quarterName({ year: Number.parseInt(match[1] ?? '', 10), quarter: Number.parseInt(match[2] ?? '', 10) as CmsQuarter['quarter'] });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Primitive fields
 

@@ -19,6 +19,8 @@ import {
   isRuleRecordType,
   parseRuleRecord,
   quarterLabel,
+  quarterName,
+  quarterNameOf,
   quarterWindowProblem,
   recordTypesDated,
   secondPassSchema,
@@ -373,6 +375,14 @@ describe('CMS quarters of a year (audit #30)', () => {
   it('labels a quarter as the screening does', () => {
     expect(quarterLabel(q(2026, 4))).toBe('2026-Q4');
     expect(quarterLabel(cmsQuarterOfDate('2025-02-14'))).toBe('2025-Q1');
+  });
+
+  it('names a quarter for a person as the UX baseline writes it (UX-167), and turns a label into that name', () => {
+    expect(quarterName(q(2026, 4))).toBe('Q4 2026 (Oct–Dec)');
+    expect(quarterName(cmsQuarterOfDate('2025-02-14'))).toBe('Q1 2025 (Jan–Mar)');
+    expect([1, 2, 3, 4].map((n) => quarterNameOf(`2027-Q${String(n)}`))).toEqual(['Q1 2027 (Jan–Mar)', 'Q2 2027 (Apr–Jun)', 'Q3 2027 (Jul–Sep)', 'Q4 2027 (Oct–Dec)']);
+    expect(quarterNameOf('2027')).toBe('2027');
+    expect(quarterNameOf('2027-Q5')).toBe('2027-Q5');
   });
 
   it('keeps the per-code MPPR list inside one calendar year, with an end', () => {

@@ -129,6 +129,8 @@ export interface FamilyThrough {
   readonly through: string | null;
   /** In force with no end date. */
   readonly open: boolean;
+  /** Its last day loaded is before the day: it has ended, and the days after it are not loaded. */
+  readonly ended: boolean;
   /** Whether every content of the family has a record in the release. */
   readonly loaded: boolean;
   /** Not loaded, but some of the family's contents have a record in the release (a ZIP5 file with no ZIP+4 file). */
@@ -152,7 +154,7 @@ export function familiesLoadedThrough(windows: ContentWindows | null, today: str
       const through = familyLoadedThrough(entry, states, today);
       const later = through.loaded && !through.open && through.through === null;
       const partly = !through.loaded && entry.contents.some((content) => (states[content]?.windows.length ?? 0) > 0);
-      return { family: entry.family, title: entry.title, ...through, partly, from: later ? firstDayLoaded(entry.contents, states, today) : null };
+      return { family: entry.family, title: entry.title, ...through, ended: through.through !== null && through.through < today, partly, from: later ? firstDayLoaded(entry.contents, states, today) : null };
     });
 }
 

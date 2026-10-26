@@ -70,7 +70,7 @@ export default async function ReleasesPage(props: Props) {
                 <CardTitle>What this release covers</CardTitle>
               </CardHeader>
               <CardContent>
-                <ReleaseLoadedThrough families={loadedThrough} />
+                <ReleaseLoadedThrough families={loadedThrough} coverageHref={`/p/${practiceId}/coverage`} />
               </CardContent>
             </Card>
           )}

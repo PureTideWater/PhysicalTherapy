@@ -156,7 +156,7 @@ describe('contentDue', () => {
       stage: 'ends_in_45',
       title: 'Content due: Medicare fee schedule (relative values and GPCIs), loaded content ends within 45 days (2026-12-31)',
       loadedThrough: '2026-12-31',
-      period: { label: '2027-Q1', from: '2027-01-01', to: '2027-03-31' },
+      period: { label: 'Q1 2027 (Jan–Mar)', from: '2027-01-01', to: '2027-03-31' },
       dueOn: '2026-12-18',
       commands: [
         'pnpm rules:import --type pfs_rvu --year 2027 --effective-from 2027-01-01 --effective-to 2027-03-31 --url <download address> --file <the PPRRVU file of RVU27A>',
@@ -164,7 +164,7 @@ describe('contentDue', () => {
         'pnpm verify-content',
         'pnpm release:assemble 5',
       ],
-      lines: ['Medicare fee schedule (relative values and GPCIs) is loaded through 2026-12-31, 30 days after 2026-12-01. 2027-Q1 starts on 2027-01-01 and is due in a published release by 2026-12-18.'],
+      lines: ['Medicare fee schedule (relative values and GPCIs) is loaded through 2026-12-31, 30 days after 2026-12-01. Q1 2027 (Jan–Mar) starts on 2027-01-01 and is due in a published release by 2026-12-18.'],
     });
     expect(contentDue(REVIEWED, feeEnding(), '2026-12-20')[0]?.title).toBe('Content due: Medicare fee schedule (relative values and GPCIs), loaded content ends within 14 days (2026-12-31)');
     expect(contentDue(REVIEWED, feeEnding(), '2027-01-05')[0]?.title).toBe('Content ended: Medicare fee schedule (relative values and GPCIs), loaded content ended on 2026-12-31');
@@ -176,7 +176,7 @@ describe('contentDue', () => {
     const stageOn = (today: string, pending: ContentStates) => contentDue(REVIEWED, feeEnding(pending), today).map((item) => item.stage);
     expect(stageOn(dayBefore(dueOn), {})).toEqual(['ends_in_14']);
     expect(stageOn(dueOn, {})).toEqual(['no_draft']);
-    expect(contentDue(REVIEWED, feeEnding({}), dueOn)[0]?.title).toBe('Content due: Medicare fee schedule (relative values and GPCIs), 2027-Q1 has no draft (due 2026-12-18)');
+    expect(contentDue(REVIEWED, feeEnding({}), dueOn)[0]?.title).toBe('Content due: Medicare fee schedule (relative values and GPCIs), Q1 2027 (Jan–Mar) has no draft (due 2026-12-18)');
     // One content drafted is not enough; both are.
     expect(stageOn(dueOn, { pfs_rvu: window('2027-01-01', '2027-03-31') })).toEqual(['no_draft']);
     expect(stageOn(dueOn, { pfs_rvu: window('2027-01-01', '2027-03-31'), pfs_gpci: window('2027-01-01', '2027-03-31') })).toEqual(['ends_in_14']);
@@ -198,8 +198,8 @@ describe('contentDue', () => {
     expect(overdue).toMatchObject({
       family: 'ncci_ptp',
       stage: 'overdue',
-      title: 'Content overdue: Medicare coding edits (NCCI PTP), 2027-Q1 files not loaded',
-      period: { label: '2027-Q1', from: '2027-01-01', to: '2027-03-31' },
+      title: 'Content overdue: Medicare coding edits (NCCI PTP), Q1 2027 (Jan–Mar) files not loaded',
+      period: { label: 'Q1 2027 (Jan–Mar)', from: '2027-01-01', to: '2027-03-31' },
       dueOn: '2026-12-18',
       commands: ['pnpm rules:import --type ncci_ptp --year 2027 --url <download address> --file <each practitioner PTP file for 2027-Q1>', 'pnpm verify-content', 'pnpm release:assemble 5'],
     });
@@ -236,8 +236,8 @@ describe('contentDue', () => {
     ]);
     const onDue = due('2026-12-18').filter((item) => item.stage === 'no_draft');
     expect(onDue.map((item) => item.title)).toEqual([
-      'Content due: Medicare fee schedule (relative values and GPCIs), 2027-Q1 has no draft (due 2026-12-18)',
-      'Content due: Medicare unit limits (MUE), 2027-Q1 has no draft (due 2026-12-18)',
+      'Content due: Medicare fee schedule (relative values and GPCIs), Q1 2027 (Jan–Mar) has no draft (due 2026-12-18)',
+      'Content due: Medicare unit limits (MUE), Q1 2027 (Jan–Mar) has no draft (due 2026-12-18)',
     ]);
     expect(onDue[0]?.lines[0]).toContain('the drafts hold no window for the period');
     expect(of(due('2026-12-18'), 'ncci_mue')[0]?.commands.at(-1)).toBe('pnpm release:assemble 1');
@@ -333,7 +333,7 @@ describe('contentDue', () => {
     // The GPCI ended with Q3, the RVUs are loaded for Q4: only Q4's GPCI is lacking.
     const gpciEnded = { releaseNo: 4, inForce: allLoaded(undefined, { pfs_rvu: window('2026-01-01', '2026-12-31'), pfs_gpci: window('2026-01-01', '2026-09-30') }) };
     const [ended] = contentDue(REVIEWED, gpciEnded, '2026-12-01');
-    expect(ended).toMatchObject({ stage: 'ended', loadedThrough: '2026-09-30', period: { label: '2026-Q4' } });
+    expect(ended).toMatchObject({ stage: 'ended', loadedThrough: '2026-09-30', period: { label: 'Q4 2026 (Oct–Dec)' } });
     expect(ended?.commands).toEqual([gpci('D', '2026-10-01', '2026-12-31'), ...tail]);
     // Both ended with Q1: Q2, Q3 and Q4, both contents each.
     const bothEnded = { releaseNo: 4, inForce: allLoaded(undefined, { pfs_rvu: window('2026-01-01', '2026-03-31'), pfs_gpci: window('2026-01-01', '2026-03-31') }) };
@@ -350,6 +350,11 @@ describe('contentDue', () => {
     const notLoaded = { releaseNo: 4, inForce: without(allLoaded(undefined, { pfs_gpci: window('2026-01-01', '2026-06-30') }), ['pfs_rvu']) };
     const [missing] = contentDue(REVIEWED, notLoaded, '2026-12-01');
     expect(missing?.stage).toBe('not_loaded');
+    // Some of the family loaded and some not: said as the Releases page says it, "only partly loaded" (fix round 2 of PR #49, UX-7).
+    expect(missing?.lines).toEqual(['Only part of Medicare fee schedule (relative values and GPCIs) is loaded: pfs_rvu has no window yet, so lines that need it are not priced.']);
+    expect(contentDue(REVIEWED, { releaseNo: 4, inForce: without(allLoaded(), ['pfs_rvu', 'pfs_gpci']) }, '2026-12-01')[0]?.lines).toEqual([
+      'No Medicare fee schedule (relative values and GPCIs) is loaded for 2026-12-01.',
+    ]);
     expect(missing?.commands).toEqual([rvu('C', '2026-07-01', '2026-09-30'), gpci('C', '2026-07-01', '2026-09-30'), rvu('D', '2026-10-01', '2026-12-31'), gpci('D', '2026-10-01', '2026-12-31'), ...tail]);
     // With no RVUs at all and the GPCI loaded through today, the period holding today alone.
     const rvuOnly = { releaseNo: 4, inForce: without(allLoaded(), ['pfs_rvu']) };

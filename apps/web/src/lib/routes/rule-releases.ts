@@ -76,7 +76,17 @@ export interface ContentDue {
   /** What is due, in the calendar's stage order, with the exact commands. */
   readonly items: readonly DueItem[];
   /** Every family of the calendar, in its order, with the date the release in force loads it through. */
-  readonly families: readonly { readonly family: ContentFamilyId; readonly title: string; readonly loadedThrough: string | null; readonly open: boolean }[];
+  readonly families: readonly {
+    readonly family: ContentFamilyId;
+    readonly title: string;
+    readonly loadedThrough: string | null;
+    readonly open: boolean;
+    /** Not loaded, but some of its contents have a window (as the Releases page's "only partly loaded"). */
+    readonly partly: boolean;
+    /** Loaded only from a later day: that day, when known. */
+    readonly loadedFrom: string | null;
+    readonly loaded: boolean;
+  }[];
   /** Drafts or prepared releases of the checkout that cannot be read; what is due is judged on the rest, and the page shows these. */
   readonly problems: readonly string[];
 }
@@ -99,7 +109,15 @@ async function dueContent(client: ScopeClient, inForce: PublishedRelease | undef
   return {
     releaseNo: inForce?.releaseNo ?? null,
     items,
-    families: familiesLoadedThrough(windows, today, { onChange: true }).map((row) => ({ family: row.family, title: row.title, loadedThrough: row.through, open: row.open })),
+    families: familiesLoadedThrough(windows, today, { onChange: true }).map((row) => ({
+      family: row.family,
+      title: row.title,
+      loadedThrough: row.through,
+      open: row.open,
+      partly: row.partly,
+      loadedFrom: row.from,
+      loaded: row.loaded,
+    })),
     problems: pending?.problems ?? [],
   };
 }

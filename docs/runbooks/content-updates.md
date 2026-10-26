@@ -118,13 +118,19 @@ that lists none of its files any more, and its dates.
 ## 6. What the console and the customer pages show
 
 - The console's Content due, on the Rule releases page, judges **the release in force** in the database (and, with a
-  checkout, the drafts and prepared releases as pending): one row per family with its loaded-through date and stage,
-  the commands for the items due, and "Nothing is due." when nothing is.
+  checkout, the drafts and prepared releases as pending): one row per family with its loaded-through date ("partly
+  loaded" when some of its contents are) and stage ("Nothing due" when none is), then every item due, each with its
+  title, what happened, what to do (this section's table, in short) and its commands, the calendar's own review said
+  once as its item; and "Nothing is due." when nothing is. Quarters read "Q1 2027 (Jan–Mar)" there and in the issues;
+  the commands keep `2027-Q1`.
 - The customer's Releases page lists every dated family of the release in force, in one of five forms: "<title>:
   loaded through <date>"; "<title>: in force, no end date" for a family that stays in force until replaced;
-  "<title>: loaded only from <date>" (or "from a later date"); "<title>: only partly loaded in this release" when some
-  but not all of its contents have records; "<title>: not loaded in this release". The Coverage page says when the
-  Medicare fee schedule for a period is not loaded, and lists the months waiting on the MPPR or the MUE.
+  "<title>: loaded only from <date>" (or "from a later date"); "<title>: only partly loaded in this release. Lines that
+  need the rest of it are not priced until it is loaded; Coverage lists them." when some but not all of its contents
+  have records; "<title>: not loaded in this release". A family whose date has passed adds "(ended; lines after that
+  date are not priced until PaidWhole loads what follows)". The Coverage page says, above its unpriced reasons, when
+  the Medicare fee schedule for a period is not loaded, and lists the months waiting on the MPPR or the MUE, each with
+  its status ("Waiting on the Q4 2026 (Oct–Dec) Medicare content (MPPR)", or "Being priced again under release <n>").
 - The workflow's issues judge **the newest published release** in the repository, which may not yet be the release
   production has loaded, or the drafts before release 1; their titles and bodies say which ("the newest published
   release (<n>)", "content in the drafts").

@@ -1,5 +1,5 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
-import { type DateRange, cmsQuarterOfDate, cmsQuarterWindow, dayAfter, quarterLabel, subtractRanges } from '@tp/rules';
+import { type DateRange, cmsQuarterOfDate, cmsQuarterWindow, dayAfter, quarterLabel, quarterNameOf, subtractRanges } from '@tp/rules';
 import {
   CONTENT_FAILURE_CODES,
   type ContentFailureCode,
@@ -43,7 +43,7 @@ export interface ContentWaitMonth {
   readonly failedReleaseNo: number;
   /** The families the code names, MPPR first. */
   readonly families: readonly ContentFamily[];
-  /** The quarters ("2027-Q1") of the month's days the failed release does not load the families' contents for. */
+  /** The quarters ("2027-Q1", the machine form; waitingOnText says "Q1 2027 (Jan–Mar)") of the month's days the failed release does not load the families' contents for. */
   readonly quarters: readonly string[];
   /** The release in force (the one a `repricing` month is priced under); null when none is. */
   readonly releaseInForce: number | null;
@@ -76,18 +76,18 @@ function quartersOf(ranges: readonly DateRange[]): string[] {
 export const FAMILY_NAME: Readonly<Record<ContentFamily, string>> = { mppr: 'MPPR', mue: 'MUE' };
 
 /**
- * What a month waits on, in words: "the 2027-Q1 Medicare content (MPPR, MUE)", with only the families its run's code
- * names; or, once it is being priced again, why.
+ * A month's status, in words: "Waiting on the Q1 2027 (Jan–Mar) Medicare content (MPPR, MUE)", with only the families
+ * its run's code names; or, once it is being priced again, why (fix round 2 of PR #49, UX-6).
  */
 export function waitingOnText(month: ContentWaitMonth): string {
   if (month.kind === 'repricing') {
-    return `being priced again under release ${String(month.releaseInForce)}`;
+    return `Being priced again under release ${String(month.releaseInForce)}`;
   }
   if (month.kind === 'terms_changed') {
-    return 'being priced again under the practice’s changed terms';
+    return 'Being priced again under the practice’s changed terms';
   }
   const families = month.families.map((family) => FAMILY_NAME[family]).join(', ');
-  return month.quarters.length === 0 ? `the Medicare content (${families})` : `the ${month.quarters.join(', ')} Medicare content (${families})`;
+  return month.quarters.length === 0 ? `Waiting on the Medicare content (${families})` : `Waiting on the ${month.quarters.map(quarterNameOf).join(', ')} Medicare content (${families})`;
 }
 
 /** The months waiting on Medicare content, oldest first; none when no month's last run failed so. */

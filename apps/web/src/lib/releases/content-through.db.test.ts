@@ -56,6 +56,7 @@ describe('the loaded-through dates', () => {
       title: 'Medicare unit limits (MUE)',
       through: '2026-12-31',
       open: false,
+      ended: false,
       loaded: true,
       partly: false,
       from: null,
@@ -80,6 +81,7 @@ describe('the loaded-through dates', () => {
     expect(rows.find((row) => row.family === 'ncci_mue')).toMatchObject({
       through: '2026-12-31',
       open: false,
+      ended: true,
       loaded: true,
     });
   });
@@ -88,13 +90,13 @@ describe('the loaded-through dates', () => {
 describe('a family the release does not load, or loads only later (review S1)', () => {
   it('is listed all the same: 900001 has no ZIP+4 file, so the ZIP locality family is only partly loaded', async () => {
     const rows = await counted(async (scope) => familiesLoadedThrough((await windowsInForce(scope.client, DATED_FAMILY_CONTENTS))?.windows ?? null, '2026-11-20'));
-    expect(rows.find((row) => row.family === 'zip_locality')).toEqual({ family: 'zip_locality', title: expect.any(String) as string, through: null, open: false, loaded: false, partly: true, from: null });
+    expect(rows.find((row) => row.family === 'zip_locality')).toEqual({ family: 'zip_locality', title: expect.any(String) as string, through: null, open: false, ended: false, loaded: false, partly: true, from: null });
     expect(rows.map((row) => row.family)).toEqual(familiesLoadedThrough(null, '2026-11-20').map((row) => row.family));
   });
 
   it('gives a family loaded only from a later day the first day it is loaded', async () => {
     const rows = await counted(async (scope) => familiesLoadedThrough(await contentWindowsOf(scope.client, RELEASE, manifest), '2025-06-01'));
-    expect(rows.find((row) => row.family === 'ncci_mue')).toEqual({ family: 'ncci_mue', title: 'Medicare unit limits (MUE)', through: null, open: false, loaded: true, partly: false, from: '2026-01-01' });
+    expect(rows.find((row) => row.family === 'ncci_mue')).toEqual({ family: 'ncci_mue', title: 'Medicare unit limits (MUE)', through: null, open: false, ended: false, loaded: true, partly: false, from: '2026-01-01' });
   });
 });
 

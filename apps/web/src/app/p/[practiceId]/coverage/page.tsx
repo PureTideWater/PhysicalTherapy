@@ -1,3 +1,4 @@
+import { quarterNameOf } from '@tp/rules';
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -14,6 +15,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../components/uploads/format-flag';
 import { type UnconfirmedFormatSource, unconfirmedFormatExplanation } from '../../../../lib/contracts/format-sources';
 import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remedies';
+import type { FeeSchedulePeriod } from '../../../../lib/coverage/in-effect';
 import { waitingHeadline } from '../../../../lib/pricing/location';
 import { shareOf } from '../../../../lib/pricing/view';
 import { loadPage } from '../../../../lib/http/next';
@@ -25,6 +27,11 @@ import { FormKeys } from '../../../../components/form-keys';
 export const metadata: Metadata = { title: 'Coverage' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
+
+/** A fee-schedule period in a person's words: a quarter as "Q4 2026 (Oct–Dec)" (UX-167), a year as "2026". */
+function periodWords(period: FeeSchedulePeriod): string {
+  return period.kind === 'quarter' ? quarterNameOf(period.label) : period.label;
+}
 
 function count(value: number, one: string, many = `${one}s`): string {
   return `${String(value)} ${value === 1 ? one : many}`;
@@ -121,6 +128,8 @@ export default async function CoveragePage(props: Props) {
     modelNotice,
   } = page.data;
   const locationHeadline = waitingHeadline(waitingOnLocation);
+  // The NO_PFS_VALUE lines that wait on a fee schedule PaidWhole has not loaded, whose remedy is not the practice's (UX-3).
+  const feeScheduleWaiting = feeScheduleNotLoaded.reduce((sum, gap) => sum + gap.lines, 0);
   // The shares are of every line a run in effect priced; before one takes effect, of every line the practice holds.
   const inEffect = share.runs > 0;
   const of = inEffect ? share.of : { lines: lines.lines, chargeCents: lines.chargeCents };
@@ -216,7 +225,7 @@ export default async function CoveragePage(props: Props) {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-sm">
-            <MonthsWaitingOnContent months={waitingOnContent} label="Months waiting on Medicare content" />
+            <MonthsWaitingOnContent months={waitingOnContent} label="Months and the Medicare content each waits on" />
           </CardContent>
         </Card>
       )}
@@ -274,6 +283,16 @@ export default async function CoveragePage(props: Props) {
         <p className="text-sm text-muted-foreground">
           {inEffect ? 'Lines the runs in effect priced, each by the reason its pricing in effect left it unpriced.' : 'Counts appear once a pricing run completes.'}
         </p>
+        {feeScheduleNotLoaded.map((gap) => (
+          <p key={gap.period.label} className="rounded-md border p-3 text-sm" data-fee-schedule-not-loaded={gap.period.label}>
+            PaidWhole has not loaded the {periodWords(gap.period)} Medicare fee schedule yet. <span className="font-mono tabular-nums">{gap.lines}</span>{' '}
+            {gap.lines === 1 ? 'line' : 'lines'} (<Money value={gap.chargeCents} /> billed) {gap.lines === 1 ? 'is' : 'are'} unpriced until it is, with nothing for you to check; once it is loaded,{' '}
+            <Link className="underline" href={`/p/${practiceId}/pricing-runs`}>
+              Pricing runs
+            </Link>{' '}
+            offers to price their months again.
+          </p>
+        ))}
         <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
           <thead className="text-muted-foreground">
             <tr>
@@ -290,15 +309,26 @@ export default async function CoveragePage(props: Props) {
                 <td className="py-1 pr-3">{reason.meaning}</td>
                 <td className="py-1 pr-3 text-right font-mono tabular-nums">{reason.lines}</td>
                 <td className="py-1">
-                  {reason.remedy}
-                  {reason.screen === null ? null : (
+                  {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? (
+                    <span className={feeScheduleWaiting < reason.lines ? 'block' : undefined} data-state="fee-schedule-waiting">
+                      <span className="font-mono tabular-nums">{feeScheduleWaiting}</span> of these {feeScheduleWaiting === 1 ? 'waits' : 'wait'} on the{' '}
+                      {feeScheduleNotLoaded.map((gap) => periodWords(gap.period)).join(' or ')} fee schedule PaidWhole has not loaded; nothing for you to check.
+                    </span>
+                  ) : null}
+                  {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 && feeScheduleWaiting >= reason.lines ? null : (
                     <>
-                      {' '}
-                      (
-                      <Link className="underline" href={remedyPath(practiceId, reason.screen)}>
-                        {REMEDY_SCREEN_NAMES[reason.screen]}
-                      </Link>
-                      )
+                      {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? 'For the rest: ' : null}
+                      {reason.remedy}
+                      {reason.screen === null ? null : (
+                        <>
+                          {' '}
+                          (
+                          <Link className="underline" href={remedyPath(practiceId, reason.screen)}>
+                            {REMEDY_SCREEN_NAMES[reason.screen]}
+                          </Link>
+                          )
+                        </>
+                      )}
                     </>
                   )}
                 </td>
@@ -306,16 +336,6 @@ export default async function CoveragePage(props: Props) {
             ))}
           </tbody>
         </table>
-        {feeScheduleNotLoaded.map((gap) => (
-          <p key={gap.period.label} className="text-sm" data-fee-schedule-not-loaded={gap.period.label}>
-            PaidWhole has not loaded the <span className="font-mono tabular-nums">{gap.period.label}</span> Medicare fee schedule yet. <span className="font-mono tabular-nums">{gap.lines}</span>{' '}
-            {gap.lines === 1 ? 'line' : 'lines'} (<Money value={gap.chargeCents} /> billed) {gap.lines === 1 ? 'is' : 'are'} unpriced until it is; once it is loaded,{' '}
-            <Link className="underline" href={`/p/${practiceId}/pricing-runs`}>
-              Pricing runs
-            </Link>{' '}
-            offers to price their months again.
-          </p>
-        ))}
       </section>
       <section aria-label="What to obtain" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">What to obtain</h2>

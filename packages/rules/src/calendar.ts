@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { CONTENT_IDS, type ContentId, type DateRange, dayAfter } from './records';
-import { cmsQuarterOf, cmsQuarterOfDate, cmsQuarterWindow, isIsoDate, isoDate, quarterLabel } from './schema';
+import { cmsQuarterOf, cmsQuarterOfDate, cmsQuarterWindow, isIsoDate, isoDate, quarterLabel, quarterName } from './schema';
 
 /**
  * The content calendar (audit #59; docs/adr/0071; docs/runbooks/content-updates.md): when each family of global rule
@@ -362,6 +362,7 @@ export const DUE_STAGES = ['no_release', 'not_loaded', 'ended', 'ends_in_14', 'e
 export type DueStage = (typeof DUE_STAGES)[number];
 
 export interface DuePeriod {
+  /** In a person's words: a quarter as "Q1 2027 (Jan–Mar)" (UX-167), a year as "2027", a listed date as "2026-03-01 update". */
   readonly label: string;
   readonly from: string;
   readonly to: string;
@@ -442,13 +443,15 @@ export function familyLoadedThrough(entry: CalendarEntry, states: ContentStates,
 
 interface Period extends DuePeriod {
   readonly year: number;
+  /** The label the import commands' {period} takes: a quarter as "2027-Q1" (the machine form), else the label. */
+  readonly code: string;
 }
 
 /** The cadence period holding `date`: its quarter, its year from the effective day, or the span from one listed date to the next. */
 function periodHolding(cadence: Exclude<CalendarEntry['cadence'], { kind: 'on_change' }>, date: string): Period {
   if (cadence.kind === 'quarterly') {
     const quarter = cmsQuarterOfDate(date);
-    return { label: quarterLabel(quarter), ...cmsQuarterWindow(quarter), year: quarter.year };
+    return { label: quarterName(quarter), code: quarterLabel(quarter), ...cmsQuarterWindow(quarter), year: quarter.year };
   }
   const days = cadence.kind === 'annual' ? [cadence.effective] : [...cadence.effective].sort();
   const year = Number.parseInt(date.slice(0, 4), 10);
@@ -458,7 +461,7 @@ function periodHolding(cadence: Exclude<CalendarEntry['cadence'], { kind: 'on_ch
   const from = starts[index] as string;
   const to = addDays(starts[index + 1] as string, -1);
   const label = cadence.kind === 'annual' && cadence.effective === '01-01' ? from.slice(0, 4) : cadence.kind === 'annual' ? `${from.slice(0, 4)} (from ${from})` : `${from} update`;
-  return { label, from, to, year: Number.parseInt(from.slice(0, 4), 10) };
+  return { label, code: label, from, to, year: Number.parseInt(from.slice(0, 4), 10) };
 }
 
 function holds(state: ContentState | undefined, date: string): boolean {
@@ -475,7 +478,7 @@ function fillCommands(entry: CalendarEntry, periods: readonly Period[], missing:
       .replaceAll('{url}', '<download address>')
       .replaceAll('{yy}', String(period.year % 100).padStart(2, '0'))
       .replaceAll('{Q}', cmsQuarterOf(period.from))
-      .replaceAll('{period}', period.label);
+      .replaceAll('{period}', period.code);
   const imports = periods.flatMap((period) =>
     entry.importCommands.flatMap((template) => {
       const content = templateContent(entry.contents, template);
@@ -585,6 +588,19 @@ export function contentDue(calendar: ContentCalendar, sources: DueSources, today
     .map(({ item }) => item);
 }
 
+/**
+ * Rule 3's sentence: none of the family for `today`, or, when some of its contents have a window and others none (a
+ * ZIP5 file with no ZIP+4 file), only part of it, naming the contents missing, as the Releases page's "only partly
+ * loaded" says (fix round 2 of PR #49, UX-7).
+ */
+function notLoadedLine(entry: CalendarEntry, judged: ContentStates, onDrafts: boolean, today: string): string {
+  const missing = entry.contents.filter((content) => (judged[content]?.windows.length ?? 0) === 0);
+  if (missing.length > 0 && missing.length < entry.contents.length) {
+    return `Only part of ${entry.title} is ${onDrafts ? 'in the drafts' : 'loaded'}: ${missing.join(', ')} ${missing.length === 1 ? 'has' : 'have'} no window yet, so lines that need ${missing.length === 1 ? 'it' : 'them'} are not priced.`;
+  }
+  return onDrafts ? `The drafts hold no ${entry.title} for ${today}.` : `No ${entry.title} is loaded for ${today}.`;
+}
+
 /** Rules 3 to 5 for one family; `pending` is what stands beside the judged state (none when the drafts are judged). */
 function familyDue(
   entry: CalendarEntry,
@@ -613,7 +629,7 @@ function familyDue(
       title: onDrafts ? `Content not in the drafts: ${entry.title}` : `Content not loaded: ${entry.title}`,
       period: { label: period.label, from: period.from, to: period.to },
       commands: fillCommands(entry, missingPeriods(entry, cadence, judged, today), (content, one) => !holds(judged[content], one.from), nextReleaseNo),
-      lines: [onDrafts ? `The drafts hold no ${entry.title} for ${today}.` : `No ${entry.title} is loaded for ${today}.`],
+      lines: [notLoadedLine(entry, judged, onDrafts, today)],
     };
   }
 

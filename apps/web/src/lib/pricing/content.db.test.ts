@@ -180,7 +180,7 @@ describe('the months waiting on Medicare content (RCC-05)', () => {
       chargeCents: '32600',
       paidCents: '17641',
     });
-    expect(months.map(waitingOnText)).toEqual(['the 2026-Q4 Medicare content (MPPR, MUE)']);
+    expect(months.map(waitingOnText)).toEqual(['Waiting on the Q4 2026 (Oct–Dec) Medicare content (MPPR, MUE)']);
     // Another practice's scope lists nothing of it.
     const other = await w.practice('waiting-other');
     expect(await inScope(other, async (scope) => monthsWaitingOnContent(scope, target.practiceId))).toEqual([]);
@@ -206,7 +206,7 @@ describe('the months waiting on Medicare content (RCC-05)', () => {
         quarters: ['2026-Q4'],
       },
     ]);
-    expect(months.map(waitingOnText)).toEqual(['the 2026-Q4 Medicare content (MUE)']);
+    expect(months.map(waitingOnText)).toEqual(['Waiting on the Q4 2026 (Oct–Dec) Medicare content (MUE)']);
   });
 
   it('lists nothing for a month with a newer line its failed run has not seen', async () => {
@@ -221,7 +221,7 @@ describe('the months waiting on Medicare content (RCC-05)', () => {
     await w.signedContract(target, '2026-01-01');
     const months = await inScope(target, async (scope) => monthsWaitingOnContent(scope, target.practiceId));
     expect(months).toMatchObject([{ kind: 'terms_changed', failureCode: 'waiting_on_content_mppr_mue' }]);
-    expect(months.map(waitingOnText)).toEqual(['being priced again under the practice’s changed terms']);
+    expect(months.map(waitingOnText)).toEqual(['Being priced again under the practice’s changed terms']);
   });
 
   it('reads repricing once the release in force loads more of the month (last in this block: it withdraws 900007)', async () => {
@@ -237,6 +237,6 @@ describe('the months waiting on Medicare content (RCC-05)', () => {
         quarters: ['2026-Q4'],
       },
     ]);
-    expect(months.map(waitingOnText)).toEqual([`being priced again under release ${String(RELEASE)}`]);
+    expect(months.map(waitingOnText)).toEqual([`Being priced again under release ${String(RELEASE)}`]);
   });
 });
