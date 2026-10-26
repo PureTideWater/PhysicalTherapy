@@ -1772,6 +1772,20 @@ describe('Postgres from docker-compose.yml (CI-13; docs/adr/0066, Part 2)', () =
     expect(postgres?.ports).toEqual(['5432:5432']);
     expect(postgres?.environment?.POSTGRES_PASSWORD).toBe('test');
   });
+
+  it('checks its health on the timing ci.yml’s services proved, every 2 s with 5 s to answer, 30 times, all inside the wait postgres.sh gives compose', () => {
+    const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { healthcheck?: Record<string, unknown> }> };
+    const health = compose.services.postgres?.healthcheck;
+    // The whole check, as the services' --health-interval 2s --health-timeout 5s --health-retries 30 held it.
+    expect(health).toEqual({ test: ['CMD-SHELL', 'pg_isready -h localhost -U postgres'], interval: '2s', timeout: '5s', retries: 30 });
+    const seconds = (value: unknown) => Number(/^(\d+)s$/.exec(String(value))?.[1] ?? Number.NaN);
+    const script = readFileSync(path.join(repositoryRoot, 'tools/ci/postgres.sh'), 'utf8');
+    const composeWait = Number(/--wait-timeout (\d+)/.exec(script)?.[1] ?? Number.NaN);
+    const scriptWait = Number(/POSTGRES_WAIT_SECONDS:-(\d+)/.exec(script)?.[1] ?? Number.NaN);
+    // Its retries run out before compose stops waiting, and compose gives its verdict before the wait step stops reading.
+    expect(seconds(health?.interval) * Number(health?.retries)).toBeLessThan(composeWait);
+    expect(composeWait).toBeLessThan(scriptWait);
+  });
 });
 
 describe('images by digest (CI-13)', () => {
