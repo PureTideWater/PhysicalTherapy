@@ -22,7 +22,7 @@
 - **Base moved:** PR #46 (db-function-diffs) merged as 4d99df8 at ~05:00; merges cleanly; taken in the fix round.
 - **Machine:** restarted again ~04:21 (PG18 restarted by the builder); the first before-capture failed on it and was retaken.
 - **Safety net:** send_later 08:50 UTC (trig_012MWfJwXCJEX4TNFjtwos9i).
-- **CI on 4a2ee32 (final):** every check green; unit 327 files, 5,098 passed, 1 skipped; db 120 files, 9,069 passed, 1 skipped; e2e 51 passed (no flake). Push runs on 7ef421b (ci, mutation, screening-capacity) started at merge.
+- **CI on 4a2ee32 (final):** every check green; unit 327 files, 5,098 passed, 1 skipped; db 120 files, 9,069 passed, 1 skipped; e2e 51 passed (no flake). Push runs on 7ef421b: ci, mutation and screening-capacity all success.
 - **Full local suite on 4a2ee32:** typecheck 22; lint 1,502 files 0/0; lint:copy, lint:logs, verify-content, engine freeze, check:fixtures; synth clean (203 cases); unit 327 files 5,096 passed 3 skipped; golden 188; oracle 637; test:db six shards 120 files 9,069 passed 1 skipped; build + stamp + e2e 51/51 (triage.spec's CAS-38 step included); no money package affected (`approval-summaries/lane-b-materiality-cents-fix-suite.md`).
 - **After shots retaken at 4a2ee32;** gallery version 2.
 - **Fresh-clone verification (wf_4b2d6b9c-0c3; cut off by the 5-hour limit ~06:35, resumed ~08:55 after the machine restart and setup-container.sh):** pass (`approval-summaries/lane-b-materiality-cents-verify.md`); its wording note (the defaults page's save still in settings.ts) fixed in the description before merge.
