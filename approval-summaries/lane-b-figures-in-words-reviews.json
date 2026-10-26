@@ -1,0 +1,187 @@
+{
+ "engine": {
+  "verdict": "The money parts of PR #52 hold up. I found no blocker and no major issue. The mutation result is still missing: I had to report before the packets-explain shard finished, so it needs a re-run or a read of the report before merge.\n\n**No arithmetic in the renderer.**\n- The renderer is packages/packets/src/explain plus explainPacket. `formatFigure` only formats text: `formatUsd(parseCents)`, `formatUnroundedUsd`, appending `%` or ` per RVU`, verbatim, and an array's length.\n- Its choices between wordings use string equality only.\n- `purity.test.ts` reads the code's syntax tree and fails on any arithmetic operator, size comparison, negation, `decimal(`, `BigInt`, `Number(` or `Date`.\n- Every figure is read through the fixed `SLOTS` table of trace and citation paths. I checked the paths by hand; each points to the right stored value.\n\n**Flags and Medicare rules (orchestrator line 2).**\n- A flag that is off reads only \"Not applied (flag off)\".\n- The payer copy prints no flag at all. Adjustment steps whose flag is off are left out.\n- An omitted timed-units rule defaults to UNKNOWN, so \"the contract follows Medicare's pooled rule\" appears only when a specialist entered it.\n- On a Medicare Advantage non-contracted line the words say \"Medicare's reductions \u2026 under 42 CFR 422.214\" and use Medicare's own timed-units text. The contract adjustment is null there and rounding never comes from a rate record. One unreachable table entry still says \"the rate record's rule\" (nit below).\n\n**The year (line 3).** The year is worded from `steps.fee_schedule.lookup`. `checkYearBasis` refuses a trace whose lookup, year basis and label disagree.\n\n**The worksheet (line 4).** It prints RVUs, GPCIs, the conversion factor, the percentage and the per-unit parts at the percentage, all from `unit_cents` in the trace. It prints no product of an RVU and its GPCI, no total RVU and no amount at 100%. The golden test computes those values independently and asserts none of them is printed.\n\n**SHA-256 check before printing.** explainPacket hashes each stored trace with the same `traceSha256` the content uses before it parses or words anything. It refuses a missing trace, a different trace, an unpriced trace, a different rate record and a regulation citation on a line that is not Medicare Advantage. The export job does this before anything is decrypted. `approveOnce` refuses a version the renderer cannot word.\n\n**WORDS_VERSION guards.**\n- They are present at approve and at the export request (`requireWordsVersion`) and in the export job (`payload.words_version`).\n- The residual gap the design names is real: approved under renderer A, a deploy, then exported under B passes. Attest has no guard.\n- The guards can wrongly refuse after a deploy and can be silently bypassed by a sentence edit (two minor findings below).\n\n**The four surfaces.** The line page, builder, review and PDF all call the same renderer. The review and the PDF both use the payer audience. The PDF matches its words to rows by index.\n\n**Golden claims.**\n- I checked by hand: G01 (21.12 per unit, 31.448 after the multiple procedure payment reduction, 30.75656 after sequestration, rounded to 30.76; worksheet parts 6.20, 13.49, 1.43), G02 (23.232, 27.038 and 29.70 at 110%), G07 (77% assistant reduction to 16.2624), G124 (lesser of) and G141 (per visit).\n- All match their traces and the fixtures/golden worksheets.\n- Test runs:\n  - The explain tests (10 files, 466 tests) pass.\n  - The golden project tests (319, including G01 and G02 against their worksheets and the trace pins) pass.\n\n**Payer copy and viewer.**\n- The payer copy's scan for internal terms and code shapes runs on the payer words and worksheets in both the golden and the property tests. A grep of every payer pin finds no \"rate record\", \"engine\", \"release\" or \"flag\".\n- The viewer gets words built on the server: no trace, no recorded steps, no date (`dated()` guards every date path).\n- The unpriced reasons' meaning and remedy are tested word for word against docs/product/unpriced-reasons.md, and remedies.ts now derives from that one table.\n\n**Test strength.** A renderer that printed a recomputed amount different from the stored one would fail three ways: the by-source check re-reads the path and formats it with an independent formatter, the token check finds a number in no trace leaf, and the golden pins move. A recomputation that happens to equal the stored value is not detectable by output, but the syntax-tree purity test blocks it.\n\n**Mutation shard (incomplete).** The packets-explain shard instrumented 1,970 mutants in 9 files, and its initial run passed (417 tests). I was told to report before it finished, so I have no score and no survivor list. The output will land in /home/user/figures-in-words/reports/mutation/packets-explain/ and the log is /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/stryker-packets-explain.log.\n\n**Coverage.** New behaviour has golden pins (more than 100 claims), a property test (100 generated claims across every method, flag combination and audience) and fixtures CAS-30 to CAS-34.\n\nProgress notes are in /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/progress/payment-engine.md.",
+  "findings": [
+   {
+    "severity": "minor",
+    "title": "Mutation score and survivors not obtained: the packets-explain shard was still running when the report was forced",
+    "evidence": "Log /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/stryker-packets-explain.log stops after 'Instrumented 9 source file(s) with 1970 mutant(s)' and 'Initial test run succeeded. Ran 417 tests'. No GATE line yet. The run was TP_MUTATION_SHARD=packets-explain pnpm -s exec tsx tools/stryker/shards.ts packets-explain under flock /tmp/laneb-heavy.lock, followed by tools/stryker/gate.ts reports/mutation --shard packets-explain.",
+    "fix": "Before merge, read reports/mutation/packets-explain/packets.json (or re-run the shard under the lock). Confirm the score is at least 85% and judge each survivor as killable or equivalent."
+   },
+   {
+    "severity": "minor",
+    "title": "Export job refuses a stale words version as 'The PDF could not be printed.', retries it twice, and blocks a fresh request in the meantime",
+    "evidence": "apps/worker/src/packets/export.ts:302 throws PacketExportRenderError, which exportFailureCode maps to 'render_failed'. apps/web/src/lib/packets/export-attempts.ts:63 shows 'The PDF could not be printed.'. apps/worker/src/jobs/registry.ts:113 sets retryLimit 2, so a mismatch that can never succeed is retried. registry.test.ts:81 asserts the singleton key ignores words_version, so a request after the deploy is treated as already queued while the old job retries. The remedy the design states ('request the export again') is never shown.",
+    "fix": "Give the mismatch its own failure code, e.g. 'words_changed' with the text 'The calculation's wording changed since the export was requested. Request it again.'. Fail it without retry (record it as a refusal, or throw pg-boss's non-retry error) so the singleton is released at once."
+   },
+   {
+    "severity": "minor",
+    "title": "WORDS_VERSION moves on a sentence change only if RENDERER_REVISION is bumped by hand, so the three guards can be silently bypassed",
+    "evidence": "packages/packets/src/words-version.ts hashes only WORD_TABLES, SLOTS and RENDERER_REVISION. Any text literal in explain/line.ts or explain/worksheet.ts (e.g. 'Each later unit loses \u2026') can change without moving WORDS_VERSION. version.test.ts checks tables and slots only. Commit f1dcd8ea did bump it by hand, but nothing enforces the bump.",
+    "fix": "In version.test.ts, pin the SHA-256 of the source text of explain/{line,worksheet,figures}.ts next to RENDERER_REVISION (a test-only constant), so any edit to those files fails until both are rewritten. Alternatively, fold a hash of the golden pins into the check."
+   },
+   {
+    "severity": "nit",
+    "title": "Medicare Advantage rounding table words a rule as 'the rate record\u2019s rule'",
+    "evidence": "packages/packets/src/explain/words.ts, MEDICARE_ROUNDING_ORIGIN_TEXT.rate_record = 'the rate record\u2019s rule'. The entry is unreachable today because MA_NONCONTRACTED_TERMS.rounding is null (packages/contracts/src/terms.ts:358-363, engine.ts:900), but it contradicts the rule that Medicare's rules on such a line are never a rate record's.",
+    "fix": "Have roundingStep throw ExplainShapeError when words.medicare is true and origin is 'rate_record', and remove that entry from the Medicare table."
+   },
+   {
+    "severity": "nit",
+    "title": "Payer copy prints Medicare reductions on a commercial line without saying the contract adopts them",
+    "evidence": "line.ts termsStep returns only the method sentence for the payer. In the G07 payer pin, the payer reads 'Modifier CQ \u2026: Medicare\u2019s assistant percentage is 77% of the amount.' with no statement that the contract incorporates the assistant reduction. The internal words do say 'Applied, as the rate record\u2019s flags are on'.",
+    "fix": "For the payer, add one sentence when a flag is on, worded as the contract: 'The contract applies Medicare\u2019s assistant reduction.' Still print nothing for flags that are off."
+   },
+   {
+    "severity": "nit",
+    "title": "Doc comment says exact_dollars keeps every fraction digit, but trailing zeros are dropped",
+    "evidence": "packages/packets/src/explain/figures.ts header ('every fraction digit kept'). formatUnroundedUsd (packages/money/src/cents.ts:86) strips trailing zeros of the fraction. The value is unchanged.",
+    "fix": "Reword the comment to say trailing zeros of the fraction of a cent are dropped."
+   }
+  ]
+ },
+ "capture": {
+  "before": "/tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/screens-before/shots.json (built from 6ddd587c. I pinned it to that commit because origin/claude/build-platform had moved to 4d99df80 since the brief, and 6ddd587 is still the PR's merge base. Populate: 10 of 10 tests passed in 3.0 min. Capture exit 0. 57 shots and 6 skips. All 6 skips are states the route map names that synthetic data cannot show; no shot failed. PNGs are in /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/screens-before/png/. The payer-copy.pdf has 3 pages, rendered 1280 px wide (the setting the spec uses for page 1) to /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/screens-before/pdf-pages/page-1.png, page-2.png and page-3.png. build.log says \"server stopped at 04:56:23\", fuser 3297/tcp printed nothing, tp_e2e_screens was dropped and /tmp/tp-e2e-tp_e2e_screens-* was removed.)",
+  "after": "/tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/screens-after/shots.json (built from origin/co-001/figures-in-words = a2eee987, the PR head after the fetch. This is one commit past the local worktree's f1dcd8ea: \"Watch the renderer's files for the screening-capacity gate\". The merge base is still 6ddd587. Populate: 10 of 10 tests passed in 2.4 min, including the PR's changed packets.spec.ts. Capture exit 0. 57 shots and the same 6 skips; no shot failed. PNGs are in /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/screens-after/png/. The payer-copy.pdf has 3 pages, in /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/screens-after/pdf-pages/page-1.png, page-2.png and page-3.png. build.log says \"server stopped at 05:07:09\", fuser 3297/tcp printed nothing, the database was dropped and the temporary directories were removed. Progress record: /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-review/progress/capture.md)",
+  "pairs": [
+   "Each pair is screens-before/png/<id>.png vs screens-after/png/<id>.png; the size change is before -> after.",
+   "p.line.default.1280: 1280x4952 -> 1280x3596 (differs)",
+   "p.line.default.1280-dark: 1280x4952 -> 1280x3596 (differs)",
+   "p.line.default.390: 509x5848 -> 509x4768 (differs; the page is wider than 390 px in both runs, so the overflow was already there and the PR does not fix it)",
+   "p.line.empty-not-priced.1280: 1280x1614, same size (differs)",
+   "p.line.empty-not-priced.390: 390x2166, same size (differs)",
+   "p.line.viewer.1280: 1280x1316 -> 1280x2268 (differs; viewers now get the explanation in words)",
+   "p.line.viewer.390: 509x1980 -> 509x3212 (differs; 509 px wide in both runs)",
+   "p.line.loading.1280: byte-identical",
+   "p.line.loading.390: byte-identical",
+   "p.line.error.1280: 1280x5062 -> 1280x3706 (differs)",
+   "p.line.error.390: 509x5958 -> 509x4878 (differs; the before run needed scrollIntoView to reach the top of the page, the after run did not)",
+   "p.case.default.1280: 1280x2337, same size (differs)",
+   "p.case.default.1280-dark: 1280x2337, same size (differs)",
+   "p.case.default.390: 390x4091, same size (differs)",
+   "p.case.empty.1280: 1280x1977, same size (differs)",
+   "p.case.empty.390: 390x3131, same size (differs)",
+   "p.case.viewer.1280: 1280x1523, same size (differs)",
+   "p.case.viewer.390: 390x2621, same size (differs)",
+   "p.case.loading.1280: byte-identical",
+   "p.case.loading.390: byte-identical",
+   "p.case.write-off-open.1280: 1280x2589, same size (differs)",
+   "p.case.write-off-open.390: 390x4383, same size (differs)",
+   "p.case.error.1280: 1280x2695, same size (differs)",
+   "p.case.error.390: 390x4509, same size (differs)",
+   "p.packet.default.1280: 1280x4510 -> 1280x4819 (differs)",
+   "p.packet.default.1280-dark: 1280x4510 -> 1280x4819 (differs)",
+   "p.packet.default.390: 390x7694 -> 390x8007 (differs)",
+   "p.packet.empty.1280: 1280x851, same size (differs)",
+   "p.packet.empty.390: 390x1123, same size (differs)",
+   "p.packet.loading.1280: byte-identical",
+   "p.packet.loading.390: byte-identical",
+   "p.packet.error-live-check.1280: 1280x4308 -> 1280x4617 (differs)",
+   "p.packet.error-live-check.390: 390x7196 -> 390x7509 (differs)",
+   "p.packet.error-export-blocked.1280: 1280x4602 -> 1280x4911 (differs)",
+   "p.packet.error-export-blocked.390: 390x7898 -> 390x8211 (differs)",
+   "p.packet.error-forbidden.1280: byte-identical",
+   "p.packet.error-forbidden.390: byte-identical",
+   "p.packet.drafter.1280: 1280x4252 -> 1280x4561 (differs)",
+   "p.packet.drafter.390: 390x7064 -> 390x7377 (differs)",
+   "p.packet.approver-ready.1280: 1280x4178 -> 1280x4487 (differs)",
+   "p.packet.approver-ready.390: 390x6930 -> 390x7243 (differs)",
+   "p.packet.notice-requested.1280: 1280x4580 -> 1280x4889 (differs)",
+   "p.packet.notice-requested.390: 390x7784 -> 390x8097 (differs)",
+   "p.packet.notice-exported.1280: 1280x4580 -> 1280x4889 (differs)",
+   "p.packet.notice-exported.390: 390x7804 -> 390x8117 (differs)",
+   "p.packet-pdf.default.1280: 1280x1657, same size (differs; page 1 of the PDF)",
+   "p.packet-review.default.1280: 1280x3078 -> 1280x3299 (differs)",
+   "p.packet-review.default.1280-dark: 1280x3078 -> 1280x3299 (differs)",
+   "p.packet-review.default.390: 390x5701 -> 390x6070 (differs)",
+   "p.packet-review.loading.1280: byte-identical",
+   "p.packet-review.loading.390: byte-identical",
+   "p.packet-review.error-needs-downloads.1280: 1280x3178 -> 1280x3339 (differs)",
+   "p.packet-review.error-needs-downloads.390: 390x5765 -> 390x6054 (differs)",
+   "p.packet-review.error-forbidden.1280: byte-identical",
+   "p.packet-review.error-forbidden.390: byte-identical",
+   "p.packet-review.notice.1280: 1280x3148 -> 1280x3369 (differs)",
+   "p.packet-review.notice.390: 390x5791 -> 390x6160 (differs)",
+   "PDF pages: screens-before/pdf-pages/page-1.png, page-2.png, page-3.png vs screens-after/pdf-pages/page-1.png, page-2.png, page-3.png. Both PDFs have 3 pages, all 1280x1657, and all 3 pairs differ.",
+   "Note: same-size pairs that differ (p.case.*, p.packet.empty.*, p.line.empty-not-priced.*) may differ only in the fresh database's IDs or dates; they need an eye check before anyone calls them a PR change."
+  ],
+  "failures": [
+   "No tour step failed in either run. Populate passed 10 of 10 tests in both, both captures exited 0 with 57 shots each, the shot ids match one for one, and both runs have the same 6 skips (all states the route map names). The PR's changed e2e specs and pages did not break the tour, so I found no defect of the PR here.",
+   "Base moved: origin/claude/build-platform was at 4d99df80 when I fetched, not 6ddd587. The first setup.sh checked out 4d99df80; I re-ran it with TOUR_REF pinned to 6ddd587c before building, so the before shots are of the PR's merge base.",
+   "Head moved: origin/co-001/figures-in-words is a2eee987, one commit past the review worktree /home/user/figures-in-words (f1dcd8ea). The after shots are of a2eee987.",
+   "Lock wait, not a failure: the first after run.sh exited 'SERVER NOT READY' because build.sh was queued on /tmp/laneb-heavy.lock behind another session's stryker packets-explain run and had not written its pid yet. run.sh only waits for ready once that pid exists. I started run.sh again once build.sh held the lock (05:00:09), and that run succeeded. No heavy commands ran at the same time.",
+   "Observation, not a tour failure: the p.line.*.390 shots are 509 px wide before and after, so the line page still overflows at 390 px with the PR applied."
+  ]
+ },
+ "ux": {
+  "verdict": "Request changes. One blocker, then a few should-fix items; the change itself is a big improvement. The line trace page no longer shows raw JSON, bare method codes or cents. Viewers now get the calculation in words, and no date appears inside the trace. The packet builder, the packet review and the payer's PDF print the same payer words, checked row by row on p.packet.default.1280, p.packet-review.default.1280 and screens-after/pdf-pages/page-3.png. Figures are in mono with tabular numerals, and money is formatted from cents. Long amounts and hashes wrap at 390 px on the packet and review pages. Dark contrast is fine (muted #A7B1C2 on #0B1626 is about 8:1). `pnpm lint:copy` passed under the lock: 503 files read, no findings. The p.case.* and p.line.empty-not-priced.* pairs differ only in IDs, timestamps and which synthetic line was chosen, so the PR does not change them, and nothing else regressed between before and after.\n\nThe blocker: at the PR head (a2eee987) the line trace page is still 509 px wide at a 390 px viewport, and the PR's own new phone-width checks fail on it in CI.\n\nOther things to know:\n- The worktree /home/user/figures-in-words has an uncommitted, unpushed edit to the line page (break-all on its IDs and hashes). It was not made by this review. It may be the fix for the blocker, but it is not on the PR.\n- No tour shot shows a fee-schedule worksheet, an unpriced line's words or a words refusal, because the synthetic data has none of them. Those were checked against the code and pricing.spec only.\n\nOn the baseline review's raw findings for these screens:\n- **Fixed by this PR:**\n  - narrow-practice-1-06: raw JSON is now under words, in a closed disclosure inside a named, focusable scroller.\n  - a11y-practice-1-16: fixed for the line page's trace blocks.\n  - narrow-practice-1-05: fixed for the calculation per line, since its Trace SHA-256 table column is gone. The Versions table hashes remain, and they belong to the shared hash-component PR.\n- **This PR should fix now (its own files, same kind of problem):**\n  - narrow-practice-1-02: the 390 px overflow (the blocker).\n  - a11y-practice-1-14: the step titles and the review's calculation need real headings; its notes said this PR should do it.\n- **Not now:**\n  - flows-practice-13 (links from a line to its case): navigation, not wording; it can ride with #107.\n  - flows-practice-35 (an amount summary on the PDF cover): new cover content, which needs the ADR 0058 cover baseline redone; a separate PR.\n  - a11y-practice-2-18 (untagged PDFs): audit #103, Lane A's PR 7.\n  - a11y-practice-1-08 (the sticky header can hide focus): app-wide fix in brand.css, outside this PR's files.",
+  "findings": [
+   {
+    "severity": "blocker",
+    "title": "The line trace page still scrolls sideways at 390 px, and the PR's own new phone-width e2e checks fail on it",
+    "evidence": "Shots p.line.default.390 and p.line.viewer.390 are 509 px wide after the PR (they were before too). Tile screens-after p.line.default.390-00 shows the Rule release value '900001 (manifest 6d346c8f...cdbce45a)' running past the card. CI check-run 121404954151 'e2e (2/2)' at a2eee987 fails 2 tests at apps/web/e2e/a11y.ts:57: pricing.spec.ts:25 (the PR added atPhoneWidth on 'the line trace page, its fee schedule record open') and viewer-phi.spec.ts:70 (the PR added 'the viewer's line trace'). Both report 'no sideways scroll at 390 px' with overflowing ['span.font-mono.text-xs (right 509)'] and scrollWidth 509. Cause: apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx (head line ~137, base :109) prints the 64-character manifest SHA-256 in a span that cannot break. An uncommitted break-all edit for these spans is sitting in the review worktree and is not on the PR.",
+    "fix": "Commit the fix to the PR: let every hash and ID on this page break (overflow-wrap:anywhere / break-all), or better, the shared hash component from narrow-practice-1-02. Then re-run e2e (2/2) and retake p.line.*.390. Those shots must come out 390 px wide."
+   },
+   {
+    "severity": "major",
+    "title": "Step titles on the line trace and the row/worksheet titles in the calculation are plain text, not headings; the review's calculation has no heading at all",
+    "evidence": "apps/web/src/components/pricing/line-words.tsx LineTrace renders each step title as <p className=\"font-medium\">. On p.line.default.1280 that is 18 titled boxes under the h2 'Trace' on a 3,596 px page, all invisible to heading navigation. apps/web/src/components/packets/calculation-words.tsx renders 'Row {row}', 'Fee schedule worksheets' and the worksheet title as <p className=\"font-medium\">. On the review page (review/page.tsx: CalculationWords placed inside the 'Line schedule' card under LineSchedule), Rows 1-3 follow the schedule with no 'Calculation per line' heading, which the builder has (p.packet-review.default.1280 tile 01 vs p.packet.default.1280 tile 01). Raw finding a11y-practice-1-14 says #38 should mark these as headings rather than leave it for a second pass.",
+    "fix": "Render step titles as <h3>. Render 'Row N' and 'Fee schedule worksheets' as <h3>/<h4> under the card's h2, and each worksheet title one level below that. On the review page give the calculation its own heading ('Calculation per line', h3 inside the Line schedule card, or its own card as on the builder)."
+   },
+   {
+    "severity": "major",
+    "title": "Step numbering reads wrong now that each step is a titled box of words: two 'Step 2's, unnumbered boxes in between, and the viewer skips Step 4",
+    "evidence": "apps/web/src/lib/pricing/view.ts:84-93 TITLES has 'Step 2: the terms and method' and 'Step 2: the fee schedule'. 'per_visit' and 'ncci_ptp' fall back to labelOf ('Per visit', 'NCCI PTP'; titleOf at view.ts:97-99) between Step 3 and Step 4. lineTraceSteps (view.ts:222-232) drops steps without words for the viewer, so p.line.viewer.1280 reads Step 3, 'NCCI PTP', Step 5. Shots: p.line.default.1280 tiles 00-01 and p.line.default.390-01 show 'Step 2: the terms and method' directly above 'Step 2: the fee schedule'. The before shots had the same titles over JSON, but the PR makes this the reading order of the explanation.",
+    "fix": "Title the parts as one sequence, for example 'Step 2: the terms and method' / 'Step 2, continued: the fee schedule' (or 2a/2b). Give per_visit and ncci_ptp real titles in TITLES ('Step 2, continued: the per-visit amount', 'Step 3, continued: NCCI procedure-to-procedure edits'), with no labelOf fallback. Give the viewer the same titles and numbering as the internal page, with 'Does not apply to this line.' where the internal page shows it."
+   },
+   {
+    "severity": "minor",
+    "title": "The viewer is told 'Dates are left out for your role.' on a page that shows the viewer a payment date",
+    "evidence": "line-words.tsx LineTrace prints 'Dates are left out for your role.' above the trace. On the same page, p.line.viewer.1280 tile 01 'The line as paid' reads 'SYNTHETIC PAYER L, paid 2026-04-06', and the Pricing card shows the run's period and completion time. The payment date was already on the viewer's page before the PR, but the new sentence claims more than the page does.",
+    "fix": "Scope the sentence to what it covers: 'These steps leave out the line's dates for your role.' Separately, decide whether the payment date in 'The line as paid' should show to a viewer; that is a separate finding outside this PR."
+   },
+   {
+    "severity": "minor",
+    "title": "The builder's card text and the reviewer's checklist promise a 'fee schedule worksheet' that most lines don't have",
+    "evidence": "packet/page.tsx: the CardDescription says '... each step, the fee schedule worksheet, the one rounding ...'. lib/packets/review.ts:71, checklist item 'calculation': '... the method, each step, the fee schedule worksheet, the one rounding ...'. On p.packet.default.1280 and p.packet-review.default.1280 every row is a fixed schedule and no worksheet exists. The attester is asked to confirm something that is not on the page.",
+    "fix": "Word both as conditional: '... each step, the fee schedule worksheet where a line used the fee schedule, ...'. Only the text of the checklist item changes; its id stays."
+   },
+   {
+    "severity": "minor",
+    "title": "The payer's words repeat figures: patient share twice per PDF row, observed allowed three times per row, and '$100.00 becomes $100.00' when rounding changed nothing",
+    "evidence": "screens-after/pdf-pages/page-3.png: each row has 'Patient share $14.00, reported beside the expected amount and never subtracted from it.' in the words and '$14.00, reported, never subtracted' in the Patient share column. The summary says 'observed allowed $70.00; short $30.00', and the last bullet says 'Observed allowed $70.00 ... Expected $100.00, observed allowed $70.00: short $30.00.' The same appears on the builder and review (p.packet.default.390 tiles 02-03). Each row comes to about 10 lines at 390 px.",
+    "fix": "In packages/packets/src/explain/line.ts, leave the patient-share sentence out of the payer audience's steps (the PDF has its own column), or drop the column. Let the variance step state only the basis ('the allowed amount the remittance states'), since the summary already gives the short. When rounded equals unrounded, write 'needed no rounding: $100.00'. Pin the change in the golden words."
+   },
+   {
+    "severity": "minor",
+    "title": "The internal and viewer words still carry bare codes",
+    "evidence": "p.line.default.1280 tile 01: 'Patient share $14.00 (PR 2 $14.00)' (line.ts patientShareStep, the CAS group and reason in verbatim form), 'MUE not checked (flag off).', 'NCCI edits not checked (flag off).', the step title 'NCCI PTP', and 'the payer's allowed amount (AMT B6)'. The viewer sees MUE and NCCI unexpanded too (p.line.viewer.1280 tile 00). The payer variant writes these out, so the practice's own readers get less plain words than the payer.",
+    "fix": "On first use, write each initialism out with the code after it: 'the medically unlikely edit (MUE)', 'National Correct Coding Initiative (NCCI) edits'. Name the CAS pair ('PR 2, the deductible, $14.00'), or point to the Adjustments table. Keep the code as a code segment after the words."
+   },
+   {
+    "severity": "minor",
+    "title": "Fourteen identical disclosure summaries with small touch targets",
+    "evidence": "line-words.tsx Recorded: <summary className=\"cursor-pointer text-xs text-muted-foreground\">As the engine recorded it</summary> in every step box (p.line.default.1280 tiles 00-01). A screen-reader user tabbing hears 'As the engine recorded it' 14 times with no step named. The summary is about 16 px tall at 390 px (p.line.default.390-01). It is keyboard-operable (native details) and has the global :focus-visible ring (apps/web/src/app/brand.css:52).",
+    "fix": "Name the step in the summary's accessible name (visually hidden ': Step 3, units' or aria-label), and give the summary at least 24 px of hit area (py-1, text-sm)."
+   },
+   {
+    "severity": "minor",
+    "title": "The 'Other runs' list drops the reason an earlier run left the line unpriced",
+    "evidence": "lines/[lineId]/page.tsx (other runs nav): before, the link showed the bare code; after, it shows ', not priced' with the reason only in data-reason. A person comparing runs now cannot see why without opening each run.",
+    "fix": "Show the reason's short meaning from unpricedReasonText (lib/contracts/remedies.ts), e.g. ', not priced: no signed-off contract version on the service date', and keep data-reason."
+   },
+   {
+    "severity": "nit",
+    "title": "PDF: the calculation table's heading and header row are cut off at the foot of page 2",
+    "evidence": "screens-after/pdf-pages/page-2.png ends with 'Each line's dispute window and how its expected amount is computed' and the thead row, and the rows start on page 3. Same in screens-before/pdf-pages/page-2.png, so this is not a regression; the PR rewrote this table in apps/worker/src/packets/html.ts.",
+    "fix": "Add break-after: avoid on the h3 and break-inside: avoid on the first rows (or keep the heading and table together) in html.ts's print CSS, then regenerate the packet print baseline."
+   },
+   {
+    "severity": "nit",
+    "title": "Counts print without a thousands separator",
+    "evidence": "p.line.viewer.1280 tile 01: 'Dispute window: 3650 days from the payment date'. The same 'verbatim' figure form (packages/packets/src/explain/figures.ts) is used for window lengths on the PDF (page-2 '3650 days').",
+    "fix": "Format integer counts in the practice's locale ('3,650 days') in the 'count'/verbatim-integer form, as PRD.md:256 asks for figures."
+   }
+  ]
+ }
+}
