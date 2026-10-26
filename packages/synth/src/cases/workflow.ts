@@ -465,9 +465,14 @@ function correctionOf(b: CaseBuilder, n: number, previous: Claim, lines: readonl
   });
 }
 
-/** A 97110 x 2 line charged 150.00 and allowed `allowed` (AMT B6) carrying only its CO-45: its patient's share sits at its claim's level. */
-function claimShareLine(b: CaseBuilder, allowed: bigint): ServiceLine {
-  return therapyLine(b.world, { code: '97110', units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed, b6: true, share: 'none' });
+/** A 97110 x 2 line (with `modifiers`) charged 150.00 and allowed `allowed` (AMT B6) carrying only its CO-45: its patient's share sits at its claim's level. */
+function claimShareLine(b: CaseBuilder, allowed: bigint, modifiers?: readonly string[]): ServiceLine {
+  return therapyLine(b.world, { code: '97110', ...(modifiers === undefined ? {} : { modifiers }), units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed, b6: true, share: 'none' });
+}
+
+/** A 97110-59 x 2 line paid at its charge, 150.00, carrying no CAS of its own and no AMT B6. */
+function bareLine(b: CaseBuilder): ServiceLine {
+  return therapyLine(b.world, { code: '97110', modifiers: ['59'], units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed: 15000n, share: 'none' });
 }
 
 /** 20% coinsurance of `allowed` as a claim-level CAS (PR-2), so the claim pays CLP04 = SVC03 less it. */
@@ -524,7 +529,12 @@ function ledEntry(stage: string, amount: Cents, evidence?: string): Record<strin
  * correction found by claim control number, both matched in one reconcile (order-*); a PLB WO of 10.00 on the
  * correction, then a reissue allowed 110.00 paying 88.00 (withheld*.835); a correction allowed 100.00 paying
  * 80.00 after the lower reprocessing (raised-again.835); and after the reversal, a reissue at the original's
- * 70.00 and 56.00, then one allowed 60.00 paying 48.00 (unchanged.835, lower-after.835).
+ * 70.00 and 56.00, then one allowed 60.00 paying 48.00 (unchanged.835, lower-after.835). The claim's level split
+ * by allowed amount (the engine re-check's R1 and R2), each in its own practice: three lines allowed 70.00 under a
+ * claim-level PR-2 of 42.00, the first raised to 100.00 and the PR-2 to 48.00, approve and deposit 24.00 on the first
+ * line and nothing on the others (claim-level-lines-*); and a case line beside a line paid at its charge with no CAS
+ * of its own takes the claim's whole PR-2 in its cash and its share, the 6.00 more billable, never another reduction
+ * (claim-level-bare-*).
  */
 export function led14(b: CaseBuilder): void {
   const base = ledBase(b);
@@ -596,6 +606,34 @@ export function led14(b: CaseBuilder): void {
     ledRemittance(b, base, 16, calendarDate(2026, 10, 5), [reversalOf(unchanged), lowerAfter, otherClaim(b, 18)]).file,
     "Then that reissue reversed (paid -56.00) and paid again allowed 60.00, CO-45 90.00, PR-2 coinsurance 12.00, paid 48.00, beside another patient's claim paying 150.00: BPR02 142.00.",
   );
+  // The claim-level split by allowed amount (the engine re-check's R1 and R2), each in its own practice.
+  const threeLines = (first: bigint) => [claimShareLine(b, first), claimShareLine(b, 7000n, ['59']), claimShareLine(b, 7000n, ['GP'])];
+  const linesOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 19, plan: LED_PLAN, lines: threeLines(7000n), adjustments: coinsuranceAtClaim(21000n) });
+  b.add835(
+    'claim-level-lines-original.835',
+    ledRemittance(b, base, 17, base.paid, [linesOriginal]).file,
+    "Another patient's original payment of three case lines, the coinsurance at the claim's level: 97110, 97110-59 and 97110-GP, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-2 coinsurance 42.00 (20% of 210.00), CLP04 168.00.",
+  );
+  const linesCorrected = correctionOf(b, 20, linesOriginal, threeLines(10000n), coinsuranceAtClaim(24000n));
+  const linesAdjusted = ledRemittance(b, base, 18, adjustedOn, [reversalOf(linesOriginal), linesCorrected]);
+  b.add835(
+    'claim-level-lines-adjusted.835',
+    linesAdjusted.file,
+    "Its adjusted remittance: the original reversed (CLP04 -168.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, the claim's PR-2 coinsurance 48.00 (20% of 240.00), CLP04 192.00: BPR02 24.00.",
+  );
+  b.addFile('claim-level-lines-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: linesAdjusted.trace, amount: linesAdjusted.check }]), 'csv', 'The bank export of that check: one deposit of 24.00 matched by trace number and amount.');
+  const bareOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 21, plan: LED_PLAN, lines: [claimShareLine(b, 7000n), bareLine(b)], adjustments: coinsuranceAtClaim(7000n) });
+  b.add835(
+    'claim-level-bare-original.835',
+    ledRemittance(b, base, 19, base.paid, [bareOriginal]).file,
+    "Another patient's original payment: the 97110 x 2 case line allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, a 97110-59 x 2 line paid at its charge, 150.00, with no CAS of its own, and the claim's PR-2 coinsurance 14.00, CLP04 206.00.",
+  );
+  const bareCorrected = correctionOf(b, 22, bareOriginal, [claimShareLine(b, 10000n), bareLine(b)], coinsuranceAtClaim(10000n));
+  b.add835(
+    'claim-level-bare-adjusted.835',
+    ledRemittance(b, base, 20, adjustedOn, [reversalOf(bareOriginal), bareCorrected]).file,
+    "Its adjusted remittance: the original reversed (CLP04 -206.00) and the correction raising the 97110 line to allowed 100.00, CO-45 50.00 and SVC03 100.00, the 97110-59 line still 150.00, the claim's PR-2 coinsurance 20.00, CLP04 230.00: BPR02 24.00.",
+  );
   recoveryScenario(b);
   b.scenario({
     shareKind: 'coinsurance',
@@ -604,6 +642,8 @@ export function led14(b: CaseBuilder): void {
       shared: ['shared-adjusted.835', 'shared-posting-export.csv'],
       onePass: ['adjusted.835 and lowered.835 loaded, then one reconcile'],
       claimLevel: ['claim-level-original.835', 'claim-level-adjusted.835', 'claim-level-eft-export.csv'],
+      claimLevelLines: ['claim-level-lines-original.835', 'claim-level-lines-adjusted.835', 'claim-level-lines-eft-export.csv'],
+      claimLevelBare: ['claim-level-bare-original.835', 'claim-level-bare-adjusted.835'],
       order: ['order-first.835 and order-second.835 loaded, then one reconcile'],
       withheld: ['adjusted.835, posting-export.csv and eft-export.csv, then withheld.835, then withheld-reissued.835'],
       withheldOnePass: ['adjusted.835, then withheld.835 and withheld-reissued.835 loaded, then one reconcile'],
@@ -644,6 +684,28 @@ export function led14(b: CaseBuilder): void {
       billableToPatient: {
         allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(claimLevelCorrected)), allowedOf(lineOf(claimLevelOriginal)))),
         paymentIncreaseCents: centsToString(subtractCents(claimLevelCorrected.paid, claimLevelOriginal.paid)),
+        coinsuranceCents: centsToString(cents((10000n - 7000n) / 5n)),
+        otherReductionCents: '0',
+        allocatedFromClaim: true,
+      },
+    },
+    // The claim's PR-2 split by each line's allowed amount before it: the 97110 line takes 20.00 of the 48.00 (14.00 of
+    // the 42.00 before), the others 14.00 each both times, so the 97110 line is approved the claim's 24.00 more and the
+    // others nothing; the deposit proves it all.
+    claimLevelLines: {
+      entries: [
+        ledEntry('approved', subtractCents(linesCorrected.paid, linesOriginal.paid), 'claim-level-lines-adjusted.835 transaction 0 claim 1'),
+        ledEntry('deposited', linesAdjusted.check, 'claim-level-lines-eft-export.csv row 1'),
+      ],
+      payerApprovedCents: centsToString(subtractCents(linesCorrected.paid, linesOriginal.paid)),
+      otherLines: 'no change, no entry',
+    },
+    // The bare line carries no CAS of its own, so the case line alone takes the claim's PR-2, in its cash and its share alike.
+    claimLevelBare: {
+      entries: [ledEntry('approved', subtractCents(bareCorrected.paid, bareOriginal.paid), 'claim-level-bare-adjusted.835 transaction 0 claim 1')],
+      billableToPatient: {
+        allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(bareCorrected)), allowedOf(lineOf(bareOriginal)))),
+        paymentIncreaseCents: centsToString(subtractCents(bareCorrected.paid, bareOriginal.paid)),
         coinsuranceCents: centsToString(cents((10000n - 7000n) / 5n)),
         otherReductionCents: '0',
         allocatedFromClaim: true,

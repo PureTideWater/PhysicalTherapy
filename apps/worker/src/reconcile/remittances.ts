@@ -2,6 +2,7 @@ import type { PracticeCipher } from '@tp/db/runtime';
 import {
   type ClaimAdjustmentPart,
   type ClaimCandidate,
+  type ClaimSplitLine,
   type PairableLine,
   type PaidLine,
   type PaymentBaselines,
@@ -52,8 +53,9 @@ import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
  *   nothing approved, is a payer response "reprocessed, no change" (the submissions' record).
  * - A line's cash, everywhere the chain reads it, is its share of its claim's CLP04 (claimLines, @tp/ledger
  *   claimLinePayments): SVC03 less its part of the claim-level CAS (every group, signed) that no SVC03 holds,
- *   split by charge over the lines carrying CAS of their own by the parser's rule, rounded once with the exact
- *   fraction beside it; SVC03 itself when the claim carries none.
+ *   split over the lines carrying CAS of their own (every line when none does) by each one's allowed amount before
+ *   the claim-level CAS (SVC02 less its own CAS outside group PR), rounded once with the exact fraction beside
+ *   it; SVC03 itself when the claim carries none.
  * - A reversal of a claim attached to a case line, with no correction of it in the same remittance,
  *   takes back the payment it removes above the original (@tp/ledger reversalTakeBack: its own claim's
  *   approval while an earlier payment of the line stands, every approval its payment carried when nothing
@@ -208,6 +210,8 @@ export interface ClaimLine extends PairableLine {
   readonly servicePaidCents: Cents;
   /** Its part of the claim-level CAS SVC03 leaves out, with the exact fraction beside the cents; null when it takes none. */
   readonly claimAdjustment: ClaimAdjustmentPart | null;
+  /** The line as its claim's claim-level CAS is split (@tp/ledger claimAllocations): the cash and the patient's share read the same lines and weights. */
+  readonly split: ClaimSplitLine;
 }
 
 /**
@@ -229,19 +233,22 @@ export async function claimLines(scope: Scope, claimIds: readonly string[]): Pro
     paid_cents: string;
     claim_paid_cents: string;
     carries_adjustments: boolean;
+    line_reduction_cents: string;
   }>(
     `SELECT s.id, s.claim_id, s.line_no, s.procedure_code, s.modifiers, s.units::text AS units, s.service_date::text AS service_date,
             s.observed_allowed_cents::text AS observed_allowed_cents, s.charge_cents::text AS charge_cents, s.paid_cents::text AS paid_cents,
-            c.paid_cents::text AS claim_paid_cents, EXISTS (SELECT 1 FROM adjustment a WHERE a.service_line_id = s.id) AS carries_adjustments
+            c.paid_cents::text AS claim_paid_cents, EXISTS (SELECT 1 FROM adjustment a WHERE a.service_line_id = s.id) AS carries_adjustments,
+            (SELECT COALESCE(sum(a.amount_cents), 0) FROM adjustment a WHERE a.service_line_id = s.id AND a.group_code <> 'PR')::text AS line_reduction_cents
        FROM service_line s JOIN claim c ON c.id = s.claim_id WHERE s.claim_id = ANY ($1::uuid[]) ORDER BY s.claim_id, s.line_no`,
     [[...new Set(claimIds)]],
   );
   const byClaim = new Map<string, ClaimLine[]>();
   for (const claimId of new Set(rows.map((row) => row.claim_id))) {
     const own = rows.filter((row) => row.claim_id === claimId);
+    const splits = own.map((row): ClaimSplitLine => ({ chargeCents: parseCents(row.charge_cents), lineReductionCents: parseCents(row.line_reduction_cents), carriesAdjustments: row.carries_adjustments }));
     const payments = claimLinePayments({
       claimPaidCents: parseCents((own[0] as (typeof own)[number]).claim_paid_cents),
-      lines: own.map((row) => ({ chargeCents: parseCents(row.charge_cents), servicePaidCents: parseCents(row.paid_cents), carriesAdjustments: row.carries_adjustments })),
+      lines: own.map((row, index) => ({ ...(splits[index] as ClaimSplitLine), servicePaidCents: parseCents(row.paid_cents) })),
     });
     byClaim.set(
       claimId,
@@ -259,6 +266,7 @@ export async function claimLines(scope: Scope, claimIds: readonly string[]): Pro
           paidCents: payment.paidCents,
           servicePaidCents: parseCents(row.paid_cents),
           claimAdjustment: payment.claimAdjustment,
+          split: splits[index] as ClaimSplitLine,
         };
       }),
     );

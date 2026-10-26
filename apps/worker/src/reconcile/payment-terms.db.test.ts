@@ -293,17 +293,69 @@ describe('a line with coinsurance (LED-14)', () => {
     ]);
   });
 
-  it('splits the claim-level CAS no SVC03 holds by the parser’s own rule, the one the patient’s share is allocated by (property)', () => {
+  it('splits the claim-level CAS no SVC03 holds by the parser’s own rule, weighed by each line’s allowed amount before it (property)', () => {
     const amount = fc.bigInt({ min: -200_000n, max: 200_000n });
     fc.assert(
-      fc.property(amount, fc.array(fc.tuple(amount, amount), { minLength: 1, maxLength: 6 }), (claimPaid, lines) => {
-        const parts = claimLinePayments({ claimPaidCents: cents(claimPaid), lines: lines.map(([charge, paid]) => ({ chargeCents: cents(charge), servicePaidCents: cents(paid), carriesAdjustments: true })) }).map(
-          (line, index) => (lines[index] as [bigint, bigint])[1] - line.paidCents,
-        );
+      fc.property(amount, fc.array(fc.tuple(amount, amount, amount), { minLength: 1, maxLength: 6 }), (claimPaid, lines) => {
+        const parts = claimLinePayments({
+          claimPaidCents: cents(claimPaid),
+          lines: lines.map(([charge, paid, reduction]) => ({ chargeCents: cents(charge), servicePaidCents: cents(paid), lineReductionCents: cents(reduction), carriesAdjustments: true })),
+        }).map((line, index) => (lines[index] as [bigint, bigint, bigint])[1] - line.paidCents);
         const left = lines.reduce((sum, [, paid]) => sum + paid, 0n) - claimPaid;
-        expect(parts).toEqual(allocateProRata(cents(left), lines.map(([charge]) => cents(charge))));
+        const allowed = lines.map(([charge, , reduction]) => cents(charge - reduction));
+        // The parser's allocateProRata over the allowed amounts' magnitudes, or over the charges when those are all zero.
+        const weights = allowed.some((weight) => weight !== 0n) ? allowed : lines.map(([charge]) => cents(charge));
+        expect(parts).toEqual(allocateProRata(cents(left), weights));
       }),
     );
+  });
+
+  it('keeps a claim-level coinsurance’s rise on the line whose allowed amount rose, so its approval is the claim’s payment increase and is proved (probe E11, R1)', async () => {
+    const led = await scenario('LED-14', 'claim-level-lines-adjusted.835', 'claim-level-lines-original.835');
+    // The case's first line, the 97110 one that rises (its three case lines share a time, so the world's own pick is any).
+    const first = ((await w.rows<{ id: string }>(led.practice, "SELECT s.id FROM case_line cl JOIN service_line s ON s.id = cl.service_line_id WHERE s.line_no = 1"))[0] as { id: string }).id;
+    const byLine = (sql: string) => w.rows<{ line_no: number; value: string }>(led.practice, sql);
+    // Three lines allowed 70.00, the claim's PR-2 42.00 -> 48.00 when the first rises to 100.00: CLP04 168.00 -> 192.00, BPR02 24.00.
+    expect(await byLine("SELECT bpr02_cents::text AS value, 0 AS line_no FROM remittance ORDER BY created_at")).toMatchObject([{ value: '16800' }, { value: '2400' }]);
+    expect(await byLine("SELECT l.line_no, m.outcome AS value FROM ledger_match m JOIN service_line l ON l.id = m.service_line_id WHERE m.kind = 'claim' ORDER BY l.line_no")).toEqual([
+      { line_no: 1, value: 'approved' },
+      { line_no: 2, value: 'no_change' },
+      { line_no: 3, value: 'no_change' },
+    ]);
+    // The first line is approved the claim's 24.00, never 28.00 (a split by charge), and the others nothing: never more than the claim paid.
+    expect(await byLine('SELECT l.line_no, e.amount_cents::text AS value FROM ledger_entry e JOIN service_line l ON l.id = e.service_line_id ORDER BY l.line_no')).toEqual([{ line_no: 1, value: '2400' }]);
+    await exported(led.practice, 'LED-14/claim-level-lines-eft-export.csv', 'eft_export');
+    expect(await w.stages(led.practice)).toEqual([
+      { stage: 'approved', amountCents: '2400' },
+      { stage: 'deposited', amountCents: '2400' },
+    ]);
+    expect(await totals(led.practice)).toMatchObject({ approvedCents: 2400n, depositedCents: 2400n, recoveredCents: 2400n, payerApprovedCents: 2400n });
+    expect(await w.lineStage(led.practice, first)).toBe('recovered');
+    // Its share: 20.00 of the claim's 48.00 against 14.00 of the 42.00, the 6.00 more billable, nothing another reduction.
+    expect((await correctionOf(led.practice, first))?.billable).toMatchObject({
+      allowedIncreaseCents: 3000n,
+      paymentIncreaseCents: 2400n,
+      shareChange: { coinsuranceCents: 600n, deductibleCents: 0n, copayCents: 0n, otherCents: 0n },
+      otherReductionCents: 0n,
+      billableCents: 600n,
+      allocations: { before: { basis: 'allowed', lineWeightCents: 7000n, claimWeightCents: 21000n }, after: { basis: 'allowed', lineWeightCents: 10000n, claimWeightCents: 24000n } },
+    });
+  });
+
+  it('gives the claim-level PR to the same lines in the share as in the cash, so no part of it shows as another reduction (probe E9, R2)', async () => {
+    const led = await scenario('LED-14', 'claim-level-bare-adjusted.835', 'claim-level-bare-original.835');
+    expect(await w.rows(led.practice, 'SELECT s.line_no FROM case_line cl JOIN service_line s ON s.id = cl.service_line_id')).toEqual([{ line_no: 1 }]);
+    expect(await w.stages(led.practice)).toEqual([{ stage: 'approved', amountCents: '2400' }]);
+    // The second line carries no CAS of its own: the case line takes the claim's whole PR-2, 14.00 then 20.00, in its cash and its share.
+    expect((await correctionOf(led.practice, led.serviceLineId))?.billable).toMatchObject({
+      allowedIncreaseCents: 3000n,
+      paymentIncreaseCents: 2400n,
+      shareChange: { coinsuranceCents: 600n, deductibleCents: 0n, copayCents: 0n, otherCents: 0n },
+      otherReductionCents: 0n,
+      billableCents: 600n,
+      allocatedFromClaim: true,
+      allocations: { before: { basis: 'allowed', lineWeightCents: 7000n, claimWeightCents: 7000n }, after: { basis: 'allowed', lineWeightCents: 10000n, claimWeightCents: 10000n } },
+    });
   });
 });
 

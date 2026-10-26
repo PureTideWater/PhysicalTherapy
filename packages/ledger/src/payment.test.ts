@@ -4,10 +4,14 @@ import { describe, expect, it } from 'vitest';
 
 import { reprocessing } from './matching';
 import {
+  type LinePayment,
   type PaidLine,
   type PatientShare,
   type PaymentEvent,
   type ShareLine,
+  claimAdjustmentParts,
+  claimAllocations,
+  claimLevelShares,
   claimLinePayments,
   originalBaselines,
   patientShareChange,
@@ -391,7 +395,7 @@ describe('billable to the patient beside the ledger, counted in no total (PRD 13
   const shareLine = (allowed: bigint, paid: bigint, pr: PatientShare, allocation: ShareLine['allocation'] = null): ShareLine => ({ ...line(allowed, paid), share: pr, allocation });
   const change = (before: ShareLine, after: ShareLine, payment: bigint) => patientShareChange({ before, after, paymentIncreaseCents: cents(payment) });
   const none = share(0n, 0n, 0n, 0n);
-  const SHARE_REFUSAL = "a share allocated from the claim is a fraction of the claim's charges, which are more than zero";
+  const SHARE_REFUSAL = "a share allocated from the claim is a fraction of the claim's weights, which are more than zero";
 
   it("names the coinsurance of LED-14's correction: 30.00 allowed, 24.00 paid, 6.00 the patient's", () => {
     expect(change(shareLine(7000n, 5600n, share(0n, 1400n, 0n, 0n)), shareLine(10000n, 8000n, share(0n, 2000n, 0n, 0n)), 2400n)).toEqual({
@@ -426,16 +430,16 @@ describe('billable to the patient beside the ledger, counted in no total (PRD 13
   });
 
   it('flags a share allocated from the claim and passes its exact fraction through', () => {
-    const allocation = { lineChargeCents: cents(15000n), claimChargeCents: cents(45000n) };
+    const allocation = { basis: 'allowed' as const, lineWeightCents: cents(15000n), claimWeightCents: cents(45000n) };
     const after = change(shareLine(7000n, 5600n, none), shareLine(10000n, 8000n, none, allocation), 2400n);
     expect([after.allocatedFromClaim, after.allocations]).toEqual([true, { before: null, after: allocation }]);
     const before = change(shareLine(7000n, 5600n, none, allocation), shareLine(10000n, 8000n, none), 2400n);
     expect([before.allocatedFromClaim, before.allocations]).toEqual([true, { before: allocation, after: null }]);
   });
 
-  it("refuses a claim allocation whose claim's charges are not more than zero", () => {
-    for (const claimCharge of [0n, -1n]) {
-      const allocation = { lineChargeCents: cents(0n), claimChargeCents: cents(claimCharge) };
+  it("refuses a claim allocation whose claim's weights are not more than zero", () => {
+    for (const claimWeight of [0n, -1n]) {
+      const allocation = { basis: 'charge' as const, lineWeightCents: cents(0n), claimWeightCents: cents(claimWeight) };
       refuses(() => change(shareLine(7000n, 5600n, none, allocation), shareLine(10000n, 8000n, none), 2400n), SHARE_REFUSAL);
       refuses(() => change(shareLine(7000n, 5600n, none), shareLine(10000n, 8000n, none, allocation), 2400n), SHARE_REFUSAL);
     }
@@ -457,7 +461,7 @@ describe('billable to the patient beside the ledger, counted in no total (PRD 13
 });
 
 describe("a line's cash is its share of CLP04 (docs/adr/0067; the combined audit's #12 on its claim-level path, B1)", () => {
-  const svc = (charge: bigint, paid: bigint, carries = true) => ({ chargeCents: cents(charge), servicePaidCents: cents(paid), carriesAdjustments: carries });
+  const svc = (charge: bigint, paid: bigint, carries = true, reduction = 0n) => ({ chargeCents: cents(charge), servicePaidCents: cents(paid), carriesAdjustments: carries, lineReductionCents: cents(reduction) });
   const pay = (claimPaid: bigint, lines: readonly ReturnType<typeof svc>[]) => claimLinePayments({ claimPaidCents: cents(claimPaid), lines });
   const part = (partCents: bigint, exactNumerator: bigint, exactDenominator: bigint) => ({ partCents: cents(partCents), exactNumerator, exactDenominator });
 
@@ -512,6 +516,51 @@ describe("a line's cash is its share of CLP04 (docs/adr/0067; the combined audit
     expect(pay(9900n, [svc(10000n, 5000n, false), svc(10000n, 5000n, false)]).map((item) => item.claimAdjustment)).toEqual([part(50n, 100n * 10000n, 20000n), part(50n, 100n * 10000n, 20000n)]);
   });
 
+  it('weighs each part by the line’s allowed amount before the claim-level CAS, so one line’s rise in a claim-level coinsurance stays on that line (R1, probe E11)', () => {
+    // Three lines charged 150.00, CO-45 80.00 and SVC03 70.00 each, the claim's PR-2 coinsurance 42.00 (20% of 210.00): CLP04 168.00.
+    const before = pay(16800n, [svc(15000n, 7000n, true, 8000n), svc(15000n, 7000n, true, 8000n), svc(15000n, 7000n, true, 8000n)]);
+    expect(before.map((item) => item.paidCents)).toEqual([5600n, 5600n, 5600n]);
+    // The correction raises line 1 to 100.00 (CO-45 50.00) and the claim's PR-2 to 48.00 (20% of 240.00): CLP04 192.00, 24.00 more.
+    const after = pay(19200n, [svc(15000n, 10000n, true, 5000n), svc(15000n, 7000n, true, 8000n), svc(15000n, 7000n, true, 8000n)]);
+    expect(after).toEqual([
+      { paidCents: 8000n, claimAdjustment: part(2000n, 4800n * 10000n, 24000n) },
+      { paidCents: 5600n, claimAdjustment: part(1400n, 4800n * 7000n, 24000n) },
+      { paidCents: 5600n, claimAdjustment: part(1400n, 4800n * 7000n, 24000n) },
+    ]);
+    // Line 1's payment increase is the claim's, 24.00, and the other lines' is zero: never 28.00 and -2.00 each, as a split by charge gives.
+    expect(after.map((item, index) => item.paidCents - (before[index] as LinePayment).paidCents)).toEqual([2400n, 0n, 0n]);
+    // Signed reductions and a reversal: the allowed amount's magnitude.
+    expect(pay(-19200n, [svc(-15000n, -10000n, true, -5000n), svc(-15000n, -7000n, true, -8000n), svc(-15000n, -7000n, true, -8000n)]).map((item) => item.paidCents)).toEqual([-8000n, -5600n, -5600n]);
+    // A line's own PR is part of its allowed amount: only its other groups come off its charge.
+    expect(pay(9000n, [svc(15000n, 6000n, true, 5000n), svc(15000n, 5000n, true, 10000n)]).map((item) => item.claimAdjustment?.partCents)).toEqual([1334n, 666n]);
+  });
+
+  it('weighs the lines that take a part by their allowed amounts, by their charges when those are all zero, and leaves the others out', () => {
+    expect(claimAllocations([svc(15000n, 10000n, true, 5000n), svc(-15000n, -7000n, true, -8000n), svc(20000n, 20000n, false)])).toEqual([
+      { basis: 'allowed', lineWeightCents: 10000n, claimWeightCents: 17000n },
+      { basis: 'allowed', lineWeightCents: 7000n, claimWeightCents: 17000n },
+      null,
+    ]);
+    // Every taking line reduced to nothing at its own level: by charge, a line that takes no part still left out of the sum.
+    expect(claimAllocations([svc(15000n, 0n, true, 15000n), svc(-5000n, 0n, true, -5000n), svc(20000n, 20000n, false)])).toEqual([
+      { basis: 'charge', lineWeightCents: 15000n, claimWeightCents: 20000n },
+      { basis: 'charge', lineWeightCents: 5000n, claimWeightCents: 20000n },
+      null,
+    ]);
+    // A line carrying no CAS weighs its charge.
+    expect(claimAllocations([svc(10000n, 5000n, false), svc(30000n, 5000n, false)])).toEqual([
+      { basis: 'allowed', lineWeightCents: 10000n, claimWeightCents: 40000n },
+      { basis: 'allowed', lineWeightCents: 30000n, claimWeightCents: 40000n },
+    ]);
+    expect(claimAllocations([svc(0n, 0n), svc(0n, 0n)])).toEqual([
+      { basis: 'charge', lineWeightCents: 0n, claimWeightCents: 0n },
+      { basis: 'charge', lineWeightCents: 0n, claimWeightCents: 0n },
+    ]);
+    expect(claimAllocations([])).toEqual([]);
+    expect(claimAdjustmentParts(cents(0n), [svc(100n, 0n)])).toEqual([null]);
+    expect(claimAdjustmentParts(cents(5n), [])).toEqual([]);
+  });
+
   it('splits it evenly when every charge that takes it is zero', () => {
     expect(pay(-3n, [svc(0n, 0n), svc(0n, 0n)])).toEqual([
       { paidCents: -2n, claimAdjustment: part(2n, 3n, 2n) },
@@ -524,10 +573,10 @@ describe("a line's cash is its share of CLP04 (docs/adr/0067; the combined audit
 
   it('adds the lines’ cash up to CLP04 exactly, each part within a cent of its exact fraction (property)', () => {
     const amount = fc.bigInt({ min: -200_000n, max: 200_000n });
-    const lineArb = fc.record({ charge: amount, paid: amount, carries: fc.boolean() });
+    const lineArb = fc.record({ charge: amount, paid: amount, carries: fc.boolean(), reduction: amount });
     fc.assert(
       fc.property(amount, fc.array(lineArb, { minLength: 1, maxLength: 6 }), (claimPaid, specs) => {
-        const lines = specs.map((spec) => svc(spec.charge, spec.paid, spec.carries));
+        const lines = specs.map((spec) => svc(spec.charge, spec.paid, spec.carries, spec.reduction));
         const result = pay(claimPaid, lines);
         expect(result.reduce((sum, item) => sum + item.paidCents, 0n)).toBe(claimPaid);
         const own = specs.some((spec) => spec.carries);
@@ -544,6 +593,79 @@ describe("a line's cash is its share of CLP04 (docs/adr/0067; the combined audit
           // Truncated, then perhaps given one of the cents left: at most a cent from the exact part (a zero charge's exact part is 0, and it can take a cent left, as the parser's rule gives it).
           const gap = partCents * exactDenominator - exactNumerator;
           expect(gap <= exactDenominator && -gap <= exactDenominator).toBe(true);
+        }
+      }),
+      { numRuns: 2000 },
+    );
+  });
+});
+
+describe("a line's claim-level CAS by reason, from its one part (docs/adr/0067; R2 and R3)", () => {
+  const split = (charge: bigint, reduction: bigint, carries = true) => ({ chargeCents: cents(charge), lineReductionCents: cents(reduction), carriesAdjustments: carries });
+  const shares = (lines: readonly ReturnType<typeof split>[], reasons: readonly bigint[]) => claimLevelShares({ lines, reasonCents: reasons.map((reason) => cents(reason)) });
+
+  it('splits the line’s single rounded part over the reasons, so its reasons add up to the part its cash is short of (R3, probe E10)', () => {
+    // PR-1 2.00 and PR-2 2.00 over allowed 100.00, 70.00 and 70.00: parts 1.67, 1.17 and 1.16 of the 4.00.
+    const lines = [split(15000n, 5000n), split(15000n, 8000n), split(15000n, 8000n)];
+    expect(claimAdjustmentParts(cents(400n), lines).map((item) => item?.partCents)).toEqual([167n, 117n, 116n]);
+    // Each part split in half, the cent left to the first reason: never 84 and 84 for line 1, as a split by reason gives (a false cent).
+    expect(shares(lines, [200n, 200n])).toEqual([
+      [84n, 83n],
+      [59n, 58n],
+      [58n, 58n],
+    ]);
+    // A reason of zero takes no cent left; a reversal is signed.
+    expect(shares([split(10000n, 0n)], [0n, 1n, 2n])).toEqual([[0n, 1n, 2n]]);
+    expect(shares([split(10000n, 0n), split(20000n, 0n)], [0n, -100n, -200n])).toEqual([
+      [0n, -34n, -66n],
+      [0n, -67n, -133n],
+    ]);
+    // Mixed signs: each line's reasons still add up to its part (67 and 133 of the 2.00).
+    expect(shares([split(10000n, 0n), split(20000n, 0n)], [300n, -100n])).toEqual([
+      [100n, -33n],
+      [199n, -66n],
+    ]);
+  });
+
+  it('gives a line that takes no part nothing, and splits reasons adding up to zero each alone', () => {
+    expect(shares([split(10000n, 5000n), split(10000n, 10000n, false)], [500n])).toEqual([[500n], [0n]]);
+    expect(shares([split(10000n, 0n), split(20000n, 0n)], [300n, -300n])).toEqual([
+      [100n, -100n],
+      [200n, -200n],
+    ]);
+    expect(shares([split(10000n, 0n), split(20000n, 0n, false)], [300n, -300n])).toEqual([
+      [300n, -300n],
+      [0n, 0n],
+    ]);
+    expect(shares([], [100n])).toEqual([]);
+    expect(shares([split(10000n, 0n)], [])).toEqual([[]]);
+  });
+
+  it('adds each line’s reasons up to its part of the total, and the parts up to the total (property)', () => {
+    const amount = fc.bigInt({ min: -200_000n, max: 200_000n });
+    const lineArb = fc.record({ charge: amount, reduction: amount, carries: fc.boolean() });
+    fc.assert(
+      fc.property(fc.array(lineArb, { minLength: 1, maxLength: 6 }), fc.array(amount, { maxLength: 5 }), (specs, reasons) => {
+        const lines = specs.map((spec) => split(spec.charge, spec.reduction, spec.carries));
+        const result = shares(lines, reasons);
+        const total = reasons.reduce((sum, reason) => sum + reason, 0n);
+        const parts = claimAdjustmentParts(cents(total), lines);
+        expect(parts.reduce((sum: bigint, item) => sum + (item?.partCents ?? 0n), 0n)).toBe(total);
+        for (const [index, row] of result.entries()) {
+          expect(row).toHaveLength(reasons.length);
+          if (total !== 0n) {
+            expect(row.reduce((sum: bigint, value) => sum + value, 0n)).toBe(parts[index]?.partCents ?? 0n);
+          }
+          for (const [reasonIndex, value] of row.entries()) {
+            if (reasons[reasonIndex] === 0n) {
+              expect(value).toBe(0n);
+            }
+          }
+        }
+        if (total === 0n) {
+          for (const [reasonIndex, reason] of reasons.entries()) {
+            expect(result.reduce((sum: bigint, row) => sum + (row[reasonIndex] as bigint), 0n)).toBe(reason);
+          }
         }
       }),
       { numRuns: 2000 },

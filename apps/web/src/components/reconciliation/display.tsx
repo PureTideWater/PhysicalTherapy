@@ -246,8 +246,8 @@ function Allocation({ billable }: { readonly billable: BillableView }) {
   return billable.allocation === null ? null : (
     <>
       {' '}
-      The payer reported the patient’s share for the whole claim; it is split to this line by charge (<Money value={billable.allocation.lineChargeCents} /> of{' '}
-      <Money value={billable.allocation.claimChargeCents} />
+      The payer reported the patient’s share for the whole claim; it is split to this line by {billable.allocation.basis === 'allowed' ? 'allowed amount' : 'charge'} (
+      <Money value={billable.allocation.lineWeightCents} /> of <Money value={billable.allocation.claimWeightCents} />
       ).
     </>
   );

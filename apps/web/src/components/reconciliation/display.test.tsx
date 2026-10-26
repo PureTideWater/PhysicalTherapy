@@ -165,8 +165,12 @@ describe('a case line’s corrections beside the ledger', () => {
   });
 
   it('names a share allocated from the claim’s level with its exact fraction', () => {
-    const allocated: CorrectionView = { kind: null, billable: { ...(COINSURANCE.billable as NonNullable<CorrectionView['billable']>), allocation: { lineChargeCents: '15000', claimChargeCents: '30000' } } };
-    expect(text(<LineCorrectionWords correction={allocated} />)).toContain('The payer reported the patient’s share for the whole claim; it is split to this line by charge ($150.00 of $300.00).');
+    const allocated = (basis: 'allowed' | 'charge'): CorrectionView => ({
+      kind: null,
+      billable: { ...(COINSURANCE.billable as NonNullable<CorrectionView['billable']>), allocation: { basis, lineWeightCents: '10000', claimWeightCents: '24000' } },
+    });
+    expect(text(<LineCorrectionWords correction={allocated('allowed')} />)).toContain('The payer reported the patient’s share for the whole claim; it is split to this line by allowed amount ($100.00 of $240.00).');
+    expect(text(<LineCorrectionWords correction={allocated('charge')} />)).toContain('The payer reported the patient’s share for the whole claim; it is split to this line by charge ($100.00 of $240.00).');
   });
 });
 

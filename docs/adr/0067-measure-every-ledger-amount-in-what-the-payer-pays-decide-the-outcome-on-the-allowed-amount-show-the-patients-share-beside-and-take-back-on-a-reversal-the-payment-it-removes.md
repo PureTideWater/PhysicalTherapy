@@ -56,7 +56,7 @@ back, and the deductible-absorbed outcome.
 
 All amounts are integer cents. The one division is a line's part of its claim's claim-level CAS, below, rounded once
 with its exact fraction kept beside the cents; every amount the ledger writes is a difference of those. The arithmetic
-is one new pure file, `packages/ledger/src/payment.ts` (`claimLinePayments`, `paymentChain`, `paymentOutcome`,
+is one new pure file, `packages/ledger/src/payment.ts` (`claimLinePayments`, `claimLevelShares`, `paymentChain`, `paymentOutcome`,
 `reversalTakeBack`, `patientShareChange`), mutation-tested under money-ledger; the reconcile step in
 `apps/worker/src/reconcile` reads the rows and calls it.
 
@@ -73,17 +73,28 @@ leave it approved and never provable by the 24.00 deposit (probe E8, now LED-14'
 - A line carrying CAS of its own balances alone, so its SVC03 holds none of the claim-level CAS; a line carrying none
   is balanced by the claim and its SVC03 may already hold its part (PAR-10's lines, where `D` is 0). So `D` is split
   over the lines that carry CAS of their own, or over every line when none does.
-- The split is the parser's own rule, `@tp/edi835 allocateProRata` (the rule behind the observed allowed and the
-  patient's share allocated from the claim): by the magnitude of each line's charge, each part truncated toward zero
-  once, the cents left given one at a time in line order. Its exact fraction, `D × charge / Σ charges` (`D / n` when
-  every such charge is zero), is kept beside the cents.
+- Each taking line's part is weighed by its allowed amount before the claim-level CAS, the magnitude of SVC02 less
+  its own CAS outside group PR (for a line balanced alone, SVC03 plus its own PR; for a line carrying no CAS, its
+  charge), or by the charges' magnitudes when those weights add up to zero (`claimAllocations`, the engine re-check's
+  R1). Each part is truncated toward zero once and the cents left are given one at a time in line order, the rule of
+  `@tp/edi835 allocateProRata` over these weights; its exact fraction, `D × weight / Σ weights` (`D / n` when every
+  weight is zero), is kept beside the cents, and the parts add up to `D` exactly, so the lines' cash adds up to CLP04
+  exactly (`claimAdjustmentParts`).
+- A split by charge was the first rule (B1) and is wrong on a claim of several lines: three lines charged 150.00 and
+  allowed 70.00 under a claim-level PR-2 of 42.00, the first raised to 100.00 and the PR-2 to 48.00, pay 24.00 more
+  (CLP04 168.00 to 192.00), yet a split by charge (16.00 each of the 48.00, 14.00 each of the 42.00) puts the first
+  line's cash 28.00 higher and the others' 2.00 lower: an approval of 28.00 that the 24.00 deposit can never prove
+  (probe E11, now LED-14's claim-level-lines variant). Coinsurance is proportional to the allowed amount, so the split
+  by allowed amount gives each line exactly its own: 20.00, 14.00 and 14.00, and the first line is approved 24.00.
+  For a deductible or a copay reported only at the claim's level, the 835 does not say which line it fell on; the
+  split by allowed amount is the best it allows, and the parts still add up to CLP04 exactly.
 - `paid(n)` is SVC03 less the part, so a claim's lines add up to its CLP04 exactly, and the chain, every posting and
   deposit share, and the billable to the patient read it. A claim-level PR is then the patient's share once, in
   billable to the patient, and never again in the other reductions. A line-level posting row is still matched on
   SVC03 as sent, which is what it posts; what it proves is the line's cash share.
 - `allocateByWeight` (largest remainder) was the other candidate. It refuses a negative total or weight, and a
-  reversal's charges and CAS are negative; and its remainder rule differs from the parser's, so a line's cash and its
-  allocated share could disagree by a cent and show a cent of other reductions that is not there.
+  reversal's charges and CAS are negative; and its remainder rule differs from the one the share is split by, so a
+  line's cash and its allocated share could disagree by a cent and show a cent of other reductions that is not there.
 - With no claim-level CAS, `D` is 0 and `paid(n)` is SVC03. No LED-01 to LED-13 claim carries claim-level CAS, so
   their amounts do not move.
 
@@ -128,8 +139,16 @@ leave it approved and never provable by the 24.00 deposit (probe E8, now LED-14'
 **Billable to the patient.** For each standing claim match, `patientShareChange` gives the allowed increase, the
 payment increase (`net(n)`, the ledger's own figure), the signed change of the patient's share by reason (PR-1
 deductible, PR-2 coinsurance, PR-3 copay, other PR), and the other reductions (the rest, shown only when not zero).
-The patient's share is read from the PR adjustments, never as allowed less paid; a claim-level PR with no line-level
-one is allocated by charge with the parser's own rule and flagged, its exact fraction kept beside the cents.
+The patient's share is read from the PR adjustments, never as allowed less paid: a line's own PR rows, and the PR
+reasons of its part of the claim-level CAS, given by the cash's own rule (`claimLevelShares`; the re-check's R2 and
+R3): the same lines take a part, by the same weights, and the line's one rounded part of the claim-level CAS is split
+over the claim's reasons in proportion to their amounts (truncated, the cents left one at a time in order), so its
+reasons add up to the very part its cash is short of SVC03 and no cent of it shows as another reduction (a split of
+each reason alone could). This holds whether or not the line carries PR of its own. A share from the claim's level
+is flagged with the weights it was split by. The observed allowed amount is the parser's (ADR 0021) and unchanged:
+with AMT B6, as the LED fixtures send, it is the payer's own figure; a line with no B6 under a claim-level PR keeps the
+parser's split by charge in its observed allowed, and where that differs from this split the difference shows in its
+other reductions (display only; no amount the ledger writes reads it).
 Billable to the patient is `max(0, Σ change)`. It is shown on Reconciliation, the case page and the specialist's
 ledger review, and counted in no total, statement, link, CSV, digest or headline.
 

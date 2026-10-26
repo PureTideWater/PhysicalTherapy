@@ -1,9 +1,8 @@
-import { allocateProRata } from '@tp/edi835';
-import { type ClaimAllocation, type PatientShare, type PatientShareChange, type ShareLine, countedStage, entriesById, patientShareChange } from '@tp/ledger';
-import { type Cents, ZERO_CENTS, cents, negateCents, parseCents, sumCents } from '@tp/money';
+import { type PatientShare, type PatientShareChange, type ShareLine, claimAllocations, claimLevelShares, countedStage, entriesById, patientShareChange } from '@tp/ledger';
+import { type Cents, ZERO_CENTS, cents, parseCents } from '@tp/money';
 
 import { type Scope, ledgerEntries } from './ledger';
-import { type ChainClaim, type ClaimLine, type LineChain, chainContext, lineChain } from './remittances';
+import { type ChainClaim, type ClaimLine, type LineChain, chainContext, claimLines, lineChain } from './remittances';
 
 /**
  * "Billable to the patient" and the payer's corrections that pay nothing more (PRD 13, Matching step 1;
@@ -11,17 +10,19 @@ import { type ChainClaim, type ClaimLine, type LineChain, chainContext, lineChai
  * in no total, statement, link, CSV, digest or headline.
  *
  * - The patient's share of a claim's line is its own CAS group PR rows by reason (PR-1 deductible, PR-2
- *   coinsurance, PR-3 copay, any other PR reason); a line with none whose claim carries PR at the claim
- *   level, while no line of the claim carries any, takes its part of the claim's by charge (@tp/edi835
- *   allocateProRata, the parser's own rule), flagged with the exact fraction (its charge over the
- *   claim's). Allowed less paid is never read as the patient's share: it can hold the payer's other
- *   reductions.
+ *   coinsurance, PR-3 copay, any other PR reason), plus, when its claim carries CAS at the claim's level,
+ *   the PR reasons of its part of it: the part its cash is short of SVC03 (remittances.ts claimLines;
+ *   @tp/ledger claimLevelShares), taken by the same lines (those carrying CAS of their own, every line when
+ *   none does) by the same weights (each one's allowed amount before the claim-level CAS), rounded once and
+ *   split over the claim's reasons, flagged with the weights (its own over the claim's). Allowed less paid is
+ *   never read as the patient's share: it can hold the payer's other reductions.
  * - Each standing claim match of a case line is read against the line its baselines stood on just
  *   before it (@tp/ledger paymentChain): the allowed increase, the payer's payment increase (the
  *   chain's own `net`, the figure the ledger posts), the patient's share by reason, signed, and the rest,
  *   the payer's other reductions (@tp/ledger patientShareChange). A line's payment is its cash, its share
- *   of CLP04 (remittances.ts claimLines), so a claim-level PR is taken off the payment by the same rule
- *   that allocates it to the share: shown once, as billable to the patient, never as other reductions.
+ *   of CLP04 (remittances.ts claimLines), so a claim-level PR is taken off the payment by the same rule, the
+ *   same lines and the same rounded part that give it to the share: shown once, as billable to the patient,
+ *   never as other reductions, whether or not the line carries PR of its own.
  * - A line's correction pays nothing more when its latest standing approving claim match wrote no entry
  *   and its payment increase is zero: "patient_balance" when the patient's share rose ("Payer
  *   corrected; balance is the patient's"), else "other_reductions". Never recovered, never no change.
@@ -78,50 +79,55 @@ const NO_SHARE: PatientShare = { deductibleCents: ZERO_CENTS, coinsuranceCents: 
 
 const REASON_KEY: Readonly<Record<string, keyof PatientShare>> = { '1': 'deductibleCents', '2': 'coinsuranceCents', '3': 'copayCents' };
 
-interface PrRow {
+interface AdjustmentRow {
   readonly claim_id: string;
   readonly service_line_id: string | null;
+  readonly group_code: string;
   readonly reason_code: string;
   readonly amount_cents: string;
 }
 
-/** A share by reason from PR adjustments. */
-function shareOf(rows: readonly PrRow[]): PatientShare {
-  const share: Record<keyof PatientShare, bigint> = { ...NO_SHARE };
-  for (const row of rows) {
-    share[REASON_KEY[row.reason_code] ?? 'otherCents'] += parseCents(row.amount_cents);
-  }
-  return { deductibleCents: cents(share.deductibleCents), coinsuranceCents: cents(share.coinsuranceCents), copayCents: cents(share.copayCents), otherCents: cents(share.otherCents) };
-}
+type ShareCents = Record<keyof PatientShare, bigint>;
 
-/** The patient's share of every line of the claims named, by service line, with the claim-level allocation where it applies. */
+const shareKey = (reasonCode: string): keyof PatientShare => REASON_KEY[reasonCode] ?? 'otherCents';
+
+const asShare = (share: ShareCents): PatientShare => ({
+  deductibleCents: cents(share.deductibleCents),
+  coinsuranceCents: cents(share.coinsuranceCents),
+  copayCents: cents(share.copayCents),
+  otherCents: cents(share.otherCents),
+});
+
+/**
+ * The patient's share of every line of the claims named, by service line: its own PR rows by reason, and its part of
+ * the claim's CAS at the claim's level by the cash's own rule (remittances.ts claimLines, @tp/ledger claimLevelShares:
+ * the same lines take a part, by the same weights, the line's one rounded part split over the claim's reasons), its
+ * PR reasons the patient's and flagged with the weights it was split by.
+ */
 async function lineShares(scope: Scope, practiceId: string, claimIds: readonly string[]): Promise<Map<string, Pick<ShareLine, 'share' | 'allocation'>>> {
   const ids = [...new Set(claimIds)];
-  const { rows: adjustments } = await scope.client.query<PrRow>(
-    "SELECT a.claim_id, a.service_line_id, a.reason_code, a.amount_cents::text AS amount_cents FROM adjustment a WHERE a.practice_id = $1 AND a.claim_id = ANY ($2::uuid[]) AND a.group_code = 'PR' ORDER BY a.claim_id, a.position",
+  const { rows: adjustments } = await scope.client.query<AdjustmentRow>(
+    "SELECT a.claim_id, a.service_line_id, a.group_code, a.reason_code, a.amount_cents::text AS amount_cents FROM adjustment a WHERE a.practice_id = $1 AND a.claim_id = ANY ($2::uuid[]) AND (a.service_line_id IS NULL OR a.group_code = 'PR') ORDER BY a.claim_id, a.position",
     [practiceId, ids],
   );
-  const { rows: lines } = await scope.client.query<{ id: string; claim_id: string; charge_cents: string }>(
-    'SELECT s.id, s.claim_id, s.charge_cents::text AS charge_cents FROM service_line s WHERE s.practice_id = $1 AND s.claim_id = ANY ($2::uuid[]) ORDER BY s.claim_id, s.line_no',
-    [practiceId, ids],
-  );
+  const lines = await claimLines(scope, ids);
   const shares = new Map<string, Pick<ShareLine, 'share' | 'allocation'>>();
-  for (const claimId of ids) {
-    const claimLines = lines.filter((line) => line.claim_id === claimId);
+  for (const [claimId, claimLinesOf] of lines) {
     const atClaim = adjustments.filter((row) => row.claim_id === claimId && row.service_line_id === null);
-    const allocate = atClaim.length > 0 && !adjustments.some((row) => row.claim_id === claimId && row.service_line_id !== null);
-    const charges = claimLines.map((line) => parseCents(line.charge_cents));
-    const claimChargeCents = sumCents(charges.map((charge) => (charge < ZERO_CENTS ? negateCents(charge) : charge)));
-    // Each reason of the claim's PR split over its lines by charge, as the parser split the total.
-    const byReason = allocate ? (Object.keys(NO_SHARE) as (keyof PatientShare)[]).map((key) => allocateProRata(shareOf(atClaim)[key], charges)) : [];
-    for (const [index, line] of claimLines.entries()) {
-      if (!allocate) {
-        shares.set(line.id, { share: shareOf(adjustments.filter((row) => row.service_line_id === line.id)), allocation: null });
-        continue;
+    const splits = claimLinesOf.map((line) => line.split);
+    const parts = claimLevelShares({ lines: splits, reasonCents: atClaim.map((row) => parseCents(row.amount_cents)) });
+    const allocations = atClaim.some((row) => row.group_code === 'PR') ? claimAllocations(splits) : splits.map(() => null);
+    for (const [index, line] of claimLinesOf.entries()) {
+      const share: ShareCents = { ...NO_SHARE };
+      for (const row of adjustments.filter((adjustment) => adjustment.service_line_id === line.serviceLineId)) {
+        share[shareKey(row.reason_code)] += parseCents(row.amount_cents);
       }
-      const [deductibleCents, coinsuranceCents, copayCents, otherCents] = byReason.map((parts) => parts[index] as Cents) as [Cents, Cents, Cents, Cents];
-      const allocation: ClaimAllocation = { lineChargeCents: charges[index] as Cents, claimChargeCents };
-      shares.set(line.id, { share: { deductibleCents, coinsuranceCents, copayCents, otherCents }, allocation });
+      for (const [position, row] of atClaim.entries()) {
+        if (row.group_code === 'PR') {
+          share[shareKey(row.reason_code)] += (parts[index] as Cents[])[position] as Cents;
+        }
+      }
+      shares.set(line.serviceLineId, { share: asShare(share), allocation: allocations[index] ?? null });
     }
   }
   return shares;

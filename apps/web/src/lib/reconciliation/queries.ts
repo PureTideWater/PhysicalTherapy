@@ -183,8 +183,8 @@ export interface BillableView {
   /** The patient's share's net change, signed (below zero when it fell): shown to every reader, as billable is. */
   readonly shareChangeCents: string;
   readonly reasons: { readonly deductible: string; readonly coinsurance: string; readonly copay: string; readonly other: string } | null;
-  /** The share allocated from the claim's level by charge: the line's charge over the claim's (the exact fraction), or null. */
-  readonly allocation: { readonly lineChargeCents: string; readonly claimChargeCents: string } | null;
+  /** The share allocated from the claim's level: the line's weight over the claim's (by allowed amount, or by charge when those are zero), or null. */
+  readonly allocation: { readonly basis: 'allowed' | 'charge'; readonly lineWeightCents: string; readonly claimWeightCents: string } | null;
 }
 
 /** A case line's correction that pays nothing more, if its latest one did, and what its corrections leave billable to the patient. */
@@ -216,7 +216,7 @@ export function correctionView(line: LineCorrection | undefined, phi: boolean): 
             other: centsToString(billable.shareChange.otherCents),
           }
         : null,
-      allocation: allocation === null ? null : { lineChargeCents: centsToString(allocation.lineChargeCents), claimChargeCents: centsToString(allocation.claimChargeCents) },
+      allocation: allocation === null ? null : { basis: allocation.basis, lineWeightCents: centsToString(allocation.lineWeightCents), claimWeightCents: centsToString(allocation.claimWeightCents) },
     },
   };
 }
