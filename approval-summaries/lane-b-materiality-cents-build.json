@@ -1,0 +1,139 @@
+[
+ {
+  "commits": [
+   "4618e414 tests first: materiality settings, the model budget and the PLB total speak dollars (CAS-38, CAS-39)",
+   "4bfcb12c Show and take settings amounts in dollars: one money-input helper, the defaults cards, the model budget, the PLB total",
+   "c74d304c Add CAS-38 and CAS-39 to the test matrix: settings stored in cents shown and saved in dollars"
+  ],
+  "filesChanged": [
+   "apps/web/src/lib/money-input.ts (new: dollarsField, dollarsForInput)",
+   "apps/web/src/lib/money-input.test.ts (new, property test)",
+   "apps/web/src/components/settings/defaults.tsx (new: MaterialityCard, PursuitCard)",
+   "apps/web/src/components/settings/defaults.test.tsx (new)",
+   "apps/web/src/app/p/[practiceId]/settings/defaults/page.tsx",
+   "apps/web/src/lib/routes/defaults-routes.db.test.ts (new)",
+   "apps/web/src/lib/routes/console-models.ts",
+   "apps/web/src/app/console/models/page.tsx",
+   "apps/web/src/lib/routes/console-routes.db.test.ts",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/lib/routes/workbench.ts",
+   "apps/web/src/lib/routes/workbench-routes.db.test.ts",
+   "apps/web/src/lib/console/practice-settings.ts",
+   "apps/web/src/app/console/practices/[practiceId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/uploads/[documentId]/page.tsx",
+   "apps/web/src/lib/uploads/receipt-labels.ts",
+   "apps/web/src/lib/uploads/receipt-labels.test.ts",
+   "apps/web/e2e/triage.spec.ts",
+   "docs/product/test-matrix.md (rows added)",
+   "packages/synth/src/cases/matrix.ts (rows added)",
+   "packages/synth/src/cases/registry.ts (entries added)",
+   "fixtures/synthetic/CAS-38/expected.json (written by pnpm synth --case CAS-38)",
+   "fixtures/synthetic/CAS-39/expected.json (written by pnpm synth --case CAS-39)"
+  ],
+  "failingFirst": [
+   "Unit run on the base behaviour: 12 failed, 16 passed. For the db run, PG18 on 5433 was down and I started it as HANDOFF.md says: 4 failed. The base behaviour means the cards moved unchanged into components/settings/defaults.tsx, plus a dollarsForInput stub that returns the stored cents text as it is, which is what the page pre-filled.",
+   "components/settings/defaults.test.tsx (CAS-38), 4 of 6 failed. The card said 'Now $500 per line and $25000 per case.' where 'Now $5.00 per line and $250.00 per case.' was expected. The edges said '$0 per line and $1 per case'. The read-only card showed $500. The pursuit card said '$4500 an hour, \u2026' and pre-filled cents. The request-key and not-set tests passed already.",
+   "lib/money-input.test.ts (CAS-39), 4 of 6 failed. The property dollarsField.parse(dollarsForInput(String(c))) === c failed with 'expected 100n to be 1n'. The edges came back as ['0','1','99',\u2026] where ['0.00','0.01','0.99',\u2026] was expected. Non-canonical text such as '05' and '5.00' did not throw. The 12-digit value came back as '999999999999' where '9999999999.99' was expected.",
+   "lib/routes/defaults-routes.db.test.ts (CAS-39), both tests failed. Saving the pre-filled 500/25000/4500 unchanged stored 100 times each value. The boundary loop failed at 1 cent: '1' was saved as $1, so 100 was stored.",
+   "console-routes.db.test.ts (model budget). The existing MOD-05/06 test, now setting '3.00', got 'invalid' where 'ok' was expected, because the save took whole cents only. The new test got 'invalid' for '5.00' where 'ok' was expected.",
+   "receipt-labels.test.ts (F6, the PLB total). The text read 'provider adjustments of $-10.50' where '-$10.50' was expected. The new negative-PLB test got '$-1.00' where '-$1.00' was expected. The held file read 'Does not balance by $-1.00'. The errorText amounts read '$-0.05' and '$1234.56' with no grouping.",
+   "e2e/triage.spec.ts: the new step 'the thresholds read as dollars on the cases page and on Settings \u2192 Defaults\u2026'. Not run, as instructed. On the base it would fail at the defaults page's 'Now $5.00 per line and $100.00 per case.'"
+  ],
+  "sweep": [
+   "apps/web/src/app/p/[practiceId]/settings/defaults/page.tsx:40,48-49,62,70: CONFIRMED BUG, fixed. The cards moved to components/settings/defaults.tsx. Amounts go through <Money>, minutes are in mono, pre-fills go through dollarsForInput, and formKeys is a factory with one request key per form.",
+   "apps/web/src/lib/routes/settings.ts:292-299: the route returns canonical cents text, which is correct as data. :271-275 and the pursuit save at :331/:341 parse dollars. No change; #42 file; handed to Lane A (use dollarsField). The new db test proves the real parser at 0, 1, 99, 100, 500, 4500, 25000 and 99,999,999,999.",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx: CORRECTED. :22's local `dollars` is gone; the pre-fill now uses dollarsForInput. :166's hardcoded defaults now come from DEFAULT_TRIAGE_SETTINGS through <Money> (F7). :95, :276, :281 <Money>: OK.",
+   "apps/web/src/lib/routes/workbench.ts: :136-140's duplicate schema is replaced by dollarsField (F1). :77's refusal now uses formatUsd ('$60.00 \u2026 $250.00'; F7). The workbench-routes.db.test.ts expectation is updated to match.",
+   "apps/web/src/lib/routes/triage.ts:292: materiality as cents text, read through <Money> and the helper. OK, unchanged.",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx:75-101,170: <Money> throughout. OK, unchanged.",
+   "apps/web/src/lib/triage/queries.ts:341-395: pursuit_cost_cents passed through as cents text. OK, unchanged.",
+   "apps/web/src/app/console/practices/[practiceId]/page.tsx: CORRECTED. :91's plain-text defaults now come from DEFAULT_TRIAGE_SETTINGS through <Money>, with the cohort count in mono (F7). :100-104 pre-fill through asDollars: OK.",
+   "apps/web/src/lib/console/practice-settings.ts: CORRECTED. :33-36's duplicate schema is replaced by dollarsField. :140 asDollars keeps its guard and calls dollarsForInput (F1). Unused money imports dropped.",
+   "apps/web/src/app/console/models/page.tsx:81 and lib/routes/console-models.ts: RECLASSIFIED. The review called this 'correctly labelled, not this class'; decision 6 fixes it. The budget is now typed in dollars through dollarsField and stored as whole cents ('5.00' and '5' both give 500). The label reads 'Daily budget (dollars)' and the hint is MODEL_VALUE_HINT, in dollars. The table and default figure use formatUsd in mono: OK. The route sample is now '7.50'.",
+   "apps/web/src/app/console/billing/page.tsx:66 and app/settings/billing/[organizationId]/page.tsx:152 (formatUsd in mono), :101-102 (<option> labels): OK, unchanged.",
+   "apps/web/src/app/p/[practiceId]/uploads/[documentId]/page.tsx:83: CONFIRMED BUG, fixed. It now renders <Money value={parse.plbTotalCents} /> (F6).",
+   "apps/web/src/lib/uploads/receipt-labels.ts: CONFIRMED, fixed. :242 centsText is deleted. :257 and :386 now use formatUsd(parseCents(\u2026)), so '-$1.00' with grouping. A unit test asserts the negative PLB.",
+   "apps/web/src/app/p/[practiceId]/remittances/[remittanceId]/page.tsx:85 and remittances/page.tsx: <Money>. OK.",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx: CORRECTED. :69's unrounded cents and :76's adjustment before/after cents are now in mono spans. They stay labelled as cents beside the rounded <Money> (F7).",
+   "apps/web/src/components/packets/display.tsx:307,317 (cents labelled, in mono) and components/packets/pricing.tsx: OK. A re-grep confirmed this.",
+   "packet, review and submissions pages; abstraction/ledger; reconciliation and template-mapper; reports/roi and components/reports/*; the dashboard; digests; anomalies; claims, pricing-run, mapping, coverage and contracts pages and their components; lib/contracts/display.ts:151-158: OK per the review, unchanged. A re-grep of apps/web/src for `$${`, '$'+ and bare *Cents interpolations found nothing new.",
+   "#42 files: components/screening/* (ScreeningMoney in mono; upload-form.tsx sends cents and shows none), app/screening/page.tsx and lib/screening/messages.ts:134,170 (formatUsd), components/monitoring/display.tsx:23 (formatUsd in mono), console/mail and support pages (no amounts): OK, not touched.",
+   "apps/web/e2e: no spec opened /settings/defaults before. triage.spec.ts now does (F4). brand.spec, copy.spec and layout-1280 do not cover the page. No #42 e2e file was touched."
+  ],
+  "checks": [
+   "Unit tests for apps/web and packages/synth after the fix: 70 files, 822 of 822 passed, including defaults.test.tsx, money-input.test.ts, receipt-labels.test.ts, practice-settings.test.ts and synth fixtures.test.ts (matrix.ts matches test-matrix.md, assertedBy files exist).",
+   "DB tests (DATABASE_URL=postgres://postgres:test@localhost:5433/postgres) for defaults-routes, console-routes and workbench-routes: 35 of 35 passed.",
+   "Generated route-tests filtered to the touched routes (console.models, practice.cases.materiality, practice.settings.*, console.practice*): 306 passed.",
+   "tools/screening-capacity unit tests: 185 of 185 passed. No new file is in the screening import closure and watched-paths.txt is untouched.",
+   "tsc --noEmit for apps/web and packages/synth, eslint on every changed file, pnpm lint:copy, pnpm lint:logs and pnpm verify-content: all clean.",
+   "No #42 file was changed except the three allowed shared files (rows only). Nothing changed under packages/money, pricing, ledger or db. No model name in any file.",
+   "e2e was not run, as instructed.",
+   "Every heavy command ran under flock /tmp/laneb-heavy.lock, one at a time."
+  ],
+  "deviations": [
+   "The model-budget db test is in apps/web/src/lib/routes/console-routes.db.test.ts, not models-routes.db.test.ts. That file already holds the console's MOD-05/06 suite, and models-routes has no console route. Two existing assertions there changed with the behaviour: the budget '300' became '3.00', and the refusal example '4.50' became '4.505' with the new message.",
+   "The tests-first commit also moved the cards into components/settings/defaults.tsx unchanged and pointed the page at them. It also exported MODEL_VALUE_HINT with its old wording and made the page use it. This let the tests render and import the real modules and fail on c5195ee's behaviour.",
+   "dollarsForInput is formatCents(parseCents(\u2026)). It refuses non-canonical text but still shows a 12-digit stored value ('9999999999.99'), which the save then refuses. I chose this over throwing so a seeded value cannot crash the page. A test pins it as the Lane A gap.",
+   "receipt-labels.ts's centsText is deleted, not kept as an alias, and its unit test is replaced by errorText assertions in formatUsd form.",
+   "The defaults cards carry role=region names ('Materiality', 'Pursuit cost') so the e2e can scope them, as the cases page's Materiality card does.",
+   "The matrix assertions are the design's wording, widened to name the model budget: CAS-38 adds 'the console\u2019s model budget field and its hint say dollars', and CAS-39 adds 'a model budget entered as 5.00 or 5 is stored as 500 cents'. 'practice\u2019s' and 'save\u2019s' use the curly apostrophe of the neighbouring rows. The md and ts text is identical.",
+   "The model budget's upper limit is now dollarsField's nine whole digits (99,999,999,999 cents). Before, any 12-digit cents value was accepted. This is still within what the gateway reads.",
+   "PostgreSQL 18 on 5433 was not running. I started it with the HANDOFF.md command (su postgres \u2026 pg_ctl -D /root/pgdata18 -o '-p 5433 -k /tmp'). To syntax-check the F9 query I created a scratch database, mc_f9_syntax, and dropped it.",
+   "No before/after screenshots were taken. That UX review step needs the running app."
+  ],
+  "handovers": [
+   "Lane A, settings.ts (#42): once #42 merges, replace the module-private `dollars` at apps/web/src/lib/routes/settings.ts:271-275 with `import { dollarsField } from '../money-input'` for settingsMaterialityAction and settingsPursuitAction. The route's page data needs no change: it returns canonical cents, which the cards now read correctly.",
+   "Lane A, the 12- versus 11-digit gap (F8): triageSettings (packages/triage/src/settings.ts:56-59), practice_set_materiality (case_workbench.sql:160), practice_set_pursuit (customer_sign_in_and_readiness.sql:722) and the gateway's budget reader (packages/model-gateway/src/flags.ts CENTS) all accept 12 digits of cents. Every save (settings.ts, workbench.ts, console practice-settings.ts, and now the console model budget, all through dollarsField) caps at 99,999,999,999. Make them agree: tighten the readers and setters in a migration, or widen dollarsField to ten whole digits.",
+   "Lane A, shared files (LANES rule 6): CAS-38 and CAS-39 are added to docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts and registry.ts. Whichever PR merges second keeps both lanes' rows.",
+   "Lane A, other #42 files: nothing else of this class. screening messages.ts, monitoring display.tsx and screening upload-form.tsx are OK. lib/routes/console.ts needs no change, because practice-settings.ts, which it imports, moved onto the helper.",
+   "For the PR description (F9), the read-only query for synthetic environments is saved at /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-f9-query.sql. Run it as the owner or operator role: BEGIN TRANSACTION READ ONLY; SELECT p.id AS practice_id, p.settings->>'line_materiality_cents' AS line_cents, p.settings->>'case_materiality_cents' AS case_cents, p.settings->>'staff_rate_cents_per_hour' AS staff_rate_cents FROM practice p WHERE coalesce((p.settings->>'line_materiality_cents')::numeric, 0) >= 50000 OR coalesce((p.settings->>'case_materiality_cents')::numeric, 0) >= 2500000 OR coalesce((p.settings->>'staff_rate_cents_per_hour')::numeric, 0) >= 100000 ORDER BY p.id; SELECT c.practice_id, c.id AS case_id, c.state, c.materiality_cents, c.pursuit_cost_cents FROM \"case\" c WHERE c.materiality_cents >= 2500000 ORDER BY c.practice_id, c.id; ROLLBACK; It lists practices at 100 times the defaults and open cases that snapshotted a 100-fold threshold when they opened (worker triage/execute.ts:373). No data repair is built: synthetic data only, pre-launch."
+  ],
+  "proposals": [
+   "Add a check to lint:copy (tools/brand-copy) that flags a literal '$' before an interpolation (`$${\u2026}`, '$' + \u2026) in apps/web, so a money figure must go through <Money> or formatUsd. That would have caught both the defaults page and the PLB total.",
+   "Move <Money> from components/remittances/display.tsx into a shared components/money.tsx. Settings, console, cases, uploads and others all import it across modules.",
+   "Extend e2e/brand.spec.ts's mono checks to Settings \u2192 Defaults and the console models table. The before/after screenshots at 1280 and 390 px, light and dark, are still owed for the UX and brand review.",
+   "Make the console models Value field take inputMode='decimal' and use its own label once a budget is chosen (a per-key field), rather than one generic Value field for switches and budgets."
+  ],
+  "summary": "The Lane B fix is in /home/user/materiality-cents on co-001/materiality-cents: three commits on c5195ee, not pushed. Settings \u2192 Defaults now shows the stored thresholds and staff rate in dollars (\"$5.00 per line and $250.00 per case\", \"$45.00 an hour\") and pre-fills 5.00, 250.00 and 45.00. Before, saving the form unchanged multiplied all three by 100; now it keeps them.\n\nAll the new unit and db tests failed on the base behaviour and pass after the fix. That covers the defaults cards, the property test, the defaults db test, the model budget and the negative PLB total. Unit: 822 of 822 for apps/web and synth. DB: 35 of 35 for the defaults, console and workbench route tests. The filtered route-test suites, typecheck, eslint, lint:copy, lint:logs, verify-content and the screening-capacity tests all pass. The e2e step was written but not run, as instructed.\n\nWhat changed:\n- **One helper:** new apps/web/src/lib/money-input.ts holds dollarsField (the one save schema) and dollarsForInput (stored cents to the dollars a form shows), each the other's inverse over [0, 99,999,999,999] cents.\n- **Defaults page:** its cards moved to apps/web/src/components/settings/defaults.tsx. Amounts show through <Money>, minutes are in mono, and each form gets its own request key.\n- **Moved onto the helper:** the cases page, workbench.ts and console/practice-settings.ts. The cases and console pages take their default figures from DEFAULT_TRIAGE_SETTINGS. Workbench's refusal now reads \"$60.00\", and the line page's cents are in mono.\n- **Model budget:** /console/models now takes dollars. \"5.00\" and \"5\" both store 500 cents, and the label and hint say dollars.\n- **Upload page:** the provider-adjustment total shows through <Money>, and the receipt sentences write \"-$1.00\" instead of \"$-1.00\".\n- **Test matrix:** CAS-38 and CAS-39 are added to test-matrix.md and matrix.ts in the same words, widened to name the model budget. registry.ts has entries for both, and the expected.json files were generated with pnpm synth.\n\nApart from those three allowed shared files (rows only), I changed no #42 file and nothing under packages/money, pricing, ledger or db.\n\nDeviations:\n- The model-budget test is in console-routes.db.test.ts, where the existing console model tests live. Two of their values changed with the behaviour: '300' became '3.00', and the refused example '4.50' became '4.505'.\n- The budget's limit is now $999,999,999.99, where any 12-digit cents value was accepted before.\n- PostgreSQL on 5433 was down, so I started it with the HANDOFF.md command.\n- No screenshots were taken for the UX review.\n\nHand-overs to Lane A:\n- settings.ts should import dollarsField once #42 merges.\n- The readers and SQL setters accept 12 digits of cents but every save caps at 11.\n\nThe read-only query for the PR description is in /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-f9-query.sql. It lists practices and open cases at 100 times the defaults in synthetic environments. Progress is in /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-build.md, and the base-behaviour failures in /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-failing-unit.txt."
+ },
+ {
+  "commits": [],
+  "filesChanged": [],
+  "failingFirst": [
+   "No new test was written in this check round. The builder's tests-first failures on c5195ee are in /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-failing-unit.txt. I did not re-run them on the base."
+  ],
+  "sweep": [
+   "I compared the diff with the design's 'After the design review' section. F1: money-input.ts exports dollarsField and dollarsForInput. workbench.ts, practice-settings.ts (with asDollars keeping its guard), the cases page, the defaults cards and the model budget all use it. settings.ts was not touched and is handed to Lane A. F2: the fast-check property runs 2,000 times over [0, 99,999,999,999]. F3: defaults-routes.db.test.ts goes through the real settings.ts routes at all eight boundaries. F4: triage.spec.ts has the cases page's 100.00 pre-fill and the defaults visit with mono figures, and checks that an unchanged save keeps $100.00. F5: the md, ts and registry rows match. F6: the uploads page uses <Money>, receipt-labels uses formatUsd(parseCents) and centsText is gone. F7: the minutes, the line page's cents, the console and cases defaults from DEFAULT_TRIAGE_SETTINGS, and workbench's formatUsd are all in place. F8 and F9 are in the handovers. Decision 6: the budget is parsed exactly as dollars, refused above dollarsField's limit, and the hint says dollars. The table already used formatUsd in mono.",
+   "The only stale-copy hits for 'whole cents' are in console-models.ts comments, which correctly describe how the value is stored. 'Daily budget (cents)', the old hint and centsText appear nowhere else in apps, docs, packages, tools or .claude. The models.spec.ts e2e only fills 'on', so the budget change does not affect it. The defaults.tsx reference to docs/adr/0017 points to the real request-key ADR. The open-case snapshot is at apps/worker/src/triage/execute.ts:373-374.",
+   "Scope: the only #42-listed files changed are test-matrix.md, matrix.ts and registry.ts, with rows added only. Nothing changed under packages/money, pricing, ledger or db, and tools/screening-capacity/watched-paths.txt is untouched. No model name appears in any added line."
+  ],
+  "checks": [
+   "pnpm typecheck: passed, 22 projects, 0 errors.",
+   "pnpm lint: passed, 1,495 files in 3 groups, 0 errors, 0 warnings.",
+   "pnpm lint:copy: passed, 494 files read.",
+   "pnpm lint:logs: passed, 1,000 files scanned.",
+   "pnpm test: 324 of 324 files passed; tests 5,026 passed and 3 skipped (5,029 in all).",
+   "pnpm synth --all: 198 cases with 0 files written, 481 unchanged and 0 removed; 8 EMR export formats with 0 written and 16 unchanged. git status --porcelain was empty afterwards, so there was nothing to commit.",
+   "DB tests this diff adds or touches, run against postgres on 5433 (it was already up): defaults-routes.db.test.ts, console-routes.db.test.ts and workbench-routes.db.test.ts. 3 of 3 files passed, 35 of 35 tests passed.",
+   "Extra: the generated route tests for the 9 touched routes, including console.models.set_flag with its new '7.50' sample. They live in route-tests files 0, 2, 3, 4, 5, 6, 10 and 11, run with a -t filter: 8 of 8 files passed, 306 tests passed, 4,318 skipped by the filter.",
+   "tsx tools/stryker/affected.ts --event pull_request --base origin/claude/build-platform: diffed from merge base c5195ee0. money, pricing, ledger and packets: not affected. Shards: none, since no money path changed.",
+   "The e2e suite was not run, as instructed.",
+   "Every heavy command ran under flock /tmp/laneb-heavy.lock, one at a time. The working tree is clean and HEAD is still c74d304c."
+  ],
+  "deviations": [
+   "I made no fix commit. The diff matches the design's F1 to F9 and decisions 1 to 6, every check was green on the first run, and synth wrote nothing.",
+   "I also ran the filtered generated route tests, which the task did not ask for. The diff changed console.models.set_flag's sample input from '750' to '7.50', and those tests use that sample. To map routes to files I briefly created a throwaway script at apps/web/src/lib/routes/route-tests/_mc_tmp.ts and deleted it straight after; it never appeared in git status."
+  ],
+  "handovers": [
+   "The builder's Lane A handovers still stand, unchanged. First, settings.ts:271-275 should import dollarsField once #42 merges. Second, the readers and SQL setters accept 12 digits of cents but every save caps at 11 (F8). Third, whichever PR merges second keeps both lanes' rows in the shared matrix files.",
+   "The new triage.spec.ts step for CAS-38 and CAS-39 has not been run yet. CI or the fix round should run it."
+  ],
+  "proposals": [
+   "I agree with the builder's lint:copy proposal: flag a literal '$' before an interpolation in apps/web, so every money figure must go through <Money> or formatUsd.",
+   "Move <Money> into a shared components/money.tsx. Six or more modules now import it from components/remittances/display.tsx.",
+   "On /console/models, show a budget-specific field (label 'Daily budget (dollars)', inputMode decimal) when the budget key is chosen, instead of one generic Value field. The before/after screenshots for the UX review are still owed."
+  ],
+  "summary": "I checked the materiality-cents build in /home/user/materiality-cents (co-001/materiality-cents, HEAD c74d304c, not pushed). Every check passed on the first run, so there was nothing to fix and I made no new commit.\n\n**Diff against the design:** it does everything the \"After the design review\" section asks, F1 to F9 and decision 6:\n- One shared money-input helper, now used by every save that reads dollars, except settings.ts, which is #42's and handed to Lane A.\n- The property test, the new defaults db test, the e2e step, and matching matrix and registry rows.\n- The provider-adjustment total on the upload page is fixed.\n- The mono-face fixes are in, and the console's model budget is now entered in dollars.\n\nNo old wording about the model budget is left anywhere. Scope rules hold: only the three allowed shared #42 files changed (rows added), nothing under packages/money, pricing, ledger or db, watched-paths.txt is untouched, and no model name appears in the diff.\n\n**Checks, each under the lock:**\n\n| Check | Result |\n|---|---|\n| typecheck | passed, 22 projects |\n| lint | 1,495 files, 0 errors, 0 warnings |\n| lint:copy | 494 files, passed |\n| lint:logs | 1,000 files, passed |\n| pnpm test | 324 of 324 files; 5,026 tests passed, 3 skipped |\n| synth --all | 0 files written (481 unchanged, plus 16 for the export formats); tree clean, nothing to commit |\n| db tests (defaults, console, workbench routes) | 3 files, 35 of 35 passed |\n| stryker affected | money, pricing, ledger and packets not affected; no shards |\n\nI also ran the generated route tests for the 9 routes the diff touches, since the model-budget route's sample changed: 8 files, 306 passed. The e2e suite was not run, as instructed, so the new triage step is still unproven.\n\nProgress is in /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-check.md."
+ }
+]
