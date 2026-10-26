@@ -6,8 +6,8 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { baseState, selectPins } from './base';
-import { checkActionPins } from './check';
-import { lightweight, raw, recordedTransport, sha } from './fixtures';
+import { checkActionPins, PUSH_CONCURRENCY } from './check';
+import { blob, HANG, lightweight, recordedTransport, sha } from './fixtures';
 
 /**
  * Which pins the networked checks read, and what a run reports (CI-11): an unchanged pin makes no network read and a
@@ -35,9 +35,9 @@ const network = () =>
   recordedTransport({
     tags: { 'octo/checkout': lightweight('v7.0.1', CHECKOUT) + lightweight('v7.0.2', NEWER), 'octo/setup-node': lightweight('v7.1.0', NODE) },
     files: {
-      [raw('octo/checkout', CHECKOUT)]: 'inputs:\n  persist-credentials: { default: true }\nruns:\n  using: node24\n  main: x.js\n',
-      [raw('octo/checkout', NEWER)]: 'inputs:\n  persist-credentials: { default: true }\nruns:\n  using: node24\n  main: x.js\n',
-      [raw('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\n  cache: {}\nruns:\n  using: node24\n  main: x.js\n',
+      [blob('octo/checkout', CHECKOUT)]: 'inputs:\n  persist-credentials: { default: true }\nruns:\n  using: node24\n  main: x.js\n',
+      [blob('octo/checkout', NEWER)]: 'inputs:\n  persist-credentials: { default: true }\nruns:\n  using: node24\n  main: x.js\n',
+      [blob('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\n  cache: {}\nruns:\n  using: node24\n  main: x.js\n',
     },
   });
 
@@ -87,12 +87,12 @@ describe('the pins the network reads', () => {
     const bumped = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
     const transport = network();
     expect(await checkActionPins({ root: bumped.dir, base: bumped.base, event: 'pull_request', transport })).toMatchObject({ errors: [], warnings: [] });
-    expect(transport.reads).toEqual(['ls-remote https://github.com/octo/checkout refs/tags/v7.0.2 refs/tags/v7.0.2^{}', `GET ${raw('octo/checkout', NEWER)}`]);
+    expect(transport.reads).toEqual(['ls-remote https://github.com/octo/checkout refs/tags/v7.0.2 refs/tags/v7.0.2^{}', `git ${blob('octo/checkout', NEWER)}`]);
 
     const changed = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT, '{ node-version: 24, cache: pnpm }'), baseChecker: true });
     const again = network();
     expect(await checkActionPins({ root: changed.dir, base: changed.base, event: 'pull_request', transport: again })).toMatchObject({ errors: [] });
-    expect(again.reads).toEqual(['ls-remote https://github.com/octo/setup-node refs/tags/v7.1.0 refs/tags/v7.1.0^{}', `GET ${raw('octo/setup-node', NODE)}`]);
+    expect(again.reads).toEqual(['ls-remote https://github.com/octo/setup-node refs/tags/v7.1.0 refs/tags/v7.1.0^{}', `git ${blob('octo/setup-node', NODE)}`]);
   });
 
   it('are every pin when the base has no checker, when the change edits the checker, or when no BASE is given', async () => {
@@ -139,6 +139,35 @@ describe('a run', () => {
     const quiet = recordedTransport({});
     expect(await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport: quiet })).toMatchObject({ errors: [], warnings: [] });
     expect(quiet.reads).toEqual([]);
+  });
+
+  it('re-reads a push run’s unchanged tags a few at a time under one deadline, the reads it stops one warning, never a failure', async () => {
+    // Ten pins, every tag hanging as a github.com that accepts and never answers: the run ends at the deadline.
+    const many = (seed: string) => `name: ci
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+${Array.from({ length: 10 }, (_, i) => `      - uses: octo/a${String(i)}@${sha(seed + String(i))} # v1.0.${String(i)}\n`).join('')}`;
+    const repo = repository({ baseWorkflow: many('a'), headWorkflow: many('a'), baseChecker: true });
+    const tags = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`octo/a${String(i)}`, HANG]));
+    const hung = recordedTransport({ tags });
+    const started = Date.now();
+    const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: hung, pushDeadlineMs: 200 });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      `the push run's re-read of unchanged tags stopped at its 0.2 s deadline with 10 of 10 unread (${Array.from({ length: 10 }, (_, i) => `octo/a${String(i)}@${sha('a' + String(i))}`).join(', ')}); the pins still run the commits they name`,
+    ]);
+    expect(hung.peak()).toBe(PUSH_CONCURRENCY);
+
+    // Answers that take a while: never more than the limit in flight, and every tag read.
+    const tagged = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`octo/a${String(i)}`, lightweight(`v1.0.${String(i)}`, sha('a' + String(i)))]));
+    const slow = recordedTransport({ tags: tagged, latency: 20 });
+    expect(await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: slow })).toMatchObject({ errors: [], warnings: [] });
+    expect(slow.reads).toHaveLength(10);
+    expect(slow.peak()).toBe(PUSH_CONCURRENCY);
   });
 
   it('fails closed when a new pin cannot be read in three tries, naming the host', async () => {

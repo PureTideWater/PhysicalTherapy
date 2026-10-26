@@ -1,6 +1,6 @@
 import { repositoryRoot } from '../content-files';
 import { checkActionPins } from './check';
-import { liveTransport } from './network';
+import { gitTransport } from './network';
 
 /**
  * `pnpm actions:check` (root script `tsx tools/check-action-pins/index.ts`): the action pin policy over every workflow
@@ -8,7 +8,10 @@ import { liveTransport } from './network';
  * BASE from the range step. `--offline` runs the offline rules alone.
  */
 const offline = process.argv.includes('--offline');
-const result = await checkActionPins({ root: repositoryRoot, base: process.env.BASE, event: process.env.GITHUB_EVENT_NAME, transport: liveTransport, offline });
+const transport = gitTransport();
+const result = await checkActionPins({ root: repositoryRoot, base: process.env.BASE, event: process.env.GITHUB_EVENT_NAME, transport, offline }).finally(() => {
+  transport.close();
+});
 for (const note of result.notes) process.stdout.write(`actions:check: ${note}\n`);
 for (const warning of result.warnings) process.stdout.write(`::warning title=Action pins::${warning}\n`);
 if (result.errors.length > 0) {

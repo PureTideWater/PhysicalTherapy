@@ -11,8 +11,19 @@ import { actionUses, consistencyProblems, formProblems, parsePin, versionsByRef,
  * run: every action pinned to a full commit SHA with its release version, one commit and one version per action.
  * Networked, for the pins the base does not already vouch for (base.ts): the tag, the inputs, the nested actions and
  * release.yml's nested caches (verify.ts). On a push run, every other pin's tag is read again, and a tag that moved or
- * could not be read is a warning, never a failure: a SHA pin runs what it names whatever its tag does.
+ * could not be read is a warning, never a failure: a SHA pin runs what it names whatever its tag does. Those re-reads
+ * run PUSH_CONCURRENCY at a time under one deadline for them all (the ci-infra review's S1): a github.com that accepts
+ * and never answers stops them at PUSH_DEADLINE_MS, and every tag still unread is named in one warning, so the push
+ * run's `static` (timeout-minutes: 15) cannot time out on them.
  */
+
+/** How many unchanged tags a push run reads at once. */
+export const PUSH_CONCURRENCY = 4;
+/**
+ * The one deadline for all of a push run's re-reads: two minutes, well inside `static`'s fifteen, and longer than one
+ * read's three tries at their 30-second limit with the pauses between them (97 s), so a single slow tag is read.
+ */
+export const PUSH_DEADLINE_MS = 120_000;
 
 export interface CheckOptions {
   readonly root: string;
@@ -23,6 +34,21 @@ export interface CheckOptions {
   readonly transport: Transport;
   /** The offline rules alone. */
   readonly offline?: boolean;
+  /** The push run's deadline for its re-reads (PUSH_DEADLINE_MS; shorter in the tests). */
+  readonly pushDeadlineMs?: number;
+}
+
+/** Runs each task with at most `limit` in flight, starting none after the signal aborts. */
+async function pool<T>(items: readonly T[], limit: number, signal: AbortSignal, task: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length && !signal.aborted) {
+      const item = items[next] as T;
+      next += 1;
+      await task(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 export interface CheckResult {
@@ -89,16 +115,40 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
 
   if (options.event === 'push') {
     notes.push(`a push: the tags of ${String(unchanged.size)} unchanged pin(s) read again, a moved or unreadable one a warning`);
-    for (const ref of [...unchanged].sort()) {
+    const deadlineMs = options.pushDeadlineMs ?? PUSH_DEADLINE_MS;
+    const deadline = new AbortController();
+    const timer = setTimeout(() => {
+      deadline.abort();
+    }, deadlineMs);
+    const pins = [...unchanged].sort().flatMap((ref) => {
       const pin = parsePin(ref);
       const version = versions.get(ref);
-      if (pin === undefined || version === undefined) continue;
-      try {
-        const tagged = await tagCommit(options.transport, pin.repo, version);
-        if (tagged !== pin.sha) warnings.push(`${ref}: the tag ${version} of ${pin.repo} ${tagged === undefined ? 'no longer exists' : `now names ${tagged}`}; the pin still runs the commit it names, and the next actions update moves it`);
-      } catch (error) {
-        warnings.push(`${ref}: its tag could not be read again (${error instanceof Error ? error.message : String(error)})`);
-      }
+      return pin === undefined || version === undefined ? [] : [{ ref, pin, version }];
+    });
+    const unread = new Set(pins.map(({ ref }) => ref));
+    const found = new Map<string, string>();
+    try {
+      await pool(pins, PUSH_CONCURRENCY, deadline.signal, async ({ ref, pin, version }) => {
+        try {
+          const tagged = await tagCommit(options.transport, pin.repo, version, deadline.signal);
+          if (tagged !== pin.sha) found.set(ref, `${ref}: the tag ${version} of ${pin.repo} ${tagged === undefined ? 'no longer exists' : `now names ${tagged}`}; the pin still runs the commit it names, and the next actions update moves it`);
+        } catch (error) {
+          // A read the deadline stopped stays unread, for the one warning below.
+          if (deadline.signal.aborted) return;
+          found.set(ref, `${ref}: its tag could not be read again (${error instanceof Error ? error.message : String(error)})`);
+        }
+        unread.delete(ref);
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    // In the pins' order, whatever order the reads finished in.
+    for (const { ref } of pins) {
+      const warning = found.get(ref);
+      if (warning !== undefined) warnings.push(warning);
+    }
+    if (unread.size > 0) {
+      warnings.push(`the push run's re-read of unchanged tags stopped at its ${String(deadlineMs / 1000)} s deadline with ${String(unread.size)} of ${String(pins.length)} unread (${[...unread].join(', ')}); the pins still run the commits they name`);
     }
   }
   return { errors, warnings, notes };

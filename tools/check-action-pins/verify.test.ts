@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-import { annotated, lightweight, raw, recordedTransport, sha } from './fixtures';
-import { NetworkError, tagCommit, withRetries } from './network';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { annotated, blob, lightweight, recordedTransport, sha } from './fixtures';
+import { actionFile, gitTransport, NetworkError, tagCommit, withRetries } from './network';
 import { ActionReader, cacheGates, gateOf, inputProblems, parseActionMeta, releaseCacheProblems, verifyPin } from './verify';
 import type { ActionUse } from './workflows';
 
@@ -60,12 +65,12 @@ const network = (overrides: { scan?: string; setupFile?: string } = {}) =>
   recordedTransport({
     tags: { 'octo/scan': annotated('v0.36.0', sha('9'), SCAN) },
     files: {
-      [raw('octo/scan', SCAN, 'action.yaml')]: overrides.scan ?? scanner(),
-      [raw('octo/setup-scan', SETUP, 'action.yaml')]: overrides.setupFile ?? setup,
-      [raw('actions/cache', CACHE)]: node('  path: { required: true }\n  key: { required: true }\n'),
-      [raw('actions/cache', CACHE, 'restore/action.yml')]: node('  path: { required: true }\n  key: { required: true }\n'),
-      [raw('actions/cache', CACHE, 'save/action.yml')]: node('  path: { required: true }\n  key: { required: true }\n'),
-      [raw('actions/checkout', CHECKOUT)]: node('  fetch-depth: { default: 1 }\n'),
+      [blob('octo/scan', SCAN, 'action.yaml')]: overrides.scan ?? scanner(),
+      [blob('octo/setup-scan', SETUP, 'action.yaml')]: overrides.setupFile ?? setup,
+      [blob('actions/cache', CACHE)]: node('  path: { required: true }\n  key: { required: true }\n'),
+      [blob('actions/cache', CACHE, 'restore/action.yml')]: node('  path: { required: true }\n  key: { required: true }\n'),
+      [blob('actions/cache', CACHE, 'save/action.yml')]: node('  path: { required: true }\n  key: { required: true }\n'),
+      [blob('actions/checkout', CHECKOUT)]: node('  fetch-depth: { default: 1 }\n'),
     },
   });
 
@@ -81,7 +86,7 @@ describe('a pin’s tag', () => {
   });
 
   it('fails the pin when the tag names another commit or does not exist', async () => {
-    const transport = recordedTransport({ tags: { 'octo/a': lightweight('v1.2.3', sha('2')) }, files: { [raw('octo/a', sha('1'))]: node('') } });
+    const transport = recordedTransport({ tags: { 'octo/a': lightweight('v1.2.3', sha('2')) }, files: { [blob('octo/a', sha('1'))]: node('') } });
     const reader = new ActionReader(transport);
     const step: ActionUse = { file: 'ci.yml', job: 'j', step: 0, uses: `octo/a@${sha('1')}`, with: {} };
     expect((await verifyPin(transport, reader, step.uses, 'v1.2.3', [step])).problems).toEqual([`octo/a@${sha('1')}: the tag v1.2.3 of octo/a is the commit ${sha('2')}, not ${sha('1')}`]);
@@ -95,8 +100,11 @@ describe('a pin’s tag', () => {
     expect(transport.reads.filter((read) => read.startsWith('ls-remote'))).toHaveLength(6);
     expect(transport.pauses).toEqual([2_000, 5_000, 2_000, 5_000]);
     // A server error or a rate limit is retried too; a 404 is an answer.
-    const files = recordedTransport({ files: { 'https://example.invalid/x': 503 } });
-    await expect(withRetries(files, 'raw.githubusercontent.com', 'GET x', () => files.get('https://example.invalid/x'), (result) => (result.status === 503 ? 'HTTP 503' : undefined))).rejects.toThrow(/^raw\.githubusercontent\.com: GET x failed 3 times \(last: HTTP 503\)/);
+    const urls = recordedTransport({ urls: { 'https://example.invalid/x': 503 } });
+    await expect(withRetries(urls, 'example.invalid', 'GET x', () => urls.get('https://example.invalid/x'), (result) => (result.status === 503 ? 'HTTP 503' : undefined))).rejects.toThrow(/^example\.invalid: GET x failed 3 times \(last: HTTP 503\)/);
+    // A commit git cannot fetch is retried, then fails closed naming github.com.
+    const unfetchable = recordedTransport({ files: { [blob('octo/a', sha('1'))]: new Error('fatal: remote error: upload-pack: not our ref') } });
+    await expect(new ActionReader(unfetchable).read('octo/a', '', sha('1'))).rejects.toThrow(/^github\.com: git fetch of octo\/a@1{40} for action\.yml failed 3 times \(last: fatal: remote error: upload-pack: not our ref\); the check fails closed$/);
   });
 });
 
@@ -126,8 +134,8 @@ describe('a composite’s nested actions', () => {
     const verdict = await verifyPin(transport, new ActionReader(transport), `octo/scan@${SCAN}`, 'v0.36.0', [use('ci.yml', { 'image-ref': 'x' })]);
     expect(verdict.problems).toEqual([]);
     // The setup composite and, inside it, the checkout were read: the recursion reached the second level.
-    expect(transport.reads).toContain(`GET ${raw('octo/setup-scan', SETUP)}`);
-    expect(transport.reads).toContain(`GET ${raw('actions/checkout', CHECKOUT)}`);
+    expect(transport.reads).toContain(`git ${blob('octo/setup-scan', SETUP)}`);
+    expect(transport.reads).toContain(`git ${blob('actions/checkout', CHECKOUT)}`);
   });
 
   it('fail on a nested tag ref, naming the chain down to it', async () => {
@@ -199,5 +207,47 @@ describe('release.yml’s nested caches', () => {
     expect(gateOf("${{ inputs.cache == 'true' || always() }}")).toBeUndefined();
     expect(gateOf("${{ !(inputs.cache == 'true') }}")).toBeUndefined();
     expect(gateOf(undefined)).toBeUndefined();
+  });
+});
+
+describe('the git transport', () => {
+  // A local repository stands in for github.com: the same commands, over file://, with no network.
+  let scratch = '';
+  beforeAll(() => {
+    scratch = mkdtempSync(path.join(os.tmpdir(), 'tp-action-pins-transport-'));
+  });
+  afterAll(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  it('reads an action’s file at its commit with a shallow fetch, a file the commit lacks being an answer, and fails on a commit the origin does not have', async () => {
+    const dir = path.join(scratch, 'octo', 'act');
+    mkdirSync(path.join(dir, 'sub'), { recursive: true });
+    const env = { ...process.env, HOME: scratch, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
+    git('init', '-q', '-b', 'main');
+    // GitHub serves partial and by-commit fetches; a local origin has to be told to.
+    git('config', 'uploadpack.allowFilter', 'true');
+    git('config', 'uploadpack.allowAnySHA1InWant', 'true');
+    writeFileSync(path.join(dir, 'action.yml'), node('  token: {}\n'));
+    writeFileSync(path.join(dir, 'sub', 'action.yaml'), node(''));
+    git('add', '.');
+    git('commit', '-q', '-m', 'first');
+    const first = git('rev-parse', 'HEAD');
+    writeFileSync(path.join(dir, 'action.yml'), node('  token: {}\n  later: {}\n'));
+    git('commit', '-q', '-am', 'second');
+    git('tag', 'v1.0.0');
+
+    const transport = gitTransport(`file://${scratch}`);
+    try {
+      expect(await transport.file('octo/act', first, 'action.yml')).toBe(node('  token: {}\n'));
+      expect(await transport.file('octo/act', first, 'sub/action.yml')).toBeUndefined();
+      expect(await transport.file('octo/act', first, 'sub/action.yaml')).toBe(node(''));
+      expect(await actionFile(transport, 'octo/act', 'sub', first)).toEqual({ name: 'sub/action.yaml', text: node('') });
+      await expect(transport.file('octo/act', 'f'.repeat(40), 'action.yml')).rejects.toThrow();
+      expect(await transport.lsRemote(`file://${dir}`, ['refs/tags/v1.0.0'])).toBe(`${git('rev-parse', 'HEAD')}\trefs/tags/v1.0.0\n`);
+    } finally {
+      transport.close();
+    }
   });
 });
