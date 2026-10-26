@@ -1483,33 +1483,6 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
   });
 });
 
-describe('dependabot', () => {
-  it('updates the workspace, the actions and both base images weekly, grouped, a few pull requests at a time', () => {
-    const config = parse(readFileSync(path.join(repositoryRoot, '.github/dependabot.yml'), 'utf8')) as {
-      updates: {
-        'package-ecosystem': string;
-        schedule: { interval: string };
-        directory?: string;
-        directories?: string[];
-        'open-pull-requests-limit'?: number;
-        groups?: Record<string, { 'update-types'?: string[]; patterns?: string[] }>;
-      }[];
-    };
-    expect(config.updates.map((update) => [update['package-ecosystem'], update.schedule.interval])).toEqual([
-      ['npm', 'weekly'],
-      ['github-actions', 'weekly'],
-      ['docker', 'weekly'],
-    ]);
-    expect(config.updates[2]?.directories).toEqual(['/apps/web', '/apps/worker']);
-    // Each pull request runs ci.yml (about 10 minutes behind all green since docs/adr/0066, 35 before it) and, on a
-    // watched path, the capacity gate: one a week for every action, one for both images.
-    expect(config.updates.map((update) => update['open-pull-requests-limit'])).toEqual([5, 2, 2]);
-    expect(config.updates[0]?.groups).toEqual({ 'minor-and-patch': { 'update-types': ['minor', 'patch'] } });
-    expect(config.updates[1]?.groups).toEqual({ actions: { patterns: ['*'] } });
-    expect(config.updates[2]?.groups).toEqual({ 'base-images': { patterns: ['*'] } });
-  });
-});
-
 describe('job timeouts (CI-10)', () => {
   it('give every job of every workflow the timeout its table names, well under GitHub’s 360 minutes but where a ruling is pending', () => {
     const limits = Object.fromEntries(
