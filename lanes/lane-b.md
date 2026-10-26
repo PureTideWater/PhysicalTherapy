@@ -849,3 +849,9 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     5. one adversarial reviewer on the rules and a fact checker on the code, in parallel;
     6. a reviser.
   - Every agent keeps a progress file (SAVE rule), and a monitor raises a 10-minute stall alarm. The script is archived in `workflow-scripts/`.
+- **2026-10-26 ~05:25 UTC: the UX review's screenshot galleries are published, private.** One version holds at most 511 files, so each width has its own gallery; each links to the other:
+  - 1280 px, light and dark (468 shots): https://claude.ai/artifact/NmJco1UsT631vdmXts8HHD
+  - 390 px (389 shots): https://claude.ai/artifact/V1vzMZc3BrJ8mtw1HXG5jh
+  - **What they do:** filter by area, role, state, theme and the checker's verdict; open a shot full size with its route, role and the checker's note. `#shot-id` links straight to a shot.
+  - **Images:** lossless WebP, 42.7 MB in all against 155 MB of PNG. The builder is `tools/lane-b-screen-gallery/`.
+  - **Next:** once the synthesis lands, the findings that cite each shot are added to both galleries. The next re-tour compares against these files.
