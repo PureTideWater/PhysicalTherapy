@@ -1,0 +1,22 @@
+# recheck2-engine (adversarial re-check of engine fixes, head 9b0bcd2d)
+- [x] worktree created at pr15b-review/recheck2-wt (detached, 9b0bcd2d)
+- [x] probes copied to recheck2-wt (probe-835.ts extended with claimCo); output -> progress/recheck2-probe-out.txt
+- [x] probe run done (log progress/recheck2-probe-run.log)
+- Rerun on 9b0bcd2d: F1, E1..E8, M4P unchanged from recheck-engine (F1 2400/-1000, Q +1000; E1 1800; E2 -1000; E3 1379+1021; E4 300 L2; E6 -2400 no shortfall; E7 no_change; M4P 2400/-1000/+1000; E8 2400, deposit 2400 = payerApproved). E9: approved 2400, other reductions 0, billable 600 (R2 fixed). E11: 2400 on line 1, deposited 2400 = payerApproved (R1 fixed).
+- E10 still: approved 2900 on line 1 while claim CLP04 rose 28.00 (fixer's recorded open item (a)).
+- Own cases (probe-engine.db.test.ts N1..N7, output progress/recheck2-probe-out.txt):
+  - N1 claim-level PR-1 40 (met) + PR-2 20->26, 2 lines 70/70, line1 ->100: claim +24.00; L1 approved 2117, L2 no_change (+283 unrecorded); deposit 2117 = payerApproved. Conservative, OK. billable 883 (ded 354, coins 529), other 0.
+  - N4 reversal alone of N1's correction: recouped -2117 (mirror). OK.
+  - N2 (E10 numbers + 150.00 OTHER claim on same check): L1 approved 2900, DEPOSITED 2900, recovered 2900, while the claim's CLP04 rose 28.00 (L2, L3 cash -50 each, no_change, no entry). VIOLATION: recovered counts 1.00 never paid.
+  - N3 claim copay 30, L1 80->100, L2 60->50: claim +10.00; L1 approved+deposited 1715; L2 no_change (cash -715). Per-line offset: same as with line-level CAS only (pre-existing per-line semantics; L2 is its own actionable shortfall). Note only.
+  - N5 claim PR-2 + CO-253, both lines raised: L1 2352 + L2 1568 = 3920 = claim increase 39.20; other reductions 48/32 = the CO-253 rise split 80/... sums to 80 = 304-224. OK, billable+other+pay = allowed increase.
+  - N6 deductible newly applied at claim level (PR-1 0->30, PR-2 28) when L1 70->100: claim +0.00, L1 approved 988. VIOLATION: approval with zero claim payment increase.
+  - N7 = N3 in fresh practice: identical output (deterministic).
+- run2: N6 + deposit (150.00 check carrying only OTHER's 150 for this claim's 0 increase): L1 deposited 988, recovered 988 -> money never paid counted as recovered. N2b (no OTHER, check 28.00): deposited capped 2800, payerApproved 2900 -> 1.00 approved never provable. N5b = N5 amounts; but deposit entry ORDER differs: N5 run1 deposited L2 then L1, run2 and N5b L1 then L2 (same amounts). Investigating whether pre-existing.
+- run3: N5 again L1 then L2 deposits. N8a/N8b (N5 + an unrelated reversal -30.00 on the same check, BPR 9.20 < shares 39.20): the whole 920 deposited to L2 (line 2) both times, L1 nothing. Which line a short row proves follows the iteration order of `owed` = order of settleMatches' case_line query, which has NO ORDER BY (postings.ts ~296); shares() iterates `for (const line of lines)` since 0e086ed (base iterated attached matches in ledgerMatches' ORDER BY matched_at, id). N5 run1 showed L2-first, runs 2/3 L1-first on identical data -> order not deterministic. FINDING (from the original build, not the fix round).
+- NEXT: pure property script for claimLinePayments/claimLevelShares (sum to CLP04, rows sum to parts, sign symmetry, within a cent); then invariant diffs; then db suites; then verdict.
+- property script probe-prop2.ts: 300k random claims (reversals, zero charges, mixed-sign reasons): lines sum to CLP04, negation symmetric, each part within a cent of its exact fraction, share rows sum to the cash part, zero reasons get 0, all columns sum to D, sign follows reason. bad 0. PASS
+- invariants vs 6ddd587: ledger src only index(+1)/payment/payment.test, 0 deleted; ledger.db.test.ts, pricing, migrations, domain-model, golden, releases, LED-01..13: no diff; oracle +37/-0, unchanged since 0e086ed; test-support harness unchanged; no model id / float in 0e086ed..HEAD; no #42 file in the fix round; all 7 commits end with the trailers. PASS
+- db: payment-terms+ledger.db+oracle 87/87; ledger unit 219/219. PASS
+- probes saved to pr15b-review/recheck2-probes/; worktree removed; db tp_recheck2_engine dropped.
+- VERDICT: fix. F-A (blocking): N2/N6 approvals and deposits exceed the claim's payment increase (claim-level CAS change spread onto unchanged lines). F-B (should_fix): settleMatches case_line query unordered -> which line a short row proves is not deterministic (N5 run1 vs run2; N8).
