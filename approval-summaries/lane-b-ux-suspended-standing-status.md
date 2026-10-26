@@ -3,7 +3,10 @@
 *Handoff, written 10:11 UTC (date -u) on the orchestrator's wind-down of 10:09 UTC (weekly usage at 90%; Lane B hands over
 to Lane A tomorrow morning). Nothing is running and no check-in is scheduled.*
 
-## Where it stopped
+## Resumed (2026-10-26 10:13 UTC, the orchestrator's change of plan: up to 98% weekly usage allowed; take it to the merge, lean)
+- 10:14: worktree restored from origin at 938f991; check stage running (wf_49f58d38-036), with the base merge (88a0e4e, PR #53); draft PR #56 opened and subscribed; safety-net check-in 12:15 (trig_01Vph3iWdjHuPwC75hFwAxNC).
+
+## Where it stopped (wind-down, 10:10)
 **Stopped at design reviewed (SS-01 to SS-14 accepted), with the build already committed; next step: the build's check
 stage, then the draft PR.** The builders had started (wf_c4497dcf-2f8, from ~09:36) before the wind-down arrived and had
 finished their three steps when the run was stopped at ~10:10; only its second agent, the checker, was cut off mid-run.
