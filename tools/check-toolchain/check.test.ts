@@ -559,10 +559,13 @@ describe('the committed lists', () => {
     expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'Dockerfiles', 'lockfile resolutions', 'trust excludes', 'overrides']);
     // packageManager carries the tarball's sha512 the images check (N1); the networked rule holds it to the registry.
     expect(JSON.parse(real.packageJson ?? '{}')).toMatchObject({ packageManager: expect.stringMatching(/^pnpm@\d+\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/) as unknown });
-    // The phase-2 slip it exists to catch: an override written in pnpm-workspace.yaml without its overrides.json entry.
-    const { parse, stringify: yaml } = await import('yaml');
-    const workspace = { ...(parse(real.workspace ?? '') as Record<string, unknown>), overrides: { 'typed-rest-client>qs': '6.16.1' } };
-    expect(problems(checkOffline({ ...real, workspace: yaml(workspace) }))).toContain(
+    // The slip it exists to catch: an override in pnpm-workspace.yaml without its overrides.json entry. The real tree
+    // carries the qs override and its entry; the same tree with the entry dropped fails.
+    const { parse } = await import('yaml');
+    expect((parse(real.workspace ?? '') as { overrides?: Record<string, string> }).overrides).toEqual({ 'typed-rest-client>qs': '6.16.1' });
+    const entries = (JSON.parse(real.overrides ?? '{}') as { entries: { selector: string }[] }).entries;
+    expect(entries.map((entry) => entry.selector)).toEqual(['typed-rest-client>qs']);
+    expect(problems(checkOffline({ ...real, overrides: JSON.stringify({ entries: [] }) }))).toContain(
       'overrides: the pnpm overrides (pnpm-workspace.yaml, package.json) lists typed-rest-client>qs: 6.16.1, which tools/check-toolchain/overrides.json does not; the two lists are kept equal',
     );
   });
