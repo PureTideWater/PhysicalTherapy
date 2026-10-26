@@ -31,7 +31,11 @@ import type { DeadlineStatus } from './deadline';
  *    release's content was wrong): else RELEASE_WITHDRAWN, so a withdrawal drops the line out of the
  *    actionable totals at once, though the case keeps its line until PR 11 refreshes it. Steps 4 and 5
  *    are the database's priced_line_pricing_check() for a line on its pricing in effect (a database test
- *    runs both);
+ *    runs both); and it was not priced without the Medicare limits its terms turn on: its trace read the per-code
+ *    MPPR, the general MPPR or the MUE on a date its release's spans do not cover (audit #7; docs/adr/0071): else
+ *    CONTENT_NOT_LOADED, held until a release that loads that content prices it again. A run of such lines is
+ *    refused today, so this holds a line priced before the refusal existed, or under a release whose span a
+ *    correction later narrowed;
  * 6. it is not a per-visit line (PER_VISIT_REVIEW) and carries no NCCI procedure-to-procedure review
  *    flag (NCCI_REVIEW): until the specialist answers QUESTIONS Q44 (whether a visit's variance is
  *    judged per visit) and Q41 (whether a standing edit keeps a line from becoming actionable), such a
@@ -58,6 +62,7 @@ export const NOT_ACTIONABLE_REASONS = [
   'VERSION_NOT_SIGNED_OFF',
   'VERSION_NOT_IN_FORCE',
   'RELEASE_WITHDRAWN',
+  'CONTENT_NOT_LOADED',
   'PER_VISIT_REVIEW',
   'NCCI_REVIEW',
   'WRITTEN_OFF',
@@ -96,6 +101,11 @@ export interface TriageFacts {
   readonly contractVersionCoversService: boolean;
   /** Whether its run's rule release has been withdrawn since (a rule_release_withdrawal row of that release). */
   readonly releaseWithdrawn: boolean;
+  /**
+   * Whether the line's trace read the per-code MPPR, the general MPPR or the MUE on a date its release's spans do not
+   * cover: it was priced without those limits. Absent is false, for callers that judge lines no release priced.
+   */
+  readonly contentNotLoaded?: boolean;
   readonly writtenOff: boolean;
   /**
    * For a line of a per-visit visit, the visit's net variance (the sum of the variance of the visit's
@@ -173,6 +183,9 @@ export function judgeLine(facts: TriageFacts, lineMaterialityCents: Cents, asOf:
   }
   if (facts.releaseWithdrawn) {
     reasons.push('RELEASE_WITHDRAWN');
+  }
+  if (facts.contentNotLoaded === true) {
+    reasons.push('CONTENT_NOT_LOADED');
   }
   if (facts.visitVarianceCents !== null) {
     reasons.push('PER_VISIT_REVIEW');

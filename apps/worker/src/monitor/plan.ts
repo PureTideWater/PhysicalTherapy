@@ -1,8 +1,18 @@
 import { LOCATION_NOT_READY_STATUSES, type LocationStatus, PricingRefusedError, isLocationStatus } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
+import { subtractRanges } from '@tp/rules';
 
 import { PricingLocationWaiting, PricingRunInputError, createPricingRun } from '../price/create';
-import { currentReleaseNo } from '../price/release';
+import {
+  CONTENT_FAILURE_CODES,
+  type ContentFailureCode,
+  type ContentSpans,
+  contentsOf,
+  coveredDays,
+  currentReleaseNo,
+  familiesOf,
+  releaseContentSpans,
+} from '../price/release';
 
 /**
  * The monitoring chain's planning step (PRD 5, J11: "on each new upload batch (or on a schedule), the
@@ -29,6 +39,14 @@ import { currentReleaseNo } from '../price/release';
  *    reads as one a line cannot price at (waitingOnLocation). So such a month is not priced
  *    again every day: saving the location (which queues this step by its request) or a new release in force
  *    plans it again. Each waiting month is listed with its location's status.
+ * 5. A month waits on Medicare content PaidWhole has not loaded (audit #7; docs/adr/0071), with no run created,
+ *    while the newest run of that exact month failed waiting_on_content_mppr, _mue or _mppr_mue (a line read the
+ *    MPPR or the MUE on a date its release does not load them for), covering the month's newest line, created at or
+ *    after the practice's mappings and contract versions last changed (a remap to terms with the flags off, or a new
+ *    version, can price the month without that content), and the release in force is the run's own or covers no
+ *    more of the month for the code's families than it did (contentFailure, coversMore). So such a month starts no
+ *    daily loop: a release in force that loads more of it, a change of the practice's terms or a newer line plans it
+ *    again. Each waiting month is listed with its code and the release its run read.
  *
  * It returns every run the chain created that is still queued, the ones just created included, so the
  * job (re)queues their price jobs: a replay (the same document, or the same day) creates nothing new and
@@ -55,6 +73,12 @@ export interface WaitingMonth extends PlannedMonth {
   readonly status: LocationStatus;
 }
 
+/** A month waiting on Medicare content PaidWhole has not loaded: its last run's code, and the release that run read. */
+export interface ContentWaitingMonth extends PlannedMonth {
+  readonly failureCode: ContentFailureCode;
+  readonly failedReleaseNo: number;
+}
+
 export type MonitorPlan =
   | { readonly outcome: 'batch_loading'; readonly pendingDocuments: number }
   | { readonly outcome: 'no_release' }
@@ -66,6 +90,8 @@ export type MonitorPlan =
       readonly waitingOnMapping: readonly PlannedMonth[];
       /** Months waiting on the practice's location: none created while it is missing, or its last run failed location_not_ready. */
       readonly waitingOnLocation: readonly WaitingMonth[];
+      /** Months whose last run failed on Medicare content PaidWhole has not loaded, while nothing that could price them changed. */
+      readonly waitingOnContent: readonly ContentWaitingMonth[];
       /** The chain's runs still queued (the ones just created among them): their price jobs are queued. */
       readonly queued: readonly string[];
     };
@@ -111,6 +137,22 @@ export async function uncoveredMonths(client: ScopeClient, practiceId: string): 
   return rows.map((row) => ({ periodFrom: row.period_from, periodTo: row.period_to }));
 }
 
+/**
+ * The CTEs `newest` (the month's newest line, of any claim, as uncoveredMonths() counts them) and `last_run` (the
+ * newest run of exactly that month), for $1 the practice, $2 and $3 the month's first and last days.
+ */
+const LAST_MONTH_RUN = `newest AS (
+       SELECT max(l.created_at) AS at
+         FROM claim c JOIN service_line l ON l.claim_id = c.id
+        WHERE c.practice_id = $1 AND date_trunc('month', coalesce(l.service_date, c.service_from))::date = $2::date
+     ), last_run AS (
+       SELECT r.status, r.failure_code, r.release_no, r.created_at, coalesce(r.lines_loaded_by, r.created_at) AS cut_off
+         FROM pricing_run r
+        WHERE r.practice_id = $1 AND r.period_from = $2::date AND r.period_to = $3::date
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT 1
+     )`;
+
 /** The statuses at which a month whose run failed location_not_ready still cannot price, so it waits with no new run. */
 const STILL_WAITING: readonly LocationStatus[] = ['zip_missing', ...LOCATION_NOT_READY_STATUSES];
 
@@ -127,17 +169,7 @@ const STILL_WAITING: readonly LocationStatus[] = ['zip_missing', ...LOCATION_NOT
  */
 export async function waitingOnLocation(client: ScopeClient, practiceId: string, month: PlannedMonth, releaseNo: number): Promise<boolean> {
   const { rows } = await client.query<{ waits: boolean }>(
-    `WITH newest AS (
-       SELECT max(l.created_at) AS at
-         FROM claim c JOIN service_line l ON l.claim_id = c.id
-        WHERE c.practice_id = $1 AND date_trunc('month', coalesce(l.service_date, c.service_from))::date = $2::date
-     ), last_run AS (
-       SELECT r.status, r.failure_code, r.release_no, r.created_at, coalesce(r.lines_loaded_by, r.created_at) AS cut_off
-         FROM pricing_run r
-        WHERE r.practice_id = $1 AND r.period_from = $2::date AND r.period_to = $3::date
-        ORDER BY r.created_at DESC, r.id DESC
-        LIMIT 1
-     )
+    `WITH ${LAST_MONTH_RUN}
      SELECT coalesce(r.status = 'failed' AND r.failure_code = 'location_not_ready' AND r.release_no = $4
                      AND r.cut_off >= (SELECT n.at FROM newest n)
                      AND r.created_at >= (SELECT s.updated_at FROM practice_site s WHERE s.practice_id = $1)
@@ -161,6 +193,78 @@ async function locationStatus(client: ScopeClient, practiceId: string, month: Pl
     throw new Error('the location status is not one of the closed list');
   }
   return status;
+}
+
+/**
+ * Whether a run created at `createdAt` saw the practice's terms as they are now (`practice` its id, both SQL
+ * expressions): it was created at or after the last time a plan mapping or a contract version of the practice was
+ * created or changed. Both tables keep updated_at by trigger and no code deletes their rows, so a remap of a plan, a
+ * new version or a sign-off since the run makes this false. The monitor's wait on content and Coverage's card read it
+ * alike (audit #7, review m2).
+ */
+export function termsUnchangedSince(practice: string, createdAt: string): string {
+  return `${createdAt} >= coalesce((SELECT max(greatest(x.created_at, x.updated_at))
+                                     FROM (SELECT created_at, updated_at FROM payer_plan_mapping WHERE practice_id = ${practice}
+                                           UNION ALL
+                                           SELECT created_at, updated_at FROM contract_version WHERE practice_id = ${practice}) x), '-infinity')`;
+}
+
+function isContentFailureCode(code: string): code is ContentFailureCode {
+  return (CONTENT_FAILURE_CODES as readonly string[]).includes(code);
+}
+
+/**
+ * The content an uncovered month's last run waited on: the newest run of exactly that month failed with a content code
+ * (waiting_on_content_*), its cut-off at or after the month's newest line, and created at or after the practice's terms
+ * last changed (termsUnchangedSince). Null otherwise: the month is planned (or waits on something else).
+ */
+export async function contentFailure(client: ScopeClient, practiceId: string, month: PlannedMonth): Promise<{ failureCode: ContentFailureCode; releaseNo: number } | null> {
+  const { rows } = await client.query<{ failure_code: string; release_no: number }>(
+    `WITH ${LAST_MONTH_RUN}
+     SELECT r.failure_code, r.release_no
+       FROM last_run r
+      WHERE r.status = 'failed' AND r.failure_code = ANY ($4::text[])
+        AND r.cut_off >= (SELECT n.at FROM newest n)
+        AND ${termsUnchangedSince('$1', 'r.created_at')}`,
+    [practiceId, month.periodFrom, month.periodTo, CONTENT_FAILURE_CODES],
+  );
+  const row = rows[0];
+  return row === undefined || !isContentFailureCode(row.failure_code) ? null : { failureCode: row.failure_code, releaseNo: row.release_no };
+}
+
+/**
+ * Whether release `now` loads more of the month than release `failure.releaseNo` did, for any content of the families
+ * the failure names: some day of the month one of those contents covers under `now` and did not under the failed
+ * release. A newer release that loads no more of it would only start a run that fails the same way. `spans` reads a
+ * release's spans (planMonitoring reads each release's once a plan).
+ */
+export async function coversMore(
+  client: ScopeClient,
+  failure: { readonly failureCode: ContentFailureCode; readonly releaseNo: number },
+  now: number,
+  month: PlannedMonth,
+  spans: (releaseNo: number) => Promise<ContentSpans> = async (releaseNo) => releaseContentSpans(client, releaseNo),
+): Promise<boolean> {
+  const [spansNow, spansFailed] = await Promise.all([spans(now), spans(failure.releaseNo)]);
+  return familiesOf(failure.failureCode)
+    .flatMap(contentsOf)
+    .some(
+      (content) =>
+        subtractRanges(coveredDays(spansNow, content, month.periodFrom, month.periodTo), coveredDays(spansFailed, content, month.periodFrom, month.periodTo)).length > 0,
+    );
+}
+
+/** A release's content spans, read once each for the plan. */
+function spansOnce(client: ScopeClient): (releaseNo: number) => Promise<ContentSpans> {
+  const read = new Map<number, Promise<ContentSpans>>();
+  return async (releaseNo) => {
+    let spans = read.get(releaseNo);
+    if (spans === undefined) {
+      spans = releaseContentSpans(client, releaseNo);
+      read.set(releaseNo, spans);
+    }
+    return spans;
+  };
 }
 
 /** The chain's runs of the practice still waiting for their price job, oldest month first. */
@@ -187,10 +291,18 @@ export async function planMonitoring(scope: PracticeScope<ScopeClient>, practice
   const created: CreatedMonthRun[] = [];
   const waitingOnMapping: PlannedMonth[] = [];
   const waitingLocation: WaitingMonth[] = [];
+  const waitingOnContent: ContentWaitingMonth[] = [];
+  const spans = spansOnce(client);
   for (const month of await uncoveredMonths(client, practiceId)) {
     if (await waitingOnLocation(client, practiceId, month, releaseNo)) {
       // Its last run failed location_not_ready and nothing it depends on changed since: no run today.
       waitingLocation.push({ ...month, status: await locationStatus(client, practiceId, month, releaseNo) });
+      continue;
+    }
+    const failure = await contentFailure(client, practiceId, month);
+    if (failure !== null && (failure.releaseNo === releaseNo || !(await coversMore(client, failure, releaseNo, month, spans)))) {
+      // Its last run read Medicare content not loaded for its dates, and no release in force loads more of it since.
+      waitingOnContent.push({ ...month, failureCode: failure.failureCode, failedReleaseNo: failure.releaseNo });
       continue;
     }
     try {
@@ -207,5 +319,5 @@ export async function planMonitoring(scope: PracticeScope<ScopeClient>, practice
       // A month whose lines are all reversals or superseded claims holds nothing to price.
     }
   }
-  return { outcome: 'planned', releaseNo, created, waitingOnMapping, waitingOnLocation: waitingLocation, queued: await queuedMonitoringRuns(client, practiceId) };
+  return { outcome: 'planned', releaseNo, created, waitingOnMapping, waitingOnLocation: waitingLocation, waitingOnContent, queued: await queuedMonitoringRuns(client, practiceId) };
 }

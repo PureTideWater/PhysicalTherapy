@@ -1,6 +1,6 @@
 import { DEFAULT_PROOF_LEVEL, type ProofLevel, type ReportReconciliation, recoveredLabel, reportReconciliation } from '@tp/ledger';
 import { formatUsd, parseCents } from '@tp/money';
-import { STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
+import { type NotActionableReason, STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
 
 import { SUBMISSION_UNATTESTED_WORDS } from '../packets/submission-kinds';
 import { type FigureColumns, brandedDocument, figureColumns } from './brand';
@@ -33,6 +33,7 @@ const CASE_STATE_WORDS: Readonly<Record<string, string>> = {
   closed_written_off: 'closed (written off)',
 };
 
+/** The words of every reason a validated line is not in the actionable total (written off has its own, WRITE_OFF_TEXT). */
 const REASON_TEXT: Readonly<Record<string, string>> = {
   BELOW_LINE_MATERIALITY: 'Below the per-line materiality',
   WINDOW_PASSED: 'Dispute window passed on the triage date',
@@ -44,11 +45,12 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   VERSION_NOT_SIGNED_OFF: 'Contract version corrected since it was priced',
   VERSION_NOT_IN_FORCE: 'Contract version no longer covers the service date (amended since it was priced)',
   RELEASE_WITHDRAWN: 'Rule release withdrawn since it was priced',
+  CONTENT_NOT_LOADED: 'Priced before PaidWhole loaded the Medicare content for its date (MPPR or MUE): held until it is priced again',
   PER_VISIT_REVIEW: 'Per-visit line, judged with its visit: held for the specialist’s review',
   NCCI_REVIEW: 'An NCCI procedure-to-procedure edit stands: held for review',
   BELOW_CASE_MATERIALITY: 'Pattern below the case materiality (accumulating)',
   CASE_LINE_FROM_OTHER_RUN: 'In a case through another run’s pricing of the line (counted in that run’s report)',
-};
+} satisfies Readonly<Record<Exclude<NotActionableReason, 'WRITTEN_OFF'> | 'BELOW_CASE_MATERIALITY' | 'CASE_LINE_FROM_OTHER_RUN', string>>;
 
 /**
  * A case's submissions sent without sign-off, in the founder's words (2026-10-20; docs/adr/0061), as the report's

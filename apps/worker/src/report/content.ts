@@ -4,6 +4,7 @@ import { type Cents, centsToString, cents, parseCents, sumCents } from '@tp/mone
 import { type UnpricedReason, parseTrace } from '@tp/pricing';
 import {
   type AdjustmentBehavior,
+  BEHAVIOR_RECORD_TYPES,
   BEHAVIOR_TEXT,
   type DeadlineUnverifiedCause,
   INVESTIGATORY,
@@ -22,7 +23,7 @@ import {
 
 import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
-import { loadRuleRelease } from '../price/release';
+import { contentGapsOf, releaseContentSpans, typedRelease } from '../price/release';
 import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
 import { lineDeadlines } from '../triage/deadline';
 import { UNPRICED_REMEDIES } from './remedies';
@@ -461,7 +462,9 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
   const practice = (await client.query<{ name: string; settings: unknown }>('SELECT name, settings FROM practice WHERE id = $1', [input.practiceId])).rows[0];
   const settings: TriageSettings = triageSettings(practice?.settings ?? {});
   const coverage = parseCoverage(run.coverage);
-  const references = releaseReferences(await loadRuleRelease(client, run.release_no));
+  // The run's release, for its MPPR rates and conversion factors alone (audit #31), and the spans of the contents it loads (audit #7).
+  const references = releaseReferences(await typedRelease(client, run.release_no, BEHAVIOR_RECORD_TYPES));
+  const spans = await releaseContentSpans(client, run.release_no);
 
   const anomalyRows = await runAnomalies(client, input);
   const anomalyOf = new Map<string, string>();
@@ -483,6 +486,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     const windowRuleComputed = deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED';
     const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
     const visit = row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents);
+    const trace = row.trace === null ? null : parseTrace(row.trace);
     const judged = judgeLine(
       {
         varianceCents: variance,
@@ -496,6 +500,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
         contractVersionStatus: row.version_status,
         contractVersionCoversService: row.version_covers_service,
         releaseWithdrawn: row.release_withdrawn,
+        contentNotLoaded: trace !== null && contentGapsOf(trace, spans).length > 0,
         writtenOff: false,
         visitVarianceCents: visit,
         reviewFlags: row.review_flags.map((flag) => flag.flag),
@@ -504,7 +509,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       input.asOf,
     );
     const validatedCents = judged.validatedCents;
-    const behavior = row.trace === null || validatedCents === null ? null : detectBehavior(parseTrace(row.trace), references);
+    const behavior = trace === null || validatedCents === null ? null : detectBehavior(trace, references);
     // A per-visit line counts with its visit: on the line that carries it, at the visit's net.
     const counted = row.per_visit === null ? variance : row.per_visit.carrier_line_no === row.line_no ? visit : null;
     let status: string;

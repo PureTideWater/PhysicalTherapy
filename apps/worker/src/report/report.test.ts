@@ -266,4 +266,12 @@ describe('the reasons a withdrawal or an amendment takes a line out of the total
     expect(reasonText('MAPPING_NOT_IN_FORCE')).toBe('Plan mapping corrected since it was priced (another agreement applies on the service date)');
     expect(reasonText('RELEASE_WITHDRAWN')).toBe('Rule release withdrawn since it was priced');
   });
+
+  it('names a line priced before the Medicare content for its date was loaded, held until it is priced again (audit #7)', () => {
+    expect(reasonText('CONTENT_NOT_LOADED')).toBe('Priced before PaidWhole loaded the Medicare content for its date (MPPR or MUE): held until it is priced again');
+    // Every reason a validated line waits on has its words; none falls back to its code.
+    for (const reason of NOT_ACTIONABLE_REASONS.filter((item) => item !== 'WRITTEN_OFF')) {
+      expect(reasonText(reason)).not.toBe(reason);
+    }
+  });
 });

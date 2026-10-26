@@ -1,9 +1,10 @@
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 import { type Cents, centsToString, parseCents } from '@tp/money';
-import { type IndexedRelease, parseTrace } from '@tp/pricing';
+import { parseTrace } from '@tp/pricing';
 import {
   type AnomalyCohort,
+  BEHAVIOR_RECORD_TYPES,
   type BehaviorReferences,
   type CandidateLine,
   type PatternKey,
@@ -20,7 +21,7 @@ import {
 } from '@tp/triage';
 
 import { PRICED_IN_EFFECT, RUN_IN_EFFECT } from '../price/in-effect';
-import { loadRuleRelease } from '../price/release';
+import { type ContentSpans, contentGapsOf, releaseContentSpans, typedRelease } from '../price/release';
 import { lineDeadlines } from './deadline';
 
 /**
@@ -48,7 +49,9 @@ import { lineDeadlines } from './deadline';
  *    its lines to it; one at or above the case materiality opens a case with the pursuit-cost estimate
  *    the practice's settings give; a smaller one waits. A line joining a case is actionable, or struck
  *    through (written off, window passed) when its window has closed. A per-visit line and a line with
- *    an NCCI review flag stay validated for a person's review (docs/adr/0040).
+ *    an NCCI review flag stay validated for a person's review (docs/adr/0040), and so does a line whose trace read
+ *    the MPPR or the MUE on a date its release does not load them for (CONTENT_NOT_LOADED; audit #7). The release
+ *    is read for its MPPR rates and conversion factors alone (BEHAVIOR_RECORD_TYPES; audit #31), and its spans.
  * 3. Every open case's line whose window closed by the triage date is written off, window passed: it
  *    leaves the case's actionable total and stays visible (the monitoring schedule's daily monitor job
  *    does the same, closePassedWindows). The case's totals, deadline and state are the database's,
@@ -248,33 +251,45 @@ export async function candidateRows(scope: PracticeScope<ScopeClient>, practiceI
   );
 }
 
-/** The behavior references of each release the candidates were priced under, read once each. */
-function referencesByRelease(client: ScopeClient): (releaseNo: number) => Promise<BehaviorReferences> {
-  const loaded = new Map<number, Promise<IndexedRelease>>();
+/** What triage reads of a release: the behavior references (its MPPR rates and conversion factors alone) and the spans of the contents it loads. */
+interface ReleaseFacts {
+  readonly references: BehaviorReferences;
+  readonly spans: ContentSpans;
+}
+
+async function readReleaseFacts(client: ScopeClient, releaseNo: number): Promise<ReleaseFacts> {
+  return { references: releaseReferences(await typedRelease(client, releaseNo, BEHAVIOR_RECORD_TYPES)), spans: await releaseContentSpans(client, releaseNo) };
+}
+
+/** The facts of each release the candidates were priced under, read once each. */
+function factsByRelease(client: ScopeClient): (releaseNo: number) => Promise<ReleaseFacts> {
+  const loaded = new Map<number, Promise<ReleaseFacts>>();
   return async (releaseNo) => {
-    let release = loaded.get(releaseNo);
-    if (release === undefined) {
-      release = loadRuleRelease(client, releaseNo);
-      loaded.set(releaseNo, release);
+    let facts = loaded.get(releaseNo);
+    if (facts === undefined) {
+      facts = readReleaseFacts(client, releaseNo);
+      loaded.set(releaseNo, facts);
     }
-    return releaseReferences(await release);
+    return facts;
   };
 }
 
 /**
  * The candidates as @tp/triage judges them: each with its pattern (the adjustment behavior detected from its
- * trace) and whether its deadline is verified (lineDeadlines: D17 a, at L2), a line the loader cannot read being
- * unverified.
+ * trace), whether its deadline is verified (lineDeadlines: D17 a, at L2), a line the loader cannot read being
+ * unverified, and whether its trace read the MPPR or the MUE on a date its release's spans do not cover (audit #7).
  */
 export async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[]): Promise<CandidateLine[]> {
-  const references = referencesByRelease(client);
+  const releases = factsByRelease(client);
   const deadlines = await lineDeadlines(
     client,
     rows.map((row) => row.priced_line_id),
   );
   const lines: CandidateLine[] = [];
   for (const row of rows) {
-    const behavior = detectBehavior(parseTrace(row.trace), await references(row.release_no));
+    const trace = parseTrace(row.trace);
+    const release = await releases(row.release_no);
+    const behavior = detectBehavior(trace, release.references);
     const pattern: PatternKey = {
       payer_id: row.payer_id,
       plan_id: row.plan_id,
@@ -298,6 +313,7 @@ export async function candidateLines(client: ScopeClient, rows: readonly Candida
       contractVersionStatus: row.version_status,
       contractVersionCoversService: row.version_covers_service,
       releaseWithdrawn: row.release_withdrawn,
+      contentNotLoaded: contentGapsOf(trace, release.spans).length > 0,
       writtenOff: row.written_off,
       visitVarianceCents: row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents),
       reviewFlags: row.review_flags.map((flag) => flag.flag),

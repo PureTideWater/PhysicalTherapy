@@ -100,10 +100,28 @@ describe('from validated to actionable (PRD 12)', () => {
       'VERSION_NOT_SIGNED_OFF',
       'VERSION_NOT_IN_FORCE',
       'RELEASE_WITHDRAWN',
+      'CONTENT_NOT_LOADED',
       'PER_VISIT_REVIEW',
       'NCCI_REVIEW',
       'WRITTEN_OFF',
     ]);
+  });
+
+  it('holds a line priced without the Medicare content its terms read for its date, alone and with the other reasons in list order (audit #7)', () => {
+    expect(judgeLine(facts({ contentNotLoaded: true }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['CONTENT_NOT_LOADED'], validatedCents: 3000n });
+    // Absent is false: a line no release priced short of its content is judged as before.
+    expect(judgeLine(facts({ contentNotLoaded: false }), FIVE, AS_OF).actionable).toBe(true);
+    expect(judgeLine(facts(), FIVE, AS_OF).actionable).toBe(true);
+    // A Medicare Advantage non-contracted line, the one that turns every limit on, is held the same way.
+    expect(judgeLine(facts({ mappingKind: 'ma_noncontracted', contractVersionStatus: null, contractVersionCoversService: true, contentNotLoaded: true }), FIVE, AS_OF).reasons).toEqual(['CONTENT_NOT_LOADED']);
+    expect(
+      judgeLine(
+        facts({ varianceCents: 300n as Cents, visitVarianceCents: 400n as Cents, releaseWithdrawn: true, contentNotLoaded: true, reviewFlags: ['NCCI_PTP'], writtenOff: true }),
+        FIVE,
+        AS_OF,
+      ).reasons,
+    ).toEqual(['BELOW_LINE_MATERIALITY', 'RELEASE_WITHDRAWN', 'CONTENT_NOT_LOADED', 'PER_VISIT_REVIEW', 'NCCI_REVIEW', 'WRITTEN_OFF']);
+    expect(NOT_ACTIONABLE_REASONS.indexOf('CONTENT_NOT_LOADED')).toBe(NOT_ACTIONABLE_REASONS.indexOf('RELEASE_WITHDRAWN') + 1);
   });
 
   it('judges a per-visit line with its visit: at most the visit’s net shortfall, none when the visit was paid in full, and held for review (Q44)', () => {
@@ -149,7 +167,8 @@ describe('from validated to actionable (PRD 12)', () => {
         fc.boolean(),
         fc.boolean(),
         fc.boolean(),
-        (variance, window, reversed, superseded, status, writtenOff, deadlineStatus, covers, withdrawn, mapped, computed) => {
+        fc.boolean(),
+        (variance, window, reversed, superseded, status, writtenOff, deadlineStatus, covers, withdrawn, mapped, computed, notLoaded) => {
           const judged = judgeLine(
             facts({
               varianceCents: variance as Cents,
@@ -160,6 +179,7 @@ describe('from validated to actionable (PRD 12)', () => {
               contractVersionStatus: status,
               contractVersionCoversService: covers,
               releaseWithdrawn: withdrawn,
+              contentNotLoaded: notLoaded,
               mappingInForce: mapped,
               windowRuleComputed: computed || deadlineStatus === 'verified',
               writtenOff,
@@ -178,6 +198,7 @@ describe('from validated to actionable (PRD 12)', () => {
           expect(judged.reasons.includes('DEADLINE_UNVERIFIED')).toBe(deadlineStatus === 'unverified');
           expect(judged.reasons.includes('VERSION_NOT_IN_FORCE')).toBe(!covers);
           expect(judged.reasons.includes('RELEASE_WITHDRAWN')).toBe(withdrawn);
+          expect(judged.reasons.includes('CONTENT_NOT_LOADED')).toBe(notLoaded);
         },
       ),
     );

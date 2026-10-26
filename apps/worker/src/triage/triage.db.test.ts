@@ -2,14 +2,15 @@ import { randomUUID } from 'node:crypto';
 
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { judgeLine } from '@tp/triage';
 import { parseCents } from '@tp/money';
 
 import { monitorHandler } from '../monitor/job';
 import { acceptRun, createRerun } from '../price/rerun';
-import { type Practice, RELEASE, RERUN_RELEASE } from '../price/test-support/pricing-world';
+import type * as ReleaseModule from '../price/release';
+import { CONTENT_GAP_RELEASE, type Practice, RELEASE, RERUN_RELEASE } from '../price/test-support/pricing-world';
 import { RATE_RECORD_FIELDS, amendVersion, approveRateRecordField, approveVersion, correctMapping, signOffVersion, supersedeVersion, verifyDisputeWindow } from '@tp/contracts';
 import { type TriageOutcome, candidateLines, candidateRows, todayUtc } from './execute';
 import { TriageWorld } from './test-support/triage-world';
@@ -21,6 +22,19 @@ import { TriageWorld } from './test-support/triage-world';
  * contracts signed off through @tp/contracts' services, a run priced by the price job, and triage run in
  * the practice's job scope under SYNTHETIC release 900001.
  */
+
+/** While set, the price job reads every content as loaded: a run priced as it was before the content refusal (audit #7). */
+const pricing = vi.hoisted(() => ({ beforeRefusal: false }));
+
+vi.mock('../price/release', async (importOriginal) => {
+  const actual = await importOriginal<typeof ReleaseModule>();
+  const loaded = [{ from: null, until: null }];
+  return {
+    ...actual,
+    releaseContentSpans: async (...args: Parameters<typeof actual.releaseContentSpans>) =>
+      pricing.beforeRefusal ? { mppr_code: loaded, mppr_general: loaded, ncci_mue: loaded } : actual.releaseContentSpans(...args),
+  };
+});
 
 let w: TriageWorld;
 
@@ -731,5 +745,46 @@ describe('whether a line’s pricing is still current, in triage and in the data
     expect(summary(await w.triage(practice, run))).toMatchObject({ validatedLines: 16, casesOpened: 0, linesAdded: 0 });
     expect(await cases(practice)).toEqual([]);
     expect(await stages(practice)).toEqual([{ stage: 'validated', lines: '16' }]);
+  }, 180_000);
+
+  // Last too: it puts release 900007 in force.
+  it('holds a line priced without the MUE its terms read for its date, before the run refusal existed (CONTENT_NOT_LOADED, audit #7), and not one whose date is loaded', async () => {
+    await w.pricing.loadContentGapRelease();
+    // A fixed fee above what was paid, with the coding edits on: each line reads the MUE, which 900007 loads through 2026-09-30.
+    const terms = { scope: {}, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '9000' }, flags: { timed_units_rule: 'PER_CODE', apply_ncci: true } };
+    const priced = async (label: string, serviceDate: string, paid: string, from: string, to: string) => {
+      const practice = await w.practice(label);
+      await w.pricing.loadVariant(practice, 'MAP-05/remit.835', [
+        ['20260216', serviceDate],
+        ['20260310', paid],
+        ['260311', `${paid.slice(2, 6)}11`],
+      ]);
+      const signed = await w.pricing.signedContract(practice, '2026-01-01', { terms });
+      await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05'), 'contract', '2026-01-01', signed.versionId);
+      const run = await w.pricing.createRun(practice, from, to, CONTENT_GAP_RELEASE);
+      pricing.beforeRefusal = true;
+      try {
+        await w.pricing.execute(practice, run);
+      } finally {
+        pricing.beforeRefusal = false;
+      }
+      expect(await rows(practice, 'SELECT status FROM pricing_run WHERE id = $1', [run])).toEqual([{ status: 'complete' }]);
+      const lines = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) =>
+        candidateLines(scope.client, await candidateRows(scope, practice.practiceId, run, `test-${randomUUID()}`)),
+      );
+      return { practice, run, lines };
+    };
+    const october = await priced('content not loaded: october', '20261014', '20261110', '2026-10-01', '2026-10-31');
+    expect(october.lines.length).toBeGreaterThan(0);
+    expect(october.lines.map((line) => line.contentNotLoaded)).toEqual(october.lines.map(() => true));
+    expect(october.lines.map((line) => judgeLine(line, parseCents('500'), todayUtc()).reasons.includes('CONTENT_NOT_LOADED'))).toEqual(october.lines.map(() => true));
+    // Triaged, every line is validated and none joins a case.
+    expect(summary(await w.triage(october.practice, october.run))).toMatchObject({ validatedLines: october.lines.length, casesOpened: 0, linesAdded: 0 });
+    expect(await cases(october.practice)).toEqual([]);
+    expect(await stages(october.practice)).toEqual([{ stage: 'validated', lines: String(october.lines.length) }]);
+    // The same terms on a September line, its MUE loaded: not held for it.
+    const september = await priced('content not loaded: september', '20260916', '20261010', '2026-09-01', '2026-09-30');
+    expect(september.lines.length).toBeGreaterThan(0);
+    expect(september.lines.map((line) => [line.contentNotLoaded, judgeLine(line, parseCents('500'), todayUtc()).reasons.includes('CONTENT_NOT_LOADED')])).toEqual(september.lines.map(() => [false, false]));
   }, 180_000);
 });
