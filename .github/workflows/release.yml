@@ -22,9 +22,11 @@ name: release
 # (the founder's F1), so a cached scale release, scanner, vulnerability database, buildx binary or pnpm store would let
 # another run's bytes into what is scanned, measured and attested. Every one is made in this run (docs/adr/0062;
 # docs/adr/0066, Part 2): no actions/cache step, setup-node without a cache, setup-buildx without its binary cache, no
-# build cache, and Trivy with its cache off (tools/check-action-pins follows each nested cache to the input that turns it
-# off). Its uploads overwrite, so a re-run of a failed job replaces what its first attempt left. A pull request that
-# changes this file runs its actions in release-dry-run.yml.
+# build cache, and Trivy with its cache off. tools/check-action-pins follows every actions/cache step a composite nests
+# to the input that turns it off, failing closed where it cannot follow; a JavaScript action's built-in cache is code it
+# cannot read, so tools/test/workflows.test.ts holds the explicit inputs that turn each one off. Its uploads overwrite,
+# so a re-run of a failed job replaces what its first attempt left. A pull request that changes this file runs its
+# actions in release-dry-run.yml.
 on:
   push:
     tags: ["v*"]

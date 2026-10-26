@@ -215,6 +215,19 @@ describe('release.yml’s nested caches', () => {
     expect(await check(scanner({ binding: 'false' }))).toEqual([]);
   });
 
+  it('fail closed beyond the depth they follow, rather than reading nothing there', async () => {
+    // A composite that nests itself: the chain never ends, so the check stops at its depth and says so.
+    const LOOP = sha('a');
+    const loop = `name: loop\nruns:\n  using: composite\n  steps:\n    - uses: octo/loop@${LOOP}\n`;
+    const transport = recordedTransport({ files: { [blob('octo/loop', LOOP)]: loop } });
+    const reader = new ActionReader(transport);
+    const meta = await reader.read('octo/loop', '', LOOP);
+    if (meta === undefined) throw new Error('fixture missing');
+    const problems = releaseCacheProblems(await cacheGates(reader, meta, ['loop']), { cache: false }).problems;
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/: composites nested deeper than 8 levels, which this check does not follow; a cache there could not be seen, so the check fails closed$/);
+  });
+
   it('read a gate only from a conjunction that requires inputs.<name> == \'true\'', () => {
     expect(gateOf("${{ inputs.cache == 'true' }}")).toBe('cache');
     expect(gateOf("inputs.cache == 'true' && inputs.version != 'latest'")).toBe('cache');

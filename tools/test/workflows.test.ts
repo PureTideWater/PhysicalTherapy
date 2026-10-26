@@ -561,6 +561,9 @@ describe('workflows', () => {
       const steps = Object.entries(release.jobs).flatMap(([name, entry]) => entry.steps.map((step) => ({ where: `${name}: ${step.name ?? step.uses ?? step.run?.split('\n')[0] ?? ''}`, step })));
       expect(steps.filter(({ step }) => /^actions\/cache(?:\/|@)/.test(step.uses ?? '')).map(({ where }) => where)).toEqual([]);
       const named = (action: string) => steps.filter(({ step }) => usesAction(step, action));
+      // These explicit inputs are the only guard for a JavaScript action's built-in cache (setup-node's, action-setup's,
+      // setup-buildx's binary cache): tools/check-action-pins follows the actions/cache steps a composite nests, and a
+      // JavaScript action's cache is code it cannot read (the security review's N2).
       // Node without its package-manager cache, which v7 turns on by itself for a packageManager it caches.
       expect(named('actions/setup-node').map(({ step }) => step.with)).toEqual([{ 'node-version': 24, 'package-manager-cache': false }]);
       expect(named('pnpm/action-setup').map(({ step }) => step.with)).toEqual([{ cache: false }]);
