@@ -228,6 +228,10 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **The change:** `infra/test/compute.test.ts` pins the permitted CLI's call. #53 changes the pinned call from `readGatewayConfig()` to `readGatewayConfig(process.env, { serving: 'evaluable' })`, because the default now refuses to serve in production until a feature passes the gate.
   - **For #42:** `git merge-tree` of #53's head with #42's head 13f59b1 merges the file cleanly (#42 edits other hunks). Whichever merges second keeps both and re-runs the test (rule 6, under the co-founder's Q2 precedent for #42-shared files; allowed by the orchestrator, 2026-10-26 09:48 UTC).
   - Status: `approval-summaries/lane-b-model-eval-gate-status.md`.
+- **2026-10-26, from Lane B's #32 design (one unmapped plan no longer freezes a month; `designs/lane-b-unmapped-plan.md`): the billing managers' stored notice and email, for Lane A.**
+  - **What it needs:** audit #32 names a stored notice and an email to billing managers when a month waits on an unmapped plan. That takes a migration (a notification kind, two figure codes, and a recipients function that selects billing managers) and #42's mail files.
+  - **What Lane B does now:** the no-migration PR (ADR 0075; test-matrix MAP-06 to MAP-09 and PRC-29 to PRC-31). MAP-10 stays reserved for the Lane B follow-up after #42 and this migration merge.
+  - Status: `approval-summaries/lane-b-unmapped-plan-status.md`.
 
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
