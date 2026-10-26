@@ -1,0 +1,141 @@
+{
+  "design": "/home/user/ops/designs/lane-b-figures-in-words.md",
+  "reviewed_at": "6ddd587",
+  "note": "The reviewer's findings as returned, unedited, except for an id on each that matches the design's section 13 table.",
+  "verdict": "Not ready to build as written: two blockers, five majors, eleven minors. The core holds up against the code. The renderer is code-only, reads stored trace fields only, adds no migration and no domain-model or format-version change, leaves packages/pricing/src and the ledger alone, never derives a 100% figure, and keeps flags that are off out of the payer copy. I checked these against pricing/src/trace.ts, engine.ts:650-658, the packet_version triggers, the attestation CHECKs and stryker/base.mjs. Two test plans need files that PR #42 changes (pnpm-lock.yaml, apps/web/package.json), which breaks a hard constraint. The design's claim that the reviewer reads exactly what the payer reads is not bound across a deploy. Three places word Medicare rules or the year as something they are not: a non-contracted MA line's rules as a contract's, the year from the year_basis label rather than the engine's lookup, and a named locality as the practice's. The payer-audience code rule contradicts the payer worksheet. All fixes are small and need no database work. Progress notes: /tmp/claude-0/-home-user-PhysicalTherapy/cd4c3776-ffb4-50ed-99cf-e6bf837d5699/scratchpad/fiw-design/progress/reviewer.md",
+  "findings": [
+    {
+      "id": "B1",
+      "severity": "blocker",
+      "finding": "The golden words test (tools/golden-worksheet/explain.golden.test.ts) imports @tp/packets, which @tp/tools does not depend on. Adding the dependency changes tools/package.json and pnpm-lock.yaml, and pnpm-lock.yaml is one of PR #42's files. The design says no #42 file is touched except the four shared docs and synth files.",
+      "evidence": "tools/package.json:16-25 lists contracts, db, edi835, money, observability, pricing, rules, synth, triage and worker, but not packets. pnpm-lock.yaml (tools importer, around lines 778-805) has no @tp/packets entry. pnpm-lock.yaml is in /tmp/claude-0/pr42-files.txt. Design sections 4.2 and 7, step 8.",
+      "fix": "Keep the pins out of tools/. Put the golden words test inside packages/packets, for example packages/packets/src/explain/golden.test.ts. It can read the golden traces from a fixture copied once into packages/packets/src/explain/__fixtures__, made by a one-off script that prices the golden claims through goldenPricingInput (that script runs where the dependency already exists, such as apps/worker, which depends on both). Or move this one test until after #42 merges and add the dependency then. Either way, Stryker's packets TEST_SETS (packages/packets/src/**/*.test.ts) then also runs the pins, which kills string mutants (it addresses Risk 'Mutation score')."
+    },
+    {
+      "id": "B2",
+      "severity": "blocker",
+      "finding": "The e2e check that the review page's words equal the downloaded PDF's text needs a PDF text extractor in apps/web. Only apps/worker has pdfjs-dist. Adding it changes apps/web/package.json and pnpm-lock.yaml, both #42 files.",
+      "evidence": "apps/worker/package.json:63 has pdfjs-dist. apps/web/package.json and the root package.json have none. Both apps/web/package.json and pnpm-lock.yaml are in pr42-files.txt. Design 4.4: 'e2e/packets.spec.ts:106 ... the review page's words equal the downloaded PDF's text ... (pdf text extracted as the payer-copy test does)'.",
+      "fix": "Split the proof into two halves that need no new dependency. (1) apps/worker export.test.ts: the PDF text extracted with pdfjs equals plainText(explainPacket(content, traces, 'payer')). (2) workbench-routes.db.test.ts: the review loader's words deep-equal explainPacket(content, traces, 'payer') for the same version. The e2e test then checks only that each [data-calculation-row] holds the summary sentence. Also fix design 4.4's worker test that compares the PDF with 'the review loader's' words. apps/worker cannot import apps/web loaders, so it has to compare against explainPacket instead."
+    },
+    {
+      "id": "M1",
+      "severity": "major",
+      "finding": "The words are bound to the approval only through trace_sha256. They are rendered again at review time and again at export time, with whatever renderer code is deployed then. A deploy that changes words.ts between approval, export and attestation makes the approved review page, the exported PDF and the attester's review page differ. The design's claim that a render-time worksheet is 'as bound to the approval as a stored one' is false for the words, though true for the figures.",
+      "evidence": "Design 2.1 ('as bound to the approval as a stored one') and 3.8. The attestation stores only format, checklist and pdf/csv SHA-256 (20261103090000_deadline_verification_and_export_attestation.sql:817-829). The approver approves approved_sha256 over content, which holds no words.",
+      "fix": "Give @tp/packets/explain a WORDS_VERSION constant: a SHA-256 of the word tables plus a renderer version, computed by a test-held script, with no database change. Show it in the review page's Internal record card. Record it in the approval and export audit events as an opaque value (IDs and hashes only). The export job refuses, as a print failure with the remedy 'approve again', when its WORDS_VERSION differs from the one in the approval's audit event. After export, the review page shows a notice and disables Attest when its rendered WORDS_VERSION differs from the export's. Add a test for each refusal. Name this in ADR 0072 as the price of choosing C2 (a)."
+    },
+    {
+      "id": "M2",
+      "severity": "major",
+      "finding": "For a Medicare Advantage non-contracted line, the internal and viewer words attribute Medicare's rules to a contract or rate record that does not exist. 'Applied, as the rate record's flags are on' and 'the contract follows Medicare's pooled timed-units rule' are printed for MA lines, whose flags and timed-units rule come from the MA_NONCONTRACTED_FLAGS constants. This is the mirror image of the flag-off rule: a setting worded as the contract's position.",
+      "evidence": "packages/contracts/src/terms.ts:209-216 (MA_NONCONTRACTED_FLAGS, all on, MEDICARE_POOLED) and :358-361 (MA_NONCONTRACTED_TERMS, rounding null). Design 3.4 Terms: 'Applied, as the rate record's flags are on' and 'MEDICARE_POOLED → the contract follows Medicare's pooled timed-units rule'.",
+      "fix": "Branch on agreement.outcome === 'MA_NONCONTRACTED' by string equality. Use 'Medicare's reductions apply to a non-contracted Medicare Advantage line under {42 CFR 422.214}: ...' and 'Units as billed; Medicare's pooled timed-units rule applies.' In line.test.ts, assert that no MA trace's words contain 'contract' or 'rate record' next to a flag or the timed-units rule. Add the check to the payment-engine reviewer checklist line."
+    },
+    {
+      "id": "M3",
+      "severity": "major",
+      "finding": "The payer-audience code rule contradicts the payer words. The Segment type says the payer admits only the ZIP+4 code, but the payer worksheet prints RVU, GPCI and APM ('per RVU', table headers, 'qualifying APM participants'), and the payer assistant-reduction sentence prints the CQ and CO codes. A builder must either fail the test or drop worksheet content.",
+      "evidence": "Design 3.2, Segment comment ('the payer audience admits ZIP+4 alone'). 3.4, Assistant reduction ('all audiences ... Modifiers CQ and CO'). 3.6, worksheet layout (RVU, GPCI, 'per RVU'). 3.4, applicability words ('APM').",
+      "fix": "Give the payer audience its own allow-list, PAYER_CODES = ZIP+4, RVU, GPCI, CQ, CO, APM, CMS. Write each out in words at first use in the worksheet ('relative value units (RVU)', 'geographic practice cost index (GPCI)'). Test that payer output contains only PAYER_CODES code segments."
+    },
+    {
+      "id": "M4",
+      "severity": "major",
+      "finding": "The year words are chosen from the year_basis label ('LOCKED:2024' → 'locked to 2024'), not from what the engine did. Lane A's open engine defect 2 is that a year basis the engine cannot read as LOCKED:<four digits> prices at the records in force, as CURRENT does. The words would then say 'locked to …' while the trace's lookup says in_force_on_service_date.",
+      "evidence": "packages/pricing/src/trace.ts: fee_schedule.lookup enum ('in_force_on_service_date' | 'latest_in_basis_year') and basis_year. /home/user/ops/LANES.md 'Handed to Lane A', item 2. Design 3.4, Terms, year words.",
+      "fix": "Word the year only from steps.fee_schedule.lookup and basis_year, which record what the engine did. In terms, print year_basis only if it agrees with lookup. If it does not (LOCKED with in_force_on_service_date, or CURRENT with latest_in_basis_year), throw ExplainShapeError so the line refuses rather than misstates. Add a unit case for the defect."
+    },
+    {
+      "id": "M5",
+      "severity": "major",
+      "finding": "The payer-copy leak scan the design holds the payer words to is narrower than the real one. The design cites only /trace|SHA-256|specialist|verif/i. The payer copy's full term list also forbids audit, hash, PaidWhole, 'rule release', 'pricing run', 'priced line', manifest, \\bL[1-3]\\b and others, plus CODE_SHAPES. The package unit tests in 4.3 use a home-made regex, so a payer sentence can pass them and fail T1 later in the worker.",
+      "evidence": "packages/packets/src/test-support.ts:159-185 (PAYER_COPY_INTERNAL_TERMS). apps/worker/src/packets/test-support/payer-copy.ts:44 (CODE_SHAPES). Design 3.3 last bullet and 4.3.",
+      "fix": "In packages/packets/src/explain/*.test.ts, import PAYER_COPY_INTERNAL_TERMS from @tp/packets/testing and run every payer-audience string (sentences, worksheet title, rows, the CMS sentence) through it plus CODE_SHAPES. Move CODE_SHAPES into @tp/packets/testing (the worker file is not a #42 file) so both use one list."
+    },
+    {
+      "id": "m1",
+      "severity": "minor",
+      "finding": "The sequestration sentence states arithmetic that is false when the payer's share is floored at zero: '{before} less the patient share {ps}, which is {payer_share}' prints, for example, '$40.00 less $50.00, which is $0.00'.",
+      "evidence": "packages/pricing/src/engine.ts:829-831 (payerShare floored at ZERO). Design 3.4, Sequestration.",
+      "fix": "Branch on payer_share_cents === '0' by string equality: 'the patient share {ps} leaves no payer's share, so nothing is withheld; {before} is unchanged.' Add a unit case."
+    },
+    {
+      "id": "m2",
+      "severity": "minor",
+      "finding": "The terms sentence always says 'the practice's locality'. The trace's locality_basis can be NAMED (carrier, locality), and such a line stops at fee_schedule, so the internal words for that unpriced line would misstate the contract's terms.",
+      "evidence": "packages/pricing/src/trace.ts terms.percent_of_medicare.locality_basis (PRACTICE | NAMED). engine.ts:561-562 (locality_basis_not_in_phase_one).",
+      "fix": "Word NAMED as 'carrier {carrier} locality {locality}, as the rate record names it'. Add a unit case for the stopped line."
+    },
+    {
+      "id": "m3",
+      "severity": "minor",
+      "finding": "The SECONDARY_PAYER meaning, quoted from the closed list, says 'Claim status 2 or 3'. For a status 20 or 21 line that sentence is false, and the design prints it anyway next to 'Claim status 20'. That breaks 'says only what the trace records'.",
+      "evidence": "engine.ts:84 (SECONDARY_STATUSES = 2, 3, 20, 21). docs/product/unpriced-reasons.md:17. Design 3.5.",
+      "fix": "Fix docs/product/unpriced-reasons.md:17 in this PR ('Claim status 2, 3, 20 or 21'). It is not a #42 file and adds no reason to the closed list, so the remedies parity test just moves with it. Or, until then, leave out the quoted meaning for SECONDARY_PAYER and print the claim status in words from the trace."
+    },
+    {
+      "id": "m6",
+      "severity": "minor",
+      "finding": "FigureSource.form has no count form, but the AMBIGUOUS_RATE sentence prints the length of matching_rate_record_ids. A length is not a leaf value, and the renderer's rule says it computes nothing.",
+      "evidence": "Design 3.2 (FigureSource.form = dollars | exact_dollars | percent | per_rvu | verbatim) and 3.4, Agreement ('{n} rate records match').",
+      "fix": "Add form 'count' (an array's length, the one derivation allowed) and list it in the renderer's rule. Or drop the number ('More than one rate record matches.')."
+    },
+    {
+      "id": "m4",
+      "severity": "minor",
+      "finding": "explainPacket takes the contract page from the packet's one citation but never checks that each line was priced by that rate record. A line from another record would be cited to the wrong page.",
+      "evidence": "packages/packets/src/format.ts:74-80 (citation.rate_record_id, page). apps/worker/src/packets/records.ts:417-418 (the case's single rate_record_id). Design 3.8.",
+      "fix": "In explainPacket, require trace.agreement.rate_record_id === content.citation.rate_record_id for a contract citation (or agreement.outcome === 'MA_NONCONTRACTED' for a regulation citation), else throw ExplainBindingError naming the row. Add a test in explain.test.ts. On the line page, read evidence.page only from a rate_record whose verified_by is not null; otherwise the citation is null and the clause is omitted."
+    },
+    {
+      "id": "m5",
+      "severity": "minor",
+      "finding": "The figure tests do not prove that each figure is the right one. Test 1 resolves the segment's own path, and test 2 checks only that a value is somewhere in the trace (small integers like 1 and 2 are almost always present). A sentence that cites before_cents where after_cents belongs passes both.",
+      "evidence": "Design 4.1, checks 1 and 2.",
+      "fix": "Give each sentence form a fixed table of the trace path for each slot (for example the summary's 'rounded once to' → steps.rounding.rounded_cents). Assert every figure segment's path against that table in line.test.ts, so a wrong path fails. Tokenise word-bounded so 'G0283' or '42 CFR 422.214' are not split into stray integers, and canonicalise the citation's reference into its tokens."
+    },
+    {
+      "id": "m7",
+      "severity": "minor",
+      "finding": "The e2e plan breaks on the new markup. The design rebuilds the calculation as words but keeps packets.spec.ts:106, which queries getByRole('table', { name: 'Calculations' }). It also expects the rule-records list inside a closed <details>, which role queries treat as hidden. The line trace page also gets no 390 px or axe check.",
+      "evidence": "apps/web/e2e/packets.spec.ts:106. apps/web/e2e/pricing.spec.ts:120 (getByRole list 'Rule records of Step 2'). apps/web/e2e/a11y.ts:53 (atPhoneWidth), not used in pricing.spec.ts or viewer-phi.spec.ts.",
+      "fix": "Have the e2e locate the region by aria-label (getByRole('region', { name: 'Calculations' })) or keep a table. Open the 'As the engine recorded it' disclosure before the records assertion. Add atPhoneWidth plus expectAccessible on the line page for the manager and the viewer, and on the review page after the change. Wrap the raw JSON <pre> in a scrolling region that a keyboard can reach."
+    },
+    {
+      "id": "m8",
+      "severity": "minor",
+      "finding": "The design adds new read purposes packet_draft and packet_review, but the builder already reads under packet_build. A second purpose name splits one screen's audit trail.",
+      "evidence": "apps/web/src/lib/packets/queries.ts:264, :364 (purpose 'packet_build'). apps/web/src/lib/packets/review.ts:146 ('packet_review').",
+      "fix": "Read the traces under the existing purposes: 'packet_build' for the builder, 'packet_review' for the review."
+    },
+    {
+      "id": "m12",
+      "severity": "minor",
+      "finding": "The mutation scope misses a file the design may create. If MA_NONCONTRACTED_CITATION moves to a new packages/packets/src/citations.ts, that file is not in MUTATE.packets or any shard. The fast-check property test will also lengthen every mutant run.",
+      "evidence": "stryker/base.mjs:48-66 (an explicit list). Design 4.5 and 7, step 3.",
+      "fix": "Put the constant in payer.ts, which is already mutated (packets-rest), or add citations.ts to MUTATE and to the packets-explain shard. Keep the property test's numRuns small when the mutation run's environment variable is set, as the other property tests do (if they do)."
+    },
+    {
+      "id": "m9",
+      "severity": "minor",
+      "finding": "The viewer path moves PHI withholding from the SQL (CASE WHEN $4 THEN p.trace END) into the handler. Correct as described, but the viewer's trace becomes null only by handler convention.",
+      "evidence": "apps/web/src/lib/pricing/queries.ts:395. apps/web/src/lib/routes/remittances.ts:247-258. Design 3.9.",
+      "fix": "Keep pricedLineOf's withTrace semantics unchanged and add a separate audited read, pricedLineWords(scope, …, audience), that reads the trace, returns only LineWords and Worksheet[], and has no trace field in its return type. The loader test asserts that the viewer's LinePageData has no trace and no date-shaped token."
+    },
+    {
+      "id": "m10",
+      "severity": "minor",
+      "finding": "Payer words say 'release' (assistant: 'the release pays'; sequestration: 'in the release's record') and 'the engine's expression', though the design's audience table says the payer gets no release. Payer sentences also cite claim line numbers ('line {line_no}') beside the packet's own 'Row {n}', which a payer can confuse.",
+      "evidence": "Design 3.3 table ('Release number: payer no'), 3.4 (Assistant reduction, Sequestration) and 3.6 ('The engine's expression').",
+      "fix": "In payer words use 'Medicare's assistant percentage', 'Medicare's sequestration record' and 'The calculation:'. Where a payer sentence names another claim line, write 'claim line {line_no}' and add the packet row when that line is in the packet. Pin these in the golden words."
+    },
+    {
+      "id": "m11",
+      "severity": "minor",
+      "finding": "Step 30 edits .claude/agents/payment-engine-reviewer.md, which is under the CODEOWNERS /.claude/ entry, in the same PR that reviewer then reviews.",
+      "evidence": ".github/CODEOWNERS:43 (/.claude/ @PureTideWater). Design 7, step 30.",
+      "fix": "Say in the PR description that the founder's code-owner review covers the checklist edit, or move the three checklist lines to the status file as a proposal for a separate PR."
+    }
+  ]
+}

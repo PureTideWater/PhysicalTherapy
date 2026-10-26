@@ -82,7 +82,7 @@ and 2026-10-26 ~00:20 UTC; recorded here, in the PR and in the status file)
    `hosted_verification_url` (Stripe's page; no PHI, nothing stored). Showing a pending verification on later visits
    would need the provider to list open SetupIntents; recorded as a proposal, not built here.
 5. **The start button says what it does.** With no method on file it stays "Add a bank account (ACH) or card"; with one
-   on file it reads "Replace it with a bank account (ACH) or card", since a confirmed method becomes the default.
+   on file it reads "Replace with a bank account (ACH) or card", since a confirmed method becomes the default.
 6. **The Payment method card moves into `components/billing`** (`payment-method-card.tsx`, a plain synchronous component
    taking the method on file, the provider, the simulator's test routing, `formKeys: ReactNode` (the page renders the async
    `<FormKeys />` and passes it in, as `components/screening/split-form.tsx` does), the CSRF token and the two simulator
@@ -103,6 +103,22 @@ and 2026-10-26 ~00:20 UTC; recorded here, in the PR and in the status file)
    every invoice". Not an amendment to ADR 0050, because 0050 is in #42's file list and only the four named shared
    documents may be touched while #42 is open. `docs/runbooks/billing.md` gains the dashboard checks (Financial
    Connections' Link saving; ACH and card the enabled methods).
+
+## After the reviews (2026-10-26 ~01:25-02:05, wf_f41510b7-8f9)
+The two adversarial reviews' findings (S1 to S4, UX-1 to UX-11) changed these decisions; the code and ADR 0073 follow
+this section where it differs from the text above:
+- 3a: a new customer default is **set** on every live subscription (no `''` clear, which Stripe's types do not mark as
+  unsettable); the local simulator models a subscription's own default, as Stripe does.
+- 4: the on-file line reads "On file: Visa card ending in 4242" / "On file: bank account (ACH) ending in 6789, <bank>";
+  one term, "bank account (ACH)"; the description "A bank account (ACH) or a card. …"; the preference line with nothing
+  or a card on file, and "A new payment method replaces the one on file." with any method on file.
+- 4a: the notice follows the micro-deposit type; an unusable verification URL is an error; notices are status
+  messages that take focus.
+- 5: "Replace with a bank account (ACH) or card".
+- 6: with nothing on file the Plan card shows prices and "Add a payment method above, then choose a plan here." in place
+  of the form; each simulator form has its own request key (a FormKeys factory); Stripe's form is themed from the live
+  brand tokens.
+- The billing case module is numbered 15 (the orchestrator's shared counter: DBF 13, RCC 14).
 
 ## Files
 - `packages/billing/src/methods.ts` (new), `packages/billing/package.json` (the `./methods` export),
@@ -126,7 +142,7 @@ is not touched) follow LANES rule 6; the PR merged second keeps both lanes' chan
 ## Tests (BIL-01 to BIL-04, a new series: the matrix has no billing series at 6ddd587)
 | ID | Case | Assertion |
 | --- | --- | --- |
-| BIL-01 | Stripe's payment form opens on the bank account | The Payment Element's options list `us_bank_account` first and `card` second, from the shared order; tabs with the first open; Apple Pay, Google Pay and Link off; the start button reads "Add a bank account (ACH) or card" with nothing on file and "Replace it with a bank account (ACH) or card" with a method on file; a confirmed setup shows the saved notice, and one waiting on a micro-deposit shows the verification notice with Stripe's link |
+| BIL-01 | Stripe's payment form opens on the bank account | The Payment Element's options list `us_bank_account` first and `card` second, from the shared order; tabs with the first open; Apple Pay, Google Pay and Link off; the start button reads "Add a bank account (ACH) or card" with nothing on file and "Replace with a bank account (ACH) or card" with a method on file; a confirmed setup shows the saved notice, and one waiting on a micro-deposit shows the verification notice with Stripe's link |
 | BIL-02 | What Stripe is asked to collect and charge | The SetupIntent's `allowed_payment_method_types`, the subscription's and the audit invoice's `payment_method_types` each send exactly `['us_bank_account', 'card']`, bank first, from the shared order, which imports nothing; the subscription saves no default of its own (`'off'`), and a new default clears any subscription's own default so the customer's governs every invoice |
 | BIL-03 | The page says the bank account is preferred | The Payment method card, with Stripe and with the simulator, says "A bank account (ACH) is preferred for annual plans and audits." and leads its description with the bank account; with a card on file it adds that adding a bank account replaces the card; with a bank account on file it does not; a card's brand is capitalized; the simulator lists its bank form before its card form; the page shows the Payment method card before the Plan card; the practice onboarding step reads "Add a payment method and choose a plan" |
 | BIL-04 | A card is never refused, and a new bank account takes over | Through the routes on the simulator, an organization with only a card on file chooses the annual plan and its invoice is paid by card, and an audit invoice issued to it is paid by card; once it adds a bank account, the next open invoice it pays is charged to the bank account |

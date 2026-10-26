@@ -172,6 +172,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Lane A's PR 6c:** four frozen-engine defects found by #44's review (LANES.md, "Handed to Lane A").
   - **Lane A's screening journey:** the e2e timing failure above. Handed to Lane A in LANES.md, for #42's fix round: read the outcome only after the consumer has finished, or assert either stage, and make the key registration safe to retry.
   - **The amendments to LANES.md's items 3, 10 and 14** (step 5).
+  - **From #84 and #120 (2026-10-26):**
+    - **F1:** the per-field recall and precision floors of the model evaluation gate. They ship unset, so the gate fails closed. Setting them needs real model access (the tracker's milestone 10 note) and a person's choice of numbers.
+    - **F2:** whether the data-rights addendum covers accepted proposals used as examples. That is legal text, the founder's sign-off; nothing is built for it.
+  - **The co-founder's own approval** (from ~00:10 UTC): a dated delegation line in LANES.md, plus a small governance PR (approvers.json, ADR 0063, the approval-of-record check), would let his approval count in his own name. Lane B never signs the founder's name.
 - **The co-founder** (delegated, LANES.md 2026-10-25):
   - the usage reading: the current % and the reset time's time of day (rule 9);
   - payment-engine/S1, from #44: an explicit MoneyError guard in `multiplyCents` for text cast past `Cents`. It would be a later money change, in its own PR, with payment-engine review;
@@ -198,6 +202,11 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~01:30 UTC:
+  - ADR **0077** (0065 is #42's, 0066 the CI series', and 0067 to 0076 are claimed);
+  - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
+  - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', and 900100 is the screening's scale release);
+  - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
   - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
   - **As its own PR, next in Lane B's queue,** when it is larger or of another kind. Add it to LANES.md as a dated item "on the co-founder's standing direction of 2026-10-25" (one PR per change, LANES rule 5).
@@ -632,7 +641,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - PR 15b (ADR 0067, LED-14 to LED-18);
     - #111 (ADR 0068 if needed, DBF-01 to DBF-05);
     - #10 (ADR 0069 if needed, PRC-25 to PRC-28);
-    - #84 and #120 (ADR 0070, MOD-7 to MOD-12).
+    - #84 and #120 (ADR 0070, MOD-07 to MOD-12; corrected from MOD-7, since the matrix pads to two digits).
     - **Why these:** they are queue items 3, 4, 5 and 12, the next ones free of shared files. Items 6 to 10 change screens and wait for the UX baseline's findings, so they take them in. #49 waits for #42. #113 follows ci-deps' CLAUDE.md line.
   - **Rules the parallel sessions keep:**
     - Only this session edits LANES.md and lanes/lane-b.md. The others write only their own designs, summaries, scripts and a `approval-summaries/lane-b-<item>-status.md`, pulling before each push.
@@ -720,3 +729,26 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Taken as recommended under the 00:20 ruling** (design §0.5):
     - Q1: 15b records the outcome, with words from stored rows, and the stored close goes to Lane A;
     - Q2: a reprocessing that raises or keeps the allowed amount but pays less is matched "decreased", and takes back the payment fall, capped.
+- **2026-10-26 ~01:05 UTC: the #84/#120 session's design is reviewed; the build started.**
+  - **Two PRs, no migration:**
+    - `co-001/model-eval-gate` (#84: the gate, evaluation set v2, faults, per-feature serving; ADR 0070 Parts 1 and 2);
+    - then `co-001/contract-phi-check` (#120; Part 3).
+  - **`tools/screening-capacity/watched-paths.txt`** (a #42 file) is generated and held by its unit test. It is treated like the lockfile under rule 6: each PR regenerates it, the one merged second regenerates again, and nobody edits it by hand. This is within the co-founder's Q2, so confirmed.
+  - **Handed to Lane A (LANES.md):**
+    - F3: compact lookup hashes with a SECURITY DEFINER screen function, #120's best option. Until then the PR refuses fail-closed above 50,000 identifiers;
+    - F4: a reviewed correction of a document's kind.
+  - **For the founder, under "Waiting on someone":** F1, the gate's floors (unset, failing closed, needing model access); F2, the data-rights addendum (legal text).
+  - **Fixed:** the matrix's IDs are padded to two digits, so the reservations now read MOD-07 to MOD-12 and MAP-06 to MAP-10. Sent to the #84/#120 and #10 sessions.
+  - **The UX capture** is in its first full run (from 00:30 UTC; the populate journeys passed, 93 PNGs by 00:47).
+    - The container had restarted again at about 22:40 UTC, and the capture agent started PG18 by hand.
+    - The agent also ran `git checkout --` on `tools/lane-b-screen-tour/{build,setup}.sh` in `/home/user/ops`, to undo its own first edits to those two files. Both were clean before, so nothing was lost; it reported the breach itself. The session checks the ops tree before every commit.
+- **2026-10-26 ~01:20 UTC: #38 and #48 both designed and reviewed, no migration; #38 building.** ADR 0076 reserved for #48 (its draft is kept in page memory only, with the in-place lock and sign-in). #38 takes ADR 0072 and CAS-30 to CAS-34; #48 takes CAS-35 to CAS-37.
+  - **#135 opened draft PR #47** (~01:15 UTC; no migration). Its design review caught that `save_default_payment_method: 'on_subscription'` would keep charging a card after a bank account was added; fixed in the design.
+  - Its proposal, to show a bank account still waiting on Stripe's micro-deposits on later visits, is noted for the queue after #135.
+  - **The UX capture** is at 709 PNGs (01:17 UTC). Along the way it found and fixed a held submit that was actually sent, and a 390 px loading state taken too early. Both were capture faults, on the synthetic database.
+  - Session clocks drift: the #38 session's message said ~02:45 UTC at 01:19. The sessions were told to take times from `date -u`.
+- **2026-10-26 ~01:30 UTC: the release content checks' design is reviewed (no migration); shared counters allocated centrally.**
+  - It found that fixture release numbers and synth module numbers are shared counters the parallel sessions could collide on. Allocated in the claim rows:
+    - DBF module 13 (#111), RCC module 14 plus fixture release 900007 (the release content checks), BIL module 15 (#135).
+    - The next free values are under "Shared counters" in the conventions. #135's session was told BIL = 15.
+  - **Handed to Lane A:** `operator_content_coverage()` for #59's later daily `content_due` job. `tp_operator` has no grant on rule objects, and a GRANT on `rule_record` would be DDL on a rule table.

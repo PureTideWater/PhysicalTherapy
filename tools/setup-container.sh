@@ -35,7 +35,8 @@
 #     also linked at /tmp/claude-0/gitleaks/gitleaks, the path older briefs use, when /tmp/claude-0 exists.
 #   - pnpm is the base image's (10.28.0 in /opt/node-tools). Only when no pnpm is on PATH: pnpm@10.28.0 from the npm
 #     registry in /opt/pnpm-10.28.0, linked at /usr/local/bin/pnpm.
-#   - Playwright's Chromium for the version the repository pins (apps/web/package.json): the base image's builds in
+#   - Playwright's Chromium for the version the repository pins (apps/web/package.json), and for the version each
+#     branch argument's worktree pins once its install is done (ci-browser's 1.64.1 needs 1248): the base image's builds in
 #     PLAYWRIGHT_BROWSERS_PATH when present, else laid out from Google's Chrome for Testing bucket, each zip checked
 #     against a pinned SHA-256 (CFT_BUILDS below: revision 1194 for Playwright 1.56.1, 1248 for 1.64.1), because the
 #     cloud proxy refuses Playwright's own download hosts.
@@ -996,35 +997,38 @@ for i in z.infolist():
   mv "$tmp" "$dir/$rev"
 }
 
-step_playwright() { # the browsers the repository's Playwright needs: the base image's, else laid out from Chrome for Testing
-  local pw browsers revs dir missing="" laid="" r ver
-  if [ "$OK_MODULES" != 1 ]; then line FAIL playwright - "skipped: needs the clone's node_modules"; return 1; fi
+# step_playwright [CHECKOUT PART]: the browsers a checkout's Playwright needs (the main clone's by default, or an
+# argument worktree's, which may name another Playwright, as ci-browser's 1.64.1 does): the base image's, else laid
+# out from Chrome for Testing.
+step_playwright() {
+  local checkout="${1:-$CLONE_DIR}" part="${2:-playwright}" pw browsers revs dir missing="" laid="" r ver
+  if [ "$checkout" = "$CLONE_DIR" ] && [ "$OK_MODULES" != 1 ]; then line FAIL "$part" - "skipped: needs the clone's node_modules"; return 1; fi
   pw="$(python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
-print({**d.get("dependencies", {}), **d.get("devDependencies", {})}["@playwright/test"])' "$CLONE_DIR/apps/web/package.json" 2>/dev/null)"
-  browsers="$CLONE_DIR/node_modules/.pnpm/playwright-core@$pw/node_modules/playwright-core/browsers.json"
+print({**d.get("dependencies", {}), **d.get("devDependencies", {})}["@playwright/test"])' "$checkout/apps/web/package.json" 2>/dev/null)"
+  browsers="$checkout/node_modules/.pnpm/playwright-core@$pw/node_modules/playwright-core/browsers.json"
   revs="$(python3 -I -c 'import json, sys
 for b in json.load(open(sys.argv[1]))["browsers"]:
     if b["name"] in ("chromium", "chromium-headless-shell"):
         print(b["name"].replace("-", "_") + "-" + b["revision"])' "$browsers" 2>/dev/null)"
-  [ -n "$revs" ] || { line FAIL playwright "$pw" "cannot read $browsers"; return 1; }
+  [ -n "$revs" ] || { line FAIL "$part" "$pw" "cannot read $browsers"; return 1; }
   dir="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
   for r in $revs; do [ -f "$dir/$r/INSTALLATION_COMPLETE" ] || missing="$missing $r"; done
   if [ -n "$missing" ] && checking; then
-    line FAIL playwright "$pw" "missing in $dir:$missing (run this script without SETUP_CHECK: it lays them out from Chrome for Testing)"
+    line FAIL "$part" "$pw" "missing in $dir:$missing (run this script without SETUP_CHECK: it lays them out from Chrome for Testing)"
     return 1
   fi
   for r in $missing; do
     if ! cft_layout "$r" "$dir"; then
-      line FAIL playwright "$pw" "$r: $ERR"
+      line FAIL "$part" "$pw" "$r: $ERR"
       return 1
     fi
     ver="$(printf '%s\n' "$CFT_BUILDS" | awk -F'|' -v r="$r" '$1 == r { print $2 }')"
     laid="$laid $r"
   done
   if [ -n "$laid" ]; then
-    line ok playwright "$pw" "$(printf '%s' "$revs" | tr '\n' ' ' | sed 's/ $//') in $dir (laid out from Chrome for Testing $ver, pinned SHA-256:$laid)"
+    line ok "$part" "$pw" "$(printf '%s' "$revs" | tr '\n' ' ' | sed 's/ $//') in $dir (laid out from Chrome for Testing $ver, pinned SHA-256:$laid)"
   else
-    line ok playwright "$pw" "$(printf '%s' "$revs" | tr '\n' ' ' | sed 's/ $//') in $dir (present)"
+    line ok "$part" "$pw" "$(printf '%s' "$revs" | tr '\n' ' ' | sed 's/ $//') in $dir (present)"
   fi
 }
 
@@ -1089,7 +1093,8 @@ worktree "$OPS_BRANCH" "$OPS_DIR" ops 0
 for arg in "$@"; do
   branch="${arg%%:*}"
   if [ "$branch" != "$arg" ]; then dir="${arg#*:}"; else dir="$WORKTREE_ROOT/$(worktree_dir "$branch")"; fi
-  worktree "$branch" "$dir" "$(basename "$dir")" 1
+  # An argument worktree's own Playwright may name other browser revisions than the main clone's.
+  worktree "$branch" "$dir" "$(basename "$dir")" 1 && step_playwright "$dir" "playwright-$(basename "$dir")"
 done
 
 printf '%s\n' "${LINES[@]}"
