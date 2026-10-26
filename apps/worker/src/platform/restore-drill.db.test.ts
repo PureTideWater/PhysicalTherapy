@@ -71,8 +71,10 @@ function lazyEvidence(url: string): EvidenceClient & { end(): Promise<void> } {
  * The restore drill against PostgreSQL (test matrix SEC-13): the latest snapshot is restored to a
  * scratch database, the row counts and the catalog test pass on it, the evidence row is written, and
  * the scratch copy is destroyed. The local restorer needs pg_dump and pg_restore at least as new as
- * the server; where they are older (a newer server than the installed client tools, as on a CI
- * runner against the compose file's PostgreSQL 18), the drill through them is skipped with that reason. A
+ * the server; where they are older (a newer server than the installed client tools, as on an
+ * ubuntu-24.04 runner, whose pg_dump is 16, against the compose file's PostgreSQL 18), the drill through
+ * them is skipped with that reason. CI's database jobs run on ubuntu-26.04, whose client tools are 18,
+ * so there the drill runs (docs/adr/0066, Part 3). A
  * restore of the source itself still runs everywhere: a server-side copy (CREATE DATABASE ...
  * TEMPLATE, which needs no client tools) restores the source, and the row counts and the catalog test
  * must pass on it.

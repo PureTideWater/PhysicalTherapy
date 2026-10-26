@@ -1,0 +1,22 @@
+{
+  "case": "CI-18",
+  "module": "CI",
+  "title": "One browser build everywhere",
+  "assertion": "The web tests, the worker, the tools and the lockfile name one Playwright version (playwright-core one catalog line), and the worker image installs the lockfile's playwright-core with no version of its own; every step that installs the browser, in every workflow, is followed by the check that holds every file of the headless shell's and Chromium's builds to `browser.json`'s tree SHA-256s before any test runs or any cache is saved, and the worker image's headless shell is held to it in `images` and in the release's build before it is saved; CI regenerates the committed brand baselines from nothing, byte for byte, on every pull request and every push; a browser-tests pull request is red on the browser check by design until the baseline procedure runs, and its other steps still run",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/test/browser-version.test.ts",
+    "tools/ci/browser-build.test.ts",
+    "tools/test/no-duplicated-versions.test.ts",
+    "tools/test/workflows.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The manifests, the lockfile, the worker's Dockerfile and the workflows are read; the browser check runs on stand-in builds and a stand-in docker in a temporary directory, and the baseline step's script in a temporary git repository; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

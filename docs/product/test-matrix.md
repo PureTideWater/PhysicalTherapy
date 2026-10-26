@@ -222,7 +222,9 @@ preferred, cards still accepted, and the customer's default payment method the o
 The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
 test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-14 are the pins, the
 Dependabot configuration, the images and the toolchain (docs/adr/0066, Part 2); CI-15 to CI-17 are the mutation
-workflow's (Part 4); CI-18 to CI-20 are reserved for the browser and runner pull request (Part 3).
+workflow's (Part 4); CI-18 to CI-20 are the browser and the runners (Part 3), which complete the series. The report's
+runner image and image store, and the launch check's refusal of another image or a non-archive binding, join CI-20 once
+#42 has merged (Part 3, "After #42").
 
 | ID | Case | Assertion |
 | --- | --- | --- |
@@ -243,4 +245,7 @@ workflow's (Part 4); CI-18 to CI-20 are reserved for the browser and runner pull
 | CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score |
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
+| CI-18 | One browser build everywhere | The web tests, the worker, the tools and the lockfile name one Playwright version (playwright-core one catalog line), and the worker image installs the lockfile's playwright-core with no version of its own; every step that installs the browser, in every workflow, is followed by the check that holds every file of the headless shell's and Chromium's builds to `browser.json`'s tree SHA-256s before any test runs or any cache is saved, and the worker image's headless shell is held to it in `images` and in the release's build before it is saved; CI regenerates the committed brand baselines from nothing, byte for byte, on every pull request and every push; a browser-tests pull request is red on the browser check by design until the baseline procedure runs, and its other steps still run |
+| CI-19 | Header controls named by their visible text | Each header control's accessible name contains its visible text (WCAG 2.5.3) at 1280 and 390 px; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation on any page a journey scans |
+| CI-20 | Runner images | Every job on ubuntu-26.04 but the release's capacity chain, on the release runner; the probe's runner comes only from its dispatch input; the browser jobs' cached system packages are used only after each matches the signed index's SHA-256; the release binds images by the config digest hashed from the saved archive under either image store, carries each image's identities from the build as job outputs no later job can rewrite, proves the measured image, the loaded image before any push and the pushed image are that one, builds every checked image with no attestation manifest, and its push and report jobs run no repository code; the image scan reads the built archive |
 
