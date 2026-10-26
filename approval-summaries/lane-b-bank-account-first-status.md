@@ -2,8 +2,8 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC.*
 
-- **Stage:** fresh-clone verification running (wf_bbfe29eb-041, from ~02:18) while CI's e2e (2/2) re-runs once on 744e1d6.
-- **Branch / PR:** `co-001/bank-account-first`, worktree /home/user/bank-account-first / #47 (draft), head 744e1d6 (commits 5ca2263, 56007bd, b15d45f, 422344b, 744e1d6). Base still 6ddd587.
+- **Stage:** MERGED. PR #47 merged as c5195ee (2026-10-26 ~03:58 UTC) with method merge and expectedHeadSha 744e1d6, after its fresh-clone verification passed and every required check was green on that head; the branch already held the base (6ddd587), so no base merge was needed.
+- **Branch / PR:** `co-001/bank-account-first` (remote kept; worktree and local branch removed) / #47, merged.
 - **Machine:** setup-container.sh printed OK; `gh api user` is PureTideWater.
 - **Migration:** none (confirmed at design: presentation and three Stripe request parameters; `packages/db` untouched).
 - **Reserved numbers:** test-matrix BIL-01 to BIL-04 (the matrix has no billing series at 6ddd587, so the reserved IDs
@@ -23,7 +23,7 @@
 - **Improvement found:** the card brand shows lowercase ("visa") on the page; capitalized in this PR.
 - **Proposal (outside this PR):** show a bank account still waiting on Stripe's micro-deposit on later visits (needs the
   provider to list open SetupIntents).
-- **CI:** 5ca2263 green. 744e1d6: every job green except e2e (2/2), the known screening flake handed to #42 (screening.spec.ts:339 read `priced`; the retry failed at helpers.ts:87); one PR comment posted (~02:13) and the failed job re-run once (~02:15).
+- **CI on 744e1d6 (final):** all 22 runs green (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record` among them); unit 322 files, 5,015 passed, 1 skipped; db 118 files, 9,050 passed, 1 skipped; e2e 51 passed (`e2e (2/2)` on its one re-run after the known screening flake handed to #42). Push runs on c5195ee (ci, mutation, screening-capacity) started at merge.
 - **Local checks before the first push:** typecheck 22 projects; lint 0/0; lint:copy, lint:logs pass; unit 5,006 passed,
   3 skipped, 2 failed in tools/screening-capacity/watched.test.ts (the new methods.ts was not in #42's watched list),
   fixed by moving the order into `types.ts`, which the list already holds (affected files then 397/397); billing db
@@ -56,4 +56,7 @@
   staging check by hand that Stripe's form accepts the resolved token colours, light and dark; showing a pending
   micro-deposit verification on later visits.
 - **Safety net:** a send_later at 03:50 UTC (trig_01Kzyx6TD5RH8orKUPQKfCRk) resumes any workflow the 5-hour limit stops (the orchestrator's warning, ~02:16).
-- **Next:** the re-run's result and the verification; merge the latest base if it moved; ready; merge.
+- **Fresh-clone verification (wf_bbfe29eb-041; cut off by the 5-hour limit at ~02:20, resumed ~03:52 after the machine restart and setup-container.sh):** pass (`approval-summaries/lane-b-bank-account-first-verify.md`); its two description notes (F1 row wording, CI totals) fixed before merge.
+- **After the merge:** unsubscribed from #47; the 03:50 check-in deleted; main checkout fast-forwarded to c5195ee and installed; worktrees `/home/user/bank-account-first` and `/home/user/screens` removed with the local branch; tp_e2e_screens dropped; nothing running.
+- **For the orchestrator (LANES.md, lanes/lane-b.md):** queue item 13 done (merged c5195ee). ADR 0073 used; test-matrix BIL-01 to BIL-04 and synth BIL-01 to BIL-04 used; billing case module number 15. Proposals listed above are outside this PR.
+- **Next:** none for this item.

@@ -1,0 +1,15 @@
+# verify PR47 2026-10-26T02:17:31Z
+- step1: clone HEAD 744e1d6 OK, base 6ddd587 = merge-base; pnpm install --frozen-lockfile rc=0
+- step2: typecheck rc=0 (22 projects); lint:copy rc=0
+- step2: unit rc=0 26 files 402 tests; db billing-routes rc=0 7 tests
+- step2: synth --all rc=0, porcelain empty
+- step2: diff 29 files; pr42 overlap only test-matrix/matrix/registry; no migration/pricing/ledger/db/content
+- step2: BIL-01..04 identical in test-matrix.md/matrix.ts, all in registry.ts; no model ids in diff/commits
+- step2: PR body fetched (head matches), reviewing vs diff
+- step2: PR body read vs diff: claims hold; only stale wording in F1 row (says 'clears', superseded by S2 row) and CI totals not yet added
+- step3: all 22 check runs completed; all success except notify/stryker skipped
+- step3 totals: unit 322 files 5015 passed 1 skipped; e2e 1/2 26 passed, 2/2 (attempt 2) 25 passed = 51; db pending (log blob host blocked, using MCP get_job_logs)
+- step3 db 4/4: 29 files, 895 passed
+- step3 db 1/4: 30 files, 3095 passed 1 skipped
+- step3 db 2/4: 30 files 2581; 3/4: 29 files 2479; total db 118 files 9050 passed 1 skipped
+- step4: verify-clone removed; verdict pass
