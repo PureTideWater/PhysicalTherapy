@@ -1,0 +1,63 @@
+{
+ "verdict": "build with changes",
+ "needsMigration": false,
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "blocking",
+   "area": "behaviour / Stripe",
+   "claim": "In Stripe mode, \"Adding one replaces the card on file\" (decision 4) and \"Replace it with a bank account (ACH) or card\" (decision 5) are false for plan renewals. The subscription is created with payment_settings.save_default_payment_method 'on_subscription' (packages/billing/src/stripe.ts:194). After the first paid invoice, Stripe therefore stores the card as subscription.default_payment_method, and that outranks the customer's invoice_settings.default_payment_method. The setup_intent.succeeded handler only updates the customer's default (apps/worker/src/billing/events.ts:213 calling stripe.ts:166). paymentMethodOnFile then reads the customer's default (stripe.ts:171-178), so the page shows the bank account while renewals and invoices.pay retries keep charging the card. The simulator always charges the customer's default (packages/billing/src/local.ts:387-411), so every simulator test passes while production does the opposite of what the copy promises. That defeats the purpose of the item, which is moving card customers to ACH.",
+   "fix": "Add a decision 9 in packages/billing/src/stripe.ts (not #42's): create subscriptions with save_default_payment_method 'off', so the customer's default governs every invoice. Make setDefaultPaymentMethod also clear the default_payment_method of the customer's non-canceled subscriptions (subscriptions.list by customer, then subscriptions.update with default_payment_method ''), each call under a derived idempotency key. Extend BIL-02 in stripe.test.ts to assert 'off' and the clearing. In BIL-03/BIL-04 add a case through the routes: card on file, annual plan, then a bank account added, and the next invoice (payInvoice on an open one) is charged to the bank account. In the ADR amendment, record that the customer's default is the single source of the method on file."
+  },
+  {
+   "id": "F2",
+   "severity": "should-fix",
+   "area": "Stripe types",
+   "claim": "Decision 3 sends payment_settings: { payment_method_types: PAYMENT_METHOD_ORDER } with PAYMENT_METHOD_ORDER declared `as const`, which makes it a readonly tuple. stripe@23 types InvoiceCreateParams.PaymentSettings.payment_method_types as Emptyable<Array<PaymentMethodType>> (esm/resources/Invoices.d.ts, InvoiceCreateParams.PaymentSettings). SetupIntentCreateParams.allowed_payment_method_types (SetupIntents.d.ts:802) and the subscription's payment_method_types are mutable Arrays too, so passing the readonly tuple does not typecheck. Also, the SetupIntent field is allowed_payment_method_types (stripe.ts:151), not payment_method_types. The design's 'What is there today' wording blurs this.",
+   "fix": "Write every server use as `[...PAYMENT_METHOD_ORDER]`, as decision 2 already does for paymentMethodOrder (stripe-js payment.d.ts:377 is string[]). Name the SetupIntent field allowed_payment_method_types in the design and in BIL-02."
+  },
+  {
+   "id": "F3",
+   "severity": "should-fix",
+   "area": "component design / tests",
+   "claim": "Decision 6 says payment-method-card.tsx is server-renderable and unit-tested with renderToStaticMarkup, yet the card it lifts contains <FormKeys /> (an async server component that reads the session cookie, apps/web/src/components/form-keys.tsx) and `await pageCsrfToken()` for StripePaymentMethod (page.tsx:102,110,117,123). renderToStaticMarkup cannot render async components, so BIL-03 as designed cannot run.",
+   "fix": "Follow the existing pattern in apps/web/src/components/screening/split-form.tsx:79-93: the card takes `formKeys: ReactNode` (the page renders <FormKeys /> and passes it in), `csrfToken: string`, the two simulator actions, the method on file, the provider and testRouting. It is a plain synchronous component. The test passes a stub node and a fixed token."
+  },
+  {
+   "id": "F4",
+   "severity": "should-fix",
+   "area": "build config",
+   "claim": "@tp/billing is a dependency of the web (apps/web/package.json:23) but is missing from transpilePackages in apps/web/next.config.ts:33-49, whose comment says workspace packages export TypeScript source and Next compiles them with the app. Until now only server code imported it. The design's new client import of @tp/billing/methods would be the first browser import of an untranspiled TypeScript workspace package. It may resolve today through the pnpm symlink, but that is undocumented and fragile. No eslint rule restricts @tp/billing in client code (eslint.config.js), and the stryker configs (stryker/*.config.mjs: ledger, money, packets, pricing) and coverage include (vitest.config.ts:104) are unaffected by a new packages/billing file.",
+   "fix": "Add '@tp/billing' to transpilePackages in apps/web/next.config.ts (not a #42 file) and list the file in the design. In methods.test.ts, assert that methods.ts contains no import or require, so the browser bundle can never pull in stripe or node:crypto through it."
+  },
+  {
+   "id": "F5",
+   "severity": "should-fix",
+   "area": "scope / missed surfaces",
+   "claim": "The practice onboarding checklist also describes the method and is not in the design: apps/web/src/app/p/[practiceId]/settings/page.tsx:18 reads 'Choose a plan and a payment method' / 'ACH or card, through the payment provider.'. The order is wrong as well, because a plan is refused until a method is on file (apps/worker/src/billing/account.ts:241; billing-routes.db.test.ts:183-184). On the billing page the Plan card is also rendered above the Payment method card (page.tsx:60-129), so a new administrator meets the plan choice, and its refusal, before the preferred-method line. Neither file is in #42's list.",
+   "fix": "Change the onboarding step to title 'Add a payment method and choose a plan' and detail 'A bank account (ACH) is preferred; a card also works.', and add the file to the design. On the billing page, render the Payment method card above the Plan card (the card is being extracted anyway). Cover both in BIL-03 and in the screenshot tour. Leave help.ts (#42's) and the worker's account.ts refusal unchanged, and say so in decision 7."
+  },
+  {
+   "id": "F6",
+   "severity": "should-fix",
+   "area": "behaviour / ACH microdeposits",
+   "claim": "This item steers more administrators to ACH. When Financial Connections falls back to microdeposits (verification_method 'automatic', stripe.ts:153), confirmSetup returns without an error and the SetupIntent is in requires_action (verify_with_microdeposits). The form still shows 'Stripe confirmed the payment method\u2026 reload the page in a moment' (stripe-payment-method.tsx:49-55,81-83). setup_intent.succeeded does not arrive until the deposits are verified, days later, and until then the card stays on file. The design's 'Adding one replaces the card on file' then reads as broken.",
+   "fix": "In ConfirmForm, read result.setupIntent.status. On 'succeeded', show the current notice. On 'requires_action' or 'processing', show a data-notice=\"bank-verification-pending\" line: \"Stripe will verify the bank account with two small deposits, which can take a few business days; the current method stays on file until then.\" Make the confirmation logic a pure exported function and add it to BIL-01."
+  },
+  {
+   "id": "F7",
+   "severity": "nit",
+   "area": "Stripe facts / rationale",
+   "claim": "The options are valid in @stripe/stripe-js 10.1.0: paymentMethodOrder?: string[] (dist/stripe-js/elements/payment.d.ts:377), LayoutObject {type:'tabs', defaultCollapsed} (344-352), and wallets {applePay, googlePay, link: 'auto'|'never'} (331-337). They coexist with Elements options that carry only clientSecret, and wallets cannot be updated later (422-433), which is fine because they are set at mount. Decision 2's rationale is inaccurate, though. In the Payment Element, Apple Pay and Google Pay render as tabs ordered by Stripe; express buttons above the tabs belong to the Express Checkout Element. Link cannot appear as a method at all, because 'link' is not in allowed_payment_method_types. And wallets.link does not govern Financial Connections, which may itself offer to save the bank login to Link, so the claim 'no extra account' is not fully established.",
+   "fix": "Rewrite the rationale: Apple Pay and Google Pay would add card-funded tabs that dynamic ordering may place ahead of the bank account. link:'never' is defence in depth, since Link is already excluded server-side. Add to the ADR amendment and the Stripe setup runbook that Financial Connections' Link account saving is a Stripe dashboard setting to check, and stop claiming the form creates no third-party account until that is checked."
+  },
+  {
+   "id": "F8",
+   "severity": "nit",
+   "area": "scope / PR #42",
+   "claim": "The design says 'None is #42's', but docs/adr/0050-\u2026 is in #42's file list (pr42-files.txt:78), along with docs/product/test-matrix.md (86), packages/synth/src/cases/matrix.ts (136) and registry.ts (137). ADRs are shared documents under LANES rule 6 (LANES.md:90, 29-32), so the amendment is allowed, but the design's list of shared documents leaves ADR 0050 out. No migration (packages/db and domain-model untouched), no new route, query or permission, and billing stays in tp_billing: all confirmed. The copy passes words.ts ('ach' initialism, words.ts:19) and the FORBIDDEN_TERMS in tools/brand-copy/scan.ts:115-121. completesIn 11 for BIL-01 to BIL-04 is within the fixtures test's bound (packages/synth/src/fixtures.test.ts:48).",
+   "fix": "Change the sentence to 'The shared documents (ADR 0050, test-matrix, matrix.ts, registry.ts) follow LANES rule 6; the PR merged second keeps both lanes' changes.' Give every BIL entry assertedBy with its test files, even though milestone 11 is above CODE_BUILT_THROUGH_MILESTONE (10) and the fixtures test would not require it."
+  }
+ ],
+ "summary": "Build with changes. No migration is needed: nothing in packages/db, domain-model, routes, queries or permissions changes, and billing stays in tp_billing.\n\nThe Stripe client options are valid against the installed stripe-js 10.1.0. paymentMethodOrder, tabs with defaultCollapsed:false, and wallets with link:'never' all exist in payment.d.ts and coexist with clientSecret-only Elements options. BIL-04 works on the local simulator.\n\nOne blocking problem: in Stripe mode the new copy \"Adding one replaces the card on file\" is false for plan renewals. The cause is subscriptions.create with save_default_payment_method 'on_subscription' (stripe.ts:194). It pins the first-paying card on the subscription, and that outranks the customer default that setup_intent.succeeded updates (events.ts:213, stripe.ts:166). The simulator always charges the customer default, so the tests would hide this. The fix is in stripe.ts: set save_default_payment_method to 'off', and have setDefaultPaymentMethod clear subscription-level defaults, with tests.\n\nShould-fix:\n- Spread the readonly constant for Stripe 23's mutable Array params.\n- Pass formKeys and csrfToken into the extracted card as props, since renderToStaticMarkup cannot render the async FormKeys.\n- Add @tp/billing to the web's transpilePackages, and test that methods.ts has no imports.\n- Update the onboarding step in p/[practiceId]/settings/page.tsx, and put the Payment method card above the Plan card.\n- Handle the ACH microdeposit pending state after confirmSetup.\n\nNits: fix the wallets rationale (the Payment Element shows Apple Pay and Google Pay as tabs; Link is already excluded on the server; Financial Connections' Link saving is a dashboard setting), and list ADR 0050 among the rule-6 shared documents. It is in PR #42's file list.\n\nProgress file: /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/design-review.md"
+}

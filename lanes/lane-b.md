@@ -40,7 +40,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - #38 (npm minor and patch) was closed by Dependabot at 18:57 UTC: "no longer updatable".
     - Its npm update on de8f9b5 (run 40223237798) failed for every dependency. Dependabot ran pnpm with `--config.minimum-release-age=4320`, and ci-mutation's Stryker 10.1.1 was under three days old.
     - Its versions are still behind at 6ddd587 (vitest and coverage 5.0.4, eslint 10.12.0, postcss 8.5.30, next 16.4.1), so ci-deps takes §3.2's versions.
-    - Dependabot's npm updates resume once Stryker 10.1.1 is three days old, from about 2026-10-26 19:50 UTC.
+    - Dependabot's npm updates resume once Stryker 10.1.1 is three days old, from 2026-10-26T19:18:50Z (corrected by ci-deps' re-read; it had said about 19:50).
 - **CI on `claude/build-platform`:**
   - The push runs on de8f9b5 are green (ci 40223130551, mutation 40223130477, screening-capacity 40223130509).
   - On 6ddd587, mutation 40229005837 (every package) and screening-capacity 40229005836 are green.
@@ -172,6 +172,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Lane A's PR 6c:** four frozen-engine defects found by #44's review (LANES.md, "Handed to Lane A").
   - **Lane A's screening journey:** the e2e timing failure above. Handed to Lane A in LANES.md, for #42's fix round: read the outcome only after the consumer has finished, or assert either stage, and make the key registration safe to retry.
   - **The amendments to LANES.md's items 3, 10 and 14** (step 5).
+  - **From #84 and #120 (2026-10-26):**
+    - **F1:** the per-field recall and precision floors of the model evaluation gate. They ship unset, so the gate fails closed. Setting them needs real model access (the tracker's milestone 10 note) and a person's choice of numbers.
+    - **F2:** whether the data-rights addendum covers accepted proposals used as examples. That is legal text, the founder's sign-off; nothing is built for it.
+  - **The co-founder's own approval** (from ~00:10 UTC): a dated delegation line in LANES.md, plus a small governance PR (approvers.json, ADR 0063, the approval-of-record check), would let his approval count in his own name. Lane B never signs the founder's name.
 - **The co-founder** (delegated, LANES.md 2026-10-25):
   - the usage reading: the current % and the reset time's time of day (rule 9);
   - payment-engine/S1, from #44: an explicit MoneyError guard in `multiplyCents` for text cast past `Cents`. It would be a later money change, in its own PR, with payment-engine review;
@@ -198,12 +202,17 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~01:30 UTC:
+  - ADR **0077** (0065 is #42's, 0066 the CI series', and 0067 to 0076 are claimed);
+  - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
+  - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', and 900100 is the screening's scale release);
+  - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
   - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
   - **As its own PR, next in Lane B's queue,** when it is larger or of another kind. Add it to LANES.md as a dated item "on the co-founder's standing direction of 2026-10-25" (one PR per change, LANES rule 5).
   - **Handed to Lane A** when it needs a migration, or changes frozen code (the engine under `packages/pricing`, the ledger's existing behaviour, the content pipeline).
   - **Wording, brand and what a person sees: done without asking** (the co-founder, 2026-10-25 ~21:34 UTC). Each takes the recommended option at once, within `.claude/rules/brand.md`, CO-11 and the PRD. The PR description and this log report it to him afterwards, and he may reverse any.
-  - **To the co-founder first** when it changes cost or makes a security trade-off (his Q3), with the recommended option.
+  - **Cost and security trade-offs: decided without asking too** (the co-founder, 2026-10-26 ~00:20 UTC: "Don't ask for approvals anymore just build and optimize"). Take the recommended option: for security, the safer one. Record it with its reasons in the design or PR description and in this log. Nothing waits on a question to him.
   - **The founder's, through the co-founder:** the domain model, release tags, owner-admin settings, legal text (the terms, the cookie notice, the screening terms, the AMA notice, HANDOFF's counsel list), and any reversal of a recorded founder ruling.
   - Never skip a pipeline stage for it, and never stop a running workflow for it. A finding inside a running workflow is applied at its next stage, or in the next workflow.
 - **Node.** The shell's default `node` is 22. Run `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` in every command or script.
@@ -632,7 +641,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - PR 15b (ADR 0067, LED-14 to LED-18);
     - #111 (ADR 0068 if needed, DBF-01 to DBF-05);
     - #10 (ADR 0069 if needed, PRC-25 to PRC-28);
-    - #84 and #120 (ADR 0070, MOD-7 to MOD-12).
+    - #84 and #120 (ADR 0070, MOD-07 to MOD-12; corrected from MOD-7, since the matrix pads to two digits).
     - **Why these:** they are queue items 3, 4, 5 and 12, the next ones free of shared files. Items 6 to 10 change screens and wait for the UX baseline's findings, so they take them in. #49 waits for #42. #113 follows ci-deps' CLAUDE.md line.
   - **Rules the parallel sessions keep:**
     - Only this session edits LANES.md and lanes/lane-b.md. The others write only their own designs, summaries, scripts and a `approval-summaries/lane-b-<item>-status.md`, pulling before each push.
@@ -665,3 +674,81 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **The UX route map is done** (`designs/lane-b-ux-review/route-map.{json,md}`, committed with the review): all 83 pages are reachable on synthetic data, 35 from the seed and 48 after the populate journeys.
     - Six extra entries name pages that do not exist. They came from this session's own scout file lists, which were partly retyped from a truncated listing instead of copied from the generated file. The checker caught all six and added the real pages that were missing; the six are removed before the map is committed.
     - **Lesson:** pass a generated list to a workflow verbatim (read the whole file), never retyped.
+- **2026-10-26 ~00:20 UTC: the co-founder: "Don't ask for approvals anymore just build and optimize."**
+  - **Ruling:** every Lane B choice takes the recommended option without asking him, cost and security trade-offs included (security: the safer option). Each is recorded with its reasons and reported afterwards. The "Improve as you go" convention says so.
+  - **Unchanged, because they are not his to give** (LANES.md delegation of 2026-10-25): the domain model's approval, release tags, owner-admin settings and legal text's sign-off stay the founder's. Lane B does not ask about them. It records each one where it is needed, under "Waiting on someone", for the founder and Lane A.
+  - **The approval question of ~00:10 UTC** (whether the co-founder may approve in his own name) is dropped. It is noted for the founder: a dated delegation line in LANES.md plus a small governance PR would let the co-founder's own approval count as the approval of record. Lane B never signs the founder's name.
+  - Sent to all five parallel sessions: decide and record, never wait on a question.
+- **2026-10-26 ~00:30 UTC: the parallel sessions' briefs corrected on #42's shared documents.**
+  - The briefs said "never touch a file #42 changes". That is stricter than LANES.md, which lets the shared documents follow rule 6.
+  - #42 changes four of them: `docs/product/test-matrix.md`, `docs/product/reconciliation-001.md`, `packages/synth/src/cases/matrix.ts` and `registry.ts`, plus amendments to older ADRs. Every new test-matrix row also needs its matrix and registry entries (`packages/synth/src/fixtures.test.ts`). PR 15 changed all of them while #42 was open.
+  - Sent to all five: add rows and entries there under rule 6 (the PR merged second keeps both), and leave every other #42 file alone.
+  - #111's reservation is widened to synth cases DBF-01 to DBF-05 (no-file entries). Its session had held back for want of that.
+  - **Messages to the sessions do not interrupt them:** they arrive as queued notifications, which the session reads between steps (seen in #111's transcript).
+- **2026-10-26 ~00:25 UTC: two more parallel sessions, and two follow-on items for warm sessions.** Each was checked against #42's 143 files and the items already running.
+
+  | Item | Session | Branch | Status file |
+  |---|---|---|---|
+  | #38, then #48 (queue items 7 and 9; the packet pages) | session_01DMD91cYkbNgkEp1nmeSwpy | `co-001/figures-in-words`, then `co-001/narrative-draft` | `lane-b-figures-in-words-status.md` |
+  | #135 (queue item 13; billing pages, not #42's worker billing files) | session_01SbDNvf4ojucLA3uyPfs1FC | `co-001/bank-account-first` | `lane-b-bank-account-first-status.md` |
+  | #46 (queue item 6), after 15b merges | PR 15b's session (session_01Rv82bANhoRiK91FKEN7Pff) | `co-001/verified-seal` | `lane-b-verified-seal-status.md` |
+  | #32 (queue item 10), after #10 merges | #10's session (session_01CwzySVsjqgoXijLDMKj7VG) | `co-001/unmapped-plan` | `lane-b-unmapped-plan-status.md` |
+
+  - #46 shares the report code with 15b, and #32 shares the pricing-run code with #10, so each follows in the warm session rather than running beside it.
+  - Every screen-changing PR takes the UX and brand review, with before-and-after screenshots, and folds in the baseline's findings on its screens once `designs/lane-b-ux-review.md` lands.
+  - The new briefs carry the 00:20 ruling (decide without asking) and the rule-6 exception for #42's four shared documents.
+  - **Not started, with why:**
+    - ci-deps: its re-read is finishing here; it then gets its own session, and ci-browser follows in it;
+    - #113: after ci-deps' CLAUDE.md line;
+    - #49 and the post-#42 items 15 and 16: they wait for #42;
+    - #52: legal text, the founder's sign-off;
+    - #138, the formatter: both lanes idle;
+    - #122: after PR 16.
+- **2026-10-26 ~00:40 UTC: ci-deps' design re-read done (wf_c51b25c9-e94: 5 agents, 1.85M subagent tokens, 1 h 52 min). ci-deps and ci-browser handed to a parallel session.**
+  - **Scouts** (`designs/lane-b-ci/scout-ci-deps-reread-{files,versions}.md`):
+    - the action table is still current;
+    - the file and line references and the stale branches are fixed. Examples: PINNED now at `workflows.test.ts:77-92`; a vacuous `actions/cache@v4` check at `:686`; `supply-chain.yml` deleted.
+    - compose's healthcheck must use TCP (`pg_isready -h 127.0.0.1`), because the socket answers first;
+    - and more: the full lists are in the reports.
+  - **The adversarial review** (`designs/lane-b-ci/ci-deps-reread-review.md`): 1 blocking, 20 should_fix, 16 nits. All 37 were verified and fixed (§3.2.7). B1 was half right: Dependabot's peer probe passes an uncapped 7- or 14-day gate to pnpm, so majors and minors would silently get no PR.
+  - **Three security choices, each taken as recommended under the 00:20 ruling** (recorded at the end of §3.2.7):
+    - CQ1 (a): npm cooldown 3 days, the same as `minimumReleaseAge`;
+    - CQ2 (a): `trustPolicyExclude` for semver 6.3.1 alone;
+    - CQ3 (a): packageManager's pnpm held to the three-day age.
+  - **Improvements outside ci-deps (P1 to P8):**
+    - P1 (pins and digests held to three days; recommended yes), P2 (trivy's version), P4 (a narrower mutation trigger) and P5 (catalog lines) are claimed as their own PRs, under the CI follow-ups row;
+    - P3 (pnpm 11's trustLockfile) and P6 (re-read the ruleset after runbook step 2) are notes for later;
+    - P7, this log's Dependabot resume time, is fixed: 2026-10-26T19:18:50Z.
+  - **The CI session:** session_01TztFLKnDUJniegCFmkfMoc. It runs ci-deps, then ci-browser (re-read first, with the V3, O6 and O7 carry-ins and shell.tsx under Q2), then P1, P2 and P4. Status in `approval-summaries/lane-b-ci-deps-status.md`.
+    - **A9**, the inspection of the regenerated baselines, falls under the 00:20 ruling: an adversarial visual-inspection agent at full resolution, plus a private gallery the co-founder may look at. It does not block the merge.
+    - **When ci-deps merges,** this session gives the co-founder the steps for F1 (a), F2 (a), then F3. Owner-admin settings are never changed by a session.
+  - **Eight parallel sessions now**, plus this one (the UX capture, then its review and the checklist PR).
+- **2026-10-26 ~00:42 UTC: PR 15b's session: design written, in review. One part handed to Lane A.**
+  - All of #12's payment-terms amounts, and "billable to the patient", need no migration (checked against every CHECK and trigger they write through).
+  - The stored case close "payer corrected; balance is the patient's" needs DDL on case and case_line. Added to LANES.md "Handed to Lane A", for PR 8's case schema; 15b records the outcome without it.
+  - **Taken as recommended under the 00:20 ruling** (design §0.5):
+    - Q1: 15b records the outcome, with words from stored rows, and the stored close goes to Lane A;
+    - Q2: a reprocessing that raises or keeps the allowed amount but pays less is matched "decreased", and takes back the payment fall, capped.
+- **2026-10-26 ~01:05 UTC: the #84/#120 session's design is reviewed; the build started.**
+  - **Two PRs, no migration:**
+    - `co-001/model-eval-gate` (#84: the gate, evaluation set v2, faults, per-feature serving; ADR 0070 Parts 1 and 2);
+    - then `co-001/contract-phi-check` (#120; Part 3).
+  - **`tools/screening-capacity/watched-paths.txt`** (a #42 file) is generated and held by its unit test. It is treated like the lockfile under rule 6: each PR regenerates it, the one merged second regenerates again, and nobody edits it by hand. This is within the co-founder's Q2, so confirmed.
+  - **Handed to Lane A (LANES.md):**
+    - F3: compact lookup hashes with a SECURITY DEFINER screen function, #120's best option. Until then the PR refuses fail-closed above 50,000 identifiers;
+    - F4: a reviewed correction of a document's kind.
+  - **For the founder, under "Waiting on someone":** F1, the gate's floors (unset, failing closed, needing model access); F2, the data-rights addendum (legal text).
+  - **Fixed:** the matrix's IDs are padded to two digits, so the reservations now read MOD-07 to MOD-12 and MAP-06 to MAP-10. Sent to the #84/#120 and #10 sessions.
+  - **The UX capture** is in its first full run (from 00:30 UTC; the populate journeys passed, 93 PNGs by 00:47).
+    - The container had restarted again at about 22:40 UTC, and the capture agent started PG18 by hand.
+    - The agent also ran `git checkout --` on `tools/lane-b-screen-tour/{build,setup}.sh` in `/home/user/ops`, to undo its own first edits to those two files. Both were clean before, so nothing was lost; it reported the breach itself. The session checks the ops tree before every commit.
+- **2026-10-26 ~01:20 UTC: #38 and #48 both designed and reviewed, no migration; #38 building.** ADR 0076 reserved for #48 (its draft is kept in page memory only, with the in-place lock and sign-in). #38 takes ADR 0072 and CAS-30 to CAS-34; #48 takes CAS-35 to CAS-37.
+  - **#135 opened draft PR #47** (~01:15 UTC; no migration). Its design review caught that `save_default_payment_method: 'on_subscription'` would keep charging a card after a bank account was added; fixed in the design.
+  - Its proposal, to show a bank account still waiting on Stripe's micro-deposits on later visits, is noted for the queue after #135.
+  - **The UX capture** is at 709 PNGs (01:17 UTC). Along the way it found and fixed a held submit that was actually sent, and a 390 px loading state taken too early. Both were capture faults, on the synthetic database.
+  - Session clocks drift: the #38 session's message said ~02:45 UTC at 01:19. The sessions were told to take times from `date -u`.
+- **2026-10-26 ~01:30 UTC: the release content checks' design is reviewed (no migration); shared counters allocated centrally.**
+  - It found that fixture release numbers and synth module numbers are shared counters the parallel sessions could collide on. Allocated in the claim rows:
+    - DBF module 13 (#111), RCC module 14 plus fixture release 900007 (the release content checks), BIL module 15 (#135).
+    - The next free values are under "Shared counters" in the conventions. #135's session was told BIL = 15.
+  - **Handed to Lane A:** `operator_content_coverage()` for #59's later daily `content_due` job. `tp_operator` has no grant on rule objects, and a GRANT on `rule_record` would be DDL on a rule table.

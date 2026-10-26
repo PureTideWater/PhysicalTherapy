@@ -1,0 +1,175 @@
+{
+ "0": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "UX-1",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/billing/stripe-payment-method.tsx",
+    "line": 186,
+    "claim": "The micro-deposit notice says \"Until then the payment method on file stays in use.\" even when no method is on file. SetupNotice never receives methodOnFile, so the sentence describes a method that does not exist.",
+    "scenario": "A new organization with nothing on file opens Stripe's form and enters a bank account manually, so Financial Connections falls back to micro-deposits. The notice tells the administrator that 'the payment method on file stays in use'. There is none, and Choose plan is refused until the deposit is verified, which nothing on the page explains.",
+    "fix": "Pass methodOnFile from StripePaymentMethod into SetupNotice (`<SetupNotice outcome={done} methodOnFile={methodOnFile} />`). End the sentence with \"Until then the payment method on file stays in use.\" when methodOnFile is true, and \"Until then no payment method is on file, so a plan cannot be chosen yet.\" when it is false. Add both cases to billing.test.tsx at line 88."
+   },
+   {
+    "id": "UX-2",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/billing/stripe-payment-method.tsx",
+    "line": 169,
+    "claim": "The notice always describes one deposit carrying a code (\"a small deposit ... enter its code\"). Stripe also sends microdeposit_type 'amounts', which means two deposits whose amounts the customer enters. setupOutcome drops microdeposit_type, so for that type the instructions are wrong. When hosted_verification_url is refused (verificationUrl null), the text still sends the reader to \"Stripe's verification page\" but shows no link.",
+    "scenario": "A Stripe account whose setup produces amount micro-deposits shows \"enter its code\". Two deposits arrive with no code, and the administrator cannot follow the instruction. Separately, a non-https URL leaves the person told to visit a page they have no way to reach.",
+    "fix": "Add `microdepositType: 'descriptor_code' | 'amounts'` to the verification_pending outcome, taken from `microdeposits.microdeposit_type` (with 'descriptor_code' as the default for null). For 'amounts' render \"Stripe sends two small deposits to the bank account within two business days. When they arrive, enter their amounts on Stripe's verification page to finish.\" For descriptor_code keep the current text, with \"its code\" made concrete as \"the 6-digit code in its description\". When verificationUrl is null, replace \"on Stripe's verification page\" with \"on the verification page Stripe sends by email\", or treat a missing or unsafe URL as an error outcome. Extend BIL-01's cases at billing.test.tsx:73 and :88."
+   },
+   {
+    "id": "UX-3",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/billing/stripe-payment-method.tsx",
+    "line": 178,
+    "claim": "Both setup notices use @tp/ui's Alert, which defaults to role=\"alert\" (packages/ui/src/components/alert.tsx). A success or waiting message is announced assertively, as if it were an error. The notice also replaces the form (lines 269-270), so the focused 'Save payment method' button unmounts and keyboard focus falls back to <body>.",
+    "scenario": "A screen-reader user presses Save payment method. The button vanishes, focus jumps to the top of the document, and the confirmation interrupts as an alert. The user must find their place again on a long page, which matters most at 390 px.",
+    "fix": "Render both notices with `role=\"status\"` (`<Alert role=\"status\" ...>`), keeping role=\"alert\" for the destructive error Alerts. Give the notice `tabIndex={-1}` and a ref focused in an effect on mount, or focus it from onDone, so focus lands on the message that replaced the form. Assert `role=\"status\"` in billing.test.tsx:88."
+   },
+   {
+    "id": "UX-4",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/billing/stripe-payment-method.tsx",
+    "line": 191,
+    "claim": "The new link \"Open Stripe's verification page\" opens with target=\"_blank\" and does not say it opens a new tab (WCAG 3.2.5 advisory, G201). The brief asks for this to be announced. The invoice link on the billing page (page.tsx:131) has the same gap.",
+    "scenario": "A keyboard or screen-reader user follows the link and lands in a new tab with no warning. Back does nothing, and the billing page with its pending notice seems to have disappeared.",
+    "fix": "Append `<span className=\"sr-only\"> (opens in a new tab)</span>` inside the anchor, here and at page.tsx:131, which is in this PR's files. Update the expected markup at billing.test.tsx:96."
+   },
+   {
+    "id": "UX-5",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/billing/stripe-payment-method.tsx",
+    "line": 261,
+    "claim": "The button label \"Replace it with a bank account (ACH) or card\" starts with a pronoun that has no referent in the control's own name (WCAG 2.4.6). Screen readers often reach buttons out of context, for example in a list of buttons.",
+    "scenario": "In VoiceOver's form-controls rotor the administrator hears \"Replace it with a bank account (ACH) or card, button\", with nothing saying what \"it\" is.",
+    "fix": "Use \"Replace with a bank account (ACH) or card\". It still leads with the bank account and says the action replaces. Update the startLabel docstring and the assertions at billing.test.tsx:69 and :115, and change the label quoted in ADR 0073 and the design."
+   },
+   {
+    "id": "UX-6",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+    "line": 379,
+    "claim": "With nothing on file, the Plan card still offers an active Choose plan form. The worker refuses every plan until a method is on file (apps/worker/src/billing/account.ts:241), as the PR's own comment at page.tsx:329 says. The PR moved the cards for exactly this reason but left the dead end in place.",
+    "scenario": "An administrator in the empty state (billing-none-*.png after) scrolls past the payment form, picks the annual plan and presses Choose plan. They get the refusal \"add a payment method (ACH or card) before choosing a plan\" rather than seeing it before acting.",
+    "fix": "When `paymentMethod === null && billing.subscription === null`, render `<p data-plan=\"needs-method\">Add a payment method above, then choose a plan here.</p>` (with the placeholder-prices line) in place of the ActionForm. Alternatively, keep the select for price visibility and give the submit `disabled` plus that sentence. Add a BIL-03 case in billing.test.tsx, and in e2e/billing.spec.ts check the sentence before the bank account is added."
+   },
+   {
+    "id": "UX-7",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/billing/payment-method-card.tsx",
+    "line": 33,
+    "claim": "A card brand missing from CARD_BRAND is shown exactly as Stripe sends it, so snake_case codes and 'unknown' reach the screen. The test at billing.test.tsx:124 locks in \"Card ending 4242 (cartes_bancaires)\". Stripe's card.brand includes 'unknown', 'eftpos_au' and 'link'.",
+    "scenario": "A card Stripe cannot classify shows as \"Card ending 4242 (unknown)\". A Cartes Bancaires card shows \"(cartes_bancaires)\". Both break the sentence-case, no-codes copy rule the rest of the product follows through words.ts.",
+    "fix": "Fall back to `labelOf` from apps/web/src/lib/copy/words.ts and drop 'unknown'. For example: `const brand = method.label === null || method.label === 'unknown' ? null : CARD_BRAND[method.label] ?? labelOf(method.label)`. The output is then \"Cartes bancaires\" or \"Eftpos au\", or no parenthesis for unknown. Add `eftpos_au: 'eftpos Australia'` to the map, and update billing.test.tsx:124 to the readable forms."
+   },
+   {
+    "id": "UX-8",
+    "severity": "nit",
+    "file": "apps/web/src/components/billing/payment-method-card.tsx",
+    "line": 19,
+    "claim": "One card uses three names for the same thing: \"A bank account (ACH debit)\" in the description (line 64), \"A bank account (ACH)\" in the preference line (line 69) and \"ACH bank account ending 6789\" in the on-file line (via METHOD, line 19, duplicated at page.tsx:322 for the invoices' Paid column). The on-file line also lacks the words \"on file\", although the empty state says \"No payment method on file.\" It renders in the same style as the preference advice below it (all 1280 and 390 after shots), so state and guidance read alike.",
+    "scenario": "In billing-bank-1280-light.png (after), \"ACH bank account ending 6789 (Simulator test bank)\" sits directly above \"A bank account (ACH) is preferred\u2026\" in the same weight and colour. The term flips order between adjacent lines, and what is on file does not stand out from the advice.",
+    "fix": "Use one term, \"bank account (ACH)\". Set METHOD to `{ us_bank_account: 'Bank account (ACH)', card: 'Card' }`, move it to one shared export (for example in payment-method-card.tsx, imported by page.tsx), and use \"A bank account (ACH) or a card.\" in the description. Render the state as `<p className=\"font-medium\">On file: {brand} card ending in 4242</p>` / `On file: bank account (ACH) ending in 6789, Simulator test bank`, with \"ending in\" (US usage) and no double parenthesis. Leave the preference line in the regular style. Update the BIL-03 strings in billing.test.tsx."
+   },
+   {
+    "id": "UX-9",
+    "severity": "nit",
+    "file": "apps/web/src/components/billing/payment-method-card.tsx",
+    "line": 69,
+    "claim": "The replace warning covers only one of the two replacements. With a card on file it says \"Adding one replaces the card on file.\", where \"one\" is the bank account, although adding a card replaces it too. With a bank account on file the simulator shows no warning that adding a card replaces the preferred bank account. That is the switch the item most wants to avoid. Stripe mode is covered only by the button label. Showing \"A bank account (ACH) is preferred\u2026\" to someone who already has a bank account on file is noise.",
+    "scenario": "A developer or administrator on the simulator, with a bank account on file (billing-bank-*.png after), presses Add test card. The bank account is silently replaced as the default, and the page had just said a bank account is preferred.",
+    "fix": "Make the second sentence generic and show it whenever a method is on file: `{paymentMethod === null ? null : ' A new payment method replaces the one on file.'}`. When the bank account is on file, either drop the preference sentence or replace it with nothing, keeping only the replace line. Adjust BIL-03 (billing.test.tsx:111 and :131) and the ADR 0073 wording to match."
+   },
+   {
+    "id": "UX-10",
+    "severity": "nit",
+    "file": "apps/web/src/components/billing/payment-method-card.tsx",
+    "line": 74,
+    "claim": "aria-label=\"Test mode\" sits on a plain <div> with no role. ARIA 1.2 prohibits naming the generic role, so assistive technology may ignore the label. The code was moved here unchanged, but it is now in a new file this PR owns.",
+    "scenario": "A screen-reader user never hears \"Test mode\" as a region or group name, and axe's aria-prohibited-attr rule flags it in newer axe-core releases.",
+    "fix": "Add `role=\"group\"` to the div. e2e's getByLabel('Test mode') and billing.test.tsx:140 still match."
+   },
+   {
+    "id": "UX-11",
+    "severity": "nit",
+    "file": "apps/web/src/components/billing/stripe-payment-method.tsx",
+    "line": 268,
+    "claim": "Elements is created with `{ clientSecret }` only and no `appearance`. In production the Payment Element, the one screen this item is about, renders in Stripe's default blue theme. It ignores the brand's tokens (--pw-primary, --pw-focus, --pw-radius-md) and stays light when data-theme=\"dark\" is set.",
+    "scenario": "An administrator sees the PaidWhole card holding a Stripe-blue tabbed form with Stripe's focus ring and radius. In dark mode it shows a white form inside a dark card, while brand.md requires tokens for colour and --pw-focus for focus.",
+    "fix": "Build `appearance` at mount from the live tokens with no hex in the component, e.g. `const css = getComputedStyle(document.documentElement); appearance = { theme: document.documentElement.dataset.theme === 'dark' ? 'night' : 'stripe', variables: { colorPrimary: css.getPropertyValue('--pw-primary').trim(), colorText: css.getPropertyValue('--pw-fg').trim(), colorBackground: css.getPropertyValue('--pw-bg').trim(), borderRadius: css.getPropertyValue('--pw-radius-md').trim(), fontFamily: 'system-ui, sans-serif' } }`. Pass it beside clientSecret, and assert in BIL-01 that the variables come from the tokens."
+   }
+  ],
+  "checked": [
+   "Order and hierarchy: in all 12 after shots (none, card and bank; 1280 and 390; light and dark) the Payment method card comes before Plan, as the design and BIL-03 require. The before shots had Plan first.",
+   "The preference line is present in both modes and in every state. Its text matches the founder's wording exactly. \"Adding one replaces the card on file.\" appears only with a card on file, and it is true in both modes: setup_intent.succeeded and the simulator's setDefaultPaymentMethod both make the new method the customer's default.",
+   "Card brand is now capitalized (\"Visa\"; before it showed \"visa\").",
+   "390 px: every after shot wraps cleanly, with no horizontal scroll. The long \"ACH bank account ending 6789 (Simulator test bank)\" line wraps inside the card, and buttons and fields fit inside the 16 px gutter.",
+   "Dark (tokens only): no hex added in the changed components, and the new lines inherit --pw-fg. Contrast by token: Slate #526070 on white is about 6.3:1, and #A7B1C2 on #0B1626 is well above 4.5:1. Both pass for the description, the text-xs test-mode line and the AlertDescription muted text.",
+   "Heading order: the h1 page title, then CardTitle rendered as h2 for Payment method, Plan and Invoices. The move keeps the order.",
+   "Wording: sentence case throughout, with ACH as an initialism in parentheses after 'bank account'. lint:copy passes ('492 files read; the product copy keeps the brand's words'). The changed copy has no AI, owed or recovered wording. The onboarding step \"Add a payment method and choose a plan / A bank account (ACH) is preferred; a card also works.\" is plain and follows the order a plan requires, and its href still goes to the organization's billing page.",
+   "paymentElementOptions matches design decision 2: paymentMethodOrder is a fresh copy of PAYMENT_METHOD_ORDER, layout is tabs with defaultCollapsed false, and Apple Pay, Google Pay and Link are 'never'. All are valid against @stripe/stripe-js 10.1.0's PaymentWalletsOption and LayoutObject types.",
+   "Start button labels follow methodOnFile: \"Add a bank account (ACH) or card\" with nothing on file and \"Replace it with...\" with a method on file. The wording issue is in UX-5.",
+   "/home/user/ops pulled. designs/lane-b-ux-review.md does not exist yet, so it has no findings to apply. .claude/agents/ux-brand-reviewer.md has not landed either.",
+   "All 24 screenshots (12 before at 6ddd587, 12 after at 5ca2263) read and compared. The only visible changes are the card order, the description wording, the preference line and the brand capitalization. Nothing else regressed."
+  ],
+  "summary": "I found no blocking defects. The order is right: Payment method now comes before Plan in all 12 after shots, the preference line uses the founder's exact wording in both modes, card brands are capitalized, and the page holds at 390 px and in dark (tokens only). Seven should-fix findings remain. (1) The micro-deposit notice says the payment method on file stays in use when nothing is on file. (2) It also ignores Stripe's 'amounts' micro-deposit type and points to a verification page it doesn't link when the URL is refused. (3) The saved and waiting notices use role=\"alert\", and focus drops to the top of the page when the form is replaced. (4) The new-tab link doesn't say it opens a new tab. (5) The button label \"Replace it with\u2026\" starts with an unclear \"it\". (6) Choose plan is still offered with nothing on file and is then refused. (7) Unknown card brand codes are shown raw, for example \"(unknown)\" or \"(cartes_bancaires)\"; the fix is labelOf from words.ts. There are four nits: three names for the bank account on one card, the replace warning covering only one direction, aria-label on a div with no role, and the Payment Element not themed from the brand's tokens. Progress log: /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/review-ux.md."
+ },
+ "1": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "S1",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/billing/payment-method-card.tsx",
+    "line": 82,
+    "claim": "The three simulator forms now share one request key. The page passes a single `<FormKeys />` element object as `formKeys` (page.tsx:66), and the card puts that same object into three ActionForms (payment-method-card.tsx:82, 89, 95). React Flight deduplicates a repeated element object: it renders FormKeys once and serializes the second and third uses as path references to the first. Before this PR each form had its own `<FormKeys />` and so its own randomUUID. I confirmed this with Next 16.4.1's compiled react-server-dom-webpack server (script at /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/rsc/t.cjs). FormKeys ran once, and forms 2 and 3 got \"$0:props:children:1:props:children:0:props:children:0\", the same requestKey input.",
+    "scenario": "mutation_request is unique on (user_id, request_key) across all routes (apps/web/src/lib/http/invoke.ts:231-236). In test mode an administrator submits 'Add test bank account (ACH)' and, before the redirect re-renders the page (a double submit, a slow network, or a second click), submits 'Add test card' or 'Settle pending test ACH payments'. The second action claims a key that is already used and returns {status:'duplicate'}, so it silently does nothing. That breaks ADR 0017's one-key-per-rendered-form rule. BIL-03's test hides the problem: it passes one static input as formKeys and only counts three name=\"requestKey\" occurrences (billing.test.tsx:36, 140), never checking that the keys differ. The impact is limited to the local simulator; the Stripe path does not use formKeys.",
+    "fix": "Stop passing one element into several forms. Either make PaymentMethodCard render `<FormKeys />` itself inside each ActionForm (it is already a server component and can import ../form-keys; tests can mock that module), or change the prop to `formKeys: () => ReactNode` and call `{formKeys()}` in each form so each gets a distinct element object. Then make the BIL-03 test pass a factory that returns a different key on each call and assert that the three requestKey values are pairwise distinct."
+   },
+   {
+    "id": "S2",
+    "severity": "should-fix",
+    "file": "packages/billing/src/stripe.ts",
+    "line": 187,
+    "claim": "It is unverified that Stripe accepts clearing a subscription's default with `default_payment_method: ''`, and nothing in CI tests it. In stripe@23.0.0, SubscriptionUpdateParams.default_payment_method is typed as plain `string` (esm/resources/Subscriptions.d.ts:1974), while the neighbouring `default_source` is `Emptyable<string>` (line 1978). The SDK generates Emptyable from the OpenAPI spec wherever '' unsets a field, so the spec does not mark this field as unsettable. '' type-checks only because it is a string. If Stripe answers with its usual \"You passed an empty string for 'default_payment_method' ... cannot be unset\" invalid_request_error, the call fails. The unit test only checks the recorded arguments on a mock (stripe.test.ts:127-131).",
+    "scenario": "Every subscription created before this PR used save_default_payment_method 'on_subscription', so it carries the card as its own default. A card customer adds a bank account. In receiveWebhook (apps/worker/src/billing/events.ts:213), customers.update succeeds, then subscriptions.update(sub, {default_payment_method: ''}) throws a BillingProviderError. The webhook returns 5xx and the event is never recorded. Stripe caches the 400 under the idempotency key `default-payment-method:<evt>:subscription:<sub>` and replays it on every retry for 3 days. Meanwhile the page shows the bank account (the customer default) while renewals keep charging the card, which is the exact failure ADR 0073 sets out to remove, and the webhook endpoint keeps failing.",
+    "fix": "Use an update whose semantics are certain. Set the subscription's default to the new method (`subscriptions.update(id, { default_payment_method: input.paymentMethodRef }, ...)`) and skip subscriptions whose default already equals it, comparing against the string or `.id`. The customer default and the subscription default then always agree, and the same retry and idempotency behavior holds. Adjust the ADR 0073 wording ('nothing else pins one') and BIL-02 to match. If '' is kept instead, record a Stripe test-mode run in the PR showing the update succeeds and that the subscription's `default_payment_method` reads null afterwards, before merge, not only in the post-deploy runbook step."
+   },
+   {
+    "id": "S3",
+    "severity": "should-fix",
+    "file": "apps/web/src/lib/routes/billing-routes.db.test.ts",
+    "line": 257,
+    "claim": "BIL-04 never exercises what this PR changes, so it would pass unchanged on the base commit. It runs only on the local simulator, and packages/billing/src/local.ts is not in the diff: its setDefaultPaymentMethod sets only customer.defaultPaymentMethod (local.ts:573-581), and the simulator has no subscription-level default. The test also checks that the bank account pays an audit invoice, which always used the customer default. It does not check a subscription renewal or a retry of the subscription's invoice, where ADR 0073 says the bug was. The matrix row's 'a new bank account takes over' therefore holds only for audit invoices, and the stripe.ts change is covered only by the mocked BIL-02 unit test.",
+    "scenario": "Revert stripe.ts to keep save_default_payment_method 'on_subscription' and drop the clearing loop. BIL-04 still passes, because neither the simulator nor the test models a subscription's own default. The regression this PR exists to prevent, renewals charging the old card, would go uncaught by any db or e2e test.",
+    "fix": "Either model the subscription-level default in LocalBillingProvider (save it on the subscription when the first invoice is paid under 'on_subscription', make attempt() prefer it over the customer's, and clear or replace it in setDefaultPaymentMethod as stripe.ts does), or narrow BIL-04's matrix wording to audit invoices. In either case, extend BIL-04: after adding the bank account, `advance()` the simulator past the annual period (or retry the subscription invoice) and assert that the renewal invoice has paymentMethodKind 'us_bank_account'. Confirm the test fails without the fix."
+   },
+   {
+    "id": "S4",
+    "severity": "nit",
+    "file": "apps/web/src/components/billing/stripe-payment-method.tsx",
+    "line": 88,
+    "claim": "The verification notice always reads 'Stripe sends a small deposit ... enter its code', but setupOutcome accepts any verify_with_microdeposits next action. Stripe also uses microdeposit_type 'amounts' (two deposits whose amounts the customer enters), and the test fixture even carries microdeposit_type.",
+    "scenario": "A bank Stripe verifies by amounts shows a notice telling the administrator to look for one deposit and a code. They see two deposits and no code, and may abandon verification.",
+    "fix": "Carry microdeposits.microdeposit_type in the verification_pending outcome. Render 'enter its code' for 'descriptor_code' and 'enter the two amounts' for 'amounts', and add both cases to the BIL-01 test."
+   }
+  ],
+  "checked": [
+   "Read the full diff for origin/claude/build-platform...HEAD (27 files), plus ADR 0073, the runbook changes, the design review JSON and .claude/agents/security-reviewer.md",
+   "Ran the packages/billing and apps/web/src/components/billing unit tests under the lock: 6 files, 54 tests passed. Ran the billing db test (billing-routes.db.test.ts): 7 tests passed",
+   "Retry path of setDefaultPaymentMethod: customers.update reuses the caller's key, subscriptions.list is a GET and needs no key, and each subscription update gets its own `<key>:subscription:<id>` key (about 80 chars, under Stripe's 255). On a webhook retry after a partial failure, subscriptions already cleared read null and are skipped, so a retry finishes the job (if Stripe accepts the clear at all; see S2). Pagination stops on has_more false or an empty page. canceled and incomplete_expired are skipped; list excludes canceled by default anyway. Rate is one update per live subscription, typically one per organization",
+   "stripe@23 types: save_default_payment_method 'off' is valid, and InvoiceCreateParams.payment_settings.payment_method_types takes a mutable copy of the array. Audit invoices limited to us_bank_account and card cover every method the customer can have as default",
+   "Browser bundle: @tp/billing/types has only `import type { Cents }`, erased at compile, so no Stripe SDK or node:crypto reaches the client. '@tp/billing' was added to transpilePackages. payment-method-card.tsx imports PaymentMethodSummary as a type only. types.test's regexes hold the module to type-only imports",
+   "hosted_verification_url: httpsUrl allows only an https: URL to become an href, and javascript: and malformed values give null. The value comes from Stripe.js's SetupIntent response. The link has rel=\"noreferrer noopener\" and target=_blank. Notices render Stripe's error message as text only, and no identifiers or PHI appear in them",
+   "@stripe/stripe-js 10.1.0 accepts paymentMethodOrder, tabs layout and wallets.link 'never'",
+   "CSRF: the Stripe form still sends the server-rendered pageCsrfToken and a fresh crypto.randomUUID requestKey to the unchanged setup-intent route. The simulator forms still carry the CSRF field, but they now share a request key (S1)",
+   "No-PHI billing role (ADR 0050, 0055): no new reads, logs, URLs or error text with identifiers. Every route is unchanged: phi:false, permission 'organization.billing', assertManagesBilling in the handler plus the database check, and audit actions as before. The webhook still fails closed (5xx) on a provider error so Stripe retries",
+   "BIL-01 to BIL-03 assertions match their matrix rows; BIL-04 does not prove the subscription-default change (S3)",
+   "Recorded progress in /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/review-security.md"
+  ],
+  "summary": "Overall the PR is sound on authorization, PHI, CSRF, the browser bundle and the verification-link href. It needs three should-fixes before merge and has one nit. S1: the payment-method-card refactor passes one `<FormKeys />` element into three simulator forms. React Flight renders a repeated element once, which I confirmed with Next 16.4.1's flight server, so all three forms now share one request key and a second submit before the redirect comes back as 'duplicate'. S2: the subscription-clearing loop sends `default_payment_method: ''`. stripe@23 types that field as plain string, not Emptyable, and nothing proves Stripe accepts the clear. If Stripe refuses it, every setup_intent.succeeded for a pre-existing subscription would make the webhook fail on every retry, and the renewal would keep charging the card. Setting the subscription's default to the new method avoids the question. S3: BIL-04 runs on the unchanged simulator, which has no subscription-level default, and checks an audit invoice rather than a renewal, so it would pass without the fix. Nit S4: the micro-deposit notice copy is wrong for Stripe's 'amounts' verification. All tests pass (54 unit, 7 db)."
+ }
+}
