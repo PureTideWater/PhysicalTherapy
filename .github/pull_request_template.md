@@ -1,8 +1,8 @@
 <!--
 The build fills in every section before it asks for the founder's approval (docs/adr/0063; the change-management
 policy, rule 1). Write "None" rather than leave a section out. No PHI, no real file and no document text here: name
-records by their IDs. GitHub offers this template only from main, which has none until launch; until then the build
-copies it into every pull request's description itself (CLAUDE.md).
+records by their IDs. GitHub offers this template from the default branch, which is the build branch until launch (the
+founder's F1); the build still fills it into every pull request's description itself (CLAUDE.md).
 -->
 
 ## What changes

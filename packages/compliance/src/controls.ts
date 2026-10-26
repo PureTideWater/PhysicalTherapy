@@ -257,6 +257,9 @@ export const CONTROLS: readonly Control[] = [
     hipaa: ['164.308(a)(1)(ii)(B)'],
     evidence: [
       { kind: 'ci_job', workflow: CI, step: 'pnpm audit --prod', what: 'the dependency audit on every pull request' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm audit --audit-level=high', what: 'the audit of every dependency, development tooling included, at high or worse, on every pull request (the static job)' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm actions:check', what: 'every action pinned to its release’s commit, its inputs declared and the release’s nested caches off, on every pull request and push (the static job; tools/check-action-pins)' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm toolchain:check', what: 'the pinned pnpm without advisories and every version the lockfile adds at least three days old or a dated exclude, on every pull request and push (the static job; tools/check-toolchain)' },
       { kind: 'ci_job', workflow: CI, step: 'pnpm licenses:check', what: 'the license allowlist on every pull request (the static job)' },
       { kind: 'ci_job', workflow: CI, step: 'aquasecurity/trivy-action', what: 'the container scan of both images on every pull request (the images job)' },
       { kind: 'ci_job', workflow: RELEASE, step: 'sbom-', what: 'a software bill of materials per release image' },
