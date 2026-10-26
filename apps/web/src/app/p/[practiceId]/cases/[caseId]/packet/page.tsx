@@ -8,7 +8,8 @@ import { FormKeys } from '../../../../../../components/form-keys';
 import { utc } from '../../../../../../components/format';
 import { DraftBadge, HandEntryNotice, ModelNoticeAlert, draftOf } from '../../../../../../components/models/display';
 import { Countdown } from '../../../../../../components/packets/countdown';
-import { CalculationTable, Citation, DeadlineChip, DeadlineSummary, EvidenceList, Hash, InterestSection, LineSchedule, Sources, StoredNarrative } from '../../../../../../components/packets/display';
+import { CalculationWords } from '../../../../../../components/packets/calculation-words';
+import { Citation, DeadlineChip, DeadlineSummary, EvidenceList, Hash, InterestSection, LineSchedule, Sources, StoredNarrative } from '../../../../../../components/packets/display';
 import { ExportRequestForm, ExportStatus } from '../../../../../../components/packets/export-status';
 import { PricingNowPanel } from '../../../../../../components/packets/pricing';
 import { type AttachableOption, VersionForm } from '../../../../../../components/packets/version-form';
@@ -159,13 +160,18 @@ function ExportBlocked({ version }: { readonly version: VersionView }) {
  * that asks again every few seconds), trying again, refused with its fix, or failed; a version is written
  * through one form whose fields every button sends; and the drafter sees the Approve button disabled with the
  * reason, next to Request approval.
+ *
+ * Combined audit #38 (docs/adr/0072): each line's calculation reads in the payer's PDF's words, with the fee-schedule
+ * worksheets; each trace's SHA-256 and the words version stay below them, outside the payer's words. The approve and
+ * export forms post the words version the page was rendered with, so a step asked from a page another renderer wrote
+ * is refused. The schedule links a line to its trace page only for a role that opens it.
  */
 export default async function PacketPage(props: Props) {
   const page = await loadPage(packetPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="A billing manager, an analyst or a firm principal builds packets; open the case to see its state." />;
   }
-  const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice, canSetContact } = page.data;
+  const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice, canSetContact, canOpenLines, wordsVersion } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const version = builder.version;
   const approval = builder.approval;
@@ -271,7 +277,7 @@ export default async function PacketPage(props: Props) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <LineSchedule content={version.content} practiceId={practiceId} />
+              <LineSchedule content={version.content} practiceId={practiceId} canOpenLines={canOpenLines} />
             </CardContent>
           </Card>
           <Card role="region" aria-label="Deadline">
@@ -292,10 +298,26 @@ export default async function PacketPage(props: Props) {
             <Card role="region" aria-label="Calculation">
               <CardHeader>
                 <CardTitle>Calculation per line</CardTitle>
-                <CardDescription>Each line’s steps and its one rounding, copied from the line’s stored trace (the unrounded amount kept beside the rounded one). The patient share is shown and never counted.</CardDescription>
+                <CardDescription>
+                  Each line’s calculation in the words the payer’s copy prints, worded by code from the line’s stored trace: each step, the fee schedule worksheet, the one rounding with the unrounded amount kept beside it, and the
+                  patient share, reported and never subtracted.
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <CalculationTable content={version.content} />
+              <CardContent className="flex min-w-0 flex-col gap-4">
+                <CalculationWords calculation={version.calculationWords} />
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground" data-internal="calculation">
+                  <p>Not in the payer’s copy: each line’s trace SHA-256, and the words version that worded them.</p>
+                  <ul className="flex flex-col gap-0.5" aria-label="Trace SHA-256 of each row">
+                    {version.content.lines.map((line) => (
+                      <li key={line.row}>
+                        Row {line.row}: <Hash value={line.calculation.trace_sha256} label={`Row ${String(line.row)} trace SHA-256`} />
+                      </li>
+                    ))}
+                  </ul>
+                  <p>
+                    Words version <Hash value={wordsVersion} label="Words version" />
+                  </p>
+                </div>
               </CardContent>
             </Card>
           ) : null}
@@ -422,6 +444,7 @@ export default async function PacketPage(props: Props) {
                     <input type="hidden" name="caseId" value={item.id} />
                     <input type="hidden" name="versionId" value={version.id} />
                     <input type="hidden" name="versionSha256" value={version.contentSha256} />
+                    <input type="hidden" name="wordsVersion" value={wordsVersion} />
                   </ActionForm>
                 ) : approval.status === 'blocked' ? (
                   <DisabledApprove describedBy="approval-blocked-reason" />
@@ -522,6 +545,7 @@ export default async function PacketPage(props: Props) {
                           <input type="hidden" name="practiceId" value={practiceId} />
                           <input type="hidden" name="caseId" value={item.id} />
                           <input type="hidden" name="versionId" value={version.id} />
+                          <input type="hidden" name="wordsVersion" value={wordsVersion} />
                         </ExportRequestForm>
                       ) : (
                         <p data-export="ready">Ready to export. A billing manager or firm principal exports the packet: the export holds line-level PHI.</p>
