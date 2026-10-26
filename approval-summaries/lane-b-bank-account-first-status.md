@@ -2,8 +2,8 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC.*
 
-- **Stage:** design reviewed (wf_a54e8809-a7e, 2026-10-26 ~00:40: build with changes, no migration; F1 to F8 accepted and folded in); before shots taken (12, base 6ddd587, ~00:33); builders next.
-- **Branch / PR:** `co-001/bank-account-first`, cut from 6ddd587, worktree /home/user/bank-account-first / no PR yet.
+- **Stage:** built (wf_4c507948-d3b, ~00:45-01:10) and pushed; draft PR #47 opened ~01:15 with its description from the template (read back byte for byte) and subscribed; after shots and the two adversarial reviews next.
+- **Branch / PR:** `co-001/bank-account-first`, cut from 6ddd587, worktree /home/user/bank-account-first / #47 (draft), head 5ca2263.
 - **Machine:** setup-container.sh printed OK; `gh api user` is PureTideWater.
 - **Migration:** none (confirmed at design: presentation and three Stripe request parameters; `packages/db` untouched).
 - **Reserved numbers:** test-matrix BIL-01 to BIL-04 (the matrix has no billing series at 6ddd587, so the reserved IDs
@@ -23,5 +23,11 @@
 - **Improvement found:** the card brand shows lowercase ("visa") on the page; capitalized in this PR.
 - **Proposal (outside this PR):** show a bank account still waiting on Stripe's micro-deposit on later visits (needs the
   provider to list open SetupIntents).
-- **CI:** none yet.
-- **Next:** builders in /home/user/bank-account-first, then the draft PR.
+- **CI:** running on 5ca2263.
+- **Local checks before the first push:** typecheck 22 projects; lint 0/0; lint:copy, lint:logs pass; unit 5,006 passed,
+  3 skipped, 2 failed in tools/screening-capacity/watched.test.ts (the new methods.ts was not in #42's watched list),
+  fixed by moving the order into `types.ts`, which the list already holds (affected files then 397/397); billing db
+  test 7/7 (BIL-04 included).
+- **Build choice:** the shared order lives in `@tp/billing/types` (not a new `methods.ts`), so no #42 file
+  (tools/screening-capacity/watched-paths.txt) changes; `PaymentMethodKind` is now derived from it.
+- **Next:** after shots; the security and UX/brand reviews (workflow); the fix round.
