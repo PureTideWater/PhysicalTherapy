@@ -313,6 +313,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'Through the routes on the simulator, an organization with only a card on file chooses the annual plan and its invoice is paid by card, and an audit invoice issued to it is paid by card; once it adds a bank account, the next open invoice it pays is charged to the bank account; and on the simulator itself, a renewal of its plan is charged to the bank account, even when the subscription carried the card as its own default',
   },
+  {
+    id: 'BIL-05',
+    title: 'One account standing from the record and billing',
+    assertion:
+      '`standingKind` and `accountStanding` give good only for an active record in good billing standing; a suspended record reads "Suspended by PaidWhole" whatever billing\'s standing, with no date, a support ticket (`/support?from=billing`) as its next step and the note that changing the plan or payment method does not lift it; a closed record reads "Closed" whatever else, takes no new plan (the plan route refuses it before Stripe is asked) and offers the ticket to reopen it; an active record suspended for nonpayment names billing\'s date and the invoice holding it (`billing_standing.invoice_id`, even past the newest 24), and says a card payment restarts runs at once and a bank (ACH) payment once the bank settles it; past due names its date and the day runs stop; beside a suspension or closure, an unpaid invoice is named with what it holds and paying it is a second step; a firm is never told runs have stopped or will, and its unpaid invoice reads past due; every non-good standing has a notice and a next step; the page draws one badge from the label, one alert and one `data-standing`, with no second date; the console shows and orders by the same kind',
+  },
+  {
+    id: 'BIL-06',
+    title: "A suspended organization's billing page",
+    assertion:
+      'With the organization suspended by PaidWhole and its billing in good standing, its administrator\'s billing page shows "Suspended by PaidWhole", never "In good standing", the notice, a link to open a support ticket (`/support?from=billing`) that opens the form on the Billing category, and the note that payment does not lift it; the page passes axe; the seed holds SYNTHETIC SUSPENDED GROUP suspended for this journey alone, so nothing suspends or reinstates an organization another journey shares',
+  },
   { id: 'CI-01', title: 'One gate over every CI job', assertion: '`all green` needs every other ci.yml job and passes only when each succeeded; a failed, skipped or cancelled job fails it' },
   { id: 'CI-02', title: "Every route's tests in exactly one of twelve files", assertion: 'Each registered route is in one file; the twelve files exist and each runs its own index' },
   { id: 'CI-03', title: 'A route snapshot in one statement', assertion: 'The folded snapshot equals the per-table snapshot on two worlds and after an update' },
