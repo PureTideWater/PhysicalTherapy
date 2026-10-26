@@ -53,7 +53,8 @@ function PracticeSwitcher({ shell }: { readonly shell: Shell }) {
   }
   return (
     <details className="relative">
-      <summary className={cn(SUMMARY, 'border px-2 font-medium sm:px-2.5')} aria-label="Practice switcher">
+      {/* Named by what it shows, the practice's name first (WCAG 2.5.3, Label in Name; CI-19). */}
+      <summary className={cn(SUMMARY, 'border px-2 font-medium sm:px-2.5')} aria-label={`${current?.name ?? 'Choose a practice'}, practice switcher`}>
         <span className="max-w-[5rem] truncate sm:max-w-[14rem]">{current?.name ?? 'Choose a practice'}</span>
         <Chevron />
       </summary>
@@ -81,10 +82,14 @@ function AccountMenu({ shell }: { readonly shell: Shell }) {
   const initial = shell.email.slice(0, 1).toUpperCase();
   return (
     <details className="relative">
-      <summary className={cn(SUMMARY, 'px-1 sm:px-2')} aria-label="Account menu" title={shell.email}>
-        <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-pill bg-bg-inset text-xs font-semibold text-fg">
-          {initial}
-        </span>
+      {/* Named by what it shows, the address first (WCAG 2.5.3, Label in Name; CI-19). The initial is drawn as generated
+          content, not a text node, so the control's visible text is the address alone wherever the address shows. */}
+      <summary className={cn(SUMMARY, 'px-1 sm:px-2')} aria-label={`${shell.email}, account menu`} title={shell.email}>
+        <span
+          aria-hidden="true"
+          data-initial={initial}
+          className="flex size-7 items-center justify-center rounded-pill bg-bg-inset text-xs font-semibold text-fg before:content-[attr(data-initial)]"
+        />
         <span className="hidden max-w-[12rem] truncate md:inline">{shell.email}</span>
         <Chevron className="hidden sm:block" />
       </summary>

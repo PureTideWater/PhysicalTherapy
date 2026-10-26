@@ -25,13 +25,24 @@ docs/runbooks/github-governance.md, step 4A), has required them from GitHub Acti
 | --- | --- | --- |
 | `static` | the dependency audits (`pnpm audit --prod`, and `--audit-level=high` over every dependency); the action pins and the toolchain, against the run's base (`pnpm actions:check`, `pnpm toolchain:check`; networked); the secret scan of the commits the run checks; the fixture check; the content checker; published releases and prompt versions unchanged; the engine freeze (pull requests); `pnpm synth --all` and its clean diff; `pnpm typecheck`; `pnpm lint:logs`; `pnpm test:golden`; `pnpm synth --large` (the 10,000-claim remittance the oracle reads) and `pnpm test:oracle`; `pnpm licenses:check` | 15 min |
 | `lint` | `pnpm lint`, ESLint in three memory-bounded groups | 15 min |
-| `unit` | Chromium, the pinned gitleaks (the pre-push hook's tests run it), the engine freeze's base, `pnpm test` (with coverage) | 20 min |
-| `db (k/N)` | its own Postgres from `docker-compose.yml`, Chromium, `pnpm db:migrate && pnpm test:db --shard=k/N`, then "Files this shard ran" | 20 min |
+| `unit` | Chromium (the cached system packages verified first) and its build check, the pinned gitleaks (the pre-push hook's tests run it), the engine freeze's base, `pnpm test` (with coverage) | 20 min |
+| `db (k/N)` | its own Postgres from `docker-compose.yml`, Chromium and its build check, `pnpm db:migrate && pnpm test:db --shard=k/N`, then "Files this shard ran" | 20 min |
 | `domain model` | its own Postgres from `docker-compose.yml`; on a pull request "Changes since the last approved domain model"; `pnpm db:migrate`; `pnpm db:domain-model --check --strict --require-approval` | 10 min |
 | `build` | `pnpm build` (web and worker); the web build stamped and kept as `web-build`; `pnpm cdk:diff` | 15 min |
-| `e2e (k/M)` | after `build`: its own Postgres from `docker-compose.yml`, Chromium, the downloaded build, `pnpm test:e2e --shard=k/M`; its report kept as `playwright-<k>` | 25 min |
-| `images` | both images built from their Dockerfiles and scanned by Trivy | 20 min |
+| `e2e (k/M)` | after `build`: its own Postgres from `docker-compose.yml`, Chromium and its build check, the downloaded build, `pnpm test:e2e --shard=k/M`; in `e2e (1/M)`, the baseline step; its report kept as `playwright-<k>` | 25 min |
+| `images` | both images built from their Dockerfiles as archives and scanned by Trivy; the worker image's headless shell held to `browser.json` | 20 min |
 | `all green` | every job's result, to its log and its summary | 5 min |
+
+Every job runs on `ubuntu-26.04` but the release's capacity chain (`release.yml`'s `build`, `capacity`, `push` and
+`report`; `release-dry-run.yml`'s `build` and `push`; `screening-capacity.yml`'s `capacity`), which stays on
+`RELEASE_RUNNER.label`, `ubuntu-24.04` (the founder's F5; docs/adr/0066, Part 3); `screening-capacity.yml`'s dispatch
+input alone may run that job once on 26.04, as an advisory probe. `workflows.test.ts` holds every `runs-on`. No job uses
+`ubuntu-latest`, which moves to 26.04 in November 2026 (runner-images #14748).
+
+In every job that installs Chromium, `node tools/ci/browser-build.ts` follows the install and holds both builds, every
+file of them, to `apps/web/e2e/browser.json` before any test runs or any cache is saved; the steps after it run when the
+install succeeded, whatever the check said, so a red check still shows the suite's verdict ("Upgrading the browser",
+below).
 
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
 the others' verdicts. Every verdict a job writes to its summary it also writes to its log, which is what the verifier
@@ -188,10 +199,12 @@ alone, then the others), and the capacity measurement refuses a 2-CPU runner (do
 | The pnpm store | setup-node's own | every job | every job |
 | tsc's build information, `node_modules/.cache/tsc` | `tsc-v1-<os>-<lockfile hash>-<commit>` | `static`, when its typecheck ran | `static`, by the prefix with the lockfile's hash, then any |
 | Each db shard's test durations, `node_modules/.vite/vitest` | `vitest-db-v1-<os>-<N>-<k>-<commit>` | each `db` shard, whatever its result | the same shard, by prefix |
-| Playwright's browsers, `~/.cache/ms-playwright` | `playwright-v1-<os>-<hash of playwright-core's browsers.json>` | `unit`, on a miss | `unit`, every `db` and `e2e` shard, by the exact key |
+| Playwright's browsers, `~/.cache/ms-playwright` | `playwright-v1-<os>-<hash of playwright-core's browsers.json>` | `unit`, on a miss, after the browser build check passed | `unit`, every `db` and `e2e` shard, by the exact key |
+| The browser jobs' system packages, `$RUNNER_TEMP/apt-archives` | `apt-v1-<ImageOS>-<ImageVersion>-<hash of apps/web/e2e/browser.json>`, from the `runner-image` step's `key` and `os` outputs; restore-keys `apt-v1-<ImageOS>-<ImageVersion>-`, then `apt-v1-<ImageOS>-` | `unit`, on a miss (`tools/ci/apt-archives.sh collect`); `screening-capacity.yml`'s `capacity`, on a miss, under its own `ubuntu24` key | `unit`, every `db` and `e2e` shard, `large-zip`, `screening-capacity.yml`'s `capacity`; each file verified before apt sees it (`tools/ci/apt-archives.sh verify`) |
 
-A run restores its own branch's caches and the default branch's, and only push runs on the build branch write the base
-branch's, so the first pull request after a CI change runs cold. Under F1 (a) the build branch is the default branch
+A run restores its own branch's caches and the default branch's. A pull request's caches are scoped to its own ref, and
+the default branch's are written only by runs of the build branch's own code (push, schedule, dispatch), so the first
+pull request after a CI change runs cold. Under F1 (a) the build branch is the default branch
 until launch, so every branch's runs, and every tag's, may restore what its push runs saved; `release.yml` therefore
 restores none, and builds or downloads everything its attested report rests on in its own run (docs/adr/0062). A cache only saves time: tsc compares every input's
 hash, the durations only order a shard's files, whose membership the paths alone fix, and the browsers' key is the
@@ -199,8 +212,83 @@ list of builds the installed Playwright pins, whose install fetches any build mi
 fetches only the system libraries; in run 40166129200, whose seven installs took 18 to 29 seconds, the browsers'
 download was about 10 of `e2e (1/2)`'s 24). The image scans keep no cache: each downloads Trivy's vulnerability
 database, the data its verdict is made from, into the runner's temporary directory, outside the checkout the worker
-image is then built from. To clear one:
+image is then built from.
+
+The system packages' cache exists because `playwright install --with-deps` fetches Chromium's libraries and fonts from
+Ubuntu's mirror one package at a time, and about one install in nine stalled there (10 of 92 installs over 60 s, up to
+612 s, in the 14 ci.yml runs before it; run 40226881568 spent 609 s of `db (4/4)`'s 13 minutes on 25.9 MB). apt takes a
+file already in its archive directory as downloaded when its size matches the index, without hashing it, so a restored
+file is never handed to apt as it is: `apt-archives.sh verify` runs `apt-get update` (the signed indexes, fresh), reads
+each file's package, version and architecture from its name, and copies it into `/var/cache/apt/archives/` only when its
+SHA-256 equals the index's for that exact version; any other file (changed, truncated, or a version the index no longer
+lists) is deleted and apt downloads that package. It prints the counts kept and discarded, and fails only when apt does.
+It also writes `/etc/apt/apt.conf.d/90paidwhole-keep-archives` (`APT::Keep-Downloaded-Packages "true";`), so what the
+install downloads stays for `collect`, which warns when it finds no file. The key moves with the runner image and with
+the browser build, and a security update is a new version, which apt fetches and the next miss in `unit` saves. The
+cache can only save time: every file apt uses is one the signed index names. To clear one:
 `gh cache list --key tsc-v1-` and `gh cache delete <id>`.
+
+## Upgrading the browser
+
+A Playwright upgrade (Dependabot's weekly `browser-tests` group, or by hand) brings a new Chrome for Testing build, and
+every `browser-tests` pull request is red on the browser build check until a person runs this procedure (docs/adr/0058;
+docs/runbooks/dependency-upgrades.md). The check's message reads "The headless shell is <found version> (revision
+<found>, tree SHA-256 <found>, binary SHA-256 <found>), and browser.json records <expected version> (revision
+<expected>, …)", and the same for Chromium. Every later step of the job still ran, so the same run shows whether a
+journey broke and how the baselines moved: read those failures as the new version's, not the check's.
+
+**What `browser.json` records.** `apps/web/e2e/browser.json` holds the `revision` and `browserVersion` the installed
+playwright-core's `browsers.json` must pin, and, for each build (`chromium-headless-shell`, which renders the baselines
+and prints the worker's PDFs, and `chromium`, which `playwright.config.ts` probes for): `dir` and `path` (the build's
+directory and binary under `chromium_headless_shell-<revision>` or `chromium-<revision>`), and six hashes in all, three
+per build:
+- `treeSha256`, what CI checks: the SHA-256 of the lines `"<sha256>  <path>\n"` of every regular file under `dir`,
+  sorted by path bytes, which is exactly
+  `cd <revision folder> && find <dir> -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum`;
+  the lines themselves are committed as `apps/web/e2e/browser-builds/<dir>.sha256`, whose own SHA-256 is `treeSha256`,
+  so a failing check names the files that differ;
+- `sha256`, the binary's, named in the message;
+- `zip` and `zipSha256`, Google's Chrome for Testing zip and its SHA-256: the local layout's pin, which
+  `setup-container.sh`'s `CFT_BUILDS` rows equal.
+
+`node tools/ci/browser-build.ts` checks the builds Playwright installed (under `PLAYWRIGHT_BROWSERS_PATH`, else
+`~/.cache/ms-playwright`); `--image <ref>` checks a built worker image's headless shell inside the image; `--list`
+prints every file's line of each build it found.
+
+**The procedure,** in the upgrade's own pull request:
+1. **Lay the new build out locally.** Run `setup-container.sh` with the worktree as an argument: it lays out every
+   revision the worktree's playwright-core pins from the pinned zips in `CFT_BUILDS`, and fails naming a revision that
+   has no row (add the row: the version, both zips and their SHA-256s from
+   `storage.googleapis.com/chrome-for-testing-public/<version>/linux64/`). By hand: download
+   `chrome-linux64.zip` and `chrome-headless-shell-linux64.zip`, check their SHA-256s, unzip them into
+   `$PLAYWRIGHT_BROWSERS_PATH/chromium-<revision>/` and `$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-<revision>/`,
+   and touch `INSTALLATION_COMPLETE` and `DEPENDENCIES_VALIDATED` in each of the two folders.
+2. **Record it.** In `browser.json`, the new `revision` and `browserVersion`; for each build, the zips' SHA-256s,
+   the file list (`cd "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-<revision>" && find chrome-headless-shell-linux64
+   -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > <repo>/apps/web/e2e/browser-builds/chrome-headless-shell-linux64.sha256`,
+   and the same for `chrome-linux64` under `chromium-<revision>`), `treeSha256` as that file's `sha256sum`, and `sha256`
+   as the binary's line in it. `node tools/ci/browser-build.ts` then passes locally.
+3. **Regenerate the baselines** with `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts
+   --update-snapshots=all` (`=all` rewrites every snapshot; Playwright 1.64 renamed the bare flag's modes), then run
+   it again: `git status` must be clean after the second.
+4. **Fix what new rules find.** A new axe release can enable a rule (4.14.0 enabled `label-content-name-mismatch`,
+   WCAG 2.5.3): every journey's `expectAccessible` runs it, so fix the finding in the page, not in the scan.
+5. **Read CI's baseline step.** `e2e (1/M)` removes the seven baselines, regenerates them from nothing with
+   `--update-snapshots=all --retries=0` on CI's runner, requires seven written files and a clean
+   `git diff --exit-code` over `apps/web/e2e/brand.spec.ts-snapshots`, and prints the seven SHA-256s. On a difference
+   it fails and prints each changed picture as a `path base64` line: decode it (`base64 -d > <path>`) and commit CI's
+   bytes, since CI is where the comparisons run, and record the local host's disagreement in ADR 0058. The step runs on
+   every pull request and every push run, whatever changed, because application code draws the pictures too.
+6. **If CI's browser differs from Google's.** CI downloads from Playwright's mirror (`cdn.playwright.dev`), whose bytes
+   are proved equal to Google's only by CI's own check. If the check fails on the first run with the new record, take
+   `treeSha256`, `sha256` and the file lists from the check's output (`--list`), keep the zip fields as the local pin,
+   and record it in ADR 0058 as a finding against "Google's build renders as Playwright's".
+7. **Inspect every picture** before the merge: each old and new baseline at full resolution, the changed pixels counted
+   exactly and under the journey's own comparator, the changed box cropped (old, new, difference), and ADR 0058's
+   brand points checked on each new image (the lockup and keystone, the brand colours, the faces, the seal and its
+   definition on the with-seal cover, a blank Paper foot on the without-seal cover). For the 1.64.1 upgrade an
+   adversarial visual-inspection agent did this and the pull request links its private gallery.
+8. Commit the manifests, the lockfile, `browser.json` with its lists, the baselines and any fix together.
 
 ## Running the same checks locally
 
