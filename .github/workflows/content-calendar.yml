@@ -1,0 +1,93 @@
+name: content-calendar
+
+# The content calendar (audit #59; docs/adr/0071; docs/runbooks/content-updates.md): every day it reads the calendar
+# (packages/rules/src/calendar.ts), the newest published release's COVERAGE.md, the prepared releases and the drafts,
+# and the public source pages each entry names, and opens one issue labelled content-due per finding not already open
+# under the same title: content that ends within 45 or 14 days or has ended, a period due with no draft, an open-ended
+# content whose next files are overdue, a source page whose files changed or were never recorded, and calendar entries
+# never reviewed or reviewed more than 13 months ago. The check job only reads (contents: read, no secrets); the notify
+# job alone writes issues, with the job's own token, checks nothing out and runs no repository code, every value
+# reaching its shell through env. Issues hold only calendar data, release numbers, public page addresses and plain file
+# names seen on those pages (docs/adr/0071). A pull request runs the check alone. Not a required check.
+on:
+  schedule:
+    # Daily. Schedules fire only from the default branch (the founder's ruling F1 (a)).
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+  push:
+    branches: [claude/build-platform]
+    paths:
+      - packages/rules/src/calendar.ts
+      - packages/rules/src/records.ts
+      - tools/content-calendar/**
+      - content/**
+      - .github/workflows/content-calendar.yml
+  pull_request:
+    paths:
+      - packages/rules/src/calendar.ts
+      - packages/rules/src/records.ts
+      - tools/content-calendar/**
+      - content/**
+      - .github/workflows/content-calendar.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      findings: ${{ steps.calendar.outputs.findings }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Read the calendar and the content
+        id: calendar
+        run: |
+          set -euo pipefail
+          pnpm exec tsx tools/content-calendar/index.ts --today "$(date -u +%F)" --out "$RUNNER_TEMP/findings.json" --summary "$RUNNER_TEMP/summary.md"
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "findings=$(base64 -w0 "$RUNNER_TEMP/findings.json")" >> "$GITHUB_OUTPUT"
+
+  notify:
+    needs: check
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open an issue for each finding not already open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          FINDINGS_B64: ${{ needs.check.outputs.findings }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create content-due --description "Rule content due (audit #59)" --color FBCA04 2>/dev/null || true
+          gh issue list --label content-due --state open --limit 200 --json title --jq '.[].title' > open-titles.txt
+          if [ "$CHECK_RESULT" != "success" ]; then
+            printf '%s\n' "Content calendar check failing" > title.txt
+            printf 'The content calendar check did not finish on %s at %s: %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+            grep -Fxq -f title.txt open-titles.txt || gh issue create --title "$(cat title.txt)" --label content-due --body-file body.md
+            exit 0
+          fi
+          printf '%s' "$FINDINGS_B64" | base64 -d > findings.json
+          count=$(jq length findings.json)
+          for i in $(seq 0 $((count - 1))); do
+            jq -r --argjson i "$i" '.[$i].title' findings.json > title.txt
+            jq -r --argjson i "$i" '.[$i].body' findings.json > body.md
+            printf '\n\nOpened by the content-calendar workflow: %s\n' "$RUN_URL" >> body.md
+            grep -Fxq -f title.txt open-titles.txt || gh issue create --title "$(cat title.txt)" --label content-due --body-file body.md
+          done
