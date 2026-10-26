@@ -1,13 +1,31 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  COVERAGE_FILE,
+  COVERAGE_WITHDRAWN_FILE,
+  type CoverageLoss,
+  LOOK_BACK_YEARS,
   MANIFEST_FILE,
   RELEASE_NOTES_FILE,
+  type ReleaseCoverage,
   type RuleRecord,
+  type WithdrawnEntry,
   buildManifest,
+  canonicalJson,
   compareText,
+  contentGaps,
+  contentSummaries,
+  coverageMap,
+  coverageRegression,
+  coverageWithdrawnNoteSchema,
+  dayAfter,
+  describeIssues,
+  lookBackCutoff,
+  readJsonBlock,
   recordLabel,
+  releaseCoverageSchema,
+  renderCoverageFile,
   secondPassPathFor,
   serializeManifest,
   type RuleRecordOf,
@@ -19,7 +37,7 @@ import { fileSha256, isRecordFile, listContentFiles, readRecordFile, readSecondP
 
 import { checkContentSet, contentSetAt } from '../verify-content/check';
 import { ReleaseToolError } from './commands';
-import { impactLines } from './impact';
+import { impactLines, previousReleaseNumber, releaseDirectory, releaseRecords } from './impact';
 
 /**
  * `pnpm release:assemble <n>` (the load-release skill, steps 1 and 2): lists the drafts at L2 or
@@ -28,7 +46,11 @@ import { impactLines } from './impact';
  * stay in content/drafts and RELEASE.md lists them under "Drafts not in this release", so a reader
  * sees what the release leaves out; the dry-run's diff shows any record type it drops against the
  * release before. A release whose ZIP5 records flag a ZIP that no ZIP9 record covers is refused
- * (plusFourGaps). content/releases is never written here; CI publishes on merge.
+ * (plusFourGaps), as is one with a gap inside a content (audit #30 R4). The release may stop covering a code and date
+ * its previous release covered only before the six-year look-back, where the source's own dates close it, or where
+ * content/drafts/COVERAGE-WITHDRAWN.md withdraws it, signed by two people (R3, docs/adr/0071): COVERAGE.md records
+ * each, the manifest seals it, and the note leaves the drafts once the release verifies. content/releases is never
+ * written here; CI publishes on merge.
  */
 
 const DRAFTS = 'content/drafts';
@@ -63,6 +85,53 @@ interface ReleaseNotesInput {
   readonly impact: readonly string[];
   /** Drafts left out (assembled releases only; fixture releases leave nothing out). */
   readonly excluded?: readonly ExcludedDraft[];
+  /** The coverage against the previous release (assembled releases only; fixture releases pass none). */
+  readonly coverage?: ReleaseNotesCoverage;
+}
+
+/** What RELEASE.md says of a release's coverage: COVERAGE.md holds the details. */
+export interface ReleaseNotesCoverage {
+  readonly previous: number | null;
+  readonly beforeCutoff: number;
+  readonly closedBySource: number;
+  readonly withdrawn: readonly WithdrawnEntry[];
+}
+
+/** A coverage loss as the assembler and the checker name it: record type, canonical key and dates. */
+function lossText(loss: CoverageLoss): string {
+  return `${loss.record_type} ${canonicalJson(loss.key)} ${loss.from} to ${loss.to ?? 'open'}`;
+}
+
+function lossIdentity(loss: CoverageLoss): string {
+  return canonicalJson({ record_type: loss.record_type, key: loss.key, from: loss.from, to: loss.to });
+}
+
+function compareLosses(a: CoverageLoss, b: CoverageLoss): number {
+  return compareText(a.record_type, b.record_type) || compareText(canonicalJson(a.key), canonicalJson(b.key)) || compareText(a.from, b.from);
+}
+
+/** The section RELEASE.md gives the coverage, before the impact. */
+function coverageLines(coverage: ReleaseNotesCoverage): string[] {
+  if (coverage.previous === null) {
+    return ['## Coverage', '', 'This is the first release: nothing to compare. Details in COVERAGE.md.', ''];
+  }
+  return [
+    `## Coverage against release ${String(coverage.previous)}`,
+    '',
+    `- ${String(coverage.beforeCutoff)} range(s) before the look-back's cutoff, ${String(coverage.closedBySource)} closed by the source's own dates, ${String(coverage.withdrawn.length)} withdrawn by a signed note.`,
+    ...coverage.withdrawn.map(
+      (entry) => `- ${lossText(entry)}: ${entry.reason} (withdrawn by ${entry.withdrawn_by}, confirmed by ${entry.confirmed_by}, ${entry.withdrawn_on})`,
+    ),
+    '',
+    'Details in COVERAGE.md.',
+    '',
+  ];
+}
+
+/** At most 20 lines of a refusal, indented, then how many more. */
+function listedAtMost(lines: readonly string[]): string[] {
+  const shown = lines.slice(0, 20).map((line) => `  ${line}`);
+  return lines.length > 20 ? [...shown, `  and ${String(lines.length - 20)} more`] : shown;
 }
 
 /** One line per draft file with records left out: how many, of which type, and why. */
@@ -152,18 +221,12 @@ export function releaseNotes(input: ReleaseNotesInput): string {
     ...verifierLines,
     '',
     ...(input.excluded === undefined ? [] : ['## Drafts not in this release', '', ...excludedLines(input.excluded), '']),
+    ...(input.coverage === undefined ? [] : coverageLines(input.coverage)),
     '## Impact on existing runs',
     '',
     ...input.impact,
     '',
   ].join('\n');
-}
-
-/** The calendar day after a YYYY-MM-DD date. */
-function dayAfter(date: string): string {
-  const next = new Date(`${date}T00:00:00Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString().slice(0, 10);
 }
 
 /**
@@ -238,6 +301,98 @@ function quotedQuarter(record: RuleRecord): string | null {
   return quarters.size === 1 && only !== undefined ? only : null;
 }
 
+/** The prepared date a release's COVERAGE.md records, or null when it has none that reads (the checker reports that release). */
+function preparedOnOf(dir: string): string | null {
+  const file = path.join(dir, COVERAGE_FILE);
+  if (!existsSync(file)) {
+    return null;
+  }
+  const block = readJsonBlock(readFileSync(file, 'utf8'));
+  const parsed = releaseCoverageSchema.safeParse(block.value);
+  return block.problems.length === 0 && parsed.success ? parsed.data.prepared_on : null;
+}
+
+/** The release's COVERAGE.md, and the drafts' withdrawal note it consumes (null when there is none). */
+interface PlannedCoverage {
+  readonly coverage: ReleaseCoverage;
+  readonly note: string | null;
+}
+
+/**
+ * Audit #30 R3: what `records` as release `release` stops covering against the release before it, refused unless each
+ * loss is older than the look-back, closed by the source's own dates, or withdrawn by the drafts' note. The previous
+ * release's records are read into its coverage map and dropped at once (R5).
+ */
+function planCoverage(root: string, release: number, today: string, records: readonly RuleRecord[]): PlannedCoverage {
+  const n = String(release);
+  const previous = previousReleaseNumber(root, release);
+  let previousMap = coverageMap([]);
+  if (previous !== null) {
+    const dir = releaseDirectory(root, previous);
+    previousMap = coverageMap(releaseRecords(dir));
+    const prepared = preparedOnOf(dir);
+    if (prepared !== null && prepared > today) {
+      throw new ReleaseToolError(`release ${n} not assembled: release ${String(previous)} was prepared on ${prepared}, after today (${today})`);
+    }
+  }
+  const cutoff = lookBackCutoff(today);
+  const regression = coverageRegression(previousMap, coverageMap(records), records, cutoff);
+
+  const notePath = path.join(root, DRAFTS, COVERAGE_WITHDRAWN_FILE);
+  const note = existsSync(notePath) ? notePath : null;
+  let withdrawn: WithdrawnEntry[] = [];
+  if (note !== null) {
+    // The drafts check refuses a note that does not read (D1); this holds the assembler to it on its own.
+    const block = readJsonBlock(readFileSync(note, 'utf8'));
+    const parsed = coverageWithdrawnNoteSchema.safeParse(block.value);
+    if (!parsed.success || block.problems.length > 0) {
+      const problems = block.problems.length > 0 || parsed.success ? block.problems : describeIssues(parsed.error);
+      throw new ReleaseToolError([`release ${n} not assembled: ${DRAFTS}/${COVERAGE_WITHDRAWN_FILE} does not read:`, ...listedAtMost(problems)].join('\n'));
+    }
+    if (parsed.data.previous_release !== previous) {
+      throw new ReleaseToolError(
+        `release ${n} not assembled: ${DRAFTS}/${COVERAGE_WITHDRAWN_FILE} names release ${String(parsed.data.previous_release)}, but the release before ${n} is ${previous === null ? 'none' : String(previous)}`,
+      );
+    }
+    withdrawn = [...parsed.data.withdrawn].sort(compareLosses);
+  }
+
+  const entries = new Set(withdrawn.map(lossIdentity));
+  const kept = regression.unexplained.filter((loss) => !entries.has(lossIdentity(loss)));
+  if (kept.length > 0) {
+    throw new ReleaseToolError(
+      [
+        `release ${n} not assembled: it stops covering what release ${String(previous)} covered:`,
+        ...listedAtMost(kept.map(lossText)),
+        `keep those records in content/drafts, or withdraw that coverage on purpose in ${DRAFTS}/${COVERAGE_WITHDRAWN_FILE}, signed by two people (content/sources/README.md, "Coverage")`,
+      ].join('\n'),
+    );
+  }
+  const losses = new Set(regression.unexplained.map(lossIdentity));
+  const unmatched = withdrawn.filter((entry) => !losses.has(lossIdentity(entry)));
+  if (unmatched.length > 0) {
+    throw new ReleaseToolError(
+      unmatched.map((entry) => `release ${n} not assembled: ${DRAFTS}/${COVERAGE_WITHDRAWN_FILE} withdraws ${lossText(entry)}, which release ${n} does not lose`).join('\n'),
+    );
+  }
+
+  return {
+    coverage: {
+      format: 'tp-release-coverage/1',
+      release,
+      previous_release: previous,
+      prepared_on: today,
+      look_back_years: LOOK_BACK_YEARS,
+      cutoff,
+      contents: contentSummaries(records).map((summary) => ({ ...summary, windows: [...summary.windows] })),
+      before_cutoff: regression.beforeCutoff,
+      closed_by_source: regression.closedBySource,
+      withdrawn,
+    },
+    note,
+  };
+}
+
 /** Writes RELEASE.md and MANIFEST.json for the files already in `dir`, and returns the manifest's hash. */
 export function sealRelease(dir: string, release: number, notes: string): string {
   writeFileSync(path.join(dir, RELEASE_NOTES_FILE), notes);
@@ -299,6 +454,17 @@ export function assembleRelease(request: AssembleRequest): AssembleResult {
   if (gaps.length > 0) {
     throw new ReleaseToolError([`release ${String(release)} not assembled: the ZIP5 file flags ZIPs that its quarter's ZIP9 file does not cover:`, ...gaps.slice(0, 20).map((gap) => `  ${gap}`)].join('\n'));
   }
+  // R4: the drafts can be whole while their L2+ part has a hole (an L1 quarter between two verified ones).
+  const holes = contentGaps(records);
+  if (holes.length > 0) {
+    throw new ReleaseToolError(
+      [
+        `release ${String(release)} not assembled: a content has dates with no record inside the dates it is loaded for:`,
+        ...listedAtMost(holes.map((hole) => `${hole.content}: ${hole.from} to ${hole.to}`)),
+      ].join('\n'),
+    );
+  }
+  const planned = planCoverage(root, release, request.today, records);
 
   const impact = impactLines(root, release, records);
   const dir = path.join(root, relativeDir);
@@ -344,13 +510,24 @@ export function assembleRelease(request: AssembleRequest): AssembleResult {
       records,
       impact,
       excluded,
+      coverage: {
+        previous: planned.coverage.previous_release,
+        beforeCutoff: planned.coverage.before_cutoff.length,
+        closedBySource: planned.coverage.closed_by_source.length,
+        withdrawn: planned.coverage.withdrawn,
+      },
     });
+    writeFileSync(path.join(dir, COVERAGE_FILE), renderCoverageFile(planned.coverage));
     const manifestSha256 = sealRelease(dir, release, notes);
-    const verify = checkContentSet(root, contentSetAt(root, relativeDir));
+    const verify = checkContentSet(root, contentSetAt(root, relativeDir), undefined, { today: request.today });
     if (verify.problems.length > 0) {
       throw new ReleaseToolError(['the assembled release does not verify:', ...verify.problems.slice(0, 20).map((problem) => `  ${problem}`)].join('\n'));
     }
-    return { dir: relativeDir, files: [RELEASE_NOTES_FILE, ...copied, MANIFEST_FILE], records: records.length, excluded: excluded.length, manifestSha256 };
+    // Only a release that verifies consumes the note; on any failure above it stays in the drafts.
+    if (planned.note !== null) {
+      rmSync(planned.note);
+    }
+    return { dir: relativeDir, files: [RELEASE_NOTES_FILE, COVERAGE_FILE, ...copied, MANIFEST_FILE], records: records.length, excluded: excluded.length, manifestSha256 };
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     throw error;

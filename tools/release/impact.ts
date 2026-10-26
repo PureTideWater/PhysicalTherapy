@@ -1,9 +1,6 @@
-import { existsSync, readdirSync } from 'node:fs';
-import path from 'node:path';
-
 import { type RuleRecord, canonicalJson, compareText, recordLabel } from '@tp/rules';
 import type { RuleRelease } from '@tp/pricing';
-import { readRelease } from '@tp/rules/content';
+import { previousReleaseNumber as previousReleaseOf, readRelease, releaseDirOf } from '@tp/rules/content';
 
 import { ReleaseToolError } from './commands';
 
@@ -75,29 +72,21 @@ export function diffRecords(previous: readonly RuleRecord[] | null, next: readon
   return [...counts.entries()].sort(([a], [b]) => compareText(a, b)).map(([recordType, entry]) => ({ recordType, ...entry }));
 }
 
-/** The highest release number below `release` that exists in content/releases or content/outgoing. */
+/**
+ * The highest release number below `release` that exists in content/releases or content/outgoing. A parent not created
+ * yet holds none; any other failure to list one throws, so an unreadable directory never passes for a first release.
+ */
 export function previousReleaseNumber(root: string, release: number): number | null {
-  const numbers = ['content/releases', 'content/outgoing'].flatMap((parent) => {
-    try {
-      return readdirSync(path.join(root, parent)).filter((name) => /^[1-9]\d*$/.test(name)).map((name) => Number.parseInt(name, 10));
-    } catch {
-      return [];
-    }
-  });
-  const earlier = numbers.filter((number) => number < release);
-  return earlier.length === 0 ? null : Math.max(...earlier);
+  return previousReleaseOf(root, release);
 }
 
 /** The directory of release `n`: published (content/releases) first, then prepared (content/outgoing). */
 export function releaseDirectory(root: string, release: number): string {
-  for (const parent of ['content/releases', 'content/outgoing']) {
-    // The content checkout is read at run time; the web server's bundler must not trace it.
-    const dir = path.join(/*turbopackIgnore: true*/ root, parent, String(release));
-    if (existsSync(dir)) {
-      return dir;
-    }
+  const dir = releaseDirOf(root, release);
+  if (dir === null) {
+    throw new ReleaseToolError(`release ${String(release)} is neither in content/releases nor in content/outgoing`);
   }
-  throw new ReleaseToolError(`release ${String(release)} is neither in content/releases nor in content/outgoing`);
+  return dir;
 }
 
 /** The records of a release directory, refusing one that does not verify. */
