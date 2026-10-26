@@ -20,5 +20,10 @@ None yet.
 - Q1 (content-due issues on the public repository hold only public calendar data, page addresses, sanitized file names and import commands) and Q2 (two scheduled workflows, free while public, ~1,000 min/month once private): **taken as recommended (accept)** under the co-founder's ruling of ~00:20 UTC; reasons in the design's 10.1 and ADR 0071.
 - 2026-10-26 ~01:45 UTC: **builders** starting (10 work packages, design 9.1) in `/home/user/release-content-checks`.
 
+- 2026-10-26 ~02:10 UTC: **draft PR #49** opened into claude/build-platform at 38088c68 (WP1), description from the template written with update_pull_request and read back; subscribed. Builders continue (wf_8156f505-4a0).
+
+## PR
+#49, draft. Head pushed: 38088c68 (WP1 only; the rest pushes once after integration).
+
 ## Next step
-Builders, then a draft PR.
+Builders and integration, push, then two adversarial reviews.

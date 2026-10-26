@@ -104,6 +104,22 @@ and 2026-10-26 ~00:20 UTC; recorded here, in the PR and in the status file)
    documents may be touched while #42 is open. `docs/runbooks/billing.md` gains the dashboard checks (Financial
    Connections' Link saving; ACH and card the enabled methods).
 
+## After the reviews (2026-10-26 ~01:25-02:05, wf_f41510b7-8f9)
+The two adversarial reviews' findings (S1 to S4, UX-1 to UX-11) changed these decisions; the code and ADR 0073 follow
+this section where it differs from the text above:
+- 3a: a new customer default is **set** on every live subscription (no `''` clear, which Stripe's types do not mark as
+  unsettable); the local simulator models a subscription's own default, as Stripe does.
+- 4: the on-file line reads "On file: Visa card ending in 4242" / "On file: bank account (ACH) ending in 6789, <bank>";
+  one term, "bank account (ACH)"; the description "A bank account (ACH) or a card. …"; the preference line with nothing
+  or a card on file, and "A new payment method replaces the one on file." with any method on file.
+- 4a: the notice follows the micro-deposit type; an unusable verification URL is an error; notices are status
+  messages that take focus.
+- 5: "Replace with a bank account (ACH) or card".
+- 6: with nothing on file the Plan card shows prices and "Add a payment method above, then choose a plan here." in place
+  of the form; each simulator form has its own request key (a FormKeys factory); Stripe's form is themed from the live
+  brand tokens.
+- The billing case module is numbered 15 (the orchestrator's shared counter: DBF 13, RCC 14).
+
 ## Files
 - `packages/billing/src/methods.ts` (new), `packages/billing/package.json` (the `./methods` export),
   `packages/billing/src/index.ts` (re-export), `packages/billing/src/stripe.ts` (the three requests read the constant;
