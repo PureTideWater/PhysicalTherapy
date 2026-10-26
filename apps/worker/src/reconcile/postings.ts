@@ -294,7 +294,9 @@ export async function settleMatches(scope: Scope, practiceId: string, createdBy:
   const entries = await ledgerEntries(scope, practiceId);
   const matches = await ledgerMatches(scope, practiceId);
   const { rows: lines } = await scope.client.query<CaseLineRow>(
-    `SELECT cl.service_line_id, cl.case_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1`,
+    // In claim and line order, so a row too short for every line proves the same lines first on every pass (RR2).
+    `SELECT cl.service_line_id, cl.case_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1
+      ORDER BY l.claim_id, l.line_no, cl.service_line_id`,
     [practiceId],
   );
   const { byRemittance, byClaim, paired } = await shares(scope, practiceId, entries, lines);

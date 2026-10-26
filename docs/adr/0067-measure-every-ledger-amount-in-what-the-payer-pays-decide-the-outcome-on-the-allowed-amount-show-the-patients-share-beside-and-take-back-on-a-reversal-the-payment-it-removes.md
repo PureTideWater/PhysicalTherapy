@@ -56,7 +56,7 @@ back, and the deductible-absorbed outcome.
 
 All amounts are integer cents. The one division is a line's part of its claim's claim-level CAS, below, rounded once
 with its exact fraction kept beside the cents; every amount the ledger writes is a difference of those. The arithmetic
-is one new pure file, `packages/ledger/src/payment.ts` (`claimLinePayments`, `claimLevelShares`, `paymentChain`, `paymentOutcome`,
+is one new pure file, `packages/ledger/src/payment.ts` (`claimLinePayments`, `keptClaimPart`, `claimLevelShares`, `paymentChain`, `paymentOutcome`,
 `reversalTakeBack`, `patientShareChange`), mutation-tested under money-ledger; the reconcile step in
 `apps/worker/src/reconcile` reads the rows and calls it.
 
@@ -86,12 +86,37 @@ leave it approved and never provable by the 24.00 deposit (probe E8, now LED-14'
   line's cash 28.00 higher and the others' 2.00 lower: an approval of 28.00 that the 24.00 deposit can never prove
   (probe E11, now LED-14's claim-level-lines variant). Coinsurance is proportional to the allowed amount, so the split
   by allowed amount gives each line exactly its own: 20.00, 14.00 and 14.00, and the first line is approved 24.00.
-  For a deductible or a copay reported only at the claim's level, the 835 does not say which line it fell on; the
-  split by allowed amount is the best it allows, and the parts still add up to CLP04 exactly.
+- **A line the payer did not change keeps its part** (`keptClaimPart`; the engine re-check's RR1). A split by weight
+  alone still moves a claim-level change onto lines the correction did not touch whenever the claim-level CAS is not
+  proportional to the allowed amounts: a deductible or a copay, or reasons rounded per claim. A met deductible of 40.00
+  beside a PR-2 rising 20.00 to 26.00, on two lines of 70.00 with the first raised to 100.00, pays 24.00 more, yet the
+  split by allowed amount approves the first line 21.17 and leaves 2.83 on the second (probe N1); PR-1 and PR-2 of
+  1.00 each rising to 2.00 on three lines approves the first 29.00 of a claim paying 28.00 more: a deposit of a check
+  beside another claim proves all 29.00, so recovered counts 1.00 never paid, and a check of 28.00 alone leaves 1.00
+  approved that no deposit can prove (N2, N2b); a PR-1 of 30.00 newly applied beside the PR-2 of 28.00
+  approves 9.88 of a claim paying nothing more (N6). So a correction's line whose split inputs (its charge, its own
+  CAS outside group PR, whether it carries CAS) and SVC03 are those of its paired line in the claim it corrects (the
+  claim whose `superseded_by_claim_id` names it, the lines paired by `pairLines`) keeps that line's part (zero when
+  that claim had no claim-level CAS), and the rest of `D`, `D` less the parts kept, is split by the same weights over
+  the lines that changed; over every line when none changed, each keeping its part beside its share of the rest, so a
+  resend moves nothing and a claim-level change alone spreads by weight. With no line paired, or every line changed,
+  it is the split by weight above exactly (N3 and N5 do not move). Each part is the part kept plus one share of the
+  rest, truncated once with the cents left in line order to the lines it is spread over, its exact fraction
+  `(kept × Σ weights + rest × weight) / Σ weights` beside it (`kept / 1` for a line keeping its part), and the parts
+  add up to `D` exactly. An unchanged line's cash is then what it was, so the changed lines' cash changes add up to
+  the claim's CLP04 change exactly: a single changed line is approved exactly what its claim paid more, 24.00 in N1,
+  28.00 in N2 and nothing in N6 (LED-14's claim-level-met, -both and -absorbed variants), and E11's 24.00, 0 and 0
+  stand. Where several lines changed, one may rise by more than the claim while another falls, which is that line's
+  own decrease or shortfall, as with line-level CAS; no cap is needed, since no claim-level amount reaches a line the
+  payer did not change. A claim's parts read the claim it corrects, and that claim's the one before, back to the
+  first, so every claim of a chain is split the same way whichever pass reads it. The weights a share from the claim's
+  level is shown with are every taking line's (`claimAllocations`), as the claim-level coinsurance is proportional to
+  them.
 - `paid(n)` is SVC03 less the part, so a claim's lines add up to its CLP04 exactly, and the chain, every posting and
   deposit share, and the billable to the patient read it. A claim-level PR is then the patient's share once, in
   billable to the patient, and never again in the other reductions. A line-level posting row is still matched on
-  SVC03 as sent, which is what it posts; what it proves is the line's cash share.
+  SVC03 as sent, which is what it posts; what it proves is the line's cash share. A posting or deposit row too short
+  for every line it covers proves them in claim and line order, the same on every pass (RR2).
 - `allocateByWeight` (largest remainder) was the other candidate. It refuses a negative total or weight, and a
   reversal's charges and CAS are negative; and its remainder rule differs from the one the share is split by, so a
   line's cash and its allocated share could disagree by a cent and show a cent of other reductions that is not there.
@@ -141,10 +166,11 @@ payment increase (`net(n)`, the ledger's own figure), the signed change of the p
 deductible, PR-2 coinsurance, PR-3 copay, other PR), and the other reductions (the rest, shown only when not zero).
 The patient's share is read from the PR adjustments, never as allowed less paid: a line's own PR rows, and the PR
 reasons of its part of the claim-level CAS, given by the cash's own rule (`claimLevelShares`; the re-check's R2 and
-R3): the same lines take a part, by the same weights, and the line's one rounded part of the claim-level CAS is split
+R3): the same lines take a part, by the same weights, keeping the same parts, and the line's one rounded part of the claim-level CAS is split
 over the claim's reasons in proportion to their amounts (truncated, the cents left one at a time in order), so its
 reasons add up to the very part its cash is short of SVC03 and no cent of it shows as another reduction (a split of
-each reason alone could). This holds whether or not the line carries PR of its own. A share from the claim's level
+each reason alone could). This holds whether or not the line carries PR of its own. When the claim's reasons add up to
+zero, each is split alone by weight and no line keeps a part of one. A share from the claim's level
 is flagged with the weights it was split by. The observed allowed amount is the parser's (ADR 0021) and unchanged:
 with AMT B6, as the LED fixtures send, it is the payer's own figure; a line with no B6 under a claim-level PR keeps the
 parser's split by charge in its observed allowed, and where that differs from this split the difference shows in its

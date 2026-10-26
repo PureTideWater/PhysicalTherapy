@@ -357,6 +357,82 @@ describe('a line with coinsurance (LED-14)', () => {
       allocations: { before: { basis: 'allowed', lineWeightCents: 7000n, claimWeightCents: 7000n }, after: { basis: 'allowed', lineWeightCents: 10000n, claimWeightCents: 10000n } },
     });
   });
+
+  /** Each line's claim match outcome and its entries, by line number (the case's lines share a time). */
+  const lineOutcomes = (practice: Practice) =>
+    w.rows<{ line_no: number; outcome: string }>(practice, "SELECT l.line_no, m.outcome FROM ledger_match m JOIN service_line l ON l.id = m.service_line_id WHERE m.kind = 'claim' ORDER BY l.line_no");
+  const lineEntries = (practice: Practice) =>
+    w.rows<{ line_no: number; stage: string; amount: string }>(practice, 'SELECT l.line_no, e.stage, e.amount_cents::text AS amount FROM ledger_entry e JOIN service_line l ON l.id = e.service_line_id ORDER BY e.stage, l.line_no');
+  const caseLineNo = async (practice: Practice, lineNo: number) =>
+    ((await w.rows<{ id: string }>(practice, 'SELECT s.id FROM case_line cl JOIN service_line s ON s.id = cl.service_line_id WHERE s.line_no = $1', [lineNo]))[0] as { id: string }).id;
+
+  it('keeps a met claim-level deductible on the line the payer did not change, so the raised line is approved the claim’s 24.00 and it is proved (probe N1, RR1)', async () => {
+    const led = await scenario('LED-14', 'claim-level-met-adjusted.835', 'claim-level-met-original.835');
+    // Two lines allowed 70.00, the claim's PR-1 40.00 and PR-2 20.00 (CLP04 80.00); line 1 to 100.00 and PR-2 to 26.00 (CLP04 104.00).
+    expect(await lineOutcomes(led.practice)).toEqual([
+      { line_no: 1, outcome: 'approved' },
+      { line_no: 2, outcome: 'no_change' },
+    ]);
+    expect(await lineEntries(led.practice)).toEqual([{ line_no: 1, stage: 'approved', amount: '2400' }]);
+    await exported(led.practice, 'LED-14/claim-level-met-eft-export.csv', 'eft_export');
+    expect(await lineEntries(led.practice)).toEqual([
+      { line_no: 1, stage: 'approved', amount: '2400' },
+      { line_no: 1, stage: 'deposited', amount: '2400' },
+    ]);
+    expect(await totals(led.practice)).toMatchObject({ approvedCents: 2400n, depositedCents: 2400n, recoveredCents: 2400n, payerApprovedCents: 2400n });
+  });
+
+  it('never approves a line more than its claim paid more when two claim-level reasons rise with it: 28.00, never 29.00 (probe N2, RR1)', async () => {
+    const led = await scenario('LED-14', 'claim-level-both-adjusted.835', 'claim-level-both-original.835');
+    expect(await lineOutcomes(led.practice)).toEqual([
+      { line_no: 1, outcome: 'approved' },
+      { line_no: 2, outcome: 'no_change' },
+      { line_no: 3, outcome: 'no_change' },
+    ]);
+    await exported(led.practice, 'LED-14/claim-level-both-eft-export.csv', 'eft_export');
+    // The deposit of the 28.00 check proves all that is approved: nothing approved that the payer never paid.
+    expect(await lineEntries(led.practice)).toEqual([
+      { line_no: 1, stage: 'approved', amount: '2800' },
+      { line_no: 1, stage: 'deposited', amount: '2800' },
+    ]);
+    expect(await totals(led.practice)).toMatchObject({ approvedCents: 2800n, depositedCents: 2800n, recoveredCents: 2800n, payerApprovedCents: 2800n });
+  });
+
+  it('approves nothing when a deductible newly applied at the claim’s level takes the whole rise, and shows it as the patient’s (probe N6, RR1)', async () => {
+    const led = await scenario('LED-14', 'claim-level-absorbed-adjusted.835', 'claim-level-absorbed-original.835');
+    expect(await w.rows(led.practice, 'SELECT bpr02_cents::text AS value FROM remittance ORDER BY created_at')).toEqual([{ value: '11200' }, { value: '0' }]);
+    // A higher allowed amount paying exactly what was paid: approved with no entry, the other line no change.
+    expect(await lineOutcomes(led.practice)).toEqual([
+      { line_no: 1, outcome: 'approved' },
+      { line_no: 2, outcome: 'no_change' },
+    ]);
+    expect(await lineEntries(led.practice)).toEqual([]);
+    expect(await totals(led.practice)).toMatchObject({ approvedCents: 0n, recoveredCents: 0n, payerApprovedCents: 0n });
+    // Line 1 takes 44.00 of the claim's 58.00 (line 2 keeps its 14.00): the deductible 22.76 and the coinsurance 21.24, against 14.00 coinsurance before.
+    expect((await correctionOf(led.practice, await caseLineNo(led.practice, 1)))?.billable).toMatchObject({
+      allowedIncreaseCents: 3000n,
+      paymentIncreaseCents: 0n,
+      shareChange: { deductibleCents: 2276n, coinsuranceCents: 724n, copayCents: 0n, otherCents: 0n },
+      otherReductionCents: 0n,
+      billableCents: 3000n,
+    });
+  });
+
+  it('proves a check too short for two approved lines on line 1 first, the same on every run (probe N8, RR2)', async () => {
+    for (const run of [1, 2]) {
+      const led = await scenario('LED-14', 'claim-level-short-adjusted.835', 'claim-level-short-original.835');
+      // Both lines raised: the claim's 38.00 split by allowed amount, 20.00 and 18.00, so 24.00 and 16.00 approved; the check is 10.00.
+      await exported(led.practice, 'LED-14/claim-level-short-eft-export.csv', 'eft_export');
+      expect({ run, entries: await lineEntries(led.practice) }).toEqual({
+        run,
+        entries: [
+          { line_no: 1, stage: 'approved', amount: '2400' },
+          { line_no: 2, stage: 'approved', amount: '1600' },
+          { line_no: 1, stage: 'deposited', amount: '1000' },
+        ],
+      });
+    }
+  });
 });
 
 describe('a correction a deductible absorbed (LED-15)', () => {

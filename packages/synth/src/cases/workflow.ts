@@ -480,6 +480,15 @@ function coinsuranceAtClaim(allowed: bigint): CasSegment[] {
   return [{ group: 'PR', items: [{ reason: '2', amount: cents(allowed / 5n) }] }];
 }
 
+/** A deductible (PR-1) and a coinsurance (PR-2) as claim-level CAS, each left out when zero. */
+function shareAtClaim(deductible: bigint, coinsurance: bigint): CasSegment[] {
+  const items = [
+    { reason: '1', amount: cents(deductible) },
+    { reason: '2', amount: cents(coinsurance) },
+  ].filter((item) => item.amount !== 0n);
+  return [{ group: 'PR', items }];
+}
+
 /** Another patient's claim paying 150.00 (97110 x 3), beside a reversal so the check's BPR02 is not negative. */
 function otherClaim(b: CaseBuilder, n: number): Claim {
   return therapyClaim(b.world, { caseId: b.info.id, n, plan: LED_PLAN, lines: [allowedLine(b, OTHER_SERVICE_DATE, 3, 15000n, 'none')] });
@@ -534,7 +543,11 @@ function ledEntry(stage: string, amount: Cents, evidence?: string): Record<strin
  * claim-level PR-2 of 42.00, the first raised to 100.00 and the PR-2 to 48.00, approve and deposit 24.00 on the first
  * line and nothing on the others (claim-level-lines-*); and a case line beside a line paid at its charge with no CAS
  * of its own takes the claim's whole PR-2 in its cash and its share, the 6.00 more billable, never another reduction
- * (claim-level-bare-*).
+ * (claim-level-bare-*). A claim-level change with one line stays on it (the engine re-check's RR1), each in its own
+ * practice: a met deductible beside a coinsurance rising 6.00 approves 24.00 (claim-level-met-*), a deductible and a
+ * coinsurance each rising 1.00 over three lines approve 28.00 (claim-level-both-*), and a deductible newly applied
+ * taking the whole rise approves nothing (claim-level-absorbed-*); and a 10.00 check short of two lines' 40.00
+ * proves line 1 first (RR2, claim-level-short-*).
  */
 export function led14(b: CaseBuilder): void {
   const base = ledBase(b);
@@ -634,6 +647,64 @@ export function led14(b: CaseBuilder): void {
     ledRemittance(b, base, 20, adjustedOn, [reversalOf(bareOriginal), bareCorrected]).file,
     "Its adjusted remittance: the original reversed (CLP04 -206.00) and the correction raising the 97110 line to allowed 100.00, CO-45 50.00 and SVC03 100.00, the 97110-59 line still 150.00, the claim's PR-2 coinsurance 20.00, CLP04 230.00: BPR02 24.00.",
   );
+  // A claim-level change with one line stays on that line (the engine re-check's RR1), and a short check proves the
+  // lines in line order (RR2), each in its own practice.
+  const twoLines = (first: bigint, second = 7000n) => [claimShareLine(b, first), claimShareLine(b, second, ['59'])];
+  const metOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 23, plan: LED_PLAN, lines: twoLines(7000n), adjustments: shareAtClaim(4000n, 2000n) });
+  b.add835(
+    'claim-level-met-original.835',
+    ledRemittance(b, base, 21, base.paid, [metOriginal]).file,
+    "Another patient's original payment of two case lines, the patient's share at the claim's level: 97110 and 97110-59, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-1 deductible 40.00 and PR-2 coinsurance 20.00, CLP04 80.00.",
+  );
+  const metCorrected = correctionOf(b, 24, metOriginal, twoLines(10000n), shareAtClaim(4000n, 2600n));
+  const met = ledRemittance(b, base, 22, adjustedOn, [reversalOf(metOriginal), metCorrected]);
+  b.add835(
+    'claim-level-met-adjusted.835',
+    met.file,
+    "Its adjusted remittance: the original reversed (CLP04 -80.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, the deductible still 40.00 and the coinsurance 26.00, CLP04 104.00: BPR02 24.00.",
+  );
+  b.addFile('claim-level-met-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: met.trace, amount: met.check }]), 'csv', 'The bank export of that check: one deposit of 24.00 matched by trace number and amount.');
+  const bothOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 25, plan: LED_PLAN, lines: threeLines(7000n), adjustments: shareAtClaim(100n, 100n) });
+  b.add835(
+    'claim-level-both-original.835',
+    ledRemittance(b, base, 23, base.paid, [bothOriginal]).file,
+    "Another patient's original payment of three case lines, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-1 deductible 1.00 and PR-2 coinsurance 1.00, CLP04 208.00.",
+  );
+  const bothCorrected = correctionOf(b, 26, bothOriginal, threeLines(10000n), shareAtClaim(200n, 200n));
+  const both = ledRemittance(b, base, 24, adjustedOn, [reversalOf(bothOriginal), bothCorrected]);
+  b.add835(
+    'claim-level-both-adjusted.835',
+    both.file,
+    "Its adjusted remittance: the original reversed (CLP04 -208.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, the claim's deductible and coinsurance 2.00 each, CLP04 236.00: BPR02 28.00.",
+  );
+  b.addFile('claim-level-both-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: both.trace, amount: both.check }]), 'csv', 'The bank export of that check: one deposit of 28.00 matched by trace number and amount.');
+  const absorbedOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 27, plan: LED_PLAN, lines: twoLines(7000n), adjustments: shareAtClaim(0n, 2800n) });
+  b.add835(
+    'claim-level-absorbed-original.835',
+    ledRemittance(b, base, 25, base.paid, [absorbedOriginal]).file,
+    "Another patient's original payment of two case lines, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-2 coinsurance 28.00, CLP04 112.00.",
+  );
+  const absorbedCorrected = correctionOf(b, 28, absorbedOriginal, twoLines(10000n), shareAtClaim(3000n, 2800n));
+  b.add835(
+    'claim-level-absorbed-adjusted.835',
+    ledRemittance(b, base, 26, adjustedOn, [reversalOf(absorbedOriginal), absorbedCorrected]).file,
+    "Its adjusted remittance: the original reversed (CLP04 -112.00) and the correction raising the 97110 line alone to allowed 100.00, CO-45 50.00 and SVC03 100.00, a claim-level PR-1 deductible of 30.00 newly applied beside the coinsurance's 28.00, CLP04 112.00: BPR02 0.00.",
+  );
+  const shortOriginal = therapyClaim(b.world, { caseId: b.info.id, n: 29, plan: LED_PLAN, lines: twoLines(7000n), adjustments: coinsuranceAtClaim(14000n) });
+  b.add835(
+    'claim-level-short-original.835',
+    ledRemittance(b, base, 27, base.paid, [shortOriginal]).file,
+    "Another patient's original payment of two case lines, each x 2 allowed 70.00 (AMT B6), CO-45 80.00 and SVC03 70.00, the claim's PR-2 coinsurance 28.00, CLP04 112.00.",
+  );
+  const shortCorrected = correctionOf(b, 30, shortOriginal, twoLines(10000n, 9000n), coinsuranceAtClaim(19000n));
+  const otherReversed = therapyClaim(b.world, { caseId: b.info.id, n: 31, plan: LED_PLAN, lines: [allowedLine(b, OTHER_SERVICE_DATE, 1, 3000n, 'none')] });
+  const short = ledRemittance(b, base, 28, adjustedOn, [reversalOf(shortOriginal), shortCorrected, reversalOf(otherReversed)]);
+  b.add835(
+    'claim-level-short-adjusted.835',
+    short.file,
+    "Its adjusted remittance: the original reversed (CLP04 -112.00), the correction raising the lines to allowed 100.00 and 90.00 (SVC03 100.00 and 90.00), the claim's PR-2 coinsurance 38.00, CLP04 152.00, and another patient's claim of 30.00 reversed: BPR02 10.00.",
+  );
+  b.addFile('claim-level-short-eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: short.trace, amount: short.check }]), 'csv', 'The bank export of that check: one deposit of 10.00, less than the 40.00 the two lines were approved.');
   recoveryScenario(b);
   b.scenario({
     shareKind: 'coinsurance',
@@ -644,6 +715,10 @@ export function led14(b: CaseBuilder): void {
       claimLevel: ['claim-level-original.835', 'claim-level-adjusted.835', 'claim-level-eft-export.csv'],
       claimLevelLines: ['claim-level-lines-original.835', 'claim-level-lines-adjusted.835', 'claim-level-lines-eft-export.csv'],
       claimLevelBare: ['claim-level-bare-original.835', 'claim-level-bare-adjusted.835'],
+      claimLevelMet: ['claim-level-met-original.835', 'claim-level-met-adjusted.835', 'claim-level-met-eft-export.csv'],
+      claimLevelBoth: ['claim-level-both-original.835', 'claim-level-both-adjusted.835', 'claim-level-both-eft-export.csv'],
+      claimLevelAbsorbed: ['claim-level-absorbed-original.835', 'claim-level-absorbed-adjusted.835'],
+      claimLevelShort: ['claim-level-short-original.835', 'claim-level-short-adjusted.835', 'claim-level-short-eft-export.csv'],
       order: ['order-first.835 and order-second.835 loaded, then one reconcile'],
       withheld: ['adjusted.835, posting-export.csv and eft-export.csv, then withheld.835, then withheld-reissued.835'],
       withheldOnePass: ['adjusted.835, then withheld.835 and withheld-reissued.835 loaded, then one reconcile'],
@@ -711,6 +786,20 @@ export function led14(b: CaseBuilder): void {
         allocatedFromClaim: true,
       },
     },
+    // A line whose allowed amount, CAS and SVC03 are as they were keeps its part of the claim-level CAS, so the claim's
+    // whole change is the raised line's: 24.00 (the deductible met), 28.00 (both reasons rising) and nothing (a
+    // deductible newly applied taking the rise), never more than the claim paid more.
+    claimLevelMet: {
+      entries: [ledEntry('approved', subtractCents(metCorrected.paid, metOriginal.paid), 'claim-level-met-adjusted.835 transaction 0 claim 1'), ledEntry('deposited', met.check, 'claim-level-met-eft-export.csv row 1')],
+      otherLines: 'no change, no entry',
+    },
+    claimLevelBoth: {
+      entries: [ledEntry('approved', subtractCents(bothCorrected.paid, bothOriginal.paid), 'claim-level-both-adjusted.835 transaction 0 claim 1'), ledEntry('deposited', both.check, 'claim-level-both-eft-export.csv row 1')],
+      otherLines: 'no change, no entry',
+    },
+    claimLevelAbsorbed: { entries: [], payerApprovedCents: centsToString(subtractCents(absorbedCorrected.paid, absorbedOriginal.paid)) },
+    // Both lines raised: the 38.00 split by allowed, 20.00 and 18.00, so 24.00 and 16.00 approved; the 10.00 check proves line 1 first.
+    claimLevelShort: { entries: [ledEntry('approved', cents(2400n)), ledEntry('approved', cents(1600n)), ledEntry('deposited', short.check, 'claim-level-short-eft-export.csv row 1')], depositedLine: 1 },
     // Each amount as the stored chain reads it: the pass writes in the chain's own order.
     order: {
       entries: [ledEntry('approved', subtractCents(byPatient.paid, original.paid)), ledEntry('recouped', negateCents(subtractCents(byPatient.paid, byControl.paid)))],

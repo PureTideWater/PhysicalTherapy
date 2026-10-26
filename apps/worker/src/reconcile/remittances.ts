@@ -13,7 +13,9 @@ import {
   allocateByWeight,
   claimLinePayments,
   countedStage,
+  keptClaimPart,
   entriesById,
+  pairLines,
   pairedLine,
   paymentChain,
   paymentMatchOutcome,
@@ -55,7 +57,10 @@ import type { NoChangeOutcome, ReprocessedNoChange } from './responses';
  *   claimLinePayments): SVC03 less its part of the claim-level CAS (every group, signed) that no SVC03 holds,
  *   split over the lines carrying CAS of their own (every line when none does) by each one's allowed amount before
  *   the claim-level CAS (SVC02 less its own CAS outside group PR), rounded once with the exact fraction beside
- *   it; SVC03 itself when the claim carries none.
+ *   it; SVC03 itself when the claim carries none. A line of a correction whose charge, own CAS and SVC03 are
+ *   those of its paired line in the claim it corrects (claim.superseded_by_claim_id) keeps that line's part,
+ *   and the rest is split over the lines that changed (@tp/ledger keptClaimPart), so a claim-level change is
+ *   the changed lines' and never moves onto a line the payer did not change.
  * - A reversal of a claim attached to a case line, with no correction of it in the same remittance,
  *   takes back the payment it removes above the original (@tp/ledger reversalTakeBack: its own claim's
  *   approval while an earlier payment of the line stands, every approval its payment carried when nothing
@@ -214,64 +219,102 @@ export interface ClaimLine extends PairableLine {
   readonly split: ClaimSplitLine;
 }
 
+interface ClaimLineRow {
+  id: string;
+  claim_id: string;
+  line_no: number;
+  procedure_code: string;
+  modifiers: string[];
+  units: string | null;
+  service_date: string | null;
+  observed_allowed_cents: string;
+  charge_cents: string;
+  paid_cents: string;
+  claim_paid_cents: string;
+  carries_adjustments: boolean;
+  line_reduction_cents: string;
+  corrects_claim_id: string | null;
+}
+
+/** What @tp/ledger pairLines reads of a line row. */
+const pairable = (row: ClaimLineRow): PairableLine => ({ procedureCode: row.procedure_code, modifiers: row.modifiers, units: row.units, serviceDate: row.service_date });
+
 /**
  * The lines of the claims named, in line order, by claim, each with its cash: SVC03 less its part of the
  * claim-level CAS that no SVC03 holds, so the claim's lines add up to its CLP04 (@tp/ledger
- * claimLinePayments; docs/adr/0067). Read from stored rows only.
+ * claimLinePayments; docs/adr/0067). A correction's line that the payer did not change keeps its part of the
+ * claim it corrects (the claim whose superseded_by_claim_id names it, its lines paired by @tp/ledger pairLines;
+ * @tp/ledger keptClaimPart), so the claims each corrects are read too, back to the first. Read from stored rows only.
  */
 export async function claimLines(scope: Scope, claimIds: readonly string[]): Promise<Map<string, ClaimLine[]>> {
-  const { rows } = await scope.client.query<{
-    id: string;
-    claim_id: string;
-    line_no: number;
-    procedure_code: string;
-    modifiers: string[];
-    units: string | null;
-    service_date: string | null;
-    observed_allowed_cents: string;
-    charge_cents: string;
-    paid_cents: string;
-    claim_paid_cents: string;
-    carries_adjustments: boolean;
-    line_reduction_cents: string;
-  }>(
-    `SELECT s.id, s.claim_id, s.line_no, s.procedure_code, s.modifiers, s.units::text AS units, s.service_date::text AS service_date,
+  const { rows } = await scope.client.query<ClaimLineRow>(
+    `WITH RECURSIVE named (id) AS (
+       SELECT unnest($1::uuid[])
+        UNION
+       SELECT k.id FROM claim k JOIN named n ON k.superseded_by_claim_id = n.id)
+     SELECT s.id, s.claim_id, s.line_no, s.procedure_code, s.modifiers, s.units::text AS units, s.service_date::text AS service_date,
             s.observed_allowed_cents::text AS observed_allowed_cents, s.charge_cents::text AS charge_cents, s.paid_cents::text AS paid_cents,
             c.paid_cents::text AS claim_paid_cents, EXISTS (SELECT 1 FROM adjustment a WHERE a.service_line_id = s.id) AS carries_adjustments,
-            (SELECT COALESCE(sum(a.amount_cents), 0) FROM adjustment a WHERE a.service_line_id = s.id AND a.group_code <> 'PR')::text AS line_reduction_cents
-       FROM service_line s JOIN claim c ON c.id = s.claim_id WHERE s.claim_id = ANY ($1::uuid[]) ORDER BY s.claim_id, s.line_no`,
+            (SELECT COALESCE(sum(a.amount_cents), 0) FROM adjustment a WHERE a.service_line_id = s.id AND a.group_code <> 'PR')::text AS line_reduction_cents,
+            (SELECT k.id FROM claim k WHERE k.superseded_by_claim_id = s.claim_id ORDER BY k.created_at DESC, k.id LIMIT 1) AS corrects_claim_id
+       FROM service_line s JOIN claim c ON c.id = s.claim_id WHERE s.claim_id IN (SELECT id FROM named) ORDER BY s.claim_id, s.line_no`,
     [[...new Set(claimIds)]],
   );
-  const byClaim = new Map<string, ClaimLine[]>();
-  for (const claimId of new Set(rows.map((row) => row.claim_id))) {
-    const own = rows.filter((row) => row.claim_id === claimId);
-    const splits = own.map((row): ClaimSplitLine => ({ chargeCents: parseCents(row.charge_cents), lineReductionCents: parseCents(row.line_reduction_cents), carriesAdjustments: row.carries_adjustments }));
-    const payments = claimLinePayments({
-      claimPaidCents: parseCents((own[0] as (typeof own)[number]).claim_paid_cents),
-      lines: own.map((row, index) => ({ ...(splits[index] as ClaimSplitLine), servicePaidCents: parseCents(row.paid_cents) })),
-    });
-    byClaim.set(
-      claimId,
-      own.map((row, index) => {
-        const payment = payments[index] as (typeof payments)[number];
-        return {
-          serviceLineId: row.id,
-          claimId: row.claim_id,
-          lineNo: row.line_no,
-          procedureCode: row.procedure_code,
-          modifiers: row.modifiers,
-          units: row.units,
-          serviceDate: row.service_date,
-          observedAllowedCents: parseCents(row.observed_allowed_cents),
-          paidCents: payment.paidCents,
-          servicePaidCents: parseCents(row.paid_cents),
-          claimAdjustment: payment.claimAdjustment,
-          split: splits[index] as ClaimSplitLine,
-        };
-      }),
-    );
+  const rowsOf = new Map<string, ClaimLineRow[]>();
+  for (const row of rows) {
+    rowsOf.set(row.claim_id, [...(rowsOf.get(row.claim_id) ?? []), row]);
   }
-  return byClaim;
+  const byClaim = new Map<string, ClaimLine[]>();
+  const linesOf = (claimId: string, seen: ReadonlySet<string>): ClaimLine[] => {
+    const known = byClaim.get(claimId);
+    if (known !== undefined) {
+      return known;
+    }
+    const own = rowsOf.get(claimId) ?? [];
+    const corrects = own[0]?.corrects_claim_id ?? null;
+    // The claim it corrects, split first (a loop, which the loader's links never make, is read as no claim corrected).
+    const before = corrects === null || seen.has(corrects) ? [] : linesOf(corrects, new Set([...seen, claimId]));
+    const pairs = pairLines(own.map(pairable), before);
+    const lines = own.map((row) => ({
+      chargeCents: parseCents(row.charge_cents),
+      lineReductionCents: parseCents(row.line_reduction_cents),
+      carriesAdjustments: row.carries_adjustments,
+      servicePaidCents: parseCents(row.paid_cents),
+    }));
+    const splits = lines.map((line, index): ClaimSplitLine => {
+      const at = pairs[index] ?? null;
+      const was = at === null ? undefined : before[at];
+      const keptCents = keptClaimPart(line, was === undefined ? undefined : { line: { ...was.split, servicePaidCents: was.servicePaidCents }, part: was.claimAdjustment });
+      return { chargeCents: line.chargeCents, lineReductionCents: line.lineReductionCents, carriesAdjustments: line.carriesAdjustments, keptCents };
+    });
+    const payments = claimLinePayments({
+      claimPaidCents: parseCents(own[0]?.claim_paid_cents ?? '0'),
+      lines: lines.map((line, index) => ({ ...(splits[index] as ClaimSplitLine), servicePaidCents: line.servicePaidCents })),
+    });
+    const result = own.map((row, index): ClaimLine => {
+      const payment = payments[index] as (typeof payments)[number];
+      return {
+        serviceLineId: row.id,
+        claimId: row.claim_id,
+        lineNo: row.line_no,
+        ...pairable(row),
+        observedAllowedCents: parseCents(row.observed_allowed_cents),
+        paidCents: payment.paidCents,
+        servicePaidCents: parseCents(row.paid_cents),
+        claimAdjustment: payment.claimAdjustment,
+        split: splits[index] as ClaimSplitLine,
+      };
+    });
+    byClaim.set(claimId, result);
+    return result;
+  };
+  const named = new Map<string, ClaimLine[]>();
+  for (const claimId of [...new Set(claimIds)]) {
+    if (rowsOf.has(claimId)) {
+      named.set(claimId, linesOf(claimId, new Set()));
+    }
+  }
+  return named;
 }
 
 /**

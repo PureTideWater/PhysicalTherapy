@@ -101,8 +101,8 @@ const asShare = (share: ShareCents): PatientShare => ({
 /**
  * The patient's share of every line of the claims named, by service line: its own PR rows by reason, and its part of
  * the claim's CAS at the claim's level by the cash's own rule (remittances.ts claimLines, @tp/ledger claimLevelShares:
- * the same lines take a part, by the same weights, the line's one rounded part split over the claim's reasons), its
- * PR reasons the patient's and flagged with the weights it was split by.
+ * the same lines take a part, by the same weights, keeping the same parts, the line's one rounded part split over
+ * the claim's reasons), its PR reasons the patient's and flagged with the weights it was split by.
  */
 async function lineShares(scope: Scope, practiceId: string, claimIds: readonly string[]): Promise<Map<string, Pick<ShareLine, 'share' | 'allocation'>>> {
   const ids = [...new Set(claimIds)];

@@ -29,6 +29,11 @@ export interface ClaimSplitLine {
   readonly chargeCents: Cents;
   readonly lineReductionCents: Cents;
   readonly carriesAdjustments: boolean;
+  /**
+   * The part it keeps of the claim it corrects (`keptClaimPart`): its paired line's part there, when its split inputs
+   * and SVC03 are that line's. Absent or null when it keeps none.
+   */
+  readonly keptCents?: Cents | null;
 }
 
 /** A line of a claim as its claim's cash is split: the split's line and its payment (SVC03). */
@@ -53,8 +58,8 @@ export interface LinePayment {
 }
 
 /**
- * What a line's part of its claim-level CAS is weighed by: its weight over the weights of the lines that take a part,
- * on the allowed amount before the claim-level CAS (`basis` allowed) or, when those are all zero, on the charge.
+ * What a line's part of its claim-level CAS is weighed by: its weight over the weights of the lines that take a
+ * part, on the allowed amount before the claim-level CAS (`basis` allowed) or, when those are all zero, on the charge.
  */
 export interface ClaimAllocation {
   readonly basis: 'allowed' | 'charge';
@@ -64,19 +69,30 @@ export interface ClaimAllocation {
 
 const magnitude = (amount: Cents): Cents => maxCents(amount, negateCents(amount));
 
+/** The part a line keeps (`ClaimSplitLine.keptCents`), null when it keeps none. */
+const keptOf = (line: ClaimSplitLine): Cents | null => line.keptCents ?? null;
+
 /**
- * The weights a claim's claim-level CAS is split by (docs/adr/0067), null for a line that takes no part. The lines
- * that take a part are those carrying CAS of their own (every line when none does): a line carrying CAS balances
- * alone (SVC02 − its CAS − SVC03 = 0), so its SVC03 holds none of the claim-level CAS, while a line carrying none is
- * balanced by the claim and its SVC03 may already hold its part. Each is weighed by its allowed amount before the
- * claim-level CAS, the magnitude of SVC02 less its own CAS outside group PR (for a line balanced alone, SVC03 plus
- * its own PR; for a line carrying none, its charge): a claim-level coinsurance is a share of the allowed amounts, so
- * this gives each line its own part of it, where a split by charge would spread one line's rise over the others.
- * When those weights add up to zero, the charges' magnitudes (and, when they too are all zero, an even split).
+ * The lines a claim's claim-level CAS is spread over (docs/adr/0067). The lines that take a part are those carrying
+ * CAS of their own (every line when none does): a line carrying CAS balances alone (SVC02 − its CAS − SVC03 = 0), so
+ * its SVC03 holds none of the claim-level CAS, while a line carrying none is balanced by the claim and its SVC03 may
+ * already hold its part. Of those, a line that keeps its part of the claim it corrects (`keptClaimPart`) takes no
+ * share of the rest, which is spread over the others; when every one keeps its part, over them all (`spreadOver`).
  */
-export function claimAllocations(lines: readonly ClaimSplitLine[]): (ClaimAllocation | null)[] {
+function takersOf(lines: readonly ClaimSplitLine[]): boolean[] {
   const own = lines.some((line) => line.carriesAdjustments);
-  const takes = lines.map((line) => !own || line.carriesAdjustments);
+  return lines.map((line) => !own || line.carriesAdjustments);
+}
+
+/** `takersOf`'s lines less those keeping a part, or all of them when every one keeps its part. */
+function spreadOver(lines: readonly ClaimSplitLine[]): boolean[] {
+  const takes = takersOf(lines);
+  const changed = lines.map((line, index) => takes[index] === true && keptOf(line) === null);
+  return changed.includes(true) ? changed : takes;
+}
+
+/** The weights of the lines `takes` names (`claimAllocations`), null for the others. */
+function allocationsOver(lines: readonly ClaimSplitLine[], takes: readonly boolean[]): (ClaimAllocation | null)[] {
   const takersTotal = (weights: readonly Cents[]): Cents => sumCents(weights.filter((_weight, index) => takes[index] === true));
   const allowed = lines.map((line) => magnitude(cents(line.chargeCents - line.lineReductionCents)));
   const basis = takersTotal(allowed) === ZERO_CENTS ? 'charge' : 'allowed';
@@ -86,34 +102,70 @@ export function claimAllocations(lines: readonly ClaimSplitLine[]): (ClaimAlloca
 }
 
 /**
- * Each line's part of a claim-level amount (`claimAllocations`' lines and weights), null for a line that takes none:
- * each part truncated toward zero, once, the cents left given one at a time in line order to the lines that take a
- * part, each beside its exact fraction `total × weight / Σ weights` (`total / n` when every weight is zero). The parts
- * add up to the total exactly.
+ * The weights a claim's claim-level CAS is split by (docs/adr/0067), null for a line that takes no part (`takersOf`),
+ * as a share allocated from the claim shows them. Each is weighed by its allowed amount before the claim-level CAS,
+ * the magnitude of SVC02 less its own CAS outside group PR (for a line balanced alone, SVC03 plus its own PR; for a
+ * line carrying none, its charge): a claim-level coinsurance is a share of the allowed amounts, so this gives each
+ * line its own part of it, where a split by charge would spread one line's rise over the others. When those weights
+ * add up to zero, the charges' magnitudes (and, when they too are all zero, an even split). When lines keep their
+ * parts of the claim it corrects, the rest is split by the same weights over the lines that changed
+ * (`claimAdjustmentParts`).
+ */
+export function claimAllocations(lines: readonly ClaimSplitLine[]): (ClaimAllocation | null)[] {
+  return allocationsOver(lines, takersOf(lines));
+}
+
+/**
+ * The part of the claim it corrects that a line keeps (docs/adr/0067), or null: its paired line's part there (`previous`,
+ * the line it replaces and that line's part, undefined when it has none; zero when that line took none) when its split
+ * inputs (its charge, its own CAS outside group PR, whether it carries CAS) and its SVC03 are that line's. A claim-level
+ * CAS that changes with one line is then that line's change, never a move onto lines the payer did not change.
+ */
+export function keptClaimPart(line: ClaimPaymentLine, previous: { readonly line: ClaimPaymentLine; readonly part: ClaimAdjustmentPart | null } | undefined): Cents | null {
+  if (previous === undefined) {
+    return null;
+  }
+  const was = previous.line;
+  const same = was.chargeCents === line.chargeCents && was.lineReductionCents === line.lineReductionCents && was.carriesAdjustments === line.carriesAdjustments && was.servicePaidCents === line.servicePaidCents;
+  return same ? (previous.part?.partCents ?? ZERO_CENTS) : null;
+}
+
+/**
+ * Each line's part of a claim-level amount, null for a line that takes none: a line that keeps a part
+ * (`keptClaimPart`) keeps it, and the rest (the total less the parts kept) is split by `claimAllocations`' weights
+ * over the lines that keep none (over every line that takes a part when all of them keep theirs), each share truncated toward zero, once, the cents left given one at a time in line order to those lines,
+ * each part beside its exact fraction `kept + rest × weight / Σ weights` (`kept + rest / n` when every weight is zero).
+ * With no line keeping a part it is the split of the whole total by weight. The parts add up to the total exactly.
  */
 export function claimAdjustmentParts(totalCents: Cents, lines: readonly ClaimSplitLine[]): (ClaimAdjustmentPart | null)[] {
-  if (totalCents === ZERO_CENTS || lines.length === 0) {
+  const takes = takersOf(lines);
+  const kept = lines.map((line, index) => (takes[index] === true ? keptOf(line) : null));
+  if (lines.length === 0 || (totalCents === ZERO_CENTS && kept.every((part) => part === null || part === ZERO_CENTS))) {
     return lines.map(() => null);
   }
-  const allocations = claimAllocations(lines);
+  const rest = totalCents - sumCents(kept.map((part) => part ?? ZERO_CENTS));
+  const allocations = allocationsOver(lines, spreadOver(lines));
   const count = BigInt(allocations.filter((allocation) => allocation !== null).length);
-  const exact = allocations.map((allocation) =>
-    allocation === null
-      ? null
-      : allocation.claimWeightCents === ZERO_CENTS
-        ? { exactNumerator: totalCents, exactDenominator: count }
-        : { exactNumerator: totalCents * allocation.lineWeightCents, exactDenominator: allocation.claimWeightCents },
-  );
-  const parts = exact.map((fraction) => (fraction === null ? 0n : fraction.exactNumerator / fraction.exactDenominator));
-  let rest = totalCents - parts.reduce((total, part) => total + part, 0n);
-  const step = BigInt(compareCents(cents(rest), ZERO_CENTS));
-  for (let index = 0; rest !== 0n; index += 1) {
-    if (exact[index] !== null) {
+  const exact = allocations.map((allocation, index) => {
+    const keeps = kept[index] ?? null;
+    if (allocation === null) {
+      return keeps === null ? null : { keeps, share: 0n, denominator: 1n };
+    }
+    const even = allocation.claimWeightCents === ZERO_CENTS;
+    return { keeps: keeps ?? ZERO_CENTS, share: even ? rest : rest * allocation.lineWeightCents, denominator: even ? count : allocation.claimWeightCents };
+  });
+  const parts = exact.map((fraction) => (fraction === null ? 0n : fraction.keeps + fraction.share / fraction.denominator));
+  let left = totalCents - parts.reduce((total, part) => total + part, 0n);
+  const step = BigInt(compareCents(cents(left), ZERO_CENTS));
+  for (let index = 0; left !== 0n; index += 1) {
+    if (allocations[index] !== null) {
       parts[index] = (parts[index] as bigint) + step;
-      rest -= step;
+      left -= step;
     }
   }
-  return exact.map((fraction, index) => (fraction === null ? null : { partCents: cents(parts[index] as bigint), ...fraction }));
+  return exact.map((fraction, index) =>
+    fraction === null ? null : { partCents: cents(parts[index] as bigint), exactNumerator: fraction.keeps * fraction.denominator + fraction.share, exactDenominator: fraction.denominator },
+  );
 }
 
 /**
@@ -138,13 +190,15 @@ export function claimLinePayments(input: { readonly claimPaidCents: Cents; reado
  * `claimAdjustmentParts` gives it, rounded once, the very part its cash is short of SVC03 when its SVC03 holds none,
  * and that part is split over the reasons in proportion to their amounts: each truncated toward zero, the cents left
  * one at a time in order to the reasons not zero, so a line's reasons add up to its part exactly and no cent shows
- * as another reduction that its cash does not hold. When the reasons add up to zero, each is split alone.
+ * as another reduction that its cash does not hold. When the reasons add up to zero, each is split alone, by weight
+ * over every line that takes a part (no line keeps a part of a reason).
  */
 export function claimLevelShares(input: { readonly lines: readonly ClaimSplitLine[]; readonly reasonCents: readonly Cents[] }): Cents[][] {
   const { lines, reasonCents } = input;
   const total = sumCents(reasonCents);
   if (total === ZERO_CENTS) {
-    const columns = reasonCents.map((reason) => claimAdjustmentParts(reason, lines));
+    const alone = lines.map((line): ClaimSplitLine => ({ ...line, keptCents: null }));
+    const columns = reasonCents.map((reason) => claimAdjustmentParts(reason, alone));
     return lines.map((_line, index) => columns.map((column) => column[index]?.partCents ?? ZERO_CENTS));
   }
   return claimAdjustmentParts(total, lines).map((part) => {
