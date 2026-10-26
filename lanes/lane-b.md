@@ -776,3 +776,18 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - this session wakes at 03:45 UTC (send_later trig_01DnPQir4gPp2sMxn3vhqUdA) to check every workflow and session and resume what stopped;
     - each parallel session was told to schedule its own send_later at 03:50 UTC to resume its workflows from their progress files.
   - **Priority sent to all eight sessions:** finish the current PR before any follow-on. This session says when to stop starting new work (~85% weekly).
+- **2026-10-26 ~03:50 UTC: the 5-hour session limit hit at about 02:20 to 02:48 UTC, and reset at 03:40. Everything resumed, nothing lost.**
+  - **What stopped:** every session's turn and workflow agents, here and in all eight parallel sessions, with rate_limit 429. Here:
+    - the UX workflow wf_b56fe7b4-652 ended with 19 checkers, the retake and the manifest failed;
+    - 16 of the 18 background checkers stopped part-way.
+  - **What held:**
+    - every progress file: 706 of the 852 images were already judged, and batches 01, 10 and 20 were complete;
+    - every pushed branch and open PR (#47, #49, #50 and #111's), and CI on GitHub;
+    - the screen tour's PNGs and shots.json.
+  - **The container also restarted again** (PostgreSQL down). `tools/setup-container.sh` was re-run and printed OK.
+  - **Resumed at ~03:48 UTC:**
+    - seven fresh checkers judge only the 146 unjudged images, reading the progress files and writing each batch's verify file;
+    - the retake and the manifest run next, as a small workflow;
+    - all eight sessions were sent a resume message (their own 03:50 send_laters are a backup).
+  - **Usage:** this session's rate-limit record now shows the seven-day limit at "allowed_warning", resetting at 1793386800 (Friday 2026-10-30 19:00 UTC, as recorded). The weekly figure is near the line, so new starts stop at ~85% as planned.
+  - **Fixed:** the ops push retry loop. `cmd | tail -1 && break` read tail's exit status, so a rejected push looked like success and was never retried. The pushes were checked: the branch is level with origin. `scratchpad/push-ops.sh` now checks git's own exit status.
