@@ -7,7 +7,18 @@
  * tests) is configuration (docs/adr/0048).
  */
 
-export { MODEL_PURPOSES, FLAGGED_PURPOSES, type ModelPurpose } from './purposes';
+export {
+  ALL_SERVED,
+  FLAGGED_PURPOSES,
+  MODEL_PURPOSES,
+  type ModelPurpose,
+  PURPOSE_VARIANTS,
+  type ServedKey,
+  type ServedSet,
+  offeredPurposes,
+  purposeServed,
+  servedKey,
+} from './purposes';
 export { type CallContext, type GatewayOptions, type GatewayResult, ModelGateway } from './gateway';
 export { CallLimiter, type CallLimits, DEFAULT_CALL_LIMITS } from './limiter';
 export {
@@ -21,26 +32,84 @@ export {
   ModelFeatureOffError,
   PhiBoundaryError,
 } from './errors';
-export { CALL_TIMEOUT_MS, type GatewayConfig, assertPricesConfirmed, createProvider, pinnedModels, readGatewayConfig } from './config';
-export { EVALUATED_PURPOSES, type MissingEvaluation, RECORDED_EVALUATIONS, type RecordedEvaluation, assertEvaluated, unevaluatedModels } from './evaluated';
+export { CALL_TIMEOUT_MS, type GatewayConfig, type ServingOptions, createProvider, pinnedModels, readGatewayConfig, unservedCount } from './config';
 export {
+  COMMITTED_BASELINE,
+  COMMITTED_FLOORS,
+  COMMITTED_SERVING,
+  type NotServedReason,
+  SERVING_RULES,
+  type Serving,
+  type ServingDecision,
+  type ServingInputs,
+  entryFor,
+  gatewayServing,
+  productionServing,
+  servedSet,
+  servingDecisions,
+} from './evaluated';
+export { FLOORS_FORMAT, FLOOR_KINDS, type FloorKind, type FloorRef, type Floors, belowFloors, floorPpm, floorsSchema, meetsFloor, parseFloors, unsetFloors } from './floors-format';
+export {
+  CORRECTION_DECISIONS,
   CORRECTION_FORMAT,
+  CORRECTION_FORMATS,
+  CORRECTION_FORMAT_V1,
+  CORRECTION_FORMAT_V2,
   type Correction,
-  type FieldCounts as PermittedFieldCounts,
+  type EarlierPermittedReport,
+  type FinalRecord,
   PERMITTED_FIELDS,
   PERMITTED_REPORT_FORMAT,
+  PERMITTED_REPORT_FORMAT_V1,
   type PermittedField,
   type PermittedReport,
   type PermittedResult,
-  addCounts,
   correctionSchema,
+  earlierPermittedReportSchema,
   finalKeys,
+  isLegacyCorrection,
   permittedRegressions,
   permittedReport,
   permittedReportSchema,
+  permittedResult,
   scorePermitted,
+  scoredFinals,
   statedKeys,
 } from './permitted';
+export {
+  type DerivedCounts,
+  type FieldTally,
+  type Stated,
+  TALLY_KEYS,
+  type Tallied,
+  type TrueKeys,
+  ZERO_TALLY,
+  addTally,
+  asCounts,
+  pairRecords,
+  sumTallies,
+  tallyFields,
+  totalTally,
+  wrongVerified,
+  zeroTallies,
+} from './tally';
+export {
+  BASELINE_FIELDS,
+  BASELINE_FORMAT,
+  type Baseline,
+  type BaselineEntry,
+  type BaselineField,
+  type BaselinePurpose,
+  CONTRACT_VARIANTS,
+  type ContractBaseline,
+  type ContractVariant,
+  type NarrativeBaseline,
+  baselineSchema,
+  contractEntrySchema,
+  narrativeEntrySchema,
+  parseBaseline,
+  tallySchema,
+} from './baseline-format';
 export {
   type CompleteOptions,
   EFFORTS,
@@ -84,6 +153,7 @@ export {
   type ContractPagesInput,
   type ContractTermsOutput,
   type ContractTermsProposal,
+  FIELD_PROBLEMS,
   type FieldProblem,
   type FieldReview,
   MAX_PAGES,

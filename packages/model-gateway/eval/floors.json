@@ -1,0 +1,34 @@
+{
+  "format": "tp-model-eval-floors/1",
+  "note": "Per-field recall and precision floors for proposeContractTerms, set by the founder with the contract specialist before production (docs/adr/0070). A null floor is unset: a real provider is neither recorded nor served while any is.",
+  "proposeContractTerms": {
+    "recall": {
+      "method": null,
+      "codes": null,
+      "modifiers": null,
+      "places_of_service": null,
+      "amount": null,
+      "percentage": null,
+      "fee_schedule_year": null,
+      "lesser_of_schedule": null,
+      "flags": null,
+      "rounding": null,
+      "effective_from": null,
+      "effective_to": null
+    },
+    "precision": {
+      "method": null,
+      "codes": null,
+      "modifiers": null,
+      "places_of_service": null,
+      "amount": null,
+      "percentage": null,
+      "fee_schedule_year": null,
+      "lesser_of_schedule": null,
+      "flags": null,
+      "rounding": null,
+      "effective_from": null,
+      "effective_to": null
+    }
+  }
+}

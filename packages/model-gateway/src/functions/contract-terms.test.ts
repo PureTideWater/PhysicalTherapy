@@ -1,9 +1,13 @@
 import { citationSchema, pageTextHash, parseRateTerms, quoteOnPage } from '@tp/contracts';
 import { describe, expect, it } from 'vitest';
 
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+
+import { referenceCandidate } from '../../eval/reference';
 import { sha256Hex } from '../hash';
 import { SYNTHETIC_CONTRACT_PAGES, syntheticContractInput, syntheticContractOutput } from '../testing';
-import { type ContractTermsCandidate, MAX_PAGES, contractTermsOutput, contractTermsSpec, scopesOverlap, verifyContractTerms } from './contract-terms';
+import { CITED_FIELDS, type ContractTermsCandidate, type FieldReview, MAX_PAGES, contractTermsOutput, contractTermsSpec, rowProblems, scopesOverlap, verifyContractTerms } from './contract-terms';
 
 /**
  * proposeContractTerms's verifier (test matrix MOD-01, MOD-02): every quote on its page, every amount,
@@ -292,5 +296,134 @@ describe('preparing the call', () => {
     expect(contractTermsOutput.safeParse(syntheticContractOutput()).success).toBe(true);
     expect(contractTermsOutput.safeParse({ candidates: [{ ...first(), approve: true }] }).success).toBe(false);
     expect(contractTermsOutput.safeParse({ candidates: [], status: 'signed_off' }).success).toBe(false);
+  });
+});
+
+describe('the row check (not_in_row, docs/adr/0070 Part 1)', () => {
+  // A SYNTHETIC rate table: each row names its codes before its figures.
+  const table = [
+    'SYNTHETIC EXHIBIT A. Fee schedule',
+    'CPT 97110 Therapeutic exercise $43.10 per unit',
+    'CPT 97112-GP Neuromuscular re-education $45.00 per unit',
+    'CPT 97140, 97530 Manual therapy and therapeutic activities $41.25 per unit in place of service 11',
+    'CPT 97161, 97162, 97163 Evaluation $120.00 per visit',
+    'CPT 97035 Ultrasound: 110% of the 2025 Medicare fee schedule',
+  ];
+  const page = table.join('\n');
+  const pages = [page];
+  const [, row97110 = '', row97112 = '', row97140 = '', row97161 = '', row97035 = ''] = table;
+  const base = (codes: readonly string[], codesQuote: string): ContractTermsCandidate => ({
+    label: `SYNTHETIC ${codes.join(', ')}`,
+    method: { value: 'FIXED_SCHEDULE', page: 1, quote: codesQuote },
+    codes: { written: [...codes], page: 1, quote: codesQuote },
+    modifiers: null,
+    places_of_service: null,
+    amount: null,
+    percentage: null,
+    fee_schedule_year: null,
+    lesser_of_schedule: null,
+    flags: null,
+    rounding: null,
+    effective_from: null,
+    effective_to: null,
+  });
+  const reviewOn = (candidate: ContractTermsCandidate, on: readonly string[] = pages) => verifyContractTerms({ ...input, pages: on }, { candidates: [candidate] }).proposal.candidates[0];
+  const problemsOf = (candidate: ContractTermsCandidate, field: string, on: readonly string[] = pages) => reviewOn(candidate, on)?.fields.find((entry) => entry.field === field)?.problems;
+
+  it('passes a row field quoted from its own row', () => {
+    const reviewed = reviewOn({ ...base(['97110'], row97110), amount: { written: '$43.10', page: 1, quote: row97110 } });
+    expect(reviewed?.fields.every((field) => field.verified)).toBe(true);
+    expect(reviewed?.rateRecord).toMatchObject({ parameters: { amount_cents: '4310' } });
+  });
+
+  it('rejects swapped rows: the codes from one row, the amount quoted from another', () => {
+    const reviewed = reviewOn({ ...base(['97110'], row97110), amount: { written: '$45.00', page: 1, quote: row97112 } });
+    expect(reviewed?.fields.find((field) => field.field === 'amount')).toMatchObject({ verified: false, problems: ['not_in_row'] });
+    expect(reviewed?.fields.find((field) => field.field === 'codes')?.verified).toBe(true);
+    expect(reviewed?.rateRecord).toBeNull();
+    expect(reviewed?.problems).toEqual(['fields_rejected']);
+  });
+
+  it('rejects a quote across rows whose figure is another row’s, and passes the same quote for the figure of its own row', () => {
+    const across = `${row97110}\n${row97112}`;
+    expect(problemsOf({ ...base(['97110'], row97110), amount: { written: '$45.00', page: 1, quote: across } }, 'amount')).toEqual(['not_in_row']);
+    expect(problemsOf({ ...base(['97110'], row97110), amount: { written: '$43.10', page: 1, quote: across } }, 'amount')).toEqual([]);
+  });
+
+  it('rejects a row field quoted from a fragment that names no code', () => {
+    expect(problemsOf({ ...base(['97110'], row97110), amount: { written: '$43.10', page: 1, quote: '$43.10 per unit' } }, 'amount')).toEqual(['not_in_row']);
+  });
+
+  it('rejects an item of a list field taken from another row: a modifier of 97112 on 97110', () => {
+    const across = `${row97110}\n${row97112}`;
+    expect(problemsOf({ ...base(['97110'], row97110), modifiers: { written: ['GP'], page: 1, quote: across } }, 'modifiers')).toEqual(['not_in_row']);
+    expect(problemsOf({ ...base(['97112'], row97112), modifiers: { written: ['GP'], page: 1, quote: row97112 } }, 'modifiers')).toEqual([]);
+  });
+
+  it('passes a multi-code row, a place of service on it, a per-visit group, and a percentage and year on their row', () => {
+    const multi = { ...base(['97140', '97530'], row97140), amount: { written: '$41.25', page: 1, quote: row97140 }, places_of_service: { written: ['11'], page: 1, quote: row97140 } };
+    expect(reviewOn(multi)?.fields.every((field) => field.problems.length === 0)).toBe(true);
+    const visit = { ...base(['97161', '97162', '97163'], row97161), method: { value: 'PER_VISIT' as const, page: 1, quote: row97161 }, amount: { written: '$120.00', page: 1, quote: row97161 } };
+    expect(reviewOn(visit)?.fields.every((field) => field.problems.length === 0)).toBe(true);
+    const percent = {
+      ...base(['97035'], row97035),
+      method: { value: 'PERCENT_OF_MEDICARE' as const, page: 1, quote: row97035 },
+      percentage: { written: '110%', page: 1, quote: row97035 },
+      fee_schedule_year: { written: '2025', page: 1, quote: row97035 },
+    };
+    expect(reviewOn(percent)?.fields.every((field) => field.problems.length === 0)).toBe(true);
+  });
+
+  it('passes a prose sentence that names the code after the figure, and one that names it before', () => {
+    const after = 'Payer shall pay $43.10 per unit for CPT 97110.';
+    const before = 'For CPT 97110, Payer shall pay $43.10 per unit.';
+    for (const sentence of [after, before]) {
+      expect(problemsOf({ ...base(['97110'], sentence), amount: { written: '$43.10', page: 1, quote: sentence } }, 'amount', [sentence]), sentence).toEqual([]);
+    }
+  });
+
+  it('passes a quote holding the word TOTAL, which is no code (the match is case-sensitive and never upper-cases)', () => {
+    const sentence = 'CPT 97110 is paid $43.10 per unit, the TOTAL for each unit; Payer shall pay it within 30 days.';
+    expect(problemsOf({ ...base(['97110'], sentence), amount: { written: '$43.10', page: 1, quote: sentence } }, 'amount', [sentence])).toEqual([]);
+  });
+
+  it('rejects, as known behaviour, a figure whose nearest token is a ZIP code, and the “respectively” sentence', () => {
+    // A visible rejection the specialist enters by hand, never a wrong value shown as checked (notice N3).
+    const zip = 'CPT 97110 provided at the SYNTHETIC clinic, SYNTHETIC TOWN 99999, is paid $43.10 per unit.';
+    expect(problemsOf({ ...base(['97110'], zip), amount: { written: '$43.10', page: 1, quote: zip } }, 'amount', [zip])).toEqual(['not_in_row']);
+    const respectively = 'CPT 97110 and CPT 97112 are paid at $43.10 and $45.00 per unit respectively.';
+    expect(problemsOf({ ...base(['97110'], respectively), amount: { written: '$43.10', page: 1, quote: respectively } }, 'amount', [respectively])).toEqual(['not_in_row']);
+    expect(problemsOf({ ...base(['97112'], respectively), amount: { written: '$45.00', page: 1, quote: respectively } }, 'amount', [respectively])).toEqual([]);
+  });
+
+  it('applies only to a candidate that states its codes, and adds nothing to a field already rejected', () => {
+    const uncoded = { ...base(['97110'], row97110), codes: null, amount: { written: '$43.10', page: 1, quote: '$43.10 per unit' } };
+    expect(problemsOf(uncoded, 'amount')).toEqual([]);
+    expect(problemsOf({ ...base(['97110'], row97110), amount: { written: '$45.01', page: 1, quote: row97112 } }, 'amount')).toEqual(['not_in_quote']);
+    // The method, flags, rounding and dates are not row fields: a wrong one is the evaluation gate's to measure.
+    expect(problemsOf({ ...base(['97110'], row97110), method: { value: 'FIXED_SCHEDULE', page: 1, quote: row97112 } }, 'method')).toEqual([]);
+  });
+
+  it('passes every reference answer of the committed synthetic contract set (MOD-01), all 742 fields', () => {
+    // Each true record as the reference provider answers it (eval/reference.ts), every cited field as the
+    // verifier would pass it: the row check alone, over every case's truth.
+    const root = path.resolve(import.meta.dirname, '../../../../fixtures/synthetic/MOD-01/contract-set');
+    const truths = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => JSON.parse(readFileSync(path.join(root, entry.name, 'truth.json'), 'utf8')) as { readonly id: string; readonly records: Parameters<typeof referenceCandidate>[0][] });
+    expect(truths).toHaveLength(40);
+    let fields = 0;
+    for (const truth of truths) {
+      for (const record of truth.records) {
+        fields += Object.keys(record.fields).length;
+        const candidate = referenceCandidate(record);
+        const reviews: FieldReview[] = CITED_FIELDS.flatMap((field) => {
+          const value = candidate[field];
+          return value === null ? [] : [{ field, page: value.page, quote: value.quote, written: 'written' in value ? value.written : null, verified: true, problems: [] }];
+        });
+        expect([...rowProblems(candidate, reviews)], `${truth.id} ${record.label}`).toEqual([]);
+      }
+    }
+    expect(fields).toBe(742);
   });
 });

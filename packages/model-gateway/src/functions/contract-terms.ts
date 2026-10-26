@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { InputRefusedError } from '../errors';
 import { isSha256, sha256Hex } from '../hash';
-import { type WrittenFigure, figureInQuote, inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote } from '../figures';
+import { type QuoteSpan, type WrittenFigure, codeTokens, figureInQuote, figureSpans, inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote, tokenSpans } from '../figures';
 import { PROMPTS } from '../prompts';
 import type { PurposeSpec, Verified } from '../spec';
 import { framePages } from '../untrusted';
@@ -28,6 +28,12 @@ import { framePages } from '../untrusted';
  *   modifier or place is a token no digit, slash or decimal point joins to a figure beside it ("11"
  *   is not a place of "11/1/2026", "59" not a modifier of "$59.00"); a field that fails is rejected,
  *   and the rest of its candidate stands for the specialist;
+ * - every row field (modifiers, places of service, amount, percentage, fee-schedule year) of a candidate
+ *   that names its codes quotes its own row: each written item stands somewhere in the field's quote
+ *   where the nearest code token before it (or, when none precedes it, the nearest after it) is one of
+ *   the candidate's own codes, else the field is rejected as not_in_row (rowProblems, docs/adr/0070 Part 1). Each field is otherwise
+ *   checked alone, so without this a candidate could take its codes from one row and its amount from
+ *   another, or quote a paragraph that holds every figure of a table, and verify;
  * - candidates whose scopes overlap (codes, modifiers, places of service and dates) are flagged as
  *   conflicting with each other, never merged or chosen between.
  *
@@ -91,7 +97,7 @@ export interface ContractPagesInput {
   readonly ambiguous?: boolean;
 }
 
-export const FIELD_PROBLEMS = ['page_missing', 'quote_not_on_page', 'not_in_quote', 'unreadable'] as const;
+export const FIELD_PROBLEMS = ['page_missing', 'quote_not_on_page', 'not_in_quote', 'unreadable', 'not_in_row'] as const;
 export type FieldProblem = (typeof FIELD_PROBLEMS)[number];
 
 export const CITED_FIELDS = [
@@ -221,6 +227,57 @@ function reviewField(entry: ReturnType<typeof citedFields>[number], pages: reado
 
 const upper = (items: readonly string[]) => items.map((item) => normalized(item).toUpperCase());
 
+/** The fields a rate table writes on a code's own row (or a prose rate clause in its own sentence). */
+const ROW_FIELDS: ReadonlySet<CitedField> = new Set(['modifiers', 'places_of_service', 'amount', 'percentage', 'fee_schedule_year']);
+
+/**
+ * The row fields reviewField passed whose quote does not tie them to one of the candidate's own codes
+ * (docs/adr/0070, Part 1; audit item #84). It applies to a candidate that states its codes. For each row
+ * field: the code tokens of its quote (codeTokens: case-sensitive whole tokens of HCPCS shape, outside
+ * figures) must not be none, since a row field quotes its row ("a table row, or the clause's sentence",
+ * the prompt asks); and each written item (the figure, or each modifier or place) must stand somewhere in
+ * the quote where its nearest code token before it (or, when none precedes it, the nearest after it) is
+ * one of the candidate's codes.
+ *
+ * What it catches: swapped rows (row B's line names row B's code nearest its amount), cross-row and
+ * paragraph quotes, and a row field quoted from a fragment with no code. What it does not catch, and the
+ * evaluation gate measures instead: a wrong method, flags or rounding, an amendment's figure on the
+ * original record (the amendment names the same code), and text the page reader got wrong. What it
+ * refuses that may be right, a visible rejection the specialist enters by hand: "97110 and 97112 are paid
+ * at $43.10 and $45.00 respectively" (the first figure's nearest code is 97112), a rate clause that refers
+ * to codes listed elsewhere, and a figure whose nearest token is a ZIP code. Code only: no prompt or schema
+ * changes with it.
+ */
+export function rowProblems(candidate: ContractTermsCandidate, reviews: readonly FieldReview[]): ReadonlySet<CitedField> {
+  const out = new Set<CitedField>();
+  if (candidate.codes === null) {
+    return out;
+  }
+  const own = new Set(upper(candidate.codes.written));
+  for (const review of reviews) {
+    if (!ROW_FIELDS.has(review.field) || !review.verified || review.written === null) {
+      continue;
+    }
+    const quote = normalized(review.quote);
+    const codes = codeTokens(quote);
+    const { field, written } = review;
+    const items = typeof written === 'string' ? [written] : written;
+    const spans = (item: string): QuoteSpan[] => (typeof written === 'string' ? figureSpans(figureOf(field), item, quote) : tokenSpans(normalized(item), quote, listField(field)));
+    const tied =
+      codes.length > 0 &&
+      items.every((item) =>
+        spans(item).some((span) => {
+          const nearest = codes.filter((code) => code.end <= span.start).at(-1) ?? codes.find((code) => code.start >= span.end);
+          return nearest !== undefined && own.has(nearest.token);
+        }),
+      );
+    if (!tied) {
+      out.add(field);
+    }
+  }
+  return out;
+}
+
 /** What code reads the candidate's scope as: null where the candidate names nothing (every code, any modifiers, any place, open dates). */
 interface ReadScope {
   readonly codes: readonly string[] | null;
@@ -337,7 +394,9 @@ function evidenceField(candidate: ContractTermsCandidate): { readonly page: numb
 }
 
 function reviewCandidate(input: ContractPagesInput, candidate: ContractTermsCandidate, index: number): Omit<CandidateReview, 'conflictsWith'> {
-  const fields = citedFields(candidate).map((entry) => reviewField(entry, input.pages));
+  const reviewed = citedFields(candidate).map((entry) => reviewField(entry, input.pages));
+  const notInRow = rowProblems(candidate, reviewed);
+  const fields = reviewed.map((field): FieldReview => (notInRow.has(field.field) ? { ...field, verified: false, problems: [...field.problems, 'not_in_row'] } : field));
   const { terms, defaults } = enteredTerms(candidate);
   const parsed = rateTermsInputSchema.safeParse(terms);
   const problems: ('fields_rejected' | 'terms_invalid')[] = [];
