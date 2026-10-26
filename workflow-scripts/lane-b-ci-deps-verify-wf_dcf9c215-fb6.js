@@ -1,0 +1,18 @@
+export const meta = {
+  name: 'lane-b-ci-deps-verify',
+  description: 'Lane B ci-deps: the fresh-clone verification of PR #48 at 7b6b10b, reading CI',
+  phases: [{ title: 'Verify', detail: 'one verifier in a fresh clone' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/320d184a-020e-5534-ba47-a98ce8d4921f/scratchpad'
+const OUT = SP + '/ci-deps'
+phase('Verify')
+const v = await agent(`You are the fresh-clone verifier of Lane B's PR #48 (co-001/ci-deps, CI 2 of 4) at head 7b6b10be742e2d6cf5992a3a3bda8221b7513a28, against claude/build-platform at d7259775. CLAUDE.md is in your context. Read-only: no commits, pushes, re-runs or GitHub posts. The budget is tight: do exactly these checks, no more. Save progress in ${OUT}/progress/verify.md (continue from it if it exists).
+Design acceptance: /home/user/ops/designs/lane-b-ci.md section 3.2.5. Status: /home/user/ops/approval-summaries/lane-b-ci-deps-status.md (top).
+1. git clone -q https://github.com/PureTideWater/PhysicalTherapy ${OUT}/verify && cd there && git checkout -q 7b6b10be742e2d6cf5992a3a3bda8221b7513a28; export PATH=${SP}/pnpm10348/bin:/opt/node24/bin:$PATH; flock /tmp/laneb-heavy.lock pnpm install --frozen-lockfile --prefer-offline.
+2. Scope (acceptance 1): git diff --stat origin/claude/build-platform...HEAD touches nothing under packages/pricing, packages/ledger, packages/db/migrations, content/, tools/verify-content, .claude/hooks/protect-content.sh, docs/product/domain-model.md; publish-content.yml differs from the base only in uses: refs, their comments and one timeout-minutes line; diff of 49514e8's publish-content.yml against tools/test/frozen/publish-content.yml is only that line, runs-on ubuntu-24.04. pnpm db:domain-model --summary-since origin/claude/build-platform says no change (if it needs a database, use DATABASE_URL=postgres://postgres:test@localhost:5433/postgres and a scratch database you drop).
+3. The licence commit (acceptance 4): the PR's first commit is 0e7776c8: it changes only package.json's packageManager, allowlist.json's musl entry and pnpm-lock.yaml; git diff --numstat 0e7776c8^ 0e7776c8 -- pnpm-lock.yaml is 43 0; counts of '^ *libc: \\[' 0 and 43; 27 glibc and 16 musl. The gates commit 6eae41a only touches pnpm-workspace.yaml's four settings. Every lockfile- or resolution-changing commit after 6eae41a is dated after 2026-10-26T19:18:50Z (git log --format='%H %cI' -- pnpm-lock.yaml pnpm-workspace.yaml package.json '*/package.json' since 6eae41a; a base merge's own commits excepted).
+4. Networked: BASE=origin/claude/build-platform pnpm actions:check and pnpm toolchain:check pass; pnpm audit --prod and --audit-level=high clean; git grep -n -i minio -- ':!pnpm-lock.yaml' ':!docs/adr/0066-*' empty.
+5. CI on 7b6b10b (GitHub MCP tools; get_job_logs with return_content and a large tail_lines; the proxy refuses artifacts): the four required checks green (all green, mutation, screening-capacity gate, approval-of-record) and release-dry-run's jobs; read the counts from CI's logs, never from vitest list: unit (passed and skipped), each db shard's total and their sum, e2e's two shards, golden; compare with the base's last green push run of ci.yml on d7259775 (its unit, db and e2e totals), and account for every difference by the PR's new or replaced tests (the PR description lists them).
+6. Every commit ends with the attribution lines; no model identifier in the diff; gitleaks clean (the pre-push hook ran it; also run tools/pre-push over the range if quick).
+Remove the clone when done. Write ${OUT}/verify-summary.md (each check, its command and result, the CI counts with job ids) and return: PASS or FAIL, and each failure exactly.`, { label: 'verify', phase: 'Verify' })
+return v

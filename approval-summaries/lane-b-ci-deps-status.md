@@ -6,6 +6,14 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 
 Open questions: none.
 
+## ci-deps MERGED (2026-10-26 ~21:06 UTC): #48 as e908c21
+
+- **Merged** with a merge commit from head 7b6b10b (`expectedHeadSha`), base d725977 unchanged, all four required checks green (`all green`, `mutation` with all seven shards, `screening-capacity gate`, `approval-of-record`), the release dry run green.
+- **Fresh-clone verification: PASS** (`lane-b-ci-deps-verify-summary.md`, wf_dcf9c215-fb6). From CI's logs: unit 6,265 passed and 1 skipped (job 121833937321) against the base's 6,154 and 1 (run 40339580259): +111, all the PR's new tests net of the three replaced; db 9,222 and 1 skipped over 127 files, equal shard by shard; e2e 54, equal; golden 376. Scope, the licence commit (43 0; 27 glibc, 16 musl), the gates commit, every resolution commit after 19:18:50Z, `actions:check` and `toolchain:check` live, audit, attribution and gitleaks all pass. The PR description's "No test lost" now gives these numbers (byte-equal read-back).
+- **Messaged the orchestrator at once.** Due now, the founder's (owner-admin): `designs/lane-b-settings-after-ci-deps.md` (F1 (a) default branch, F2 (a) Dependabot alerts and security updates, then F3 SHA pinning). Also due: `tools/setup-container.sh` to pin pnpm 10.34.8 (sha512 in `packageManager`); Lane A: the capacity harness race (below).
+- **Housekeeping:** unsubscribed from #48; the main checkout fast-forwarded to e908c21 and installed under pnpm 10.34.8; the ci-deps worktree and local branch removed (the remote branch stays). Push runs on e908c21 started at ~21:06 (ci 40401493722, mutation 40401493941, screening-capacity 40401493758, release-dry-run 40401493861, content-calendar 40401493955).
+- **Still stopped, as recorded below:** ci-browser (`co-001/ci-browser` at 8b38f48; its next step is to merge e908c21 in, then phase 2) and P1, P2, P4.
+
 ## Plan changed (2026-10-26 10:15 UTC): ci-deps is finished tonight by this session
 
 The orchestrator (10:13 UTC): the co-founder allows up to 98% weekly usage and Lane A runs on its own account, so ci-deps
