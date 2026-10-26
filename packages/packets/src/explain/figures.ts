@@ -77,8 +77,8 @@ export function formatFigure(value: unknown, form: FigureForm): string {
     return grouped(String(value.length));
   }
   if (form === 'integer') {
-    const digits = typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : typeof value === 'string' ? value : null;
-    if (digits === null || !/^\d+$/.test(digits)) {
+    const digits = Number.isSafeInteger(value) ? String(value) : value;
+    if (typeof digits !== 'string' || !/^\d+$/.test(digits)) {
       throw new ExplainShapeError('an integer figure is a whole number');
     }
     return grouped(digits);
@@ -135,8 +135,11 @@ export function segmentText(segment: Segment): string {
 export type Part = string | Segment | readonly Part[] | null | false;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** A code of CODES standing as a word of its own (not inside another word or code; no code begins another, so their order is free). */
-const CODE_IN_TEXT = new RegExp(`(?<![A-Za-z0-9+])(${CODES.map(escape).join('|')})(?![A-Za-z0-9+])`, 'g');
+/**
+ * A code of CODES standing as a word of its own (not inside another word or code; no code begins another, so their
+ * order is free). Only split() reads it, which finds every match without the global flag.
+ */
+const CODE_IN_TEXT = new RegExp(`(?<![A-Za-z0-9+])(${CODES.map(escape).join('|')})(?![A-Za-z0-9+])`);
 const DIGIT = /\d/;
 
 /** Text in its segments: each code of CODES its own code segment, the rest text, which may hold no digit. */
@@ -155,7 +158,8 @@ export function textSegments(text: string): Segment[] {
 }
 
 function flatten(part: Part, into: Segment[]): void {
-  if (part === null || part === false || part === '') {
+  // Empty text needs no case of its own: textSegments('') is no segment.
+  if (part === null || part === false) {
     return;
   }
   if (typeof part === 'string') {

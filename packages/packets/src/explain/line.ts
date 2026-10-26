@@ -106,11 +106,16 @@ interface Words extends FigureContext {
   readonly options: ExplainLineOptions;
   /** Whether the line is a Medicare Advantage non-contracted line (agreement.outcome, by string equality). */
   readonly medicare: boolean;
+  /** The reason an unpriced line stopped, or null for a priced line. */
+  readonly stopped: UnpricedReason | null;
 }
 
-/** A step not reached before an unpriced line stopped; a step that does not apply is left out. */
-const NOT_REACHED = 'not_reached';
-type StepResult = readonly Sentence[] | typeof NOT_REACHED | null;
+/**
+ * A step not reached before an unpriced line stopped: its words, which a step returns as they are (explainLine() tells
+ * them by identity, and prints them only for an unpriced line). A step that does not apply returns null and is left out.
+ */
+const NOT_REACHED: readonly Sentence[] = [say('Not reached.')];
+type StepResult = readonly Sentence[] | null;
 
 /** The words of one line. Throws ExplainWordsError for a code without words, ExplainShapeError for a trace the words cannot read. */
 export function explainLine(trace: PricingTrace, citation: ExplainCitation, audience: Audience, options: ExplainLineOptions = {}): LineWords {
@@ -122,16 +127,16 @@ export function explainLine(trace: PricingTrace, citation: ExplainCitation, audi
     throw new ExplainShapeError('the payer’s words are of priced lines only');
   }
   checkYearBasis(trace);
-  const words: Words = { trace, citation, audience, options, medicare };
-  const unpriced = trace.outcome.result === 'unpriced';
+  const stopped = trace.outcome.result === 'unpriced' ? trace.outcome.reason : null;
+  const words: Words = { trace, citation, audience, options, medicare, stopped };
   const steps: StepWords[] = [];
   for (const step of stepsFor(audience)) {
     const result = STEP_WORDS[step](words);
     if (result === NOT_REACHED) {
-      if (unpriced) {
-        steps.push({ step, sentences: [say('Not reached.')] });
+      if (stopped !== null) {
+        steps.push({ step, sentences: NOT_REACHED });
       }
-    } else if (result !== null && result.length !== 0) {
+    } else if (result !== null) {
       steps.push({ step, sentences: result });
     }
   }
@@ -163,16 +168,32 @@ export function checkYearBasis(trace: PricingTrace): void {
   }
 }
 
-/**
- * The worksheet a line's fee schedule is in: the SHA-256s of its RVU, locality (and ZIP+4), GPCI and
- * conversion-factor records, with the setting, the percentage, the lookup and its year, the practice ZIP and ZIP+4 and
- * the citation. Null for a line without a complete fee schedule (fixed, per visit, or stopped in it).
- */
-export function worksheetKeyOf(trace: PricingTrace, citation: ExplainCitation): string | null {
+type FeeSchedule = NonNullable<PricingTrace['steps']['fee_schedule']>;
+
+/** A fee schedule the engine completed: each of its records found, its setting chosen and its amount per unit made. */
+export type CompleteFeeSchedule = FeeSchedule & { readonly [K in 'unit_cents' | 'rvu' | 'locality' | 'gpci' | 'conversion_factor' | 'setting']: NonNullable<FeeSchedule[K]> };
+
+/** The line's fee schedule when it is complete; null for a line without one (fixed, per visit, or stopped in it). */
+export function completeFeeSchedule(trace: PricingTrace): CompleteFeeSchedule | null {
   const schedule = trace.steps.fee_schedule;
   if (schedule === null || schedule.unit_cents === null || schedule.rvu === null || schedule.locality === null || schedule.gpci === null || schedule.conversion_factor === null || schedule.setting === null) {
     return null;
   }
+  return { ...schedule, unit_cents: schedule.unit_cents, rvu: schedule.rvu, locality: schedule.locality, gpci: schedule.gpci, conversion_factor: schedule.conversion_factor, setting: schedule.setting };
+}
+
+/**
+ * The worksheet a line's fee schedule is in: the SHA-256s of its RVU, locality (and ZIP+4), GPCI and
+ * conversion-factor records, with the setting, the percentage, the lookup and its year, the practice ZIP and ZIP+4 and
+ * the citation. Null for a line without a complete fee schedule (completeFeeSchedule()).
+ */
+export function worksheetKeyOf(trace: PricingTrace, citation: ExplainCitation): string | null {
+  const schedule = completeFeeSchedule(trace);
+  return schedule === null ? null : scheduleKeyOf(schedule, trace, citation);
+}
+
+/** worksheetKeyOf() of a line whose complete fee schedule is `schedule`. */
+export function scheduleKeyOf(schedule: CompleteFeeSchedule, trace: PricingTrace, citation: ExplainCitation): string {
   const plusFour = schedule.locality.plus_four;
   const cited = citation === null ? 'none' : citation.kind === 'contract' ? `page ${String(citation.page)}` : `regulation ${citation.reference}`;
   return [
@@ -369,7 +390,7 @@ const PAYER_FLAGS = ['apply_mppr', 'apply_assistant_reduction', 'apply_sequestra
 
 function methodSentence(words: Words, terms: NonNullable<PricingTrace['terms']>): Sentence {
   if (words.medicare) {
-    return say(METHOD_TEXT.MA_NONCONTRACTED, ': ', percentSchedule(words, terms, 'medicare'), ', with Medicare’s reductions, under ', figure(words, 'terms.reference', 'verbatim'), '.');
+    return say(METHOD_TEXT.MA_NONCONTRACTED, ': ', percentSchedule(words, terms), ', with Medicare’s reductions, under ', figure(words, 'terms.reference', 'verbatim'), '.');
   }
   switch (terms.method) {
     case 'FIXED_SCHEDULE':
@@ -377,9 +398,9 @@ function methodSentence(words: Words, terms: NonNullable<PricingTrace['terms']>)
     case 'PER_VISIT':
       return say(METHOD_TEXT.PER_VISIT, ': ', figure(words, 'terms.fixed_amount', 'dollars'), ' per visit.');
     case 'PERCENT_OF_MEDICARE':
-      return say(METHOD_TEXT.PERCENT_OF_MEDICARE, ': ', percentSchedule(words, terms, 'contract'), '.');
+      return say(METHOD_TEXT.PERCENT_OF_MEDICARE, ': ', percentSchedule(words, terms), '.');
     case 'LESSER_OF': {
-      const schedule = terms.lesser_of?.schedule_method === 'FIXED_SCHEDULE' ? ['a fixed schedule of ', figure(words, 'terms.fixed_amount', 'dollars'), ' per unit'] : percentSchedule(words, terms, 'contract');
+      const schedule = terms.lesser_of?.schedule_method === 'FIXED_SCHEDULE' ? ['a fixed schedule of ', figure(words, 'terms.fixed_amount', 'dollars'), ' per unit'] : percentSchedule(words, terms);
       return say(METHOD_TEXT.LESSER_OF, ' the line charge and ', schedule, '.');
     }
     case 'UNSUPPORTED':
@@ -390,7 +411,7 @@ function methodSentence(words: Words, terms: NonNullable<PricingTrace['terms']>)
 }
 
 /** "110% of the Medicare physician fee schedule, the records in force on the service date, the practice's locality, with the conversion factor ..." */
-function percentSchedule(words: Words, terms: NonNullable<PricingTrace['terms']>, of: 'contract' | 'medicare'): Part[] {
+function percentSchedule(words: Words, terms: NonNullable<PricingTrace['terms']>): Part[] {
   const schedule = terms.percent_of_medicare;
   if (schedule === null) {
     throw new ExplainShapeError('a percent-of-Medicare term has its schedule');
@@ -399,7 +420,8 @@ function percentSchedule(words: Words, terms: NonNullable<PricingTrace['terms']>
   const year: Part =
     lookup === null ? null : lookup === 'in_force_on_service_date' ? ', the records in force on the service date' : [', locked to ', figure(words, 'terms.basis_year', 'verbatim'), ', the latest records in force during that year'];
   const head = [figure(words, 'terms.percentage', 'percent'), ' of the Medicare physician fee schedule', year];
-  if (of === 'medicare') {
+  // A Medicare Advantage non-contracted line is priced at the practice's own locality, with no contract's choices.
+  if (words.medicare) {
     return [head, ', the practice’s locality'];
   }
   const basis = schedule.locality_basis;
@@ -476,7 +498,7 @@ function unitsStep(words: Words): StepResult {
         : say('No medically unlikely edit (MUE) is in force for the code on the service date.'),
     );
   } else {
-    const exceeded = trace.outcome.result === 'unpriced' && trace.outcome.reason === 'MUE_EXCEEDED';
+    const exceeded = words.stopped === 'MUE_EXCEEDED';
     sentences.push(say('The medically unlikely edit (MUE) for code ', figure(words, 'units.mue_code', 'verbatim'), ' is ', figure(words, 'units.mue_value', 'verbatim'), exceeded ? '; the units are above it.' : '; the units are within it.'));
   }
   if (units.schedule_cents === null) {

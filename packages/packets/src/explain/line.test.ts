@@ -17,8 +17,8 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { CODE_SHAPES, PAYER_COPY_INTERNAL_TERMS, figureSourceProblems, figureTokenProblems, lineSentences } from '../test-support';
-import { ExplainShapeError, type Sentence, plainText } from './figures';
-import { type Audience, type ExplainCitation, type ExplainLineOptions, type LineWords, type StepKind, explainLine } from './line';
+import { ExplainShapeError, type Sentence, plainText, say } from './figures';
+import { type Audience, type ExplainCitation, type ExplainLineOptions, type LineWords, type StepKind, explainLine, worksheetKeyOf } from './line';
 import { PAYER_CODES } from './words';
 
 /**
@@ -289,6 +289,40 @@ describe('step 2, the fee schedule', () => {
   it('has none for a fixed schedule', () => {
     expect(step(trace(AUDIT_LINE), 'fee_schedule')).toBeUndefined();
   });
+
+  it('points only the payer to a worksheet, and only for a complete fee schedule', () => {
+    expect(step(line, 'fee_schedule', 'internal', { worksheet: 2 })).toMatch(/^Fee schedule: the 2026 records in force on 2026-03-10\./);
+    const schedule = line.steps.fee_schedule!;
+    const noRvu = { ...line, steps: { ...line.steps, fee_schedule: { ...schedule, rvu: null } } };
+    expect(step(noRvu, 'fee_schedule', 'payer', { worksheet: 2 })).toBe(
+      'Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.',
+    );
+  });
+});
+
+describe('the worksheet key', () => {
+  const line = trace({ agreement: contract(percentTerms({ percentage: '110' })) });
+  const schedule = line.steps.fee_schedule!;
+  const records = [schedule.rvu!.record.sha256, schedule.locality!.record.sha256];
+  const rest = [schedule.gpci!.record.sha256, schedule.conversion_factor!.record.sha256, 'non_facility', '110', 'in_force_on_service_date', '2026', '00011'];
+
+  it('joins the records, the setting, the percentage, the lookup and its year, the ZIP and the citation', () => {
+    expect(explainLine(line, CONTRACT, 'internal').worksheetKey).toBe([...records, '', '', ...rest, 'page 2'].join('|'));
+    expect(explainLine(line, null, 'internal').worksheetKey).toBe([...records, '', '', ...rest, 'none'].join('|'));
+    const ma = trace({ units: '1' });
+    expect(explainLine(ma, REGULATION, 'internal').worksheetKey).toMatch(/\|regulation 42 CFR 422\.214$/);
+  });
+
+  it('holds the ZIP+4 and its record when the locality needed one', () => {
+    const release = indexRelease(readRuleRelease('fixtures/synthetic/rules/release-synth-900006'));
+    const split = trace({ agreement: contract(percentTerms()) }, { release, settings: practiceSettings({ zip: '00012', zipPlusFour: '5001' }) });
+    const plusFour = split.steps.fee_schedule!.locality!.plus_four!;
+    expect(explainLine(split, CONTRACT, 'internal').worksheetKey?.split('|').slice(2, 4)).toEqual([plusFour.record.sha256, '5001']);
+  });
+
+  it.each(['unit_cents', 'rvu', 'locality', 'gpci', 'conversion_factor', 'setting'] as const)('is null for a fee schedule without its %s', (field) => {
+    expect(worksheetKeyOf({ ...line, steps: { ...line.steps, fee_schedule: { ...schedule, [field]: null } } }, CONTRACT)).toBeNull();
+  });
 });
 
 describe('step 3, the units and the medically unlikely edit', () => {
@@ -328,6 +362,7 @@ describe('step 3, per visit', () => {
   it('words the line that carries the visit and the visit’s lines', () => {
     expect(step(carrier, 'per_visit')).toBe('$80.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.');
     expect(step(carrier, 'per_visit', 'payer', { rowsOfClaim: new Map([[2, 5]]) })).toBe('$80.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2 (row 5).');
+    expect(wordsOf(carrier, 'payer', { rowsOfClaim: new Map([[2, 5]]) }).steps.find((item) => item.step === 'per_visit')?.sentences[0]?.segments).toContainEqual({ label: '5', of: 'row' });
   });
 
   it('words the visit’s other line', () => {
@@ -352,6 +387,18 @@ describe('step 3, the NCCI procedure-to-procedure edits', () => {
     expect(step(column2, 'ncci_ptp')).toBe('Claim line 1’s code 97140 is the first-column code of a National Correct Coding Initiative (NCCI) edit with this code: the edit stands. It is a review flag and does not change the amount.');
     expect(step(column2, 'outcome')).toBe('Priced: $50.00 expected, $50.00 before the one rounding. A National Correct Coding Initiative (NCCI) edit stands: a review flag, which does not change the amount.');
     expect(step(column2, 'ncci_ptp', 'payer')).toBeUndefined();
+  });
+
+  it('writes NCCI out at the first of two edits and abbreviates it at the second', () => {
+    const [, , column2] = traces([
+      lineFacts({ procedureCode: '97140', agreement: ncci }),
+      lineFacts({ lineNo: 2, procedureCode: '97140', agreement: ncci }),
+      lineFacts({ lineNo: 3, procedureCode: '97530', agreement: ncci }),
+    ]) as [PricingTrace, PricingTrace, PricingTrace];
+    expect(column2.steps.ncci_ptp?.edits).toHaveLength(2);
+    const sentences = wordsOf(column2).steps.find((item) => item.step === 'ncci_ptp')?.sentences.map(plainText);
+    expect(sentences?.[0]).toContain(' is the first-column code of a National Correct Coding Initiative (NCCI) edit with this code: ');
+    expect(sentences?.[1]).toContain(' is the first-column code of an NCCI edit with this code: ');
   });
 
   it('words an edit bypassed by a modifier on this line or on the first-column line', () => {
@@ -486,6 +533,8 @@ describe('step 5, the patient share', () => {
     const line = trace({ ...AUDIT_LINE, patientShareAdjustments: [{ groupCode: 'PR', reasonCode: '1', amountCents: cents(500n) }] });
     const other = { ...line, line: { ...line.line, patient_share_adjustments: [{ group_code: 'CO', reason_code: '45', amount_cents: '500' }] } };
     expect(() => explainLine(other, CONTRACT, 'internal')).toThrow('a patient share adjustment is of group PR');
+    const mixed = { ...line, line: { ...line.line, patient_share_adjustments: [{ group_code: 'PR', reason_code: '1', amount_cents: '500' }, { group_code: 'CO', reason_code: '45', amount_cents: '500' }] } };
+    expect(() => explainLine(mixed, CONTRACT, 'internal')).toThrow('a patient share adjustment is of group PR');
     expect(step(line, 'patient_share', 'payer')).toBe('Patient share $5.00, reported beside the expected amount and never subtracted from it.');
   });
 });
@@ -571,6 +620,11 @@ describe('step 8, the dispute window', () => {
     expect(step(trace(AUDIT_LINE, { claim: { remittanceDate: null } }), 'window')).toBe('No dispute window applies to this line.');
   });
 
+  it('words a window of one day in the singular', () => {
+    const windows = { timely_filing_days: null, dispute_window_days: 1, appeal_levels: [] };
+    expect(step(trace({ agreement: contract(fixedTerms(5000n), { windows }) }), 'window', 'viewer')).toBe('Dispute window: 1 day from the payment date, under the contract.');
+  });
+
   it('groups a window’s length by thousands (UX finding: counts without a separator)', () => {
     const windows = { timely_filing_days: null, dispute_window_days: 3650, appeal_levels: [] };
     expect(step(trace({ agreement: contract(fixedTerms(5000n), { windows }) }), 'window', 'viewer')).toBe('Dispute window: 3,650 days from the payment date, under the contract.');
@@ -634,7 +688,12 @@ describe('an unpriced line', () => {
     expect(step(line, 'outcome', 'viewer')).toBe(outcome);
     const quoted = wordsOf(line).steps.find((item) => item.step === 'outcome')?.sentences.flatMap((sentence) => sentence.segments.filter((segment) => 'quoted' in segment));
     expect(quoted?.length).toBe(2);
+    expect(quoted?.map((segment) => ('quoted' in segment ? segment.from : null))).toEqual(['unpriced_reasons', 'unpriced_reasons']);
     expect(() => explainLine(line, citationOf(line), 'payer')).toThrow('the payer’s words are of priced lines only');
+  });
+
+  it('words a plan mapping that could not be resolved to one agreement', () => {
+    expect(step(trace({ agreement: { outcome: 'RESOLUTION_FAILED' } }), 'agreement')).toBe('The plan’s mapping could not be resolved to one agreement.');
   });
 
   it('reads the steps not reached as such, and leaves out a step that would not have applied', () => {
@@ -696,6 +755,97 @@ describe('the flag rule', () => {
     expect(payer).not.toContain('flag');
     if (kind !== 'sequestration') expect(payer).not.toContain(name);
     else expect(payer).not.toMatch(/Sequestration/);
+  });
+});
+
+/**
+ * Shapes the engine does not write, each made by hand from a trace it priced: the words refuse them by name (an
+ * ExplainShapeError or ExplainWordsError the surfaces show as "cannot be put in words"), or word only what the trace
+ * holds, rather than failing on a property of nothing or printing a step as reached or not that it was not.
+ */
+describe('traces the engine does not write', () => {
+  const percent = trace({ agreement: contract(percentTerms({ percentage: '110' })) });
+  const unpriced = (line: PricingTrace, step: 'input' | 'fee_schedule'): PricingTrace => ({ ...line, outcome: { result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'unexpected', step } });
+
+  it('reads the agreement as not reached for a line that stopped before it, and states no variance for it', () => {
+    const line = { ...unpriced(trace(AUDIT_LINE), 'input'), agreement: null };
+    const words = explainLine(line, null, 'internal');
+    expect(words.steps.find((item) => item.step === 'agreement')).toEqual({ step: 'agreement', sentences: [say('Not reached.')] });
+    // Its trace still holds the variance it was priced with; an unpriced line's observed step states only the basis.
+    expect(text(words.steps.find((item) => item.step === 'observed')?.sentences ?? [])).toBe('Observed allowed $70.00, the allowed amount the payer states for the line (AMT B6).');
+  });
+
+  it('reads the fee schedule as not reached for a percent-of-Medicare line that stopped before it', () => {
+    const line = { ...unpriced(percent, 'fee_schedule'), steps: { ...percent.steps, fee_schedule: null } };
+    expect(text(explainLine(line, CONTRACT, 'internal').steps.find((item) => item.step === 'fee_schedule')?.sentences ?? [])).toBe('Not reached.');
+  });
+
+  it('never reads a step of a priced line as not reached, even one its trace leaves empty', () => {
+    const line = { ...trace(AUDIT_LINE), steps: { ...trace(AUDIT_LINE).steps, window: null } };
+    const words = explainLine(line, CONTRACT, 'internal');
+    expect(words.steps.map((item) => item.step)).not.toContain('window');
+    expect(lineSentences(words).map(plainText)).not.toContain('Not reached.');
+  });
+
+  it('refuses a priced line without its units or its variance', () => {
+    const line = trace(AUDIT_LINE);
+    for (const steps of [{ ...line.steps, units: null }, { ...line.steps, variance_cents: null }]) {
+      expect(() => explainLine({ ...line, steps }, CONTRACT, 'internal')).toThrow('the calculation cannot be put in words: a priced line has its units and variance');
+    }
+  });
+
+  it('refuses a fee schedule whose year basis the terms do not state', () => {
+    for (const terms of [null, { ...percent.terms!, percent_of_medicare: null }]) {
+      expect(() => explainLine({ ...percent, terms }, CONTRACT, 'internal')).toThrow('the year basis disagrees with the fee schedule’s lookup');
+    }
+  });
+
+  it('refuses a percent-of-Medicare term without its schedule', () => {
+    const line = { ...percent, terms: { ...percent.terms!, percent_of_medicare: null }, steps: { ...percent.steps, fee_schedule: null } };
+    expect(() => explainLine(line, CONTRACT, 'internal')).toThrow('the calculation cannot be put in words: a percent-of-Medicare term has its schedule');
+  });
+
+  it('words a lesser-of term that names no schedule method by its percent-of-Medicare schedule', () => {
+    const line = trace({ agreement: contract(lesserOfTerms({ percentage: '110' })) });
+    const bare = { ...line, terms: { ...line.terms!, lesser_of: null } };
+    expect(step(bare, 'terms', 'payer')).toBe(step(line, 'terms', 'payer'));
+    expect(step(bare, 'terms', 'payer')).toMatch(/^Lesser of the line charge and 110% of the Medicare physician fee schedule/);
+  });
+
+  it('refuses a claim status it has no words for, naming the list', () => {
+    const line = trace(AUDIT_LINE, { claim: { claimStatusCode: '20' } });
+    const other = { ...line, claim: { ...line.claim, claim_status_code: '29' } };
+    expect(() => explainLine(other, CONTRACT, 'internal')).toThrow(expect.objectContaining({ name: 'ExplainWordsError', list: 'claim status' }));
+  });
+
+  it('refuses a bypassed edit with no bypassing modifier on either line', () => {
+    const ncci = contract(fixedTerms(5000n, { codes: ['97140', '97530', '97161'], flags: { apply_ncci: true } }));
+    const [, own] = traces([lineFacts({ procedureCode: '97140', agreement: ncci }), lineFacts({ lineNo: 2, procedureCode: '97530', modifiers: ['GP', 'XS'], agreement: ncci })]) as [PricingTrace, PricingTrace];
+    const none = { ...own, line: { ...own.line, modifiers: ['GP'] } };
+    expect(() => explainLine(none, CONTRACT, 'internal')).toThrow('the calculation cannot be put in words: a bypassed edit has a bypassing modifier');
+  });
+
+  it('refuses a reduction in the pool that ranks no unit', () => {
+    const line = trace({ units: '3' });
+    const steps = { ...line.steps, adjustments: line.steps.adjustments.map((adjustment) => (adjustment.name === 'mppr' ? { ...adjustment, ranking: [] } : adjustment)) };
+    expect(() => explainLine({ ...line, steps }, REGULATION, 'internal')).toThrow('the calculation cannot be put in words: a reduction in the pool ranks its units');
+  });
+
+  it('refuses an assistant modifier it has no words for', () => {
+    const line = trace({ units: '2', modifiers: ['GP', 'CQ'] });
+    const steps = {
+      ...line.steps,
+      adjustments: line.steps.adjustments.map((adjustment) =>
+        adjustment.name === 'assistant_reduction' ? { ...adjustment, records: adjustment.records.map((record) => ({ ...record, modifier: 'GA' })) } : adjustment,
+      ),
+    };
+    expect(() => explainLine({ ...line, steps }, REGULATION, 'internal')).toThrow(expect.objectContaining({ name: 'ExplainWordsError', list: 'assistant modifier' }));
+  });
+
+  it.each(['length', 'unit', 'measured_from', 'source'] as const)('refuses a dispute window without its %s', (field) => {
+    const line = trace();
+    const window = { ...line.steps.window!, [field]: null };
+    expect(() => explainLine({ ...line, steps: { ...line.steps, window } }, REGULATION, 'viewer')).toThrow('the calculation cannot be put in words: a dispute window has its length, unit, start and source');
   });
 });
 

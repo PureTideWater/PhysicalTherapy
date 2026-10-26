@@ -1,7 +1,7 @@
 import type { PricingTrace } from '@tp/pricing';
 
-import { ExplainShapeError, type FigureContext, type FigureForm, type Part, type Segment, type Sentence, figure, label, listOf, say } from './figures';
-import { type Audience, type ExplainCitation, checkYearBasis, lockedBy, worksheetKeyOf } from './line';
+import { type FigureContext, type FigureForm, type Part, type Segment, type Sentence, figure, label, listOf, say } from './figures';
+import { type Audience, type CompleteFeeSchedule, type ExplainCitation, checkYearBasis, completeFeeSchedule, lockedBy, scheduleKeyOf } from './line';
 import type { Slot } from './slots';
 import { APPLICABILITY_TEXT, SETTING_TEXT, wordsOf } from './words';
 
@@ -62,26 +62,26 @@ export interface WorksheetOptions {
 
 /** The worksheets of the lines, numbered in the order their first lines come; a line without a fee schedule has none. */
 export function feeScheduleWorksheets(lines: readonly WorksheetLine[], audience: Audience, options: WorksheetOptions = {}): Worksheet[] {
-  const groups = new Map<string, WorksheetLine[]>();
+  const groups = new Map<string, { readonly schedule: CompleteFeeSchedule; readonly lines: [WorksheetLine, ...WorksheetLine[]] }>();
   for (const line of lines) {
     checkYearBasis(line.trace);
-    const key = worksheetKeyOf(line.trace, line.citation);
-    if (key !== null) {
-      groups.set(key, [...(groups.get(key) ?? []), line]);
+    const schedule = completeFeeSchedule(line.trace);
+    if (schedule !== null) {
+      const key = scheduleKeyOf(schedule, line.trace, line.citation);
+      const group = groups.get(key);
+      if (group === undefined) {
+        groups.set(key, { schedule, lines: [line] });
+      } else {
+        group.lines.push(line);
+      }
     }
   }
-  return [...groups].map(([key, group], index) => worksheet(key, index + 1, group, audience, options.of ?? 'rows'));
+  return [...groups].map(([key, group], index) => worksheet(key, index + 1, group.schedule, group.lines, audience, options.of === 'line'));
 }
 
-function worksheet(key: string, number: number, group: readonly WorksheetLine[], audience: Audience, of: 'rows' | 'line'): Worksheet {
+/** A worksheet of its group's lines, the first line's complete fee schedule `schedule`; `ofLine` on a line's own page. */
+function worksheet(key: string, number: number, schedule: CompleteFeeSchedule, group: readonly [WorksheetLine, ...WorksheetLine[]], audience: Audience, ofLine: boolean): Worksheet {
   const [first] = group;
-  if (first === undefined) {
-    throw new ExplainShapeError('a worksheet has a line');
-  }
-  const schedule = first.trace.steps.fee_schedule;
-  if (schedule === null || schedule.setting === null || schedule.conversion_factor === null || schedule.locality === null) {
-    throw new ExplainShapeError('a worksheet’s line has a complete fee schedule');
-  }
   const context: FigureContext = { trace: first.trace, citation: first.citation, row: first.row };
   const at = (slot: Slot, form: FigureForm) => figure(context, slot, form);
   const plusFour = schedule.locality.plus_four !== undefined;
@@ -97,9 +97,9 @@ function worksheet(key: string, number: number, group: readonly WorksheetLine[],
 
   // Each distinct place of service of the lines, read in the first line's trace that has it.
   const places: Part[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string | null>();
   for (const line of group) {
-    const place = line.trace.line.place_of_service ?? '';
+    const place = line.trace.line.place_of_service;
     if (!seen.has(place)) {
       seen.add(place);
       places.push(figure({ trace: line.trace, citation: line.citation, row: line.row }, 'worksheet.place_of_service', 'verbatim'));
@@ -169,7 +169,7 @@ function worksheet(key: string, number: number, group: readonly WorksheetLine[],
       say('Each part above is its RVU × its GPCI × ', factor, ' × ', percentage, ', kept to the fraction of a cent until the one rounding.'),
     ],
     reductions:
-      of === 'line'
+      ofLine
         ? say('Reductions, in order, then the one rounding: as this line’s words say.')
         : say('Reductions, in order, then the one rounding: as the words of ', listOf(rowsUsing.map((row) => ['row ', label(row, 'row')])), ' say.'),
     check: say(

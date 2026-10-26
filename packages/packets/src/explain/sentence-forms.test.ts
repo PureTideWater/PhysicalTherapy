@@ -19,8 +19,8 @@ import { RENDERER_REVISION } from './version';
  * Mutation runs leave this file out (vitest.mutation.config.ts): Stryker's instrumentation rewrites the files it reads.
  */
 const PINNED = {
-  revision: 3,
-  sha256: 'a791273ad6b1a4b8db6e6c7493431dee094542ee264f8d0ec6cc8bc1bc9927fa',
+  revision: 4,
+  sha256: '948d313deb6d400b5a8f0eee9a92c1b68dd5de886ef89a7f6da3f2708a453d0b',
 } as const;
 
 const FILES = ['line.ts', 'worksheet.ts', 'figures.ts'] as const;

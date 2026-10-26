@@ -1,6 +1,6 @@
 import { cents } from '@tp/money';
 import { type PricingTrace, price } from '@tp/pricing';
-import { contractAgreement, lineFacts, maAgreement, percentTerms, pricingInput, syntheticRelease } from '@tp/pricing/testing';
+import { contractAgreement, lineFacts, maAgreement, perVisitTerms, percentTerms, pricingInput, syntheticRelease } from '@tp/pricing/testing';
 import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
@@ -82,6 +82,36 @@ describe('explainPacket', () => {
     );
   });
 
+  it('names each row by its own claim’s other lines only, never another claim’s or its own', () => {
+    // Two claims, each a visit of lines 1 and 2 whose line 1 carries the visit's amount (the other line, overpaid, is
+    // not a row): claim A's carrier is row 1, claim B's row 2. A row named from the wrong claim, or the line itself,
+    // would read "(row 1)" or "(row 2)" beside its own line.
+    const perVisit = contractAgreement({ terms: perVisitTerms(8000n), rateRecordId: IDS.rateRecord });
+    const carrier = (claimId: string, n: number) => {
+      const facts = [lineFacts({ agreement: perVisit, observedAllowedCents: cents(2000n) }), lineFacts({ lineNo: 2, procedureCode: '97140', agreement: perVisit, observedAllowedCents: cents(2000n) })];
+      const [item] = price(pricingInput(syntheticRelease(), facts, { claim: { remittanceDate: '2026-04-08' } }));
+      if (item?.outcome !== 'priced') throw new Error('the carrier prices');
+      const assembled = line(n, {
+        claimId,
+        serviceDate: item.trace.line.service_date,
+        procedureCode: item.trace.line.procedure_code,
+        units: item.trace.line.units,
+        expectedCents: item.expectedAllowedCents,
+        observedCents: cents(2000n),
+        varianceCents: item.varianceCents,
+        paidCents: cents(2000n),
+        calculation: lineCalculation(item.trace),
+      });
+      return { line: assembled, trace: item.trace };
+    };
+    const { content, traces } = packet([carrier(line(1).claimId, 1), carrier(line(2).claimId, 2)], { citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '8000' } }) });
+    const rows = explainPacket(content, traces, 'payer').rows;
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(plainText(row.words.steps.find((item) => item.step === 'per_visit')?.sentences[0] as never)).toBe('$80.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.');
+    }
+  });
+
   it('refuses a row whose trace differs from the SHA-256 its calculation carries, naming the row', () => {
     const { content, traces } = packet();
     const id = content.lines[1]?.priced_line_id as string;
@@ -95,7 +125,7 @@ describe('explainPacket', () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(ExplainBindingError);
-    expect(thrown).toMatchObject({ reason: 'trace_differs', row: 2, message: "row 2's calculation cannot be worded: trace_differs" });
+    expect(thrown).toMatchObject({ name: 'ExplainBindingError', reason: 'trace_differs', row: 2, message: "row 2's calculation cannot be worded: trace_differs" });
   });
 
   it('refuses a row whose trace is missing', () => {
@@ -123,7 +153,22 @@ describe('explainPacket', () => {
   it('refuses a tp-packet/1 version, which holds no calculation to bind', () => {
     const { content, traces } = packet();
     const v1 = { ...content, format: 'tp-packet/1' } as unknown as PacketContentV2;
-    expect(() => explainPacket(v1, traces, 'payer')).toThrow(expect.objectContaining({ reason: 'format', row: null }));
+    expect(() => explainPacket(v1, traces, 'payer')).toThrow(expect.objectContaining({ name: 'ExplainBindingError', reason: 'format', row: null, message: "the packet's calculation cannot be worded: format" }));
+  });
+
+  it('refuses a priced row whose trace names no agreement, under either citation, rather than failing to read it', () => {
+    const withoutAgreement = (content: PacketContentV2, traces: Map<string, unknown>) => {
+      const id = content.lines[0]?.priced_line_id as string;
+      const changed = { ...(traces.get(id) as PricingTrace), agreement: null };
+      const calculation = { ...content.lines[0]!.calculation, trace_sha256: traceShaOf(changed) };
+      traces.set(id, changed);
+      return { ...content, lines: content.lines.map((line, index) => (index === 0 ? { ...line, calculation } : line)) };
+    };
+    const contracted = packet();
+    expect(() => explainPacket(withoutAgreement(contracted.content, contracted.traces), contracted.traces, 'payer')).toThrow(expect.objectContaining({ reason: 'rate_record_differs', row: 1 }));
+    const ma = (n: number) => pricedLine(n, { facts: { agreement: maAgreement(), procedureCode: '97161', units: '1', observedAllowedCents: cents(4000n) } });
+    const regulated = packet([ma(1), ma(2)], { citation: MA_NONCONTRACTED_CITATION });
+    expect(() => explainPacket(withoutAgreement(regulated.content, regulated.traces), regulated.traces, 'payer')).toThrow(expect.objectContaining({ reason: 'not_medicare_advantage', row: 1 }));
   });
 
   it('refuses a row whose stored trace priced nothing', () => {

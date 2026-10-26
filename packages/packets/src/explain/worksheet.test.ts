@@ -121,6 +121,45 @@ describe('the worksheet’s words', () => {
   });
 });
 
+describe('the worksheet’s parts and refusals', () => {
+  it('words a rate record that is not signed off, citing no page, as the rate record’s percentage', () => {
+    const [sheet] = sheets([row(1, priced({ agreement: at110 }), null)], 'internal');
+    const lines = whole(sheet as Worksheet);
+    expect(lines[5]).toBe('Percentage: 110% of the fee schedule.');
+    expect(lines.at(-1)).toMatch(/ CMS shows the full fee-schedule amount, before the rate record’s 110% and before any reduction\.$/);
+  });
+
+  it('names each part of the table and labels its number and its rows as such', () => {
+    const [sheet] = sheets([row(2, priced({ agreement: at110 })), row(5, priced({ agreement: at110 }))]);
+    expect(sheet?.parts.map((part) => part.part)).toEqual(['work', 'pe', 'mp']);
+    expect(sheet?.title.segments).toContainEqual({ label: '1', of: 'worksheet' });
+    expect(sheet?.reductions.segments.filter((segment) => 'label' in segment)).toEqual([
+      { label: '2', of: 'row' },
+      { label: '5', of: 'row' },
+    ]);
+  });
+
+  it('refuses a line whose year basis disagrees with its lookup (finding M4), as the line’s words do', () => {
+    const line = priced({ agreement: at110 });
+    const malformed = { ...line, steps: { ...line.steps, fee_schedule: { ...line.steps.fee_schedule!, lookup: 'latest_in_basis_year' as const } } };
+    expect(() => feeScheduleWorksheets([row(1, malformed)], 'payer')).toThrow('the year basis disagrees with the fee schedule’s lookup');
+  });
+
+  it('refuses a conversion factor applicability it has no words for, naming the list', () => {
+    const line = priced({ agreement: at110 });
+    const schedule = line.steps.fee_schedule!;
+    const unknown = { ...line, steps: { ...line.steps, fee_schedule: { ...schedule, conversion_factor: { ...schedule.conversion_factor!, applicability: 'synthetic_unknown' } } } };
+    expect(() => feeScheduleWorksheets([row(1, unknown)], 'payer')).toThrow(expect.objectContaining({ name: 'ExplainWordsError', list: 'conversion factor applicability' }));
+  });
+
+  it.each(['unit_cents', 'rvu', 'locality', 'gpci', 'conversion_factor', 'setting'] as const)('gives none to a line whose fee schedule lacks its %s', (field) => {
+    const line = priced({ agreement: at110 });
+    const partial = { ...line, steps: { ...line.steps, fee_schedule: { ...line.steps.fee_schedule!, [field]: null } } };
+    expect(feeScheduleWorksheets([row(1, partial)], 'payer')).toEqual([]);
+    expect(feeScheduleWorksheets([row(1, partial), row(2, line)], 'payer').map((sheet) => sheet.lines)).toEqual([[2]]);
+  });
+});
+
 describe('the grouping', () => {
   it('gives two lines of one code, setting, locality and release one worksheet, with both rows', () => {
     const built = sheets([row(1, priced({ agreement: at110 })), row(2, priced({ serviceDate: '2026-04-02', agreement: at110 }))]);

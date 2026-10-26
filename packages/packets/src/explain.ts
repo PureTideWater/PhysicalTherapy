@@ -76,8 +76,9 @@ export function explainPacket(content: PacketContent, traces: ReadonlyMap<string
   const rows = lines.map((line) => {
     // The other lines of the same claim that are rows of the packet, by their line numbers: the words name them "claim line 2 (row 3)".
     const rowsOfClaim = new Map(lines.filter((other) => other.claimId === line.claimId && other !== line).map((other) => [other.trace.line.line_no, other.row] as const));
-    const worksheet = numberOf.get(line.row) ?? null;
-    return { row: line.row, words: explainLine(line.trace, line.citation, audience, { rowsOfClaim, ...(worksheet === null ? {} : { worksheet }) }), worksheet };
+    // A row with no worksheet is given none (undefined), and its words point nowhere.
+    const worksheet = numberOf.get(line.row);
+    return { row: line.row, words: explainLine(line.trace, line.citation, audience, { rowsOfClaim, worksheet }), worksheet: worksheet ?? null };
   });
   return { rows, worksheets, wordsVersion: WORDS_VERSION };
 }

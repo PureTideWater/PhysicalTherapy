@@ -111,6 +111,7 @@ describe('the closed lists the trace writes as strings', () => {
       }
       expect(thrown).toBeInstanceOf(ExplainWordsError);
       expect((thrown as ExplainWordsError).list).toBe(list);
+      expect((thrown as ExplainWordsError).name).toBe('ExplainWordsError');
       expect((thrown as ExplainWordsError).message).toBe(`the words have no entry for a ${list}`);
     }
   });

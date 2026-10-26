@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ExplainShapeError, figure, formatFigure, label, listOf, plainText, say, segmentText, slotValue } from './figures';
+import { ExplainShapeError, figure, formatFigure, label, listOf, plainText, say, segmentText, slotValue, textSegments } from './figures';
 
 /**
  * The display forms (design 4.3, figures.test.ts): each changes how a value is written, never the value; and the
@@ -59,6 +59,18 @@ describe('the display forms', () => {
     expect(formatFigure([], 'count')).toBe('0');
     expect(formatFigure(Array.from({ length: 1000 }, () => 'rr'), 'count')).toBe('1,000');
     expect(() => formatFigure('2', 'count')).toThrow(ExplainShapeError);
+    expect(() => formatFigure('2', 'count')).toThrow('the calculation cannot be put in words: a count is of an array');
+  });
+
+  it('names its refusal ExplainShapeError, which the surfaces read', () => {
+    let thrown: unknown;
+    try {
+      formatFigure(null, 'count');
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ExplainShapeError);
+    expect(thrown).toMatchObject({ name: 'ExplainShapeError', what: 'a count is of an array' });
   });
 
   it.each([
@@ -74,7 +86,7 @@ describe('the display forms', () => {
   });
 
   it('integer refuses anything but a whole number', () => {
-    for (const value of [-5, 2 ** 60, '-5', '1.5', '1,000', '', null, ['x']]) {
+    for (const value of [-5, 2 ** 60, '-5', '1.5', '1,000', '', '5x', null, ['x'], ['3650'], 3 / 2]) {
       expect(() => formatFigure(value, 'integer'), String(value)).toThrow('an integer figure is a whole number');
     }
   });
@@ -96,6 +108,16 @@ describe('sentences', () => {
     const sentence = say('Fee ', ['schedule', null, false, ''], ': ', { figure: '$1.00', source: { from: 'trace', path: ['x'], form: 'dollars', slot: 'summary.rounded' } }, ' (AMT B6).');
     expect(sentence.segments).toEqual([{ text: 'Fee schedule: ' }, { figure: '$1.00', source: { from: 'trace', path: ['x'], form: 'dollars', slot: 'summary.rounded' } }, { text: ' (' }, { code: 'AMT B6' }, { text: ').' }]);
     expect(plainText(sentence)).toBe('Fee schedule: $1.00 (AMT B6).');
+  });
+
+  it('splits a code out of its text without an empty text beside it', () => {
+    expect(textSegments('AMT B6')).toEqual([{ code: 'AMT B6' }]);
+    expect(textSegments('CQ and CO')).toEqual([{ code: 'CQ' }, { text: ' and ' }, { code: 'CO' }]);
+    expect(textSegments('')).toEqual([]);
+    expect(say('CQ', { figure: '$1.00', source: { from: 'trace', path: ['x'], form: 'dollars', slot: 'summary.rounded' } }).segments).toEqual([
+      { code: 'CQ' },
+      { figure: '$1.00', source: { from: 'trace', path: ['x'], form: 'dollars', slot: 'summary.rounded' } },
+    ]);
   });
 
   it('lists one, two and three items', () => {
@@ -122,6 +144,9 @@ describe('a figure at its slot', () => {
     expect(figure({ trace, citation }, 'summary.rounded', 'dollars')).toEqual({ figure: '$100.00', source: { from: 'trace', path: ['steps', 'rounding', 'rounded_cents'], form: 'dollars', slot: 'summary.rounded' } });
     expect(figure({ trace, citation }, 'summary.after', 'exact_dollars', [1])).toEqual({ figure: '$44.105', source: { from: 'trace', path: ['steps', 'adjustments', 1, 'after_cents'], form: 'exact_dollars', slot: 'summary.after' } });
     expect(figure({ trace, citation, row: 4 }, 'summary.page', 'verbatim')).toEqual({ figure: '2', source: { from: 'citation', path: ['page'], form: 'verbatim', slot: 'summary.page', row: 4 } });
+    // A line's own figure names no row at all, not a row of undefined.
+    const own = figure({ trace, citation }, 'summary.page', 'verbatim');
+    expect('source' in own ? Object.keys(own.source) : []).toEqual(['from', 'path', 'form', 'slot']);
   });
 
   it('refuses a slot with no value at its path, or with the wrong number of indexes', () => {
@@ -130,5 +155,12 @@ describe('a figure at its slot', () => {
     expect(() => slotValue({ trace, citation }, 'summary.after', [5])).toThrow('no value for the slot summary.after');
     expect(() => slotValue({ trace, citation }, 'summary.rounded', [0])).toThrow('the slot summary.rounded takes fewer indexes');
     expect(() => slotValue({ trace, citation: null }, 'summary.page')).toThrow('no value for the slot summary.page');
+  });
+
+  it('reads a path only through objects: never a missing index as a key, nor a property of text', () => {
+    // An index left out is not the key "undefined", and text's own length is not a dispute window's.
+    expect(() => slotValue({ trace: { steps: { adjustments: { undefined: { after_cents: '4500' } } } }, citation }, 'summary.after')).toThrow('no value for the slot summary.after');
+    expect(() => slotValue({ trace: { steps: { window: 'twelve' } }, citation }, 'window.length')).toThrow('no value for the slot window.length');
+    expect(slotValue({ trace: { steps: { window: { length: 3650 } } }, citation }, 'window.length')).toEqual({ value: 3650, path: ['steps', 'window', 'length'] });
   });
 });

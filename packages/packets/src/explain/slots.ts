@@ -171,6 +171,7 @@ export function pathMatchesSlot(slot: string, from: 'trace' | 'citation', path: 
   }
   return entry.path.every((part, index) => {
     const given = path[index];
-    return part === '#' ? typeof given === 'number' && Number.isSafeInteger(given) && /^\d+$/.test(String(given)) : given === part;
+    // A non-negative safe integer: its decimal text has no minus sign (comparing it by size is arithmetic the words do not do).
+    return part === '#' ? Number.isSafeInteger(given) && !String(given).startsWith('-') : given === part;
   });
 }

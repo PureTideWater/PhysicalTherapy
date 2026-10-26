@@ -12,5 +12,6 @@ import { canonicalJson } from './hash';
  * browser-safe subpath does not import.
  */
 export function wordsVersionOf(): string {
-  return createHash('sha256').update(canonicalJson({ tables: WORD_TABLES, slots: SLOTS, revision: RENDERER_REVISION }), 'utf8').digest('hex');
+  // Hash.update reads a string as UTF-8 by default, so no encoding is named (naming one leaves a mutant no input tells apart).
+  return createHash('sha256').update(canonicalJson({ tables: WORD_TABLES, slots: SLOTS, revision: RENDERER_REVISION })).digest('hex');
 }
