@@ -4,7 +4,8 @@
  * complete, the concurrent phase's six included; the run not complete; a priced-line count other than the measured
  * period's lines, or parsed claims other than the 835s held; an OOM kill or a restart of the worker; the worker's
  * memory.peak above 90% of its task's memory, over the whole run or the concurrent phase; a worker log line with
- * error_code RELEASE_READ_OUTSIDE_FETCH or JOB_FAILED; and any of these that could not be read (fail closed). Times are
+ * error_code RELEASE_READ_OUTSIDE_FETCH or JOB_FAILED; a concurrent phase sampled fewer than once each 2 seconds; and
+ * any of these that could not be read (fail closed). Times are
  * recorded and advisory, as the founder ruled for the screening's test (2026-10-23, reconciliation-001.md).
  */
 
@@ -13,6 +14,9 @@ export const MEMORY_PEAK_PERCENT = 90;
 
 /** The worker log's error codes that fail the run: a read outside the keyed fetch, and a job's last failed attempt. */
 export const FAILING_ERROR_CODES = ['RELEASE_READ_OUTSIDE_FETCH', 'JOB_FAILED'] as const;
+
+/** The longest the concurrent phase's memory may go unsampled on average: it is sampled each second. */
+export const PHASE_SAMPLE_GAP_MS = 2_000;
 
 /** The windows query's advisory budget, cold (docs/adr/0071; 5.9). */
 export const WINDOWS_COLD_BUDGET_MS = 5_000;
@@ -158,8 +162,11 @@ export function verdict(m: CapacityMeasurements): Verdict {
       reasons.push(`the worker’s memory peak ${what} is ${mib(value)}, above ${String(MEMORY_PEAK_PERCENT)}% of its ${mib(memory.limitBytes)} (${mib(ceiling)})`);
     }
   }
-  if (memory.phasePeakBytes !== null && memory.phaseSamples === 0) {
-    reasons.push('the concurrent phase’s memory was never sampled');
+  // Sampled each second, a phase with half its samples missing did not see its peak (int-surfaces improvement 5).
+  const phaseMs = m.times['concurrent phase'] ?? null;
+  const fewestSamples = phaseMs === null ? 1 : Math.max(1, Math.floor(phaseMs / PHASE_SAMPLE_GAP_MS));
+  if (memory.phasePeakBytes !== null && memory.phaseSamples < fewestSamples) {
+    reasons.push(`the concurrent phase’s memory was sampled ${String(memory.phaseSamples)} times in ${seconds(phaseMs)}, fewer than one each ${String(PHASE_SAMPLE_GAP_MS / 1000)} seconds (${String(fewestSamples)})`);
   }
   if (m.errorCodes === null) {
     reasons.push('the worker’s log could not be read');
@@ -178,6 +185,14 @@ export function verdict(m: CapacityMeasurements): Verdict {
     advisories.push(`the windows query took ${String(m.windows.coldMs)} ms cold, above its ${String(WINDOWS_COLD_BUDGET_MS)} ms budget (advisory)`);
   }
   return { pass: reasons.length === 0, reasons, advisories };
+}
+
+/**
+ * The advisory lines as the capacity job's `advisories` output: base64 of the lines, one per line, so no line can end
+ * the output early; empty when there are none, which keeps the notify job from running on a pass (fix round S3).
+ */
+export function advisoriesOutput(advisories: readonly string[]): string {
+  return advisories.length === 0 ? '' : Buffer.from(advisories.join('\n'), 'utf8').toString('base64');
 }
 
 /** release-capacity.json: the measurements and their verdict. */

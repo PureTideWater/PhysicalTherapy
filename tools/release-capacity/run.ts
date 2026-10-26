@@ -21,7 +21,7 @@ import { CommandError, DockerRuntime, ProcessRuntime, type Runtime, type Service
 import { HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginUrl, loginsEnvironment, workerEnvironment } from '../screening-capacity/env';
 import { MIB, NETWORK_DELAY_MS, cpuLayout, harnessCpus, postgresLimit, productionLimits, runnerTooSmall, taskLimit } from '../screening-capacity/limits';
 import { memoryEvents, workerStarted } from '../screening-capacity/measure';
-import { type CapacityMeasurements, type JobOutcome, type WindowsQuery, type WorkerMemory, errorCodes, markdown, report } from './checks';
+import { type CapacityMeasurements, type JobOutcome, type WindowsQuery, type WorkerMemory, advisoriesOutput, errorCodes, markdown, report } from './checks';
 import {
   FULL_SIZE,
   SMALL_SIZE,
@@ -530,6 +530,10 @@ async function main(): Promise<number> {
   }
   for (const advisory of full.verdict.advisories) {
     process.stdout.write(`::warning title=Release capacity (advisory)::${advisory}\n`);
+  }
+  // The notify job's issue body names the advisories too, on a pass as on a failure (fix round S3).
+  if (process.env.GITHUB_OUTPUT !== undefined && full.verdict.advisories.length > 0) {
+    appendFileSync(process.env.GITHUB_OUTPUT, `advisories=${advisoriesOutput(full.verdict.advisories)}\n`);
   }
   return full.verdict.pass ? 0 : 1;
 }

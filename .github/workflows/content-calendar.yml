@@ -3,12 +3,13 @@ name: content-calendar
 # The content calendar (audit #59; docs/adr/0071; docs/runbooks/content-updates.md): every day it reads the calendar
 # (packages/rules/src/calendar.ts), the newest published release's COVERAGE.md, the prepared releases and the drafts,
 # and the public source pages each entry names, and opens one issue labelled content-due per finding not already open
-# under the same title: content that ends within 45 or 14 days or has ended, a period due with no draft, an open-ended
-# content whose next files are overdue, a source page whose files changed or were never recorded, and calendar entries
-# never reviewed or reviewed more than 13 months ago. The check job only reads (contents: read, no secrets); the notify
-# job alone writes issues, with the job's own token, checks nothing out and runs no repository code, every value
-# reaching its shell through env. Issues hold only calendar data, release numbers, public page addresses and plain file
-# names seen on those pages (docs/adr/0071). A pull request runs the check alone. Not a required check.
+# under the same title, at most 20 new ones a run: content that ends within 45 or 14 days or has ended, a period due
+# with no draft, an open-ended content whose next files are overdue, a source page whose files changed, were never
+# recorded or are no longer listed, and calendar entries never reviewed or reviewed more than 13 months ago. The check
+# job only reads (contents: read, no secrets); the notify job alone writes issues, with the job's own token, checks
+# nothing out and runs no repository code, every value reaching its shell through env. Issues hold only calendar data,
+# release numbers, public page addresses and file names seen on those pages, plain or percent-encoded (docs/adr/0071).
+# A pull request runs the check alone. Not a required check.
 on:
   schedule:
     # Daily. Schedules fire only from the default branch (the founder's ruling F1 (a)).
@@ -58,6 +59,9 @@ jobs:
           cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
           echo "findings=$(base64 -w0 "$RUNNER_TEMP/findings.json")" >> "$GITHUB_OUTPUT"
 
+  # The notify job opens at most MAX_OPENED new issues a run, counting only titles not already open, so no finding is
+  # starved by older ones staying open; the rest are listed in one "findings not filed" issue (fix round SB-5). A
+  # check that did not finish, or handed on no findings list, opens or comments on one "check failing" issue (S8).
   notify:
     needs: check
     if: always() && github.event_name != 'pull_request'
@@ -73,21 +77,59 @@ jobs:
           CHECK_RESULT: ${{ needs.check.result }}
           FINDINGS_B64: ${{ needs.check.outputs.findings }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # tools/content-calendar/render.ts, MAX_OPENED_PER_RUN.
+          MAX_OPENED: "20"
         run: |
           set -euo pipefail
           gh label create content-due --description "Rule content due (audit #59)" --color FBCA04 2>/dev/null || true
-          gh issue list --label content-due --state open --limit 200 --json title --jq '.[].title' > open-titles.txt
-          if [ "$CHECK_RESULT" != "success" ]; then
+          # Every open content-due issue, every page of them: what the findings are deduplicated against.
+          gh api --paginate "repos/$GH_REPO/issues?labels=content-due&state=open&per_page=100" --jq '.[] | select(.pull_request == null) | {number, title}' > open.jsonl
+          jq -r '.title' open.jsonl > open-titles.txt
+          # The open issue titled as title.txt, if any.
+          open_number() { jq -rn --arg title "$(cat title.txt)" 'first(inputs | select(.title == $title) | .number) // empty' open.jsonl; }
+          # Opens the issue titled as title.txt with body.md, or comments on the one already open under that title.
+          open_or_comment() {
+            number=$(open_number)
+            if [ -z "$number" ]; then
+              gh issue create --title "$(cat title.txt)" --label content-due --body-file body.md
+            else
+              gh issue comment "$number" --body-file body.md
+            fi
+          }
+          : > findings.json
+          if [ "$CHECK_RESULT" = "success" ]; then
+            printf '%s' "$FINDINGS_B64" | base64 -d > findings.json 2>/dev/null || : > findings.json
+          fi
+          if ! jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then
             printf '%s\n' "Content calendar check failing" > title.txt
-            printf 'The content calendar check did not finish on %s at %s: %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
-            grep -Fxq -f title.txt open-titles.txt || gh issue create --title "$(cat title.txt)" --label content-due --body-file body.md
+            printf 'The content calendar check did not hand on its findings (the check: %s) on %s at %s: %s\n' "$CHECK_RESULT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+            open_or_comment
             exit 0
           fi
-          printf '%s' "$FINDINGS_B64" | base64 -d > findings.json
+          opened=0
+          : > unfiled.txt
           count=$(jq length findings.json)
           for i in $(seq 0 $((count - 1))); do
             jq -r --argjson i "$i" '.[$i].title' findings.json > title.txt
+            if grep -Fxq -f title.txt open-titles.txt; then
+              continue
+            fi
+            if [ "$opened" -ge "$MAX_OPENED" ]; then
+              printf -- '- %s\n' "$(cat title.txt)" >> unfiled.txt
+              continue
+            fi
             jq -r --argjson i "$i" '.[$i].body' findings.json > body.md
             printf '\n\nOpened by the content-calendar workflow: %s\n' "$RUN_URL" >> body.md
-            grep -Fxq -f title.txt open-titles.txt || gh issue create --title "$(cat title.txt)" --label content-due --body-file body.md
+            gh issue create --title "$(cat title.txt)" --label content-due --body-file body.md
+            opened=$((opened + 1))
           done
+          printf '%s\n' "Content calendar: findings not filed" > title.txt
+          if [ -s unfiled.txt ]; then
+            { printf 'A run opens at most %s new issues. These %s findings were not filed by %s; a later run files them:\n\n' "$MAX_OPENED" "$(wc -l < unfiled.txt | tr -d ' ')" "$RUN_URL"; cat unfiled.txt; } > body.md
+            open_or_comment
+          else
+            number=$(open_number)
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "Every finding is filed: $RUN_URL"
+            fi
+          fi

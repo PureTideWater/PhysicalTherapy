@@ -27,12 +27,19 @@ concurrency:
 
 jobs:
   capacity:
-    # GitHub's free 4-CPU runner, as screening-capacity's: Postgres keeps db.t4g.medium's 2 vCPU on 0-1, shared with the
-    # harness, and the worker its half vCPU on a CPU of its own (tools/screening-capacity/limits.ts, cpuLayout).
+    # GitHub's free 4-CPU runner for a public repository, as screening-capacity's: Postgres keeps db.t4g.medium's 2 vCPU
+    # on 0-1, shared with the harness, and the worker its half vCPU on a CPU of its own (tools/screening-capacity/limits.ts,
+    # cpuLayout). Once the repository is private its standard runner has 2 CPUs, which run.ts refuses as RUNNER_TOO_SMALL
+    # before measuring: this label then becomes the same 4-core larger runner as screening-capacity's, which needs an
+    # organization on GitHub Team and is billed beyond the included minutes (docs/runbooks/screening-capacity.md, "The
+    # 8-core runner"; docs/adr/0071); until then a private run fails every week without measuring (fix round S5).
     runs-on: ubuntu-24.04
     # The larger release takes longer to build and load than the screening's: a run takes 60 to 120 minutes, and a hung
     # one stops at 180 instead of GitHub's 360 (docs/adr/0063).
     timeout-minutes: 180
+    # The advisory lines (the windows query's time above its budget), base64, for the notify job (fix round S3).
+    outputs:
+      advisories: ${{ steps.measure.outputs.advisories }}
     steps:
       # The harness calls no GitHub API and pushes nothing, so the token is not left in the checkout.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -68,6 +75,7 @@ jobs:
       # The harness and its child processes on Postgres's CPUs (0-1 on the free 4-CPU runner), never the worker's: the
       # screening layout's own answer (limits.ts, harnessCpus). Every failing check fails this step (checks.ts).
       - name: Measure under the worker task's limits
+        id: measure
         run: |
           cpus=$(pnpm -s exec tsx tools/release-capacity/run.ts --print-harness-cpus)
           echo "harness on CPUs $cpus"
@@ -88,11 +96,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
 
-  # A failure opens one issue, or comments on the one already open. This job holds the workflow's only write permission
-  # and runs no repository code: it checks nothing out.
+  # A failure, a cancel (the 180-minute timeout among them) or an advisory opens one issue, or comments on the one already
+  # open under its title (fix round S3, SB-7). This job holds the workflow's only write permission and runs no
+  # repository code: it checks nothing out, and every value reaches its shell through env.
   notify:
     needs: capacity
-    if: failure() && github.event_name != 'pull_request'
+    if: always() && github.event_name != 'pull_request' && (needs.capacity.result == 'failure' || needs.capacity.result == 'cancelled' || needs.capacity.outputs.advisories != '')
     runs-on: ubuntu-24.04
     # One call to the issues API; a hung call stops at 5 minutes instead of GitHub's 360 (docs/adr/0063).
     timeout-minutes: 5
@@ -104,12 +113,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CAPACITY_RESULT: ${{ needs.capacity.result }}
+          ADVISORIES_B64: ${{ needs.capacity.outputs.advisories }}
         run: |
-          body="The release capacity test failed on ${GITHUB_REF_NAME} at ${GITHUB_SHA}: ${RUN_URL}. The run's artifact holds release-capacity.json and summary.md with each failing check."
-          number=$(gh issue list --label release-capacity --state open --json number --jq '.[0].number // empty')
+          set -euo pipefail
+          if [ "$CAPACITY_RESULT" = "success" ]; then
+            title="Release capacity advisory"
+            printf 'The release capacity test passed on %s at %s with an advisory: %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+          else
+            title="Release capacity test failing"
+            printf 'The release capacity test ended %s on %s at %s: %s. The artifact of the run holds release-capacity.json and summary.md with each failing check.\n' "$CAPACITY_RESULT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+          fi
+          if [ -n "$ADVISORIES_B64" ]; then
+            { printf '\nAdvisory:\n\n'; printf '%s' "$ADVISORIES_B64" | base64 -d | sed 's/^/- /'; printf '\n'; } >> body.md
+          fi
+          gh issue list --label release-capacity --state open --json number,title > open.json
+          number=$(jq -r --arg title "$title" 'first(.[] | select(.title == $title) | .number) // empty' open.json)
           if [ -z "$number" ]; then
             gh label create release-capacity --description "The weekly real-size test (audit #31)" --color B60205 2>/dev/null || true
-            gh issue create --title "Release capacity test failing" --label release-capacity --body "$body"
+            gh issue create --title "$title" --label release-capacity --body-file body.md
           else
-            gh issue comment "$number" --body "$body"
+            gh issue comment "$number" --body-file body.md
           fi

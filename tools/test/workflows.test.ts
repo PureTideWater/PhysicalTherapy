@@ -8,6 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
+import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
 import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
@@ -797,18 +798,103 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(check?.outputs).toEqual({ findings: '${{ steps.calendar.outputs.findings }}' });
   });
 
-  it('content-calendar: its notify job alone writes issues, skips pull requests, and opens each finding once per title, as an issue on a failed check too', () => {
+  /**
+   * A fake gh on PATH for a notify script: `gh api` answers with the open issues (as its --jq would print them, one
+   * object a line), `gh issue list` with them as one JSON array, and every call is logged one line each.
+   */
+  function fakeGh(open: readonly { number: number; title: string }[]): { dir: string; log: () => string[]; bodies: () => string[] } {
+    const dir = mkdtempSync(path.join(scratch, 'notify-'));
+    mkdirSync(path.join(dir, 'bin'));
+    mkdirSync(path.join(dir, 'fake'));
+    writeFileSync(path.join(dir, 'fake/open.jsonl'), open.map((issue) => JSON.stringify(issue)).join('\n') + (open.length > 0 ? '\n' : ''));
+    writeFileSync(path.join(dir, 'fake/open.json'), JSON.stringify(open));
+    writeFileSync(
+      path.join(dir, 'bin/gh'),
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "%s\\n" "$*" >> "$FAKE_DIR/log"',
+        'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
+        'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
+        'for arg in "$@"; do if [ "${previous:-}" = --body-file ]; then { cat "$arg"; printf "\\n---\\n"; } >> "$FAKE_DIR/bodies"; fi; previous=$arg; done',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    const lines = (name: string) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), 'utf8') : '');
+    return { dir, log: () => lines('log').split('\n').filter((line) => line !== ''), bodies: () => lines('bodies').split('\n---\n').filter((body) => body !== '') };
+  }
+
+  const notifyStep = (name: string) => read(name).jobs.notify?.steps[0];
+
+  /** Runs a notify step as GitHub runs it, with its env's literals and these values for its expressions. */
+  function runNotify(name: string, values: Record<string, string>, open: readonly { number: number; title: string }[]) {
+    const step = notifyStep(name);
+    const gh = fakeGh(open);
+    const literals = Object.fromEntries(Object.entries(step?.env ?? {}).filter(([, value]) => !value.includes('${{')));
+    const result = runScript(step?.run ?? '', { ...literals, GH_REPO: 'owner/repo', GH_TOKEN: 'token', RUN_URL: 'https://github.com/owner/repo/actions/runs/1', GITHUB_REF_NAME: 'claude/build-platform', GITHUB_SHA: 'abc123', FAKE_DIR: gh.dir, PATH: `${path.join(gh.dir, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`, ...values }, gh.dir);
+    return { ...result, log: gh.log(), bodies: gh.bodies() };
+  }
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64');
+  const finding = (index: number) => ({ title: `Finding ${String(index)}`, body: `Body ${String(index)}` });
+
+  it('content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run', () => {
     expectQuietNotify('content-calendar.yml', 'check', "always() && github.event_name != 'pull_request'");
-    const script = runs(read('content-calendar.yml').jobs.notify).join('\n');
+    const step = notifyStep('content-calendar.yml');
+    expect(step?.env?.MAX_OPENED).toBe(String(MAX_OPENED_PER_RUN));
+    const script = step?.run ?? '';
     expect(script.startsWith('set -euo pipefail\n')).toBe(true);
-    expect(script).toContain("gh issue list --label content-due --state open --limit 200 --json title --jq '.[].title' > open-titles.txt");
-    // Every issue it opens is behind the exact-title check against the open ones.
-    const creates = script.split('\n').filter((line) => line.includes('gh issue create'));
-    expect(creates).toHaveLength(2);
-    for (const line of creates) expect(line.trim().startsWith('grep -Fxq -f title.txt open-titles.txt || gh issue create --title "$(cat title.txt)" --label content-due --body-file body.md'), line).toBe(true);
-    expect(script).toContain('if [ "$CHECK_RESULT" != "success" ]; then');
-    // The bodies are the findings the check wrote (plain file names only, tools/content-calendar/fetch.ts) and the run's address.
-    expect(script).toContain('printf \'%s\' "$FINDINGS_B64" | base64 -d > findings.json');
+    // Every page of the open issues, not the first 200 (sec-boundary improvement 3).
+    expect(script).toContain('gh api --paginate "repos/$GH_REPO/issues?labels=content-due&state=open&per_page=100"');
+    expect(script).not.toContain('--limit 200');
+  });
+
+  it('content-calendar: notify files the findings not open, at most 20 a run, and lists the rest in one issue it closes once every finding is filed (fix round SB-5)', () => {
+    const all = Array.from({ length: 25 }, (_, index) => finding(index));
+    const open = [0, 1, 2].map((index) => ({ number: 100 + index, title: `Finding ${String(index)}` }));
+    const first = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, open);
+    expect(first.status, first.output).toBe(0);
+    const creates = first.log.filter((line) => line.startsWith('issue create'));
+    expect(creates).toEqual([
+      ...Array.from({ length: 20 }, (_, index) => `issue create --title Finding ${String(index + 3)} --label content-due --body-file body.md`),
+      'issue create --title Content calendar: findings not filed --label content-due --body-file body.md',
+    ]);
+    expect(first.bodies[0]).toBe('Body 3\n\n\nOpened by the content-calendar workflow: https://github.com/owner/repo/actions/runs/1\n');
+    expect(first.bodies.at(-1)).toBe('A run opens at most 20 new issues. These 2 findings were not filed by https://github.com/owner/repo/actions/runs/1; a later run files them:\n\n- Finding 23\n- Finding 24\n');
+    // The next day, with those open: findings 23 and 24 are filed, and the list of findings not filed is closed.
+    const nowOpen = [...open, ...Array.from({ length: 20 }, (_, index) => ({ number: 200 + index, title: `Finding ${String(index + 3)}` })), { number: 300, title: 'Content calendar: findings not filed' }];
+    const second = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, nowOpen);
+    expect(second.status, second.output).toBe(0);
+    expect(second.log.filter((line) => line.startsWith('issue '))).toEqual([
+      'issue create --title Finding 23 --label content-due --body-file body.md',
+      'issue create --title Finding 24 --label content-due --body-file body.md',
+      'issue close 300 --comment Every finding is filed: https://github.com/owner/repo/actions/runs/1',
+    ]);
+    // Twenty-five more the day after, while the list is open: it is commented on, not opened twice.
+    const third = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(Array.from({ length: 21 }, (_, index) => finding(index + 50))) }, [{ number: 300, title: 'Content calendar: findings not filed' }]);
+    expect(third.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue comment 300 --body-file body.md');
+    expect(third.log.filter((line) => line.startsWith('issue create'))).toHaveLength(20);
+  });
+
+  it('content-calendar: notify opens, or comments on, the one "check failing" issue when the check did not finish or handed on no findings list (fix round S8; sec-boundary improvement 2)', () => {
+    const failing = 'issue create --title Content calendar check failing --label content-due --body-file body.md';
+    for (const values of [
+      { CHECK_RESULT: 'failure', FINDINGS_B64: '' },
+      { CHECK_RESULT: 'cancelled', FINDINGS_B64: b64([finding(1)]) },
+      { CHECK_RESULT: 'success', FINDINGS_B64: '' },
+      { CHECK_RESULT: 'success', FINDINGS_B64: '!!not base64!!' },
+      { CHECK_RESULT: 'success', FINDINGS_B64: b64({ title: 'x' }) },
+      { CHECK_RESULT: 'success', FINDINGS_B64: b64([{ title: 'x' }]) },
+    ]) {
+      const result = runNotify('content-calendar.yml', values, []);
+      expect(result.status, `${JSON.stringify(values)} ${result.output}`).toBe(0);
+      expect(result.log.filter((line) => line.startsWith('issue ')), JSON.stringify(values)).toEqual([failing]);
+      expect(result.bodies[0], JSON.stringify(values)).toBe(`The content calendar check did not hand on its findings (the check: ${values.CHECK_RESULT}) on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1\n`);
+    }
+    // Each later failing run comments on the open issue, so a long failure shows in its history.
+    const again = runNotify('content-calendar.yml', { CHECK_RESULT: 'failure', FINDINGS_B64: '' }, [{ number: 7, title: 'Content calendar check failing' }]);
+    expect(again.log.filter((line) => line.startsWith('issue '))).toEqual(['issue comment 7 --body-file body.md']);
+    // An empty list on a passing check files nothing.
+    expect(runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64([]) }, []).log.filter((line) => line.startsWith('issue '))).toEqual([]);
   });
 
   it('release-capacity: runs weekly and on request with a read-only token, builds release 900110 outside the repository and measures the production worker image under the worker task’s limits', () => {
@@ -834,11 +920,31 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
     expect(JSON.stringify(job?.steps ?? [])).not.toContain('secrets.');
   });
 
-  it('release-capacity: its notify job alone writes issues, on a failure that is not a pull request’s', () => {
-    expectQuietNotify('release-capacity.yml', 'capacity', "failure() && github.event_name != 'pull_request'");
-    const script = runs(read('release-capacity.yml').jobs.notify).join('\n');
-    expect(script).toContain('gh issue list --label release-capacity --state open');
-    expect(script).toContain('gh issue create --title "Release capacity test failing" --label release-capacity');
+  it('release-capacity: its notify job alone writes issues, on a failure, a cancel or an advisory that is not a pull request’s (fix round S3, SB-7)', () => {
+    expectQuietNotify(
+      'release-capacity.yml',
+      'capacity',
+      "always() && github.event_name != 'pull_request' && (needs.capacity.result == 'failure' || needs.capacity.result == 'cancelled' || needs.capacity.outputs.advisories != '')",
+    );
+    const capacity = read('release-capacity.yml').jobs.capacity;
+    expect(capacity?.outputs).toEqual({ advisories: '${{ steps.measure.outputs.advisories }}' });
+    expect(capacity?.steps.find((step) => step.id === 'measure')?.run).toContain('tools/release-capacity/run.ts \\');
+    expect(notifyStep('release-capacity.yml')?.env).toMatchObject({ CAPACITY_RESULT: '${{ needs.capacity.result }}', ADVISORIES_B64: '${{ needs.capacity.outputs.advisories }}' });
+    const advisory = Buffer.from('the windows query took 7000 ms cold, above its 5000 ms budget (advisory)').toString('base64');
+
+    const failed = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'failure', ADVISORIES_B64: advisory }, []);
+    expect(failed.status, failed.output).toBe(0);
+    expect(failed.log.filter((line) => line.startsWith('issue '))).toEqual(['issue list --label release-capacity --state open --json number,title', 'issue create --title Release capacity test failing --label release-capacity --body-file body.md']);
+    expect(failed.bodies[0]).toBe(
+      'The release capacity test ended failure on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1. The artifact of the run holds release-capacity.json and summary.md with each failing check.\n\nAdvisory:\n\n- the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\n',
+    );
+    const cancelled = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'cancelled', ADVISORIES_B64: '' }, [{ number: 4, title: 'Release capacity test failing' }]);
+    expect(cancelled.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue comment 4 --body-file body.md');
+    expect(cancelled.bodies[0]).toContain('ended cancelled');
+    // A pass with an advisory: its own issue, so the failing one's title never misleads.
+    const passed = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'success', ADVISORIES_B64: advisory }, [{ number: 4, title: 'Release capacity test failing' }]);
+    expect(passed.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue create --title Release capacity advisory --label release-capacity --body-file body.md');
+    expect(passed.bodies[0]).toBe('The release capacity test passed on claude/build-platform at abc123 with an advisory: https://github.com/owner/repo/actions/runs/1\n\nAdvisory:\n\n- the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\n');
   });
 
   it('are neither of them a required check', () => {

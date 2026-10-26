@@ -6,7 +6,7 @@ import { describeIssues, isIsoDate } from '@tp/rules';
 import { CONTENT_CALENDAR, type ContentCalendar, contentCalendarSchema, contentDue } from '@tp/rules/calendar';
 
 import { repositoryRoot } from '../content-files';
-import { type Fetcher, type SourceFinding, httpFetcher, watchSources } from './fetch';
+import { type Fetcher, type SourceFinding, httpFetcherFor, sourceHosts, watchSources } from './fetch';
 import { findings, findingsJson, summaryMarkdown } from './render';
 import { readCalendarSources } from './sources';
 
@@ -16,8 +16,8 @@ import { readCalendarSources } from './sources';
  * The content calendar's check (audit #59; docs/adr/0071; docs/runbooks/content-updates.md): what is due on `--today`
  * against the newest published release, the prepared releases and the drafts, and (unless --no-fetch) what changed on
  * the source pages, written as the findings file the content-calendar workflow files issues from and as a summary.
- * Exit 0 when it ran, with or without findings; 1 when the calendar fails its schema, an input cannot be read or
- * --today is not a date; 2 for usage. It fails closed: an unreadable input never reads as "nothing due".
+ * Exit 0 when it ran, with or without findings; 1 when the calendar fails its schema, an input cannot be read,
+ * --today is not a date, a title is not one line or the findings pass the file's bound; 2 for usage. It fails closed: an unreadable input never reads as "nothing due".
  */
 export const USAGE = 'usage: pnpm exec tsx tools/content-calendar/index.ts --today YYYY-MM-DD --out <findings.json> --summary <summary.md> [--no-fetch]';
 
@@ -73,16 +73,18 @@ export async function runContentCalendar(argv: readonly string[], run: CalendarR
     return 1;
   }
   const items = contentDue(calendar, read.sources, today);
-  const sources: SourceFinding[] = values['no-fetch'] === true ? [] : await watchSources(calendar, run.fetcher ?? httpFetcher, run.sleep);
+  const sources: SourceFinding[] = values['no-fetch'] === true ? [] : await watchSources(calendar, run.fetcher ?? httpFetcherFor(sourceHosts(calendar)), run.sleep);
   let list;
+  let text;
   try {
     list = findings(items, sources, calendar, { releaseNo: read.sources.releaseNo });
+    text = findingsJson(list);
   } catch (error) {
     run.stderr(`content-calendar: ${(error as Error).message}\n`);
     return 1;
   }
-  writeFileSync(out, findingsJson(list));
-  writeFileSync(summary, summaryMarkdown(list, today, items.length + sources.length));
+  writeFileSync(out, text);
+  writeFileSync(summary, summaryMarkdown(list, today));
   run.stdout(`content-calendar: ${String(list.length)} findings on ${today}\n`);
   return 0;
 }

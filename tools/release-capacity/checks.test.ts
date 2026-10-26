@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type CapacityMeasurements, FAILING_ERROR_CODES, type JobOutcome, MEMORY_PEAK_PERCENT, WINDOWS_COLD_BUDGET_MS, errorCodes, markdown, report, verdict } from './checks';
+import { type CapacityMeasurements, FAILING_ERROR_CODES, type JobOutcome, MEMORY_PEAK_PERCENT, PHASE_SAMPLE_GAP_MS, WINDOWS_COLD_BUDGET_MS, advisoriesOutput, errorCodes, markdown, report, verdict } from './checks';
 
 /**
  * The weekly real-size test's fail conditions (audit #31; docs/adr/0071; test matrix RCC-07), over synthetic
@@ -97,6 +97,15 @@ describe('the release capacity verdict', () => {
     failsWith({ memory: { ...PASSING.memory, phasePeakBytes: null, phaseSamples: 0 } }, /memory peak over the concurrent phase could not be read/);
   });
 
+  it(`fails a concurrent phase sampled fewer than once each ${String(PHASE_SAMPLE_GAP_MS / 1000)} seconds, so a peak between samples is not missed unseen (int-surfaces improvement 5)`, () => {
+    // 600 s of phase: 300 samples is the floor.
+    expect(verdict({ ...PASSING, memory: { ...PASSING.memory, phaseSamples: 300 } }).pass).toBe(true);
+    failsWith({ memory: { ...PASSING.memory, phaseSamples: 299 } }, /the concurrent phase’s memory was sampled 299 times in 600.0 s, fewer than one each 2 seconds \(300\)/);
+    failsWith({ memory: { ...PASSING.memory, phaseSamples: 0 } }, /sampled 0 times/);
+    // With the phase's time unread, one sample is the floor.
+    expect(verdict({ ...PASSING, times: {}, memory: { ...PASSING.memory, phaseSamples: 1 } }).pass).toBe(true);
+  });
+
   it('fails a worker log line with a read outside the fetch or a job’s last failed attempt, and an unreadable log', () => {
     expect(FAILING_ERROR_CODES).toEqual(['RELEASE_READ_OUTSIDE_FETCH', 'JOB_FAILED']);
     failsWith({ errorCodes: { RELEASE_READ_OUTSIDE_FETCH: 1 } }, /logged RELEASE_READ_OUTSIDE_FETCH 1 times/);
@@ -113,7 +122,8 @@ describe('the release capacity verdict', () => {
     expect(slow.pass).toBe(true);
     expect(slow.advisories).toEqual([`the windows query took 5001 ms cold, above its 5000 ms budget (advisory)`]);
     expect(verdict({ ...PASSING, windows: null })).toMatchObject({ pass: true, advisories: ['the windows query was not measured'] });
-    expect(verdict({ ...PASSING, times: { 'concurrent phase': 10 * 60 * 60_000 } }).pass).toBe(true);
+    // A ten-hour phase, sampled each second as the harness samples it.
+    expect(verdict({ ...PASSING, times: { 'concurrent phase': 10 * 60 * 60_000 }, memory: { ...PASSING.memory, phaseSamples: 36_000 } }).pass).toBe(true);
   });
 
   it('writes the report with its verdict, and a summary naming each failing check', () => {
@@ -139,5 +149,16 @@ describe('the worker log’s error codes', () => {
         '{"level":"info","msg":"worker started"}',
       ]),
     ).toEqual({ JOB_FAILED: 2, CONTENT_NOT_LOADED: 1 });
+  });
+});
+
+describe('the advisories output (fix round S3)', () => {
+  it('is empty with no advisory, and otherwise one line of base64 holding each advisory on a line of its own', () => {
+    expect(advisoriesOutput([])).toBe('');
+    const advisories = verdict({ ...PASSING, windows: { ...(PASSING.windows as NonNullable<CapacityMeasurements['windows']>), coldMs: 7_000 } }).advisories;
+    expect(advisories).toEqual(['the windows query took 7000 ms cold, above its 5000 ms budget (advisory)']);
+    const output = advisoriesOutput([...advisories, 'the windows query was not measured']);
+    expect(output).toMatch(/^[A-Za-z0-9+/]+=*$/);
+    expect(Buffer.from(output, 'base64').toString('utf8')).toBe('the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\nthe windows query was not measured');
   });
 });

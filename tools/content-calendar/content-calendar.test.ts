@@ -1,4 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -7,9 +9,23 @@ import { CONTENT_CALENDAR, type CalendarEntry, type ContentCalendar, type DueIte
 import { readRecordFile } from '@tp/rules/content';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { type FetchAnswer, type Fetcher, RETRY_AFTER_MS, USER_AGENT, linkFileName, pageFileNames, watchSources } from './fetch';
+import {
+  type FetchAnswer,
+  type FetchFunction,
+  type Fetcher,
+  MAX_PAGE_BYTES,
+  MAX_REDIRECTS,
+  RETRY_AFTER_MS,
+  USER_AGENT,
+  encodedName,
+  httpFetcherFor,
+  linkFileName,
+  pageFileNames,
+  sourceHosts,
+  watchSources,
+} from './fetch';
 import { runContentCalendar } from './index';
-import { MAX_BODY, MAX_FINDINGS, findings, sourceBody } from './render';
+import { MAX_BODY, MAX_FILE_BYTES, MAX_OPENED_PER_RUN, findings, findingsJson, sourceBody, summaryMarkdown } from './render';
 import { readCalendarSources } from './sources';
 
 /**
@@ -170,7 +186,7 @@ describe('the source watch', () => {
     const html = page('/files/zip/rvu27a.zip', 'https://www.cms.gov/files/zip/RVU26D.zip?x=1#top', 'RVU26C.zip', '/other/PFREV26.zip', '/medicare/payment/', 'RVU26D.zip');
     const fetcher: Fetcher = () => Promise.resolve(ok(html));
     const [unrecorded] = await watchSources([fee(null)], fetcher);
-    expect(unrecorded).toMatchObject({ kind: 'source_unrecorded', title: 'Content source files not recorded: Medicare fee schedule (relative values and GPCIs)', names: ['RVU26C.zip', 'RVU26D.zip', 'rvu27a.zip'], notShown: 0 });
+    expect(unrecorded).toMatchObject({ kind: 'source_unrecorded', title: 'Content source files not recorded: Medicare fee schedule (relative values and GPCIs)', names: ['RVU26C.zip', 'RVU26D.zip', 'rvu27a.zip'], encoded: [], unlisted: 0 });
     const [changed, ...rest] = await watchSources([fee(['RVU26B.zip', 'RVU26C.zip', 'RVU26D.zip'])], fetcher);
     expect(rest).toEqual([]);
     expect(changed).toMatchObject({ kind: 'source_changed', title: 'Content source changed: Medicare fee schedule (relative values and GPCIs)', names: ['rvu27a.zip'] });
@@ -216,21 +232,86 @@ describe('the source watch', () => {
     expect(calls).toBe(1);
   });
 
-  it('keeps only plain names: a hostile href never reaches a body, and the count of names not shown does (review m6)', async () => {
-    const long = `RVU${'A'.repeat(197)}.zip`;
-    const hostile = ['/files/@founder.zip', '/files/RVU27A](https://example.com).zip', '/files/RVU27A`b.zip', `/files/${long}`, '/files/RVU%2327%20A.zip', '/files/RVU27%40A.zip', '/files/RVU27A&amp;x.zip', '/files/%E0%A4%A.zip'];
+  it('shows plain names as they are and any other matching name only percent-encoded: a hostile href never reaches a body (review m6)', async () => {
+    const long = `RVU27A${' '.repeat(300)}.zip`;
+    const hostile = ['/files/@founder.zip', '/files/RVU27A](https://example.com).zip', '/files/RVU27A`b.zip', `/files/${encodeURIComponent(long)}`, '/files/RVU%2327%20A.zip', '/files/RVU27%40A.zip', '/files/RVU27A&amp;x.zip', '/files/%E0%A4%A.zip'];
     const html = page(...hostile, '/files/RVU27B.zip');
     const [finding] = await watchSources([fee(null)], () => Promise.resolve(ok(html)));
     expect(finding?.names).toEqual(['RVU27B.zip']);
-    expect(finding?.notShown).toBe(hostile.length);
+    // Only the names the pattern matches are counted: @founder.zip, example.com).zip, RVU#27 A.zip, RVU27@A.zip and the undecodable one are not.
+    expect(finding?.encoded).toEqual([encodedName(long), 'RVU27A%26x.zip', 'RVU27A%60b.zip']);
+    expect(encodedName(long)).toMatch(/^RVU27A(%20)+\.\.\.$/);
+    expect(encodedName(long).length).toBeLessThanOrEqual(203);
     const body = sourceBody(finding as NonNullable<typeof finding>);
-    for (const text of ['@', 'founder', 'example.com', 'RVU27A`b', long, '#27', '](', 'x.zip']) {
+    for (const text of ['@', 'founder', 'example.com', 'RVU27A`b', long, '#27', '](', '&', ' .zip']) {
       expect(body, text).not.toContain(text);
     }
-    expect(body).toContain('`RVU27B.zip`');
-    expect(body).toContain(`${String(hostile.length)} link names were not shown because they hold characters other than letters, digits, dot, underscore and hyphen.`);
+    expect(body).toContain('`RVU27B.zip`\n`RVU27A%20%20');
+    expect(body).toContain('3 of these names hold characters other than letters, digits, dot, underscore and hyphen, so they are shown percent-encoded; record them in the entry as shown.');
+    // Every line in a code span holds only letters, digits and . _ - %.
+    for (const line of body.split('\n').filter((one) => one.startsWith('`'))) {
+      expect(line).toMatch(/^`[A-Za-z0-9._%-]+`$/);
+    }
     const [{ body: filed = '' } = { body: '' }] = findings([], [finding as NonNullable<typeof finding>], CONTENT_CALENDAR, { releaseNo: 3 });
     expect(filed).toBe(body);
+  });
+
+  it('finds a new file whatever its name holds: a matching name that is not plain is a change, counted and shown encoded (fix round SB-1)', async () => {
+    const html = page('/f/RVU26A.zip', '/f/RVU27A%20updated.zip', '/f/RVU27B(1).zip');
+    const fetcher: Fetcher = () => Promise.resolve(ok(html));
+    const [changed, ...rest] = await watchSources([fee(['RVU26A.zip'])], fetcher);
+    expect(rest).toEqual([]);
+    expect(changed).toMatchObject({ kind: 'source_changed', names: [], encoded: ['RVU27A%20updated.zip', 'RVU27B%281%29.zip'], unlisted: 0 });
+    expect(sourceBody(changed as NonNullable<typeof changed>)).toContain('`RVU27A%20updated.zip`\n`RVU27B%281%29.zip`');
+    // Recorded as the issue shows them, or as the page names them, they are known.
+    expect(await watchSources([fee(['RVU26A.zip', 'RVU27A%20updated.zip', 'RVU27B%281%29.zip'])], fetcher)).toEqual([]);
+    expect(await watchSources([fee(['RVU26A.zip', 'RVU27A updated.zip', 'RVU27B(1).zip'])], fetcher)).toEqual([]);
+    const [unrecorded] = await watchSources([fee(null)], fetcher);
+    expect(unrecorded).toMatchObject({ kind: 'source_unrecorded', names: ['RVU26A.zip'], encoded: ['RVU27A%20updated.zip', 'RVU27B%281%29.zip'] });
+  });
+
+  it('counts no link that does not match the pattern: a page’s mailto:, javascript: and other links are not findings (fix round SB-6)', async () => {
+    const noise = page('mailto:a@b.gov', 'javascript:void(0)', '/about%20us', '/f/RVU26A.zip');
+    const [unrecorded] = await watchSources([fee(null)], () => Promise.resolve(ok(noise)));
+    expect(unrecorded).toMatchObject({ names: ['RVU26A.zip'], encoded: [], unlisted: 0 });
+    expect(sourceBody(unrecorded as NonNullable<typeof unrecorded>)).not.toContain('percent-encoded');
+    expect(await watchSources([fee(['RVU26A.zip'])], () => Promise.resolve(ok(noise)))).toEqual([]);
+  });
+
+  it('reads single-quoted and unquoted hrefs, and reports a recorded page that lists no matching file any more (fix round SB-2)', async () => {
+    const quoted = `<a href='/f/RVU27A.zip'>x</a> <a href=/f/RVU27B.zip>y</a> <a href = "/f/RVU27C.zip">z</a>`;
+    expect(pageFileNames(quoted)).toEqual(['RVU27A.zip', 'RVU27B.zip', 'RVU27C.zip']);
+    expect(await watchSources([fee(['RVU27A.zip', 'RVU27B.zip', 'RVU27C.zip'])], () => Promise.resolve(ok(quoted)))).toEqual([]);
+    // A page moved its files elsewhere: nothing matches, though the entry records files.
+    const moved = page('/medicare/payment/rvu27a', '/medicare/payment/rvu27b');
+    const [lost, ...rest] = await watchSources([fee(['RVU27A.zip'])], () => Promise.resolve(ok(moved)));
+    expect(rest).toEqual([]);
+    expect(lost).toMatchObject({ kind: 'source_lost', title: 'Content source no longer lists its files: Medicare fee schedule (relative values and GPCIs)', names: [], encoded: [] });
+    expect(sourceBody(lost as NonNullable<typeof lost>)).toContain('the watch cannot see this source');
+    // Some recorded names left, others stay: not a finding; an entry that records none is not lost.
+    expect(await watchSources([fee(['RVU26D.zip', 'RVU27A.zip', 'RVU27B.zip', 'RVU27C.zip'])], () => Promise.resolve(ok(quoted)))).toEqual([]);
+    expect(await watchSources([fee([])], () => Promise.resolve(ok(moved)))).toEqual([]);
+  });
+
+  it('cuts a long list of names at 6,000 characters, keeping the source and the runbook and saying how many lines were cut and where the rest is (fix round S2)', async () => {
+    const names = Array.from({ length: 400 }, (_, index) => `/f/RVU27A-${String(index).padStart(3, '0')}.zip`);
+    const [changed] = await watchSources([fee(['RVU26A.zip'])], () => Promise.resolve(ok(page(...names))));
+    const body = sourceBody(changed as NonNullable<typeof changed>);
+    expect(body.length).toBeLessThanOrEqual(MAX_BODY);
+    const lines = body.split('\n');
+    expect(lines.slice(-6)).toEqual([
+      '',
+      `Source: ${entryOf('fee_schedule').source.title} (${entryOf('fee_schedule').source.page})`,
+      '',
+      'Runbook: docs/runbooks/content-updates.md',
+      '',
+      'These dates are not yet confirmed against the source page (the calendar entry has no review).',
+    ]);
+    const shownNames = lines.filter((line) => line.startsWith('`RVU27A-')).length;
+    const note = lines.find((line) => line.includes('more lines were cut')) ?? '';
+    // The statement, a blank line and the names make the 402 lines before the tail.
+    expect(note).toBe(`${String(402 - 2 - shownNames)} more lines were cut to keep this issue under 6,000 characters. The source page named below lists every file.`);
+    expect(body).not.toContain('tools/content-calendar/index.ts');
   });
 
   it('reduces an href to its decoded last segment, without query or fragment', () => {
@@ -238,11 +319,131 @@ describe('the source watch', () => {
     expect(linkFileName('/files/RVU%2027A.zip')).toBe('RVU 27A.zip');
     expect(linkFileName('a.zip?x=1&amp;y=2')).toBe('a.zip');
     expect(linkFileName('/files/')).toBeNull();
-    expect(pageFileNames('<a HREF = "x/Y.zip">').names).toEqual(['Y.zip']);
+    expect(pageFileNames('<a HREF = "x/Y.zip">')).toEqual(['Y.zip']);
   });
 
   it('sends the calendar’s User-Agent', () => {
     expect(USER_AGENT).toBe('PaidWhole content calendar');
+  });
+});
+
+describe('the fetcher (fix round SB-3, SB-4)', () => {
+  const HOSTS = sourceHosts(CONTENT_CALENDAR);
+  const PAGE = entryOf('fee_schedule').source.page;
+  const OPTIONS = { timeoutMs: 20_000 };
+
+  /** A fetch answering by URL, recording what it was asked. */
+  function answering(answer: (url: string) => Response) {
+    const asked: { url: string; init: RequestInit }[] = [];
+    const fetchFunction: FetchFunction = (url, init) => {
+      asked.push({ url, init });
+      return Promise.resolve(answer(url));
+    };
+    return { asked, fetcher: httpFetcherFor(HOSTS, fetchFunction) };
+  }
+  const redirect = (location: string, status = 302) => new Response(null, { status, headers: { location } });
+
+  it('reads only from the calendar’s hosts', () => {
+    expect([...HOSTS].sort()).toEqual(['www.cms.gov', 'www.federalregister.gov', 'www.ncdoi.gov', 'x12.org']);
+  });
+
+  it('follows a redirect itself, on the same https host, with the User-Agent and no automatic redirect', async () => {
+    const { asked, fetcher } = answering((url) => (url === PAGE ? redirect('/files/listing?x=1') : new Response(page('/f/RVU27A.zip'))));
+    expect(await fetcher(PAGE, OPTIONS)).toEqual({ status: 200, text: page('/f/RVU27A.zip') });
+    expect(asked.map(({ url }) => url)).toEqual([PAGE, 'https://www.cms.gov/files/listing?x=1']);
+    for (const { init } of asked) {
+      expect(init.redirect).toBe('manual');
+      expect(init.headers).toEqual({ 'user-agent': USER_AGENT });
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('refuses a redirect to plain http, to another host, to a port or with credentials, and more than three redirects; each reads as unreachable', async () => {
+    for (const location of ['http://www.cms.gov/files/listing', 'https://example.com/files/listing', 'https://www.cms.gov:8443/files/listing', 'https://user:pass@www.cms.gov/files/listing']) {
+      const { asked, fetcher } = answering((url) => (url === PAGE ? redirect(location, 301) : new Response(page('/f/RVU27A.zip'))));
+      await expect(fetcher(PAGE, OPTIONS), location).rejects.toThrow('a page is read over https from the calendar’s hosts only');
+      expect(asked, location).toHaveLength(1);
+      const [finding] = await watchSources([{ ...entryOf('fee_schedule'), knownFiles: ['RVU27A.zip'] }], fetcher, () => Promise.resolve());
+      expect(finding?.kind, location).toBe('source_unreachable');
+    }
+    const hops = (count: number) => answering((url) => {
+      const hop = Number(new URL(url).searchParams.get('hop') ?? '0');
+      return hop < count ? redirect(`/files?hop=${String(hop + 1)}`) : new Response('done');
+    });
+    expect((await hops(MAX_REDIRECTS).fetcher(PAGE, OPTIONS)).text).toBe('done');
+    await expect(hops(MAX_REDIRECTS + 1).fetcher(PAGE, OPTIONS)).rejects.toThrow('more than 3 redirects');
+    const { asked, fetcher } = answering(() => new Response('never'));
+    await expect(fetcher('https://example.com/', OPTIONS)).rejects.toThrow();
+    expect(asked).toEqual([]);
+  });
+
+  it('reads at most 5 MiB of a page, declared or streamed', async () => {
+    const chunk = new Uint8Array(1024 * 1024).fill(0x61);
+    const streamed = (chunks: number, extra = 0) => {
+      let pulled = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (pulled < chunks) {
+            pulled += 1;
+            controller.enqueue(chunk);
+          } else {
+            if (extra > 0) controller.enqueue(new Uint8Array(extra).fill(0x62));
+            controller.close();
+          }
+        },
+      });
+      return { body, pulled: () => pulled };
+    };
+    const exact = streamed(5);
+    expect((await answering(() => new Response(exact.body)).fetcher(PAGE, OPTIONS)).text).toHaveLength(MAX_PAGE_BYTES);
+    const over = streamed(5, 1);
+    await expect(answering(() => new Response(over.body)).fetcher(PAGE, OPTIONS)).rejects.toThrow('the page passes 5242880 bytes');
+    const endless = streamed(1_000);
+    await expect(answering(() => new Response(endless.body)).fetcher(PAGE, OPTIONS)).rejects.toThrow('the page passes');
+    expect(endless.pulled()).toBeLessThanOrEqual(7);
+    const declared = streamed(1);
+    await expect(answering(() => new Response(declared.body, { headers: { 'content-length': String(MAX_PAGE_BYTES + 1) } })).fetcher(PAGE, OPTIONS)).rejects.toThrow('the page declares');
+    expect(declared.pulled()).toBeLessThanOrEqual(1);
+  });
+
+  it('against a local server through the real fetch: follows a same-host redirect, refuses one to http and stops a page past 5 MiB (sec-boundary improvement 4)', async () => {
+    const server = createServer((request, response) => {
+      if (request.url === '/start') {
+        response.writeHead(302, { location: '/listing' }).end();
+      } else if (request.url === '/listing') {
+        response.writeHead(200, { 'content-type': 'text/html' }).end(page('/f/RVU27A.zip'));
+      } else if (request.url === '/downgrade') {
+        response.writeHead(302, { location: 'http://www.cms.gov/listing' }).end();
+      } else {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        const block = Buffer.alloc(1024 * 1024, 0x61);
+        let sent = 0;
+        const more = () => {
+          while (sent < 64 && !response.destroyed) {
+            sent += 1;
+            if (!response.write(block)) {
+              response.once('drain', more);
+              return;
+            }
+          }
+          response.end();
+        };
+        more();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    // The calendar's https host, served here over http: every hop is checked as the https address it names.
+    const local: FetchFunction = (url, init) => fetch(url.replace(/^https:\/\/www\.cms\.gov/, `http://127.0.0.1:${String(port)}`), init);
+    const fetcher = httpFetcherFor(HOSTS, local);
+    try {
+      expect(await fetcher('https://www.cms.gov/start', OPTIONS)).toEqual({ status: 200, text: page('/f/RVU27A.zip') });
+      await expect(fetcher('https://www.cms.gov/downgrade', OPTIONS)).rejects.toThrow('a page is read over https from the calendar’s hosts only');
+      await expect(fetcher('https://www.cms.gov/big', OPTIONS)).rejects.toThrow('the page passes 5242880 bytes');
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });
 
@@ -309,7 +510,7 @@ describe('the findings file', () => {
     expect(filed[1]?.body).toContain('These dates are not yet confirmed against the source page (the calendar entry has no review).');
   });
 
-  it('files at most 20 findings, each body at most 6,000 characters', () => {
+  it('files every finding, each body at most 6,000 characters with its runbook kept, and the summary says how many a run opens (fix round SB-5)', () => {
     const items: DueItem[] = Array.from({ length: 25 }, (_, index) => ({
       family: 'ncci_mue',
       stage: 'ended',
@@ -317,15 +518,34 @@ describe('the findings file', () => {
       loadedThrough: null,
       period: null,
       dueOn: null,
-      commands: [],
-      lines: ['x'.repeat(100), ...Array.from({ length: 100 }, () => 'y'.repeat(100))],
+      commands: Array.from({ length: 60 }, (_, line) => `pnpm rules:import --type ncci_mue --year ${String(2000 + line)} --file ${'y'.repeat(60)}`),
+      lines: ['x'.repeat(100)],
     }));
     const list = findings(items, [], CONTENT_CALENDAR, { releaseNo: null });
-    expect(list).toHaveLength(MAX_FINDINGS);
+    expect(list).toHaveLength(25);
     for (const finding of list) {
       expect(finding.body.length).toBeLessThanOrEqual(MAX_BODY);
-      expect(finding.body.split('\n').at(-1)).toMatch(/^The rest of this finding was cut at 6,000 characters/);
+      const lines = finding.body.split('\n');
+      expect(lines.slice(-4)).toEqual(['', 'Runbook: docs/runbooks/content-updates.md', '', 'These dates are not yet confirmed against the source page (the calendar entry has no review).']);
+      expect(lines.find((line) => line.includes('more lines were cut'))).toMatch(
+        /^\d+ more lines were cut to keep this issue under 6,000 characters\. The calendar entry in packages\/rules\/src\/calendar\.ts holds the import templates, and the runbook below says what to do\.$/,
+      );
+      // The cut closes the commands' code block.
+      expect(lines.filter((line) => line.startsWith('```')).length % 2).toBe(0);
     }
+    const summary = summaryMarkdown(list, '2026-12-01');
+    expect(summary.split('\n').filter((line) => line.startsWith('- Finding '))).toHaveLength(25);
+    expect(summary).toContain(`A run opens at most ${String(MAX_OPENED_PER_RUN)} new issues; the notify job lists the others in the issue "Content calendar: findings not filed" and opens them on later runs.`);
+    expect(summaryMarkdown(list.slice(0, MAX_OPENED_PER_RUN), '2026-12-01')).not.toContain('A run opens');
+  });
+
+  it('refuses a findings file past its bound, so the check fails rather than hand on a cut list', () => {
+    const one = { title: 'Finding', body: 'x'.repeat(MAX_BODY) };
+    const fits = Math.floor(MAX_FILE_BYTES / (MAX_BODY + 60));
+    expect(() => findingsJson(Array.from({ length: fits }, () => one))).not.toThrow();
+    expect(() => findingsJson(Array.from({ length: fits + 20 }, () => one))).toThrow(RangeError);
+    // Its base64 fits GitHub's 1 MB job output.
+    expect(Math.ceil(MAX_FILE_BYTES / 3) * 4).toBeLessThan(1_000_000);
   });
 
   it('refuses a title that is not one line', async () => {
