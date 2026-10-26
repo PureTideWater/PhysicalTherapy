@@ -144,8 +144,8 @@ export interface DirectoryRead {
    * reads it.
    */
   readonly reads: readonly string[];
-  /** When `reads` is empty: the function that reads the directory, which no other closure file names. */
-  readonly onlyIn?: string;
+  /** When `reads` is empty: the function, or each of the functions, that reads the directory, which no other closure file names. */
+  readonly onlyIn?: string | readonly string[];
   readonly why: string;
 }
 
@@ -163,6 +163,13 @@ export const DIRECTORY_READS: readonly DirectoryRead[] = [
     onlyIn: 'fixtureFileHashes',
     why: 'fixtureFileHashes hashes every fixture for the rules importer (packages/rules/src/import.ts), which no mutation closure reaches',
   },
+  ...['content/releases', 'content/outgoing'].map((directory) => ({
+    file: RULES_CONTENT,
+    directory,
+    reads: [],
+    onlyIn: ['previousReleaseNumber', 'releaseDirOf'],
+    why: 'previousReleaseNumber and releaseDirOf find a numbered release for the content checker and the assembler (tools/verify-content, tools/release), which no mutation closure reaches',
+  })),
   {
     file: LEDGER_TEMPLATES_TEST,
     directory: 'fixtures/synthetic',
@@ -428,8 +435,12 @@ export function closureOf(pkg: MutationPackage, root: string, files: readonly st
         if (!exists || !isNamed || !coversRead(config.data[pkg], target, isFile)) uncovered.push(`${file}: ${literal} (reads ${target}${isNamed ? '' : ', which the file does not name'})`);
       }
       if (read.reads.length === 0) {
-        const others = read.onlyIn === undefined ? [] : closure.filter((other) => other !== file && (sourceOf.get(other) ?? '').includes(read.onlyIn ?? ''));
-        if (read.onlyIn === undefined || !source.includes(read.onlyIn) || others.length > 0) uncovered.push(`${file}: ${literal} (${read.onlyIn ?? 'no function'} is named in ${others.join(', ') || 'no closure file but its own'})`);
+        const readers = read.onlyIn === undefined ? [] : typeof read.onlyIn === 'string' ? [read.onlyIn] : read.onlyIn;
+        if (readers.length === 0) uncovered.push(`${file}: ${literal} (no function is named in no closure file but its own)`);
+        for (const reader of readers) {
+          const others = closure.filter((other) => other !== file && (sourceOf.get(other) ?? '').includes(reader));
+          if (!source.includes(reader) || others.length > 0) uncovered.push(`${file}: ${literal} (${reader} is named in ${others.join(', ') || 'no closure file but its own'})`);
+        }
         continue;
       }
       // Every file the reader names under the directory is one it reads, so the list cannot fall behind the file.
