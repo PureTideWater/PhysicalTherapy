@@ -1,0 +1,17 @@
+{
+  "case": "BIL-01",
+  "module": "BIL",
+  "title": "Stripe's payment form opens on the bank account",
+  "assertion": "The Payment Element's options list `us_bank_account` first and `card` second, from the shared order; tabs with the first open; Apple Pay, Google Pay and Link off; the start button reads \"Add a bank account (ACH) or card\" with nothing on file and \"Replace it with a bank account (ACH) or card\" with a method on file; a confirmed setup shows the saved notice, and one waiting on a micro-deposit shows the verification notice with Stripe's link",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": ["apps/web/src/components/billing/billing.test.tsx"],
+  "codeListRelease": null,
+  "noFileReason": "The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

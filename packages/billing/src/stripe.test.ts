@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { parseCatalog } from './catalog';
 import { BillingEventError } from './events';
+import { PAYMENT_METHOD_ORDER } from './types';
 import { type StripeApi, StripeBillingProvider, stripeClient } from './stripe';
 import { BillingProviderError, WebhookSignatureError } from './types';
 
@@ -37,7 +38,11 @@ function mockClient() {
       list: vi.fn().mockResolvedValue({ data: [{ id: 'price_monthly', lookup_key: 'tp_monitoring_monthly', unit_amount: 50000 }, { id: 'price_old_annual', lookup_key: 'tp_monitoring_annual', unit_amount: 1 }] }),
       create: vi.fn().mockImplementation((params: { lookup_key: string }) => Promise.resolve({ id: `price_new_${params.lookup_key}` })),
     },
-    subscriptions: { create: vi.fn().mockResolvedValue({ id: 'sub_test1' }), update: vi.fn().mockResolvedValue({ id: 'sub_test1' }) },
+    subscriptions: {
+      create: vi.fn().mockResolvedValue({ id: 'sub_test1' }),
+      update: vi.fn().mockResolvedValue({ id: 'sub_test1' }),
+      list: vi.fn().mockResolvedValue({ data: [], has_more: false }),
+    },
     invoices: {
       create: vi.fn().mockResolvedValue({ id: 'in_test1' }),
       finalizeInvoice: vi.fn().mockResolvedValue({ id: 'in_test1' }),
@@ -76,6 +81,62 @@ describe('StripeBillingProvider', () => {
     await expect(billing.createSetupIntent({ customerRef: 'cus_test1', idempotencyKey: 'setup:2' })).rejects.toThrow(BillingProviderError);
     await billing.setDefaultPaymentMethod({ customerRef: 'cus_test1', paymentMethodRef: 'pm_test1', idempotencyKey: 'evt_1' });
     expect(client.customers.update).toHaveBeenCalledWith('cus_test1', { invoice_settings: { default_payment_method: 'pm_test1' } }, { idempotencyKey: 'evt_1' });
+    expect(client.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it('asks Stripe for the bank account first, then the card, from the shared order (BIL-02)', async () => {
+    const { client, billing } = provider();
+    await billing.createSetupIntent({ customerRef: 'cus_test1', idempotencyKey: 'setup:1' });
+    await billing.createSubscription({ customerRef: 'cus_test1', organizationId: 'org-1', plan: 'annual', idempotencyKey: 'subscribe:1' });
+    await billing.createAuditInvoice({ customerRef: 'cus_test1', organizationId: 'org-1', idempotencyKey: 'audit:1' });
+    const sent = [
+      (client.setupIntents.create.mock.calls[0]?.[0] as { allowed_payment_method_types: string[] }).allowed_payment_method_types,
+      (client.subscriptions.create.mock.calls[0]?.[0] as { payment_settings: { payment_method_types: string[] } }).payment_settings.payment_method_types,
+      (client.invoices.create.mock.calls[0]?.[0] as { payment_settings: { payment_method_types: string[] } }).payment_settings.payment_method_types,
+    ];
+    for (const types of sent) {
+      expect(types).toEqual(['us_bank_account', 'card']);
+      // A fresh copy each time, so nothing Stripe's SDK does to a request can reorder the shared constant.
+      expect(types).not.toBe(PAYMENT_METHOD_ORDER);
+    }
+    expect(PAYMENT_METHOD_ORDER).toEqual(['us_bank_account', 'card']);
+  });
+
+  it('lets the customer’s default pay every invoice: a new default clears a live subscription’s own (BIL-02)', async () => {
+    const { client, billing } = provider();
+    client.subscriptions.list
+      .mockResolvedValueOnce({
+        data: [
+          { id: 'sub_card', status: 'active', default_payment_method: 'pm_card' },
+          { id: 'sub_plain', status: 'active', default_payment_method: null },
+          { id: 'sub_overdue', status: 'past_due', default_payment_method: { id: 'pm_card2' } },
+        ],
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          { id: 'sub_old', status: 'canceled', default_payment_method: 'pm_card' },
+          { id: 'sub_expired', status: 'incomplete_expired', default_payment_method: 'pm_card' },
+          { id: 'sub_trial', status: 'trialing', default_payment_method: 'pm_card' },
+        ],
+        has_more: false,
+      });
+    await billing.setDefaultPaymentMethod({ customerRef: 'cus_test1', paymentMethodRef: 'pm_ach', idempotencyKey: 'evt_2' });
+    expect(client.customers.update).toHaveBeenCalledWith('cus_test1', { invoice_settings: { default_payment_method: 'pm_ach' } }, { idempotencyKey: 'evt_2' });
+    expect(client.subscriptions.list.mock.calls).toEqual([[{ customer: 'cus_test1', limit: 100 }], [{ customer: 'cus_test1', limit: 100, starting_after: 'sub_overdue' }]]);
+    expect(client.subscriptions.update.mock.calls).toEqual([
+      ['sub_card', { default_payment_method: '' }, { idempotencyKey: 'evt_2:subscription:sub_card' }],
+      ['sub_overdue', { default_payment_method: '' }, { idempotencyKey: 'evt_2:subscription:sub_overdue' }],
+      ['sub_trial', { default_payment_method: '' }, { idempotencyKey: 'evt_2:subscription:sub_trial' }],
+    ]);
+    // A page that says there is more yet carries nothing ends the walk instead of asking again.
+    client.subscriptions.list.mockResolvedValueOnce({ data: [], has_more: true });
+    await billing.setDefaultPaymentMethod({ customerRef: 'cus_test1', paymentMethodRef: 'pm_ach', idempotencyKey: 'evt_3' });
+    expect(client.subscriptions.list).toHaveBeenCalledTimes(3);
+    client.subscriptions.list.mockRejectedValueOnce(Object.assign(new Error('network'), { code: 'api_connection_error' }));
+    await expect(billing.setDefaultPaymentMethod({ customerRef: 'cus_test1', paymentMethodRef: 'pm_ach', idempotencyKey: 'evt_4' })).rejects.toThrow(
+      new BillingProviderError('api_connection_error', 'Stripe refused to read the customer’s subscriptions'),
+    );
   });
 
   it('describes the payment method on file: ACH, card, by ID, none or a deleted customer', async () => {
@@ -113,7 +174,7 @@ describe('StripeBillingProvider', () => {
         customer: 'cus_test1',
         items: [{ price: 'price_new_tp_monitoring_annual' }],
         collection_method: 'charge_automatically',
-        payment_settings: { payment_method_types: ['us_bank_account', 'card'], save_default_payment_method: 'on_subscription' },
+        payment_settings: { payment_method_types: ['us_bank_account', 'card'], save_default_payment_method: 'off' },
         metadata: { tp_organization_id: 'org-1' },
       },
       { idempotencyKey: 'subscribe:1' },
@@ -143,7 +204,14 @@ describe('StripeBillingProvider', () => {
     const { client, billing } = provider();
     expect(await billing.createAuditInvoice({ customerRef: 'cus_test1', organizationId: 'org-1', idempotencyKey: 'audit:1' })).toBe('in_test1');
     expect(client.invoices.create).toHaveBeenCalledWith(
-      { customer: 'cus_test1', collection_method: 'charge_automatically', auto_advance: true, pending_invoice_items_behavior: 'exclude', metadata: { tp_organization_id: 'org-1', tp_kind: 'audit' } },
+      {
+        customer: 'cus_test1',
+        collection_method: 'charge_automatically',
+        auto_advance: true,
+        pending_invoice_items_behavior: 'exclude',
+        payment_settings: { payment_method_types: ['us_bank_account', 'card'] },
+        metadata: { tp_organization_id: 'org-1', tp_kind: 'audit' },
+      },
       { idempotencyKey: 'audit:1:invoice' },
     );
     expect(client.invoiceItems.create).toHaveBeenCalledWith({ customer: 'cus_test1', invoice: 'in_test1', pricing: { price: 'price_new_tp_audit' } }, { idempotencyKey: 'audit:1:item' });

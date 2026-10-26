@@ -14,8 +14,20 @@ only into Secrets Manager.
    `BILLING_STRIPE_MODE` to match), create a restricted or secret key, and a webhook endpoint at
    `https://<AppDomainName>/api/billing/webhook` with these events: `customer.subscription.created`, `.updated`,
    `.deleted`, `.paused`, `.resumed`; `invoice.created`, `.finalized`, `.updated`, `.paid`, `.payment_succeeded`,
-   `.payment_failed`, `.voided`, `.marked_uncollectible`, `.overdue`; `setup_intent.succeeded`. Enable the
-   `us_bank_account` (ACH Direct Debit) and card payment methods.
+   `.payment_failed`, `.voided`, `.marked_uncollectible`, `.overdue`; `setup_intent.succeeded`. Then check
+   the dashboard's payment settings (ADR 0073), in the same mode as the keys:
+   - **Payment methods.** ACH Direct Debit (`us_bank_account`) and cards are the enabled methods. The application asks
+     for exactly these two, the bank account first, on every SetupIntent, subscription and audit invoice, so another
+     method the dashboard enables is never offered; but ACH turned off here leaves the card tab alone, so check that it
+     is on.
+   - **Financial Connections.** Its option to save a customer's bank login to Link stays off. The form turns Link off as
+     a payment method, but this setting is Stripe's alone and the form cannot reach it; until it is checked off, nothing
+     may say that adding a bank account creates no third-party account.
+   - **No default on a subscription.** The customer's default payment method is the one method on file: subscriptions
+     are created with `save_default_payment_method: 'off'`, and a new default clears any a subscription carries, because
+     a subscription's own default outranks the customer's and would keep charging the old card after a bank account is
+     added. Never set a payment method on a subscription by hand in the dashboard; set the customer's default, or let
+     the administrator replace it on the billing page.
 3. **Secrets Manager.** Write the environment's Stripe secret (`StripeSecret` in the compute construct; its description
    names the environment) as one JSON object: `{"secretKey": "sk_live_…", "webhookSecret": "whsec_…",
    "publishableKey": "pk_live_…"}` (`sk_test_`, `pk_test_` in dev and staging). Then force a new deployment of the web
@@ -23,7 +35,17 @@ only into Secrets Manager.
 4. **Check.** The web service's tasks start (a refused setting is named in the web log group as `invalid settings: <NAME>`
    or `<NAME> is required`, never with its value). In staging, on Stripe's test mode, run once by hand: a test ACH
    payment through Elements, a declined test card, and a webhook sent with the Stripe CLI (`stripe trigger
-   invoice.paid`), and record the result in the pull request.
+   invoice.paid`), and record the result in the pull request. Then, for ADR 0073, on a desktop browser and on a phone:
+   - The form opens on the bank account tab, the card tab second, with no Apple Pay, Google Pay or Link tab.
+   - **A card customer switching to a bank account.** A test organization adds a test card (`4242 4242 4242 4242`) and
+     chooses the annual plan; the invoice is paid by card, and the page says that adding a bank account replaces the
+     card. It then adds a test bank account through Financial Connections; once `setup_intent.succeeded` arrives the
+     page shows the bank account, the subscription in the dashboard has no payment method of its own, and the next
+     invoice (an audit invoice, or `stripe invoices pay` on an open one) is charged to the bank account, not the card.
+   - **A bank account waiting on a deposit.** A test bank account entered by hand (routing `110000000`, account
+     `000123456789`) leaves the form showing the verification notice and Stripe's link; the card stays on file until
+     the deposit's code (`SM11AA` in test mode) is entered on that page, and the bank account then takes over.
+   - Financial Connections offers no Link sign-up, as the dashboard check above set.
 
 ## Rotating a key
 

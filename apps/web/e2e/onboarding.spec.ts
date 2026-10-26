@@ -240,6 +240,9 @@ test('a new customer is invited, signs up, enrolls MFA, accepts the terms, pays 
         await expect(admin.locator(`[data-step="${step}"]`)).toHaveAttribute('data-done', 'yes');
       }
       await expect(admin.locator('[data-step="upload"]')).toHaveAttribute('data-done', 'no');
+      // The billing step in the order a plan needs: a payment method first (BIL-03; docs/adr/0073).
+      await expect(admin.locator('[data-step="billing"]')).toContainText('Add a payment method and choose a plan');
+      await expect(admin.locator('[data-step="billing"]')).toContainText('A bank account (ACH) is preferred; a card also works.');
       await expectAccessible(admin, 'Settings');
       await admin.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Practice home' }).click();
       await expect(admin).toHaveURL(new RegExp(`/p/${practiceId}$`));

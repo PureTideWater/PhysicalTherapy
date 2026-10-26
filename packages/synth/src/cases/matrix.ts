@@ -277,6 +277,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'MOD-04', title: 'Document with embedded instructions', assertion: 'No effect on output authority; proposal still verified' },
   { id: 'MOD-05', title: 'Budget exceeded', assertion: 'Calls refused; alert' },
   { id: 'MOD-06', title: 'Kill switch on', assertion: 'Product works on hand-entered records' },
+  {
+    id: 'BIL-01',
+    title: "Stripe's payment form opens on the bank account",
+    assertion:
+      'The Payment Element\'s options list `us_bank_account` first and `card` second, from the shared order; tabs with the first open; Apple Pay, Google Pay and Link off; the start button reads "Add a bank account (ACH) or card" with nothing on file and "Replace it with a bank account (ACH) or card" with a method on file; a confirmed setup shows the saved notice, and one waiting on a micro-deposit shows the verification notice with Stripe\'s link',
+  },
+  {
+    id: 'BIL-02',
+    title: 'What Stripe is asked to collect and charge',
+    assertion:
+      "The SetupIntent's `allowed_payment_method_types`, the subscription's and the audit invoice's `payment_method_types` each send exactly `['us_bank_account', 'card']`, bank first, from the shared order, whose module imports nothing but types; the subscription saves no default of its own (`'off'`), and a new default clears any subscription's own default so the customer's governs every invoice",
+  },
+  {
+    id: 'BIL-03',
+    title: 'The page says the bank account is preferred',
+    assertion:
+      'The Payment method card, with Stripe and with the simulator, says "A bank account (ACH) is preferred for annual plans and audits." and leads its description with the bank account; with a card on file it adds that adding a bank account replaces the card; with a bank account on file it does not; a card\'s brand is capitalized; the simulator lists its bank form before its card form; the page shows the Payment method card before the Plan card; the practice onboarding step reads "Add a payment method and choose a plan"',
+  },
+  {
+    id: 'BIL-04',
+    title: 'A card is never refused, and a new bank account takes over',
+    assertion:
+      'Through the routes on the simulator, an organization with only a card on file chooses the annual plan and its invoice is paid by card, and an audit invoice issued to it is paid by card; once it adds a bank account, the next open invoice it pays is charged to the bank account',
+  },
   { id: 'CI-01', title: 'One gate over every CI job', assertion: '`all green` needs every other ci.yml job and passes only when each succeeded; a failed, skipped or cancelled job fails it' },
   { id: 'CI-02', title: "Every route's tests in exactly one of twelve files", assertion: 'Each registered route is in one file; the twelve files exist and each runs its own index' },
   { id: 'CI-03', title: 'A route snapshot in one statement', assertion: 'The folded snapshot equals the per-table snapshot on two worlds and after an update' },

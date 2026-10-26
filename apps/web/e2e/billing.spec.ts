@@ -6,12 +6,13 @@ import { signInWithTotp, withDatabase } from './helpers';
 
 /**
  * Billing in the browser (PRD 5, J18; PRD 6, Billing acceptance: "A test ACH payment completes"; PRD 7,
- * Settings: billing; docs/adr/0050), on the local Stripe test-mode simulator the e2e server runs with: the
- * group's practice administrator opens Settings, Billing, adds the simulator's test bank account, chooses
- * the monthly plan, settles the test ACH debit and sees the invoice paid. Stripe's events reach the
- * application through the same verification and processing the webhook route uses; the webhook route
- * itself refuses a body without Stripe's signature. Nothing here suspends an organization (the other
- * journeys share the group); billing-routes.db.test.ts covers suspension. Synthetic data only.
+ * Settings: billing; docs/adr/0050, 0073), on the local Stripe test-mode simulator the e2e server runs with:
+ * the group's practice administrator opens Settings, Billing, reads that a bank account is preferred, adds the
+ * simulator's test bank account, chooses the monthly plan, settles the test ACH debit and sees the invoice
+ * paid. Stripe's events reach the application through the same verification and processing the webhook route
+ * uses; the webhook route itself refuses a body without Stripe's signature. Nothing here suspends an
+ * organization (the other journeys share the group); billing-routes.db.test.ts covers suspension. Synthetic
+ * data only.
  */
 
 async function seededGroup(): Promise<{ readonly id: string; readonly name: string }> {
@@ -46,6 +47,9 @@ test('an organization administrator pays by test ACH: the bank account, the mont
   await expect(page.locator('[data-payment-method]')).toHaveAttribute('data-payment-method', 'none');
   await expect(page.getByLabel('Test mode')).toBeVisible();
   await expectAccessible(page, 'Organization billing');
+  // The bank account is the preferred method (BIL-03; docs/adr/0073), said before any method is on file.
+  await expect(page.locator('[data-notice="ach-preferred"]')).toBeVisible();
+  await expect(page.locator('[data-notice="ach-preferred"]')).toHaveText('A bank account (ACH) is preferred for annual plans and audits.');
 
   await page.getByRole('button', { name: 'Add test bank account (ACH)' }).click();
   await expect(page.locator('[data-payment-method]')).toHaveAttribute('data-payment-method', 'us_bank_account');
