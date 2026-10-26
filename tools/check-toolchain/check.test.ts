@@ -24,7 +24,7 @@ const TIMES: Record<string, Record<string, string>> = {
   },
   'old-lib': { '1.0.0': '2024-01-01T00:00:00.000Z', '1.1.0': '2026-10-01T00:00:00.000Z' },
   'young-lib': { '2.0.0': '2026-01-01T00:00:00.000Z', '2.0.1': '2026-10-24T12:00:00.000Z' },
-  '@scope/fix': { '3.0.0': '2026-10-25T06:00:00.000Z' },
+  '@scope/fix': { '2.0.0': '2025-03-01T00:00:00.000Z', '3.0.0': '2026-10-25T06:00:00.000Z' },
   'semver': { '6.3.1': '2023-07-10T22:57:32.000Z' },
 };
 
@@ -39,6 +39,10 @@ const pm = (version: string) => `pnpm@${version}+sha512.${pnpmDigest(version).to
 
 /** Bulk advisory answers by `name@version`. */
 type AdvisoryTable = Record<string, Advisory[]>;
+
+/** The advisory FIX_EXCLUDE names, which the bulk endpoint reports against @scope/fix 2.0.0, the base's locked version. */
+const FIX_ADVISORY: Advisory = { id: 2, url: 'https://github.com/advisories/GHSA-2222-3333-4444', title: 'synthetic', severity: 'moderate', vulnerable_versions: '<3.0.0' };
+const DEFAULT_ADVISORIES: AdvisoryTable = { '@scope/fix@2.0.0': [FIX_ADVISORY] };
 
 /**
  * A registry that answers from TIMES, FACTS and an advisory table keyed by `name@version` (a bare version key is
@@ -72,7 +76,8 @@ function fakeRegistry(
       }
       const answer: Record<string, Advisory[]> = {};
       for (const [name, versions] of Object.entries(packages)) {
-        const hits = versions.flatMap((version) => options.advisories?.[`${name}@${version}`] ?? (name === 'pnpm' ? options.advisories?.[version] : undefined) ?? []);
+        const table = { ...DEFAULT_ADVISORIES, ...options.advisories };
+        const hits = versions.flatMap((version) => table[`${name}@${version}`] ?? (name === 'pnpm' ? table[version] : undefined) ?? []);
         const unique = [...new Map(hits.map((hit) => [hit.url, hit])).values()];
         if (unique.length > 0) {
           answer[name] = unique;
@@ -118,7 +123,7 @@ const TRUST = [{ package: 'semver@6.3.1', reason: 'published without provenance 
 /** A synthetic tree: the gates as ruled, semver@6.3.1's trust exclude, and the files' empty lists. */
 function tree(shape: Shape = {}): Tree {
   const workspace = { minimumReleaseAge: 4320, minimumReleaseAgeExclude: [], trustPolicy: 'no-downgrade', trustPolicyExclude: ['semver@6.3.1'], ...shape.workspace };
-  const locked = shape.locked ?? ['old-lib@1.0.0', 'semver@6.3.1'];
+  const locked = shape.locked ?? ['old-lib@1.0.0', 'semver@6.3.1', '@scope/fix@2.0.0'];
   return {
     packageJson: JSON.stringify({ name: 'synthetic', packageManager: shape.packageManager ?? PACKAGE_MANAGER, ...shape.packageJson }),
     workspace: stringify(workspace),
@@ -234,6 +239,37 @@ describe('check-toolchain', () => {
     expect(registry.reads).not.toContain('@scope/fix');
   });
 
+  it('confirms an added exclude’s advisory through the bulk endpoint against the version it replaces (N3)', async () => {
+    const withExclude = (entry: typeof FIX_EXCLUDE, base: Shape = {}) => [tree({ workspace: { minimumReleaseAgeExclude: [entry.package] }, releaseAge: [entry] }), tree(base)] as const;
+    // The base locks @scope/fix 2.0.0, which the bulk endpoint reports GHSA-2222-3333-4444 against: a security fix.
+    const registry = fakeRegistry();
+    expect(problems(await run(...withExclude(FIX_EXCLUDE), { registry }))).toEqual([]);
+    expect(registry.reads).toContain('advisories');
+    // Another advisory, or none against what the base locks: not shown to be a security fix.
+    expect(problems(await run(...withExclude({ ...FIX_EXCLUDE, advisory: 'GHSA-3333-4444-5555' })))).toEqual([
+      'release-age excludes: @scope/fix@3.0.0: the bulk advisory endpoint does not report GHSA-3333-4444-5555 against the version the base locks (2.0.0); an exclude is only for the fix of an advisory against what we run (docs/runbooks/dependency-upgrades.md, "The release age")',
+    ]);
+    expect(problems(await run(...withExclude(FIX_EXCLUDE, { locked: ['old-lib@1.0.0', 'semver@6.3.1'] })))).toEqual([
+      'release-age excludes: @scope/fix@3.0.0: the base locks no other version of @scope/fix, so no advisory against what we run can be fixed by it; an exclude is only for the fix of an advisory against what we run (docs/runbooks/dependency-upgrades.md, "The release age")',
+    ]);
+    // The excluded version is itself affected: it fixes nothing.
+    const affected = fakeRegistry({ advisories: { '@scope/fix@3.0.0': [FIX_ADVISORY] } });
+    expect(problems(await run(...withExclude(FIX_EXCLUDE), { registry: affected }))).toEqual([
+      'release-age excludes: @scope/fix@3.0.0: the bulk advisory endpoint reports GHSA-2222-3333-4444 against @scope/fix@3.0.0 itself, so it is not the fix',
+    ]);
+    // A pnpm exclude is judged against the base's packageManager.
+    const pnpmExclude = { ...FIX_EXCLUDE, package: 'pnpm@10.34.9', added: '2026-10-25T20:00:00.000Z', expires: '2026-10-29T00:00:00.000Z' };
+    const pnpmHead = tree({ packageManager: pm('10.34.9'), workspace: { minimumReleaseAgeExclude: ['pnpm@10.34.9'] }, releaseAge: [pnpmExclude] });
+    expect(problems(await run(pnpmHead, tree(), { registry: fakeRegistry({ advisories: { 'pnpm@10.34.8': [FIX_ADVISORY] } }) }))).toEqual([]);
+    expect(problems(await run(pnpmHead, tree()))).toEqual([
+      'release-age excludes: pnpm@10.34.9: the bulk advisory endpoint does not report GHSA-2222-3333-4444 against the version the base locks (10.34.8); an exclude is only for the fix of an advisory against what we run (docs/runbooks/dependency-upgrades.md, "The release age")',
+    ]);
+    // The endpoint unreadable: fails closed.
+    expect(problems(await run(...withExclude(FIX_EXCLUDE), { registry: fakeRegistry({ fail: ['advisories'] }) }))).toContain(
+      'release-age excludes: registry.npmjs.org: reading the bulk advisory endpoint failed after 3 tries with backoff (last: fetch failed); check-toolchain fails closed',
+    );
+  });
+
   it('fails an expired exclude on a pull request that edits either list, and warns on a push run or any other pull request', async () => {
     const expired = { ...FIX_EXCLUDE, added: '2026-10-18T00:00:00.000Z', expires: '2026-10-25T00:00:00.000Z' };
     const holding = tree({ workspace: { minimumReleaseAgeExclude: [expired.package] }, releaseAge: [expired] });
@@ -250,7 +286,7 @@ describe('check-toolchain', () => {
   });
 
   it('fails a version the lockfile adds under three days old, unless a live exclude names it; a young version already in the base passes', async () => {
-    const adds = (extra: Shape = {}) => tree({ locked: ['old-lib@1.0.0', 'semver@6.3.1', 'young-lib@2.0.1', '@scope/fix@3.0.0'], ...extra });
+    const adds = (extra: Shape = {}) => tree({ locked: ['old-lib@1.0.0', 'semver@6.3.1', '@scope/fix@2.0.0', 'young-lib@2.0.1', '@scope/fix@3.0.0'], ...extra });
     const findings = await run(adds());
     expect(problems(findings)).toEqual([
       expect.stringMatching(/^lockfile release age: @scope\/fix@3\.0\.0 was published 2026-10-25T06:00:00\.000Z, under three days ago, and the lockfile adds it .* it is old enough from 2026-10-28T06:00:00\.000Z: wait until then, or, for a security fix, add "@scope\/fix@3\.0\.0" to/),
@@ -307,9 +343,10 @@ describe('check-toolchain', () => {
       expect.stringMatching(/^pnpm release age: packageManager's pnpm 10\.34\.9 was published 2026-10-25T17:54:00\.000Z, under three days ago; it is old enough from 2026-10-28T17:54:00\.000Z\. .*add "pnpm@10\.34\.9" to/),
     ]);
     const exclude = { package: 'pnpm@10.34.9', advisory: 'GHSA-2222-3333-4444', reason: 'synthetic: the first pnpm that fixes an advisory against the pinned one', added: '2026-10-25T20:00:00.000Z', expires: '2026-10-29T00:00:00.000Z' };
-    expect(problems(await run(tree({ packageManager: pm('10.34.9'), workspace: { minimumReleaseAgeExclude: ['pnpm@10.34.9'] }, releaseAge: [exclude] })))).toEqual([]);
+    const fixed = fakeRegistry({ advisories: { 'pnpm@10.34.8': [FIX_ADVISORY] } });
+    expect(problems(await run(tree({ packageManager: pm('10.34.9'), workspace: { minimumReleaseAgeExclude: ['pnpm@10.34.9'] }, releaseAge: [exclude] }), tree(), { registry: fixed }))).toEqual([]);
     // In one list only: the age rule still fails, and so does the lists' equality.
-    const half = problems(await run(tree({ packageManager: pm('10.34.9'), releaseAge: [exclude] })));
+    const half = problems(await run(tree({ packageManager: pm('10.34.9'), releaseAge: [exclude] }), tree(), { registry: fakeRegistry({ advisories: { 'pnpm@10.34.8': [FIX_ADVISORY] } }) }));
     expect(half).toHaveLength(2);
     expect(half[0]).toMatch(/^pnpm release age: /);
     expect(half[1]).toMatch(/^release-age excludes: tools\/check-toolchain\/release-age-exceptions\.json lists pnpm@10\.34\.9, which/);

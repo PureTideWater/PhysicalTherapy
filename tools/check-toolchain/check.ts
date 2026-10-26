@@ -431,6 +431,56 @@ function auditRule(head: Config, now: Date): Finding[] {
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(ignored.length)} audit exception(s), equal in both lists and in date` }];
 }
 
+const EXCLUDE_PURPOSE = 'an exclude is only for the fix of an advisory against what we run (docs/runbooks/dependency-upgrades.md, "The release age")';
+
+/** The versions of a package the base runs, other than `except`: its lockfile's, and packageManager's for pnpm. */
+function baseVersions(base: Config, name: string, except: string): string[] {
+  const versions = new Set<string>();
+  for (const key of base.lockfile === null ? [] : lockedPackages(base.lockfile)) {
+    const spec = splitSpec(key);
+    if (spec.name === name) {
+      versions.add(spec.version);
+    }
+  }
+  const pnpm = name === 'pnpm' ? pnpmVersion(base.packageJson.packageManager) : null;
+  if (pnpm !== null) {
+    versions.add(pnpm);
+  }
+  versions.delete(except);
+  return [...versions].sort(compareVersions);
+}
+
+/** Whether an advisory list names a GHSA (the bulk endpoint gives it as the advisory's GitHub URL). */
+function namesGhsa(advisories: readonly { readonly url: string }[] | undefined, ghsa: string): boolean {
+  return (advisories ?? []).some((advisory) => advisory.url.replace(/\/+$/, '').split('/').at(-1)?.toUpperCase() === ghsa.toUpperCase());
+}
+
+/**
+ * N3: an exclude this change adds names an advisory npm's bulk endpoint reports against a version of the package the
+ * base runs, and not against the excluded version itself, so "a security fix" is checked rather than only well formed.
+ */
+async function excludeAdvisoryFindings(entry: ReleaseAgeException, base: Config, registry: Registry): Promise<Finding[]> {
+  const rule = 'release-age excludes';
+  const { name, version } = splitSpec(entry.package);
+  const before = baseVersions(base, name, version);
+  if (before.length === 0) {
+    return [{ level: 'error', rule, message: `${entry.package}: the base locks no other version of ${name}, so no advisory against what we run can be fixed by it; ${EXCLUDE_PURPOSE}` }];
+  }
+  try {
+    const [against, itself] = await Promise.all([registry.advisories({ [name]: before }), registry.advisories({ [name]: [version] })]);
+    const findings: Finding[] = [];
+    if (!namesGhsa(against[name], entry.advisory)) {
+      findings.push({ level: 'error', rule, message: `${entry.package}: the bulk advisory endpoint does not report ${entry.advisory} against the version${before.length === 1 ? '' : 's'} the base locks (${before.join(', ')}); ${EXCLUDE_PURPOSE}` });
+    }
+    if (namesGhsa(itself[name], entry.advisory)) {
+      findings.push({ level: 'error', rule, message: `${entry.package}: the bulk advisory endpoint reports ${entry.advisory} against ${entry.package} itself, so it is not the fix` });
+    }
+    return findings;
+  } catch (error) {
+    return [failClosed(rule, error)];
+  }
+}
+
 async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInput, minutes: number, registry: Registry): Promise<Finding[]> {
   const rule = 'release-age excludes';
   const listed = head.workspace.minimumReleaseAgeExclude ?? [];
@@ -476,6 +526,7 @@ async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInp
       } catch (error) {
         findings.push(failClosed(rule, error));
       }
+      findings.push(...(await excludeAdvisoryFindings(entry, base, registry)));
     }
     if (expires <= now) {
       // Once expired the version is three days old, so the exclude changes no resolution: it fails only where the

@@ -485,8 +485,10 @@ in `static`, networked, against the range step's base reduced with `git merge-ba
   `time`, or listed in `minimumReleaseAgeExclude` with a live entry in `tools/check-toolchain/release-age-exceptions.json`;
 - each exclude is one exact version (`name@x.y.z`; a bare name, a pattern or a union fails), with its advisory, reason,
   date added and expiry, and the two lists are equal. An entry the change adds expires no earlier than the version's
-  publish time plus three days and no later than seven days after it was added; an expired entry fails a pull request
-  that edits either list and warns everywhere else, since it can no longer change a resolution;
+  publish time plus three days and no later than seven days after it was added, and its advisory must be one npm's bulk
+  advisory endpoint reports against a version of that package the base runs (its lockfile, or `packageManager` for pnpm)
+  and not against the excluded version, so "a security fix" is checked, not only well formed; an expired entry fails a
+  pull request that edits either list and warns everywhere else, since it can no longer change a resolution;
 - `packageManager`'s pnpm has no moderate or worse advisory (npm's bulk advisory endpoint); it fails while that pnpm is
   under three days old unless that exact version has a live exclude, as any version the lockfile adds would (CQ3 (a):
   action-setup's `self-update` escapes the workspace's gate, and without the rule a hand bump could make every CI job

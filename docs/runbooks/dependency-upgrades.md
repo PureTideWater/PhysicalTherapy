@@ -112,7 +112,9 @@ Dependabot's npm runs to fail until it ages.
 2. In `tools/check-toolchain/release-age-exceptions.json`, add the same entry: `package` (`name@x.y.z`), `advisory`
    (the GHSA id), `reason`, `added` and `expires` as UTC instants. The expiry must be no earlier than the version's
    publish time plus three days (`npm view <name> 'time["x.y.z"]'`), so it covers the whole young window, and no later
-   than seven days after `added`.
+   than seven days after `added`. `check-toolchain` asks npm's bulk advisory endpoint whether that advisory affects a
+   version of the package the base runs (the lockfile's, or `packageManager`'s for pnpm) and not the excluded version,
+   and refuses the entry otherwise: a package the base does not run yet has nothing to fix.
 3. Resolve (`pnpm install --lockfile-only`), run `pnpm toolchain:check`, and say in the pull request's description why
    the fix cannot wait three days.
 
