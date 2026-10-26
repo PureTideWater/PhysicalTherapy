@@ -9,6 +9,7 @@ apps/web/public/*
 apps/worker/Dockerfile
 apps/worker/build.ts
 apps/worker/package.json
+docker-compose.yml
 fixtures/synthetic/rules/release-synth-900001/*
 infra/lib/constructs/compute.ts
 infra/lib/constructs/database.ts

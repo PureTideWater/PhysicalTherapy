@@ -1,0 +1,4 @@
+{
+  "$comment": "One entry per pnpm override (pnpm-workspace.yaml's overrides and package.json's pnpm.overrides), with its reason and removal trigger (tools/check-toolchain): selector, version, reason, removeWhen, added. An override whose target no longer appears in the lockfile fails.",
+  "entries": []
+}

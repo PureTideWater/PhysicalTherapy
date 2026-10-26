@@ -1,0 +1,491 @@
+import {
+  AUDIT_EXCEPTION_MAX_DAYS,
+  DAY_MS,
+  EXACT_SPEC,
+  EXCLUDE_MAX_DAYS,
+  MINIMUM_RELEASE_AGE_MINUTES,
+  MINUTE_MS,
+  type PackageJson,
+  SEMVER,
+  type Workspace,
+  auditExceptionsSchema,
+  compareVersions,
+  lockedPackages,
+  lockfileSchema,
+  type Lockfile,
+  overrideEntriesSchema,
+  packageJsonSchema,
+  parseJsonFile,
+  parseSelector,
+  parseYamlFile,
+  pnpmVersion,
+  rangeHolds,
+  releaseAgeExceptionsSchema,
+  type ReleaseAgeException,
+  snapshotSpec,
+  splitSpec,
+  trustExceptionsSchema,
+  workspaceSchema,
+} from './policy';
+import { NetworkReadError, type Packument, type Registry } from './registry';
+
+/**
+ * `pnpm toolchain:check` (designs/lane-b-ci.md §3.2.1, "Audit and toolchain"; test matrix CI-14; ADR 0066 Part 2): the
+ * pnpm CI runs and every version the lockfile adds, held to the founder's F2 (b) three-day release age, with each
+ * exception written down, dated and kept equal to the setting pnpm reads. It compares this tree with the base (the
+ * range step's base, reduced with git merge-base), so a change is judged on what it adds.
+ */
+
+/** The files check-toolchain reads, root-relative. */
+export const FILES = {
+  packageJson: 'package.json',
+  workspace: 'pnpm-workspace.yaml',
+  lockfile: 'pnpm-lock.yaml',
+  auditExceptions: 'tools/check-toolchain/audit-exceptions.json',
+  releaseAgeExceptions: 'tools/check-toolchain/release-age-exceptions.json',
+  trustExceptions: 'tools/check-toolchain/trust-exceptions.json',
+  overrides: 'tools/check-toolchain/overrides.json',
+} as const;
+
+/** One tree's text of those files (undefined: absent), and its Dockerfiles by path. */
+export type Tree = { readonly [key in keyof typeof FILES]?: string } & { readonly dockerfiles?: Readonly<Record<string, string>> };
+
+/** A push run follows a green pull request, so it warns where a pull request that edits a list fails. */
+export type CheckEvent = 'push' | 'pull_request';
+
+export interface CheckInput {
+  readonly head: Tree;
+  readonly base: Tree;
+  readonly event: CheckEvent;
+  readonly now: Date;
+}
+
+export type Level = 'error' | 'warning' | 'ok';
+export interface Finding {
+  readonly level: Level;
+  readonly rule: string;
+  readonly message: string;
+}
+
+/** What one tree says, parsed; problems name the file that could not be read. */
+interface Config {
+  readonly packageJson: PackageJson;
+  readonly workspace: Workspace;
+  readonly lockfile: Lockfile | null;
+  readonly auditExceptions: ReturnType<typeof auditExceptionsSchema.parse>['entries'];
+  readonly releaseAgeExceptions: readonly ReleaseAgeException[];
+  readonly trustExceptions: ReturnType<typeof trustExceptionsSchema.parse>['entries'];
+  readonly overrides: ReturnType<typeof overrideEntriesSchema.parse>['entries'];
+  readonly problems: readonly string[];
+}
+
+function readConfig(tree: Tree): Config {
+  const problems: string[] = [];
+  const take = <T>(parsed: { ok: true; value: T } | { ok: false; problem: string }, empty: T): T => {
+    if (parsed.ok) {
+      return parsed.value;
+    }
+    problems.push(parsed.problem);
+    return empty;
+  };
+  const lockfile = tree.lockfile === undefined ? null : take(parseYamlFile(FILES.lockfile, tree.lockfile, lockfileSchema, { lockfileVersion: '9.0' }), null);
+  return {
+    packageJson: take(parseJsonFile(FILES.packageJson, tree.packageJson, packageJsonSchema, {}), {}),
+    workspace: take(parseYamlFile(FILES.workspace, tree.workspace, workspaceSchema, {}), {}),
+    lockfile,
+    auditExceptions: take(parseJsonFile(FILES.auditExceptions, tree.auditExceptions, auditExceptionsSchema, { entries: [] }), { entries: [] }).entries,
+    releaseAgeExceptions: take(parseJsonFile(FILES.releaseAgeExceptions, tree.releaseAgeExceptions, releaseAgeExceptionsSchema, { entries: [] }), { entries: [] }).entries,
+    trustExceptions: take(parseJsonFile(FILES.trustExceptions, tree.trustExceptions, trustExceptionsSchema, { entries: [] }), { entries: [] }).entries,
+    overrides: take(parseJsonFile(FILES.overrides, tree.overrides, overrideEntriesSchema, { entries: [] }), { entries: [] }).entries,
+    problems,
+  };
+}
+
+/** "three days" for 4,320 minutes, otherwise the minutes and the days. */
+function ageWords(minutes: number): string {
+  return minutes === MINIMUM_RELEASE_AGE_MINUTES ? 'three days' : `${String(minutes)} minutes (${(minutes / 1440).toFixed(2)} days)`;
+}
+
+function failClosed(rule: string, error: unknown): Finding {
+  if (error instanceof NetworkReadError) {
+    return { level: 'error', rule, message: error.message };
+  }
+  throw error;
+}
+
+/** The members of a list that occur more than once. */
+function duplicates(items: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return [...new Set(items.filter((item) => (seen.has(item) ? true : (seen.add(item), false))))];
+}
+
+/** One line per member of either list missing from the other, naming both. */
+function sameMembers(rule: string, left: readonly string[], leftName: string, right: readonly string[], rightName: string): Finding[] {
+  const findings: Finding[] = [];
+  for (const item of duplicates(left)) {
+    findings.push({ level: 'error', rule, message: `${leftName} lists ${item} more than once` });
+  }
+  for (const item of duplicates(right)) {
+    findings.push({ level: 'error', rule, message: `${rightName} lists ${item} more than once` });
+  }
+  const rightSet = new Set(right);
+  const leftSet = new Set(left);
+  for (const item of left.filter((entry) => !rightSet.has(entry))) {
+    findings.push({ level: 'error', rule, message: `${leftName} lists ${item}, which ${rightName} does not; the two lists are kept equal` });
+  }
+  for (const item of right.filter((entry) => !leftSet.has(entry))) {
+    findings.push({ level: 'error', rule, message: `${rightName} lists ${item}, which ${leftName} does not; the two lists are kept equal` });
+  }
+  return findings;
+}
+
+/** At most `limit` reads at once. */
+async function mapLimit<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await run(items[index] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
+/** The release-age excludes in force: in minimumReleaseAgeExclude and in release-age-exceptions.json, unexpired. */
+function liveExcludes(head: Config, now: Date): ReadonlySet<string> {
+  const listed = new Set(head.workspace.minimumReleaseAgeExclude ?? []);
+  return new Set(head.releaseAgeExceptions.filter((entry) => listed.has(entry.package) && Date.parse(entry.expires) > now.getTime()).map((entry) => entry.package));
+}
+
+const REMEDY =
+  'wait until then, or, for a security fix, add it to pnpm-workspace.yaml’s minimumReleaseAgeExclude and to tools/check-toolchain/release-age-exceptions.json with its advisory, the date added and an expiry (docs/runbooks/dependency-upgrades.md, "The release age")';
+
+function gatesRule(workspace: Workspace): Finding[] {
+  const rule = 'gates';
+  const findings: Finding[] = [];
+  const minutes = workspace.minimumReleaseAge;
+  if (minutes === undefined || minutes < MINIMUM_RELEASE_AGE_MINUTES) {
+    findings.push({ level: 'error', rule, message: `${FILES.workspace}: minimumReleaseAge is ${String(minutes ?? 'unset')}; the founder's F2 (b) requires at least ${String(MINIMUM_RELEASE_AGE_MINUTES)} (three days)` });
+  }
+  if (workspace.trustPolicy !== 'no-downgrade') {
+    findings.push({ level: 'error', rule, message: `${FILES.workspace}: trustPolicy is ${String(workspace.trustPolicy ?? 'unset')}, not no-downgrade (CQ2 (a))` });
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `minimumReleaseAge ${String(minutes)} minutes, trustPolicy no-downgrade` }];
+}
+
+function pnpmRules(version: string, pnpm: Packument | Error, advisories: Awaited<ReturnType<Registry['advisories']>> | Error, live: ReadonlySet<string>, minutes: number, now: Date): Finding[] {
+  const findings: Finding[] = [];
+  // Advisories: moderate or worse fails, a low one warns.
+  if (advisories instanceof Error) {
+    findings.push(failClosed('pnpm advisories', advisories));
+  } else {
+    const hits = advisories.pnpm ?? [];
+    for (const advisory of hits) {
+      const serious = ['moderate', 'high', 'critical'].includes(advisory.severity);
+      findings.push({
+        level: serious ? 'error' : 'warning',
+        rule: 'pnpm advisories',
+        message: `packageManager's pnpm ${version} has a ${advisory.severity} advisory, ${advisory.url} (${advisory.title}; vulnerable ${advisory.vulnerable_versions}); move packageManager to the first fixed version (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
+      });
+    }
+    if (hits.length === 0) {
+      findings.push({ level: 'ok', rule: 'pnpm advisories', message: `pnpm ${version}: no advisory (registry.npmjs.org bulk endpoint)` });
+    }
+  }
+  if (pnpm instanceof Error) {
+    findings.push(failClosed('pnpm release age', pnpm));
+    return findings;
+  }
+  // CQ3 (a): the pnpm every CI job switches to is held to the release age the lockfile is held to.
+  const published = pnpm.time[version];
+  if (published === undefined) {
+    findings.push({ level: 'error', rule: 'pnpm release age', message: `registry.npmjs.org gives no publish time for pnpm ${version}` });
+  } else {
+    const matureAt = Date.parse(published) + minutes * MINUTE_MS;
+    if (matureAt <= now.getTime()) {
+      findings.push({ level: 'ok', rule: 'pnpm release age', message: `pnpm ${version} was published ${published}, at least ${ageWords(minutes)} ago` });
+    } else if (live.has(`pnpm@${version}`)) {
+      findings.push({ level: 'ok', rule: 'pnpm release age', message: `pnpm ${version} was published ${published}, under ${ageWords(minutes)} ago, and has a live dated exclude` });
+    } else {
+      findings.push({
+        level: 'error',
+        rule: 'pnpm release age',
+        message: `packageManager's pnpm ${version} was published ${published}, under ${ageWords(minutes)} ago; it is old enough from ${new Date(matureAt).toISOString()}. CI switches to it outside the workspace's release age (CQ3 (a)): ${REMEDY.replace('add it', `add "pnpm@${version}"`)}`,
+      });
+    }
+  }
+  // A newer release of the same major, old enough: Dependabot never moves packageManager, so a person does.
+  const major = SEMVER.exec(version)?.[1];
+  const newer = pnpm.versions
+    .filter((candidate) => {
+      const match = SEMVER.exec(candidate);
+      const time = pnpm.time[candidate];
+      return match !== null && match[1] === major && match[4] === undefined && compareVersions(candidate, version) > 0 && time !== undefined && Date.parse(time) + minutes * MINUTE_MS <= now.getTime();
+    })
+    .sort(compareVersions)
+    .at(-1);
+  findings.push(
+    newer === undefined
+      ? { level: 'ok', rule: 'newer pnpm', message: `no ${String(major)}.x newer than ${version} is ${ageWords(minutes)} old` }
+      : {
+          level: 'warning',
+          rule: 'newer pnpm',
+          message: `pnpm ${newer} (published ${pnpm.time[newer] ?? '?'}) is newer than packageManager's ${version} and at least ${ageWords(minutes)} old; Dependabot never moves packageManager, so bump it by hand at the weekly triage (docs/runbooks/dependency-upgrades.md, "pnpm itself")`,
+        },
+  );
+  return findings;
+}
+
+/** Neither Dockerfile names a pnpm version: both derive it from package.json's packageManager. */
+export function dockerfileRule(dockerfiles: Readonly<Record<string, string>>, version: string | null): Finding[] {
+  const rule = 'Dockerfiles';
+  const findings: Finding[] = [];
+  const files = Object.keys(dockerfiles).sort();
+  if (files.length === 0) {
+    return [{ level: 'error', rule, message: 'no Dockerfile found under apps/*/' }];
+  }
+  for (const file of files) {
+    const text = dockerfiles[file] ?? '';
+    text.split('\n').forEach((line, index) => {
+      const literal = /pnpm@v?\d/.test(line) || (version !== null && /pnpm/i.test(line) && line.includes(version));
+      if (literal) {
+        findings.push({ level: 'error', rule, message: `${file}:${String(index + 1)} names a pnpm version; derive it from package.json's packageManager, so one field moves every pnpm` });
+      }
+    });
+    if (!text.includes('packageManager')) {
+      findings.push({ level: 'error', rule, message: `${file} does not derive its pnpm from package.json's packageManager` });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${files.join(' and ')} derive pnpm from packageManager; no pnpm literal` }];
+}
+
+function auditRule(head: Config, now: Date): Finding[] {
+  const rule = 'audit exceptions';
+  const ignored = head.workspace.auditConfig?.ignoreGhsas ?? [];
+  const findings = sameMembers(rule, ignored, `${FILES.workspace}'s auditConfig.ignoreGhsas`, head.auditExceptions.map((entry) => entry.ghsa), FILES.auditExceptions);
+  for (const entry of head.auditExceptions) {
+    const added = Date.parse(entry.added);
+    const expires = Date.parse(entry.expires);
+    if (added > now.getTime()) {
+      findings.push({ level: 'error', rule, message: `${entry.ghsa}: added ${entry.added}, a date in the future` });
+    }
+    if (now.getTime() - added > AUDIT_EXCEPTION_MAX_DAYS * DAY_MS) {
+      findings.push({ level: 'error', rule, message: `${entry.ghsa}: added ${entry.added}, more than ${String(AUDIT_EXCEPTION_MAX_DAYS)} days ago; fix it or remove the exception` });
+    }
+    if (expires <= now.getTime()) {
+      findings.push({ level: 'error', rule, message: `${entry.ghsa}: expired ${entry.expires}; fix it or remove the exception` });
+    }
+    if (expires - added > AUDIT_EXCEPTION_MAX_DAYS * DAY_MS) {
+      findings.push({ level: 'error', rule, message: `${entry.ghsa}: expires ${entry.expires}, more than ${String(AUDIT_EXCEPTION_MAX_DAYS)} days after it was added` });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(ignored.length)} audit exception(s), equal in both lists and in date` }];
+}
+
+async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInput, minutes: number, registry: Registry): Promise<Finding[]> {
+  const rule = 'release-age excludes';
+  const listed = head.workspace.minimumReleaseAgeExclude ?? [];
+  const findings: Finding[] = [];
+  for (const item of listed) {
+    if (!EXACT_SPEC.test(item) || item.includes('*') || item.includes('||')) {
+      findings.push({ level: 'error', rule, message: `${FILES.workspace}: minimumReleaseAgeExclude entry "${item}" is not one exact version (name@x.y.z); a bare name, a pattern or a union is refused, so each exclude has one expiry` });
+    }
+  }
+  findings.push(...sameMembers(rule, listed, `${FILES.workspace}'s minimumReleaseAgeExclude`, head.releaseAgeExceptions.map((entry) => entry.package), FILES.releaseAgeExceptions));
+  const baseEntries = new Set(base.releaseAgeExceptions.map((entry) => JSON.stringify(entry)));
+  const edited =
+    JSON.stringify([...listed].sort()) !== JSON.stringify([...(base.workspace.minimumReleaseAgeExclude ?? [])].sort()) ||
+    JSON.stringify(head.releaseAgeExceptions.map((entry) => JSON.stringify(entry)).sort()) !== JSON.stringify([...baseEntries].sort());
+  const now = input.now.getTime();
+  for (const entry of head.releaseAgeExceptions) {
+    const added = Date.parse(entry.added);
+    const expires = Date.parse(entry.expires);
+    if (!EXACT_SPEC.test(entry.package)) {
+      findings.push({ level: 'error', rule, message: `${FILES.releaseAgeExceptions}: "${entry.package}" is not one exact version (name@x.y.z)` });
+      continue;
+    }
+    // An entry this change adds (or rewrites) covers its version's whole young window and never outlives seven days.
+    if (!baseEntries.has(JSON.stringify(entry))) {
+      if (added > now) {
+        findings.push({ level: 'error', rule, message: `${entry.package}: added ${entry.added}, a time in the future` });
+      }
+      if (expires > added + EXCLUDE_MAX_DAYS * DAY_MS) {
+        findings.push({ level: 'error', rule, message: `${entry.package}: expires ${entry.expires}, more than ${String(EXCLUDE_MAX_DAYS)} days after it was added (${entry.added}); F2 (b) allows seven` });
+      }
+      const { name, version } = splitSpec(entry.package);
+      try {
+        const published = (await registry.packument(name)).time[version];
+        if (published === undefined) {
+          findings.push({ level: 'error', rule, message: `${entry.package}: registry.npmjs.org gives no publish time for it` });
+        } else if (expires < Date.parse(published) + minutes * MINUTE_MS) {
+          findings.push({
+            level: 'error',
+            rule,
+            message: `${entry.package}: expires ${entry.expires}, before the version is ${ageWords(minutes)} old (${new Date(Date.parse(published) + minutes * MINUTE_MS).toISOString()}; published ${published}), so it would lapse while still needed`,
+          });
+        }
+      } catch (error) {
+        findings.push(failClosed(rule, error));
+      }
+    }
+    if (expires <= now) {
+      // Once expired the version is three days old, so the exclude changes no resolution: it fails only where the
+      // lists are being edited, and warns elsewhere (a push follows a green pull request; Dependabot's touch only the lockfile).
+      findings.push({
+        level: input.event === 'pull_request' && edited ? 'error' : 'warning',
+        rule,
+        message: `${entry.package}: expired ${entry.expires}; remove it from both lists (the weekly triage, docs/runbooks/dependency-upgrades.md)`,
+      });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(listed.length)} exclude(s), each one exact version, equal in both lists and in date` }];
+}
+
+async function lockfileRule(head: Config, base: Config, live: ReadonlySet<string>, minutes: number, now: Date, registry: Registry): Promise<Finding[]> {
+  const rule = 'lockfile release age';
+  if (head.lockfile === null) {
+    return [{ level: 'error', rule, message: `${FILES.lockfile} is missing` }];
+  }
+  const before = base.lockfile === null ? new Set<string>() : lockedPackages(base.lockfile);
+  const added = [...lockedPackages(head.lockfile)].filter((key) => !before.has(key)).sort();
+  const findings: Finding[] = [];
+  const names = [...new Set(added.map((key) => splitSpec(key).name))];
+  const documents = new Map<string, Packument | Error>();
+  await mapLimit(names, 8, async (name) => {
+    documents.set(
+      name,
+      await registry.packument(name).catch((error: unknown) => {
+        if (error instanceof NetworkReadError) {
+          return error;
+        }
+        throw error;
+      }),
+    );
+  });
+  let young = 0;
+  for (const key of added) {
+    const { name, version } = splitSpec(key);
+    if (!SEMVER.test(version)) {
+      findings.push({ level: 'error', rule, message: `${key}: not a registry version, so its release age cannot be read; take it from the registry` });
+      continue;
+    }
+    const document = documents.get(name);
+    if (document === undefined || document instanceof Error) {
+      findings.push(failClosed(rule, document ?? new NetworkReadError(`registry.npmjs.org: ${name} was not read`)));
+      continue;
+    }
+    const published = document.time[version];
+    if (published === undefined) {
+      findings.push({ level: 'error', rule, message: `${key}: registry.npmjs.org gives no publish time for it` });
+      continue;
+    }
+    const matureAt = Date.parse(published) + minutes * MINUTE_MS;
+    if (matureAt > now.getTime()) {
+      young += 1;
+      if (!live.has(key)) {
+        findings.push({
+          level: 'error',
+          rule,
+          message: `${key} was published ${published}, under ${ageWords(minutes)} ago, and the lockfile adds it (a frozen install never checks the release age, and Dependabot's security updates resolve without it); it is old enough from ${new Date(matureAt).toISOString()}: ${REMEDY.replace('add it', `add "${key}"`)}`,
+        });
+      }
+    }
+  }
+  const failed = findings.length > 0;
+  return failed
+    ? findings
+    : [{ level: 'ok', rule, message: added.length === 0 ? 'the lockfile adds no version against the base' : `the lockfile adds ${String(added.length)} version(s) against the base, each at least ${ageWords(minutes)} old${young > 0 ? ` or under a live dated exclude (${String(young)})` : ''}` }];
+}
+
+function trustRule(head: Config): Finding[] {
+  const rule = 'trust excludes';
+  const listed = head.workspace.trustPolicyExclude ?? [];
+  const findings: Finding[] = [];
+  for (const item of listed) {
+    if (!EXACT_SPEC.test(item)) {
+      findings.push({ level: 'error', rule, message: `${FILES.workspace}: trustPolicyExclude entry "${item}" is not one exact version (name@x.y.z)` });
+    }
+  }
+  findings.push(...sameMembers(rule, listed, `${FILES.workspace}'s trustPolicyExclude`, head.trustExceptions.map((entry) => entry.package), FILES.trustExceptions));
+  const locked = head.lockfile === null ? new Set<string>() : lockedPackages(head.lockfile);
+  for (const entry of head.trustExceptions) {
+    if (!locked.has(entry.package)) {
+      findings.push({ level: 'error', rule, message: `${entry.package} is no longer resolved in ${FILES.lockfile}; remove it from trustPolicyExclude and ${FILES.trustExceptions}` });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(listed.length)} trust exclude(s) (${listed.join(', ') || 'none'}), equal in both lists and each still resolved` }];
+}
+
+/** Whether an override still changes something the lockfile resolves. */
+function overrideApplies(lockfile: Lockfile, selector: string, version: string): boolean {
+  const { parent, target } = parseSelector(selector);
+  const exact = SEMVER.test(version);
+  for (const [key, snapshot] of Object.entries(lockfile.snapshots ?? {})) {
+    const spec = snapshotSpec(key);
+    if (parent === null) {
+      if (spec.name === target.name && (!exact || spec.version === version)) {
+        return true;
+      }
+      continue;
+    }
+    if (spec.name !== parent.name || !rangeHolds(parent.range, spec.version)) {
+      continue;
+    }
+    const resolved = { ...snapshot?.dependencies, ...snapshot?.optionalDependencies }[target.name];
+    if (version === '-' || (resolved !== undefined && (!exact || snapshotSpec(`${target.name}@${resolved}`).version === version))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function overridesRule(head: Config): Finding[] {
+  const rule = 'overrides';
+  const declared: Record<string, string> = { ...head.packageJson.pnpm?.overrides, ...head.workspace.overrides };
+  const findings = sameMembers(
+    rule,
+    Object.entries(declared).map(([selector, version]) => `${selector}: ${version}`),
+    `the pnpm overrides (${FILES.workspace}, ${FILES.packageJson})`,
+    head.overrides.map((entry) => `${entry.selector}: ${entry.version}`),
+    FILES.overrides,
+  );
+  for (const entry of head.overrides) {
+    if (declared[entry.selector] === entry.version && head.lockfile !== null && !overrideApplies(head.lockfile, entry.selector, entry.version)) {
+      findings.push({ level: 'error', rule, message: `the override ${entry.selector}: ${entry.version} no longer applies to anything ${FILES.lockfile} resolves (its target left); remove it and its entry (removal trigger: ${entry.removeWhen})` });
+    }
+  }
+  return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(head.overrides.length)} override(s), each with its entry and still applied` }];
+}
+
+/** Every rule, in order. Never throws for a network failure: each fails closed as an error finding. */
+export async function checkToolchain(input: CheckInput, registry: Registry): Promise<Finding[]> {
+  const head = readConfig(input.head);
+  const base = readConfig(input.base);
+  if (head.problems.length > 0) {
+    return head.problems.map((message) => ({ level: 'error', rule: 'files', message }));
+  }
+  const findings: Finding[] = base.problems.map((message) => ({ level: 'warning', rule: 'files', message: `the base's ${message}; its lists are read as empty` }));
+  findings.push(...gatesRule(head.workspace));
+  const minutes = Math.max(head.workspace.minimumReleaseAge ?? 0, MINIMUM_RELEASE_AGE_MINUTES);
+  const live = liveExcludes(head, input.now);
+  const version = pnpmVersion(head.packageJson.packageManager);
+  if (version === null) {
+    findings.push({ level: 'error', rule: 'pnpm', message: `${FILES.packageJson}: packageManager is ${JSON.stringify(head.packageJson.packageManager ?? null)}, not pnpm@x.y.z` });
+  } else {
+    const [pnpm, advisories] = await Promise.all([
+      registry.packument('pnpm').catch((error: unknown) => (error instanceof Error ? error : new Error(String(error)))),
+      registry.advisories({ pnpm: [version] }).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error)))),
+    ]);
+    findings.push(...pnpmRules(version, pnpm, advisories, live, minutes, input.now));
+  }
+  findings.push(...dockerfileRule(input.head.dockerfiles ?? {}, version));
+  findings.push(...auditRule(head, input.now));
+  findings.push(...(await releaseAgeExcludeRule(head, base, input, minutes, registry)));
+  findings.push(...(await lockfileRule(head, base, live, minutes, input.now, registry)));
+  findings.push(...trustRule(head));
+  findings.push(...overridesRule(head));
+  return findings;
+}

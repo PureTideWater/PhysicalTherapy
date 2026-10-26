@@ -34,6 +34,8 @@
     "screening:capacity": "tsx tools/screening-capacity/run.ts",
     "cdk:diff": "pnpm --filter @tp/infra cdk:diff",
     "licenses:check": "tsx tools/check-licenses/index.ts",
+    "actions:check": "tsx tools/check-action-pins/index.ts",
+    "toolchain:check": "tsx tools/check-toolchain/index.ts",
     "stryker": "stryker"
   },
   "devDependencies": {
