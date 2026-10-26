@@ -2,7 +2,7 @@
 
 **Open questions:** none.
 
-- **Stage:** **MERGED** as #46 → 4d99df8 on `claude/build-platform` (2026-10-26 04:38 UTC). Push runs on 4d99df8: being read.
+- **Stage:** **MERGED** as #46 → 4d99df8 on `claude/build-platform` (2026-10-26 04:38 UTC). Push runs on 4d99df8 all green: ci 40270038758, mutation 40270038764, screening-capacity 40270038754.
 - **Branch / PR:** `co-001/db-function-diffs` / PR #46, merged with method merge and expectedHeadSha 15b1abd (base merge 15b1abd took c5195ee, PR #47: synth module lists kept both, BIL and DBF). CI on 15b1abd: every check green (ci 40268258654, all green, mutation, screening-capacity gate, approval-of-record). Unsubscribed; worktree and local branch removed; main checkout fast-forwarded to 4d99df8 with pnpm install; scratch databases dropped.
 - **Design:** `designs/lane-b-db-function-diffs.md`. Confirmed at design: **no migration** ("Database: no schema change");
   the domain model's text and hash stay unchanged; no workflow change.
@@ -36,3 +36,4 @@
 - 2026-10-26 ~03:50: worker restarted; PG18 restarted (stale pid). Verification fixes committed and pushed as 20898fb.
 - 2026-10-26 04:15: base moved to c5195ee (#47); merged into the branch as 15b1abd (conflicts only in synth module lists, both kept); CI all green.
 - 2026-10-26 04:38: PR body final (verified byte for byte); marked ready; merged as 4d99df8 (expectedHeadSha 15b1abd). Unsubscribed, worktree and branch removed, main checkout updated.
+- 2026-10-26 ~04:50: push runs on 4d99df8 green (ci, mutation, screening-capacity). Item complete; machine clean. The orchestrator's next item (co-001/ux-forms) is outside this session's one-PR brief: handed back for a new session.
