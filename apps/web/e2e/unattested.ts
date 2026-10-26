@@ -81,7 +81,7 @@ export async function staleExport(practiceId: string): Promise<StaleExport> {
       () => withDatabase(async (client) => (await client.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = $1', [pricingRunId])).rows[0]?.status === 'complete'),
       'the re-run’s price job',
     );
-    await as(manager, (scope) => acceptRun(scope, { practiceId, pricingRunId }));
+    await as(manager, (scope) => acceptRun(scope, { practiceId, pricingRunId, replacesId: runId, heldByIds: [] }));
     return { caseId, versionId: version.versionId };
   } finally {
     await pool.end();

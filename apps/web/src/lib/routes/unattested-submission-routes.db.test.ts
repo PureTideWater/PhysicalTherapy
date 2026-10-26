@@ -208,7 +208,7 @@ async function acceptedRerun(setup: Exported): Promise<void> {
   const { practice } = setup;
   const { pricingRunId } = await as(practice, practice.manager, (scope) => createRerun(scope, { practiceId: practice.practiceId, pricingRunId: setup.runId, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }));
   await w.pricing.execute(practice, pricingRunId);
-  await as(practice, practice.manager, (scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId }));
+  await as(practice, practice.manager, (scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId, replacesId: setup.runId, heldByIds: [] }));
 }
 
 const confirmations = () => Object.fromEntries(PACKET_CHECKLIST.map((item) => [`confirm_${item.id}`, 'on']));

@@ -123,6 +123,8 @@ export async function loadPublicPage<R extends object>(route: Route<R | StepResu
 /** What a form shows after a server action that did not move on. */
 export interface ActionState {
   readonly error?: string;
+  /** The error is the generic line of an invalid form ("Check the fields marked below."), which the issues follow. */
+  readonly invalid?: boolean;
   readonly issues?: readonly Issue[];
   readonly problems?: readonly string[];
   readonly locked?: boolean;
@@ -159,7 +161,7 @@ export async function runAction(route: Route<MutationResult>, form: FormData, pa
     return { error: guarded };
   }
   if (outcome.status === 'invalid') {
-    return { error: 'Check the fields marked below.', issues: outcome.issues };
+    return { error: 'Check the fields marked below.', invalid: true, issues: outcome.issues };
   }
   if (outcome.status === 'forbidden') {
     return { error: `Not available to your role: ${outcome.message}.` };
@@ -177,7 +179,7 @@ export async function runAction(route: Route<MutationResult>, form: FormData, pa
 export async function runSignInStep(route: Route<StepResult>, form: FormData): Promise<ActionState> {
   const outcome = await route.invoke(await nextRequest({}, formInput(form)), services());
   if (outcome.status === 'invalid') {
-    return { error: 'Check the fields marked below.', issues: outcome.issues };
+    return { error: 'Check the fields marked below.', invalid: true, issues: outcome.issues };
   }
   const guarded = guardMessage(outcome);
   if (guarded !== undefined) {

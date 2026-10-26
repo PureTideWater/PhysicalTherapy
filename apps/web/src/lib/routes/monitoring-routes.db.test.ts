@@ -313,7 +313,7 @@ describe('the monthly summary reads each line’s pricing in effect (PRD 5, J17;
     await w.pricing.execute(target, rerun.pricingRunId);
     // Before anyone accepts it, the summary still reads the first run.
     expect(ok(await call(monthlySummaryPage, target.manager, month)).summary.total.figures.validated.lines).toBe(3);
-    await asManager((scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId: rerun.pricingRunId }));
+    await asManager((scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId: rerun.pricingRunId, replacesId: may, heldByIds: [] }));
     const figures = ok(await call(monthlySummaryPage, target.manager, month)).summary.total.figures;
     expect(figures.validated).toEqual({ lines: 0, billedCents: '0', varianceCents: '0' });
     expect(figures.priced).toMatchObject({ lines: 3, billedCents: '22500' });

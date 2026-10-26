@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
 import { NotFoundError } from '../http/route';
-import { type RunSummary, runsInEffect } from '../pricing/queries';
+import { type RunSummary, pendingFirstRuns, runsInEffect } from '../pricing/queries';
 import { type PublishedRelease, type ReleaseNote, publishedReleases, releaseNote } from '../releases/queries';
 import { opaqueId } from './schemas';
 
@@ -16,7 +16,10 @@ import { opaqueId } from './schemas';
  * effect pinned to another release, which a re-run under the release in force would price again. For
  * the roles that price runs (mapping.edit), a run's "what would change" is worked out on request, in
  * memory: its lines priced under its own release and under this one, nothing written but the audited
- * reads (purpose release_impact). The re-run itself, and its diff, are the Pricing runs screens'.
+ * reads (purpose release_impact). The re-run itself, and its diff, are the Pricing runs screens'. The
+ * runs listed are runs in effect, the only ones re-run (docs/adr/0037, amendment of 2026-10-26); while a
+ * first run of a listed run's overlapping dates is queued or being priced, that run's Re-run button gives
+ * way to the run it waits for (createRerun would refuse it, newer_run_pending).
  */
 
 const releaseNumber = z.coerce.number().int().min(1).max(2_147_483_647);
@@ -32,6 +35,8 @@ export interface ReleasesPageData {
   readonly note: ReleaseNote | null;
   /** The practice's runs in effect pinned to another release than the note's (a re-run under the release in force prices them again). */
   readonly otherRuns: readonly RunSummary[];
+  /** Per run listed, the first runs of overlapping periods queued or being priced, oldest first (empty for most). */
+  readonly pendingByRun: Readonly<Record<string, readonly RunSummary[]>>;
   /** What the note's release would change in the run asked about (`check`), when it is the release in force. */
   readonly impact: RunImpact | null;
   readonly canRerun: boolean;
@@ -65,13 +70,22 @@ export const releasesPage = practiceRoute({
       }
       impact = await runReleaseImpact(scope, run, await loadRuleRelease(scope.client, note.releaseNo), request.requestId);
     }
+    const otherRuns = note === null ? [] : runs.filter((run) => run.releaseNo !== note.releaseNo);
+    const pendingByRun: Record<string, readonly RunSummary[]> = {};
+    // Only where a re-run would be offered: the note of the release in force.
+    if (note?.inForce === true) {
+      for (const run of otherRuns) {
+        pendingByRun[run.id] = await pendingFirstRuns(scope, practiceId, run.id, request.requestId);
+      }
+    }
     return {
       practiceId,
       releases: await publishedReleases(scope.client),
       runsByRelease,
       inForce,
       note,
-      otherRuns: note === null ? [] : runs.filter((run) => run.releaseNo !== note.releaseNo),
+      otherRuns,
+      pendingByRun,
       impact,
       canRerun,
     };

@@ -269,6 +269,7 @@ describe('what a diff and a dry run compare', () => {
 describe('what a listed line says changed', () => {
   const side: DiffSide = {
     pricedLineId: 'priced',
+    pricingRunId: 'run-1',
     method: 'FIXED_SCHEDULE',
     expectedAllowedCents: '5000',
     varianceCents: '2000',
