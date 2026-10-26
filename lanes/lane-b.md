@@ -202,6 +202,11 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~01:30 UTC:
+  - ADR **0077** (0065 is #42's, 0066 the CI series', and 0067 to 0076 are claimed);
+  - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
+  - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', and 900100 is the screening's scale release);
+  - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
   - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
   - **As its own PR, next in Lane B's queue,** when it is larger or of another kind. Add it to LANES.md as a dated item "on the co-founder's standing direction of 2026-10-25" (one PR per change, LANES rule 5).
@@ -737,3 +742,25 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **The UX capture** is in its first full run (from 00:30 UTC; the populate journeys passed, 93 PNGs by 00:47).
     - The container had restarted again at about 22:40 UTC, and the capture agent started PG18 by hand.
     - The agent also ran `git checkout --` on `tools/lane-b-screen-tour/{build,setup}.sh` in `/home/user/ops`, to undo its own first edits to those two files. Both were clean before, so nothing was lost; it reported the breach itself. The session checks the ops tree before every commit.
+- **2026-10-26 ~01:20 UTC: #38 and #48 both designed and reviewed, no migration; #38 building.** ADR 0076 reserved for #48 (its draft is kept in page memory only, with the in-place lock and sign-in). #38 takes ADR 0072 and CAS-30 to CAS-34; #48 takes CAS-35 to CAS-37.
+  - **#135 opened draft PR #47** (~01:15 UTC; no migration). Its design review caught that `save_default_payment_method: 'on_subscription'` would keep charging a card after a bank account was added; fixed in the design.
+  - Its proposal, to show a bank account still waiting on Stripe's micro-deposits on later visits, is noted for the queue after #135.
+  - **The UX capture** is at 709 PNGs (01:17 UTC). Along the way it found and fixed a held submit that was actually sent, and a 390 px loading state taken too early. Both were capture faults, on the synthetic database.
+  - Session clocks drift: the #38 session's message said ~02:45 UTC at 01:19. The sessions were told to take times from `date -u`.
+- **2026-10-26 ~01:30 UTC: the release content checks' design is reviewed (no migration); shared counters allocated centrally.**
+  - It found that fixture release numbers and synth module numbers are shared counters the parallel sessions could collide on. Allocated in the claim rows:
+    - DBF module 13 (#111), RCC module 14 plus fixture release 900007 (the release content checks), BIL module 15 (#135).
+    - The next free values are under "Shared counters" in the conventions. #135's session was told BIL = 15.
+  - **Handed to Lane A:** `operator_content_coverage()` for #59's later daily `content_due` job. `tp_operator` has no grant on rule objects, and a GRANT on `rule_record` would be DDL on a rule table.
+- **2026-10-26 ~02:15 UTC: the UX capture is done; the image checks run 20 batches at once.**
+  - **Capture** (wf_b56fe7b4-652's capture agent):
+    - **857 shots covering all 83 reachable routes.** At 1280 px light, 385 (84 default, 126 interaction, 75 error, 52 loading, 45 empty, 3 not-found); 83 at 1280 px dark (tokens only), one per route; 389 at 390 px light.
+    - **36 named states that synthetic data cannot show** are each recorded with the reason, never faked. Examples: the screening's "not open yet", a 50-group pager, empty consoles the seed always fills, a tampered ledger.
+    - **The lock** was held about 100 minutes in two fresh-prepare sessions; the final data is session 2 (populate 3.0 min, capture 28 min, a 390 px sticky-header retake).
+    - **Clean at the end:** server stopped, port 3297 free, `tp_e2e_screens` dropped.
+  - **The tour tool grew** (committed here):
+    - `tour.spec.ts` rewritten: a declarative capture helper, stable ids, `TOUR_ONLY`, bounded timeouts, held submits that are truly aborted, and loading shots taken after prefetch;
+    - `screens.config.ts` populates with seven specs (`reports.spec.ts` added), and `run.sh` excludes only the webhook test;
+    - new `reserve.sh` (re-serve a build from a fresh prepare), `build-only.sh` and `batches.py`, with the README.
+  - **The route map is committed** with the 83 real pages. The six phantom paths are kept only in the readable map's "Paths with no page".
+  - **Faster checks:** the workflow runs two agents at a time on this 4-CPU container, so its 20 check batches would have taken about ten rounds. Eighteen background checkers took batches 03 to 20 at once, writing the same progress and verdict files as the workflow's checkers, which take the results when they reach each batch.

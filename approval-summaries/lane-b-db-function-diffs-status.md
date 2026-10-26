@@ -2,8 +2,8 @@
 
 **Open questions:** none.
 
-- **Stage:** fix round (wf_9668ca80-bbd, from 2026-10-26 ~01:05 UTC): every review finding, full local suite once, one push.
-- **Branch / PR:** `co-001/db-function-diffs` / draft PR #46, head e1896d5. CI on 2abcf83: all green but `unit` (a '#111' comment read as a hex colour by the brand scan; fixed in e1896d5); capacity cancelled by that push. CI on e1896d5 running.
+- **Stage:** fresh-clone verification that reads CI (wf_088253bb-ce9, from 2026-10-26 ~02:10 UTC).
+- **Branch / PR:** `co-001/db-function-diffs` / draft PR #46, head b564bf2 (base 6ddd587, unchanged). **CI on b564bf2: every check green** (ci run 40256241530; all green, mutation, screening-capacity gate, approval-of-record).
 - **Design:** `designs/lane-b-db-function-diffs.md`. Confirmed at design: **no migration** ("Database: no schema change");
   the domain model's text and hash stay unchanged; no workflow change.
 - **Machine:** setup-container OK 2026-10-25 23:45 UTC; `gh api user` = PureTideWater.
@@ -17,7 +17,8 @@
 - **Decisions taken (recommended):** DBF db cases in their own file function-files.db.test.ts, so workflows.test.ts CI-09 stays unchanged; synth no-file entries DBF-01..05 (module DBF) as the orchestrator confirmed.
 - **Reviews (wf_a92bcca4-084):** tooling 17 findings (T1 blocking: the summary with diffs would exceed GitHub's 65,536-character PR body for a real migration such as #42's; 6 should; 10 nits), security 15 (6 should, 6 nits, 3 improvements). All taken except I2 (needs a workflow change: proposal) and S1's workflow step (not needed). Findings: `approval-summaries/lane-b-db-function-diffs-review-findings.json`; dispositions: `...-fix-dispositions.md`.
 - **Proposal (outside this PR):** I2: CI's domain model job could run the summary renderer from the base ref, so a PR cannot change the judge that writes the founder's copy (a workflow change; Lane A or a CI PR).
-- **Next:** CI on the fix head, then the fresh-clone verification that reads CI, then merge.
+- **Fix round (wf_9668ca80-bbd):** every finding fixed in ac1c337, 95ee88f, b564bf2 (one push). Full local suite: typecheck; lint 1,493; lint:copy 491; lint:logs 999; fixtures; synth clean; unit 5,057 + 3 skipped; golden 188; oracle 637; test:db 9,065 + 1 skipped (119 files, 4 shards); domain model --check --strict; build + e2e 51/51; actionlint; no mutation shard affected. New tests fail on e1896d5 (33 unit, 10 db).
+- **Next:** the verification's verdict, then mark ready and merge (base unchanged at 6ddd587).
 
 ## Log (UTC)
 - 2026-10-25 23:45: machine OK; read LANES, lane-b.md, CLAUDE.md, audit #111.
@@ -28,3 +29,4 @@
 - 2026-10-26 00:45: build done; 2abcf83 pushed; draft PR #46 opened, body written with update_pull_request and verified byte for byte; subscribed.
 - 2026-10-26 00:50: CI on 2abcf83: unit red (brand scan read '#111'); fixed e1896d5, pushed.
 - 2026-10-26 01:00: reviews done; dispositions written; fix round launched.
+- 2026-10-26 02:05: fix round pushed b564bf2; CI all green; PR body updated (verified byte for byte); verification launched.
