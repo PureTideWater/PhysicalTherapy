@@ -1,11 +1,19 @@
 # 0066. Run CI as parallel jobs behind one gate, measure mutation on every money package, move the browser and runner together, and pin every dependency
 
 - **Status:** accepted, Part 1 (`co-001/ci-speed`, combined audit #109), Part 2 (`co-001/ci-deps`, #112, with #19's
-  assert loosening, Dependabot groups and licence fix) and Part 4 (`co-001/ci-mutation`, #54). Part 3 is appended by
-  the series' later pull request, `co-001/ci-browser` (#19's upgrade part). Part 1 amends
+  assert loosening, Dependabot groups and licence fix), Part 3 (`co-001/ci-browser`, #19's upgrade part) and Part 4
+  (`co-001/ci-mutation`, #54). Part 1 amends
   [0010](0010-supply-chain-gates-beside-ci.md) (the image and licence gates run as ci.yml jobs under `all green`) and
   [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
   (the required checks, the job that writes the domain model's summary, the per-job timeouts).
+  - **Part 3** (`co-001/ci-browser`) amends
+    [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md) (Chrome for Testing 156.0.8078.4, revision 1248, recorded in `browser.json` and
+    proved on ubuntu-26.04 by CI's baseline step),
+    [0062](0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md)
+    (F5: the release's capacity chain on ubuntu-24.04 with a dispatched 26.04 probe; the images bound by content under
+    either image store) and
+    [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
+    (item 15: approval-of-record on ubuntu-26.04).
   - **Part 4** (`co-001/ci-mutation`, combined audit #54) amends
     [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md)
     (mutation by path, not by label; Stryker 10.1.1 in place of 10.0.0 and its patch) and
@@ -17,12 +25,16 @@
     [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
     (the build branch is the default branch until launch, the build branch's ruleset applied, every action pinned by
     SHA at its release).
-- **Date:** 2026-10-25; Part 2 2026-10-26
+- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
   #19, #54, #109 and #112 among it, each placed "CI PR before PR 7"), under the standing rule of 2026-10-18; the build
   (Lane B), for the notices below, decided under that rule and each reversible by the founder
   - **Part 4:** item #54 of that audit, placed "CI PR before PR 7"; and the founder's ruling of 2026-10-25, relayed by
     the co-founder, that his adoption covers #54's 85% exit for milestone 6 and Gate 1 (the series' question F6).
+  - **Part 3:** item #19 of that audit (its upgrade part); the founder's F4 and F5 (F5 as recommended), relayed by the
+    co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's Q2 (2026-10-25, about 21:05 UTC) and ruling of
+    2026-10-26, about 00:20 UTC (every choice its recommended option, for security the safer one; the baselines'
+    inspection by an adversarial visual-inspection agent's private gallery, not blocking the merge).
   - **Part 2:** items #112 and #19 of that audit; the founder's rulings on the series' questions F1 (a), F2 (a) and
     (b), F4 and F7, relayed by the co-founder on 2026-10-25 at about 01:10 UTC, F7 applied that day at 21:14 UTC; and
     the co-founder's answers to CQ1, CQ2 and CQ3, each its recommended and safer option (2026-10-26, about 00:20 UTC),
@@ -35,6 +47,8 @@
     0047 and 0064.
   - **Part 2:** 15 (the dev environment), 16 (dependency and image hygiene), 18; reconciliation-001's content-pipeline
     check (F4's standing exception); test matrix CI-11 to CI-14; ADRs 0058, 0062 and 0063.
+  - **Part 3:** 16, 18, and the cross-cutting accessibility requirement (labels on every screen; WCAG 2.5.3, Label in
+    Name, as axe 4.14 checks it); test matrix CI-18 to CI-20; ADRs 0058, 0062 and 0063.
 
 ## Part 1 (`co-001/ci-speed`)
 
@@ -251,7 +265,8 @@ offer of 2026-10-22 ("check, mutation, capacity, approval-of-record") maps one f
 ### Revisit when
 
 The repository goes private (read the six- and three-shard runs against the 10-minute target), the founder rules on the capacity run's
-length, Part 2's pins land, Playwright moves (Part 3), or a db file passes 240 s on CI or a route-test file 90 s.
+length, a db file passes 240 s on CI or a route-test file 90 s. (Part 2's pins have landed and Part 3 moved Playwright
+and the runners; their runs are read against the 10-minute target.)
 
 ## Part 2 (`co-001/ci-deps`)
 
@@ -692,7 +707,183 @@ branch back to `main`.
 
 ## Part 3 (`co-001/ci-browser`)
 
-Appended by that pull request.
+### Context
+
+Combined audit #19's upgrade part: Playwright 1.56.1 predates Ubuntu 26.04 (its `nativeDeps` tables stop at 24.04),
+so every job stayed pinned to `ubuntu-24.04` while `ubuntu-latest` moves to 26.04 in November 2026 (runner-images
+#14748), and axe-core 4.14.0 enables WCAG 2.5.3's `label-content-name-mismatch` by default, which two of the shell's
+header controls fail. Moving the browser moves the brand baselines (ADR 0058), the worker's PDF printer and every
+browser job's system packages; moving the runner moves Docker to 29, whose containerd image store changes what
+`docker image inspect -f {{.Id}}` names, which the release's capacity binding read (ADR 0062). The founder ruled F4 (this
+pull request moves `publish-content.yml`'s runner once, with its frozen copy) and F5 (below); the co-founder ruled Q2
+(`shell.tsx` and the capacity harness are #42 files this pull request may change under LANES rule 6) and, on
+2026-10-26 at about 00:20 UTC, that every choice takes its recommended option, for security the safer one, and that
+the baselines' inspection is an adversarial visual-inspection agent's, published as a private gallery that does not
+block the merge.
+
+Measured before the change ([SF] §6, the 14 ci.yml runs before 6ddd587): 10 of 92 `playwright install --with-deps`
+steps took over 60 s (86 to 612 s), all on pull-request runs; #45's run 40226881568 spent 609 s of `db (4/4)`'s 13:02
+fetching 25.9 MB from a throttled mirror. apt takes a file in its archive directory by its size alone (apt-pkg
+`acquire-item.cc`, "Make sure the size matches"), so a cached `.deb` must be checked before apt sees it.
+
+### Decision
+
+**The browser.** `@playwright/test`, `playwright-core` (one catalog line) and `playwright` move to 1.64.1 and
+`@axe-core/playwright` to 4.14.0, each over three days old and published with provenance, so ci-deps' gates pass them
+with no exclude. Playwright 1.64.1 pins chromium and the headless shell at revision 1248, Chrome for Testing
+156.0.8078.4. The worker image copies the lockfile's playwright-core from its build stage's frozen install, with no
+version of its own. `apps/web/e2e/browser.json` records both builds (per build its directory, its binary's path, the
+SHA-256 of every file of the build as `find <dir> -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum`
+gives it, the binary's SHA-256, and the Chrome for Testing zip and its SHA-256 for the local layout).
+`tools/ci/browser-build.ts` holds the installed builds to it, and its `--image <ref>` form holds a worker image's headless
+shell to it. The shell's two header controls are named by their visible text (`aria-label` "<practice>, practice
+switcher" and "<email>, account menu", the initial drawn as generated content), and the brand journey checks every
+header control's name contains its visible text at 1280 and 390 px.
+
+**Runners (the founder's F5, as recommended, relayed by the co-founder on 2026-10-25 at about 01:10 UTC).** The
+release's capacity chain stays on `RELEASE_RUNNER.label`, `ubuntu-24.04`: `release.yml`'s four jobs,
+`release-dry-run.yml`'s three, which mirror them, and `screening-capacity.yml`'s `capacity`. The other eighteen jobs move
+to `ubuntu-26.04`, `publish-content.yml`'s with its frozen copy (F4). `screening-capacity.yml`'s `workflow_dispatch`
+takes one choice input, `runner` (`ubuntu-24.04` by default, or `ubuntu-26.04`), and its `capacity` job runs on
+`${{ inputs.runner || 'ubuntu-24.04' }}`, so every event but a dispatch naming 26.04 measures on the release's runner.
+The 26.04 run is an advisory probe: `notify` opens no issue for it, the launch check refuses its report (not
+`release.yml`'s run), and its numbers, image store and `docker info` go to issue #41 for the chain's later move.
+`workflows.test.ts` holds the exact chain (`RELEASE_CHAIN`), every other job on 26.04, and resolves the
+`${{ inputs.<name> || '<label>' }}` form against its choice input only, refusing every other expression. On 26.04 the
+database jobs' `pg_dump` is 18, so the restore drill runs on CI and the db suite loses its one skip.
+
+**actionlint** (1.7.7 to 1.7.12 and main) does not know `ubuntu-26.04`. The workflows' test runs it with `-ignore
+'label "ubuntu-26\.04" is unknown'`: one exact message, no configuration file (an `actionlint.yaml` naming the label
+self-hosted would reverse the configuration ban and misname a hosted label). It goes when actionlint lists the label.
+
+**The browser jobs' system packages (V3).** `unit`, every `db` and `e2e` shard, `large-zip` and both capacity jobs
+restore `$RUNNER_TEMP/apt-archives` under `apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>`
+(the runner's own environment, through a step, since the `env` context holds only what a workflow sets), falling back
+to the image version's and the image's earlier keys; `tools/ci/apt-archives.sh verify` fetches the signed indexes and
+copies into apt's archive directory only a file whose SHA-256 is the index's for exactly its name, version and
+architecture, deleting every other, and sets `APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit`
+and the capacity job save on a miss, on the build branch's own runs only (push, schedule, dispatch), after the browser
+check passed. `release.yml` restores no cache (Part 2), so its one install stays uncached.
+
+**The browser check.** Every step that installs Playwright's browsers, in every workflow, carries `id:
+browser-install` and is followed at once by `node tools/ci/browser-build.ts`, before any test runs or any cache is
+saved. In ci.yml's jobs and large-zip every later step runs while the install succeeded, `${{ !cancelled() &&
+steps.browser-install.outcome == 'success' }}`, so a red check still shows what the new browser does to the suite; the
+capacity jobs stop at a red check instead, because a measurement made with another browser must never be attested as
+passing. Every Playwright bump is red here by construction until a person runs ADR 0058's procedure
+(`docs/runbooks/ci.md`, "Upgrading the browser"): the one exception to A4 (c).
+
+**The brand baselines, from nothing, on every run.** The first `e2e` shard of every pull request and push removes the
+committed baselines, regenerates them with `--update-snapshots=all --retries=0` into its own output directory, and fails
+on a failed run, on any set of pictures written other than the committed set, or on any byte, printing the SHA-256s and
+each changed picture as its path and base64. There is no path condition: the pictures are drawn by application code
+(the header, the worker's report covers) as well as by the browser and the runner image, and the journey's comparisons
+pass a change under their tolerance.
+
+**The release's images, bound by content under either image store.** `tools/screening-capacity/image-id.ts` (`node:`
+modules only) reads a `docker save` or buildx `type=docker` archive, plain or gzipped, as one stream, hashes the config
+blob and every manifest it follows and fails unless each equals the digest that names it, and returns the config digest,
+the linux/amd64 manifest's and the archive's top-level descriptor (`target`, what the containerd store's `.Id` names).
+Every build whose identity is checked passes `provenance: false` and `sbom: false`, so each store holds one manifest.
+`release.yml`'s `build` saves each image, reads its identity, proves the tag is that image on its store (the config
+digest on the classic store, the top-level descriptor on containerd's, from `docker info`'s `DriverStatus`), checks the
+worker's headless shell with `browser-build.ts --image` before the save, and sets `sha256_<image>`, `config_<image>` and
+`target_<image>` as job outputs, distinct per matrix leg. `capacity` and `push` check each archive's SHA-256 against
+those outputs (`sha256sum --check`) before `docker load` and prove each loaded tag the same way before anything is
+installed or pushed; `push` reads every pushed manifest back from the registry afterwards and fails unless its config
+digest is the build's. `push` and `report` run no repository code. The artifact's `.tar.sha256` and `.id` stay for a
+person and no check reads them: `capacity` runs repository code and every installed package beside `push`, and a step
+there that reached the run's artifact token could replace an archive and its files together, while no job can rewrite
+another's outputs. ci.yml's `images` job (26.04) builds archives, scans them with Trivy's `input`, holds image-id.ts's
+config digest to buildx's `containerimage.config.digest`, loads the worker as the archive's top-level descriptor and
+checks its headless shell, so every pull request proves the reader and the containerd rule on the store the probe will
+use. `screening-capacity.yml`'s builds write archives and load them the same way. `release-dry-run.yml` carries the same
+steps, cut to its one image, without the push and the registry check. The watched list gains `tools/ci/apt-archives.sh`,
+`tools/ci/browser-build.ts` and `browser.json`, which the capacity job runs or reads.
+
+### After #42
+
+#42 (open, 143 files) changes `tools/screening-capacity/run.ts`, `report.ts`, `report.test.ts` and
+`test-support/measurements.ts`. While it is open this part changes none of them (the safer reading of the series'
+brief; it touches only `shell.tsx`, the manifests and lockfile, the regenerated `watched-paths.txt`, ADR 0062, the test
+matrix, reconciliation-001 and the synthetic matrix and registry among #42's files, each under rule 6). So the harness
+still reads each image's `.Id` itself, and the report is still `tp-screening-capacity/8`. It is safe meanwhile: under
+F5 the release's capacity chain runs on ubuntu-24.04, whose Docker 28 keeps images in the classic store, where `.Id` is
+the config digest, and the release's capacity job proves each loaded tag is the config digest its build read from the
+archive's bytes before the harness runs. The trigger to finish it is #42's merge, or GitHub moving ubuntu-24.04's
+docker-ce past 28, whichever comes first. The follow-up pull request, cut from the build branch after #42 merges:
+1. `run.ts`: options `imageArchives` and `expectImages` (`--image-archive <name>=<path>`, `--expect-image <name>=<config
+   digest>`, the usage line), parsed beside `webImage` and `workerImage`; `run.ts:825-826`'s `.Id` read replaced by
+   `containers.ts`'s `proveLoadedImage(tag, { archive, expectedConfig })` (built and tested in this part, with
+   `measure.test.ts`'s store, attested-index and `--expect-image` cases), the run stopping before it measures when the
+   loaded tag is not the archive's image.
+2. `report.ts`: `REPORT_FORMAT` `tp-screening-capacity/9`; `WorkflowRun` gains `imageOS` and `imageVersion` from the
+   runner's environment; the measurements gain `imageStore` (driver and snapshotter) and `imageSource` (`archive` with
+   each archive's SHA-256, or `save`), beside `workflow` and `images`; `report.test.ts` and
+   `test-support/measurements.ts` with them.
+3. `launch-check.ts`: `RELEASE_RUNNER` gains `imageOS: 'ubuntu24'`; `launchCheck()` refuses a binding report whose
+   `imageOS` is not it or whose `imageSource` is not `archive`, and format 8; `launch-check.test.ts` holds each refusal.
+4. `release.yml`'s `capacity` passes `--image-archive web=… --image-archive worker=…` and `--expect-image` from
+   `needs.build.outputs`, and `screening-capacity.yml`'s `capacity` passes `--image-archive`; `workflows.test.ts` holds
+   both, and the in-workflow proof of the release's capacity job stays as the step before the install.
+5. Failing first by §3.3.3's worktree run at the merge base (each refusal on an assertion, not a missing export), and
+   the probe dispatched once more to record the report's `imageStore` on #41.
+
+### Alternatives considered
+
+- **The worker image's playwright-core:** a version derived from the manifest into `npm install` (keeps an unpinned
+  registry fetch, and reads `catalog:` once the manifest names the catalog), or a literal held equal by a test (the
+  duplication A4 (b) forbids). Copying the build stage's frozen install is integrity-checked and names no version.
+- **The browser record:** a binary hash alone (a changed `libGLESv2.so`, `libvk_swiftshader.so`, `icudtl.dat` or
+  `.pak` beside an equal binary changes the pictures, and Playwright verifies no download); the tree hash binds every
+  file of both builds.
+- **The baselines:** a diff-gated regeneration (an application change under the comparators' tolerance would merge
+  green and turn the next push red with no pull request open to fix it); Playwright's container image for the jobs
+  (changes the rendering host the baselines depend on, which ADR 0058 rejected).
+- **The system packages:** a hand-kept `.deb` set installed with `dpkg -i` (loses the index check and goes stale with
+  every security update); dropping `--with-deps` (CI-05 requires it, and its fonts are part of the rendering host);
+  another mirror (moves the throttle, does not remove it); `APT_CONFIG` (sudo drops it, so the cache goes through apt's
+  own directory and a conf file).
+- **actionlint:** a configuration file naming `ubuntu-26.04` as a self-hosted label (reverses a ruled ban).
+- **The release binding:** the artifact's own `.id` and `.tar.sha256` (replaceable with the archive by a job that runs
+  repository code); moving the pre-push compare after the push (a mismatch would then be public); keeping `.Id` alone
+  (store-dependent).
+- **Runners:** the chain to 26.04 now (F5 (a)) or every job kept on 24.04 (F5 (b)): the founder ruled for the
+  recommendation, with the probe deciding the chain's move by numbers.
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+- **N12.** `release-dry-run.yml`'s `capacity` job stays on the release's runner with the rest of the chain it mirrors,
+  so the chain is eight jobs, not the design's seven; eighteen move.
+- **N13.** The apt cache key hashes playwright-core's installed `browsers.json` (the browser cache's own file, which
+  moves with every Playwright build) rather than `browser.json`, and is saved by the build branch's own runs only.
+- **N14.** The baseline step compares the set of pictures written with the committed set (seven today) rather than
+  counting seven lines, so a baseline added or removed with its spec is held without an edit of the workflow.
+- **N15.** The capacity jobs stop at a red browser check, unlike ci.yml's jobs, so a measurement is never made, or
+  attested, with another browser than the record's.
+- **N16.** The release's `build` and `capacity` jobs also prove each tag on their own store, and the dry run's
+  `capacity` runs release.yml's archive check, so every check a tag runs is exercised by a pull request first.
+
+### Consequences
+
+- A Playwright bump is red on the browser check until a person runs ADR 0058's procedure, and every later step of
+  ci.yml's jobs still runs, so its other effects show in the same run; Dependabot's `browser-tests` group stays.
+- Every pull request and push regenerates the seven baselines in one more run of one spec on the first e2e shard; its
+  duration is measured on this pull request's runs and kept in `docs/runbooks/ci.md`.
+- The ubuntu-24.04 and 26.04 images each keep about 26 MB of system packages in the Actions cache.
+- The release's capacity chain is the only work left on ubuntu-24.04 until the founder rules on the probe's numbers;
+  `ubuntu-latest`'s November move changes nothing here, since the runner rule refuses `-latest`.
+- What cannot be verified where the series is built (no Docker daemon, no GitHub runner): the containerd `.Id` rule,
+  image-id.ts on real archives, Trivy's `input`, the registry check, the apt verify against a real index, the mirror's
+  bytes against `browser.json` and the baseline step. The pull request's own runs prove them (the `images` job every
+  run, the dry run where its paths run it), and the first tag proves the push job's registry check.
+
+### Revisit when
+
+actionlint lists `ubuntu-26.04` (the `-ignore` goes); the probe's numbers are in and the founder rules on the chain's
+move (`RELEASE_RUNNER`, the release workflows' `runs-on` and `RELEASE_CHAIN` together); #42 merges (the follow-up
+above); GitHub moves ubuntu-24.04's Docker past 28 before then; or the baseline step's measured cost passes a minute,
+when its inputs are derived from the brand spec's import closure by `watched.ts`' mechanism, never a hand list.
 
 ## Part 4 (`co-001/ci-mutation`)
 
