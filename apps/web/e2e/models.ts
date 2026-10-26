@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { createContract, createDraftVersion } from '@tp/contracts';
 import { LocalKeyProvider, appDevLoginUrl, developmentMasterKey, loadPracticeCipher, openPool, withPracticeScope } from '@tp/db';
-import { LOCAL_OUTPUT_FORMAT, type ModelPurpose, type PurposeInputs, localOutputKey, requestFor } from '@tp/model-gateway';
+import { LOCAL_OUTPUT_FORMAT, type ModelPurpose, type RequestInputs, localOutputKey, requestFor } from '@tp/model-gateway';
 import { draftNarrative } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetDraftInputs } from '@tp/worker/packets';
@@ -42,7 +42,7 @@ async function withPool<T>(run: (pool: ReturnType<typeof openPool>) => Promise<T
 }
 
 /** Writes the model's answer to the request the gateway will send for this input. */
-export function expectModelOutput<K extends ModelPurpose>(purpose: K, input: PurposeInputs[K], output: unknown): void {
+export function expectModelOutput<K extends ModelPurpose>(purpose: K, input: RequestInputs[K], output: unknown): void {
   const key = localOutputKey(requestFor(purpose, input));
   writeFileSync(path.join(E2E_MODEL_OUTPUTS_DIR, `${key}.json`), JSON.stringify({ format: LOCAL_OUTPUT_FORMAT, output }));
 }
@@ -51,7 +51,7 @@ export interface DraftContract {
   readonly versionId: string;
   readonly documentId: string;
   /** What the gateway is given when the specialist asks for a proposal of the document. */
-  readonly input: PurposeInputs['proposeContractTerms'];
+  readonly input: RequestInputs['proposeContractTerms'];
 }
 
 /**

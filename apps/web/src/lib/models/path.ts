@@ -169,6 +169,15 @@ export async function modelFeatures(scope: PracticeScope<ScopeClient>, services:
   return offeredPurposes(await featuresIn(scope.client, practiceId), servedOf(models));
 }
 
+/**
+ * The contract screen's refusals (docs/adr/0070, Part 3), by the code the gateway refuses with: the document
+ * names a patient of the practice, or it could not be checked (`screen_unavailable`, above the identifier bound;
+ * `screen_failed`, the check's own read failed), which the person meets the same way, by entering the terms by
+ * hand. Mapped before the generic `refused`, so the screen says which; a check the gateway did not issue
+ * (`screen_invalid`) is the code's mistake, not the document's, and stays the generic refusal.
+ */
+const SCREEN_PROBLEMS: Readonly<Record<string, ModelProblem>> = { names_patient: 'names_patient', screen_unavailable: 'screen_unavailable', screen_failed: 'screen_unavailable' };
+
 /** The problem a gateway error is, or null for an error that is not the model's (rethrown by the caller). */
 export function modelProblem(error: unknown): ModelProblem | null {
   if (error instanceof ModelFeatureOffError) {
@@ -182,6 +191,9 @@ export function modelProblem(error: unknown): ModelProblem | null {
   }
   if (error instanceof ModelCallFailedError || error instanceof DuplicateModelCallError) {
     return 'failed';
+  }
+  if (error instanceof InputRefusedError && Object.hasOwn(SCREEN_PROBLEMS, error.code)) {
+    return SCREEN_PROBLEMS[error.code] ?? 'refused';
   }
   if (error instanceof InputRefusedError || error instanceof PhiBoundaryError) {
     return 'refused';

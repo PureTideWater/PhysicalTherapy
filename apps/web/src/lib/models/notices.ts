@@ -4,8 +4,16 @@
  * without the gateway.
  */
 
-/** Why a model call proposed nothing. */
-export const MODEL_PROBLEMS = ['off', 'not_evaluated', 'budget', 'busy', 'failed', 'refused', 'invalid_output', 'misstated', 'unavailable'] as const;
+/**
+ * Why a model call proposed nothing. Two are the contract screen's (docs/adr/0070, Part 3): `names_patient`,
+ * the document holds an identifier of one of the practice's patients (a member ID, a patient control number
+ * or a payer claim number its records hold), so it was not sent; and `screen_unavailable`, the document could
+ * not be checked against the practice's records (the practice holds more identifiers than the check reads
+ * until the lookup hashes land, or the check itself failed), so it was not sent either. Each names no patient,
+ * no identifier, no kind of identifier and no count: the person can already open the document, so saying it
+ * names a patient discloses nothing they cannot see (the design review's m14).
+ */
+export const MODEL_PROBLEMS = ['off', 'not_evaluated', 'budget', 'busy', 'failed', 'refused', 'names_patient', 'screen_unavailable', 'invalid_output', 'misstated', 'unavailable'] as const;
 export type ModelProblem = (typeof MODEL_PROBLEMS)[number];
 
 export const MODEL_PROBLEM_TEXT: Readonly<Record<ModelProblem, string>> = {
@@ -15,6 +23,8 @@ export const MODEL_PROBLEM_TEXT: Readonly<Record<ModelProblem, string>> = {
   busy: 'Other model requests are being answered right now, so nothing was sent; try again in a minute, or enter it by hand.',
   failed: 'The model did not answer (it timed out, was busy or refused); nothing was proposed. Enter it by hand, or try again.',
   refused: 'The input cannot be sent to a model as it is; enter it by hand.',
+  names_patient: 'This document names a patient of the practice, so it was not sent to the model. Enter its terms by hand. If it is a payer letter or an EOB, it was filed as the wrong kind.',
+  screen_unavailable: 'This document could not be checked for patient details, so it was not sent to the model. Enter its terms by hand.',
   invalid_output: 'The model’s answer did not follow its schema; nothing was proposed. Enter it by hand.',
   misstated: 'The model’s narrative stated a figure in the wrong place (one amount or count as another); nothing was written. Draft it by hand, or ask again.',
   unavailable: 'No model is configured for this environment; enter it by hand.',

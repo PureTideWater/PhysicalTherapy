@@ -14,7 +14,7 @@ import {
   type ModelRequest,
   type ModelResponse,
   PROMPTS,
-  type PurposeInputs,
+  type RequestInputs,
   type ServedKey,
   correctionSchema,
   gatewayServing,
@@ -140,7 +140,7 @@ function refused(outcome: Outcome<unknown>): string {
 }
 
 /** Registers the model's answer to the request the gateway will send for this input. */
-function answer<K extends ModelPurpose>(purpose: K, input: PurposeInputs[K], output: unknown): void {
+function answer<K extends ModelPurpose>(purpose: K, input: RequestInputs[K], output: unknown): void {
   provider.register(requestFor(purpose, input), output);
 }
 
@@ -246,16 +246,16 @@ class RecordingStandIn implements ModelProvider {
   }
 }
 
-/** What the gateway is given for the document: its pages as intake stored them. */
-async function pagesInput(draft: DraftContract): Promise<PurposeInputs['proposeContractTerms']> {
+/** What the gateway is given for the document (the version's contract, unless another of its documents is named): its pages as intake stored them. */
+async function pagesInput(draft: DraftContract, documentId = draft.documentId, kind: 'contract' | 'exhibit' = 'contract'): Promise<RequestInputs['proposeContractTerms']> {
   const { practiceId } = draft.practice;
   return withPracticeScope(w.app, { actorId: draft.specialist, practiceIds: [practiceId] }, async (scope) => {
-    const pages = await evidenceFor(scope, documents, draft.practice.cipher, practiceId, 'test').pages(draft.documentId);
+    const pages = await evidenceFor(scope, documents, draft.practice.cipher, practiceId, 'test').pages(documentId);
     if (!pages.ok) {
       throw new Error('the synthetic contract has no pages');
     }
-    const [document] = (await scope.client.query<{ sha256: string }>('SELECT sha256 FROM source_document WHERE id = $1', [draft.documentId])).rows;
-    return { documentId: draft.documentId, documentSha256: document?.sha256 ?? '', kind: 'contract', pages: pages.pages };
+    const [document] = (await scope.client.query<{ sha256: string }>('SELECT sha256 FROM source_document WHERE id = $1', [documentId])).rows;
+    return { documentId, documentSha256: document?.sha256 ?? '', kind, pages: pages.pages };
   });
 }
 
@@ -533,6 +533,107 @@ describe('what a contract proposal reads (PRD 14, PHI minimization; Provider and
     ok(await call(proposeTermsAction, plain.specialist, { practiceId: plain.practice.practiceId }, { versionId: plain.versionId, documentId: plain.documentId }));
     const [unmarked] = ok(await call(abstractionVersionPage, plain.specialist, { practiceId: plain.practice.practiceId, versionId: plain.versionId })).proposals;
     expect(unmarked).toMatchObject({ ambiguous: false, modelId: modelFor(PROMPTS.proposeContractTerms, 'local') });
+  });
+});
+
+/** A SYNTHETIC remittance note filed as an exhibit: it names the CAS-08 claim's patient control number, as an EOB would. */
+const MISFILED_EXHIBIT: readonly (readonly string[])[] = [
+  ['SYNTHETIC EXHIBIT B - INVENTED', '97110 Therapeutic exercise $32.00 per unit', `Patient account:${KNOWN[0] ?? ''} paid 97110 $32.00`],
+];
+
+/** The person's contract_screen_requested events in the practice, and the screen reads each one's request ID joins. */
+async function screenTrail(practiceId: string) {
+  const events = await rows<{ actor_id: string; actor_kind: string; object_id: string; purpose: string; request_id: string }>(
+    practiceId,
+    "SELECT actor_id, actor_kind, object_id, purpose, request_id FROM audit_event WHERE practice_id = $1 AND action = 'contract_screen_requested' AND object_type = 'source_document' ORDER BY at",
+    [practiceId],
+  );
+  const reads = await rows<{ actor_id: string; actor_kind: string; object_type: string; request_id: string; n: string }>(
+    practiceId,
+    "SELECT actor_id, actor_kind, object_type, request_id, count(*)::text AS n FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen' GROUP BY 1, 2, 3, 4 ORDER BY 3, 4",
+    [practiceId],
+  );
+  return { events, reads };
+}
+
+describe('the practice records check before a contract is sent (docs/adr/0070, Part 3; MOD-12)', () => {
+  it('refuses a document that names a patient of the practice before anything is sent, says so, and records who caused the screen and what it read, as the screen', async () => {
+    const draft = await draftContract('MODELS NAMES PATIENT', [{ pages: MISFILED_EXHIBIT, kind: 'exhibit' }]);
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    const exhibitId = draft.extraIds[0] ?? '';
+    // Were it sent, the model would answer: the refusal, not a missing answer, is what stops it.
+    answer('proposeContractTerms', await pagesInput(draft, exhibitId, 'exhibit'), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    const sentBefore = provider.requests.length;
+    logs.length = 0;
+
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: exhibitId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=names_patient`);
+    expect(provider.requests.length).toBe(sentBefore);
+    expect(provider.requests.some((request) => KNOWN.some((identifier) => request.user.includes(identifier)))).toBe(false);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(await rows(practiceId, 'SELECT 1 FROM rate_record WHERE contract_version_id = $1', [draft.versionId])).toEqual([]);
+
+    // The screen says why and offers hand entry; the version stays a draft the specialist can still propose from.
+    const page = ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId, model: 'names_patient' }));
+    expect([page.modelNotice, page.canPropose, page.review.version.status, page.proposals]).toEqual(['names_patient', true, 'draft', []]);
+
+    // The person's one event names the document; the reads are the screen's, a service actor, joined by request ID.
+    const trail = await screenTrail(practiceId);
+    expect(trail.events).toEqual([{ actor_id: draft.specialist, actor_kind: 'user', object_id: exhibitId, purpose: 'contract_screen', request_id: expect.stringMatching(/^test-[0-9a-f-]{36}:screen:[0-9a-f-]{36}$/) as string }]);
+    const requestId = trail.events[0]?.request_id ?? '';
+    const screenId = requestId.slice(requestId.lastIndexOf(':') + 1);
+    expect(screenId).not.toBe(draft.specialist);
+    expect(trail.reads.map(({ actor_id, actor_kind, object_type, request_id }) => ({ actor_id, actor_kind, object_type, request_id }))).toEqual([
+      { actor_id: screenId, actor_kind: 'service', object_type: 'claim', request_id: requestId },
+      { actor_id: screenId, actor_kind: 'service', object_type: 'patient_ref', request_id: requestId },
+    ]);
+    // One audited read per row: every claim and every patient with a member ID the practice holds, and nothing in the person's name.
+    const [held] = await rows<{ claims: string; patients: string }>(
+      practiceId,
+      'SELECT (SELECT count(*) FROM claim WHERE practice_id = $1)::text AS claims, (SELECT count(*) FROM patient_ref WHERE practice_id = $1 AND member_id IS NOT NULL)::text AS patients',
+      [practiceId],
+    );
+    expect(Object.fromEntries(trail.reads.map((read) => [read.object_type, read.n]))).toEqual({ claim: held?.claims, patient_ref: held?.patients });
+    expect(await rows(practiceId, "SELECT 1 FROM audit_event WHERE actor_id = $1 AND purpose = 'contract_screen' AND action = 'read'", [draft.specialist])).toEqual([]);
+
+    // One log line: the practice and the code, nothing of the match and no document text.
+    expect(logs.filter((entry) => entry.error_code === 'MODEL_INPUT_NAMES_PATIENT').map((entry) => entry.practice_id)).toEqual([practiceId]);
+    const logged = JSON.stringify(logs);
+    expect(KNOWN.some((identifier) => logged.includes(identifier))).toBe(false);
+    expect(logged).not.toContain('Patient account');
+
+    // The contract beside it names no patient and is proposed as before, after a screen of its own.
+    answer('proposeContractTerms', await pagesInput(draft), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=proposed`);
+    expect((await screenTrail(practiceId)).events.map((event) => event.object_id)).toEqual([exhibitId, draft.documentId]);
+  });
+
+  it('refuses, as not checked, a document whose practice records could not be read, and sends nothing', async () => {
+    const draft = await draftContract('MODELS SCREEN FAILED');
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    answer('proposeContractTerms', await pagesInput(draft), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    // One claim's patient control number no longer decrypts (a value sealed for another column): the check cannot
+    // read the practice's records, so it refuses rather than answering that the document is clear.
+    await asOwner(w.owner, [practiceId], () =>
+      w.owner.query('UPDATE claim SET patient_control_number = $2 WHERE id = (SELECT id FROM claim WHERE practice_id = $1 ORDER BY id LIMIT 1)', [
+        practiceId,
+        draft.practice.cipher.encrypt('patient_ref.member_id', 'SYNSEALEDELSEWHERE01'),
+      ]),
+    );
+    const sentBefore = provider.requests.length;
+    logs.length = 0;
+
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=screen_unavailable`);
+    expect(provider.requests.length).toBe(sentBefore);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId, model: 'screen_unavailable' })).modelNotice).toBe('screen_unavailable');
+    // The operator's log names the failed read apart from the bound (MODEL_INPUT_SCREEN_UNAVAILABLE); the person reads the same notice for both.
+    expect(logs.filter((entry) => entry.error_code === 'MODEL_INPUT_SCREEN_FAILED').map((entry) => entry.practice_id)).toEqual([practiceId]);
+    expect(JSON.stringify(logs)).not.toContain('SYNSEALEDELSEWHERE01');
+    expect((await screenTrail(practiceId)).events).toHaveLength(1);
   });
 });
 

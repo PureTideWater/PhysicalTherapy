@@ -9,8 +9,21 @@ import {
   rateTermsToJson,
   removeRateRecord,
 } from '@tp/contracts';
-import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { CONTRACT_KINDS, CORRECTION_FORMAT, type CandidateReview, type Correction, type ContractTermsProposal, type ProposedRateRecord, recordPermittedExampleIn, recordReviewerDecisionIn } from '@tp/model-gateway';
+import { randomUUID } from 'node:crypto';
+
+import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
+import {
+  CONTRACT_KINDS,
+  CONTRACT_SCREEN_PURPOSE,
+  CORRECTION_FORMAT,
+  type CandidateReview,
+  type Correction,
+  type ContractTermsProposal,
+  type ProposedRateRecord,
+  practiceRecordsCheck,
+  recordPermittedExampleIn,
+  recordReviewerDecisionIn,
+} from '@tp/model-gateway';
 import type { DocumentStore } from '@tp/worker/documents';
 
 import { evidenceFor } from '../contracts/evidence';
@@ -28,6 +41,19 @@ import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from 
  *   fields stay on the review screen with their problems for the specialist to enter by hand. The model
  *   never approves anything: each proposed record still needs every field approved against its cited
  *   page, and the version its approval and the customer's sign-off.
+ *   Before anything is sent, the gateway checks the pages against the practice's own records (docs/adr/0070,
+ *   Part 3; test matrix MOD-12): a "contract" that holds one of the practice's member IDs, patient control
+ *   numbers or payer claim numbers is an EOB or a letter filed as the wrong kind, and is refused
+ *   (`names_patient`), as is one that could not be checked (`screen_unavailable`): nothing is sent, no
+ *   model_call row is written, and the screen offers hand entry. The check is built here, after the role check
+ *   (the route's), the kind check and the pages, from the request's own scope as proof that it reaches the
+ *   practice and never read through: the contract specialist holds no phi.read, so the records are read in the
+ *   check's own job scope as a service actor, the screen, a fresh ID per request. The person's
+ *   `contract_screen_requested` event, recorded here in the request's transaction before the call, names the
+ *   document and carries the screen's request ID, so the audit trail says who caused the screen and joins it
+ *   to every read the screen made, without saying the person read every patient. The gateway requires the
+ *   check (ContractPagesInput.patientRecords) and accepts only one it issued for this practice, so no caller
+ *   can send a contract unchecked.
  * - reject: the specialist discards a proposal: its model records not yet verified are removed, and
  *   the decision is recorded on the call as rejected.
  * - review: when the version is approved, each proposal not yet reviewed is decided from what the
@@ -145,11 +171,25 @@ export async function proposeTerms(scope: PracticeScope<ScopeClient>, services: 
   if (gateway === null) {
     return { kind: 'not_proposed', problem: 'unavailable' };
   }
+  // The practice records check (docs/adr/0070, Part 3): built from the request's scope as proof only, it reads
+  // in its own job scope on the model pool as the screen, under a request ID that joins its reads to the
+  // person's event below; the event is recorded first, in the request's transaction, naming the document.
+  const screenId = randomUUID();
+  const patientRecords = practiceRecordsCheck({ authorizedBy: scope, pool: services.modelPool, cipher, practiceId: input.practiceId, screenId, requestId: input.requestId });
+  await recordAuditEvent(scope, {
+    action: 'contract_screen_requested',
+    objectType: 'source_document',
+    objectId: input.documentId,
+    practiceId: input.practiceId,
+    purpose: CONTRACT_SCREEN_PURPOSE,
+    // The request ID the screen's reads carry (packages/model-gateway/src/patient-records.ts), so the event joins them.
+    requestId: `${input.requestId}:screen:${screenId}`,
+  });
   let result;
   try {
     result = await gateway.proposeContractTerms(
       { practiceId: input.practiceId, requestKey: input.requestKey },
-      { documentId: input.documentId, documentSha256: document.sha256, kind, pages: pages.pages, ambiguous: input.ambiguous },
+      { documentId: input.documentId, documentSha256: document.sha256, kind, pages: pages.pages, ambiguous: input.ambiguous, patientRecords },
     );
   } catch (error) {
     const problem = modelProblem(error);
