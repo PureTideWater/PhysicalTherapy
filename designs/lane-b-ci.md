@@ -30,9 +30,12 @@ scout's measurement. Section 10 lists where this plan departs from a scout, and 
   1. **`co-001/ci-speed`** (#109): parallel jobs behind one `all green` gate, plus the slow tests made fast. It goes
      first, because every later PR in both lanes runs CI about 30 minutes faster.
   2. **`co-001/ci-deps`** (#112, with #19's assert loosening, its Dependabot group and its licence part; Dependabot #40,
-     #38 except the browser packages, and #33): every action and image pinned, pnpm without its 23 advisories, a
+     #38 except the browser packages, and #33): every action at its latest release and every image by digest (ci-speed
+     and ci-mutation already SHA-pinned two workflows at older versions), pnpm without its 23 advisories under a
+     three-day release age that the lockfile itself is checked against, Postgres from one digest-pinned compose file, a
      Dependabot configuration whose pull requests are green unless something is really incompatible, a release
      workflow that restores no cache, and a dry run that exercises the release's actions on every change to it.
+     Re-read at 6ddd587 on 2026-10-25 (§3.2.6).
   3. **`co-001/ci-browser`** (#19's upgrade part): Playwright 1.64.1 and axe 4.14.0, the two WCAG 2.5.3 fixes, the seven
      baselines regenerated and inspected, every job on ubuntu-26.04 except the release's capacity chain, and an image
      binding that holds under either Docker image store.
@@ -65,6 +68,8 @@ scout's measurement. Section 10 lists where this plan departs from a scout, and 
   - F6 (the 85% exit in PRD 17) shapes two documents in ci-mutation.
   - F3 (the SHA-pinning setting, which needs F4 = yes first) and F7 (the ruleset) are repository settings, applied
     after a merge.
+  - All seven were ruled as recommended (the founder, relayed 2026-10-25 ~01:10 UTC). F7's ruleset was applied on
+    2026-10-25 at 21:14 UTC; F1 (a), F2 (a) and then F3 are applied when ci-deps merges (§3.2.5).
 - **Lane A:** #42 (6b-4) overlaps all four PRs: the lockfile, `shell.tsx`, `consumer.db.test.ts`, the capacity
   harness, the test matrix and the synth registry. Rule 6 applies, and section 5 gives the exact resolution for each
   file.
@@ -79,7 +84,7 @@ scout's measurement. Section 10 lists where this plan departs from a scout, and 
 | A1′ | Time until a PR can merge | From the head's first workflow run's `created_at` to the `completed_at` of the last of the four required checks (§3.1.6), reported beside A1 on the same sample, split by which check finished last. Expected: `screening-capacity gate` on watched-path PRs (13-16 min today), `mutation` on money-path PRs (13-17 min), `all green` otherwise (≤ 10 min). No target is set here beyond A1's, because the capacity floor is O12's founder decision | `gh api repos/PureTideWater/PhysicalTherapy/actions/runs?head_sha=<sha> --jq '[.workflow_runs[].created_at] \| min'`, then `gh api repos/PureTideWater/PhysicalTherapy/commits/<sha>/check-runs --paginate --jq '.check_runs[] \| select(.name \| IN("all green","mutation","screening-capacity gate","approval-of-record")) \| [.name,.started_at,.completed_at] \| @tsv'`. Both go in `docs/runbooks/ci.md`, with the same pair for Dependabot heads (bot queue time, §3.2.1) | ci-speed (reported again by each later PR) |
 | A2 | No test lost to sharding | Unit count = base + the new unit tests. The four db shards sum to the base's test:db count, minus the approval case and the route-count check (now a unit test), plus the snapshot-equivalence case. The e2e shards sum to the base's e2e count. Base 49514e8 = #39's merged tree: unit 4,524 + 1 skipped, golden 38, db 9,041 + 1 skipped, e2e 51 (HANDOFF.md, 2026-10-23 15:21). ci-mutation changes the golden count by its per-claim restructure, and states the new count with the claims-unchanged check (§3.4.1) | The CI job logs' vitest and Playwright totals (`get_job_logs`). Each `db (k/N)` job prints the files it ran, read from vitest's json reporter (sorted, with their count and the list's SHA-256), and the verifier takes the union of the N logs: disjoint, and equal to `pnpm -s vitest list --project db --filesOnly` (unsharded; `vitest list` ignores `--shard`, measured: 105 files for 1/4, 2/4 and the whole, `scratchpad/reviser-tools/{all,shard1,shard2}.txt`). CI-04's unit test proves the split for N = 4 and N = 6 through vitest's own sequencer | ci-speed |
 | A3 | The slowest db file stops setting the wall | No db file over 240 s on CI. The 12 route files each ≤ 90 s, against route-tests' 865-1,336 s today [S1 §3] | The CI log's per-file durations | ci-speed |
-| A4 | Dependabot PRs green by construction | (a) A unit test applies a simulated Dependabot rewrite to every action pin and image digest, and every workflow assertion in `workflows.test.ts` and `dependabot-config.test.ts` still passes on the rewritten text. (b) No version is duplicated outside a manifest: the worker image's playwright-core and both images' pnpm are derived. (c) After the merge, the first Dependabot batch is red only where a test names a real incompatibility. **The one deliberate exception:** a `browser-tests` PR is red on the `browser.json` check until a person runs ADR 0058's baseline procedure, and the failing step's message names that procedure, the expected revision and the found one (CI-12, CI-18, `docs/runbooks/ci.md`) | (a) and (b) in `tools/test`; (c) read on the first weekly batch's checks | ci-deps (and ci-browser for Playwright) |
+| A4 | Dependabot PRs green by construction | (a) A unit test applies a simulated Dependabot rewrite to every action pin and image digest, and every workflow assertion in `workflows.test.ts` and `dependabot-config.test.ts` still passes on the rewritten text. (b) No version is duplicated outside a manifest: the worker image's playwright-core and both images' pnpm are derived. (c) After the merge, the first Dependabot batch is red only where a test names a real incompatibility. **The one deliberate exception:** a `browser-tests` PR is red on the `browser.json` check until a person runs ADR 0058's baseline procedure, and the failing step's message names that procedure, the expected revision and the found one (CI-18, `docs/runbooks/ci.md`) | (a) and (b) in `tools/test`; (c) read on the first weekly batch's checks | ci-deps (and ci-browser for Playwright) |
 | A5 | Pins | Every `uses:` is `owner/repo@<40 hex> # vX.Y.Z`, the SHA is that tag's commit, and every `with:` key is an input the action declares at that commit. Every `uses:` inside a composite action, followed recursively at its pinned SHA, is a full SHA too (today: trivy-action pins setup-trivy and actions/cache, setup-trivy pins actions/cache/restore and actions/checkout, attest-build-provenance pins actions/attest, all by SHA, read at the pinned commits). Every base and service image carries an `@sha256:` digest | `tools/check-action-pins` (networked) on every run; `tools/test/workflows.test.ts` | ci-deps |
 | A6 | Toolchain security | `pnpm audit --prod` gives 0 and `pnpm audit --audit-level=high` passes. The pnpm in `packageManager` has no moderate or worse advisory; 10.28.0 has 23, 11 of them high [S4 §9] | `tools/check-toolchain` on every run | ci-deps |
 | A7 | Mutation, per package | The CI gate, on the ci-mutation PR's own full run and on the first push run, requires every package > 85%. Today's measurements (10.1.1, with aliases): money 93.22, ledger 92.19, packets (widened) 85.40, pricing (with golden tests) 91.70 [S2 §3.5]. **Zero unexplained survivors:** every Survived or NoCoverage mutant is killed by a test or recorded as equivalent, with a reason and a reviewer. A recorded equivalent stays in the score's denominator as Survived, so recording one never raises a score. The canary reports 5 of 5 cases as expected in every shard that ran, and no shard takes over 15 minutes | The `mutation` gate's log and summary, per package and per file | ci-mutation |
@@ -506,82 +511,202 @@ Two copies outside this PR also name them:
 
 ### 3.2 `co-001/ci-deps` (audit #112; #19's assert loosening, Dependabot groups and licence fix; #40, #38's tooling, #33)
 
+Revised on 2026-10-25 at `claude/build-platform` 6ddd587, after ci-speed (#43), ci-mutation (#44) and PR 15 (#45)
+merged. In §3.2.1 to §3.2.5 every `file:line` reads at 6ddd587; §3.2.6 lists each change from the 2026-10-24 text with
+its evidence. The rulings this section follows:
+- the founder's F1 (a), F2 (a) and (b), and F4 yes (relayed by the co-founder, 2026-10-25 ~01:10 UTC);
+- F7, applied 2026-10-25 21:14 UTC: "Protect the build branch" (ruleset 25837331) requires `all green`, `mutation`,
+  `screening-capacity gate` and `approval-of-record` from GitHub Actions, with branches up to date, a pull request with
+  0 approvals, no force push or deletion, and no bypass;
+- the co-founder's Q2 (#42's shared files under LANES rule 6) and Q3 (engineering-only choices inside a ruled design
+  are pre-approved), 2026-10-25 ~21:05 UTC.
+
+Three choices go to the co-founder (§3.2.6, CQ1 to CQ3; CQ3 added by §3.2.7). Each touches only a few lines. None
+blocks the builders' start, and the pull request merges only once all three are answered (§3.2.5 step 11).
+
 #### 3.2.1 What changes
 
+- **Already done by ci-speed and ci-mutation, so not repeated here:**
+  - `ci.yml` (9 jobs) and `mutation.yml` (3 jobs) are now SHA-pinned, as `release.yml` and `screening-capacity.yml`
+    were, at the versions `PINNED` holds (`tools/test/workflows.test.ts:77-92`): checkout v4.4.0, setup-node v4.4.0,
+    action-setup v4.3.0, setup-python v5.6.0, cache v4.3.0, upload v4.6.2, download v4.3.0, buildx v3.12.0,
+    build-push v6.19.2 and login v3.7.0. ci-deps moves every one of them to the table below.
+  - `supply-chain.yml` is gone. Licences are a step of `static` (`ci.yml:150-151`) and both images one `images` job
+    (`:467-519`), whose two Trivy steps already set `cache: false` (`:493`, `:516`).
+  - Every job has a timeout except `publish-content`'s (CI-10, `workflows.test.ts:1513-1535`). Every checkout sets
+    `persist-credentials: false` except `large-zip.yml`'s and `publish-content.yml`'s, which pushes (grep over the
+    seven workflows). The Postgres services check health on TCP (`ci.yml:243-247`).
+  - Tag refs remain in three files only: `approval-of-record.yml:30,32`, `large-zip.yml:30-32` and
+    `publish-content.yml:25,27,28`. `approval-of-record` is one of F7's four required checks, so a moved `v4` tag could
+    decide a required check until ci-deps merges.
 - **Every action pinned, at its latest release.** Each `uses:` becomes `owner/repo@<sha> # vX.Y.Z` in every workflow.
-  Latest tags, checked with `git ls-remote --tags` on 2026-10-24:
+  Read with `git ls-remote --tags` on 2026-10-25: no tag newer than 2026-10-24's. "Tag's commit" is the commit's date
+  from a depth-1 fetch of the tag (GitHub's release API is refused for other repositories in this session); "Uses"
+  counts every workflow at 6ddd587.
 
-  | Action | Version |
-  |---|---|
-  | `actions/checkout` | v7.0.1 |
-  | `actions/setup-node` | v7.1.0 |
-  | `pnpm/action-setup` | v6.1.0 |
-  | `actions/setup-python` | v7.1.0 |
-  | `actions/upload-artifact` | v7.0.2 |
-  | `actions/download-artifact` | v8.0.2 |
-  | `actions/cache` and its `restore` and `save` | v6.1.0 |
-  | `docker/setup-buildx-action` | v4.4.1 |
-  | `docker/build-push-action` | v7.4.0 |
-  | `docker/login-action` | v4.7.0 |
-  | `aquasecurity/trivy-action` | v0.36.0 (kept) |
-  | `actions/attest-build-provenance` | v4.2.2 (kept) |
+  | Action | Version | Peeled commit (the pin) | Tag's commit (UTC) | #40 offers | Uses |
+  |---|---|---|---|---|---|
+  | `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` | 2026-07-17 18:45 | v7.0.1 | 18 |
+  | `actions/setup-node` | v7.1.0 | `949feb2413d6458794dcd2491c4babbbce0c15c1` | 2026-10-08 02:43 | v7.1.0 | 15 |
+  | `pnpm/action-setup` | v6.1.0 | `ea17c68df8912ef543352723c149a84f56e3d413` | 2026-09-04 23:42 (annotated tag 09-05 07:26) | **v6.0.10** `0977fd99` | 14 |
+  | `actions/setup-python` | v7.1.0 | `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0` | 2026-10-22 02:33 | v7.1.0 | 1 |
+  | `actions/upload-artifact` | v7.0.2 | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` | 2026-10-07 10:00 | v7.0.2 | 7 |
+  | `actions/download-artifact` | v8.0.2 | `9000827ccba6bdab643e8b6fd33ac0654aef8333` | 2026-10-07 10:00 | v8.0.2 | 6 |
+  | `actions/cache/restore` and `/save` | v6.1.0 | `55cc8345863c7cc4c66a329aec7e433d2d1c52a9` | 2026-06-23 20:30 | v6.1.0 | 7 + 4 |
+  | `docker/setup-buildx-action` | v4.4.1 | `f87e5991a6d7451dcb8d9637bfbc97413f497069` | 2026-09-16 07:47 | v4.4.1 | 3 |
+  | `docker/build-push-action` | v7.4.0 | `c3c9e263c25d99ce0380d002d59b67737d91b0dc` | 2026-09-15 07:29 | v7.4.0 | 5 |
+  | `docker/login-action` | v4.7.0 | `81c6f93d4bc991e510b342a00b419b3bb4efc5c6` | **2026-10-23 15:11** | **v4.6.0** `dbcb8138` | 1 |
+  | `aquasecurity/trivy-action` | v0.36.0 (kept) | `ed142fd0673e97e23eac54620cfb913e5ce36c25` | 2026-04-22 09:20 (annotated tag 09:29) | not offered | 4 |
+  | `actions/attest-build-provenance` | v4.2.2 (kept) | `4d101475d8b20a2381f78447822ac1eab6504dd8` | 2026-08-06 19:54 | not offered | 1 |
 
-  The builder resolves each peeled SHA (`refs/tags/vX.Y.Z^{}`). [S4] §2 checked #40's breaking changes against our
-  usage. `publish-content.yml` is pinned only under F4 = yes, and then held to its frozen copy (F4).
-- **`workflows.test.ts` pin rules**, replacing `PINNED` (`:46-58`) and every literal ref (`:404, :423, :719`, the
-  `PINNED.*` uses):
-  - (a) the form, over all workflow files;
+  - ci-speed and ci-mutation added no new action, only more uses: cache/restore at `ci.yml:124, 187, 263, 272, 425`,
+    cache/save at `:136, 194, 309`, and `mutation.yml`'s checkout, action-setup, setup-node, upload and download
+    (`:49-181`).
+  - **The new majors already ran green here.** Dependabot's #40 (head e0d5b6f, runs 40223436311, 40223436319 and
+    40223436304, 2026-10-25 18:54-19:10 UTC) ran every job of `ci.yml`, `mutation.yml` and `screening-capacity.yml` on
+    these majors, with action-setup at v6.0.10. All passed except `unit`, which failed only on `workflows.test.ts`'s
+    literal pins. Its log (job 121259732714) gives 14 failed, 4,974 passed and 1 skipped; GitHub shows only 10 of them
+    as annotations, its cap per step. The 14: `:457`, `:1373` and `:1397` (each through `stepIndex` `:174`), and
+    `:489, :540, :645, :818, :936, :1062, :1213, :1250, :1271, :1447, :1456`. Every one is pin-derived. Rules (b) to
+    (d) below remove exactly that failure.
+  - ci-deps differs from #40 in two pins. It takes action-setup v6.1.0, the latest release, where #40 offers v6.0.10
+    (why Dependabot passed over a release seven weeks old could not be read: the release API is refused here). And it
+    takes login v4.7.0, where #40 offers v4.6.0, most likely because GitHub's default three-day cooldown held v4.7.0.
+    The builder pins v4.7.0 after 2026-10-26T15:11Z, when its tag commit is three days old. That is this one pin's
+    timing, not a rule of ci-deps, and it costs nothing: the pull request cannot merge before its bump commits, which
+    come after 2026-10-26T19:18:50Z (below). A check that holds every action pin to three days is P1, a security
+    trade-off for the co-founder outside ci-deps (§3.2.6).
+  - action-setup v6.1.0 bootstraps pnpm 11.25.0 from its own lock, then runs `pnpm self-update` to `packageManager`'s
+    version in its own directory (`src/install-pnpm/run.ts` at `ea17c68d`). The workspace's release age therefore never
+    applies to that switch, and `check-toolchain` checks `packageManager`'s version itself (below).
+  - The builder resolves each peeled SHA again when it pins (`refs/tags/vX.Y.Z^{}`). [S4] §2 checked #40's breaking
+    changes against our usage. Re-checked on 2026-10-25 for the uses added since:
+    - checkout v7.0.0 blocks a fork's checkout under `pull_request_target` and `workflow_run`, which no workflow uses;
+      v7.0.1 is fixes (`CHANGELOG.md:3-23` at `3d3c42e5`);
+    - setup-python v7 removed `pip-install`, and build-push v7 dropped `DOCKER_BUILD_NO_SUMMARY` and
+      `DOCKER_BUILD_EXPORT_RETENTION_DAYS`, all unused (grep);
+    - every `with:` key used at 6ddd587 is an input at the new SHAs (`action.yml` at each, raw.githubusercontent.com).
+      download v8.0.2 adds `digest-mismatch` (default `error`, stricter), upload v7.0.2 adds `archive` (default
+      `true`), and setup-node v7.1.0's `package-manager-cache` turns on only for an npm `packageManager`.
+  - `publish-content.yml` is pinned too (F4, yes) and held to its frozen copy (§3.2.3). **How ci-deps reads F4's
+    "SHA pins at the current majors now" (§7):** "current" as the latest release, so publish-content.yml takes
+    checkout v7.0.1, action-setup v6.1.0 and setup-node v7.1.0, as rule (b) requires of every workflow. Three facts
+    support that reading. Only its `uses:` refs and their comments change, which F4's operative clause allows. The
+    first Dependabot actions PR would bring these majors anyway, and F4 lets it do so with no further ruling. And the
+    same three actions run in ci.yml on every pull request with the same inputs (`fetch-depth: 0`; none;
+    `node-version: 24, cache: pnpm`), apart from `persist-credentials`, which publish-content.yml keeps for its push.
+    reconciliation-001's F4 entry records this reading. If anyone doubts it, it goes to the founder before ci-deps
+    merges.
+- **`workflows.test.ts` pin rules.** They replace `PINNED` (`:77-92`), its 26 uses and every literal ref:
+  - the 26 uses are 24 `PINNED.*` on 23 lines (`:457, 469, 489, 490, 505, 540, 545, 645, 668, 682, 684, 690, 699, 710,
+    818, 936, 1062, 1213, 1219, 1373, 1397, 1445, 1457`; `:540` holds two) and `Object.values(PINNED)` at `:1247` and
+    `:1454`, with the `typeof PINNED` cast at `:1250`;
+  - the literal refs are `:686`'s `'actions/cache@v4'`, `:1271`'s `'actions/checkout@v4'` and `'actions/setup-node@v4'`,
+    and `:545`'s `# v4.2.2`.
+
+  The rules:
+  - (a) the form `owner/repo@<40 hex> # vX.Y.Z`, over every workflow file. It replaces the form test at `:1236-1253`,
+    which reads only `release.yml`, `screening-capacity.yml` and `ci.yml`, so it also covers `approval-of-record.yml`,
+    `large-zip.yml`, `publish-content.yml` and `release-dry-run.yml`;
   - (b) one SHA and one version per action across files;
-  - (c) behaviour asserts match by action name;
-  - (d) the **simulated Dependabot rewrite**: every pin and every image digest replaced in memory by another
-    well-formed one, with the workflow assertions re-run (A4a).
-- **`tools/check-action-pins`** (new; networked; runs in `static`). For each distinct pin it checks three things:
+  - (c) behaviour asserts match by the action's name, the part before `@`, through the helper that already exists,
+    `usesAction(step, action)` (`:181`), which 14 sites use today (`:764, 828, 855, 857, 991, 997, 1078, 1097, 1126,
+    1143, 1165, 1176, 1217, 1220`). The 26 `PINNED` uses move to it, `mutation.yml`'s every-step check (`:1453-1460`)
+    and its Node lookup (`:1445`) included. It keeps `:686`'s check alive. Today `:686` asserts that no capacity step
+    uses exactly `'actions/cache@v4'`, which no SHA pin equals, and an `actions/cache@<sha>` in screening-capacity.yml
+    is caught only by the set check at `:1247-1250`, since `actions/cache` is not in `PINNED`. Rules (a) and (b) replace
+    that set check with the form test, so by name `:686` must fail on any `actions/cache` step;
+  - (d) the **simulated Dependabot rewrite** (A4a). A unit test copies `.github/`, both Dockerfiles and
+    `docker-compose.yml` into a temporary directory, with every pin replaced by another well-formed one (a new 40-hex
+    SHA and a higher `# vX.Y.Z`) and every image digest by another. It then spawns vitest, as `collection.test.ts`
+    does (`:37-46`), on `workflows.test.ts` and `dependabot-config.test.ts`, with `CI_TREE` set to that directory, and
+    the run must pass. Every read of those files in the two test files goes through one root: `CI_TREE` when set, the
+    repository otherwise. The rewrite test skips itself when `CI_TREE` is set, so it never recurses. A second copy
+    with one deliberate break (one checkout's `persist-credentials` removed), run with `-t` on that one test, must
+    fail: that proves the spawned run reads the rewritten files. #40's red `unit` (above) is the same rewrite failing
+    on the literal pins.
+- **`tools/check-action-pins`** (new; root script `pnpm actions:check`; runs in `static`). Offline, on every run, over
+  every workflow: rules (a) and (b) above, read from the files. Networked, for each pin it verifies, three things:
   - `git ls-remote https://github.com/<owner>/<repo> refs/tags/vX.Y.Z refs/tags/vX.Y.Z^{}` gives the pinned SHA;
   - every `with:` key used is an input declared in `action.yml`/`action.yaml` at that SHA (raw.githubusercontent.com),
     and every required input with no default is given;
   - when the action is `runs.using: composite`, every `uses:` among its steps is a full 40-hex SHA, and the check
-    recurses into each at that SHA. A nested tag or branch ref fails, naming the chain. It also lists each nested
-    `actions/cache*` use with the input that gates it (`trivy-action`'s `cache`, `setup-trivy`'s `cache`), which the
-    release rule below reads.
+    recurses into each at that SHA. A nested tag or branch ref fails, naming the chain.
 
-  Read at the pinned commits on 2026-10-25, the nested refs are all SHAs today: trivy-action v0.36.0 pins
-  `aquasecurity/setup-trivy@3fb12ec…` and `actions/cache@27d5ce7…`; setup-trivy pins `actions/cache/restore@9255dc7…`
-  and `actions/checkout@8e8c483…`; attest-build-provenance v4.2.2 pins `actions/attest@508db95…`, a node action.
+  **Which pins go to the network (§3.2.7, S4).** An `action.yml` at a given SHA never changes, and a moved tag cannot
+  change what a SHA pin runs. So the network is read only for a pin that is new against the base (an `owner/repo@sha`
+  the base tree does not use), and for a pin used by a step whose `with:` changed. Those fail closed after three tries
+  with backoff, naming the host. Every pin is verified when the base has no `tools/check-action-pins` (ci-deps' own
+  pull request) or when the change touches `tools/check-action-pins/**`. The base is the range step's
+  (`ci.yml:54-74`), reduced with `git merge-base <base> HEAD` as the engine freeze does (`:110`), and the base tree's
+  pins are read with `git show <base>:<file>` (`static` checks out the whole history). On push runs it also re-reads
+  every unchanged pin's tag, and a moved tag or a failed read there is a `::warning::` naming the action, never a
+  failure, so an upstream re-tag or a rate limit cannot turn both lanes red. A lane PR that touches no pin reads
+  nothing from the network. No facts are committed per SHA: Dependabot's actions PRs rewrite only `uses:` lines, so a
+  committed file would be stale on every one of them and make it red (A4 c).
 
-  It fails closed after three tries with backoff. Its unit tests use recorded synthetic `ls-remote` lines and action
-  files, including a composite with a nested tag ref, which fails. The input check reaches `release.yml`'s tag-only
-  actions (login v4, download-artifact v8), and `release-dry-run.yml` (below) runs them: risk R1 of [S4], closed.
-- **`release.yml` restores no cache, whatever F1's answer.** Today its capacity job restores the pnpm store
-  (`release.yml:153-156`, `setup-node … cache: pnpm`) and the scale release (`:159-169`, `actions/cache/restore` of
-  `screening-scale-release-<hash>`). Its `trivy-action` steps default to `cache: 'true'`, which restores the
-  Trivy binary (through setup-trivy's `actions/cache/restore`) and its database (`actions/cache`, restore key
-  `cache-trivy-`) (trivy-action v0.36.0 `action.yaml:102-146`, read at its pinned SHA; the steps are `release.yml:75-91`).
+  **The release's nested caches (§3.2.7, S3).** For every action `release.yml` uses, the check follows each nested
+  `actions/cache*` use (recursively) to the top-level input that gates it, through `with:` bindings of the form
+  `${{ inputs.<name> }}`. That input must be set to `false` in release.yml's step. A nested cache whose `if:` does not
+  reduce to `inputs.<name> == 'true'` (ungated, or a form the check cannot read) fails, naming the chain. Today:
+  trivy-action's `cache` gates its own `actions/cache` (`action.yaml:139-142`) and, through `cache: ${{ inputs.cache }}`
+  (`:129-133`), setup-trivy's restore and save (`if: inputs.cache == 'true' && …`). A bump that adds an ungated cache
+  fails on its own pull request, which A4 (c) counts as a real incompatibility.
+
+  Read at the pinned commits on 2026-10-25, the nested refs are all SHAs: trivy-action v0.36.0 pins
+  `aquasecurity/setup-trivy@3fb12ec…` (v0.2.6) and `actions/cache@27d5ce7…` (v5.0.5) (`action.yaml:129, 142`);
+  setup-trivy pins `actions/cache/restore@9255dc7…` (`action.yaml:56`), `actions/checkout@8e8c483…` (`:66`) and
+  `actions/cache/save@9255dc7…` (`:100`); attest-build-provenance v4.2.2 pins `actions/attest@508db95…`, a node action.
+
+  Its unit tests use recorded synthetic `ls-remote` lines and action files: a composite with a nested tag ref fails; a
+  nested cache gated through a binding is reported, and an ungated one fails; an unchanged pin makes no network read; a
+  moved tag on an unchanged pin warns on a push run; three failed reads of a new pin fail. The input check reaches the
+  actions only a tag runs (`release.yml`'s login), and `release-dry-run.yml` (below) runs them: risk R1 of [S4],
+  closed.
+- **`release.yml` restores no cache.** F1 (a) is ruled, so this is no longer a hedge. `release.yml` is unchanged since
+  49514e8, and its cites hold:
+  - Its capacity job restores the pnpm store (`release.yml:153-156`, `setup-node … cache: pnpm`) and the scale release
+    (`:159-168`, `actions/cache/restore` of `screening-scale-release-<hash>`). Its `trivy-action` steps (`:75-91`) set
+    no `cache` input, so they default to `cache: 'true'`, which restores the Trivy binary (through setup-trivy's
+    `actions/cache/restore`) and its database (`actions/cache`, restore key `cache-trivy-`) (trivy-action v0.36.0
+    `action.yaml:102-146`, read at its pinned SHA).
   - A tag run may restore caches created on the default branch ("Workflow runs can restore caches created in either the
     current branch or the default branch", github/docs `content/actions/reference/workflows-and-actions/dependency-caching.md`,
-    "Restrictions for accessing a cache"). Today the default branch is `main` (`gh api repos/PureTideWater/PhysicalTherapy`:
-    `default_branch: main`), which runs no workflow, so nothing is restored. Under F1 (a) the build branch's push runs
-    would seed all of these. `screening-capacity.yml:29-30` is a push trigger, and its save at `:192-197` has no event
-    condition.
+    "Restrictions for accessing a cache"). Today the default branch is `main` (`gh api repos/PureTideWater/PhysicalTherapy`
+    `--jq .default_branch`, 2026-10-25), which runs no workflow, so nothing is restored. When ci-deps merges, F1 (a)
+    makes the build branch the default, and its push runs seed all of these: `ci.yml`'s header says so (`:5-6`),
+    `screening-capacity.yml:29-30` is a push trigger, and its save at `:192-197` has no event condition.
   - The binding, attested measurement (decision 13) could then run on a scale release built in another run. Its key
     hashes only `packages/synth/src/release/**`, `tools/release/scale.ts`, `packages/rules/src/**` and release
     900001's directory, not the lockfile or the generator's other imports, so a hit can serve a release built by
     different code. The scanner binary and its database would come from another run too.
-  - So in ci-deps: the restore step goes and the scale release is always built in-run (22 s on a miss: the push run
-    39977565861's "Build the scale release", 15:24:36-15:24:58). `setup-node` takes no `cache` and sets
-    `package-manager-cache: false` (an input of setup-node v7.1.0). `pnpm/action-setup` keeps `cache: false` (its v6.1.0
-    default). Every `trivy-action` step sets `cache: 'false'`. `setup-buildx-action` sets `cache-binary: false`
-    (default `true` in v4.4.1). No `build-push-action` step gets `cache-from` or `cache-to`.
-  - A `workflows.test.ts` rule holds release.yml to it: no `actions/cache*` step; no setup-node `cache`, and
-    `package-manager-cache: false`; no buildx `cache-from` or `cache-to`; and every action that `check-action-pins`
-    reports as gating a nested cache sets that input to `false`. The attested report then depends only on its own run.
-    ADR 0062 records it (Part 2 of ADR 0066 gives the reason).
+  - So in ci-deps:
+    - the restore step goes, and the scale release is always built in-run (22 s on a miss: the push run 39977565861's
+      "Build the scale release", 15:24:36-15:24:58);
+    - `setup-node` takes no `cache` and sets `package-manager-cache: false`; `pnpm/action-setup` keeps `cache: false`
+      (its v6.1.0 default);
+    - both `trivy-action` steps take the two lines `ci.yml`'s `images` job already has (`:493-494`): `cache: false`, and
+      a `cache-dir` under `runner.temp`, outside the checkout;
+    - `setup-buildx-action` sets `cache-binary: false` (default `true` in v4.4.1), and no `build-push-action` step gets
+      `cache-from` or `cache-to`.
+  - A `workflows.test.ts` rule holds release.yml to it, offline and by named inputs: no `actions/cache*` step; no
+    setup-node `cache`, and `package-manager-cache: false`; `cache-binary: false` on setup-buildx; no build-push
+    `cache-from` or `cache-to`; and `cache: false` on every trivy-action step. What the actions nest is
+    `check-action-pins`' to check, since only it reads the actions' files (above). The attested report then depends
+    only on its own run. ADR 0062 records it (Part 2 of ADR 0066 gives the reason).
+  - **Its uploads overwrite (§3.2.7, S2).** release.yml's three uploads (`:92-96` the bill of materials, `:110-118` the
+    image, `:188-198` the capacity report) gain `overwrite: true`. Upload-artifact v4 and later names are unique per
+    run and immutable, so a re-run of a tag's failed job conflicts on the name its first attempt left; ADR 0066:96-97
+    found the same for ci.yml, whose per-run uploads already set it. The image and its `.id` file stay one artifact,
+    so the push job's identity check still compares an image with its own scan.
 - **`.github/workflows/release-dry-run.yml`** (new). Only a tag runs `release.yml`, and only the founder creates tags,
   so its new majors (upload-artifact v7, download-artifact v8, login-action v4, build-push-action v7, setup-buildx v4)
   would otherwise first run on the founder's tag. No tag exists yet (`gh api repos/PureTideWater/PhysicalTherapy/tags`:
   0), so release.yml has never run at all. Input validation does not prove runtime behaviour.
   - Triggers: `pull_request` and `push` on `claude/build-platform`, with paths `.github/workflows/release.yml`,
     `.github/workflows/release-dry-run.yml`, `tools/screening-capacity/image-id.ts` (ci-browser) and both Dockerfiles.
-    It is advisory, not a required check, so its path filter can never leave a required check pending.
+    It is advisory: not one of F7's four required checks, so its path filter can never leave a required check pending.
+    Its job names (`build`, `push`) collide with none of them (`workflows.test.ts:1661-1680`).
   - `build` job (`contents: read`): checkout; setup-buildx; build the `web` image with `load: true`; `docker save | gzip`;
     record the image's identity as release.yml then does (in ci-deps the `.Id`; from ci-browser on, the tarball's
     SHA-256 and the config digest, §3.3.1); upload `image-web` (v7, `overwrite: true`, retention 1 day).
@@ -589,28 +714,81 @@ Two copies outside this PR also name them:
     `merge-multiple: true` (v8); the same identity check as release.yml's push job; `docker load`;
     `docker/login-action` to ghcr.io with the job's `GITHUB_TOKEN`. It never tags, pushes or attests, and holds no
     `packages: write`, `id-token` or `attestations` permission.
+  - Timeouts in CI-10's table: `build` 20 and `push` 10, each about three times its expected time. The existing rules
+    already cover the new file with no edit: the runner (`:349-360`), the concurrency group's workflow prefix
+    (`:1537-1543`) and continue-on-error (`:1629-1645`).
   - A `workflows.test.ts` rule holds every step the dry run shares with release.yml (the same action, or the same `run`
-    text with only the image list and the push lines removed) equal in `uses:` and `with:` keys, so the dry run cannot
-    drift from what the tag runs.
-- **Images by digest from one source:**
-  - Both Dockerfiles: `FROM node:24-trixie-slim@sha256:43b9ba11…` (index digest, Hub API, 2026-10-24). That leaves
-    Debian 12 bookworm, which is what `24-slim` is today (same digest `sha256:55fb5f5a…` as `24-bookworm-slim`, checked).
-  - `docker-compose.yml`: `postgres:18-trixie@sha256:<digest>`, resolved at build.
-  - Every CI job that needs Postgres (ci.yml's, `large-zip.yml`'s, and any later one) starts it from the compose file
-    instead of a `services:` block. The compose file is then the only Postgres reference Dependabot's docker-compose
-    ecosystem updates, and CI follows it by construction.
-    - `docker compose up --wait` blocks until the service is healthy, and `--detach` alone still pulls first. So the
-      first step, before install, runs it in the background:
-      `docker compose up --detach --wait postgres > "$RUNNER_TEMP/postgres-up.log" 2>&1 &`. The pull and start then
-      overlap the install.
-    - Just before the first database step, a loop polls for up to 120 s until the container's health is `healthy`
-      (`docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q postgres)"`; `docker-compose.yml:15-19`
-      defines the `pg_isready` healthcheck). It polls instead of issuing a second `up`, which could race the first. On a
-      timeout the step prints the background log and fails.
-  - `tools/screening-capacity/containers.ts:223, 344, 509` and `measure.test.ts:181` read the image from the compose
-    file through one tested function.
-  - Rejected: a job output feeding `services:` (an extra job on the critical path), and an equality test across copies
-    (red by construction, [S4] §6).
+    text with only the image list and the push lines removed) equal in `uses:` and in the set of `with:` keys, so the
+    dry run cannot drift from what the tag runs. Values are compared only for `overwrite` (`true` in both) and the cache
+    inputs above; `name`, `path` and `retention-days` may differ, since the dry run builds one image and keeps it a day.
+- **Images by digest, from one source each:**
+  - Both Dockerfiles (web `:7, :17`, worker `:5, :12`):
+    `FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea`, the index digest,
+    unchanged since 2026-10-24 (Node 24.22.1, pushed 2026-10-21T17:39Z). That leaves Debian 12 bookworm, which is what
+    `24-slim` is today (`sha256:55fb5f5a…`, the same digest as `24-bookworm-slim`).
+  - `docker-compose.yml:8`:
+    `postgres:18-trixie@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6` (pushed
+    2026-10-21T19:08Z). Today's `postgres:18` already resolves to that index (it is `18.6-trixie` and `18.6`), so the pin
+    changes no bits for CI or the capacity harness; only the node images change Debian release (N7).
+  - Reading a digest through the session's proxy (both work, checked 2026-10-25 ~23:00 UTC):
+    - the Hub API, `curl -sS https://hub.docker.com/v2/repositories/library/<name>/tags/<tag>`, field `digest`;
+    - the registry: a token from `https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/<name>:pull`,
+      then `curl -sSI` with that bearer token and the OCI index and Docker manifest-list `Accept` types on
+      `https://registry-1.docker.io/v2/library/<name>/manifests/<tag>`, header `docker-content-digest`.
+- **Postgres from the compose file, decided on the evidence of 2026-10-25.**
+  - Today there are four `services:` blocks, each with ci-speed's TCP health options: `ci.yml`'s db (`:238-247`),
+    domain-model (`:322-331`) and e2e (`:402-411`), and `large-zip.yml:20-28`. That is 7 job instances on a public
+    `ci.yml` run (db 4, domain model 1, e2e 2) and 10 on a private one, plus the weekly large-zip run.
+  - Measured on three push runs (40201435875, 40223130551, 40229005858, `gh api …/runs/<id>/jobs`):
+    - "Initialize containers" takes 8 to 18 s in every Postgres job. It runs before checkout, on the job's own path;
+    - after checkout, action-setup, setup-node and install take 7 to 14 s;
+    - in db and e2e, the browser restore (3-5 s) and Playwright's install (12-22 s) follow, before anything needs the
+      database.
+  - **Decision: compose, as planned in 2026-10-24's text.**
+    - One digest-pinned reference, which Dependabot's docker-compose ecosystem updates and which CI and the capacity
+      harness follow by construction. `services:` cannot read an image from a file. Four digest copies in workflows
+      would drift, since Dependabot's github-actions ecosystem rewrites `uses:` only, and an equality test across them
+      goes red on every compose bump ([S4] §6). A job output feeding `services:` adds a job to the critical path. A
+      tag-only `services:` image fails CI-13.
+    - It is also faster: about 10-15 s off each Postgres job, since the pull overlaps setup. That is about 1 to 1.5
+      runner-minutes a run, and 9 to 18 s off the `build` → `e2e` path that sets `all green`'s time.
+  - **How, in order:**
+    1. **The healthcheck on TCP, first.** `docker-compose.yml:16` runs `pg_isready -U postgres`, on the Unix socket.
+       The image's first-run setup serves that socket before the server listens on TCP (ci-speed's finding,
+       `ci.yml:243-244`, `workflows.test.ts:1613`), so a wait on that health could pass early. It becomes
+       `pg_isready -h localhost -U postgres`, the form ci-speed's services proved on CI (`ci.yml:246`). `pnpm dev`'s
+       `docker compose up --wait` gains the same fix.
+    2. **One script, `tools/ci/postgres.sh`, instead of four copies of the steps.** It runs under
+       `set -euo pipefail` (§3.2.7, N11):
+       - `up`, the step right after checkout, starts a background subshell and returns at once. The subshell runs
+         `docker compose up --detach --wait --wait-timeout 120 postgres` with all three standard streams redirected
+         (stdin from `/dev/null`, stdout and stderr to `$RUNNER_TEMP/postgres-up.log`), so the step never waits on an
+         open pipe. With `set +e` inside, it then writes compose's exit status to `$RUNNER_TEMP/postgres-up.status`
+         (to a temporary name, then `mv`), so a failure is recorded too. `--wait` returns only once the service is
+         healthy, and `--detach` alone still pulls first, so the background start overlaps setup and install;
+       - `wait`, just before the first step that reads `DATABASE_URL`, polls for that status file once a second for up
+         to 130 s. Status 0 passes. Any other status fails at once, printing the log. No file by then prints the log
+         and fails. It reads compose's own verdict, so it never calls `docker inspect` on a container id that is
+         empty while the image still pulls, and it never issues a second `up`, which could race the first;
+       - used by `ci.yml`'s db, domain-model and e2e jobs and by `large-zip.yml`. A script, not a local composite
+         action, keeps F3's SHA rule and `check-action-pins` simple. A unit test runs `up` and `wait` with a stub
+         `docker` on `PATH` (healthy; failing at once; never finishing, with the 130 s shortened by a variable).
+    3. **"Quiet the database's log" moves after the browser install** (db `:259-260`, e2e `:421-422`), with `wait`
+       just before it. The pull and start then overlap the install, the browser restore and Playwright's install.
+    4. **The database's log on failure.** GitHub printed a service container's log after the job (`ci.yml:257-258`);
+       compose prints nothing. A last step with `if: failure()` runs
+       `docker compose logs --no-color --tail=200 postgres`. The quiet step stays, so that tail shows the failure, not
+       the tests' deliberate refusals.
+    5. `DATABASE_URL` is unchanged (`postgres://postgres:test@localhost:5432/postgres`): compose publishes 5432 with the
+       password `test` (`docker-compose.yml:9-12`).
+    6. `tools/screening-capacity/containers.ts:223, 344, 509` and `measure.test.ts:181` read the image from the compose
+       file through one tested function. `WATCHED_FIXED` (`tools/screening-capacity/watched.ts:62-80`) gains
+       `docker-compose.yml`, so a compose digest bump runs the capacity measurement; today the file is not a watched
+       path. `watched-paths.txt` is regenerated with `pnpm exec tsx tools/screening-capacity/watched.ts --write`.
+       `screening-capacity.yml`'s push paths (`:31-44`) gain `docker-compose.yml` too, and so does `workflows.test.ts`'s
+       `pushPaths` (`:612-627`), which holds that list exactly: `watched.test.ts:82-91` requires every watched line to
+       fall inside those push paths, so without it the regenerated list fails ci-speed's test (§3.2.7, S1). A merged
+       compose bump then measures on push as well.
 - **MinIO removed, not replaced.**
   - `minio/minio` no longer exists on Docker Hub (`hub.docker.com/v2/repositories/minio/minio/` returns "object not
     found", checked 2026-10-24), so `pnpm dev`'s `docker compose up --wait` fails on a fresh machine.
@@ -619,77 +797,201 @@ Two copies outside this PR also name them:
   - A replacement (RustFS, SeaweedFS) would be a maintained dependency that nothing exercises. Testing the S3 path
     (presigned PUT, Object Lock COMPLIANCE, multipart) belongs on AWS staging, in infrastructure PR (b) or (c), where the
     real bucket policy and KMS live (open item O4).
-  - Wording follows in `tools/dev.ts:11-22`, `README.md:37`, `CLAUDE.md:31`, `PRD.md:645`, the
-    `infra/lib/environments.ts:4` comment and `docs/product/diagrams/architecture.svg`.
+  - Wording follows in `docker-compose.yml:1-3`, `tools/dev.ts:11, 22`, `README.md:37` (and `:11-15`, which also name
+    pnpm 10.28 and "CI's `postgres:18` service"), `CLAUDE.md:31`, `PRD.md:645`, the `infra/lib/environments.ts:4`
+    comment and `docs/product/diagrams/architecture.svg:1`. That is every MinIO line outside the lockfile
+    (`git grep -n -i minio -- ':!pnpm-lock.yaml'`, 6ddd587). One more stale service wording, not MinIO's:
+    `apps/worker/src/platform/restore-drill.db.test.ts:75`, "a CI runner against the postgres:18 service", becomes
+    "against the compose file's PostgreSQL 18".
+  - README.md:11-12 then names no version: pnpm "at the version `package.json`'s `packageManager` names
+    (`corepack enable` installs it)", so it cannot go stale (A4 b; §3.2.7, N13).
 - **pnpm 10.34.8:**
-  - It fixes all 23 of 10.28.0's advisories (npm bulk advisory endpoint, [S4] §9). It writes `libc:` fields on a fresh
-    resolution ([S3] M2), but **not** into existing lockfile entries on a plain `install --lockfile-only`.
-  - Why 10 and not 12.15.0 (`npm view pnpm dist-tags`: latest 12.15.0, latest-11 11.28.8, latest-10 10.34.8): Dependabot
-    supports pnpm "v7, v8, v9, v10" (github/docs `data/reusables/dependabot/supported-package-managers.md:44`). A lockfile
-    from 11 or 12 would leave Dependabot unable to update it. ADR 0066 and `dependency-upgrades.md` record the reason and
-    the trigger for moving: GitHub listing pnpm 11 or later there. Until then, the latest 10.x.
-  - `packageManager` moves to it. Both Dockerfiles derive their pnpm from it after `COPY package.json`.
+  - It fixes all 23 of 10.28.0's advisories (11 high, 12 moderate). The highest fixed-in bound among them is `<10.34.5`
+    (GHSA-vq4v-j7r6-jq4m, GHSA-c59q-g84q-2gj5, GHSA-vx52-2968-3vc6), and 10.34.8 has none (npm bulk advisory endpoint,
+    2026-10-25). It writes `libc:` fields on a fresh resolution ([S3] M2), but **not** into existing lockfile entries on
+    a plain `install --lockfile-only`.
+  - **10.34.8, not 10.34.9.** `latest-10` moved to 10.34.9 on 2026-10-25T17:54:00Z. Its one change (0bff20d, #17344)
+    records the pin when pnpm 10 switches to a pnpm 11 or 12 target, which a 10.x `packageManager` never does
+    (`pnpm/src/switchCliVersion.ts` at v10.34.9). 10.34.8 is the version the licence diff was measured on, and it is
+    three days old from 2026-10-26T18:06:38Z; 10.34.9 only from 2026-10-28T17:54Z.
+  - **A person moves `packageManager`; Dependabot never does** (§3.2.7, S6). dependabot-core parses only
+    `dependencies`, `devDependencies` and `optionalDependencies` (`npm_and_yarn/.../file_parser.rb:32` at 7c06280), and
+    reads `packageManager` only to choose the pnpm it runs (`package_manager.rb:54, :296-320`); nothing in
+    `npm_and_yarn/lib` writes it. So `check-toolchain` warns, never fails, when a newer 10.x is at least three days old,
+    and `dependency-upgrades.md` gives the bump, its cadence and the outage remedy (below).
+  - **Why 10, not 12.15.0** (`npm view pnpm dist-tags`, 2026-10-25: latest 12.15.0, latest-11 11.28.8):
+    - GitHub's support table still lists pnpm "v7, v8, v9, v10" (github/docs
+      `data/reusables/dependabot/supported-package-managers.md:44`, read 2026-10-25). A lockfile from 11 or 12 would
+      rest on support GitHub does not state.
+    - dependabot-core already handles 11 and 12 in code (`pnpm_package_manager.rb`'s `SUPPORTED_VERSIONS`; "Beta support
+      of PNPM 11", 8ac9b21a, 2026-07-28; "add pnpm 12 support", 493da6c4, 2026-09-15), and its updater image runs pnpm
+      12.10.1 (run 40223237798 logs "Installed version of pnpm: 12.10.1", then `corepack install pnpm@10.28.0`).
+    - ADR 0066 and `dependency-upgrades.md` record the reason, that code-level support, and the trigger for moving:
+      GitHub listing pnpm 11 or later in that table.
+  - `packageManager` moves to it. Both Dockerfiles derive their pnpm from it after `COPY package.json`, in place of
+    `npm install --global pnpm@10.28.0` (web `:11`, worker `:6`).
   - **The licence fix is its own first commit, alone:** `packageManager` set to `pnpm@10.34.8`, then
     `pnpm install --lockfile-only --fix-lockfile` under 10.34.8. Measured at 49514e8 (`scratchpad/reviser-tools/`):
-    - a plain `install --lockfile-only` gives 3 `libc:` lines before and after, no diff, and
-      `@img/sharp-libvips-linuxmusl-x64@1.3.4` still has no `libc`;
-    - `--fix-lockfile` gives 46 `libc:` lines. The diff is 43 insertions and 0 deletions, all `libc: [glibc]` (27) or
-      `libc: [musl]` (16) (`fix-lockfile.diff`, matching [R]'s);
+    - the lockfile holds no `libc:` field. The "3 `libc:` lines" of the 2026-10-24 text were the three `detect-libc:`
+      dependency lines (`pnpm-lock.yaml:6147, 6163, 6498` at 6ddd587). Fields are counted with
+      `grep -c '^ *libc: \['`, which gives 0 at 6ddd587;
+    - a plain `install --lockfile-only` gives no diff, and `@img/sharp-libvips-linuxmusl-x64@1.3.4` still has no `libc`;
+    - `--fix-lockfile` adds 43 `libc:` fields and nothing else (`git diff --numstat`: `43 0`), each `libc: [glibc]` (27)
+      or `libc: [musl]` (16) (`fix-lockfile.diff`, matching [R]'s);
     - `pnpm licenses list --prod --json` under 10.34.8 then lists no `linuxmusl` package. It listed
       `@img/sharp-libvips-linuxmusl-x64` before (`lic-orig.json`, `lic-fixed.json`).
 
-    The commit's lockfile diff must be exactly those `libc:` lines, and the PR description carries the measured
-    `git diff --numstat` and the line counts. The version bumps come in later commits, each with its own lockfile diff.
-  - The `@img/sharp-libvips-linuxmusl-x64` exception is removed from `tools/check-licenses/allowlist.json` in the same
+    43 is expected at the cut. Since 49514e8 the lockfile changed only by Stryker 10.0.0 → 10.1.1, the removed patch and
+    the canary's workspace link, and none of those entries carries `os`, `cpu` or `libc`. The builder re-measures on
+    the commit's own parent and does not assume it. The commit's lockfile diff must be exactly those fields, and the PR
+    description carries `git diff --numstat <first>^ <first> -- pnpm-lock.yaml` and both counts, taken at `<first>^`
+    and `<first>`. The commit's own diff still holds after the build branch is merged in, where a diff from the moving
+    merge base would not (§3.2.7, S5). The version bumps come in later commits, each with its own lockfile diff.
+  - The `@img/sharp-libvips-linuxmusl-x64` exception (`tools/check-licenses/allowlist.json:9-13`) is removed in the same
     first commit.
   - A new `check.test.ts` case requires every lockfile entry whose name marks musl (`linuxmusl`, or a `-musl` suffix:
     the 16 above, sharp's, `@next/swc`'s, lightningcss's, rolldown's, tailwind oxide's and `@napi-rs/canvas`'s) to carry
     `libc: [musl]`. Its message names the cause (an entry written before pnpm wrote libc fields) and the remedy
     (`pnpm install --lockfile-only --fix-lockfile`).
-- **npm versions taken:**
-  - vitest and @vitest/coverage-v8 5.0.5 (catalog);
-  - eslint 10.13.0;
-  - postcss 8.5.31;
-  - next and @next/eslint-plugin-next 16.4.3 (`npm view … dist-tags.latest`, 2026-10-24);
-  - a lockfile refresh of qs to at least 6.16.0 and fast-uri to at least 3.1.9 ([S4] §5).
+- **npm versions taken.** Each was published more than three days before the bump commits, which are made after
+  2026-10-26T19:18:50Z (below), so `minimumReleaseAge: 4320` resolves every one with no exclude (`npm view <pkg> time`,
+  2026-10-25):
 
-  Not taken:
-  - Playwright and axe go to ci-browser.
-  - The Anthropic SDK goes to its own group and a deliberate PR that passes the evaluation gate.
-  - TypeScript 7.0.2: typescript-eslint 8.72.0 declares `<6.1.0`.
-  - @types/node 26 and the Node 26 images wait for a planned Node 26 PR: Node 26 is LTS from 2026-10-28 (nodejs/Release
-    `schedule.json`).
-  - Node 25 (#33) is end of life since 2026-06-01.
+  | Package (where) | Locked at 6ddd587 | Target | Published (UTC) | Three days old from |
+  |---|---|---|---|---|
+  | vitest (catalog, root) and @vitest/coverage-v8 (root) | 5.0.4 | 5.0.5 | 2026-10-15 14:29 and 14:27 | 2026-10-18 |
+  | eslint (root, tools; to the catalog) | 10.12.0 | 10.13.0 | 2026-10-16 14:24 | 2026-10-19 |
+  | typescript-eslint (root, tools; to the catalog) | 8.71.2 | 8.72.0 | 2026-10-19 17:08 | 2026-10-22 |
+  | postcss (apps/web) | 8.5.30 | 8.5.31 | 2026-10-18 19:39 | 2026-10-21 |
+  | next (apps/web) and @next/eslint-plugin-next (root) | 16.4.1 | 16.4.3 | 2026-10-23 13:40:24 and 13:28:29 | 2026-10-26 13:40 |
+  | fast-uri (through ajv), by lockfile refresh | 3.1.8 | 3.1.9 | 2026-10-19 23:05 | 2026-10-22 |
+  | qs (through typed-rest-client), by override | 6.15.1 | 6.16.1 | 2026-10-14 22:06 | 2026-10-17 |
+  | pnpm (`packageManager`) | 10.28.0 | 10.34.8 | 2026-10-23 18:06:37 | 2026-10-26 18:06:38 |
+
+  - **typescript-eslint 8.72.0 is added.** It is lint tooling in lockstep with eslint 10.13.0, #38's refresh tried it,
+    and its peer range is `eslint ^8.57 || ^9 || ^10`. The other peers hold: coverage-v8 5.0.5 needs vitest 5.0.5
+    exactly; vitest-runner 10.1.1 needs vitest `>=2.0.0`; next 16.4.3 needs react `^18.2 || ^19` and
+    `@playwright/test ^1.51.1` (`npm view <pkg>@<ver> peerDependencies`).
+  - **qs needs an override, not a refresh.** `@stryker-mutator/core` 10.1.1 depends on `typed-rest-client ~2.3.0`, and
+    typed-rest-client 2.3.1 pins `qs` to exactly 6.15.1 (3.1.2 depends on `qs ^6.16.0`). So `pnpm-workspace.yaml` gains
+    `overrides: { "typed-rest-client@2>qs": "6.16.1" }` (pnpm 10 reads `overrides` there). That closes qs's three
+    moderate advisories (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g, GHSA-q8mj-m7cp-5q26, fixed in 6.16.0).
+    `check-toolchain` keeps each override with its reason and removal trigger (Stryker on typed-rest-client 3, or on
+    qs 6.16.0 or later), and fails an override whose target is no longer in the lockfile. fast-uri 3.1.9 comes by
+    refresh. Both are development-only (`pnpm why`), so `pnpm audit --prod` and `--audit-level=high` pass today.
+  - **One line per shared tool.** `tools/package.json:36, 38` repeats root's `eslint` and `typescript-eslint` ranges
+    (`package.json:47, 53`), and root's devDependencies repeat five catalog entries as literal ranges (`@types/node`,
+    `fast-check`, `tsx`, `typescript`, `vitest`; `package.json:39-55` against `pnpm-workspace.yaml:11-25`). eslint and
+    typescript-eslint join the catalog, and every manifest names all seven as `catalog:`. Dependabot updates catalog
+    entries (#38 changed `pnpm-workspace.yaml`'s vitest line), so its PRs keep one line per tool, and
+    `no-duplicated-versions.test.ts` holds it (§3.2.3).
+  - Not taken:
+    - Playwright and axe go to ci-browser.
+    - The Anthropic SDK goes to its own group and a deliberate PR that passes the evaluation gate (N8).
+    - TypeScript 7.0.2: typescript-eslint 8.72.0 declares `typescript >=4.8.4 <6.1.0`.
+    - @types/node 26 and the Node 26 images wait for a planned Node 26 PR (N8): Node 26 is LTS from 2026-10-28
+      (nodejs/Release `schedule.json`).
+    - #33 now proposes `node:26-slim` (head bc82651, rebased 2026-10-25 14:18 UTC); before that it proposed Node 25, end
+      of life since 2026-06-01. ci-deps rewrites both Dockerfiles' `FROM` lines to the trixie digest, so #33's diff no
+      longer applies, and the node semver-major ignore stops its kind of PR.
+    - stripe 23.0.1, aws-cdk 2.1146.1 with aws-cdk-lib 2.274.0, and @aws-sdk/* 3.1156.0 come through their Dependabot
+      groups after the merge.
 - **Audit and toolchain:**
-  - `pnpm audit --prod` stays, and `pnpm audit --audit-level=high` is added.
-  - `tools/check-toolchain` (new; networked):
-    - checks `packageManager`'s pnpm against the bulk advisory endpoint (moderate or worse fails);
-    - checks that neither Dockerfile carries a pnpm literal;
-    - keeps the audit exceptions in `tools/check-toolchain/audit-exceptions.json` (`ghsa`, reason, added, expires),
+  - `pnpm audit --prod` stays, and `pnpm audit --audit-level=high` is added, both in `static`.
+  - `tools/check-toolchain` (new; root script `pnpm toolchain:check`; networked; in `static`, which checks out the whole
+    history). Its base is the range step's (`ci.yml:54-74`), reduced with `git merge-base <base> HEAD`, the same as
+    `check-action-pins`', so a pull request into any base, the launch pull request included, is measured against its own
+    base (§3.2.7, N12):
+    - it checks `packageManager`'s pnpm against the bulk advisory endpoint (moderate or worse fails);
+    - it warns, never fails, when a newer 10.x than `packageManager`'s is at least three days old (npm's `time` for
+      pnpm), naming it, since Dependabot never moves `packageManager` (above);
+    - under CQ3's recommended answer, it fails when `packageManager`'s pnpm is under three days old, unless that exact
+      version has a live entry in both exclude lists below, as any locked version would need. action-setup switches to
+      that pnpm with `pnpm self-update` in its own directory, where the workspace's release age never applies (above);
+    - it checks that neither Dockerfile carries a pnpm literal;
+    - it keeps the audit exceptions in `tools/check-toolchain/audit-exceptions.json` (`ghsa`, reason, added, expires),
       equal to `pnpm-workspace.yaml`'s `auditConfig.ignoreGhsas`. An entry older than 30 days fails. The list is empty
-      today.
+      today;
+    - **the lockfile's release age (new).** Every `packages:` key the lockfile adds against that base must have a
+      registry `time[version]` at least `minimumReleaseAge` old, or be listed in `minimumReleaseAgeExclude` with a live
+      entry in `release-age-exceptions.json`. The message names the version, its publish time and the remedy. Why it is needed:
+      pnpm 10.34.8's frozen install never checks release age (an up-to-date lockfile skips resolution,
+      `dist/pnpm.cjs:175478`; the age filter lives only in resolution, `:66130-66139, :66217-66225`), and Dependabot's
+      security updates pass `--config.minimum-release-age=0` (dependabot-core `pnpm_lockfile_updater.rb:540-556`).
+      Without this rule, F2 (b) would hold only re-resolutions;
+    - it keeps the release-age excludes: `release-age-exceptions.json` holds each with its advisory, reason, the date
+      added and an expiry, equal to `minimumReleaseAgeExclude`. Each entry is one exact version, `name@x.y.z` (the form
+      pnpm accepts since 10.19.0). pnpm also accepts a bare name, a `*` pattern and a `||` union
+      (`dist/pnpm.cjs:141938-142001`), which `check-toolchain` refuses, so each entry has one expiry. It fails when the
+      two lists differ. **Expiry (§3.2.7, S7):** an entry the change adds must have publish time + 3 days ≤ expiry ≤
+      added + 7 days, so it covers the version's whole young window and never outlives F2 (b)'s seven days. Once the
+      version is three days old the exclude changes no resolution, so an expired entry fails only a pull request that
+      edits either exclude list (the person is already there) and is a `::warning::` everywhere else: push runs, which
+      follow a green pull request, and every other pull request, Dependabot's npm ones included, which always touch the
+      lockfile (A4 c). The weekly triage removes expired entries (`dependency-upgrades.md`);
+    - it keeps the trust excludes: `trust-exceptions.json` (package, reason, added; no expiry, since each is a fixed old
+      version), equal to `trustPolicyExclude`, each entry still resolved in the lockfile (CQ2);
+    - it keeps the overrides, each with its entry (above);
+    - every networked read fails closed after three tries with backoff, naming the host.
   - `pnpm-workspace.yaml` adds:
-    - `trustPolicy: no-downgrade`;
-    - `minimumReleaseAge: 4320`, three days, equal to the shortest Dependabot cooldown, **subject to F2 (b)**: it is a
-      security trade-off, so the founder's (LANES.md:38). It applies to every resolution, transitive packages and
-      Dependabot's own lockfile updates included ("This applies to all dependencies, including transitive ones",
-      pnpm.io `docs/settings/dependency-resolution.md`, "minimumReleaseAge"; [S4] §9 and its R4). So a security fix
-      published less than three days ago cannot enter the lockfile, by Dependabot or by hand, until a person adds a
-      dated exclude;
-    - `minimumReleaseAgeExclude: []`. An exclude names the exact fixed version (`pkg@1.2.3`, the form pnpm accepts since
-      10.19.0, same page), never a bare package name, and `tools/check-toolchain/release-age-exceptions.json` holds each
-      entry with its advisory, reason, date and an expiry of at most 7 days. `check-toolchain` fails when the two lists
-      differ or an entry has expired. The runbook's step covers it.
-  - The builder confirms pnpm 10.34.8's behaviour on a frozen install, and that Dependabot's lockfile updater runs
-    within it (O3). The release-age and trust settings land in the commit after the version bumps, and every bumped
-    version must already be three days old then (next 16.4.3 from 2026-10-26T13:40Z, Stryker 10.1.1 from
-    2026-10-26T19:18Z; N5).
+    - `minimumReleaseAge: 4320`, three days (F2 (b), ruled), and `minimumReleaseAgeExclude: []`;
+    - `trustPolicy: no-downgrade`, and `trustPolicyExclude: ['semver@6.3.1']` (CQ2's recommended answer). Under
+      no-downgrade (`dist/pnpm.cjs:67150-67240`) a version fails when an earlier non-prerelease version had stronger
+      evidence (trusted publisher over provenance over none). Applied to all 614 locked versions and every target, one
+      fails: semver 6.3.1 (2023-07-10, no provenance), published after 7.5.1 (2023-05-12, with provenance). It is
+      reached through next > styled-jsx > @babel/core and through eslint-plugin-react-hooks > @babel/core, and the next
+      bump re-resolves that subtree, so without the exclude the gate stops the bump;
+    - the qs override (above).
+  - **What the release age does under pnpm 10.34.8** (O3, answered from pnpm's source and Dependabot run 40223237798's
+    log, 2026-10-25):
+    - a frozen install never checks it (above), so CI installs a young locked version without complaint.
+      `check-toolchain`'s lockfile rule covers that;
+    - any re-resolution re-checks every direct dependency, not only the one changed. Run 40223237798 (on de8f9b5) failed
+      every update with `ERR_PNPM_NO_MATURE_MATCHING_VERSION` on the locked `@stryker-mutator/api` 10.1.1, then 47 hours
+      old. A young version merged into the lockfile so stops every Dependabot npm run, and every person's
+      re-resolution, until it is three days old. That is what closed #38;
+    - the CLI flag `--config.minimum-release-age=N` replaces the minutes and keeps the workspace's excludes. Dependabot
+      passes its own gate only when it is longer than the repository's (`helpers.rb:144-148`), from two places (§3.2.7,
+      B1): the update checker's peer probe, `pnpm update <dep>@<ver> --lockfile-only`, passes the version's own
+      semver-specific cooldown, uncapped (`update_checker/version_resolver.rb:894-905, :912-924`), and a release-age
+      failure there makes Dependabot skip that version and try older ones (`:185-190, :288-296`); the file updater passes
+      the smallest per-dependency `min(semver days, default-days)` (`file_updater.rb:475-514`). CQ1 turns on this;
+    - pnpm 10 has no strict toggle: `minimumReleaseAgeStrict` and `trustLockfile` arrive in pnpm 11 (P3).
+
+    So a security fix younger than three days can enter a pull request, since Dependabot's security update resolves it
+    with the gate off, and `check-toolchain` holds that pull request red until a person adds the dated exclude. That is
+    F2 (b)'s ruled trade-off, enforced where the version lands. The builder confirms O3 live (§3.2.5 step 5).
+  - **Commit order.**
+    1. The licence fix, alone (above).
+    2. `minimumReleaseAge`, `minimumReleaseAgeExclude: []`, `trustPolicy` and `trustPolicyExclude`.
+    3. Then the bump commits, the qs override among them, each made after 2026-10-26T19:18:50Z. That is when the last
+       young locked version is three days old: the five Stryker 10.1.1 packages, published 2026-10-23T19:17:52Z to
+       19:18:49.904Z, are the only locked versions under three days old (all 614 checked). Every resolution in the PR
+       then runs under the gates Dependabot uses, and one that would break Dependabot breaks the builder first. Before
+       that instant pnpm refuses any re-resolution anyway, because of the locked Stryker. After the gates' commit, only
+       commits that change `pnpm-lock.yaml` or a resolution setting (a manifest's dependency ranges,
+       `pnpm-workspace.yaml`'s catalog or overrides) wait for it. The pins (login v4.7.0's after 2026-10-26T15:11Z, above), compose, the checks,
+       the tests and the documents resolve nothing and do not wait (§3.2.7, S18).
+  - **Dependabot after the merge.** Under F1 (a) Dependabot reads this configuration from the build branch as soon as
+    the founder switches the default branch. A configuration change has started immediate runs before (2026-10-18 02:41,
+    10-20 22:24, 10-22 05:53 and 10-25 18:51 UTC), so the new groups open at once, on ci-deps' versions. An npm run that
+    starts after 2026-10-26T19:18:50Z passes the gate. One before it fails as #38's did and opens nothing
+    (`lanes/lane-b.md:43`'s "about 19:50 UTC" is 30 minutes late).
 - **`.github/dependabot.yml`:**
-  - The config from [S4] §7:
-    - npm weekly on Monday, github-actions weekly on Tuesday, and the `container-images` group weekly on Wednesday, each
-      at a jittered minute (04:31, 04:37, 04:43 UTC), so one day's batch is at most the npm groups (load plan below);
+  - The config from [S4] §7, with the changes of 2026-10-25 marked:
+    - **days (changed):** github-actions weekly on Tuesday at 04:37 UTC, the `container-images` group on Wednesday at
+      04:43, and npm on **Thursday** at 04:31 (it was Monday). Under F1 (a) the three weekly runs start at the switch,
+      all on Monday: mutation at 05:23 (every package, `mutation.yml:26`), large-zip at 06:17 (up to 45 minutes,
+      `large-zip.yml:10`) and screening-capacity at 06:41 (`screening-capacity.yml:25`). Thursday keeps the week's
+      largest batch off that morning, at no cost to freshness;
     - npm with an 8-PR limit;
-    - cooldown 7 days by default, 14 for majors, 7 for minors and 3 for patches;
+    - **cooldown (changed):** github-actions, docker and docker-compose take `default-days: 7`, the only cooldown key
+      those ecosystems support (github/docs `dependabot-options-reference.md:230-288`). npm takes CQ1's answer:
+      recommended `default-days: 3` alone, equal to `minimumReleaseAge`, so neither the peer probe nor the file updater
+      ever passes a longer gate to pnpm; under CQ1 (b), 2026-10-24's 7 by default, 14 for majors, 7 for minors and 3 for
+      patches. Raising only the semver-specific days over a default of 3 would not help: the probe passes them uncapped
+      (§3.2.7, B1). GitHub applies a three-day cooldown when none is set (same page, `:191-196`), most likely why #40
+      offers login v4.6.0;
     - semver-major ignored for `@types/node`, `typescript`, `next`, `@next/eslint-plugin-next` and `pg-boss`;
     - groups in this order: `browser-tests` (`@playwright/test`, `playwright`, `playwright-core`,
       `@axe-core/playwright`, `axe-core`), `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`,
@@ -698,33 +1000,52 @@ Two copies outside this PR also name them:
     - `docker` (both directories, node majors ignored) and a new `docker-compose` entry (postgres majors ignored) in one
       multi-ecosystem group, `container-images`, with `patterns` on each entry, as the how-to requires
       (github/docs `configuring-multi-ecosystem-updates.md`, "Troubleshooting").
-  - Under F1 (b), every entry gains `target-branch: claude/build-platform`, and §3.2.4 applies.
-  - `tools/test/dependabot-config.test.ts` (new) replaces the `describe('dependabot')` block (`workflows.test.ts:766-790`).
-    It asserts the ignores, the group order, one entry per ecosystem in use, a docker-compose entry while
-    `docker-compose.yml` exists, and three distinct schedule days.
+  - No `target-branch` lines: under F1 (a) the build branch is the default branch until launch (§3.2.4 is not taken).
+    The header (`:1-7`) is rewritten: `ci.yml` costs "about 38 to 39 runner minutes (44 to 45 billed)" (`:4` says about
+    45), and Dependabot reads the file from the default branch, `claude/build-platform` until launch (`:6-7` say
+    `main`'s copy is in force, which the switch makes false). `origin/main`'s copy (220f2b4) is no longer read after the
+    switch, and stays as it is: no pull request goes into `main`.
+  - `tools/test/dependabot-config.test.ts` (new) replaces the `describe('dependabot')` block
+    (`workflows.test.ts:1486-1511`; its comment's "about 10 minutes" goes with it). It asserts the ignores, the group
+    order, one entry per ecosystem in use, a `docker-compose` entry while `docker-compose.yml` exists, three distinct
+    schedule days with none on Monday, the cooldowns CQ1's answer sets (under (a), npm `default-days: 3` and no
+    semver-specific key anywhere; under (b), semver-specific keys on the npm entry only), the `docker-compose` entry's
+    postgres-major ignore, and no `target-branch`.
   - **The weekly batch's load (a plan, not a hope).** GitHub Free runs 20 jobs at once per account (O1), shared by both
     lanes.
-    - Measured: Dependabot's actions PR #40 (head `dependabot/github_actions/claude/build-platform/actions-e4ecb2e43d`)
-      ran a 15:40 capacity job (run 39978142533), because it edits `screening-capacity.yml`, a watched path
-      (`watched-paths.txt:4`). Every npm PR edits `pnpm-lock.yaml` (`:20`), also watched.
-    - Estimate per npm PR: ci.yml 43-48 runner-minutes at a peak of about 11 jobs at once, capacity about 16, and
-      mutation either about 1 (no money closure touched) or 45-55 (a full run, [S2] §5).
-    - Without §3.4.1's closure rule (the first draft's "the lockfile gives all"), every npm PR runs mutation in full:
-      about 120 runner-minutes
-      per PR and about 1,000 for an 8-PR Monday, which holds the account's slots for about an hour.
-    - With it, an npm PR that moves no package in a money closure costs about 60: five of the eight groups (§3.4.1).
-      `aws-sdk` (pricing and packets, five shards) and `minor-and-patch` (usually all six) cost about 100-110. The
-      Monday batch is then about 550-600 runner-minutes and saturates the 20 slots for about 30 minutes. A lane's PR
-      pushed then waits that long for its first jobs.
-    - Staggering the three ecosystems keeps Tuesday's and Wednesday's batches to one PR each.
+    - Measured per pull request, 2026-10-25:
+      - `ci.yml`: 38.0 to 39.1 runner-minutes on push runs (44 to 45 billed; 40201435875, 40223130551, 40229005858),
+        and 48.3 on #40's pull request run (56 billed; 40223436311). 13 jobs, at most about 11 at once;
+      - the capacity job: 12 to 19 minutes on every PR that touches a watched path. Every npm PR edits `pnpm-lock.yaml`
+        (`watched-paths.txt:20`), and every actions PR edits `screening-capacity.yml` (`:4`);
+      - mutation: about 1 when no money closure moves, or a full run of 31 to 36 runner-minutes (push runs 40223130477
+        and 40229005837: 30.9 and 35.9, 36 and 38 billed; #40's run 40223436319: 35.1). [S2] §5's 45-55 was the estimate
+        before ci-mutation's shards were measured.
+    - Which PRs run mutation in full. `tools/stryker/affected.ts:111-120` makes root `package.json`,
+      `pnpm-workspace.yaml` and `mutation.yml` global inputs, and `:108` makes vitest, `@vitest/*`, Stryker, fast-check
+      and tsx test tooling. So:
+      - ci-deps' own pull request;
+      - every actions PR, since it edits `mutation.yml` (#40's ran all six shards);
+      - every npm PR that edits the root manifest or the catalog: `minor-and-patch` nearly always, `next` (through
+        `@next/eslint-plugin-next`, a root devDependency), and any group that moves a catalog entry;
+      - `aws-sdk`, which reaches pricing and packets through the lockfile (§3.4.1).
+
+      Each costs about 95 to 110 runner-minutes (#40's pull request: 99.2 in all, 115 billed). `browser-tests`,
+      `anthropic-sdk`, `pg-boss` and `aws-cdk` touch no root manifest and no money closure: about 55 to 65 each.
+    - A full Thursday batch of eight groups is then about 550 to 650 runner-minutes. It fills the 20 slots for about 30
+      to 35 minutes, and a lane's PR pushed then waits that long for its first jobs.
+    - Without §3.4.1's closure rule (the first draft's "the lockfile gives all"), every npm PR would run mutation in
+      full, about 100 runner-minutes each and about 800 for an eight-PR batch.
+    - Staggering the three ecosystems keeps Tuesday's and Wednesday's batches to one PR each, and Monday to the three
+      weekly runs.
     - If the repository goes private: about 10 bot PRs a week at about 80-95 billed minutes each (2-vCPU runners, [S1]
       §9), about 3,500-4,000 billed minutes a month, and about double that without the closure rule. It joins §9's
       cost row for the founder's decision to go private.
     - **Not used: one shared concurrency group for bot runs.** By default a group holds one running and one pending
       run, and a newer pending run cancels the older one (github/docs `data/reusables/actions/actions-group-concurrency.md`),
       so a shared group would cancel most of a batch. `queue: max` lets up to 100 runs wait (same file;
-      `data/features/actions-nga.yml` lists `fpt: '*'`). But actionlint, which `workflows.test.ts:733-740` runs and
-      whose configuration file it forbids (`:168-171`), refuses the key: `unexpected key "queue" for "concurrency"
+      `data/features/actions-nga.yml` lists `fpt: '*'`). But actionlint, which `workflows.test.ts:1285-1293` runs and
+      whose configuration file it forbids (`:355-359`), refuses the key: `unexpected key "queue" for "concurrency"
       section` (measured with the installed 1.7.7), and `parse.go` on actionlint's main branch, past its latest release
       v1.7.12 of 2026-03-30, still accepts only `group` and `cancel-in-progress` (read 2026-10-25). The combination
       with a `cancel-in-progress` expression is also unproven. Open item O13 revisits it when actionlint accepts
@@ -743,112 +1064,609 @@ Two copies outside this PR also name them:
   - TypeScript 7;
   - the SDK;
   - AWS;
-  - pnpm itself;
+  - pnpm itself, with the trigger for leaving major 10. Dependabot never moves `packageManager` (§3.2.1), so the bump
+    is a person's: at the weekly triage, when `check-toolchain` warns that a newer 10.x is at least three days old, a
+    one-line `packageManager` pull request (both Dockerfiles derive their pnpm, so nothing else names it), re-running
+    `pnpm install --lockfile-only` under the new pnpm (with `--fix-lockfile` if the libc rule names an entry) and
+    `pnpm licenses:check`. **The outage it prevents:** an advisory published against the pinned pnpm turns `static`
+    red on every pull request of both lanes. The remedy is that same pull request to the first fixed version (with its
+    dated exclude if under three days old, under CQ3's answer), merged first; every other pull request then merges the
+    build branch in;
   - base images;
-  - transitive packages;
+  - transitive packages, and an override's removal trigger;
   - the PostgreSQL major;
   - stored ignores (`@dependabot show/unignore`);
-  - the `minimumReleaseAgeExclude` step for a young security fix (F2 (b)): the exact version, its advisory and an
-    expiry of at most 7 days, in both lists;
-  - a `browser-tests` PR, red by design on the `browser.json` check until ADR 0058's procedure runs (A4).
+  - the release age (F2 (b)): why a young locked version stops every re-resolution, `check-toolchain`'s lockfile rule,
+    and the dated exclude for a young security fix (the exact version, its advisory, and an expiry no earlier than
+    its publish time + 3 days and no later than 7 days after it is added, in both lists), removed at the weekly triage
+    once expired (an expired entry warns; §3.2.1);
+  - the trust policy's excludes, and how to add one only for a fixed old version;
+  - a `browser-tests` PR, red by design on the `browser.json` check until ADR 0058's procedure runs (A4);
+  - **the weekly triage reads Dependabot's own runs** (§3.2.7, S8), since a run that opens no pull request is the
+    design's main Dependabot risk (CQ1, the trust policy, #38). Dependabot's runs are Actions runs with
+    `event=dynamic`: `gh api 'repos/PureTideWater/PhysicalTherapy/actions/runs?event=dynamic&created=>=<last triage
+    date>' --jq '.workflow_runs[] | [.id,.name,.conclusion,.created_at] | @tsv'` (run 40223237798, #38's, reads
+    `failure`). Each `failure` is opened and its log read. A version skipped by a release-age block is not a failure:
+    the run succeeds and its log says "release-age block detected", which under CQ1 (a) should not occur. The same
+    command goes in `docs/runbooks/ci.md`.
 
 #### 3.2.2 Files
 
 - **Workflows and the pin rules:**
-  - every `.github/workflows/*.yml` (`publish-content.yml` only under F4 = yes), `release.yml`'s cache removal and
-    `large-zip.yml`'s compose step included;
-  - `.github/workflows/release-dry-run.yml` (new);
+  - `.github/workflows/ci.yml`: every pin bumped; `static` gains three steps, each run once after the install:
+    `pnpm audit --audit-level=high` on the install's condition, and `pnpm actions:check` and `pnpm toolchain:check`, each
+    with `env: { BASE: "${{ steps.range.outputs.base }}" }` and
+    `if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.range.outcome == 'success' }}` (so `all
+    green`'s `needs` at `:526` and `ci-gate.test.ts` do not change); db, domain-model and e2e move to compose; the
+    comments at `:52-53` and `:101-104` say the ruleset blocks force and direct pushes (F7 applied);
+  - `.github/workflows/mutation.yml`: pins (`:49, 53, 54, 81, 84, 85, 100, 168, 172, 174, 181`). Its exact
+    `node-version: 24.22.0` (`:56, 87, 177`) stays, held to `tools/stryker/unicode.json` (`workflows.test.ts:1444`). The
+    header comment's "one exact Node, 24.22.0" (`:17`) becomes "the one exact Node `tools/stryker/unicode.json` names",
+    so the version sits only where a test holds it (§3.2.7, N13);
+  - `.github/workflows/approval-of-record.yml:30, 32` and `large-zip.yml:30-32`: SHA pins. `large-zip.yml` also moves
+    to compose and gains `persist-credentials: false` on its checkout, as every other workflow but publish-content has;
+  - `.github/workflows/release.yml`: pins, the cache removal and `overwrite: true` on its three uploads (§3.2.1);
+  - `.github/workflows/screening-capacity.yml`: pins, and `docker-compose.yml` in its push paths (`:31-44`; §3.2.1);
+  - `.github/workflows/publish-content.yml:25, 27, 28`: pins, plus its one `timeout-minutes: 15` on `publish` (F4).
+    Basis (§3.2.7, N4): its one run took 21 s with nothing to publish (run 39090999122, 2026-10-18, job 02:41:42 to
+    02:42:03, install 7 s), and its work is `static`'s in small (a whole-history checkout, the install and
+    `pnpm verify-content`, `ci.yml:39-49, 92`), whose band is 15. That leaves room for a cold install and several
+    releases, and stops a hung push at 15 minutes instead of GitHub's 360;
+  - `.github/workflows/release-dry-run.yml` (new). `supply-chain.yml` no longer exists;
   - `.github/dependabot.yml`;
-  - `tools/test/workflows.test.ts`;
-  - `tools/test/dependabot-config.test.ts`;
-  - `tools/test/frozen/publish-content.yml` (new, under F4 = yes: the file at 49514e8, the reference for its frozen
-    lines);
+  - `.github/pull_request_template.md:4-5`: "GitHub offers this template only from main, which has none until launch"
+    turns false at the F1 switch, when the build branch, which holds the template, becomes the default;
+  - `tools/test/workflows.test.ts`: the pin rules; the compose rule in place of "the Postgres services"
+    (`:1606-1620`) and of the `services` checks at `:980`, `:1042` and `:1094`; the release and dry-run rules; the
+    frozen-copy rule; the CI-10 table (`:1513-1535`); the artifact test (`:1164`): its name says upload-artifact v7, and
+    it also holds release.yml's and the dry run's uploads to `overwrite: true`; `pushPaths` (`:612-627`) gains
+    `docker-compose.yml`; the static test's `checks` (`:819`) gains `pnpm audit --audit-level=high`, and a sibling
+    assertion holds `pnpm actions:check` and `pnpm toolchain:check` once each, after the install and the range step,
+    on the condition above; every read of `.github/**`, the Dockerfiles and `docker-compose.yml` goes through the
+    `CI_TREE` root (rule (d));
+  - `tools/test/dependabot-config.test.ts` and `tools/test/no-duplicated-versions.test.ts` (new);
+  - `tools/test/frozen/publish-content.yml` (new): the file at 49514e8 plus ci-deps' `timeout-minutes` line, its
+    `runs-on: ubuntu-24.04` included (§3.2.3);
+  - `tools/test/collection.test.ts`: its `FILES` (`:19-29`) gain ci-deps' new test files (dependabot-config,
+    no-duplicated-versions, check-action-pins', check-toolchain's), under the N-6 temporary-directory rule;
   - `tools/check-action-pins/**`;
-  - `packages/compliance/src/controls.ts` (any changed step strings).
+  - `tools/ci/postgres.sh` (new), and its test with a stub `docker`;
+  - `apps/worker/src/platform/restore-drill.db.test.ts:75`: the comment's "the postgres:18 service" (§3.2.1);
+  - `packages/compliance/src/controls.ts`: no change needed, since it matches steps by substring
+    (`controls.test.ts:221-235`) and the supply-chain evidence already names ci.yml (`:259-261`). Optional: evidence
+    rows for `check-action-pins` and `check-toolchain` under the same control.
 - **The toolchain:**
-  - `package.json` (`packageManager`, devDependencies);
-  - `pnpm-workspace.yaml`;
+  - `package.json`: `packageManager` (`:5`); devDependencies, with eslint, typescript-eslint and the five catalog copies
+    as `catalog:`; two root scripts in the form of `licenses:check` (`:36`), `actions:check` →
+    `tsx tools/check-action-pins/index.ts` and `toolchain:check` → `tsx tools/check-toolchain/index.ts` (§3.2.7, N8);
+  - `pnpm-workspace.yaml`: the catalog (`:11-25`: vitest 5.0.5, eslint, typescript-eslint); the release-age and trust
+    settings; the override;
   - `pnpm-lock.yaml`;
-  - `apps/web/package.json`;
+  - `tools/package.json:36, 38` (`catalog:`);
+  - `apps/web/package.json`: next (`:39`), postcss (`:53`);
   - `apps/web/Dockerfile` and `apps/worker/Dockerfile`;
   - `tools/check-licenses/{allowlist.json, check.test.ts}`;
-  - `tools/check-toolchain/**`;
+  - `tools/check-toolchain/**` (the checker; `audit-exceptions.json`, `release-age-exceptions.json`,
+    `trust-exceptions.json` and the overrides' entries);
   - `docker-compose.yml`;
   - `tools/dev.ts`;
-  - `tools/screening-capacity/{containers.ts, measure.test.ts, watched-paths.txt}` (the last regenerated with
-    `pnpm exec tsx tools/screening-capacity/watched.ts --write`).
+  - `tools/screening-capacity/{containers.ts, measure.test.ts, watched.ts, watched.test.ts, watched-paths.txt}` (the
+    last regenerated with `pnpm exec tsx tools/screening-capacity/watched.ts --write`).
 - **Documents:**
-  - ADR 0066 Part 2;
-  - ADR 0063 amendment (F1; the template line; the pin policy);
-  - `docs/runbooks/{dependency-upgrades.md (new), github-governance.md, ci.md}`;
-  - `CLAUDE.md:31` (MinIO), and its template line under F1 (a);
-  - `README.md` (pnpm version, dev services);
-  - `docs/product/PRD.md:645`;
-  - `infra/lib/environments.ts:4`;
-  - `docs/product/diagrams/architecture.svg`;
-  - `docs/product/reconciliation-001.md` (the F4 exception, F1 and F2 recorded with their dates);
-  - ADR 0062 amendment: release.yml restores no cache, so the attested report depends only on its own run.
+  - ADR 0066: Part 2, in place of the placeholder at `:243-245`, and the status header (`:3-13`). In the same file:
+    - F7 made stale: `:91-93` ("until step 4A's ruleset blocks direct pushes"), `:151-153` ("Once the founder applies
+      …; until then nothing enforces them"), `:218-220` (a consequence now done) and `:496-497` ("one of the required
+      checks once the founder applies the ruleset");
+    - F1, ruled: `:231-233`;
+    - the carry-ins: `:175`, the capacity gate "about 12 to 19 minutes" (measured 11:59, 15:52, 18:28, 18:32, 17:30);
+      `:178-180`, "146 new by full name less 12 renamed (4,658 and 1 skipped on CI, b5ff4c7)"; `:96`'s "Upload-artifact
+      v4" becomes v7;
+    - kept as they are: `:46-47`, the dated Context; and `:333`, "the required `mutation` job", which F7 made true.
+  - ADR 0063:
+    - the F1 (a) amendment: `:86-88` (security updates against the default branch), `:140-142` and `:146-151` (the
+      template offered from the default branch), `:339-347` (Dependabot reads the build branch's copy until launch);
+    - `:480-482`, "Dates to record here": F7 was applied on 2026-10-25 21:14 UTC, on the personal account
+      `PureTideWater`, ahead of runbook steps 1 to 3 (ruleset id 25837331);
+    - `:494-497`, the 2026-10-25 amendment's item 1: "the founder sets the ruleset with these names once ADR 0066's
+      pull request has its first green push run" gains "applied 2026-10-25 21:14 UTC (ruleset 25837331)" (§3.2.7,
+      S10). The marked listing at `:491-492` stays as it is;
+    - the pin policy. `:17`, the dated Context, stays.
+  - ADR 0062: the amendment that release.yml restores no cache, so the attested report depends only on its own run.
+  - `docs/runbooks/github-governance.md`:
+    - step 4A (`:279-317`) gains a dated "Applied 2026-10-25 21:14 UTC" line. The step table (`:26`) puts step 4 after
+      step 2, and the check (`:350-354`) expects five rulesets, while 4B and 4C do not exist yet: both say so;
+    - F1 (a): 4B targets "Include default branch" (`:325`, `:330`), which must become **Include by pattern** → `main`
+      only, since the default branch is the build branch until launch; `:394` (security updates against the default
+      branch); `:556` ("Leave Default branch at `main`" becomes "switch it back to `main`" at launch, and that switch
+      moves ahead of step 4's merge, §3.2.7 N14); `:562-620` (Dependabot and the template read from the default
+      branch). **The switch comes immediately before the launch pull request merges.** A run on `main` may restore
+      caches the default branch saved, and the launch merge's push starts publish-content.yml (`contents: write`,
+      `setup-node … cache: pnpm`, `publish-content.yml:15, 28-29`), whose `cache: pnpm` F4 keeps. With `main` the default
+      first, that run restores no pnpm store the build branch saved. For the minutes until the merge lands, Dependabot
+      reads `main`'s old copy (220f2b4, which targets the build branch); a pull request it opens then is closed;
+    - the carry-ins: `:65` ("about 38 to 39 runner minutes (44 to 45 billed)") and `:66` ("about 12 to 19").
+  - `docs/runbooks/ci.md`: `:44-46` and `:55-56` (F7 applied), `:97` (the capacity gate about 12 to 19 minutes) and
+    `:135` (about 38 to 39 runner minutes, 44 to 45 billed); the bot-queue section; the weekly read of Dependabot's
+    runs (`event=dynamic`, the command in `dependency-upgrades.md`; §3.2.7, S8).
+  - `docs/runbooks/screening-capacity.md:306-318`, "Making it required": steps 1 to 3 are done; the section gains
+    "applied 2026-10-25 21:14 UTC (ruleset 25837331)" and keeps its marked listing at `:315-316` (§3.2.7, S10).
+  - **How the F7 records are worded (§3.2.7, S9).** ci-speed's `required-checks.test.ts` fails any tracked Markdown
+    paragraph that names three or more of the four checks in backticks outside `<!-- required-checks -->` markers
+    (`tools/required-checks.ts:100-113`), and only the seven files at `:35-43` may hold a marked listing;
+    reconciliation-001 is not one. `STALE_NAMES` (`:127`) also fails `supply-chain.yml` and "five checks" in any
+    tracked file. So the F7 records (ADR 0063, ADR 0066 Part 2, governance step 4A, `screening-capacity.md`, ci.md and
+    reconciliation-001) name the ruleset, "Protect the build branch" (id 25837331), and say "the four required checks"
+    without listing them. A listing, where one is wanted, goes between the markers in a file that list names. No new
+    text names `supply-chain.yml`.
+  - `docs/runbooks/dependency-upgrades.md` (new).
+  - `CLAUDE.md:31` (MinIO), and `:54`'s "(GitHub offers it only from main)" under F1 (a).
+  - `README.md:11-15` (pnpm at `packageManager`'s version, named by the field, not a literal; Postgres from the
+    compose file) and `:37` (dev services).
+  - `docs/product/PRD.md:645`; `infra/lib/environments.ts:4`; `docs/product/diagrams/architecture.svg:1`.
+  - `docs/product/reconciliation-001.md`: F4's standing exception to the content-pipeline check (`:461`), with the
+    reading of "SHA pins at the current majors now" that §3.2.1 gives (§3.2.7, S12), and F1, F2 and F7 recorded with
+    their dates, worded as above.
 - **Test matrix and synthetic cases:**
-  - `docs/product/test-matrix.md`;
-  - `packages/synth/src/cases/{matrix,registry}.ts`;
+  - `docs/product/test-matrix.md`: CI-11 to CI-14 between `:225` (CI-10) and `:226` (CI-15), and the reservation note
+    at `:211-212`;
+  - `packages/synth/src/cases/matrix.ts` (between `:289` and `:290`) and `registry.ts` (between `:461`, CI-10, and
+    `:462`, the comment that opens the mutation workflow's rows);
   - `fixtures/synthetic/CI-11…CI-14/expected.json`.
+- **Shared with Lane A's #42 (LANES rule 6; the co-founder's Q2).** #42 is a draft at 13f59b1 on base 49514e8,
+  `mergeable_state: dirty`, 143 files (`gh api …/pulls/42` and its `files` pages 1-2, 2026-10-25). The pull request
+  merged second keeps both sides:
+
+  | File | #42 | ci-deps | Resolution by the PR merged second |
+  |---|---|---|---|
+  | `pnpm-lock.yaml` | +33 lines: `@aws-sdk/client-sesv2`, `@aws-sdk/client-sqs` 3.1152.0, `@aws-sdk/middleware-sdk-sqs` 3.972.44 | the licence commit, the bumps | Take the merged manifests, start from the lockfile already on the build branch, and re-resolve with `pnpm install --lockfile-only` under the then-pinned pnpm (with `--fix-lockfile` if the libc rule names an entry); never hand-merge. #42's versions are older than three days (2026-10-14, 2026-10-09), so the gate passes them, and they carry no `libc`, so the licence commit's 43 fields stand |
+  | `apps/web/package.json` | `:17` adds `client-sesv2` | next `:39`, postcss `:53` | Separate hunks: keep both |
+  | `tools/screening-capacity/watched-paths.txt` | +6 closure paths | `docker-compose.yml` through `WATCHED_FIXED` | Regenerate with `watched.ts --write` |
+  | ADR 0062 | header `:1-6`, `:863`, appends at the end (`:1353`; its hunk is `@@ -1351,3 +1367,99 @@`) | the no-cache amendment | Keep both amendments in merge order and merge the header lines |
+  | `docs/product/reconciliation-001.md` | appends at the end of 49514e8's 599 lines (`@@ -597,3 @@`) | F1, F2, F4 and F7 records | Keep both |
+  | `docs/product/test-matrix.md`, `packages/synth/src/cases/{matrix,registry}.ts` | SEC-18, SEC-19, SCR-21, SCR-22, JOB-05 | CI-11 to CI-14 | Different sections: keep both, then `pnpm synth --all` |
+
+  `apps/worker/package.json` is #42's alone; root `package.json`, `containers.ts`, `measure.test.ts` and
+  `infra/lib/environments.ts` are ci-deps' alone. #42 changes no workflow, ADR 0063 or 0066, and neither the CI nor the
+  governance runbook. Under F7's "branches up to date", whichever merges second also merges the build branch in and
+  re-runs all four required checks.
+
+  **The parallel Lane B pull requests (§3.2.7, S19).** Five were claimed on 2026-10-25 at 23:55 to 23:58 UTC
+  (`LANES.md:167-171`): PR 15b, #111, #10, #84 with #120 (an evaluation gate that may add a CI job) and the release
+  content checks (#7, #30, #31, #59). They share rule-6 documents with ci-deps (reconciliation-001, the test matrix,
+  the synth registry). The resolutions above apply to any of them merged before ci-deps, and a workflow or job such a
+  pull request adds is held by rule (a) and needs its CI-10 row; ci-deps pins it when it merges the build branch in. One
+  merged after ci-deps takes ci-deps' rules as they stand.
 
 #### 3.2.3 Tests
 
-These are failing first where they replace a rule that made Dependabot red:
+**Failing first (§3.2.7, S13).** Every test below that fixes a behaviour fails on the merge base's tree, and the PR
+description records that red run. The tests read the files they judge through one root, `CI_TREE` when set (rule
+(d)), and `check.test.ts`'s libc rule reads the lockfile the same way, so the verifier runs the new tests against the
+base's files without checking the base out:
+
+```
+tmp=$(mktemp -d) && git archive "$(git merge-base origin/claude/build-platform HEAD)" | tar -x -C "$tmp"
+CI_TREE="$tmp" pnpm exec vitest run --project unit tools/test/workflows.test.ts tools/check-licenses/check.test.ts \
+  -t '<each name below>'
+```
+
+Each must fail there and pass on the head:
+- the release rule (today's release.yml restores the pnpm store, the scale release and Trivy's caches);
+- the compose rule, its healthcheck's `-h` included (`docker-compose.yml:16` has none; four `services:` blocks);
+- `persist-credentials: false` on every checkout but publish-content's (`large-zip.yml:30` has none);
+- CI-10's table with `publish-content.yml`'s `publish: 15` (the base has none, 360);
+- the frozen-copy rule (the base's publish-content.yml has no timeout line; the frozen copy is read from the head);
+- the libc rule (0 `libc:` fields at 6ddd587);
+- (c) on its fixture step `actions/cache@<40 hex>`, which today's exact comparison at `:686` lets through.
+
+The simulated rewrite (d) is proven by its own deliberate break (§3.2.1) and by #40's red `unit`, which is the same
+rewrite failing on the literal pins (job 121259732714).
+
 - `workflows.test.ts`:
   - (a) to (d) above;
-  - no job declares `services:`; every Postgres job starts the compose service in the background before install and
-    waits for it before any `DATABASE_URL` step;
-  - the release rule: release.yml restores no cache (no `actions/cache*`, no setup-node `cache`,
-    `package-manager-cache: false`, no buildx `cache-from` or `cache-to`, and `cache: 'false'` or `cache-binary: false`
-    on every action that gates a nested cache). It fails first on today's release.yml;
-  - the dry run: release-dry-run.yml's shared steps equal release.yml's, and it holds no `packages: write`,
-    `id-token` or `attestations` permission and no `docker push` or attest step;
-  - under F4 = yes, the frozen-copy rule: `publish-content.yml` equals `tools/test/frozen/publish-content.yml` once
-    both are normalised (each `uses: owner/repo@<ref> # <comment>` reduced to `uses: owner/repo`, and the one-time
-    `runs-on` and `timeout-minutes` lines set aside). A Dependabot pin bump passes; any other edit fails.
-- `dependabot-config.test.ts`.
-- `tools/check-action-pins/*.test.ts`: a composite action with a nested tag ref fails; the nested cache report.
-- `tools/check-toolchain/*.test.ts`: an advisory hit, a Dockerfile literal, an expired audit exception, a release-age
-  exclude that is a bare package name, and an expired or unlisted release-age exclude, each failing.
+  - the compose rule, in place of "the Postgres services" (`:1606-1620`) and the `services` checks at `:980`, `:1042`
+    and `:1094`: no job declares `services:`; every Postgres job (`ci.yml`'s db, domain-model and e2e, and
+    `large-zip.yml`) runs `tools/ci/postgres.sh up` right after checkout and `tools/ci/postgres.sh wait` before the first
+    step that reads `DATABASE_URL`; in db and e2e the quiet step follows Playwright's install; a last `if: failure()`
+    step prints the database's log; and `docker-compose.yml`'s healthcheck runs `pg_isready` with `-h`;
+  - the release rule, by named inputs: no `actions/cache*` step, no setup-node `cache`,
+    `package-manager-cache: false`, `cache-binary: false`, no build-push `cache-from` or `cache-to`, and `cache: false`
+    on every trivy-action step. The nested caches are `check-action-pins`' (below);
+  - the dry run: release-dry-run.yml's shared steps equal release.yml's in `uses:` and `with:` keys (§3.2.1), and it
+    holds no `packages: write`, `id-token` or `attestations` permission and no `docker push` or attest step;
+  - the artifact test (`:1164`): its name says upload-artifact v7, and release.yml's three uploads and the dry run's set
+    `overwrite: true`;
+  - `screening-capacity.yml`'s push paths (`pushPaths`, `:612-627`) with `docker-compose.yml`;
+  - the static test (`:817-824`): `pnpm audit --audit-level=high` joins `checks`; `pnpm actions:check` and
+    `pnpm toolchain:check` each run once, after the install and the range step, on the condition and with the `BASE`
+    of §3.2.2. That holds A5's and A6's "on every run" (§3.2.7, S15);
+  - CI-10's table (`:1513-1535`) gains `'release-dry-run.yml': { build: 20, push: 10 }` and
+    `'publish-content.yml': { publish: 15 }`; its comment at `:1527-1528` ("until the founder's ruling … (F4 …)")
+    goes;
+  - the frozen-copy rule (F4): `publish-content.yml` equals `tools/test/frozen/publish-content.yml` once both are
+    normalised, each `uses: owner/repo@<ref> # <comment>` reduced to `uses: owner/repo`. Nothing else is set aside,
+    `runs-on` included (§3.2.7, S11). The frozen copy is the file at 49514e8 (whose `runs-on` has been `ubuntu-24.04`
+    since 7ac60bc6, 2026-10-20) plus ci-deps' `timeout-minutes: 15` line, so a second timeout edit fails. F4's one
+    change to `runs-on` is ci-browser's move to ubuntu-26.04, which edits the workflow and the frozen copy together,
+    where a reviewer sees an F4 edit; a later global runner move then fails here instead of changing the file
+    unruled. A Dependabot pin bump passes; any other edit fails;
+  - every workflow's checkout sets `persist-credentials: false`, except `publish-content.yml`'s, which pushes.
+- `dependabot-config.test.ts` (§3.2.1).
+- `tools/check-action-pins/*.test.ts` (§3.2.1): a composite with a nested tag ref fails; a nested cache gated through
+  a binding is reported, and an ungated one fails; an unchanged pin makes no network read, and a new one does; a moved
+  tag on an unchanged pin warns on a push run; three failed reads of a new pin fail closed.
+- `tools/check-toolchain/*.test.ts`, each failing unless said: an advisory hit; a Dockerfile literal; an expired audit
+  exception; a release-age exclude that is a bare name, a pattern or a union; an unlisted exclude; an added exclude whose
+  expiry is before its version's publish time + 3 days or after its added date + 7 days; an expired exclude, which
+  fails on a pull request that edits either list and warns on a push run and on any other pull request; a version the
+  lockfile adds that is under three days old (the same version passes with a live exclude, and a young version
+  already in the base passes, which tests the exclude path F2 (b) needs); the base taken from `BASE` through
+  `git merge-base`; a newer 10.x at least three days old, which warns; under CQ3 (a), a `packageManager` pnpm under
+  three days old, which passes only with its exclude; a trust exclude missing from either list or no longer in the
+  lockfile; an override without its entry, or whose target left the lockfile; three failed tries (fails closed).
 - `tools/check-licenses/check.test.ts`: the libc rule.
-- `tools/screening-capacity/measure.test.ts`: the Postgres image read from compose.
+- `tools/ci/postgres.sh`'s test, with a stub `docker` on `PATH`: healthy passes; a failed `up` fails `wait` at once,
+  printing the log; an `up` that never finishes fails after the (shortened) limit.
+- `tools/screening-capacity/measure.test.ts`: the Postgres image read from compose. `watched.test.ts` (`:79` asserts
+  the lockfile is watched) gains the compose file, and its push-path test (`:82-91`) passes with it.
 - `tools/test/no-duplicated-versions.test.ts` (new): no version or digest is written outside its manifest or source of
-  record (Dockerfiles for node, compose for postgres, `packageManager` for pnpm, `apps/worker/package.json` for the
-  worker's playwright-core once ci-browser adds it). This is A4 (b).
+  record. The sources: the Dockerfiles for the node image; compose for postgres; `packageManager` for pnpm;
+  `tools/stryker/unicode.json` for `mutation.yml`'s exact `node-version` (24.22.0, `mutation.yml:56, 87, 177`), which
+  `workflows.test.ts:1444` already holds equal; `apps/worker/package.json` for the worker's playwright-core once
+  ci-browser adds it. It scans the whole text, comments included, of every workflow, both Dockerfiles,
+  `docker-compose.yml`, `README.md` and `CLAUDE.md`; ADRs and dated runbook entries record what was and are not scanned
+  (§3.2.7, N13). So `mutation.yml:17`'s comment and README.md:11-12 name their source, not the number. Every package the
+  catalog holds is `catalog:` in every manifest's dependencies and devDependencies (peer ranges stay their own).
+  Without the `unicode.json` source, the new test would fail on ci-mutation's pin. This is A4 (b).
+- `tools/test/collection.test.ts`: the new files in `FILES`.
 
-#### 3.2.4 Under F1 (b) only
+#### 3.2.4 Under F1 (b) only: not taken
 
-- The PR into main is separate and opened only on the founder's ruling (the #27 precedent). It carries the same YAML
-  with every `target-branch` line kept, plus the new PR template.
-- `tools/test/dependabot-config.test.ts` also asserts that the build branch's copy equals `origin/main`'s minus the
-  `target-branch` lines (`fetch-depth: 0` already fetches `origin/main`).
+The founder ruled F1 (a) (relayed 2026-10-25 ~01:10 UTC), so ci-deps opens no pull request into `main`, writes no
+`target-branch` line and adds no drift test against `origin/main`. The plan for (b), kept for the record: a separate
+pull request into `main` on the founder's ruling (the #27 precedent), carrying the same YAML with every `target-branch`
+line kept, plus the new PR template; and a test that the build branch's copy equals `origin/main`'s minus those lines.
 
 #### 3.2.5 Acceptance
 
-1. Fresh clone and scope, as in §3.1.7. No migration and no `packages/pricing` change.
-2. Networked checks, which pass from this machine (git and the registry are reachable):
-   - `pnpm -s exec tsx tools/check-action-pins`;
-   - `pnpm -s exec tsx tools/check-toolchain`.
+1. Fresh clone and scope, as in §3.1.7. No migration, no change under `packages/pricing`, `packages/ledger`,
+   `packages/db/migrations`, `content/`, `tools/verify-content` or `.claude/hooks/protect-content.sh`, and
+   `publish-content.yml` changed only in its `uses:` refs, their comments and one `timeout-minutes: 15` line (F4).
+   `diff <(git show 49514e8:.github/workflows/publish-content.yml) tools/test/frozen/publish-content.yml` shows only
+   that line; the frozen copy's `runs-on` is still `ubuntu-24.04`.
+2. Networked checks, which pass from this machine (git and the registry are reachable), each against the merge base:
+   - `BASE=origin/claude/build-platform pnpm actions:check` (every pin read live, since the base has no checker);
+   - `BASE=origin/claude/build-platform pnpm toolchain:check`.
 3. `pnpm audit --prod`; `pnpm audit --audit-level=high`.
 4. **The licence commit:** the PR's first commit changes only `package.json`'s `packageManager`, `allowlist.json`'s musl
-   entry and `pnpm-lock.yaml`, and `git diff --numstat <mb> <first> -- pnpm-lock.yaml` is `43 0`, every added line
-   `libc: [glibc]` or `libc: [musl]` (`git diff <mb> <first> -- pnpm-lock.yaml | grep '^+ ' | sort | uniq -c`).
-   `pnpm licenses:check` then passes with no musl package listed.
-5. `pnpm exec vitest run tools/test tools/check-action-pins tools/check-toolchain tools/check-licenses tools/screening-capacity`.
-6. `grep -ri minio docker-compose.yml tools/dev.ts README.md CLAUDE.md` finds nothing.
-7. `git diff <first> -- pnpm-lock.yaml`, after the licence commit, has a summary in the PR description: the named bumps,
-   commit by commit, and nothing else unexplained.
-8. **CI:**
-   - `all green` (images built on trixie and scanned clean, Postgres from compose);
-   - `screening-capacity gate` (the lockfile and Dockerfiles are watched): every correctness check passes;
-   - `release-dry-run` green on the PR (it changes release.yml): the v7 upload, the v8 download with
-     `merge-multiple`, the SHA-256 check, the load and the ghcr login all ran;
-   - `approval-of-record`.
-9. **After the merge**, under F1 (a): the Dependabot tab shows the config parsed. #40 and #38 are superseded, or rebased
-   to what remains; the remaining browser group is red only on what ci-browser fixes. The PR records any Dependabot PR
-   left open, with its reason.
+   entry and `pnpm-lock.yaml`. Measured on the commit itself, so it holds after the build branch is merged in (§3.2.7,
+   S5): `git show <first>^:pnpm-lock.yaml | grep -c '^ *libc: \['` gives 0 and the same at `<first>` gives 43;
+   `git diff --numstat <first>^ <first> -- pnpm-lock.yaml` is `43 0`, every added line `libc: [glibc]` or
+   `libc: [musl]` (`git diff <first>^ <first> -- pnpm-lock.yaml | grep '^+ ' | sort | uniq -c`). Any other count is
+   re-measured and each difference explained by its entries before the PR goes on. `pnpm licenses:check` then passes
+   with no musl package listed.
+5. **The gates' commit and O3, live:** the second commit changes only `pnpm-workspace.yaml`'s four release-age and
+   trust settings. Every later commit that changes `pnpm-lock.yaml` or a resolution setting is dated after
+   2026-10-26T19:18:50Z, and its resolution ran under the gates; the login pin's commit is after 2026-10-26T15:11Z;
+   other commits are not held (§3.2.7, S18). The PR description records the builder's live check of O3 in a scratch
+   copy, never committed: a resolution that needs a version under three days old fails with
+   `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, and passes with that version's exact exclude;
+   `pnpm install --frozen-lockfile` does not check.
+6. `pnpm exec vitest run tools/test tools/check-action-pins tools/check-toolchain tools/check-licenses tools/screening-capacity tools/ci`.
+7. **Failing first** (§3.2.3; §3.2.7, S13): the verifier runs §3.2.3's command against the merge base's tree, and each
+   named test fails there; the PR description carries that red run's output and the green one on the head.
+8. `git grep -n -i minio -- ':!pnpm-lock.yaml' ':!docs/adr/0066-*'` prints nothing; ADR 0066's Part 2 alone records
+   the removal (§3.2.7, N7).
+9. `git diff <first> -- pnpm-lock.yaml`, after the licence commit, has a summary in the PR description: the named bumps,
+   the override and the refresh, commit by commit, and nothing else unexplained.
+10. **CI.** The F7 ruleset's four required checks ("Protect the build branch", applied 2026-10-25 21:14 UTC, branches
+    up to date), on the PR's head:
+    - `all green` (images built on trixie and scanned clean, Postgres from compose);
+    - `mutation`, every package: root `package.json`, `pnpm-workspace.yaml` and `mutation.yml` are global inputs
+      (`affected.ts:111-120`), so it runs all six shards, about 10 minutes and 31-36 runner-minutes;
+    - `screening-capacity gate` (the lockfile, the Dockerfiles and now the compose file are watched): every correctness
+      check passes;
+    - `approval-of-record`, now on SHA pins.
+
+    Also `release-dry-run` green on the PR (it changes release.yml; advisory, outside the ruleset): the v7 upload, the v8
+    download with `merge-multiple`, the identity check, the load and the ghcr login all ran. If #42 or another PR merges
+    first, ci-deps merges the build branch in, re-resolves the lockfile under the gates (never hand-merged) and re-runs
+    all four checks.
+
+    **No test lost** (§0; §3.2.7, S16), read from CI's logs on the head: unit = 6ddd587's 4,996 passed and 1 skipped
+    (run 40229005858, job 121281841727), plus ci-deps' new tests, less the three it replaces (`describe('dependabot')`'s
+    one test, by `dependabot-config.test.ts`; "the Postgres services", by the compose rule; the form test at
+    `:1236-1253`, by rule (a)), with 1 skipped. The PR description lists the new tests by name and does the sum. Golden
+    188, db 9,049 and 1 skipped over 118 files, and e2e 51 stay unchanged. A Lane B or Lane A pull request merged in
+    first adds its own stated counts.
+11. **The co-founder's answers** (§3.2.7, S17): the pull request merges only after CQ1, CQ2 and CQ3 are answered. The
+    PR description records each answer, its date and who relayed it, and the cooldown, trust and `packageManager`
+    lines match them. Until then the builder writes each recommended option.
+12. **After the merge**, under F1 (a):
+    - the founder makes `claude/build-platform` the default branch (F1 (a)) and turns on Dependabot alerts and security
+      updates (F2 (a)); then, with F4's pins in, requires actions pinned to a full SHA (F3);
+    - the Dependabot tab shows the config parsed from the build branch. #40 closes as up to date (every version it
+      offers is at or below ci-deps'), or is recorded with its state. #33 is declined by the node major ignore. npm
+      runs resume after 2026-10-26T19:18:50Z, and the remaining browser group is red only on what ci-browser fixes. The
+      PR records any Dependabot PR left open, with its reason;
+    - the conclusions of Dependabot's first runs after the switch are read (§3.2.7, S8): any immediate runs at the
+      switch and each ecosystem's first weekly run (actions Tuesday 04:37, container images Wednesday 04:43, npm
+      Thursday 04:31 UTC), with
+      `gh api 'repos/PureTideWater/PhysicalTherapy/actions/runs?event=dynamic&created=>=<switch date>' --jq
+      '.workflow_runs[] | [.id,.name,.conclusion,.created_at] | @tsv'`. Each is logged with the pull requests it opened;
+      a `failure` is read and fixed in a follow-up;
+    - the first Monday's weekly runs (mutation 05:23, large-zip 06:17, screening-capacity 06:41 UTC) are read, and
+      their results logged.
+
+#### 3.2.6 Re-read at 6ddd587 (2026-10-25)
+
+Sources: two scout reports, `designs/lane-b-ci/scout-ci-deps-reread-files.md` and
+`designs/lane-b-ci/scout-ci-deps-reread-versions.md`, both 2026-10-25, read whole; and the code and the network,
+re-checked here. Every cite below is at 6ddd587.
+
+**What changed from the 2026-10-24 text, and why:**
+
+| § | Change | Evidence |
+|---|---|---|
+| 3.2 | The rulings are stated as ruled: F1 (a), F2 (a) and (b), F4 yes, F7 applied. "Under F4 = yes" and "subject to F2 (b)" are gone, and §3.2.4 is marked not taken | `lanes/lane-b.md`, "Rulings and decisions of record"; `gh api …/rulesets/25837331` (4 checks, `strict_required_status_checks_policy: true`, 0 approvals, no bypass; created 21:07:53Z, updated 21:14:05Z) |
+| 3.2.1 | A list of what ci-speed and ci-mutation already did: ci.yml and mutation.yml SHA-pinned at the old versions, supply-chain.yml folded into ci.yml, Trivy in ci.yml cache-free, timeouts, TCP health. Tag refs remain in three files only | `ci.yml:39-517`; `mutation.yml:49-181`; `ci.yml:493, 516`; `approval-of-record.yml:30,32`; `large-zip.yml:30-32`; `publish-content.yml:25,27,28` |
+| 3.2.1 | The action table gains the peeled SHAs, the tag commits' dates, #40's offers and the uses; no newer tag | `git ls-remote --tags` and depth-1 tag fetches, 2026-10-25 (versions scout §2; re-checked here for checkout, setup-node, action-setup, login) |
+| 3.2.1 | The new majors are shown to run: #40's head passed every job but `unit`, which failed only on literal pins | check runs on e0d5b6f; `unit`'s annotations (check run 121259732714) |
+| 3.2.1 | login v4.7.0 is pinned only once three days old (from 2026-10-26T15:11Z) | tag commit 2026-10-23T15:11Z; Dependabot's default cooldown (`dependabot-options-reference.md:191-196`) |
+| 3.2.1 | The pin rules cite `PINNED` at `:77-92` (it gained `setupPython`), its 25 uses (26, §3.2.7 N1), and the literal refs at `:686`, `:1271` and `:545`; `:404` and `:423` are gone (now `PINNED.uploadArtifact`); the form test is `:1235-1253` | `grep -n PINNED tools/test/workflows.test.ts` |
+| 3.2.1 | Rule (c) also closes `:686`'s vacuous check | `:686` compares `step.uses` to `'actions/cache@v4'`, which a SHA pin never equals |
+| 3.2.1 | release.yml's cites hold; its Trivy steps take ci.yml's two lines (`cache: false`, a `cache-dir` under `runner.temp`) | `git diff 49514e8 6ddd587 -- .github/workflows/release.yml` is empty; `ci.yml:493-494, 516-517` |
+| 3.2.1 | release-dry-run.yml gets timeouts (CI-10) and is stated as outside F7's ruleset | `workflows.test.ts:1513-1535`; the ruleset's four checks |
+| 3.2.1 | Both digests in full; Postgres pinned as `18-trixie`, which is today's `postgres:18`; two working ways to read a digest | Hub API and `registry-1.docker.io` HEAD, 2026-10-25 ~23:00 UTC (versions scout §4) |
+| 3.2.1 | Postgres: compose decided on measured evidence; the healthcheck moves to TCP first; one script; the quiet step after the browser install; the log printed on failure; the compose file becomes a watched path | three push runs' job steps; `docker-compose.yml:16`; `ci.yml:243-246, 257-260, 421-422`; `watched.ts:62-80` |
+| 3.2.1 | pnpm: latest-10 is 10.34.9; 10.34.8 kept. The pnpm-12 reason gains dependabot-core's code-level support, with GitHub's table still the trigger | `npm view pnpm dist-tags` (re-checked 23:17 UTC); pnpm v10.34.9 changelog; dependabot-core 8ac9b21a, 493da6c4; `supported-package-managers.md:44` |
+| 3.2.1 | The "3 `libc:` lines" were `detect-libc:` lines; the lockfile has no `libc:` field; 43 expected at the cut, re-measured | `grep -n libc pnpm-lock.yaml`: `:2601, 5711, 6147, 6163, 6498`, none a field; `grep -c '^ *libc: \['`: 0 |
+| 3.2.1 | npm versions with dates; typescript-eslint 8.72.0 added; qs by override, not refresh; one catalog line per shared tool; #33 is now `node:26-slim` | `npm view … time`; `npm view typed-rest-client@2.3.1 dependencies`; `tools/package.json:36, 38`; `package.json:39-55`; #38's `pnpm-workspace.yaml` patch; `gh api …/pulls/33` |
+| 3.2.1 | `check-toolchain` gains the lockfile release-age rule, the trust and override entries; the "cannot enter the lockfile" sentence is replaced | `dist/pnpm.cjs:175478, 66130-66139`; `pnpm_lockfile_updater.rb:540-556`; run 40223237798's log |
+| 3.2.1 | `trustPolicyExclude: ['semver@6.3.1']` (CQ2) | `dist/pnpm.cjs:67150-67240` applied to all 614 locked versions; `pnpm why semver` |
+| 3.2.1 | Commit order: licence, then the gates, then the bumps after 2026-10-26T19:18:50Z (was: gates after the bumps; Stryker at "19:18Z") | `npm view @stryker-mutator/vitest-runner time`: 2026-10-23T19:18:49.904Z |
+| 3.2.1 | O3 answered from source and the log; the builder only confirms it live | versions scout §6 |
+| 3.2.1 | Dependabot: npm on Thursday; semver-specific cooldowns on npm only (values per CQ1); no `target-branch`; the header's figures; the test asserts no Monday and npm-only semver keys | `mutation.yml:26`, `large-zip.yml:10`, `screening-capacity.yml:25`; `dependabot-options-reference.md:230-288`; `dependabot.yml:4, 6-7` |
+| 3.2.1 | The load plan: ci.yml 38.0-39.1 runner-minutes on push runs; a full mutation run is 31-36 (not 45-55); `next` and every actions PR run mutation in full; a Thursday batch about 550-650 | push runs 40201435875, 40223130551, 40229005858; mutation runs 40223130477, 40229005837; #40's runs; `affected.ts:108, 111-120` |
+| 3.2.1 | Actionlint cites: `:1285-1293`, its configuration ban `:355-359` | `workflows.test.ts` |
+| 3.2.2 | Added: `watched.ts`, `tools/package.json`, `pull_request_template.md:4-5`, `collection.test.ts`, `tools/ci/postgres.sh`, the three `tools/check-toolchain` lists; removed: `supply-chain.yml`; each document with its lines (F7, F1 (a), the carry-ins); #42's shared files under rule 6 | the files scout §2, §5-7, re-checked: ADR 0066, ADR 0063, `github-governance.md`, `ci.md` at the lines cited |
+| 3.2.2 | Carry-in corrected: ADR 0066:333 needs no edit (F7 made "the required `mutation` job" true); `:496-497` is the stale line. The runner-minute figure sits in three files | `adr/0066…md:333, 496-497`; `dependabot.yml:4`, `github-governance.md:65`, `ci.md:135` |
+| 3.2.3 | The compose rule replaces `:1606-1620`, `:980`, `:1042` and `:1094`; CI-10's table grows; the frozen copy is stricter; `persist-credentials: false` everywhere but publish-content; `no-duplicated-versions` names `unicode.json` and the catalog; the new `check-toolchain` cases | `workflows.test.ts` at those lines; `mutation.yml:15-18, 56`; `tools/stryker/unicode.json:4` |
+| 3.2.5 | The CI step names the F7 ruleset, mutation's full run and the up-to-date re-run; the licence step counts fields; a gates step and the live O3 check; the frozen-copy diff; after the merge, the founder's three settings and the first weekly runs | as above |
+| §0, §3.5, §4, §5, §9, §11 | Cross-references only: §0's ci-deps line and a line on the rulings; CI-14 gains the release-age rule; D1's and D2's files in §4 (the new files need an owner each); §5's lockfile row, Lane A's notes and an "Applied" paragraph under the ruleset offer; §9's release-age rows and batch row; O3 marked answered | this section |
+
+Sections outside §3.2 keep their 49514e8 cites (line 22), apart from those cross-references.
+
+**Engineering-only choices made here, each pre-approved (the co-founder's Q3, 2026-10-25) and reversible** (updated by
+§3.2.7):
+- pnpm 10.34.8 kept over 10.34.9;
+- typescript-eslint 8.72.0 taken with eslint 10.13.0;
+- eslint and typescript-eslint moved to the catalog, and root's five literal copies of catalog entries named `catalog:`,
+  held by `no-duplicated-versions.test.ts`;
+- qs 6.16.1 by an override, with its removal trigger, kept by `check-toolchain`;
+- `check-toolchain`'s lockfile release-age rule, which enforces the founder's F2 (b) where pnpm 10 and Dependabot's
+  security updates do not;
+- the commit order (the gates before the bumps; only commits that resolve wait for 2026-10-26T19:18:50Z);
+- the compose healthcheck on TCP (`-h localhost`, ci-speed's proven form rather than the scout's `127.0.0.1`), one
+  `tools/ci/postgres.sh` (its `wait` reading `up`'s recorded exit status), the quiet step after the browser install,
+  and the database's log on failure;
+- `docker-compose.yml` added to `WATCHED_FIXED` and to `screening-capacity.yml`'s push paths;
+- `persist-credentials: false` on `large-zip.yml`'s checkout, and a rule for every workflow but publish-content;
+- release.yml's Trivy steps in ci.yml's form (`cache: false`, a `cache-dir` under `runner.temp`), and `overwrite: true`
+  on its three uploads;
+- the stricter F4 frozen copy (49514e8 plus the timeout line; nothing set aside, `runs-on` included);
+- publish-content's `timeout-minutes: 15` (F4 allows one timeout; the value is engineering);
+- rule (c) through `usesAction`, keeping `:686`'s check alive;
+- the simulated rewrite through `CI_TREE` and a spawned vitest;
+- `check-action-pins` reading the network only for new or changed pins, warning on a moved tag of an unchanged pin,
+  and checking release.yml's nested caches itself, with no committed per-SHA file;
+- `check-toolchain`'s base from the range step, its warning for a newer 10.x, and the exclude expiry rules (an added
+  entry's window; an expired one failing only where the lists are edited);
+- root scripts `actions:check` and `toolchain:check`;
+- npm's Dependabot day moved from Monday to Thursday 04:31 UTC;
+- semver-specific cooldown keys, if CQ1 keeps any, on the npm entry only (the other ecosystems support only
+  `default-days`);
+- release-dry-run.yml's timeouts (build 20, push 10);
+- ci-deps' new test files in `collection.test.ts`'s `FILES`;
+- `no-duplicated-versions.test.ts` naming `tools/stryker/unicode.json` as mutation.yml's Node source, and its scan
+  scope (workflows, Dockerfiles, compose, README.md and CLAUDE.md, comments included);
+- the governance runbook's default-branch switch moved to just before the launch pull request merges (F1 (a)'s "at
+  the launch merge", read so the merge's push restores no build-branch cache).
+
+login v4.7.0's timing (after 2026-10-26T15:11Z) is not on this list: it is a security choice of P1's kind, and here
+it costs nothing, since nothing in the PR can merge before 2026-10-26T19:18:50Z (§3.2.7, N9).
+
+**For the co-founder (security trade-offs; recommended option first). None blocks the builders' start; each touches a
+few lines; the pull request merges only once all three are answered (§3.2.5 step 11).**
+- **CQ1. Dependabot's npm cooldown (soak time before a version update opens).** Corrected on 2026-10-25 (§3.2.7, B1).
+  - **(a) Recommended: npm `cooldown: { default-days: 3 }`, with no semver-specific days.** Actions and images keep
+    `default-days: 7`, which passes no gate to pnpm. Every gate Dependabot computes for npm is then 3 days, equal to
+    `minimumReleaseAge`, so it is never passed to pnpm (`helpers.rb:144-148`), and every npm update, majors included,
+    opens once its versions are three days old: F2 (b)'s floor. People still triage every PR, and none merges as it
+    stands.
+  - (b) Keep 2026-10-24's values (7 by default, 14 for majors, 7 for minors, 3 for patches). Two code paths then pass
+    pnpm a gate longer than the repository's, per dependency. The update checker's peer probe passes the version's own
+    semver days, uncapped: 14 for a major, 7 for a minor (`update_checker/version_resolver.rb:894-905, :912-924`), and a
+    release-age failure there makes Dependabot skip that version and try older ones (`:185-190, :288-296`). The file
+    updater passes `min(semver days, default-days)`, so 7 for a minor or a major (`file_updater.rb:500-514`). pnpm 10
+    re-checks every locked direct dependency on those re-resolutions. So a **major** update is dropped, with no pull
+    request and no failed run, whenever any locked direct dependency is under 14 days old. After any week that took a
+    patch bump 3 to 6 days old (the minor-and-patch group nearly always has one), that is most weeks. A **minor**
+    update is dropped whenever one is under 7 days old: after a security update, a hand bump, a newly added
+    dependency or an expired exclude in the past 7 days. Patch updates (3 days, the repository's own) always arrive.
+  - (c) Raise `minimumReleaseAge` to 7 days to match. That changes the founder's F2 (b), so it would go to him, and
+    every young security fix would need its exclude for longer. Majors would still be probed at 14 days.
+  - Not an option: `default-days: 3` with semver days of 14 and 7. The file updater would pass nothing, but the probe
+    passes the semver days uncapped, so majors and minors would be dropped as under (b).
+  - (a) against the corrected (b): (a) opens minor updates 4 days sooner and majors 11 days sooner (3 days of public
+    soak against 7 and 14). (b) drops majors silently in most weeks and minors in some. Its drops are successful runs
+    whose log says "release-age block detected", so the weekly read of Dependabot's runs (§3.2.1) would not see them as
+    failures. Both keep the three-day floor on every resolution and a person on every merge, and both leave the
+    founder's F2 (b) as ruled; only the design's own cooldown values of 2026-10-24 change.
+  - It blocks only the npm entry's `cooldown` lines and their assertion; the builder writes (a) until told otherwise.
+- **CQ2. One exclude from the trust policy.**
+  - **(a) Recommended: `trustPolicyExclude: ['semver@6.3.1']`**, mirrored in `trust-exceptions.json` with its reason,
+    held equal and still resolved by `check-toolchain`. It waives the provenance-downgrade check for one version
+    published in 2023 and already locked, reached through `@babel/core`; every other locked version (613) and every
+    target passes the policy.
+  - (b) `trustPolicyIgnoreAfter` (pnpm 10.27.0), which waives the check for every version older than a set age. It is
+    broader: it would also pass a future downgrade in any old version.
+  - (c) No `trustPolicy`. That drops the check for every package.
+  - Without one of these, the next bump cannot resolve, since it re-resolves `@babel/core`'s subtree.
+- **CQ3. The pnpm that CI runs, held to the three-day release age** (added on 2026-10-25, §3.2.7, S6).
+  - **(a) Recommended: `check-toolchain` fails when `packageManager` names a pnpm published under three days ago,
+    unless that exact version has a live dated exclude in both lists**, the same rule as any version the lockfile adds.
+    action-setup v6.1.0 switches to `packageManager`'s pnpm with `pnpm self-update` in its own directory
+    (`src/install-pnpm/run.ts:70, :113-114` at `ea17c68d`), where the workspace's `minimumReleaseAge` never applies, and
+    Dependabot never proposes it, so only a person moves it. Without this rule, a hand bump could make every CI job run
+    a pnpm published minutes ago, inside the window F2 (b) exists for.
+  - (b) As written before: the advisory check alone, no age rule on `packageManager`.
+  - What (a) costs: an urgent pnpm fix younger than three days needs a person's dated exclude before its pull request
+    is green, which is the trade-off F2 (b) already makes for every other package. It changes nothing today: 10.34.8
+    is three days old from 2026-10-26T18:06:38Z, before the bump commits.
+  - It blocks only that `check-toolchain` rule and its test; the builder writes (a) until told otherwise.
+
+**Proposed improvements outside ci-deps** (not in this PR; each would be its own item):
+- P1, a security trade-off for the co-founder: hold action pins and image digests to the same three-day floor
+  (`check-action-pins` refuses a tag commit, and `check-toolchain` a digest's push, under three days old). Today it
+  would have held back only login v4.7.0, by a day. Recommended yes.
+- P2: set trivy-action's `version:` to the latest trivy (v0.76.1, 2026-10-21) instead of v0.36.0's default v0.70.0,
+  with a check against March 2026's hijacked tags (CVE-2026-33634) and a pin rule in `check-action-pins`.
+- P3: pnpm 11.3 or later verifies every lockfile entry against `minimumReleaseAge` and `trustPolicy` on every install,
+  frozen included (`trustLockfile`). Revisit N10's trigger when GitHub's table lists pnpm 11 or 12.
+- P4: narrow `tools/stryker/affected.ts`'s root-manifest input to `packageManager`, `engines`, the Stryker scripts and
+  `TEST_TOOLING`'s specifiers; other devDependencies already reach a money closure through the lockfile. It would spare
+  a full mutation run (31-36 runner-minutes) on most npm PRs. ci-mutation's area, as its own PR.
+- P5: one catalog line for every package that two manifests name with the same literal range: pg-boss (web, worker),
+  `@aws-sdk/client-s3` (web, worker), tailwindcss (web, brand), playwright-core (worker, tools), yauzl and
+  `@types/yauzl` (worker, contracts), pdfjs-dist (worker, contracts). After #42 and ci-browser merge, since both touch
+  those manifests.
+- P6: re-read "Protect the build branch" through the rulesets API after runbook step 2 moves the repository, and put
+  that check in step 2.
+- P7: `lanes/lane-b.md:43` gives Dependabot's resume time as "about 19:50 UTC"; it is 2026-10-26T19:18:50Z.
+- P8 (§3.2.7): dependabot-core's two release-age gates disagree. The file updater caps each dependency's gate at
+  `default-days` (`file_updater.rb:500-514`, whose comment says the gate must never exceed the window a version was
+  selected under), while the update checker's peer probe passes the uncapped semver days (`version_resolver.rb:912-924`)
+  and skips a version on a release-age block caused by any locked dependency. A report upstream, with this repository's
+  case and no repository data beyond public versions, is the founder's or co-founder's to send; ci-deps does not depend
+  on its outcome under CQ1 (a).
+
+**Migration and frozen code:** ci-deps still needs no migration, and changes no engine (`packages/pricing`), ledger or
+content-pipeline code beyond F4's pins and one timeout in `publish-content.yml`.
+
+#### 3.2.7 Review of the re-read (2026-10-25)
+
+The review: `designs/lane-b-ci/ci-deps-reread-review.md` (1 blocking, 20 should-fix, 16 nits). Each finding was
+checked again against 6ddd587, GitHub (`gh api` GET and the job-log tool, read only) and dependabot-core at main
+7c06280 (a sparse clone of `npm_and_yarn/` and `common/lib/dependabot/`), before any text changed. Every finding names a real
+defect, though B1's mechanism was only half right. Four are fixed by another means than the review proposed (B1's
+majors, S3, S4, S7), each with its reason below.
+The design's sections above carry each change, marked "§3.2.7".
+
+**Blocking**
+- **B1. Fixed, and the review's own premise corrected.** The review is right that the file updater caps each
+  dependency's gate at `default-days` (`file_updater.rb:500-514`). It missed a second path: the update checker's peer
+  probe runs `pnpm update <dep>@<ver> --lockfile-only` under the version's uncapped semver days
+  (`update_checker/version_resolver.rb:894-905, :912-924`, through `pnpm_lockfile_updater.rb:550-555` and
+  `helpers.rb:144-148`), and a release-age block there makes Dependabot skip that version and try older ones
+  (`:185-190, :288-296`). The probe runs on every update check (`relevant_unmet_peer_dependencies` →
+  `peer_dependency_errors`). The versions scout's "a majors-only update gets 20,160" was the probe's figure, not a
+  contradiction. So under (b) majors are probed at 14 days and dropped in most weeks; minors at 7 days and dropped only
+  after a young direct dependency in the past 7 days. CQ1 (b) is rewritten per dependency with both paths; (a) stays
+  recommended, with its cost stated against the corrected (b) (§3.2.6). One alternative the fix looked at,
+  `default-days: 3` with semver days of 14 and 7, is shown not to work (the probe is uncapped). §3.2.1's O3 bullet and
+  the dependabot.yml cooldown text name both paths. P8 proposes an upstream report.
+
+**Should fix**
+- **S1. Fixed.** `screening-capacity.yml`'s push paths (`:31-44`) and `workflows.test.ts`'s `pushPaths` (`:612-627`,
+  held with `toEqual` at `:627`) gain `docker-compose.yml`; `watched.test.ts:82-91` then passes (§3.2.1, §3.2.2,
+  §3.2.3).
+- **S2. Fixed, by the second option.** release.yml's three uploads (`:92-96`, `:110-118`, `:188-198`; none sets
+  `overwrite`) gain `overwrite: true`, which fixes a real re-run conflict (ADR 0066:96-97 found it for ci.yml). The
+  dry-run rule compares `uses:` and the `with:` key sets, and values only for `overwrite` and the cache inputs; the
+  artifact test holds all three files' uploads to `overwrite: true`.
+- **S3. Fixed, by another means.** The finding holds: an offline unit test cannot read a networked report. The fix
+  splits the rule where its data is. `workflows.test.ts` names release.yml's cache inputs explicitly (trivy-action
+  `cache: false`, setup-buildx `cache-binary: false`, setup-node's two), and `check-action-pins` follows each nested
+  `actions/cache*` to the top-level input that gates it and requires that input `false` in release.yml (§3.2.1). No
+  `verified.json`: Dependabot's github-actions ecosystem rewrites only `uses:` lines, so a committed per-SHA file would
+  be stale on every actions PR and make it red, against A4 (c).
+- **S4. Fixed, by another means.** The finding holds (`static` is under `all green`; a re-tag or rate limit would fail
+  both lanes). `check-action-pins` now reads the network only for a pin new against the base, or used by a step whose
+  `with:` changed, or for every pin when the base has no checker or the checker itself changed; on push runs it
+  re-reads unchanged pins' tags as warnings only. A PR that touches no pin reads nothing. The review's "store facts per
+  SHA" half is not taken, for S3's reason.
+- **S5. Fixed.** Acceptance 4 and §3.2.1 measure the commit's own diff, `git diff --numstat <first>^ <first>`, with
+  the counts at `<first>^` and `<first>`.
+- **S6. Fixed, with one addition.** Confirmed: `file_parser.rb:32` parses only the three dependency fields; nothing in
+  `npm_and_yarn/lib` writes `packageManager`. The sentence is gone; `check-toolchain` warns when a newer 10.x is at
+  least three days old; `dependency-upgrades.md` gives the manual bump, its cadence (the weekly triage, on that
+  warning) and the outage remedy. Added: CQ3, whether `packageManager`'s pnpm is held to the three-day age, since
+  action-setup's self-update escapes the workspace's gate. It has a security trade-off, so it goes to the co-founder.
+- **S7. Fixed, with a narrower fail scope.** The add-time window (publish + 3 days ≤ expiry ≤ added + 7 days) is taken
+  as proposed. An expired entry fails only a PR that edits either exclude list and warns elsewhere. The review proposed
+  failing on push runs and on any PR touching the lockfile; not taken, because every Dependabot npm PR touches the
+  lockfile (A4 c) and a push run follows a green PR. Since expiry ≥ publish + 3 days, an expired entry can no longer
+  change any resolution, so warning loses nothing.
+- **S8. Fixed.** Confirmed: `event=dynamic` lists Dependabot's runs (31; run 40223237798 reads `failure`). The command
+  goes in `dependency-upgrades.md` and `ci.md` for the weekly triage, and acceptance 12 reads the first runs after the
+  switch. B1's silent drops are successful runs, which the triage notes.
+- **S9. Fixed.** Confirmed at `tools/required-checks.ts:35-43, :100-113, :127`; the test scans every tracked `*.md`
+  (`required-checks.test.ts:40`). §3.2.2 states the wording rule for every F7 record.
+- **S10. Fixed.** ADR 0063:494-497 and `screening-capacity.md:306-318` join §3.2.2, each keeping its marked listing
+  (`:491-492`; `:315-316`).
+- **S11. Fixed.** The frozen copy keeps `runs-on`; ci-browser edits the workflow and the copy together.
+- **S12. Fixed.** §3.2.1 and reconciliation-001's F4 entry record the reading of "the current majors", with the three
+  facts and the route to the founder if doubted.
+- **S13. Fixed.** §3.2.3 opens with the failing-first list and the verifier's command (`CI_TREE` on the merge base's
+  `git archive`); acceptance 7 records the red run.
+- **S14. Fixed.** Rule (d) names the mechanism: a temporary copy with every pin and digest rewritten, vitest spawned as
+  `collection.test.ts` does, with `CI_TREE`; the rewrite test skips itself there; a deliberate break proves it reads
+  the copy.
+- **S15. Fixed.** The static test's `checks` (`:819`) gains the second audit, and a sibling assertion holds
+  `pnpm actions:check` and `pnpm toolchain:check`, which need the range step's base too.
+- **S16. Fixed.** Acceptance 10 states the count: 4,996 and 1 skipped (job 121281841727, read again), plus the new
+  tests, less three named replacements; golden 188, db 9,049 and 1 skipped, e2e 51.
+- **S17. Fixed.** Acceptance 11: the merge waits for CQ1, CQ2 and CQ3, each answer recorded with its date.
+- **S18. Fixed.** Only commits that change the lockfile or a resolution setting wait for 2026-10-26T19:18:50Z; the
+  login pin waits for 15:11Z.
+- **S19. Fixed, and one more.** `LANES.md:167-171` holds five claims, not four: the release content checks (#7, #30,
+  #31, #59) were claimed at 23:58. §3.2.2's one paragraph covers all five.
+- **S20. Fixed.** Rule (c) names `usesAction` (`:181`, 14 call sites, re-counted).
+
+**Nits** (each confirmed, each fixed)
+- **N1.** 26 uses (24 `PINNED.*` on 23 lines, `:540` holding two, and two `Object.values`), plus the `:1250` cast.
+- **N2.** Rule (c) "keeps `:686`'s check alive" once the set check at `:1247-1250` goes.
+- **N3.** The log of job 121259732714, read with the job-log tool: 14 failed, 4,974 passed, 1 skipped; all 14 listed.
+- **N4.** `timeout-minutes: 15`, from its one run (21 s, run 39090999122) and `static`'s band for the same work.
+- **N5.** `registry.ts`: between `:461` and `:462`.
+- **N6.** CI-12 gains the postgres-major ignore; the browser-tests clause moves to CI-18, and A4's cite follows.
+- **N7.** `git grep -n -i minio -- ':!pnpm-lock.yaml' ':!docs/adr/0066-*'`, empty. ADR 0066 is excluded because its
+  Part 2 records the removal, which a bare grep would report.
+- **N8.** Root scripts `actions:check` and `toolchain:check`, in `licenses:check`'s form (`package.json:36`).
+- **N9.** Dropped from the pre-approved list, with the reason the timing costs nothing.
+- **N10.** setup-trivy's `actions/cache/save@9255dc7…` (`action.yaml:100`) added, with `:56` and `:66` cited.
+- **N11.** `set -euo pipefail`, all three streams redirected, and `up` recording its exit status. Refined beyond the
+  review: `wait` reads that status instead of polling `docker inspect`, so the empty-id race cannot occur at all.
+- **N12.** Both checkers take the range step's base, reduced with `git merge-base`.
+- **N13.** README names `packageManager`, not a version; `mutation.yml:17`'s comment names `unicode.json`;
+  `no-duplicated-versions` scans comments in workflows, Dockerfiles, compose, README.md and CLAUDE.md.
+- **N14.** The governance step switches the default branch back to `main` just before the launch pull request merges,
+  with the few minutes of `main`'s old Dependabot copy noted.
+- **N15.** `restore-drill.db.test.ts:75` joins the wording list.
+- **N16.** ADR 0062 "appends at the end (`:1353`)"; the reconciliation-001 row likewise (end of 49514e8's 599 lines).
+
+**Open questions after this review:** CQ1 (corrected), CQ2 (unchanged) and CQ3 (new), all in §3.2.6. Each blocks only
+a few lines, and the merge waits for all three.
+
+**Ruled (the co-founder, 2026-10-26 ~00:20 UTC: "Don't ask for approvals anymore just build and optimize"; recorded in
+lanes/lane-b.md):** each takes its recommended option, the safer one.
+- CQ1 (a): Dependabot's npm cooldown is `default-days: 3`, with no semver-specific days. Actions and images keep 7.
+- CQ2 (a): `trustPolicyExclude: ['semver@6.3.1']`, mirrored in `tools/check-toolchain/trust-exceptions.json`.
+- CQ3 (a): check-toolchain holds `packageManager`'s pnpm to the three-day age unless a live dated exclude names it.
+
+ci-deps is ready for builders. P1 to P8 (§3.2.6) are queued as their own items under "improve as you go"; ci-deps does
+not take them.
 
 ### 3.3 `co-001/ci-browser` (audit #19, upgrade part)
 
@@ -1275,13 +2093,13 @@ Each row is a `none(0, …)` registry case with `assertedBy`. Milestone 0 is "CI
 | CI-09 | The domain model's approval as its own check | `domain model` runs `--check --strict --require-approval`; the database suite carries no approval case | ci-speed |
 | CI-10 | A timeout on every job | Every job of every workflow has the timeout its table names | ci-speed |
 | CI-11 | Actions pinned to their release | Every `uses:` is a full SHA with its version, one SHA per action; the SHA is the tag's and every input is declared; every action nested in a composite is pinned by SHA too; the release restores no cache | ci-deps |
-| CI-12 | Dependabot's configuration | Groups in order, majors ignored for the Node image, its types, TypeScript, Next and pg-boss, cooldowns, staggered days, and an entry per ecosystem in use; a browser-tests PR is red on the browser build check by design, until the baseline procedure runs | ci-deps |
+| CI-12 | Dependabot's configuration | Groups in order, majors ignored for the Node image, its types, TypeScript, Next and pg-boss, and for the compose file's postgres; cooldowns; staggered days; and an entry per ecosystem in use (§3.2.7, N6) | ci-deps |
 | CI-13 | Images pinned by digest from one source | Every base and service image carries a digest; CI and the capacity harness take Postgres from docker-compose.yml | ci-deps |
-| CI-14 | A toolchain without known advisories | The pinned pnpm has no moderate or worse advisory; both images derive it; every musl package in the lockfile carries libc | ci-deps |
+| CI-14 | A toolchain without known advisories | The pinned pnpm has no moderate or worse advisory; both images derive it; every musl package in the lockfile carries libc; every version the lockfile adds is at least three days old or a dated exclude (§3.2.1, re-read 2026-10-25) | ci-deps |
 | CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score | ci-mutation |
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure | ci-mutation |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none | ci-mutation |
-| CI-18 | One browser build everywhere | The web tests, the worker, the tools, the lockfile and the worker image name one Playwright version; CI's headless shell is the baselines' build, and CI regenerates the baselines byte for byte when they change | ci-browser |
+| CI-18 | One browser build everywhere | The web tests, the worker, the tools, the lockfile and the worker image name one Playwright version; CI's headless shell is the baselines' build, and CI regenerates the baselines byte for byte when they change; a browser-tests PR is red on the browser build check by design, until the baseline procedure runs (moved from CI-12, §3.2.7) | ci-browser |
 | CI-19 | Header controls named by their visible text | Each header control's accessible name contains its visible text (WCAG 2.5.3); axe finds no violation | ci-browser |
 | CI-20 | Runner images | Every job on ubuntu-26.04 but the release's capacity chain on the release runner; the release binds images by config digest under either image store, and its push and report jobs run no repository code | ci-browser |
 
@@ -1313,8 +2131,8 @@ interfaces between builders are fixed here, so they work in parallel:
 | ci-speed | **S1, workflows, gate and documents** | every line of ci.yml; supply-chain.yml (deleted); `large-zip.yml`'s Chromium step; the comment at `screening-capacity.yml:146`; the comments at `apps/web/Dockerfile:24`, `apps/worker/Dockerfile:19` and `tools/check-licenses/index.ts:11`; `tools/test/{workflows,ci-gate,codeowners,required-checks}.test.ts`; `tools/required-checks.ts`; `tools/engine-freeze/check.test.ts`; `packages/compliance/src/{controls.ts, controls.test.ts}`; `packages/db/src/domain-model/domain-model.db.test.ts`; `.github/pull_request_template.md`; §3.1.5's documents (ADR 0066 Part 1, 0010, 0063, runbooks, policy, README, reconciliation-001); the test matrix; `packages/synth/src/{expected/types.ts, cases/matrix.ts, cases/registry.ts}`; the generated fixtures | tools/test, compliance, synth, the freeze's check tests; actionlint; `pnpm synth --all` with a clean diff; `db:domain-model --check --require-approval` against PG18; the stale-name grep |
 | | **S2, database and e2e suites** | `apps/web/src/lib/routes/route-tests*/**`; `test-support/contract-world.ts`; the three comment lines; `apps/worker/src/screening/{consumer,consumer-lease}.db.test.ts`, `test-support/consumer.ts`; `vitest.config.ts`; `tools/test/{ci-chromium.ts, ci-chromium.test.ts, db-shards.ts, db-shards.test.ts}`; `apps/web/playwright.config.ts`; `apps/web/scripts/build-stamp{,.test}.ts` | the partition test; `snapshot.db.test.ts`; two route files; `consumer-lease.db.test.ts` once; `db-shards.test.ts`; web and worker unit |
 | | **S3, lint and typecheck runners** | `tools/lint/**`; `tools/typecheck/**`; `package.json` (two scripts) | the runners' tests; `pnpm typecheck` cold and warm; `pnpm lint` with RSS |
-| ci-deps | **D1, workflows, pins and the release chain** | every line of every workflow file (ci.yml's new `static` steps, the Postgres steps, release.yml's cache removal and `large-zip.yml` included); `release-dry-run.yml` (new); `.github/dependabot.yml`; `tools/test/{workflows,dependabot-config,no-duplicated-versions}.test.ts`; `tools/test/frozen/publish-content.yml` (F4 = yes); `tools/check-action-pins/**`; `packages/compliance/src/controls.ts` | actionlint; tools/test; check-action-pins, live; compliance |
-| | **D2, toolchain, lockfile and images** | `package.json`; `pnpm-workspace.yaml`; `pnpm-lock.yaml` (the licence commit first, alone); `apps/web/package.json`; both Dockerfiles; `docker-compose.yml`; `tools/dev.ts`; `tools/check-licenses/**`; `tools/check-toolchain/**`; `tools/screening-capacity/{containers.ts, measure.test.ts, watched-paths.txt}` | install frozen; audits; licences; check-toolchain, live; capacity unit; whole-repo typecheck and unit after the version bumps (vitest, eslint and next move) |
+| ci-deps | **D1, workflows, pins and the release chain** | every line of every workflow file (ci.yml's new `static` steps, the Postgres steps, release.yml's cache removal and `large-zip.yml` included); `release-dry-run.yml` (new); `.github/dependabot.yml`; `.github/pull_request_template.md`; `tools/test/{workflows,dependabot-config,no-duplicated-versions,collection}.test.ts`; `tools/test/frozen/publish-content.yml` (F4); `tools/ci/postgres.sh`; `tools/check-action-pins/**`; `packages/compliance/src/controls.ts` | actionlint; tools/test; check-action-pins, live; compliance |
+| | **D2, toolchain, lockfile and images** | `package.json`; `pnpm-workspace.yaml`; `pnpm-lock.yaml` (the licence commit first, alone); `apps/web/package.json`; `tools/package.json`; both Dockerfiles; `docker-compose.yml`; `tools/dev.ts`; `tools/check-licenses/**`; `tools/check-toolchain/**`; `tools/screening-capacity/{containers.ts, measure.test.ts, watched.ts, watched.test.ts, watched-paths.txt}` | install frozen; audits; licences; check-toolchain, live; capacity unit; whole-repo typecheck and unit after the version bumps (vitest, eslint and next move) |
 | | **D3, policy documents** | `docs/runbooks/{dependency-upgrades,github-governance,ci}.md`; ADR 0066 Part 2; ADR 0063; ADR 0062's release-cache line; `CLAUDE.md`; `README.md`; `PRD.md:645`; `infra/lib/environments.ts:4`; `architecture.svg`; reconciliation-001; the test matrix and the synth registry (CI-11 to CI-14) | synth; the docs' citations checked against the code |
 | ci-browser | **P1, browser, app and baselines** | the three manifests; the lockfile; the worker Dockerfile; `shell.tsx`; `brand.spec.ts` and the seven PNGs; `browser.json`; `tools/test/browser-version.test.ts`; `tools/screening-capacity/measure.test.ts` (the whole file; P2 asks P1 for any case its binding needs); ADR 0058; `docs/runbooks/screening-capacity.md:464`; `docs/runbooks/ci.md` ("Upgrading the browser") | the 11 affected specs and the brand journey, locally, on the CfT 156 layout; the regeneration no-op |
 | | **P2, runners, CI steps and binding** | every line of every workflow file (`runs-on`; ci.yml's install, SHA and baseline steps; `screening-capacity.yml`'s dispatch input; release.yml's and `release-dry-run.yml`'s identity steps); `workflows.test.ts`; `tools/screening-capacity/{image-id,containers,run,report,launch-check}.ts`, `image-id.test.ts`, `report.test.ts`, `launch-check.test.ts` and `test-support/measurements.ts`; ADR 0062; ADR 0066 Part 3; reconciliation-001; the test matrix and the synth registry (CI-18 to CI-20) | capacity unit; actionlint; tools/test |
@@ -1340,11 +2158,12 @@ running the full local suite once (§6 bounds it), and a fresh-clone verificatio
 
 **#42 (PR 6b-4, draft, head 13f59b1, fix round after the 2026-10-27 14:00 UTC reset).** It changes 143 files
 (`gh api repos/PureTideWater/PhysicalTherapy/pulls/42 --jq .changed_files`, and 143 names over both pages of
-`…/pulls/42/files`, 2026-10-25). The ones the CI series also touches:
+`…/pulls/42/files`, 2026-10-25). The ones the CI series also touches (ci-speed and ci-mutation have merged since, so
+their rows now fall to #42; §3.2.2 gives ci-deps' shared files as they read at 6ddd587, under the co-founder's Q2):
 
 | File | #42's change | Our PR's change | Resolution (rule 6: the PR merged second resolves, keeping both) |
 |---|---|---|---|
-| `pnpm-lock.yaml`, `apps/web/package.json`, `apps/worker/package.json` | +`@aws-sdk/client-sesv2` (web), +`client-sqs` (worker), 33 lockfile lines | ci-deps (pnpm 10.34.8, the libc fields, bumps), ci-browser (Playwright), ci-mutation (Stryker) | Take the merged manifests. Start from the lockfile of the parent already on the build branch, then run `pnpm install --lockfile-only` with the then-pinned pnpm (10.34.8 once ci-deps is in), adding `--fix-lockfile` if the libc test names an entry, then `pnpm install --frozen-lockfile`. Check that the lockfile diff against each parent holds the other's entries. Never hand-merge lockfile hunks. Once ci-deps is in, `minimumReleaseAge` (if F2 (b) keeps it) and `trustPolicy: no-downgrade` apply to this re-resolve: a version younger than three days, or one whose trust evidence dropped, fails it. The remedy is the runbook's dated exclude, never removing the setting |
+| `pnpm-lock.yaml`, `apps/web/package.json`, `apps/worker/package.json` | +`@aws-sdk/client-sesv2` (web), +`client-sqs` (worker), 33 lockfile lines | ci-deps (pnpm 10.34.8, the libc fields, bumps), ci-browser (Playwright), ci-mutation (Stryker) | Take the merged manifests. Start from the lockfile of the parent already on the build branch, then run `pnpm install --lockfile-only` with the then-pinned pnpm (10.34.8 once ci-deps is in), adding `--fix-lockfile` if the libc test names an entry, then `pnpm install --frozen-lockfile`. Check that the lockfile diff against each parent holds the other's entries. Never hand-merge lockfile hunks. Once ci-deps is in, `minimumReleaseAge: 4320` (F2 (b), ruled) and `trustPolicy: no-downgrade` apply to this re-resolve: a version younger than three days, or one whose trust evidence dropped, fails it, and `check-toolchain` refuses a young version the lockfile adds. The remedy is the runbook's dated exclude, never removing the setting. #42's own additions (`client-sqs` 3.1152.0, `middleware-sdk-sqs` 3.972.44, `client-sesv2`) are older than three days and carry no `libc` |
 | `tools/screening-capacity/test-support/measurements.ts` | the `mail` measurements' test data | ci-browser (the report's new fields, if their tests need it) | Keep both. The report's format number is the next free after both |
 | `apps/web/src/components/shell.tsx` | the `console_mail` section and rail link (`:156-160, :259-265`) | ci-browser: `:56, :84` | Clean text merge. The second PR's CI runs axe 4.14 over #42's new console mail page and its two journeys (`mail-cutoff.spec.ts`, `mail-notices.spec.ts`), and fixes any Label-in-Name finding. If the admin rail moves a brand baseline, regenerate and inspect it (ADR 0058) |
 | `apps/worker/src/screening/consumer.db.test.ts` | the consumer's mail config adds `eventsDir`, `streamPrefix` (`:240, :396`) | ci-speed moves SCR-19 and the two helpers to `test-support/consumer.ts` | Apply #42's two-line change in the helper. Typecheck finds any miss |
@@ -1364,8 +2183,11 @@ running the full local suite once (§6 bounds it), and a fresh-clone verificatio
 - **ci-deps:**
   - resolve lockfiles with pnpm 10.34.8, starting from the lockfile already on the build branch, then
     `pnpm install --lockfile-only` (with `--fix-lockfile` when the libc test names an entry);
-  - `minimumReleaseAge` (as F2 (b) is answered) and `trustPolicy: no-downgrade` apply to every re-resolve, #42's
-    included;
+  - `minimumReleaseAge: 4320` (F2 (b), ruled) and `trustPolicy: no-downgrade` apply to every re-resolve, #42's
+    included. pnpm 10 re-checks every locked direct dependency on any re-resolution, so a version under three days old
+    in the lockfile stops every re-resolve until it ages (what closed #38), and `check-toolchain` refuses a young
+    version the lockfile adds unless a dated exclude lists it (§3.2.1);
+  - npm Dependabot PRs arrive on Thursdays, actions on Tuesdays and images on Wednesdays;
   - the ops branch's `tools/setup-container.sh` pins pnpm 10.28.0 (`:36-37, 72-74`). It should move to 10.34.8, with the
     registry's SHA-512, so session containers match `packageManager`;
   - Postgres comes from `docker-compose.yml`;
@@ -1392,9 +2214,14 @@ running the full local suite once (§6 bounds it), and a fresh-clone verificatio
 - `approval-of-record` is unchanged.
 
 Applying the ruleset before ci-speed merges would require a `check` that then disappears. The recommendation (F7) is
-therefore to apply it after ci-speed's first green push run. Until the ruleset exists, rule 6's "green CI on that head"
-means `all green` plus the other three. Rule 6 already makes each PR merge the latest build branch in before merging,
-so "require branches to be up to date" adds enforcement, not a new step, and its cost is the re-run F7 names.
+therefore to apply it after ci-speed's first green push run. Rule 6 already makes each PR merge the latest build branch
+in before merging, so "require branches to be up to date" adds enforcement, not a new step, and its cost is the re-run
+F7 names.
+
+**Applied (2026-10-25 21:14 UTC).** F7 was ruled as recommended, and "Protect the build branch" (ruleset 25837331)
+now requires those four checks from GitHub Actions on `claude/build-platform`, with branches up to date, a pull request
+with 0 approvals, no force push or deletion, and no bypass (`gh api repos/PureTideWater/PhysicalTherapy/rulesets/25837331`).
+Rule 6's "green CI on that head" is now enforced by GitHub, for #42 as for the CI series.
 
 ---
 
@@ -1491,12 +2318,13 @@ a check rename also needs the founder's ruleset edit.
 | ci-speed | Watched paths set the time to merge | `package.json` and the lockfile are watched, so the PR and most product PRs also wait for the 13-16 minute capacity measurement. A1′ reports it beside A1, and O12 takes the PR capacity run's length to the founder |
 | ci-deps | trixie changes glibc and OpenSSL in both images | images, e2e (on the build artifact) and capacity on the same head |
 | ci-deps | The lockfile re-resolve brings surprises | The licence commit is alone and holds exactly the 43 measured `libc:` lines (§3.2.5 step 4). Each bump's lockfile diff is reviewed and summarised; anything beyond the named bumps is explained or reverted |
-| ci-deps | `minimumReleaseAge` blocks a young security fix | The founder's trade-off, F2 (b). The exact-version exclude, with its advisory and an expiry of at most 7 days, enforced by `check-toolchain` |
+| ci-deps | `minimumReleaseAge` blocks a young security fix | The founder's trade-off, F2 (b). Dependabot's security update resolves it with the gate off, and `check-toolchain`'s lockfile rule holds that PR red until a person adds the exact-version exclude, with its advisory and an expiry of at most 7 days (§3.2.1, re-read 2026-10-25) |
+| ci-deps | A young version merged into the lockfile stops every re-resolution until it is three days old (what closed #38) | `check-toolchain` refuses one unless a dated exclude lists it; the bump commits are made after 2026-10-26T19:18:50Z (§3.2.1) |
 | ci-deps | The networked checks flake | Three tries with backoff, then fail closed, with the failing host named |
 | ci-deps | Docker Hub rate limits (429 seen by [S4]) | Digests resolved once by the builder; CI's image build proves them |
 | ci-deps | `multi-ecosystem-groups` merges parameters in ways not fully documented | The first Dependabot run after merge is read, and the PR's follow-up fixes the config |
 | ci-deps | Under F1 (a), ignored majors also stop security updates | The alert still shows; the runbook says how to act |
-| ci-deps | The weekly Dependabot batch fills the account's 20 job slots | Measured and estimated in §3.2.1: about 30 minutes of saturation on a Monday with the closure rule, about an hour without. Mitigated by the closure rule (five of eight npm groups measure no mutation), staggered days per ecosystem, and the bot queue time reported in `docs/runbooks/ci.md`; serialising bot runs waits for actionlint to accept `queue` (O13) |
+| ci-deps | The weekly Dependabot batch fills the account's 20 job slots | Measured and estimated in §3.2.1 (re-read 2026-10-25): about 30 to 35 minutes of saturation on a Thursday with the closure rule. Mitigated by the closure rule (four of eight npm groups measure no mutation; a root-manifest or catalog change runs it in full), staggered days per ecosystem away from Monday's weekly runs, and the bot queue time reported in `docs/runbooks/ci.md`; serialising bot runs waits for actionlint to accept `queue` (O13) |
 | ci-deps | The dry run differs from the tag's run | A test holds its shared steps equal to release.yml's; what it cannot cover (pushing, attesting, `packages: write`) is read job by job on the founder's first tag after the merge |
 | ci-deps | Under F1 (a), a tag run restores the build branch's caches | release.yml restores no cache, by test (§3.2.1, N11) |
 | ci-browser | The 26.04 Docker uses the containerd store | The store-independent ID; the capacity chain stays on 24.04 (F5) |
@@ -1560,7 +2388,10 @@ a check rename also needs the founder's ruleset edit.
   before the first staging deploy. The runbook in ci-deps documents it.
 - **O3.** Confirm pnpm 10.34.8's `minimumReleaseAge` behaviour on frozen installs and under Dependabot's updater
   (ci-deps build). pnpm 10 has no `minimumReleaseAgeStrict` (added in 11.0.0, pnpm.io `dependency-resolution.md`), so
-  the builder records what 10.34.8 does when no version in range is old enough.
+  the builder records what 10.34.8 does when no version in range is old enough. **Answered from source on 2026-10-25**
+  (§3.2.1): a frozen install never checks; any re-resolution re-checks every direct dependency and fails with
+  `ERR_PNPM_NO_MATURE_MATCHING_VERSION` (Dependabot run 40223237798); the CLI flag sets the minutes; Dependabot's
+  security updates pass 0. The builder only confirms it live (§3.2.5 step 5).
 - **O4.** Test the S3 path (presigned PUT, Object Lock COMPLIANCE, multipart) against AWS staging, in infrastructure
   PR (b) or (c), now that no local S3 stand-in exists.
 - **O5.** The dispatched 26.04 capacity probe and its `docker info`, for F5's later ruling (issue #41).

@@ -40,7 +40,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - #38 (npm minor and patch) was closed by Dependabot at 18:57 UTC: "no longer updatable".
     - Its npm update on de8f9b5 (run 40223237798) failed for every dependency. Dependabot ran pnpm with `--config.minimum-release-age=4320`, and ci-mutation's Stryker 10.1.1 was under three days old.
     - Its versions are still behind at 6ddd587 (vitest and coverage 5.0.4, eslint 10.12.0, postcss 8.5.30, next 16.4.1), so ci-deps takes §3.2's versions.
-    - Dependabot's npm updates resume once Stryker 10.1.1 is three days old, from about 2026-10-26 19:50 UTC.
+    - Dependabot's npm updates resume once Stryker 10.1.1 is three days old, from 2026-10-26T19:18:50Z (corrected by ci-deps' re-read; it had said about 19:50).
 - **CI on `claude/build-platform`:**
   - The push runs on de8f9b5 are green (ci 40223130551, mutation 40223130477, screening-capacity 40223130509).
   - On 6ddd587, mutation 40229005837 (every package) and screening-capacity 40229005836 are green.
@@ -695,3 +695,22 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - #52: legal text, the founder's sign-off;
     - #138, the formatter: both lanes idle;
     - #122: after PR 16.
+- **2026-10-26 ~00:40 UTC: ci-deps' design re-read done (wf_c51b25c9-e94: 5 agents, 1.85M subagent tokens, 1 h 52 min). ci-deps and ci-browser handed to a parallel session.**
+  - **Scouts** (`designs/lane-b-ci/scout-ci-deps-reread-{files,versions}.md`):
+    - the action table is still current;
+    - the file and line references and the stale branches are fixed. Examples: PINNED now at `workflows.test.ts:77-92`; a vacuous `actions/cache@v4` check at `:686`; `supply-chain.yml` deleted.
+    - compose's healthcheck must use TCP (`pg_isready -h 127.0.0.1`), because the socket answers first;
+    - and more: the full lists are in the reports.
+  - **The adversarial review** (`designs/lane-b-ci/ci-deps-reread-review.md`): 1 blocking, 20 should_fix, 16 nits. All 37 were verified and fixed (§3.2.7). B1 was half right: Dependabot's peer probe passes an uncapped 7- or 14-day gate to pnpm, so majors and minors would silently get no PR.
+  - **Three security choices, each taken as recommended under the 00:20 ruling** (recorded at the end of §3.2.7):
+    - CQ1 (a): npm cooldown 3 days, the same as `minimumReleaseAge`;
+    - CQ2 (a): `trustPolicyExclude` for semver 6.3.1 alone;
+    - CQ3 (a): packageManager's pnpm held to the three-day age.
+  - **Improvements outside ci-deps (P1 to P8):**
+    - P1 (pins and digests held to three days; recommended yes), P2 (trivy's version), P4 (a narrower mutation trigger) and P5 (catalog lines) are claimed as their own PRs, under the CI follow-ups row;
+    - P3 (pnpm 11's trustLockfile) and P6 (re-read the ruleset after runbook step 2) are notes for later;
+    - P7, this log's Dependabot resume time, is fixed: 2026-10-26T19:18:50Z.
+  - **The CI session:** session_01TztFLKnDUJniegCFmkfMoc. It runs ci-deps, then ci-browser (re-read first, with the V3, O6 and O7 carry-ins and shell.tsx under Q2), then P1, P2 and P4. Status in `approval-summaries/lane-b-ci-deps-status.md`.
+    - **A9**, the inspection of the regenerated baselines, falls under the 00:20 ruling: an adversarial visual-inspection agent at full resolution, plus a private gallery the co-founder may look at. It does not block the merge.
+    - **When ci-deps merges,** this session gives the co-founder the steps for F1 (a), F2 (a), then F3. Owner-admin settings are never changed by a session.
+  - **Eight parallel sessions now**, plus this one (the UX capture, then its review and the checklist PR).
