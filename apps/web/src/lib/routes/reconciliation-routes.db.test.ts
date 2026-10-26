@@ -8,7 +8,7 @@ import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { type JobContext, printRoiStatement, reconcileHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
-import { TriageWorld } from '@tp/worker/testing/triage';
+import type { TriageWorld } from '@tp/worker/testing/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
@@ -17,12 +17,14 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
+import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
 import { reconciliation } from '../reconciliation/queries';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
 import { matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
 import { adjustEntryAction, ledgerReviewPage } from './specialist';
+import { casePage } from './triage';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
@@ -33,13 +35,17 @@ import { csrfTokenFor } from '../http/csrf';
  * case; its adjusted remittance, posting export, a bank export with a mistyped trace and the recoupment
  * then reach the ledger through the reconcile job's own handler; and the people of the practice work
  * it through the routes: the billing manager maps the template, matches the deposit by hand and
- * reverses it, generates an ROI statement; the viewer reads it all without the PHI columns.
+ * reverses it, generates an ROI statement; the viewer reads it all without the PHI columns. Practices of their own
+ * hold SYNTHETIC LED-14, LED-15 and LED-18 (lines with a patient's share; docs/adr/0067): billable to the patient
+ * beside the ledger, counted in no total, its reasons for the roles that read PHI only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../../../fixtures/synthetic');
 const SETTINGS = { case_materiality_cents: '1000', proof_level: 'deposited' };
 
 let w: TriageWorld;
+/** The same world, with the ledger's scenario steps (a case per LED fixture, a submission and the payer's response). */
+let ledger: LedgerWorld;
 let services: Services;
 let queue: MemoryQueue;
 let practice: Practice;
@@ -144,7 +150,8 @@ async function stageExport(kind: 'posting_export' | 'eft_export', content: Buffe
 }
 
 beforeAll(async () => {
-  w = await TriageWorld.open(readDatabaseUrl());
+  ledger = await LedgerWorld.open(readDatabaseUrl());
+  w = ledger.triage;
   const sealer = new Sealer(randomBytes(32));
   queue = new MemoryQueue();
   services = createServices({
@@ -429,5 +436,78 @@ describe('the Reconciliation screen (PRD 7)', () => {
     expect(after.entries.items[0]).toMatchObject({ id: adjusted.objectId, stage: 'adjusted', amountCents: '500', reason: 'SYNTHETIC specialist review of the take-back', byJob: false, adjustable: false });
     // The billing manager cannot open the specialist's page.
     expect((await call(ledgerReviewPage, practice.manager, P())).status).toBe('forbidden');
+  });
+});
+
+describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test matrix LED-14, LED-15, LED-18)', () => {
+  /** A practice of its own with its LED case open from the fixture's original payment, and a viewer. */
+  async function ledPractice(id: string): Promise<{ readonly practice: Practice; readonly viewer: string; readonly caseId: string; readonly serviceLineId: string }> {
+    const target = await ledger.practice(`RECONCILIATION ${id} ${randomUUID().slice(0, 8)}`, ledSettings());
+    const reader = await createUser(w.owner);
+    await addMembership(w.owner, target.world.organizationId, reader, 'viewer');
+    return { practice: target, viewer: reader, ...(await ledger.caseFor(target, `${id}/original.835`)) };
+  }
+
+  it('shows a coinsurance line’s allowed increase, the payer’s payment and the patient’s share beside the figures, the reasons to PHI roles only (LED-14)', async () => {
+    const led = await ledPractice('LED-14');
+    await ledger.load(led.practice, 'LED-14/adjusted.835');
+    await ledger.reconcile(led.practice);
+    const at = { practiceId: led.practice.practiceId };
+    const page = ok(await call(reconciliationPage, led.practice.manager, at));
+    expect(page.totals).toMatchObject({ approvedCents: '2400', payerApprovedCents: '2400', recoveredCents: '0' });
+    const [line] = page.linkage.items;
+    expect(line?.correction).toEqual({
+      kind: null,
+      billable: { billableCents: '600', allowedIncreaseCents: '3000', paymentIncreaseCents: '2400', otherReductionCents: '0', reasons: { deductible: '0', coinsurance: '600', copay: '0', other: '0' }, allocation: null },
+    });
+    // The ERA match's words read its payment increase.
+    expect(line?.era).toEqual([expect.objectContaining({ outcome: 'approved', reading: 'approved', allowed: 'higher', paymentIncreaseCents: '2400', standing: true })]);
+    // Counted in no total: no figure holds the patient's 6.00.
+    expect(Object.values(page.totals)).not.toContain('600');
+    // A reader who does not read PHI sees the amounts, never the reasons.
+    const seen = ok(await call(reconciliationPage, led.viewer, at));
+    expect(seen.linkage.items[0]?.correction.billable).toMatchObject({ billableCents: '600', allowedIncreaseCents: '3000', paymentIncreaseCents: '2400', reasons: null });
+    // The case page: the case's billable total and the line's words, beside payer approved.
+    const shown = ok(await call(casePage, led.practice.manager, { ...at, caseId: led.caseId }));
+    expect(shown.ledger).toEqual({ approvedCents: '2400', recoveredCents: '0', proofLevel: 'deposited' });
+    expect(shown.corrections).toEqual({ billableCents: '600', patientBalance: false, lines: { [led.serviceLineId]: line?.correction } });
+    expect(ok(await call(casePage, led.viewer, { ...at, caseId: led.caseId })).corrections.lines[led.serviceLineId]?.billable?.reasons).toBeNull();
+  });
+
+  it('shows a correction the deductible took whole as the patient’s balance, with no entry and the case’s stored state unchanged (LED-15)', async () => {
+    const led = await ledPractice('LED-15');
+    await ledger.submit(led.practice, led.caseId, '2026-05-04');
+    await ledger.load(led.practice, 'LED-15/adjusted.835');
+    await ledger.reconcile(led.practice);
+    const at = { practiceId: led.practice.practiceId };
+    const page = ok(await call(reconciliationPage, led.practice.manager, at));
+    expect(page.totals).toMatchObject({ approvedCents: '0', payerApprovedCents: '0', recoveredCents: '0' });
+    const [line] = page.linkage.items;
+    expect(line).toMatchObject({ stage: 'actionable', entries: [], shortfallCents: null });
+    expect(line?.correction).toEqual({
+      kind: 'patient_balance',
+      billable: { billableCents: '3000', allowedIncreaseCents: '3000', paymentIncreaseCents: '0', otherReductionCents: '0', reasons: { deductible: '3000', coinsurance: '0', copay: '0', other: '0' }, allocation: null },
+    });
+    expect(line?.era).toEqual([expect.objectContaining({ outcome: 'approved', reading: 'patient_balance', allowed: 'higher', paymentIncreaseCents: '0' })]);
+    expect(ok(await call(reconciliationPage, led.viewer, at)).linkage.items[0]?.correction).toMatchObject({ kind: 'patient_balance', billable: { billableCents: '3000', reasons: null } });
+    // The case reads "Payer corrected; balance is the patient's" beside its state, which case_rules derives as ever (Q1).
+    const shown = ok(await call(casePage, led.practice.manager, { ...at, caseId: led.caseId }));
+    expect(shown.case.state).toBe('submitted');
+    expect(shown.ledger).toMatchObject({ approvedCents: '0', recoveredCents: '0' });
+    expect(shown.corrections).toMatchObject({ billableCents: '3000', patientBalance: true });
+  });
+
+  it('names on the specialist’s review the patient’s share beside a shortfall of an acceptance typed as the allowed amount, in amounts only (LED-18, S7)', async () => {
+    const led = await ledPractice('LED-18');
+    const { submissionId } = await ledger.submit(led.practice, led.caseId, '2026-05-04');
+    await ledger.respond(led.practice, submissionId, { kind: 'accepted', amountCents: 3000n, receivedOn: '2026-05-20' });
+    await ledger.reconcile(led.practice);
+    await ledger.load(led.practice, 'LED-18/adjusted.835');
+    await ledger.reconcile(led.practice);
+    const review = ok(await call(ledgerReviewPage, w.pricing.specialist, { practiceId: led.practice.practiceId }));
+    expect(review.shortfalls).toEqual([expect.objectContaining({ serviceLineId: led.serviceLineId, shortfallCents: '600' })]);
+    // The route reads without PHI: the share's amount, never its reason.
+    expect(review.shortfalls[0]?.correction.billable).toMatchObject({ billableCents: '600', reasons: null });
+    expect(review.totals).toMatchObject({ approvedCents: '3000', payerApprovedCents: '3000' });
   });
 });

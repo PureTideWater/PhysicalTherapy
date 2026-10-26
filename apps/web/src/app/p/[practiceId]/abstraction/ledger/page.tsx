@@ -133,6 +133,13 @@ export default async function LedgerReviewPage(props: Props) {
               <li key={line.serviceLineId} className="flex flex-col gap-2 rounded-md border p-3" data-shortfall={line.shortfallCents}>
                 <p className="text-sm">
                   The payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this case line. Correct the approval, or leave it for the practice to dispute.
+                  {(line.correction.billable?.billableCents ?? '0') === '0' ? null : (
+                    <>
+                      {' '}
+                      The patient’s share of the correction is <Money value={line.correction.billable?.billableCents ?? '0'} />; if the approval was typed as the allowed amount, correct it to what
+                      the payer will pay.
+                    </>
+                  )}
                 </p>
                 <Entries entries={line.entries} practiceId={practiceId} canAdjust={canAdjust} label="Entries of the line" />
               </li>

@@ -3,7 +3,19 @@ import { createHash } from 'node:crypto';
 import { type DocumentStatus, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
 import { type FigureCheck, type LedgerEntry, type ProofLevel, type ReportReconciliation, type StoredStatement, entriesById, ratioText, recomputeStatement, reportReconciliation, roiStatementCsv } from '@tp/ledger';
 import { centsToString, parseCents } from '@tp/money';
-import { STATEMENT_COLUMNS, approvalShortfalls, practiceLedgerSettings, practiceLedgerTotals, storedStatement, unmatchedItems } from '@tp/worker/ledger';
+import {
+  type CorrectionKind,
+  type LineCorrection,
+  type MatchCorrection,
+  type MatchReading,
+  STATEMENT_COLUMNS,
+  approvalShortfalls,
+  lineCorrections,
+  practiceLedgerSettings,
+  practiceLedgerTotals,
+  storedStatement,
+  unmatchedItems,
+} from '@tp/worker/ledger';
 
 import { type ListPage, pageWindow } from '../http/paging';
 import type { Services } from '../server/services';
@@ -16,7 +28,9 @@ import type { Services } from '../server/services';
  * number typed or stored elsewhere; nothing unmatched is in any total. The rows read here are PHI tables
  * read through readWithAudit; dates of service, codes and the people's reasons are shown to the roles
  * that read PHI only; amounts, check and trace numbers, payment dates and stages to every reader of the
- * ledger (report.read).
+ * ledger (report.read). "Billable to the patient" (the allowed increase and the patient's share of a payer's
+ * corrections, docs/adr/0067) is read beside the ledger and counted in no total; its amounts show to every reader of
+ * the ledger, its reasons (deductible, coinsurance, copay) to the roles that read PHI only, as codes are.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -123,6 +137,14 @@ export interface MatchView {
   readonly eftRowId: string | null;
   /** A PLB recoupment or interest (provider adjustment), or a reversing claim. */
   readonly source: 'plb' | 'reversal' | null;
+  /**
+   * A standing claim match read in payment terms (docs/adr/0067), or null for any other match: how it reads beside
+   * its stored outcome, which way the allowed amount moved from the baseline it was decided against, and the
+   * payer's payment increase it carried (text cents).
+   */
+  readonly reading: MatchReading | null;
+  readonly allowed: MatchCorrection['allowed'] | null;
+  readonly paymentIncreaseCents: string | null;
 }
 
 export interface EntryView {
@@ -146,6 +168,68 @@ export interface EntryView {
   readonly adjustable: boolean;
 }
 
+/**
+ * What a case line's corrections leave billable to the patient, as text cents (PRD 13; docs/adr/0067): from its
+ * original claim's line to the line its baselines stand on now, the allowed increase, the payer's payment increase,
+ * the patient's share by reason (signed; PHI roles only, null for other readers) with their net at least zero, and
+ * the payer's other reductions. Shown beside the ledger and counted in no total.
+ */
+export interface BillableView {
+  readonly billableCents: string;
+  readonly allowedIncreaseCents: string;
+  readonly paymentIncreaseCents: string;
+  readonly otherReductionCents: string;
+  readonly reasons: { readonly deductible: string; readonly coinsurance: string; readonly copay: string; readonly other: string } | null;
+  /** The share allocated from the claim's level by charge: the line's charge over the claim's (the exact fraction), or null. */
+  readonly allocation: { readonly lineChargeCents: string; readonly claimChargeCents: string } | null;
+}
+
+/** A case line's correction that pays nothing more, if its latest one did, and what its corrections leave billable to the patient. */
+export interface CorrectionView {
+  readonly kind: CorrectionKind | null;
+  readonly billable: BillableView | null;
+}
+
+/** A case line's correction as the screens show it; the share's reasons only when `phi`. */
+export function correctionView(line: LineCorrection | undefined, phi: boolean): CorrectionView {
+  const billable = line?.billable ?? null;
+  if (billable === null) {
+    return { kind: line?.correction ?? null, billable: null };
+  }
+  const allocation = billable.allocations.after ?? billable.allocations.before;
+  return {
+    kind: line?.correction ?? null,
+    billable: {
+      billableCents: centsToString(billable.billableCents),
+      allowedIncreaseCents: centsToString(billable.allowedIncreaseCents),
+      paymentIncreaseCents: centsToString(billable.paymentIncreaseCents),
+      otherReductionCents: centsToString(billable.otherReductionCents),
+      reasons: phi
+        ? {
+            deductible: centsToString(billable.shareChange.deductibleCents),
+            coinsurance: centsToString(billable.shareChange.coinsuranceCents),
+            copay: centsToString(billable.shareChange.copayCents),
+            other: centsToString(billable.shareChange.otherCents),
+          }
+        : null,
+      allocation: allocation === null ? null : { lineChargeCents: centsToString(allocation.lineChargeCents), claimChargeCents: centsToString(allocation.claimChargeCents) },
+    },
+  };
+}
+
+/**
+ * Whether a case shows "Payer corrected; balance is the patient's" (docs/adr/0067; design 2.3): one of its lines is a
+ * correction the patient's share took whole, and every other line not written off is one too or is payer approved or
+ * recovered. The case's stored state is case_rules' as ever; this is said beside it until the stored close lands.
+ */
+export function casePatientBalance(lines: readonly { readonly correction: CorrectionKind | null; readonly writtenOff: boolean; readonly stage: string | null }[]): boolean {
+  const open = lines.filter((line) => !line.writtenOff);
+  return (
+    open.some((line) => line.correction === 'patient_balance') &&
+    open.every((line) => line.correction === 'patient_balance' || line.stage === 'payer_approved' || line.stage === 'recovered')
+  );
+}
+
 /** A case line's linkage: the remittance that reprocessed it (ERA), its posting and its deposit, and its entries. */
 export interface LinkageLine {
   readonly caseId: string;
@@ -165,6 +249,8 @@ export interface LinkageLine {
    * text cents, or null: approved still, never taken back, for a person to adjust or dispute.
    */
   readonly shortfallCents: string | null;
+  /** What the line's corrections leave billable to the patient, or the correction that pays nothing more: beside the ledger, counted in no total. */
+  readonly correction: CorrectionView;
 }
 
 interface MatchRow {
@@ -208,7 +294,7 @@ const MATCH_SELECT = `SELECT m.id, m.practice_id, m.kind, m.claim_id, m.posting_
     LEFT JOIN posting_row p ON p.id = m.posting_row_id LEFT JOIN eft_row e ON e.id = m.eft_row_id
     LEFT JOIN "user" mu ON mu.id = m.matched_by LEFT JOIN "user" ru ON ru.id = m.reversed_by`;
 
-function matchOf(row: MatchRow, cipher: PracticeCipher | null): MatchView {
+function matchOf(row: MatchRow, cipher: PracticeCipher | null, read?: MatchCorrection): MatchView {
   const evidence =
     row.posting_reference !== null
       ? { reference: row.posting_reference, on: row.posted_on ?? '', amountCents: row.posting_cents ?? '0', batch: row.posting_batch }
@@ -238,6 +324,9 @@ function matchOf(row: MatchRow, cipher: PracticeCipher | null): MatchView {
     postingRowId: row.posting_row_id,
     eftRowId: row.eft_row_id,
     source: row.kind === 'recoupment' || row.kind === 'interest' ? (row.provider_adjustment_id === null ? 'reversal' : 'plb') : null,
+    reading: read?.reading ?? null,
+    allowed: read?.allowed ?? null,
+    paymentIncreaseCents: read === undefined ? null : centsToString(read.change.paymentIncreaseCents),
   };
 }
 
@@ -403,7 +492,11 @@ export async function reconciliation(scope: Scope, services: Services, practiceI
   ).rows;
   const lineEntries = (await scope.client.query<EntryRow>(`${ENTRY_SELECT} WHERE e.practice_id = $1 AND e.service_line_id = ANY ($2::uuid[]) ORDER BY e.seq`, [practiceId, lineIds])).rows;
   const shortfalls = await approvalShortfalls(scope, practiceId, lineIds);
+  // The lines' corrections in payment terms, from the same rows (their PR adjustments read with the lines above).
+  const corrections = await lineCorrections(scope, practiceId, lineIds);
   const linkage: LinkageLine[] = lines.map((line) => {
+    const correction = corrections.get(line.service_line_id);
+    const readings = new Map((correction?.matches ?? []).map((match) => [match.matchId, match]));
     const own = lineMatches.filter((match) => match.service_line_id === line.service_line_id);
     const era = own.filter((match) => match.kind === 'claim');
     const claims = new Set(era.map((match) => match.claim_id));
@@ -415,13 +508,14 @@ export async function reconciliation(scope: Scope, services: Services, practiceI
       procedureCode: phi ? line.procedure_code : null,
       serviceDate: phi ? line.service_date : null,
       stage: line.stage,
-      era: era.map((match) => matchOf(match, cipher)),
+      era: era.map((match) => matchOf(match, cipher, readings.get(match.id))),
       postings: proving.filter((match) => match.kind === 'posting').map((match) => matchOf(match, cipher)),
       deposits: proving.filter((match) => match.kind === 'deposit').map((match) => matchOf(match, cipher)),
       recoupments: own.filter((match) => match.kind === 'recoupment').map((match) => matchOf(match, cipher)),
       interest: own.filter((match) => match.kind === 'interest').map((match) => matchOf(match, cipher)),
       entries: lineEntries.filter((entry) => entry.service_line_id === line.service_line_id).map((entry) => entryOf(entry, cipher)),
       shortfallCents: shortfallText(shortfalls, line.service_line_id),
+      correction: correctionView(correction, phi),
     };
   });
   const { rows: entryCount } = await scope.client.query<{ n: number }>('SELECT count(*)::int AS n FROM ledger_entry e WHERE e.practice_id = $1 AND ($2::uuid IS NULL OR e.case_id = $2)', [

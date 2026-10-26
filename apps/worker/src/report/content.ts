@@ -24,6 +24,7 @@ import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
 import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
+import { type CorrectionKind, lineCorrections } from '../reconcile/patient-share';
 import { lineDeadlines } from '../triage/deadline';
 import { UNPRICED_REMEDIES } from './remedies';
 
@@ -110,6 +111,12 @@ export interface ReportCase {
    * payer's answer is tracked as for any submission. Present only when there is one.
    */
   readonly unattested_submissions?: number;
+  /**
+   * Present, and true, when the case's corrections paid nothing more because the patient's share took them
+   * (docs/adr/0067): one of its lines is such a correction, and every other line not written off is one too or is
+   * payer approved or recovered. Said after the state, which stays as stored; counted in no figure.
+   */
+  readonly patient_balance?: true;
 }
 
 export interface ReportAnomaly {
@@ -427,6 +434,37 @@ async function runCases(client: ScopeClient, input: GatherInput): Promise<CaseRo
   return rows;
 }
 
+/**
+ * The cases, of those named, whose corrections paid nothing more because the patient's share took them (docs/adr/0067;
+ * the Reconciliation and case screens say the same): one of their lines is such a correction, and every other line
+ * not written off is one too or is payer approved or recovered. Over every line of the case, whichever run priced it.
+ */
+async function patientBalanceCases(scope: PracticeScope<ScopeClient>, practiceId: string, caseIds: readonly string[]): Promise<Set<string>> {
+  if (caseIds.length === 0) {
+    return new Set();
+  }
+  const { rows } = await scope.client.query<{ case_id: string; service_line_id: string; written_off: boolean; stage: string | null }>(
+    `SELECT cl.case_id, cl.service_line_id, cl.written_off_reason IS NOT NULL AS written_off,
+            (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_id ORDER BY s.seq DESC LIMIT 1) AS stage
+       FROM case_line cl WHERE cl.practice_id = $1 AND cl.case_id = ANY ($2::uuid[])`,
+    [practiceId, caseIds],
+  );
+  const corrections = await lineCorrections(
+    scope,
+    practiceId,
+    rows.map((row) => row.service_line_id),
+  );
+  const correctionOf = (serviceLineId: string): CorrectionKind | null => corrections.get(serviceLineId)?.correction ?? null;
+  const qualifies = new Set<string>();
+  for (const caseId of new Set(rows.map((row) => row.case_id))) {
+    const open = rows.filter((row) => row.case_id === caseId && !row.written_off);
+    if (open.some((row) => correctionOf(row.service_line_id) === 'patient_balance') && open.every((row) => correctionOf(row.service_line_id) === 'patient_balance' || row.stage === 'payer_approved' || row.stage === 'recovered')) {
+      qualifies.add(caseId);
+    }
+  }
+  return qualifies;
+}
+
 async function runAnomalies(client: ScopeClient, input: GatherInput): Promise<AnomalyRow[]> {
   const { rows } = await client.query<AnomalyRow>(
     `SELECT a.id, a.cohort_key, a.cohort_size, a.modal_allowed_cents::text, a.stats, a.line_ids, a.reviewed_at IS NOT NULL AS reviewed,
@@ -625,6 +663,8 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     );
   };
 
+  const patientBalance = await patientBalanceCases(scope, input.practiceId, caseRows.map((row) => row.id));
+
   const cases: ReportCase[] = caseRows.map((row) => {
     const still = actionableNow(row.id);
     const stillCents = sum(still.map((line) => line.variance_cents ?? '0'));
@@ -659,6 +699,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       payer_approved_cents: text(totals.payerApprovedCents),
       recovered_cents: text(totals.recoveredCents),
       ...(row.unattested_submissions > 0 ? { unattested_submissions: row.unattested_submissions } : {}),
+      ...(patientBalance.has(row.id) ? { patient_balance: true as const } : {}),
     };
   });
   const openCases = cases.filter((item) => item.state === 'open');

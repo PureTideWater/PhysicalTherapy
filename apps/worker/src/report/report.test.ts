@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type ReportLine, deadlineRemedy } from './content';
 import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
-import { auditHtml, auditReconciliation, escapeHtml, reasonText } from './html';
+import { auditHtml, auditReconciliation, caseStateText, escapeHtml, reasonText } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
 import { UNPRICED_REMEDIES } from './remedies';
 import { CONTENT } from './test-support/audit-content';
@@ -153,7 +153,7 @@ describe('the report HTML', () => {
       cases: [{ ...first, state: 'resolved', actionable_now_lines: 0, actionable_now_cents: '0', payer_approved_cents: '3000', recovered_cents: '3000' }],
     });
     const headline = recovered.slice(recovered.indexOf('aria-label="Headline"'), recovered.indexOf('aria-label="Coverage"'));
-    expect(headline).toContain('Payer approved</div><div class="amount">$30.00</div><div class="note">accepted by the payer, from the ledger’s entries; not cash until it posts</div>');
+    expect(headline).toContain('Payer approved</div><div class="amount">$30.00</div><div class="note">what payers have agreed to pay on the lines they corrected, from the ledger’s entries; not cash until it posts</div>');
     expect(headline).toContain('Recovered (posted)</div><div class="amount">$30.00</div><div class="note">cash posted, from the ledger’s entries, net of recoupments and reversals</div>');
     expect(recovered).not.toContain('recorded yet');
     expect(recovered).not.toContain('nothing has posted yet');
@@ -165,6 +165,14 @@ describe('the report HTML', () => {
     const submitted = auditHtml({ ...CONTENT, cases: [{ ...first, state: 'submitted' }] });
     expect(submitted).toContain('<td>submitted</td>');
     expect(submitted).not.toContain('closed (written off)');
+    // With nothing approved, the note says so in the same words (design review S4).
+    const none = auditHtml({ ...CONTENT, headline: { ...CONTENT.headline, payer_approved_cents: '0' } });
+    expect(none).toContain('<div class="note">what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet</div>');
+    // A case whose correction the patient's share took whole says so after its state, which stays as stored (docs/adr/0067, S6).
+    const corrected = { ...first, state: 'submitted', patient_balance: true as const };
+    expect(caseStateText(corrected)).toBe('submitted; payer corrected, balance is the patient’s');
+    expect(corrected.state).toBe('submitted');
+    expect(auditHtml({ ...CONTENT, cases: [corrected] })).toContain('<td>submitted; payer corrected, balance is the patient’s</td>');
   });
 
   it('escapes every text it shows and loads nothing from outside the document', () => {

@@ -80,7 +80,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, '').replaceAll('&#x27;',
 describe('the audit report on screen after a recovery (N4)', () => {
   it('notes payer approved as the ledger’s when it holds any, and says none was recorded only when none was', () => {
     const shown = text(renderToStaticMarkup(<Headline headline={CONTENT.headline} practiceId="p" base="/r" />));
-    expect(shown).toContain('Payer approved$30.00what payers accepted, from the recovery ledger; not cash until it posts');
+    expect(shown).toContain('Payer approved$30.00what payers have agreed to pay on the lines they corrected, from the recovery ledger; not cash until it posts');
     expect(shown).toContain(`${STAGE_LABELS.recovered}$30.00`);
     expect(shown).not.toContain('recorded yet');
     const none = text(renderToStaticMarkup(<Headline headline={{ ...CONTENT.headline, payer_approved_cents: '0', recovered_cents: '0' }} practiceId="p" base="/r" />));
@@ -96,6 +96,11 @@ describe('the audit report on screen after a recovery (N4)', () => {
     expect(shown).toContain('SYNTHETIC PAYER LCE:SYNPLAN-FIX-LEDResolved$30.00$30.00');
     expect(shown).toContain('the headline is the sum of each column');
     expect(shown).not.toContain('Neither had an entry');
+  });
+
+  it('says after a case’s stored state that the payer corrected and the balance is the patient’s, as the printed report does', () => {
+    const shown = text(renderToStaticMarkup(<ReportSections content={{ ...CONTENT, cases: [{ ...CASE, state: 'submitted', patient_balance: true }] }} practiceId="p" />));
+    expect(shown).toContain('Submitted; payer corrected, balance is the patient’s');
   });
 
   it('shows a report stored before the stages were read as it was: its share, and no entry', () => {
