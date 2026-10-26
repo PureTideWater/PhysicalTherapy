@@ -269,5 +269,11 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **An index:** on `claim.superseded_by_claim_id`.
   - Status and the reviews: `approval-summaries/lane-b-pr15b-status.md`. #46, the Verified seal, is queued, not started.
 
+- **2026-10-26, from Lane B's ci-deps (#48): a race in the screening capacity harness, for Lane A (`run.ts` is a #42 file).**
+  - **What failed:** `screening-capacity gate` failed once on fb0af1d with `result link did not open: S4#3 S4-1 (HTTP 404)`, every timing normal. Its one re-run passed.
+  - **Why:** the worker sends the result email before the run commits, so the harness can open the link too early. An investigation agent, read-only, is about 90% sure, from the log's evidence.
+  - **The fix:** before opening each link, wait for the run's commit, bounded by `LOG_WAIT_MS`: poll `runFacts` until `complete`, or open after the existing wait for the "emailed" log lines. A 404 then means a broken link.
+  - Status: `approval-summaries/lane-b-ci-deps-status.md`.
+
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
