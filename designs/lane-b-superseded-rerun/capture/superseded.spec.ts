@@ -29,13 +29,24 @@ const DESKTOP = { width: 1280, height: 800 };
 const PHONE = { width: 390, height: 844 };
 // The narrowest phone (UX recheck of PR #50, N1: the longer "Re-run the run in effect under release N" button wraps).
 const NARROW = { width: 320, height: 568 };
-const WIDTHS = [DESKTOP, PHONE] as const;
+// The dark pass (TOUR_DARK=1; light by default): the same flow, shot at 1280 px only, with data-theme="dark" set on
+// <html> before every shot as apps/web/e2e/brand.spec.ts does (the app has dark tokens but no theme switch and no
+// prefers-color-scheme rule, so this is tokens only). Its files end in "-dark".
+const DARK = process.env.TOUR_DARK === '1';
+const THEME = DARK ? 'dark (tokens only)' : 'light';
+const WIDTHS: readonly { width: number; height: number }[] = DARK ? [DESKTOP] : [DESKTOP, PHONE];
 
 interface Shot {
   readonly file: string;
   readonly route: string;
   readonly state: string;
   readonly width: number;
+  readonly theme: string;
+}
+
+/** Puts the dark tokens on (dark pass only); again before every shot, since a load or a refresh may drop it. */
+async function theme(page: Page): Promise<void> {
+  if (DARK) await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
 }
 const shots: Shot[] = [];
 const skipped: string[] = [];
@@ -70,14 +81,18 @@ async function save(page: Page, name: string, state: string, tag?: string, quick
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await page.waitForTimeout(400);
   }
+  if (DARK) {
+    await theme(page);
+    await page.waitForTimeout(200);
+  }
   // A tagged shot (tag "a", "b", "c") sits after shot `counter` without taking a number, so a shot only one side of a
   // before/after pair, or only a later tour, has does not renumber the shots after it.
   if (tag === undefined) counter += 1;
   const width = page.viewportSize()?.width ?? 0;
-  const file = `${PNG}/${String(counter).padStart(2, '0')}${tag ?? ''}-${name}-${String(width)}.png`;
+  const file = `${PNG}/${String(counter).padStart(2, '0')}${tag ?? ''}-${name}-${String(width)}${DARK ? '-dark' : ''}.png`;
   await page.screenshot({ path: file, fullPage: true, animations: 'disabled' });
   const url = new URL(page.url());
-  shots.push({ file, route: `${url.pathname}${url.search}`, state, width });
+  shots.push({ file, route: `${url.pathname}${url.search}`, state, width, theme: THEME });
   record();
 }
 
@@ -100,7 +115,10 @@ async function capture(page: Page, name: string, route: string, state: string, n
         await page.goto(route);
         await save(page, name, state);
       }
-      if (narrow !== undefined) {
+      // The dark pass skips the 390 and 320 px shots but keeps their numbers, so a dark shot carries its light 1280 px
+      // twin's number.
+      if (DARK) counter += 1 + (narrow === 'numbered' ? 1 : 0);
+      if (narrow !== undefined && !DARK) {
         await page.setViewportSize(NARROW);
         await page.goto(route);
         await save(page, name, state, narrow === 'tagged' ? 'c' : undefined);
@@ -295,9 +313,12 @@ test('audit #10 screens: a re-run superseded by a newer run of its month (synthe
     try {
       const STALE = 'stale tab on R, loaded before X existed, X now in effect: before pressing Accept';
       await save(stale, 'stale-rerun-before-accept', STALE);
-      await stale.setViewportSize(PHONE);
-      await save(stale, 'stale-rerun-before-accept', STALE);
-      await stale.setViewportSize(DESKTOP);
+      if (DARK) counter += 1;
+      if (!DARK) {
+        await stale.setViewportSize(PHONE);
+        await save(stale, 'stale-rerun-before-accept', STALE);
+        await stale.setViewportSize(DESKTOP);
+      }
       // The refusal moment (head only): ActionForm's refreshOnError reads the page again (router.refresh, a GET with
       // the RSC header) right after a refusal. Those reads are held until the refusal is captured, then let through;
       // the gate opens by itself after 60 s, so a page that needs such a read to show its result (the base's
@@ -321,9 +342,11 @@ test('audit #10 screens: a re-run superseded by a newer run of its month (synthe
       if (await refused.isVisible()) {
         const REFUSED = 'stale tab on R: Accept refused, before the page refreshes (head only: the base accepts)';
         await save(stale, 'stale-rerun-refused', REFUSED, 'a');
-        await stale.setViewportSize(PHONE);
-        await save(stale, 'stale-rerun-refused', REFUSED, 'b');
-        await stale.setViewportSize(DESKTOP);
+        if (!DARK) {
+          await stale.setViewportSize(PHONE);
+          await save(stale, 'stale-rerun-refused', REFUSED, 'b');
+          await stale.setViewportSize(DESKTOP);
+        }
       }
       open();
       // Then the page as it settles: accepted on the base, the explanation in place of the form on the head.
@@ -335,11 +358,14 @@ test('audit #10 screens: a re-run superseded by a newer run of its month (synthe
       console.log(`stale accept: focus after the refresh is on ${focused}`);
       const AFTER = 'stale tab on R: after pressing Accept (the base accepts it; the head refuses and refreshes)';
       await save(stale, 'stale-rerun-after-accept', AFTER);
-      await stale.setViewportSize(PHONE);
-      await save(stale, 'stale-rerun-after-accept', AFTER);
-      await stale.setViewportSize(NARROW);
-      await save(stale, 'stale-rerun-after-accept', AFTER, 'c');
-      await logRerunOffer(stale, 'stale-rerun-after-accept');
+      if (DARK) counter += 1;
+      if (!DARK) {
+        await stale.setViewportSize(PHONE);
+        await save(stale, 'stale-rerun-after-accept', AFTER);
+        await stale.setViewportSize(NARROW);
+        await save(stale, 'stale-rerun-after-accept', AFTER, 'c');
+        await logRerunOffer(stale, 'stale-rerun-after-accept');
+      }
     } catch (error) {
       skipped.push(`stale accept: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
       record();

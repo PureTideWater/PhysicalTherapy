@@ -34,6 +34,14 @@ Open questions: none.
 | 2026-10-26 10:13 | Third fix round, base merged | 2eb464b: ScrollTable contains its sr-only cells (`relative`) and shows a scroll cue while a table overflows; the run page's reasons and variance tables wrapped; the diff summary counts and totals only lines priced on both sides (NEW-B); the N2 and N3 nits. a8ace05: diff rows for priced-to-unpriced lines labelled as the summary words them. The screens confirm on 2eb464b passes: run pages 390 wide at 390 px. At 320 px they are 369 wide, because of the shell's mobile menu (a #42 file; a proposal). c637dfd: claude/build-platform 88a0e4e (#53) merged in, clean. |
 | 2026-10-26 10:23 | CI fix | Fresh-clone verification on c637dfd: every local check passes, and the records match. CI on c637dfd: unit failed on one test, the 6,000-sequence property timed out at the 5 s default under coverage (5.7 s locally). 7f17d62 gives each random-sequence property an explicit 60 s bound, keeping the run counts. Pushed. The PR description was rewritten with update_pull_request and read back identical. |
 | 2026-10-26 10:24 | Waiting on CI | CI on 7f17d62; then ready and merge. |
+| 2026-10-26 10:52 | Final head | c4f2742: claude/build-platform 6070e41 (#55, the UX reviewer checklist and the PR template; 2 files outside this PR) merged in, clean. The new template's UX row asks for 1280 px dark shots, so 23 dark shots (D-01 to D-44) were taken on c4f2742. One advisory dark finding, not this PR's: the month fields' calendar icons have no `color-scheme: dark` (D-15, D-27). A private gallery of 114 shots (B-, A- and D-) is kept in the session's scratchpad (`pr50-gallery/index.html`). It is not published as an artifact, because its 114 embedded images could not all be read before publishing; the repository is public. |
+| 2026-10-26 11:04 | CI green on the final head | c4f2742, every check passing, with all four required checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`):
+- unit: 338 files, 5,280 passed, 1 skipped;
+- db (1/4) to (4/4): 3,131 (1 skipped), 2,578, 2,501 and 902, which is 9,112 passed in 120 files;
+- e2e: 26 and 25 passed, none flaky;
+- Stryker: skipped, no money path changed. |
+| 2026-10-26 11:06 | **Merged** | #50 merged with a merge commit, expectedHeadSha c4f2742: **9d3ab335a850c64fea6a3e478d807c269ec90826**. The PR was marked ready first; that re-ran approval-of-record, and the merge waited for it to pass. The description was rewritten with update_pull_request and read back identical. |
+| 2026-10-26 11:07 | After the merge | Unsubscribed from #50. The main checkout is fast-forwarded to 9d3ab33, with pnpm install. The worktree `/home/user/superseded-rerun` and the local branch are removed (the remote branch stays). This session has no scheduled check-in left. The push runs on 9d3ab33 (ci, mutation, screening-capacity) are being read. |
 
 **Proposal for Lane A:** the trigger mirror in `pricing_run_rules()` (design §5.2). Recommended, not urgent; it needs the founder's exception for a pricing table.
 
@@ -42,4 +50,10 @@ Open questions: none.
 - **Lane A** (above): the trigger mirror.
 - **Lane B later:** an operator console count of runs stuck queued or running, with an audited action to fail one; a read-only detection of lines with no pricing in effect; `runAction`'s generic "Check the fields marked below." when every issue names a hidden field.
 
-**Next step:** on green CI on 7f17d62 (merging the base again first if it moved): mark ready, then merge with method merge and expectedHeadSha. Then unsubscribe, clean up, and send the orchestrator the merge commit.
+**State: merged (9d3ab33).** Nothing open. The proposals above stay with the orchestrator and Lane A:
+- the trigger mirror;
+- two first runs of one period priced out of order;
+- an operator view and action for a run stuck queued or running;
+- a detection of lines with no pricing in effect;
+- the shell's mobile menu at 320 px (a #42 file);
+- `color-scheme: dark` for form controls.
