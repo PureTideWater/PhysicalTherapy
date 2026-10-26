@@ -4,7 +4,7 @@
 # Without it, pages load their assets from the application's own host.
 
 # Node 24 on Debian 13 (trixie), by the index digest Dependabot's docker entry updates; both stages, both images.
-FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS build
+FROM node:26-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS build
 ARG STATIC_ASSET_ORIGIN=""
 ENV NEXT_TELEMETRY_DISABLED=1 \
     STATIC_ASSET_ORIGIN=${STATIC_ASSET_ORIGIN}
@@ -21,7 +21,7 @@ COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/web..."
 RUN pnpm --filter @tp/web build
 
-FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS runtime
+FROM node:26-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS runtime
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
