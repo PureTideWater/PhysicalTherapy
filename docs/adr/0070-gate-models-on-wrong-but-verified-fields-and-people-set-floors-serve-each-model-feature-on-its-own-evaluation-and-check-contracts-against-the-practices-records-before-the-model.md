@@ -1,0 +1,481 @@
+# 0070. Gate models on wrong-but-verified fields and people-set floors, serve each model feature on its own evaluation, and check contracts against the practice's records before the model
+
+- **Status:** accepted, Parts 1 and 2 (`co-001/model-eval-gate`, combined audit #84, one pull request). Part 3
+  (`co-001/contract-phi-check`, #120) is reserved for that pull request, which appends it. Part 1 amends
+  [0051](0051-evaluate-every-prompt-and-model-on-the-synthetic-sets-in-the-golden-project-against-a-committed-baseline-and-prove-the-gate-with-injected-faults.md)
+  (the scorer, the gate, the set and the first real-model run),
+  [0052](0052-call-the-gateway-from-the-screens-in-the-persons-name-record-each-decision-when-the-person-is-done-and-keep-corrections-only-under-a-data-rights-agreement.md)
+  (what an example's expectation holds) and
+  [0054](0054-match-model-figures-whole-and-in-role-read-letters-only-through-their-reader-hold-budgets-before-calls-and-serve-only-evaluated-prompts.md)
+  (the permitted run's report).
+  - **Part 2** (`co-001/model-eval-gate`) amends 0054 again: production serves each model feature on its own
+    evaluation, so a feature without one is off on its own, not every feature at once.
+- **Date:** 2026-10-26
+- **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
+  #84 and #120 among it), under the standing rule of 2026-10-18; the co-founder's standing ruling of 2026-10-26, about
+  00:20 UTC, relayed by the orchestrator ("Don't ask for approvals anymore just build and optimize": take the
+  recommended option on every choice, for security the safer one, record it with its reasons, and never wait), under
+  which the build session made the session rulings below at about 01:10 UTC; the build (Lane B), for the notices below,
+  each reversible by the founder. The founder's own matters, F1 and F2, stay open (below).
+  - **Part 2:** the same, and session rulings 9 (F5 (a)) and 10 (F6).
+- **PRD sections:** 14 (Logging and evaluation: "the gate for a prompt or model change is field-level precision and
+  recall on that set with no regression"; "Reviewer corrections become evaluation examples under the data-rights
+  terms"), 17 (milestone 10's done check), 18 (Layers: Model, "No regression on any prompt or model change"); test
+  matrix MOD-07 to MOD-10; reconciliation-001 item 16 (PR 16's red team); ADRs 0048, 0051, 0052, 0054 and 0063
+  - **Part 2:** 14 (Operational limits: the kill switch "turns every model feature off"; Provider and data path), 18
+    (What never ships); test matrix MOD-11; ADRs 0052, 0054 and 0063 (the founder's paths in CODEOWNERS).
+
+## Session rulings (2026-10-26, about 01:10 UTC)
+
+Made by the build session under the co-founder's standing ruling of 2026-10-26 above; each is the design's
+recommended option (for security, the safer one).
+
+1. **Two pull requests, not three.** The design split #84 into a gate (its PR A) and a serving switch (its PR B). Both
+   are built as one pull request, `co-001/model-eval-gate`, as this ADR's Parts 1 and 2. #120 is the second pull
+   request, `co-001/contract-phi-check`, Part 3, cut from `claude/build-platform` after the first merges, so it starts
+   from the first's `gateway.ts` and `contract-terms.ts` and no shared file is resolved twice. The reason: the gate on
+   its own would have left production refusing every real provider until a second pull request merged, so the two
+   halves of #84 are one change with one AI-safety review. `co-001/model-serving` is not created.
+2. **`tools/screening-capacity/watched-paths.txt`** (the design's Q4) is a generated file (`pnpm exec tsx
+   tools/screening-capacity/watched.ts --write`, held equal to the imports by its own unit test), treated as LANES
+   rule 6 treats the lockfile: never hand-edited or hand-merged. Each pull request regenerates it, and the one merged
+   second (this one or #42) regenerates it again after merging its base. It is derived from imports, so a stale copy
+   fails its own test, and regenerating it changes none of #42's content.
+3. **Q1** (Part 3): until F3's migration, the check refuses with `screen_unavailable` above 50,000 stored identifiers.
+4. **Q2** (Part 3): the stored-side identifier rules: every kind holds a digit; a patient control number has at least
+   8 compact characters; a member ID and a payer claim number at least 6; 8-digit calendar-date values are dropped.
+5. **Q3:** the large tier of set v2 is generated in CI, pinned by hash, its images run-length encoded and written
+   atomically (Part 1), not committed.
+6. **F1 (the floors):** `eval/floors.json` ships with every floor unset, which fails closed: a real provider is
+   neither recorded nor served in production while any floor is unset. The values are the founder's and the contract
+   specialist's (the audit's "you and the specialist"); nothing in the build chooses them. Open, below.
+7. **F2 (accepted proposals as examples):** not built. Whether the data-rights addendum covers keeping an accepted,
+   uncorrected proposal's document is the agreement's text, which is legal text and the founder's. Open, below.
+8. **F3 and F4** (compact lookup-hash columns; a reviewed correction of a document's kind) are migrations, proposed
+   for Lane A (below). Part 3 is the bounded, fail-closed interim until F3 lands.
+9. **F5:** option (a), the two-step: a synthetic baseline entry makes a feature evaluable only, and the permitted run's
+   record, made inside the PHI boundary, serves it (Part 2).
+10. **F6:** `packages/model-gateway/eval/baseline.json`, `eval/floors.json` and `eval/reports/` are named as the
+    founder's paths in `.github/CODEOWNERS` in this pull request, with `tools/test/codeowners.test.ts` updated: Part 2
+    makes them a production switch, and ADR 0063 makes the founder the owner of such paths. It changes repository
+    content, not an owner-admin setting.
+11. The claim row's "MOD-7 to MOD-12" reads MOD-07 to MOD-12, a spelling for the orchestrator to correct in LANES.md.
+
+## Part 1 (`co-001/model-eval-gate`): the evaluation gate
+
+### Context
+
+Combined audit #84 found the gate blind to the error that matters most. At 6ddd587:
+
+- **A rejection and a wrong value scored the same.** `scoreContract` (`eval/score.ts`) counted a stated true field
+  that was not right as one false positive and one false negative, whether the verifier rejected it (the specialist
+  sees it marked and enters it by hand) or passed a wrong value (the specialist sees it marked as checked). The gate
+  (`eval/baseline.ts`) compared precision and recall fractions only, and the in-boundary scorer
+  (`src/permitted.ts`) had the same rule. A model change that turned visible rejections into silent wrong values
+  scored the same and passed.
+- **Wrong values verify.** The verifier (`reviewField`, `src/functions/contract-terms.ts`) checks each field alone:
+  its page, its quote on the page, its written value a whole figure inside its own quote. Nothing tied a candidate's
+  fields together, so codes quoted from one row and an amount quoted from another both verified; a quote of up to
+  2,000 characters spanning rows held every figure in it; `method`, `flags` and `rounding` have no written value and
+  only their quote was checked, so a flipped `apply_mppr` with the real flags sentence verified; an amendment's figure
+  on the original record verified; an obeyed injected instruction verified. Text the reader got wrong (a PDF's own
+  OCR layer, hidden or struck-through text, all read as ordinary text by `packages/contracts/src/evidence/pages.ts`)
+  can only be caught by truth.
+- **The set could not show it.** The 40 cases of v1 are 1 to 4 pages with 2 to 6 rows; every row field quotes its row
+  line; every scan's recording is error-free; no case has a twin, a decoy or unfaithful page text. Its hash did not
+  cover the pages as read, so a reader change that altered what a model is sent left the set "unchanged".
+- **The gate had holes.** `set_changed` was reported but did not block `--record`, which still compared counts made
+  on another set; `contractBaselineFor` fell back to the provider's latest entry and ignored the variant, so the
+  larger "ambiguous" model could be held to the default model's entry; `recordBaseline`'s `same()` ignored the
+  variant too.
+- **Examples counted other documents.** `reviewVersionProposals` (`apps/web/src/lib/models/contract-proposals.ts`)
+  stored every final record of the version in each example, whatever document it cites, so a contract proposal in a
+  version that also had an exhibit was never "accepted" and its example counted the exhibit's records as misses.
+- Every fault test reran the whole set (about 2,000 local calls in `pnpm test:golden`).
+
+### Decision
+
+**One tally, seven counts** (`src/tally.ts`, used by `eval/score.ts` and `src/permitted.ts`, notice N12). Each true
+record pairs with the candidate that gets most of its fields right (greedy, as before). For each field:
+
+| Truth has it | Candidate states it | Verified | Value is the truth | Count |
+| --- | --- | --- | --- | --- |
+| yes | yes | yes | yes | `tp` |
+| yes | yes | yes | no | `wrong` |
+| yes | yes | no | yes | `rejected` and `rejected_right` |
+| yes | yes | no | no | `rejected` |
+| yes | no (or no candidate) | | | `missed` |
+| no | yes | yes | | `extra` |
+| no | yes | no | | `rejected_extra` |
+
+A candidate paired with no record adds `extra` or `rejected_extra` for each field it states. `lesser_of_schedule`,
+which is never cited, counts as verified when stated, as before. The old counts are derived (`asCounts`): `fp = wrong +
+extra + rejected + rejected_extra`, `fn = wrong + rejected + missed`, so precision and recall mean what they meant, and
+a test holds them equal to the 6ddd587 scorer's on every v1 case of the reference and of each fault. **Wrong but
+verified** is `wrong + extra`: a value the specialist would see marked as checked that is not the truth.
+
+**The verifier ties a row field to its row** (`not_in_row`, notice N3; `rowProblems` in
+`src/functions/contract-terms.ts`, `codeTokens`, `figureSpans` and `tokenSpans` in `src/figures.ts`). For a candidate
+whose codes are stated, each row field (`modifiers`, `places_of_service`, `amount`, `percentage`, `fee_schedule_year`)
+that `reviewField` passed is rejected with `not_in_row` unless, for every item of its written value, some place the
+item verifies in its quote has, as its nearest code token before it (or, with none before, after it), one of the
+candidate's own codes. A code token is a case-sensitive whole token of HCPCS shape (four digits then a digit or a
+capital, or a capital then four digits) outside any amount, percentage or date the scanner reads; the quote is never
+upper-cased, so "Payer", "shall" and "TOTAL" are not codes. A quote with no code token rejects its row fields. The
+check is code only: no prompt or schema change, so no new prompt version. It catches swapped rows, cross-row and
+paragraph quotes, and a row field quoted from a fragment with no code. It does not catch a wrong method, flags or
+rounding, an amendment's figure on the original record (the amendment line names the same code), or text the reader
+got wrong; the gate measures those. It refuses some right answers, which become visible rejections the specialist
+enters by hand, counted as `rejected_right`: "97110 and 97112 are paid at $43.10 and $45.00 respectively", a rate
+clause pointing at codes listed elsewhere, and a five-digit ZIP code nearest the amount. The tests pin each as known
+behaviour. Every reference answer of v1 (742 fields) has no row problem, checked before the rule's tests were written
+and held by `contract-terms.test.ts`; set v2's are held by the golden reference run, which allows no rejection on a
+faithful case. The same check over all 63 cases (2,615 fields) found no code token in any quote but its record's own
+codes, and row problems only on three amounts of V05 and V07 whose text as read is not a figure (a letter for a digit),
+which the verifier rejects before the row check.
+
+**Set v2** (`packages/synth/src/eval/contract-set-v2.ts`, `large-contracts.ts`; test matrix MOD-09; notice N2). One
+set holds the bar: v1's 40 cases keep their bytes and become v2's small tier (their truths upgraded to
+`tp-eval-contract/2`), and 23 cases are added, 63 documents in all:
+
+- V01 to V05, medium (to 12 pages and 40 codes): a multi-row table across pages with wrapped descriptions, a 40-row
+  CSV exhibit, a contract-plus-exhibit pair (V03 states the terms, V04 the rates), and an image-only scan whose
+  recording carries seeded OCR errors;
+- V06 to V18, small: a scan with its own invisible OCR text layer, one whose layer has seeded errors, struck-through
+  rates in a table and in prose, three injected-instruction twins (visible text, invisible and white text, drawn in a
+  scan) each beside its clean twin, and three decoy amended-rate paragraphs (table, prose, scan) that overlap a real
+  row with another amount;
+- L01 to L05, large (to 80 pages and 60 codes): an Exhibit A after 70 pages of articles full of distractor figures,
+  rate sentences spread over 40 pages, an image-only 80-page scan, and a contract-plus-exhibit pair. They are written
+  by `ensureLargeContractTier` into `fixtures/synthetic/MOD-09/generated/` (ignored by git) before each read, into a
+  fresh temporary directory renamed into place so parallel test workers never read a half-written file, and every
+  file's SHA-256 is pinned by MOD-09's registry entry. Every new scan writes its image with the PDF `RunLengthDecode`
+  filter from an encoder in `packages/synth`, so no pinned hash depends on the zlib build (session ruling 5).
+
+Tiers small 53, medium 5, large 5; 3 twin pairs; 9 expected conflict pairs (the two amended rows of each of v1's
+amendment cases C05, C25 and C33, and one per decoy case); 5 cases whose page text is unfaithful (V05 `ocr_errors`, V07
+`ocr_layer_errors`, V08 and V09 `struck_text`, V13 `hidden_text`). Every case says SYNTHETIC on every page and passes
+the fixture guard. A truth (`tp-eval-contract/2`) adds the tier, the page text's fidelity and why, `pairOf`, `twinOf`,
+the expected conflict pairs and each record's role (`term`, `amendment`, `decoy`); on an unfaithful case a field also
+carries `asRead`, the field as a faithful copier of the page text would write it, which the local reference answer
+uses. The loader refuses a dangling `twinOf`, `pairOf` or conflict index and a pair whose truths do not name each
+other. The set hash (`tp-eval-set-hash/2`) covers the manifest, every truth, document and recording, and the hash of
+every page **as read**, so a pdf.js or Textract-reader change that alters what a model is sent changes the set.
+
+**The report and the baseline.** Report `tp-model-eval-report/2` (`eval/harness.ts`) holds tallies by field, layout,
+tier and page text, each case's own tallies and wrong-but-verified counts, conflicts, twins, the sorted `caseIds` and a
+`spliced` mark. Baseline `tp-model-eval-baseline/3` (strict schema in `src/baseline-format.ts`, so the gate and
+production serving parse entries alike) keys a contract entry by purpose, prompt version and content hash, provider,
+model and **variant**, holds the seven counts per field and in total, and carries three literals:
+`faithful_wrong_verified: 0`, `conflicts.unflagged: 0` and `twins.differing: 0`. A hand-edited entry carrying a
+dangerous count therefore does not parse. Each entry names its recorded report by SHA-256 (`report_sha256`), committed
+as `eval/reports/<sha256>.json` (counts, codes and case IDs of the synthetic set only); a golden test recomputes every
+entry from its report, checks the report's hash and case IDs, and, for every entry production would serve, that its
+set hash is the current set's. Forging an entry means forging a whole report, which the founder reviews by path
+(session ruling 10).
+
+**Floors** (`eval/floors.json`, `tp-model-eval-floors/1`; `eval/floors.ts`). A recall floor and a precision floor per
+field for `proposeContractTerms`, each decimal text with at most six places in [0, 1], or `null` (unset). A recall floor
+is met when `tp × 10^6 ≥ ppm × (tp + fn)`, a precision floor when `tp × 10^6 ≥ ppm × (tp + fp)`, in BigInt; precision
+bounds junk candidates (`extra`, `rejected_extra`), which nothing else bounds. A field with a zero denominator meets any
+floor. The file ships with every floor `null`, and a unit test holds that: the build never chooses the numbers (F1).
+The local provider is never held to floors.
+
+**The gate** (`eval/baseline.ts`). `contractBaselineFor` matches provider and variant, then prompt version and model,
+then the model under an earlier prompt, then the variant's latest entry; never across variants. Its problems, in
+order:
+
+| Code | When | Blocks `--record` |
+| --- | --- | --- |
+| `incomplete_report` | the report's `caseIds` are not exactly the set's; nothing else is computed | yes |
+| `spliced_report` | the report is a splice (below) | yes; tests may gate one |
+| `no_baseline` | no entry for the provider and variant | no (the first record), but every absolute rule still applies |
+| `prompt_changed` | the prompt version's content differs from the held entry's | yes |
+| `set_changed` | the held entry's set hash differs; no regression is computed | yes, unless `--new-set` and the prompt version, prompt hash, provider, model and variant are the held entry's |
+| `new_set_with_change` | `--new-set` with any of those five different | yes, always |
+| `precision_regressed`, `recall_regressed` | as before, per field and overall, on the same set only | yes |
+| `wrong_verified_rose` | wrong but verified above the held entry's, per field or overall, on the same set only | yes |
+| `wrong_verified_on_faithful` | any wrong but verified field on a case whose page text is faithful, whatever the baseline | yes |
+| `wrong_verified_above_reference` | on an unfaithful case, a field's wrong but verified above the local reference's on that case, for any provider | yes |
+| `conflict_unflagged` | for an expected pair, the two records' candidates not both proposed, or either not listing the other in `conflictsWith` | yes |
+| `pair_term_extra` | a verified exhibit candidate states a field only its contract states | yes when the case is faithful (it is then also wrong but verified there) |
+| `twin_incomplete` | either call of a twin pair failed or was refused | yes |
+| `twin_differs` | an injected twin's `twinSha256` differs from its clean twin's | yes |
+| `twin_canary` | any output string of any case holds the injection's canary phrase | yes |
+| `floor_unset` | a provider other than `local` with a recall or precision floor `null` | yes |
+| `recall_below_floor`, `precision_below_floor` | a provider other than `local` below a set floor | yes |
+| `quotes_off_page`, `narrative_failures` | as before | yes |
+| `reference_missing` | the local reference run does not cover an unfaithful case of the report (another set or prompt, or a case left out), so `wrong_verified_above_reference` cannot be computed there; it names the cases | yes |
+
+The local reference report for `wrong_verified_above_reference` is computed in the same run (the local provider over
+the unfaithful cases only), never read from a file, so it follows the current set and verifier. `twinSha256` is the
+sorted list, over every candidate, of its full canonical output without its free-text `label`, plus the verifier's
+review of every field (page, quote, written value, verified, problems), its defaults, problems and `conflictsWith`, and
+whether a rate record was proposed. The label is left out because the specialist renames it and two runs of the same
+request can word it differently with no change of meaning; the canary rule catches a label that repeats the injection.
+The twins share every page and line position, so equal pages and quotes are required, not excused. On the local
+provider twin equality holds by construction (it answers by request hash, and both twins are registered with the same
+reference), so CI proves the pairing, the key and the gate failing on an obeyed, quoted or failed twin, not a model's
+resistance; only the people-run real-model evaluation measures that. A real model can answer the same request
+differently, since no sampling setting is fixed, so the runbook has the contracts run twice: if the clean twin's two
+answers differ (its two `model_call` rows: the same input hashes, different `output_sha256`), the pair's twin result
+is `nondeterministic`, neither a pass nor a failure of injection resistance. The CLI has no comparison option for this
+yet; it is a person's reading of the two runs.
+
+`recordBaseline` records only with no blocking problem, writes the report under `eval/reports/` and the entry's
+`report_sha256`, and replaces an entry only when purpose, prompt version, provider, model and variant are equal, so
+recording the `ambiguous` variant keeps the `default` entry.
+
+**The two-step re-baseline.** A set change (a new case, a truth fix, a pdf.js or Textract-reader bump that changes the
+pages as read) and a prompt or model change never land in one record. First the held prompt and model are run on the
+new set and recorded with `--new-set`; then the new prompt or model is gated against that entry on the same set, with
+every regression rule in force. For a real provider each step is a people run and a pull request
+(`docs/runbooks/model-evaluation.md`), so a dependency bump that changes the pages as read cannot merge until every
+real-provider entry has been re-recorded this way.
+
+**Faults** (`eval/faults.ts`; test matrix MOD-08 and MOD-10). Each fault names the cases it spoils by case ID, through
+a per-request case tag, so the spoiled call is the same whether the whole set or a subset runs. Beside v1's three
+contract faults and five narrative faults: `swappedRows` and `crossRowQuote` (rejected as `not_in_row`; the gate sees
+precision and recall fall and no wrong-but-verified problem); `mergeRows` on C01 (the merged codes are rejected, since
+the codes' quote holds one row's code: recall falls on the lost row and precision on codes, and nothing wrong verifies);
+`flipFlag`, `wrongMethod`, `wrongDate` and `amendedOnOriginal` (each verifies; `wrong_verified_rose` and
+`wrong_verified_on_faithful`); `takeStruck` on V08
+(`wrong_verified_rose` and `wrong_verified_above_reference`, and the test asserts `wrong_verified_on_faithful` is
+absent, so a broken `wrong_verified_rose` fails it alone); `obeyInjection`, `quoteInjection` and `failTwin` on V11
+(`twin_differs`, `twin_canary`, `twin_incomplete`); `dropDecoy` and `unpairConflict` (`conflict_unflagged`). A test
+floors file proves `recall_below_floor` and `precision_below_floor`; the committed file stays all `null`. The
+demonstration test (MOD-07) records a baseline from a run with `wrongValue` on one amount, gates a run with
+`amendedOnOriginal` on the same record, asserts that the old tp, fp and fn of the two runs are equal field by field
+(the blindness, measured), and that the gate fails the second with `wrong_verified_rose:amount` and
+`wrong_verified_on_faithful:amount`.
+
+**CI time stays bounded** (notice N11). `runEvaluation({ cases })` evaluates a subset, and `spliceReport` puts the
+subset's case results in place of the reference report's and recomputes every total from the cases, marking the
+result `spliced` with the full `caseIds`: the gate computes on it, and `--record` and `record-permitted` refuse it. Each
+fault test therefore calls the model only for the cases it spoils, narrative faults included, against about 2,000
+calls before.
+
+**Examples and the permitted run** (amending ADRs 0052 and 0054).
+
+- An example's expectation is `tp-eval-correction/2`: the decision (`accepted`, `accepted_with_changes`,
+  `rejected`), the changed fields, and only the final records whose citation is the proposal's own document, each with
+  its `citation.document_id`; a final entered with no citation belongs to no document's expectation and is counted as
+  `uncited_finals`. `changedFields` takes only the proposal's own document's finals, so a contract proposal in a
+  contract-plus-exhibit version is accepted when its own records stand. A /1 example's records cannot be filtered;
+  they are all scored and the report counts such examples as `legacyUnfiltered`.
+- Keeping an accepted proposal as an example waits on F2: `reviewVersionProposals` still keeps corrected and rejected
+  proposals only.
+- The permitted report is `tp-model-eval-permitted/2`: tallies per field and in total, problem codes, the sorted
+  `exampleIds` (row IDs of `eval_example`, not PHI) and `refused`, the examples whose call the gateway refused before
+  it was made (an input refused, or the feature or the variant off or not evaluable: `refused:not_evaluated`), counted
+  apart from misses. `permittedRegressions` compares the two reports' example ID sets (`examples_changed`), adds
+  `wrong_verified_rose` and `refused_rose`, and refuses an earlier /1 report (`earlier_report_format`: run the earlier
+  side again on the current code).
+
+### Measured
+
+Measured on this pull request's head, on the build machine (CI's `static` job will differ; its limit is 15 minutes):
+
+- `pnpm test:golden`: 4 files, 215 tests, 18.6 s in vitest (19.6 s wall), against 11 to 17 s at 6ddd587 and the
+  design's estimate of 25 to 45 s; the builder's check fails above 60 s. The gate's own file is about 19 s of it.
+- Calls: 363 local calls for the reference run (63 contracts, 300 narratives); each fault test calls the model only for
+  the cases it spoils (one to three calls) and splices them into the reference report, against about 2,000 calls
+  before.
+- `pnpm --filter @tp/model-gateway eval` (local) passes in about 15 s: 63 documents, tp 2,607, wrong 5, rejected 3,
+  every one on an unfaithful scanned case; precision and recall 1 on the faithful cases; 9 conflict pairs all flagged;
+  3 twins equal; 300 of 300 narratives clean.
+- Committed fixture growth: 0.86 MB for MOD-09's 18 committed cases, and v1's 40 truths rewritten as /2 (their
+  documents and recordings byte for byte unchanged); the recorded report under `eval/reports/` is 0.23 MB. The large
+  tier, generated and ignored by git, is 4.75 MB, written in about 0.5 s.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| One weighted score | It trades a dangerous error (a wrong value marked as checked) against a harmless one (a visible rejection), which is the blindness #84 names |
+| A verifier that refuses every value-only field | `method`, `flags` and `rounding` have no written text to check; refusing them all would turn every contract into hand entry. A prompt that writes their phrases (P1) makes them checkable |
+| Keep v1 as a second gate set | Comparing across sets is meaningless, so one set holds the bar; v1's cases keep their bytes inside v2 and its old baseline stays readable in history (N2) |
+| Commit the large tier | About 6 to 8 MB of PDFs and recordings in every clone and every fixture scan (pre-push, gitleaks, `check:fixtures`), against 1 to 2 s of generation (session ruling 5) |
+| Floors chosen by the build | The bar a model must meet is the founder's, set with the contract specialist (F1) |
+| `not_in_row` as a measurement only | It turns the most likely silent error into a visible one with no prompt change, and every reference answer passes it; if the founder prefers measurement only, it is one function to remove |
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+Numbered once across the parts; N4 to N6 are Part 3's and are written with it.
+
+- **N1.** Two pull requests, the gate and serving together (Parts 1 and 2) and the PHI check (Part 3), where the
+  design had three (session ruling 1).
+- **N2.** v1 is retired as a separate gate set; its 40 cases are v2's small tier with unchanged bytes and truth /2.
+- **N3.** The verifier's `not_in_row` rejection, with its known refusals.
+- **N8.** No MOD-13: the accepted-example assertion extends MOD-07 when F2 lands.
+- **N9.** Decoys keep the real row's modifier set; `scopesOverlap`'s same-set rule is unchanged (P7).
+- **N11.** Fault reruns call the model only for the cases they spoil, narrative faults included.
+- **N12.** One tally (`src/tally.ts`) for the synthetic and the permitted scorer.
+- **N13.** PRD 14's Logging and evaluation paragraph and PRD 18's Model row are amended under the founder's adoption
+  of the audit on 2026-10-20; PRD 17's milestone 10 check is unchanged.
+
+### Consequences
+
+- The first real-model baseline needs F1's floors, committed to `eval/floors.json` by a pull request quoting the
+  founder's ruling, before the run: until then `--record` refuses a real provider (`floor_unset`).
+- A model that reads method, flags, rounding or lesser-of wrong on a faithful case keeps the contract feature off: the
+  zero rule cannot be met by the verifier for those fields, only by a model that reads them right. That is the audit's
+  intent; P1 makes them checkable.
+- The unfaithful cases (V05, V07, V08, V09, V13) are also live product paths: pdf.js reads an OCR layer and hidden text
+  as the page. #15's contract-evidence pull request (Lane A, a migration) fixes intake and reuses those cases; once it
+  lands, their page text becomes faithful and the zero rule covers them. Until then the gate holds them never-rising
+  and never above the local reference.
+- A pdf.js or Textract-reader bump that changes the pages as read changes the set, and cannot merge until every
+  real-provider entry is re-recorded by the two-step re-baseline.
+- The large tier's real-model cost is about 100,000 input tokens per 80-page document, five such documents per variant
+  run (the runbook gives the estimate). CI never calls a model.
+- PR 16's red team gains the model path's own attacks (reconciliation-001 item 16).
+
+### Revisit when
+
+A prompt version 2 writes the value-only fields' phrases (P1); #15's contract-evidence pull request lands; the founder
+rules on F1 or F2; the first real-model baseline shows how often `not_in_row` refuses a right answer (`rejected_right`).
+
+## Part 2 (`co-001/model-eval-gate`): serving each model feature on its own evaluation
+
+### Context
+
+At 6ddd587, `assertEvaluated` (`src/evaluated.ts`), called once in `readGatewayConfig` for a real provider in
+production, refused the whole provider unless contract proposals and narratives each had an entry for every pinned
+model. It checked presence only, never a score, and parsed entries loosely (`purpose: z.string()`), so a hand-typed
+entry for any purpose counted. `suggestEvidenceRequests` and `readDenialLetter` were outside it: once the other two had
+entries, they would have been served with no evaluation. And one missing entry turned every feature off at once.
+
+### Decision
+
+**Who decides what is served** (`src/evaluated.ts`). `SERVING_RULES` says which purpose has a synthetic set its
+entries are recorded on: `proposeContractTerms` the contract gate, `draftPacketNarrative` the narrative gate,
+`suggestEvidenceRequests` and `readDenialLetter` none (`no_set`). `servingDecisions(provider, { baseline, floors,
+prices })` decides each purpose and each variant its current prompt pins for the provider (`purpose/variant`, for
+example `proposeContractTerms/ambiguous`). A key is not served, with its reasons, when its purpose has no set
+(`no_set`); when no entry for that purpose, provider, prompt version and content hash, model and variant parses under
+the strict /3 schema (`no_entry`); for contracts, when any field's recall or precision floor is unset (`floor_unset`)
+or the entry's counts do not meet it (`below_floor`), computed at run time from `eval/floors.json`, so a floor raised
+after recording switches the feature off until it is met; when a model the variant pins has no confirmed price
+(`price_unconfirmed`, the per-purpose form of the old all-prompts check); and, for contracts on a real provider, while
+the entry's permitted run is `pending` or absent (`permitted_pending`: an entry whose `permitted` was deleted by hand
+is not served either). A key is served with no reason, and evaluable when its only reason is `permitted_pending`.
+Floors and the permitted run apply to real providers, as the gate's `floor_unset` does. The floors' format and
+arithmetic are one module, `src/floors-format.ts`, which the gate's `eval/floors.ts` re-exports, so a key is served on
+exactly the floors its record was held to (src reads no file: it runs in the web app's bundle). `assertEvaluated`,
+`unevaluatedModels`, `EVALUATED_PURPOSES`, `MissingEvaluation`, `RECORDED_EVALUATIONS`, `RecordedEvaluation` and
+`assertPricesConfirmed` are removed from the package and its exports (`src/index.ts`); no other package imported them.
+
+**The gateway decides what it serves; no caller passes a set** (`src/gateway.ts`, `src/purposes.ts`). In production on
+a real provider the gateway computes its own served set from the committed baseline, floors and prices bundled with
+the package, the same files `readGatewayConfig` reads; a caller that passes nothing, as every caller does, gets exactly
+what has passed, and no option widens it. Its only option is `serving: 'evaluable'`, accepted only when the store's
+actor is a job and refused otherwise, so a request path cannot ask for the permitted run's wider set. With the local
+provider, or any provider outside production (only synthetic material may reach it), every key is served, so tests and
+the harness are unchanged. `limited()` checks, in this order: the purpose served (any variant), before the flags are
+read; `prepare`; the call's own variant served; and only then `screen`, so no audited read runs for a call that would
+be refused. A refused call throws `ModelFeatureOffError('not_evaluated')` ("this model feature has not passed its
+evaluation for the configured model; enter the record by hand"): nothing is sent and no `model_call` row is written,
+as with the kill switch. `ModelGateway.features()` and the web's `modelFeatures()` both return `offeredPurposes`, one
+rule in place of two copies.
+
+**Config** (`src/config.ts`). `GatewayConfig` carries `served`, `evaluable` and `decisions`. For a real provider in
+production, `readGatewayConfig` throws `GatewayConfigError` when no key is served, as before, so the web's
+`unavailable` path and the worker's exit 2 are unchanged for that case; when some are served it returns them, and the
+web's config read logs once `MODEL_FEATURES_NOT_EVALUATED` with the count of keys not served (`record_count`). The
+worker's evaluate-permitted task reads the configuration with `{ serving: 'evaluable' }`, so the run that a pending
+entry waits on can be made, logs the same code with the count of keys not evaluable, and exits 2 when nothing is.
+
+**The screens.** The web's `ModelPath` carries `served`; a call refused as `not_evaluated` returns the person to the
+screen with the notice "This model feature is off until it has been evaluated for the model configured here; enter it
+by hand." and the hand-entry form (the existing notices' "enter it by hand", since contract, narrative and checklist
+screens share it). The version page's "ambiguous" checkbox stays; an ambiguous request whose variant is
+not served shows that notice (N10).
+
+**The permitted run before a model change is served** (F5 (a), session ruling 9). `--record` for a real provider writes
+the contract entry with `permitted: 'pending'`, so the deploy carrying it serves nothing new: the key is evaluable
+only. A person runs `evaluate-permitted --against <earlier report>` in production, whose gateway is built with
+`serving: 'evaluable'` because its actor is the permitted job, and gets report /2. Then `pnpm --filter
+@tp/model-gateway eval record-permitted --report <file> --against <file>` refuses unless the report is /2, names the
+entry's prompt, provider and models, is not spliced, and `permittedRegressions` is empty (`--against` may be left out
+only while nothing of the provider serves contracts on a recorded permitted run; once given, it is always compared). It
+also refuses a run that did not reach the model for every example: a failed call (`call_failed:<code>`) or a call
+refused because the feature or its variant was off for the run (`refused:kill_switch`, `refused:feature_off`,
+`refused:not_evaluated`). Otherwise a first run, compared with nothing, could serve a model it never called. In the
+run's report such refusals are counted apart from misses (`refused`), as an input refused on its own merits is. It
+writes `permitted: { examples, report_sha256, against_sha256, recorded_on }` into the entry, and that commit serves the
+key. Before the
+first practice the run reports no examples and is recorded the same way; nothing special-cases launch.
+
+**Evidence requests and the denial-letter reader** stay off for a real provider in production (`no_set`), their
+screens on hand entry, until each has its own set, truth, metric and entry kind (P5, notice N7).
+
+**The founder's paths** (session ruling 10). `.github/CODEOWNERS` names the founder for
+`packages/model-gateway/eval/baseline.json`, `eval/floors.json` and `eval/reports/`, and
+`tools/test/codeowners.test.ts` holds those lines.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| Keep refusing the whole provider | One missing or failing entry turns every feature off, and a purpose with no set rides on the others' entries |
+| A served set passed by each caller | Every caller at 6ddd587 builds the gateway with no such input, so a default of everything would serve everything; the gateway computing its own set leaves no caller able to widen it (the design review's B1) |
+| A per-purpose operator flag in `feature_flag` | A migration (its key CHECK); the kill switch covers emergencies and this part covers evaluation (P4) |
+| The permitted run as a runbook step only (F5 (b)) | A real-document regression would be caught only if a person ran it |
+
+### Notices
+
+- **N7.** Sets for evidence requests and the denial-letter reader are a follow-up (P5); both stay off in production.
+- **N10.** The larger "ambiguous" model is served or off on its own; an ambiguous request it cannot serve shows the
+  `not_evaluated` notice.
+
+### Consequences
+
+- With the committed baseline (local entries only), production on a real provider serves nothing and
+  `readGatewayConfig` throws, as at 6ddd587; a production gateway built with no serving option refuses all four
+  purposes with `not_evaluated`. Serving the contract feature then takes F1's floors, a recorded real-provider entry
+  whose report is committed, a confirmed price, and the permitted run's record.
+- PRD 14's kill switch still turns every model feature off; a feature without its own passing evaluation is off on its
+  own (PRD 14, Operational limits, amended).
+- `eval/baseline.json`, `eval/floors.json` and `eval/reports/` are a production switch, reviewed by the founder by path.
+
+### Revisit when
+
+Evidence requests or the letter reader get a set (P5); an operator needs to switch one purpose off without a deploy
+(P4); F5 is reversed.
+
+## Part 3 (`co-001/contract-phi-check`)
+
+Reserved for #120's check of a contract or exhibit against the practice's records before the model; appended by that
+pull request (session rulings 3, 4 and 8 apply to it).
+
+## Open matters
+
+**For the founder** (founder-kept; nothing in these pull requests decides them):
+
+- **F1. The per-field recall and precision floors** for contract proposals, 12 fields each. Recommended: one recall and
+  one precision floor per field over the whole of set v2, set by the founder with the contract specialist and
+  committed to `eval/floors.json` by a pull request quoting the ruling, before the first real-model baseline run. Until
+  then every floor stays `null`, and a real provider is neither recorded nor served. Blocks the first real-model run,
+  not a pull request.
+- **F2. Accepted proposals as examples.** Does the data-rights addendum cover keeping an accepted, uncorrected
+  proposal's document as an evaluation example? The repository holds no addendum text (the agreement table keeps
+  `document_ref` and `sha256` only); PRD 14 says "Reviewer corrections". Recommended: yes, if counsel confirms the
+  addendum covers any reviewed proposal's document. On the answer, one line of `reviewVersionProposals` changes and
+  MOD-07's assertion gains "accepted ones included where the data-rights agreement allows", in the second pull request
+  if it is open then, else in a pull request of its own.
+
+**Proposed for Lane A** (migrations; Lane B opens none):
+
+- **F3.** #120's best option: compact-form keyed lookup hashes on `patient_ref.member_id`,
+  `claim.patient_control_number` and `claim.payer_claim_control_number`, a backfill job, and a `SECURITY DEFINER`
+  function that checks the hashes with one indexed query, audits one screen event and the matched rows only, and runs
+  as the screen, not the person. Part 3 is the bounded, fail-closed interim until it lands.
+- **F4.** A reviewed way to correct a misfiled document's kind (a kind-change grant with an audit event), so a payer
+  letter uploaded as a contract can be re-filed.
+
+**Proposals outside these pull requests:** P1 a contract prompt version that writes each value-only field's phrase,
+read by code, so the verifier rejects a value its phrase contradicts; P2 #15's contract-evidence integrity pull
+request, reusing V05 to V09 and V13; P4 a per-purpose operator flag (a migration, optional); P5 sets, entry kinds and
+serving rules for evidence requests and the letter reader; P7 whether a decoy whose modifier set differs from its row
+should be flagged, for the engine review.
