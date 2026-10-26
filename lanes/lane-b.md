@@ -38,13 +38,13 @@ HANDOFF.md; LANES.md rule 10).
   | #52 | #38, every figure explained in words (ADR 0072, CAS-30 to CAS-34) | 3486f75 | 2026-10-26 11:41 |
   | #56 | UX PR 2, a suspended organization never reads "In good standing" (UX-004; BIL-05, BIL-06) | 0e28f9b | 2026-10-26 12:11 |
   | #51 | PR 15b, ledger amounts in payment terms (#12; ADR 0067, LED-14 to LED-18) | c355633 | 2026-10-26 12:41 |
+  | #49 | the release content checks (#7, #30, #31, #59; ADR 0071, RCC-01 to RCC-08) | d725977 | 2026-10-26 14:25 |
 
 - **Open Lane B PRs at this writing**, each run by its own Lane B session, each told to finish to its merge or stop at
   a clean, recorded step. The status file says exactly where it is:
 
   | PR | Item | Head | Status file | Next step |
   | --- | --- | --- | --- | --- |
-  | #49 | the release content checks (#7, #30, #31, #59; ADR 0071, RCC-01 to RCC-08) | ac162d6 | `lane-b-release-content-checks-status.md` | reviews' fix round, CI, verification, merge |
   | #48 | ci-deps (CI 2 of 4; ADR 0066) | 123b8fa | `lane-b-ci-deps-status.md` (its top) | after 15:11, 18:06 and 19:18 UTC today: the login pin, the pnpm age, the bumps; then the suite, CI, verification, merge |
 
   #48's `static` check is red by design until 2026-10-26T18:06:38Z (pnpm 10.34.8's three-day age, CQ3 (a)). When
@@ -106,8 +106,8 @@ HANDOFF.md; LANES.md rule 10).
   everything they built is on GitHub.
 
 ### Next actions, in order (for whoever continues Lane B's work)
-1. **Read the status files** of the open PRs above. Finish any that are still open, in this order: #49,
-   then #48 after 19:18 UTC. Follow "Merging" below: base merged in with a merge commit, CI green on that head,
+1. **Read the status files** of the open PRs above. Finish #48 (ci-deps) if it is still open: its last
+   steps run after 19:18 UTC on 2026-10-26. Follow "Merging" below: base merged in with a merge commit, CI green on that head,
    the fresh-clone verification, ready, then `merge_pull_request` with `expectedHeadSha`.
 2. **When #48 merges,** the founder clicks the three settings in `designs/lane-b-settings-after-ci-deps.md`; then
    ci-browser (`co-001/ci-browser`, phase 2) and the follow-ups P1, P2 and P4.
@@ -893,3 +893,4 @@ HANDOFF.md; LANES.md rule 10).
 - **2026-10-26 ~12:35 UTC: the push CI on 0e28f9b (#56's merge) was cancelled in one job, not by a test.** `db (2/4)` (job 121564437093) hung in `playwright install --with-deps chromium`, the browser's system packages, from 12:12 to 12:31 UTC until the job's timeout, before any test ran. Every other job passed, and `all green` failed with it. This is V3, the slow uncached install that ci-browser caches. The failed jobs were re-run once (run 40320655101, attempt 2), as the rules allow for a job that died in its install.
   - **The re-run passed** (run 40320655101, attempt 2): `db (2/4)` and `all green` green, so all three push runs on 0e28f9b are green.
 - **2026-10-26 12:41 UTC: PR 15b merged as #51 (c355633).** Ledger amounts in payment terms (audit #12, ADR 0067, LED-14 to LED-18), after two fix rounds, the payment-engine and UX reviews, and the fresh-clone verification. Its follow-on #46 (the Verified seal) stays queued, not started.
+- **2026-10-26 14:25 UTC: the release content checks merged as #49 (d725977).** Audits #7, #30, #31 and #59 (ADR 0071, RCC-01 to RCC-08), after two adversarial reviews, a fix round, three base merges (six conflicted code files, both sides kept) and the fresh-clone verification. Its real-size test found SUITE-CAP-1 (handed to Lane A). The parts in #42's files wait for #42 (its status file's "Split for after #42 merges"). Ten Lane B merges on 2026-10-26; only ci-deps (#48) remains, tonight.
