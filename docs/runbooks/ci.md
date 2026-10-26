@@ -15,20 +15,21 @@ build, a reviewer, the verifier, the founder.
 <!-- /required-checks -->
 
 The list lives in `tools/required-checks.ts`; every document that lists the checks is held to it
-(`tools/test/required-checks.test.ts`). The founder sets them in the ruleset (docs/runbooks/github-governance.md, step
-4A). No other ci.yml job is required by name: `all green` needs them all, so a shard added or removed changes no setting.
+(`tools/test/required-checks.test.ts`). The build branch's ruleset, "Protect the build branch" (ruleset 25837331;
+docs/runbooks/github-governance.md, step 4A), has required them from GitHub Actions since the founder applied it on
+2026-10-25 at 21:14 UTC, with branches up to date. No other ci.yml job is required by name: `all green` needs them all, so a shard added or removed changes no setting.
 
 ## The jobs
 
 | Job (its check) | What it runs | Timeout |
 | --- | --- | --- |
-| `static` | the dependency audit; the secret scan of the commits the run checks; the fixture check; the content checker; published releases and prompt versions unchanged; the engine freeze (pull requests); `pnpm synth --all` and its clean diff; `pnpm typecheck`; `pnpm lint:logs`; `pnpm test:golden`; `pnpm synth --large` (the 10,000-claim remittance the oracle reads) and `pnpm test:oracle`; `pnpm licenses:check` | 15 min |
+| `static` | the dependency audits (`pnpm audit --prod`, and `--audit-level=high` over every dependency); the action pins and the toolchain, against the run's base (`pnpm actions:check`, `pnpm toolchain:check`; networked); the secret scan of the commits the run checks; the fixture check; the content checker; published releases and prompt versions unchanged; the engine freeze (pull requests); `pnpm synth --all` and its clean diff; `pnpm typecheck`; `pnpm lint:logs`; `pnpm test:golden`; `pnpm synth --large` (the 10,000-claim remittance the oracle reads) and `pnpm test:oracle`; `pnpm licenses:check` | 15 min |
 | `lint` | `pnpm lint`, ESLint in three memory-bounded groups | 15 min |
 | `unit` | Chromium, the pinned gitleaks (the pre-push hook's tests run it), the engine freeze's base, `pnpm test` (with coverage) | 20 min |
-| `db (k/N)` | its own Postgres, Chromium, `pnpm db:migrate && pnpm test:db --shard=k/N`, then "Files this shard ran" | 20 min |
-| `domain model` | its own Postgres; on a pull request "Changes since the last approved domain model"; `pnpm db:migrate`; `pnpm db:domain-model --check --strict --require-approval` | 10 min |
+| `db (k/N)` | its own Postgres from `docker-compose.yml`, Chromium, `pnpm db:migrate && pnpm test:db --shard=k/N`, then "Files this shard ran" | 20 min |
+| `domain model` | its own Postgres from `docker-compose.yml`; on a pull request "Changes since the last approved domain model"; `pnpm db:migrate`; `pnpm db:domain-model --check --strict --require-approval` | 10 min |
 | `build` | `pnpm build` (web and worker); the web build stamped and kept as `web-build`; `pnpm cdk:diff` | 15 min |
-| `e2e (k/M)` | after `build`: its own Postgres, Chromium, the downloaded build, `pnpm test:e2e --shard=k/M`; its report kept as `playwright-<k>` | 25 min |
+| `e2e (k/M)` | after `build`: its own Postgres from `docker-compose.yml`, Chromium, the downloaded build, `pnpm test:e2e --shard=k/M`; its report kept as `playwright-<k>` | 25 min |
 | `images` | both images built from their Dockerfiles and scanned by Trivy | 20 min |
 | `all green` | every job's result, to its log and its summary | 5 min |
 
@@ -41,9 +42,9 @@ the differential test against the merge base); on a push, the commits beyond the
 (`github.event.before`), or the last commit alone when the branch is new. "The commits this run checks", the first
 step of `static`, prints the range. The engine freeze's own check (`tools/engine-freeze/check.ts`) runs on pull
 requests only, because its exception names a pull request, which a push does not carry: a merge's push follows its
-pull request's run, which the check gated, and a direct push to `claude/build-platform`, which the ruleset of the
-governance runbook's step 4A blocks once the founder applies it, is until then checked by the unit job's differential
-test alone, which prices the base's engine and this commit's.
+pull request's run, which the check gated. A direct push to `claude/build-platform` is refused by the build branch's
+ruleset (the governance runbook's step 4A, applied 2026-10-25); every push is still checked by the unit job's
+differential test, which prices the base's engine and this commit's.
 
 ## Reading a red gate
 
@@ -53,7 +54,21 @@ test alone, which prices the base's engine and this commit's.
 2. Open the red job.
    - **`static`:** every step reports; the red ones are the findings. A red "The commits this run checks" means the
      range's base is not in the clone (on a push, a previous head the branch no longer holds, which a force push
-     leaves; once the founder applies step 4A's ruleset, it blocks those).
+     leaves; the build branch's ruleset has blocked those since 2026-10-25).
+     - **"Action pins"** (`pnpm actions:check`) names the workflow, the step and the rule: a `uses:` not of the form
+       `owner/repo@<40 hex> # vX.Y.Z`, two pins of one action, a SHA that is not the tag's commit, a `with:` key the
+       action does not declare at that SHA, a composite nesting an action by tag, or a cache nested in an action
+       `release.yml` uses that its inputs do not turn off. Re-pin from the tag's peeled commit,
+       `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/vX.Y.Z^{}'`. "… failed 3 times …; the check fails
+       closed" names the host that refused or rate-limited the read: re-run the job. On a push run an unchanged pin's
+       moved tag is a warning, never a failure, read at the weekly triage (docs/runbooks/dependency-upgrades.md).
+     - **"Toolchain"** (`pnpm toolchain:check`) names the rule and the version: an advisory against the pinned pnpm, a
+       pnpm or a version the lockfile adds under three days old with no dated exclude, an exclude or exception list out
+       of step with `pnpm-workspace.yaml`, an override without its entry. "… check-toolchain fails closed" names the
+       registry host it could not read: re-run the job. Each other remedy is in docs/runbooks/dependency-upgrades.md.
+   - **"Wait for the database" in `db`, `domain model` or `e2e`:** compose's own log follows the error. A pull refused
+     or slow (Docker Hub) is an infrastructure failure: re-run the job. A healthcheck that never passes is the image's
+     or `docker-compose.yml`'s; read the last step, "The database's log".
    - **`db (k/N)`:** the failing file and test are in the suite step's output. "Files this shard ran" lists the files
      the shard ran, with the ten slowest. Run the file locally on its own (below); every db file makes its own
      database, so a shard's failure is a file's, never the shard's order.
@@ -94,8 +109,8 @@ gh api "repos/PureTideWater/PhysicalTherapy/actions/runs/$run/jobs" --paginate -
 ```
 
 The time until a pull request can merge (A1′) is the last of the four required checks, from the head's first workflow
-run: on a pull request that touches a watched path the capacity gate (13 to 16 minutes measured), on a money-path pull
-request `mutation`, otherwise `all green`. Record which check finished last.
+run: on a pull request that touches a watched path the capacity gate (about 12 to 19 minutes measured: 11:59, 15:52,
+18:28, 18:32 and 17:30 on five runs of 2026-10-25), on a money-path pull request `mutation`, otherwise `all green`. Record which check finished last.
 
 ```sh
 sha=<head commit>
@@ -104,8 +119,35 @@ gh api "repos/PureTideWater/PhysicalTherapy/commits/$sha/check-runs" --paginate 
   --jq '.check_runs[] | select(.name | IN("all green", "mutation", "screening-capacity gate", "approval-of-record")) | [.name, .started_at, .completed_at] | @tsv'
 ```
 
-Dependabot's pull requests are read the same way; their runs queue behind the account's other jobs (GitHub Free runs
-20 jobs at once per account, ci.yml up to about 11 of them), and that bot queue time is reported apart.
+## Dependabot's pull requests and runs
+
+From the founder's switch of the default branch (F1 (a); docs/runbooks/github-governance.md, "The default branch until
+launch"), Dependabot reads `.github/dependabot.yml` from `claude/build-platform` and opens its grouped pull requests
+there: actions on Tuesdays at 04:37 UTC, the two images and compose's postgres on Wednesdays at 04:43, npm on Thursdays
+at 04:31 (up to eight groups). Each runs every workflow a lane's pull request runs: ci.yml (about 38 to 39
+runner-minutes), the capacity measurement on a watched path (every npm and actions pull request touches one), and
+mutation in full (31 to 36 runner-minutes) when it changes the root manifest, the catalog or `mutation.yml`. A full
+Thursday batch is about 550 to 650 runner-minutes and fills GitHub Free's 20 concurrent jobs per account for about 30
+to 35 minutes. A person triages every one and never merges one as it stands (docs/runbooks/dependency-upgrades.md).
+
+**The bot queue, for the first four weekly batches.** For each Dependabot head, and for each lane pull request pushed
+while a batch runs, take A1′'s two commands above with that head's SHA, and the run's queue time from "Timing a run"
+(`queue_minutes`). Record per batch: the heads, each one's queue and A1′, and which check finished last. If a lane
+pull request waits more than 15 minutes for its first job, record it: with actionlint accepting `concurrency.queue`,
+that is the trigger to revisit one shared queue for Dependabot's runs (docs/adr/0066, Part 2, "Revisit when").
+
+**The weekly read of Dependabot's own runs.** Dependabot runs as Actions runs with `event=dynamic`. A run that opens no
+pull request shows only there:
+
+```sh
+since=<last triage date, YYYY-MM-DD>
+gh api "repos/PureTideWater/PhysicalTherapy/actions/runs?event=dynamic&created=>=$since" --paginate \
+  --jq '.workflow_runs[] | [.id, .name, .conclusion, .created_at] | @tsv'
+```
+
+Open every `failure` and read its log (run 40223237798, #38's of 2026-10-25, is one: pnpm refused a locked version under
+three days old). A version held back by a release age is a successful run whose log says "release-age block
+detected"; under the npm cooldown of three days, equal to the release age, that should not occur, so record any.
 
 ## Proving the shards ran every database file once
 
@@ -132,7 +174,7 @@ lines. A shard's hash is the SHA-256 of its list, sorted bytewise (`LC_ALL=C sor
 
 GitHub's standard runner for a private repository has 2 CPUs and 8 GB, not 4 and 16. The matrices widen by themselves
 from `github.event.repository.private`: six `db` shards and three `e2e` shards, so the wall stays near 10 minutes, at
-about 70 to 80 billed minutes a push instead of about 45. The lint runner fits its groups to the host's memory (web
+about 70 to 80 billed minutes a push instead of about 38 to 39 runner minutes (44 to 45 billed). The lint runner fits its groups to the host's memory (web
 alone, then the others), and the capacity measurement refuses a 2-CPU runner (docs/runbooks/screening-capacity.md, "The
 8-core runner"). Read the budget after the first private week (docs/runbooks/github-governance.md, step 1).
 
@@ -145,8 +187,10 @@ alone, then the others), and the capacity measurement refuses a 2-CPU runner (do
 | Each db shard's test durations, `node_modules/.vite/vitest` | `vitest-db-v1-<os>-<N>-<k>-<commit>` | each `db` shard, whatever its result | the same shard, by prefix |
 | Playwright's browsers, `~/.cache/ms-playwright` | `playwright-v1-<os>-<hash of playwright-core's browsers.json>` | `unit`, on a miss | `unit`, every `db` and `e2e` shard, by the exact key |
 
-A pull request restores its own caches and its base branch's, and only push runs on the build branch write the base
-branch's, so the first pull request after a CI change runs cold. A cache only saves time: tsc compares every input's
+A run restores its own branch's caches and the default branch's, and only push runs on the build branch write the base
+branch's, so the first pull request after a CI change runs cold. Under F1 (a) the build branch is the default branch
+until launch, so every branch's runs, and every tag's, may restore what its push runs saved; `release.yml` therefore
+restores none, and builds or downloads everything its attested report rests on in its own run (docs/adr/0062). A cache only saves time: tsc compares every input's
 hash, the durations only order a shard's files, whose membership the paths alone fix, and the browsers' key is the
 list of builds the installed Playwright pins, whose install fetches any build missing from the cache (on a hit it
 fetches only the system libraries; in run 40166129200, whose seven installs took 18 to 29 seconds, the browsers'
@@ -158,8 +202,9 @@ image is then built from. To clear one:
 ## Running the same checks locally
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:golden`, `pnpm test:oracle` (pyx12 in a virtualenv).
-- One database file: `DATABASE_URL=postgres://postgres:test@localhost:5432/postgres pnpm vitest run --project db <file>`
-  (each file makes and drops its own database). A shard as CI runs it: `pnpm test:db --shard=k/N`.
+- One database file: `docker compose up --detach --wait postgres` (the image CI runs), then
+  `DATABASE_URL=postgres://postgres:test@localhost:5432/postgres pnpm vitest run --project db <file>` (each file makes
+  and drops its own database). A shard as CI runs it: `pnpm test:db --shard=k/N`.
 - The schema approval: `pnpm db:migrate && pnpm db:domain-model --check --strict --require-approval`.
 - The journeys over a build of this commit, from a tree with no uncommitted change: `pnpm build`, then
   `pnpm -s exec tsx apps/web/scripts/build-stamp.ts --write "$(git rev-parse HEAD)"`, then
@@ -167,7 +212,9 @@ image is then built from. To clear one:
   that names a commit cannot vouch for; with edits in the tree, leave `E2E_PREBUILT` unset and the web server builds
   first.
 - The workflows: `actionlint .github/workflows/*.yml`, and `pnpm exec vitest run tools/test/workflows.test.ts
-  tools/test/ci-gate.test.ts tools/test/required-checks.test.ts`.
+  tools/test/dependabot-config.test.ts tools/test/no-duplicated-versions.test.ts tools/test/ci-gate.test.ts
+  tools/test/required-checks.test.ts`; the pins and the toolchain against the build branch:
+  `BASE=origin/claude/build-platform pnpm actions:check` and `BASE=origin/claude/build-platform pnpm toolchain:check`.
 
 ## Changing CI
 
@@ -177,6 +224,14 @@ image is then built from. To clear one:
   ruleset, which only the founder sets.
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
+- A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes
+  the same SHA wherever it is used; `pnpm actions:check` reads it. Behaviour asserts in `workflows.test.ts` find a step
+  by the action's name (`usesAction`), never by a version, so Dependabot's pin bumps stay green.
+- A job that needs PostgreSQL runs `tools/ci/postgres.sh up` right after its checkout and `tools/ci/postgres.sh wait`
+  before its first database step, with "The database's log" last (`workflows.test.ts` holds the order); no workflow
+  declares `services:`.
+- A change to `release.yml` or the Dockerfiles runs `release-dry-run.yml` (advisory) on its pull request: read it,
+  since no tag runs the release before the founder's.
 
 ## Mutation testing
 
