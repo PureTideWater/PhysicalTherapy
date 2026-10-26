@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/u
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { Money } from '../../../../../components/remittances/display';
+import { Counted, Money } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../../components/uploads/format-flag';
 import { ReceiptList, ReceiptStatus } from '../../../../../components/uploads/receipts';
@@ -22,6 +22,7 @@ import {
   exportErrorPosition,
   exportErrorText,
   formatBytes,
+  providerAdjustments,
   shortId,
   utcMinute,
 } from '../../../../../lib/uploads/receipt-labels';
@@ -72,6 +73,19 @@ function RemittanceLinks(props: { readonly practiceId: string; readonly remittan
   );
 }
 
+/** Which way the provider adjustments (PLB) moved the payment, and by how much, in the mono face. */
+function ProviderAdjustments({ plbTotalCents }: { readonly plbTotalCents: string }) {
+  const adjustments = providerAdjustments(plbTotalCents);
+  if (adjustments === null) {
+    return 'no provider adjustments';
+  }
+  return (
+    <>
+      provider adjustments {adjustments.direction} <Money value={adjustments.magnitudeCents} /> {adjustments.direction === 'withheld' ? 'from' : 'to'} the payment
+    </>
+  );
+}
+
 /** An 835's parse report: what each transaction set became, and every error with its segment and position. */
 function X12Report({ practiceId, parse }: { readonly practiceId: string; readonly parse: X12ParseSummary }) {
   return (
@@ -79,8 +93,8 @@ function X12Report({ practiceId, parse }: { readonly practiceId: string; readonl
       <CardHeader>
         <CardTitle>Parse report</CardTitle>
         <CardDescription>
-          {parse.transactions === 1 ? '1 transaction set' : `${String(parse.transactions)} transaction sets`}, {parse.claims} claims, {parse.lines} lines, {parse.reversals} reversals; provider
-          adjustments <Money value={parse.plbTotalCents} />.
+          <Counted value={parse.transactions} one="transaction set" />, <Counted value={parse.claims} one="claim" />, <Counted value={parse.lines} one="line" />,{' '}
+          <Counted value={parse.reversals} one="reversal" />; <ProviderAdjustments plbTotalCents={parse.plbTotalCents} />.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -153,7 +167,8 @@ function ExportReport({ practiceId, parse }: { readonly practiceId: string; read
       <CardHeader>
         <CardTitle>Parse report</CardTitle>
         <CardDescription>
-          {parse.transactions === 1 ? '1 payment' : `${String(parse.transactions)} payments`}, {parse.claims} claims, {parse.lines} lines, {parse.reversals} reversals.
+          <Counted value={parse.transactions} one="payment" />, <Counted value={parse.claims} one="claim" />, <Counted value={parse.lines} one="line" />,{' '}
+          <Counted value={parse.reversals} one="reversal" />.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

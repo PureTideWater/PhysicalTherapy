@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { platformRoute } from '../http/invoke';
 import { InputError, type MutationResult } from '../http/route';
 import { modelPathOf } from '../models/path';
-import { dollarsField } from '../money-input';
+import { DOLLARS_MESSAGE, dollarsField } from '../money-input';
 
 /**
  * The console's model controls (PRD 6, Admin console: "feature flags"; PRD 14, Operational limits: "per-practice
@@ -17,7 +17,7 @@ import { dollarsField } from '../money-input';
  *   practice), and each active practice's model calls and cost today against its daily budget, in counts and
  *   amounts only (console_model_spend; no call, input or output is named).
  * - The one action sets a model flag through set_feature_flag() (feature_flag.manage, checked again there, with its
- *   own audit event): the kill switch on or off, the daily budget (typed in dollars and cents, as every amount a person
+ *   own audit event): the kill switch on or off, the daily budget (typed in dollars, as every amount a person
  *   enters, and stored in the flag as whole cents), the v1.5 denial-letter reader on or off.
  *   A kill switch in reach of a practice turns its every model feature off; the most specific budget and letter
  *   setting wins (the gateway's flags.ts).
@@ -26,14 +26,17 @@ import { dollarsField } from '../money-input';
 /** The model flags the console sets, and what each is called on the screen. */
 export const MODEL_FLAGS: Readonly<Record<Exclude<FeatureFlagKey, 'platform.maintenance'>, string>> = {
   'model.kill_switch': 'Kill switch (every model feature off)',
-  'model.daily_budget_cents': 'Daily budget (dollars)',
+  'model.daily_budget_cents': 'Daily budget',
   'model.read_denial_letter': 'Denial-letter reader (v1.5)',
 };
 type ModelFlagKey = keyof typeof MODEL_FLAGS;
 const MODEL_FLAG_KEYS = Object.keys(MODEL_FLAGS) as ModelFlagKey[];
 
-/** What the flag form's one value field takes, under it. */
-export const MODEL_VALUE_HINT = 'on or off for a switch; a budget in dollars and cents, such as 5.00';
+/** What the flag form's one value field takes, under it: the budget's unit is said here, not in the flag's name. */
+export const MODEL_VALUE_HINT = 'on or off for a switch; a daily budget in dollars, such as 5.00';
+
+/** The longest value the field takes: the largest budget written with "$" and commas ("$ 9,999,999,999.99"). */
+export const MODEL_VALUE_LENGTH = 24;
 
 export interface ModelFlagView {
   readonly key: ModelFlagKey;
@@ -153,16 +156,16 @@ export const setModelFlag = platformRoute({
   input: z.object({
     key: z.enum(MODEL_FLAG_KEYS as [ModelFlagKey, ...ModelFlagKey[]], { message: 'choose a model flag' }),
     target: z.string().regex(TARGET, 'choose everyone, an organization or a practice'),
-    value: z.string().trim().min(1, 'a value').max(16),
+    value: z.string().trim().min(1, 'a value').max(MODEL_VALUE_LENGTH),
   }),
   audit: { action: 'model_flag_set', objectType: 'feature_flag' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
     let value: boolean | string;
     if (input.key === 'model.daily_budget_cents') {
-      // Dollars and cents, exactly (dollarsField: nine whole digits at most, within what the gateway reads), stored as whole cents.
+      // Dollars and cents, exactly (dollarsField: ten whole digits at most, as the gateway reads), stored as whole cents.
       const budget = dollarsField.safeParse(input.value);
       if (!budget.success) {
-        throw new InputError([{ field: 'value', message: 'a budget in dollars and cents, such as 5.00' }]);
+        throw new InputError([{ field: 'value', message: DOLLARS_MESSAGE }]);
       }
       value = centsToString(budget.data);
     } else if (input.value === 'on' || input.value === 'off') {

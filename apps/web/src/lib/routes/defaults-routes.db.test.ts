@@ -20,8 +20,8 @@ import { defaultsSettingsPage, settingsMaterialityAction, settingsPursuitAction 
 /**
  * Settings → Defaults through its routes against PostgreSQL (test matrix CAS-39): the page returns the stored
  * thresholds and staff rate in cents, the form is pre-filled with them in dollars (dollarsForInput), and saving the
- * materiality and pursuit forms with what the page pre-fills keeps every value, through the real settings.ts parser,
- * at the edges of what a save can store; triage reads the same cents. SYNTHETIC data only.
+ * materiality and pursuit forms with what the page pre-fills writes every value back, through the real settings.ts
+ * parser, at the edges of what its save takes; triage reads the same cents. SYNTHETIC data only.
  */
 
 let database: MigratedDatabase;
@@ -102,13 +102,22 @@ async function store(settings: Record<string, unknown>): Promise<void> {
   await owner.query('UPDATE practice SET settings = settings || $2::jsonb WHERE id = $1', [world.practiceId, JSON.stringify(settings)]);
 }
 
-/** Reads the page, then saves both forms with exactly what the page pre-fills. */
+/** The keys the two forms write. */
+const SAVED_KEYS = ['line_materiality_cents', 'case_materiality_cents', 'staff_rate_cents_per_hour', 'minutes_per_packet', 'minutes_per_follow_up'];
+
+/**
+ * Reads the page, then saves both forms with exactly what the page pre-fills. The keys are removed between the read
+ * and the save, so a value found afterwards is one the save wrote, not one it left in place (an audit event would not
+ * show that: the route records it whether or not the statement wrote).
+ */
 async function saveUnchanged(): Promise<void> {
   const page = await run(defaultsSettingsPage);
   if (page.status !== 'ok') {
     throw new Error(`expected the page, got ${page.status}`);
   }
   const { materiality, pursuit } = page.data;
+  await owner.query('UPDATE practice SET settings = settings - $2::text[] WHERE id = $1', [world.practiceId, SAVED_KEYS]);
+  expect(Object.keys(await stored()).filter((key) => SAVED_KEYS.includes(key))).toEqual([]);
   expect(await run(settingsMaterialityAction, { lineMateriality: dollarsForInput(materiality.lineCents), caseMateriality: dollarsForInput(materiality.caseCents) })).toMatchObject({
     status: 'ok',
     data: { redirect: `/p/${world.practiceId}/settings/defaults?notice=materiality` },
@@ -135,7 +144,7 @@ describe('saving the defaults form unchanged (CAS-39)', () => {
     expect(triageSettings(settings)).toMatchObject({ lineMaterialityCents: 500n, caseMaterialityCents: 25000n, pursuit: { staffRateCentsPerHour: 4500n, minutesPerPacket: 45, minutesPerFollowUp: 10 } });
   });
 
-  it('keeps every amount at the edges of what a save can store, through the save’s own parser', async () => {
+  it('writes every amount back at the edges of what the save takes, through the save’s own parser', async () => {
     for (const amount of ['0', '1', '99', '100', '500', '4500', '25000', '99999999999']) {
       await store({ line_materiality_cents: amount, case_materiality_cents: amount, staff_rate_cents_per_hour: amount, minutes_per_packet: 0, minutes_per_follow_up: 10_000 });
       await saveUnchanged();

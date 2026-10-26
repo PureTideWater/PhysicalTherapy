@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { addNote, assignOwner } from '../cases/workbench';
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
-import { underPacketRules } from '../cases/refusals';
+import { REFUSED_FIELD, underPacketRules } from '../cases/refusals';
 import { dollarsField } from '../money-input';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
@@ -72,9 +72,10 @@ export const openCaseAction = practiceRoute({
       throw new InputError([{ field: 'pattern', message: PATTERN_NOT_WAITING }]);
     }
     if (opened.outcome === 'below_materiality') {
+      // Said as the form's refusal, not under the pattern's hidden fields, which mark nothing a person sees.
       throw new InputError([
         {
-          field: 'pattern',
+          field: REFUSED_FIELD,
           message: `its actionable lines total ${formatUsd(opened.actionableCents)}, below the case materiality of ${formatUsd(opened.materialityCents)}, so it keeps accumulating; lower the case materiality to open it`,
         },
       ]);

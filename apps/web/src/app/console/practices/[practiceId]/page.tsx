@@ -6,8 +6,10 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { Field, SelectField } from '../../../../components/field';
+import { MoneyField, moneyLabel } from '../../../../components/money-field';
 import { Money } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
+import type { PracticeSettingsInput } from '../../../../lib/console/practice-settings';
 import { loadPage } from '../../../../lib/http/next';
 import { practiceSettingsPage } from '../../../../lib/routes/console';
 import { zipCodeText } from '../../../../lib/zip';
@@ -22,6 +24,20 @@ const ROUNDING = [
   { value: 'HALF_EVEN_CENT', label: 'Half even to the cent' },
   { value: 'TRUNCATE', label: 'Truncate to the cent' },
 ];
+
+/** The label of each field of the settings form, by its key, as the form shows it, so a refusal names the label. */
+const SETTINGS_LABELS = {
+  facilityPlaces: 'Places of service priced as facility',
+  nonFacilityPlaces: 'Places of service priced as non-facility',
+  defaultRounding: 'Default rounding when a contract is silent',
+  lineMateriality: moneyLabel('Per-line materiality'),
+  caseMateriality: moneyLabel('Case materiality'),
+  anomalyMinimumCohort: 'Anomaly cohort minimum (lines)',
+  anomalyThreshold: moneyLabel('Anomaly threshold', 'dollars short of the mode'),
+  staffRatePerHour: moneyLabel('Staff rate', 'dollars per hour'),
+  minutesPerPacket: 'Minutes per packet',
+  minutesPerFollowUp: 'Minutes per follow-up',
+} as const satisfies Readonly<Record<keyof PracticeSettingsInput, string>>;
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -99,19 +115,19 @@ export default async function PracticeSettingsPage(props: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ActionForm action={setPracticeSettingsAction} submit="Save the settings" className="grid max-w-xl gap-3">
+          <ActionForm action={setPracticeSettingsAction} submit="Save the settings" className="grid max-w-xl gap-3" labels={SETTINGS_LABELS}>
             <FormKeys />
             <input type="hidden" name="practiceId" value={practice.id} />
-            <Field label="Places of service priced as facility" name="facilityPlaces" defaultValue={form.facilityPlaces} hint="Two-digit codes, separated by commas (for example 19, 22)." />
-            <Field label="Places of service priced as non-facility" name="nonFacilityPlaces" defaultValue={form.nonFacilityPlaces} hint="Two-digit codes, separated by commas (for example 11)." />
-            <SelectField label="Default rounding when a contract is silent" name="defaultRounding" options={ROUNDING} defaultValue={form.defaultRounding} />
-            <Field label="Per-line materiality (dollars)" name="lineMateriality" inputMode="decimal" defaultValue={form.lineMateriality} />
-            <Field label="Case materiality (dollars)" name="caseMateriality" inputMode="decimal" defaultValue={form.caseMateriality} />
-            <Field label="Anomaly cohort minimum (lines)" name="anomalyMinimumCohort" inputMode="numeric" defaultValue={form.anomalyMinimumCohort} />
-            <Field label="Anomaly threshold (dollars short of the mode)" name="anomalyThreshold" inputMode="decimal" defaultValue={form.anomalyThreshold} />
-            <Field label="Staff rate (dollars per hour)" name="staffRatePerHour" inputMode="decimal" defaultValue={form.staffRatePerHour} />
-            <Field label="Minutes per packet" name="minutesPerPacket" inputMode="numeric" defaultValue={form.minutesPerPacket} />
-            <Field label="Minutes per follow-up" name="minutesPerFollowUp" inputMode="numeric" defaultValue={form.minutesPerFollowUp} />
+            <Field label={SETTINGS_LABELS.facilityPlaces} name="facilityPlaces" defaultValue={form.facilityPlaces} hint="Two-digit codes, separated by commas (for example 19, 22)." />
+            <Field label={SETTINGS_LABELS.nonFacilityPlaces} name="nonFacilityPlaces" defaultValue={form.nonFacilityPlaces} hint="Two-digit codes, separated by commas (for example 11)." />
+            <SelectField label={SETTINGS_LABELS.defaultRounding} name="defaultRounding" options={ROUNDING} defaultValue={form.defaultRounding} />
+            <MoneyField label="Per-line materiality" name="lineMateriality" defaultValue={form.lineMateriality} />
+            <MoneyField label="Case materiality" name="caseMateriality" defaultValue={form.caseMateriality} />
+            <Field label={SETTINGS_LABELS.anomalyMinimumCohort} name="anomalyMinimumCohort" inputMode="numeric" defaultValue={form.anomalyMinimumCohort} />
+            <MoneyField label="Anomaly threshold" unit="dollars short of the mode" name="anomalyThreshold" defaultValue={form.anomalyThreshold} />
+            <MoneyField label="Staff rate" unit="dollars per hour" name="staffRatePerHour" defaultValue={form.staffRatePerHour} />
+            <Field label={SETTINGS_LABELS.minutesPerPacket} name="minutesPerPacket" inputMode="numeric" defaultValue={form.minutesPerPacket} />
+            <Field label={SETTINGS_LABELS.minutesPerFollowUp} name="minutesPerFollowUp" inputMode="numeric" defaultValue={form.minutesPerFollowUp} />
           </ActionForm>
         </CardContent>
       </Card>

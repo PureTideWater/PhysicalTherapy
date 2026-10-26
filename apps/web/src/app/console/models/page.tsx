@@ -7,7 +7,7 @@ import { Field, SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
-import { MODEL_VALUE_HINT, consoleModelsPage } from '../../../lib/routes/console-models';
+import { MODEL_VALUE_HINT, MODEL_VALUE_LENGTH, consoleModelsPage } from '../../../lib/routes/console-models';
 import { setModelFlagAction } from './actions';
 
 export const metadata: Metadata = { title: 'Model features' };
@@ -74,11 +74,11 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ActionForm action={setModelFlagAction} submit="Set the flag" className="grid max-w-2xl gap-4">
+          <ActionForm action={setModelFlagAction} submit="Set the flag" className="grid max-w-2xl gap-4" labels={{ key: 'Flag', target: 'Applies to', value: 'Value' }}>
             <FormKeys />
             <SelectField label="Flag" name="key" options={keys} />
             <SelectField label="Applies to" name="target" options={targets} />
-            <Field label="Value" name="value" required maxLength={16} hint={MODEL_VALUE_HINT} />
+            <Field label="Value" name="value" required maxLength={MODEL_VALUE_LENGTH} hint={MODEL_VALUE_HINT} />
           </ActionForm>
         </CardContent>
       </Card>

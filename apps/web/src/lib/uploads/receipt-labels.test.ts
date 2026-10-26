@@ -17,6 +17,7 @@ import {
   exportErrorPosition,
   exportErrorText,
   formatBytes,
+  providerAdjustments,
   receiptState,
   shortId,
   utcMinute,
@@ -138,14 +139,22 @@ describe('receipts of parsed 835s (PRD 10, step 10)', () => {
       transactionOutcomes: [{ ...transaction, outcome: 'loaded_for_review' }],
     };
     expect(receiptState({ ...base, status: 'loaded', parse: busy }).detail).toBe(
-      'Loaded 2 remittances, 1 claim and 1 line; 1 reversal linked to its original where loaded; provider adjustments of -$10.50; 2 remittances already loaded from another file; a trace number the payer used before, flagged for review; unknown codes loaded with a flag: carc:Z999.',
+      'Loaded 2 remittances, 1 claim and 1 line; 1 reversal linked to its original where loaded; provider adjustments added $10.50 to the payment; 2 remittances already loaded from another file; a trace number the payer used before, flagged for review; unknown codes loaded with a flag: carc:Z999.',
     );
     expect(receiptState({ ...base, status: 'loaded' }).detail).toBe('Loaded.');
   });
 
   it('say a negative provider adjustment as -$1.00, the sign before the dollar sign, as <Money> shows it on the remittance', () => {
-    expect(receiptState({ ...base, status: 'loaded', parse: { ...parsed, plbTotalCents: '-100' } }).detail).toBe('Loaded 1 remittance, 2 claims and 3 lines; provider adjustments of -$1.00.');
-    expect(receiptState({ ...base, status: 'loaded', parse: { ...parsed, plbTotalCents: '123456' } }).detail).toBe('Loaded 1 remittance, 2 claims and 3 lines; provider adjustments of $1,234.56.');
+    // The 835 subtracts the PLB total from the payment: negative (interest) was added to it, positive withheld; none is not said.
+    expect(receiptState({ ...base, status: 'loaded', parse: { ...parsed, plbTotalCents: '-100' } }).detail).toBe('Loaded 1 remittance, 2 claims and 3 lines; provider adjustments added $1.00 to the payment.');
+    expect(receiptState({ ...base, status: 'loaded', parse: { ...parsed, plbTotalCents: '123456' } }).detail).toBe('Loaded 1 remittance, 2 claims and 3 lines; provider adjustments withheld $1,234.56 from the payment.');
+    expect(receiptState({ ...base, status: 'loaded', parse: { ...parsed, plbTotalCents: '0' } }).detail).toBe('Loaded 1 remittance, 2 claims and 3 lines.');
+    expect(['-1050', '0', '1', '123456'].map(providerAdjustments)).toEqual([
+      { direction: 'added', magnitudeCents: '1050' },
+      null,
+      { direction: 'withheld', magnitudeCents: '1' },
+      { direction: 'withheld', magnitudeCents: '123456' },
+    ]);
   });
 
   it('show a held file’s segment and position, and the difference of an imbalance (milestone 3; PAR-20, PAR-25)', () => {
@@ -158,7 +167,7 @@ describe('receipts of parsed 835s (PRD 10, step 10)', () => {
     };
     expect(receiptState({ ...base, status: 'held', parse: unbalanced })).toMatchObject({
       held: true,
-      detail: 'Held: nothing in it loaded. Does not balance by -$1.00 at segment 4 (BPR), element 2. The error report lists every position.',
+      detail: 'Held: nothing in it loaded. Does not balance by $1.00 at segment 4 (BPR), element 2: the payment is more than the claims paid less provider adjustments. The error report lists every position.',
     });
     const truncated: X12ParseSummary = { ...unbalanced, errors: [{ code: 'EDI_UNKNOWN_CODE', list: 'carc', segmentIndex: 9, segmentId: 'CAS', elementPosition: 2 }, { code: 'EDI_SYNTAX', reason: 'truncated', segmentIndex: 29, segmentId: 'CLP', elementPosition: 3 }] };
     expect(receiptState({ ...base, status: 'held', parse: truncated }).detail).toContain('Cut short at segment 29 (CLP), element 3.');
@@ -173,16 +182,20 @@ describe('receipts of parsed 835s (PRD 10, step 10)', () => {
     expect(receiptState({ ...base, status: 'duplicate', parse: duplicate }).detail).toBe('Duplicate remittance: already loaded from file 9a8b7c6d; nothing loads from it, and it is linked to the original.');
   });
 
-  it('write amounts as US dollars, the sign before the dollar sign, without a float, and positions in words', () => {
-    const unbalancedBy = (differenceCents: string) => errorText({ code: 'EDI_UNBALANCED', scope: 'transaction', segmentIndex: 4, segmentId: 'BPR', elementPosition: 2, differenceCents });
-    expect(['0', '5', '-5', '100', '-100', '123456', '-1234567'].map((amount) => unbalancedBy(amount).replace(' at segment 4 (BPR), element 2', ''))).toEqual([
+  it('write an imbalance as its size in US dollars, without a float, and which way it is off in words; positions in words', () => {
+    const unbalancedBy = (differenceCents: string, scope = 'transaction') => errorText({ code: 'EDI_UNBALANCED', scope, segmentIndex: 4, segmentId: 'BPR', elementPosition: 2, differenceCents });
+    expect(['0', '5', '-5', '123456', '-1234567'].map((amount) => unbalancedBy(amount).replace(' at segment 4 (BPR), element 2', ''))).toEqual([
       'Does not balance by $0.00',
-      'Does not balance by $0.05',
-      'Does not balance by -$0.05',
+      'Does not balance by $0.05: the payment is less than the claims paid less provider adjustments',
+      'Does not balance by $0.05: the payment is more than the claims paid less provider adjustments',
+      'Does not balance by $1,234.56: the payment is less than the claims paid less provider adjustments',
+      'Does not balance by $12,345.67: the payment is more than the claims paid less provider adjustments',
+    ]);
+    expect(['claim', 'claim_lines', 'line', 'unknown'].map((scope) => unbalancedBy('-100', scope).replace(' at segment 4 (BPR), element 2', ''))).toEqual([
+      'Does not balance by $1.00: the claim’s payment and adjustments come to more than its charge',
+      'Does not balance by $1.00: its lines’ charges come to less than the claim’s charge',
+      'Does not balance by $1.00: the line’s payment and adjustments come to more than its charge',
       'Does not balance by $1.00',
-      'Does not balance by -$1.00',
-      'Does not balance by $1,234.56',
-      'Does not balance by -$12,345.67',
     ]);
     expect(errorText({ code: 'EDI_NOT_835', segmentIndex: 3, segmentId: 'ST', elementPosition: 1 })).toBe('Not an 835 at segment 3 (ST), element 1');
     expect(errorText({ code: 'EDI_SYNTAX', reason: 'missing_segment', segmentIndex: 7, segmentId: '', elementPosition: 0 })).toBe('Unreadable at segment 7');

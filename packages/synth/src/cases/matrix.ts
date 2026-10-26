@@ -130,7 +130,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'CAS-38',
     title: 'The materiality and pursuit settings show stored cents as dollars',
     assertion:
-      'With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says "$5.00 per line and $250.00 per case" and "$45.00 an hour", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget field and its hint say dollars',
+      'With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says "$5.00 per line and $250.00 per case" and "$45.00 an hour", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget is typed in dollars, as its hint says',
   },
   {
     id: 'CAS-39',
