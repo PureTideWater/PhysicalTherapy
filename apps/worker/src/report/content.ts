@@ -24,7 +24,7 @@ import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
 import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
-import { type CorrectionKind, lineCorrections } from '../reconcile/patient-share';
+import { casePatientBalance, lineCorrections } from '../reconcile/patient-share';
 import { lineDeadlines } from '../triage/deadline';
 import { UNPRICED_REMEDIES } from './remedies';
 
@@ -435,9 +435,9 @@ async function runCases(client: ScopeClient, input: GatherInput): Promise<CaseRo
 }
 
 /**
- * The cases, of those named, whose corrections paid nothing more because the patient's share took them (docs/adr/0067;
- * the Reconciliation and case screens say the same): one of their lines is such a correction, and every other line
- * not written off is one too or is payer approved or recovered. Over every line of the case, whichever run priced it.
+ * The cases, of those named, whose corrections paid nothing more because the patient's share took them (docs/adr/0067):
+ * the one rule the Reconciliation and case screens read too (reconcile/patient-share.ts casePatientBalance), over every
+ * line of the case, whichever run priced it.
  */
 async function patientBalanceCases(scope: PracticeScope<ScopeClient>, practiceId: string, caseIds: readonly string[]): Promise<Set<string>> {
   if (caseIds.length === 0) {
@@ -454,11 +454,10 @@ async function patientBalanceCases(scope: PracticeScope<ScopeClient>, practiceId
     practiceId,
     rows.map((row) => row.service_line_id),
   );
-  const correctionOf = (serviceLineId: string): CorrectionKind | null => corrections.get(serviceLineId)?.correction ?? null;
   const qualifies = new Set<string>();
   for (const caseId of new Set(rows.map((row) => row.case_id))) {
-    const open = rows.filter((row) => row.case_id === caseId && !row.written_off);
-    if (open.some((row) => correctionOf(row.service_line_id) === 'patient_balance') && open.every((row) => correctionOf(row.service_line_id) === 'patient_balance' || row.stage === 'payer_approved' || row.stage === 'recovered')) {
+    const lines = rows.filter((row) => row.case_id === caseId).map((row) => ({ correction: corrections.get(row.service_line_id)?.correction ?? null, writtenOff: row.written_off, stage: row.stage }));
+    if (casePatientBalance(lines)) {
       qualifies.add(caseId);
     }
   }

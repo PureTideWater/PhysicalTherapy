@@ -145,6 +145,21 @@ function readingOf(outcome: MatchCorrection['outcome'], allowed: MatchCorrection
   return change.billableCents > ZERO_CENTS ? 'patient_balance' : 'other_reductions';
 }
 
+/**
+ * Whether a case shows "Payer corrected; balance is the patient's" (docs/adr/0067; design 2.3), the one rule the
+ * case and Reconciliation screens and the audit report read: one of its lines not written off is a correction the
+ * patient's share took whole, and every other such line is one too or is payer approved or recovered (its latest
+ * line_status stage). The case's stored state is case_rules' as ever; this is said beside it until the stored close
+ * lands.
+ */
+export function casePatientBalance(lines: readonly { readonly correction: CorrectionKind | null; readonly writtenOff: boolean; readonly stage: string | null }[]): boolean {
+  const open = lines.filter((line) => !line.writtenOff);
+  return (
+    open.some((line) => line.correction === 'patient_balance') &&
+    open.every((line) => line.correction === 'patient_balance' || line.stage === 'payer_approved' || line.stage === 'recovered')
+  );
+}
+
 /** The case lines named, each with its claim matches read in payment terms, its correction and its billable to the patient. */
 export async function lineCorrections(scope: Scope, practiceId: string, serviceLineIds: readonly string[]): Promise<Map<string, LineCorrection>> {
   const corrections = new Map<string, LineCorrection>();

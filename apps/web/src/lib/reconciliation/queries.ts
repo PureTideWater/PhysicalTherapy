@@ -10,6 +10,7 @@ import {
   type MatchReading,
   STATEMENT_COLUMNS,
   approvalShortfalls,
+  casePatientBalance,
   lineCorrections,
   practiceLedgerSettings,
   practiceLedgerTotals,
@@ -217,18 +218,8 @@ export function correctionView(line: LineCorrection | undefined, phi: boolean): 
   };
 }
 
-/**
- * Whether a case shows "Payer corrected; balance is the patient's" (docs/adr/0067; design 2.3): one of its lines is a
- * correction the patient's share took whole, and every other line not written off is one too or is payer approved or
- * recovered. The case's stored state is case_rules' as ever; this is said beside it until the stored close lands.
- */
-export function casePatientBalance(lines: readonly { readonly correction: CorrectionKind | null; readonly writtenOff: boolean; readonly stage: string | null }[]): boolean {
-  const open = lines.filter((line) => !line.writtenOff);
-  return (
-    open.some((line) => line.correction === 'patient_balance') &&
-    open.every((line) => line.correction === 'patient_balance' || line.stage === 'payer_approved' || line.stage === 'recovered')
-  );
-}
+/** Whether a case shows "Payer corrected; balance is the patient's": the worker's one rule (@tp/worker/ledger casePatientBalance), which the audit report reads too. */
+export { casePatientBalance };
 
 /** A case line's linkage: the remittance that reprocessed it (ERA), its posting and its deposit, and its entries. */
 export interface LinkageLine {

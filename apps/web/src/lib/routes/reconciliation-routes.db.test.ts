@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import { type ScopeClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
+import { casePatientBalance as reportRule } from '@tp/worker/ledger';
 import { type JobContext, printRoiStatement, reconcileHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
 import type { TriageWorld } from '@tp/worker/testing/triage';
@@ -18,7 +19,7 @@ import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
-import { reconciliation } from '../reconciliation/queries';
+import { casePatientBalance, reconciliation } from '../reconciliation/queries';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
 import { matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
@@ -495,6 +496,16 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
     expect(shown.case.state).toBe('submitted');
     expect(shown.ledger).toMatchObject({ approvedCents: '0', recoveredCents: '0' });
     expect(shown.corrections).toMatchObject({ billableCents: '3000', patientBalance: true });
+  });
+
+  it('reads the case’s "balance is the patient’s" by the one rule the audit report reads (S3)', () => {
+    // One definition, @tp/worker/ledger's, never a copy that can drift from the report's.
+    expect(casePatientBalance).toBe(reportRule);
+    const line = (correction: 'patient_balance' | 'other_reductions' | null, stage: string | null, writtenOff = false) => ({ correction, writtenOff, stage });
+    expect(casePatientBalance([line('patient_balance', 'actionable'), line(null, 'recovered'), line(null, 'payer_approved'), line(null, 'actionable', true)])).toBe(true);
+    expect(casePatientBalance([line('patient_balance', 'actionable'), line(null, 'actionable')])).toBe(false);
+    expect(casePatientBalance([line('other_reductions', 'actionable')])).toBe(false);
+    expect(casePatientBalance([line('patient_balance', 'actionable', true), line(null, 'recovered')])).toBe(false);
   });
 
   it('names on the specialist’s review the patient’s share beside a shortfall of an acceptance typed as the allowed amount, in amounts only (LED-18, S7)', async () => {

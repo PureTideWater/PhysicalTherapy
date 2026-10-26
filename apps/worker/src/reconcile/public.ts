@@ -11,7 +11,7 @@ export { type Scope, practiceLedgerSettings } from './ledger';
 export { type ManualContext, ReconciliationError, type ReconciliationRefusal, adjustEntry, matchClaimByHand, matchDepositByHand, matchPostingByHand, reverseMatch } from './manual';
 export { LedgerSettingsRefused, setLedgerSettings, setPostingTemplate } from './settings';
 export { approvalShortfalls } from './shortfalls';
-export { type CorrectionKind, type LineCorrection, type MatchCorrection, type MatchReading, lineCorrections } from './patient-share';
+export { type CorrectionKind, type LineCorrection, type MatchCorrection, type MatchReading, casePatientBalance, lineCorrections } from './patient-share';
 export { STATEMENT_COLUMNS, storedStatement } from './print';
 export {
   DEFAULT_STATEMENT_SOURCES,
