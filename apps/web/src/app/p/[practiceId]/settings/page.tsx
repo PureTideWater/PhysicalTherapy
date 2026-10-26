@@ -15,7 +15,7 @@ const STEPS: Readonly<Record<string, { readonly title: string; readonly detail: 
   terms: { title: 'Terms of use', detail: 'Accepted with their version and time.' },
   agreements: { title: 'Confirm the agreement chain', detail: 'BAA, engagement letter, terms and data-rights addendum on file, confirmed by you.' },
   team: { title: 'Invite your team', detail: 'A billing manager and a viewer, at least.' },
-  billing: { title: 'Choose a plan and a payment method', detail: 'ACH or card, through the payment provider.' },
+  billing: { title: 'Add a payment method and choose a plan', detail: 'A bank account (ACH) is preferred; a card also works.' },
   billing_zip: { title: 'Confirm your billing ZIP', detail: 'The ZIP code, and the ZIP+4 where Medicare needs it, that every line is priced at.' },
   upload: { title: 'Upload your first remittances', detail: '835 files from your clearinghouse or payer portals.' },
   correspondence: { title: 'Set the correspondence contact', detail: 'Whom a payer writes to or calls about a dispute: every packet prints it, and none is exported without it.' },

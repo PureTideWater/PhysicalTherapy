@@ -113,6 +113,16 @@ export interface FunctionModel {
   readonly bodySha256: string;
 }
 
+/**
+ * The SHA-256 of a function's body as the catalog holds it (prosrc, the text between the dollar quotes; or the
+ * SQL-standard body as PostgreSQL prints it), in hexadecimal. Appendix C prints its first 16 digits, and each
+ * function file (functions.ts) prints the same 16 on its body-hash line: one helper for both, so the two agree.
+ */
+export const bodySha256 = (src: string | null): string =>
+  createHash('sha256')
+    .update(src ?? '')
+    .digest('hex');
+
 /** Groups `list` by `key`, keeping order. */
 export function groupBy<T, K>(list: readonly T[], key: (item: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
@@ -314,9 +324,7 @@ export function buildModel(catalog: Catalog, migrations: MigrationText, areas: A
       executeRoles: f.execute_roles,
       executePublic: f.execute_public,
       setsScope: /set_config\s*\(\s*'app\.practice_ids'/i.test(f.src ?? '') || f.config.some((c) => c.startsWith('app.practice_ids=')),
-      bodySha256: createHash('sha256')
-        .update(f.src ?? '')
-        .digest('hex'),
+      bodySha256: bodySha256(f.src),
     }),
   );
 
