@@ -172,6 +172,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Lane A's PR 6c:** four frozen-engine defects found by #44's review (LANES.md, "Handed to Lane A").
   - **Lane A's screening journey:** the e2e timing failure above. Handed to Lane A in LANES.md, for #42's fix round: read the outcome only after the consumer has finished, or assert either stage, and make the key registration safe to retry.
   - **The amendments to LANES.md's items 3, 10 and 14** (step 5).
+  - **From #84 and #120 (2026-10-26):**
+    - **F1:** the per-field recall and precision floors of the model evaluation gate. They ship unset, so the gate fails closed. Setting them needs real model access (the tracker's milestone 10 note) and a person's choice of numbers.
+    - **F2:** whether the data-rights addendum covers accepted proposals used as examples. That is legal text, the founder's sign-off; nothing is built for it.
+  - **The co-founder's own approval** (from ~00:10 UTC): a dated delegation line in LANES.md, plus a small governance PR (approvers.json, ADR 0063, the approval-of-record check), would let his approval count in his own name. Lane B never signs the founder's name.
 - **The co-founder** (delegated, LANES.md 2026-10-25):
   - the usage reading: the current % and the reset time's time of day (rule 9);
   - payment-engine/S1, from #44: an explicit MoneyError guard in `multiplyCents` for text cast past `Cents`. It would be a later money change, in its own PR, with payment-engine review;
@@ -632,7 +636,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - PR 15b (ADR 0067, LED-14 to LED-18);
     - #111 (ADR 0068 if needed, DBF-01 to DBF-05);
     - #10 (ADR 0069 if needed, PRC-25 to PRC-28);
-    - #84 and #120 (ADR 0070, MOD-7 to MOD-12).
+    - #84 and #120 (ADR 0070, MOD-07 to MOD-12; corrected from MOD-7, since the matrix pads to two digits).
     - **Why these:** they are queue items 3, 4, 5 and 12, the next ones free of shared files. Items 6 to 10 change screens and wait for the UX baseline's findings, so they take them in. #49 waits for #42. #113 follows ci-deps' CLAUDE.md line.
   - **Rules the parallel sessions keep:**
     - Only this session edits LANES.md and lanes/lane-b.md. The others write only their own designs, summaries, scripts and a `approval-summaries/lane-b-<item>-status.md`, pulling before each push.
@@ -720,3 +724,16 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Taken as recommended under the 00:20 ruling** (design §0.5):
     - Q1: 15b records the outcome, with words from stored rows, and the stored close goes to Lane A;
     - Q2: a reprocessing that raises or keeps the allowed amount but pays less is matched "decreased", and takes back the payment fall, capped.
+- **2026-10-26 ~01:05 UTC: the #84/#120 session's design is reviewed; the build started.**
+  - **Two PRs, no migration:**
+    - `co-001/model-eval-gate` (#84: the gate, evaluation set v2, faults, per-feature serving; ADR 0070 Parts 1 and 2);
+    - then `co-001/contract-phi-check` (#120; Part 3).
+  - **`tools/screening-capacity/watched-paths.txt`** (a #42 file) is generated and held by its unit test. It is treated like the lockfile under rule 6: each PR regenerates it, the one merged second regenerates again, and nobody edits it by hand. This is within the co-founder's Q2, so confirmed.
+  - **Handed to Lane A (LANES.md):**
+    - F3: compact lookup hashes with a SECURITY DEFINER screen function, #120's best option. Until then the PR refuses fail-closed above 50,000 identifiers;
+    - F4: a reviewed correction of a document's kind.
+  - **For the founder, under "Waiting on someone":** F1, the gate's floors (unset, failing closed, needing model access); F2, the data-rights addendum (legal text).
+  - **Fixed:** the matrix's IDs are padded to two digits, so the reservations now read MOD-07 to MOD-12 and MAP-06 to MAP-10. Sent to the #84/#120 and #10 sessions.
+  - **The UX capture** is in its first full run (from 00:30 UTC; the populate journeys passed, 93 PNGs by 00:47).
+    - The container had restarted again at about 22:40 UTC, and the capture agent started PG18 by hand.
+    - The agent also ran `git checkout --` on `tools/lane-b-screen-tour/{build,setup}.sh` in `/home/user/ops`, to undo its own first edits to those two files. Both were clean before, so nothing was lost; it reported the breach itself. The session checks the ops tree before every commit.
