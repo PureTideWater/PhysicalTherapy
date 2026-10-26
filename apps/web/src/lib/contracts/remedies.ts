@@ -53,6 +53,15 @@ export function unpricedReasonText(reason: UnpricedReason): UnpricedReasonText {
   return BY_REASON.get(reason) as UnpricedReasonText;
 }
 
+/**
+ * Why an earlier run left a line unpriced, as the line page's list of other runs says it beside the run: the reason's
+ * meaning, word for word. SECONDARY_PAYER's meaning in the list ("Claim status 2 or 3") is narrower than the engine
+ * stops for (claim statuses 20 and 21 too), so it reads as the line's words say it (design 3.5, finding m3).
+ */
+export function otherRunReasonText(reason: UnpricedReason): string {
+  return reason === 'SECONDARY_PAYER' ? 'the payer processed the claim as secondary or later, which the release does not price' : unpricedReasonText(reason).meaning;
+}
+
 /** The names of the remedy screens, as the navigation shows them. */
 export const REMEDY_SCREEN_NAMES: Readonly<Record<RemedyScreen, string>> = {
   mapping: 'Payer and plan mapping',

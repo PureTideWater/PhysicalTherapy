@@ -10,6 +10,7 @@ import { Fact, LineStatusChip, Money, basisName, claimStatusName, period } from 
 import { AdjustmentWords, LineSummary, LineTrace, UnpricedWords } from '../../../../../components/pricing/line-words';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { notComputedWindowText } from '../../../../../lib/contracts/display';
+import { otherRunReasonText } from '../../../../../lib/contracts/remedies';
 import { loadPage } from '../../../../../lib/http/next';
 import { type PricingWords, lineTraceSteps, pricingWords } from '../../../../../lib/pricing/view';
 import { linePage } from '../../../../../lib/routes/remittances';
@@ -119,28 +120,28 @@ export default async function LinePage(props: {
                 </Fact>
               )}
               <Fact label="Mapping">
-                <span className="font-mono text-xs">{pricing.mappingId ?? '—'}</span>
+                <span className="break-all font-mono text-xs">{pricing.mappingId ?? '—'}</span>
               </Fact>
               <Fact label="Contract version">
                 {pricing.contractVersionId === null ? (
                   '—'
                 ) : (
-                  <Link className="font-mono text-xs underline" href={`/p/${practiceId}/contracts/versions/${pricing.contractVersionId}`}>
+                  <Link className="break-all font-mono text-xs underline" href={`/p/${practiceId}/contracts/versions/${pricing.contractVersionId}`}>
                     {pricing.contractVersionId}
                   </Link>
                 )}
               </Fact>
               <Fact label="Rate record">
-                <span className="font-mono text-xs">{pricing.rateRecordId ?? '—'}</span>
+                <span className="break-all font-mono text-xs">{pricing.rateRecordId ?? '—'}</span>
               </Fact>
               <Fact label="Rule release">
-                {pricing.run.releaseNo} <span className="font-mono text-xs">(manifest {pricing.run.manifestSha256})</span>
+                {pricing.run.releaseNo} <span className="break-all font-mono text-xs">(manifest {pricing.run.manifestSha256})</span>
               </Fact>
               <Fact label="Run">
                 <Link className="underline" href={`/p/${practiceId}/pricing-runs/${pricing.run.id}`}>
                   {pricing.run.periodFrom} to {pricing.run.periodTo}
                 </Link>
-                , engine <span className="font-mono text-xs">{pricing.run.engineVersion}</span>, complete {utc(pricing.run.completedAt)}
+                , engine <span className="break-all font-mono text-xs">{pricing.run.engineVersion}</span>, complete {utc(pricing.run.completedAt)}
               </Fact>
             </dl>
             {runs.length <= 1 ? null : (
@@ -151,7 +152,7 @@ export default async function LinePage(props: {
                   .map((other) => (
                     <Link key={other.runId} className="underline" href={`/p/${practiceId}/lines/${line.lineId}?run=${other.runId}`}>
                       {other.periodFrom} to {other.periodTo} (release {other.releaseNo}
-                      {other.unpricedReason === null ? null : <span data-reason={other.unpricedReason}>, not priced</span>})
+                      {other.unpricedReason === null ? null : <span data-reason={other.unpricedReason}>, not priced: {otherRunReasonText(other.unpricedReason)}</span>})
                     </Link>
                   ))}
               </nav>
@@ -195,14 +196,14 @@ export default async function LinePage(props: {
               {line.originalUnits === null ? '' : ` (billed ${line.originalUnits})`}
             </Fact>
             <Fact label="Code">
-              <span className="font-mono text-xs">
+              <span className="break-all font-mono text-xs">
                 {line.procedureQualifier}:{line.procedureCode}
                 {line.modifiers.length === 0 ? '' : `:${line.modifiers.join(':')}`}
               </span>
             </Fact>
             <Fact label="Revenue code">{line.revenueCode ?? '—'}</Fact>
             <Fact label="Plan key">
-              <span className="font-mono text-xs">{line.planKey}</span>
+              <span className="break-all font-mono text-xs">{line.planKey}</span>
             </Fact>
             <Fact label="Payer">
               {line.payerName}, paid {line.paymentDate}{' '}
@@ -215,10 +216,10 @@ export default async function LinePage(props: {
               <>
                 <Fact label="Patient reference">{line.identifiers.patient}</Fact>
                 <Fact label="Patient control number">
-                  <span className="font-mono text-xs">{line.identifiers.patientControlNumber}</span>
+                  <span className="break-all font-mono text-xs">{line.identifiers.patientControlNumber}</span>
                 </Fact>
                 <Fact label="Payer claim control number">
-                  <span className="font-mono text-xs">{line.identifiers.payerClaimControlNumber}</span>
+                  <span className="break-all font-mono text-xs">{line.identifiers.payerClaimControlNumber}</span>
                 </Fact>
                 <Fact label="Service date">{period(line.identifiers.serviceDate, line.identifiers.serviceDateTo)}</Fact>
                 <Fact label="Rendering NPI">{line.renderingNpi ?? '—'}</Fact>
