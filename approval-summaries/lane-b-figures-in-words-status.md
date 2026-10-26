@@ -3,15 +3,17 @@
 One parallel Lane B session runs both PRs, one after the other (the orchestrator's start of 2026-10-26 ~00:35 UTC, on the co-founder's direction of 2026-10-25 ~23:40 UTC). Reserved: ADR 0072 (A) and ADR 0076 (B); test-matrix CAS-30 to CAS-34 (A) and CAS-35 to CAS-37 (B); `packages/synth` cases CAS-30 to CAS-37.
 
 ## Now
-- **Stage:** A, design done and reviewed (wf_fd4e0a68-385: 4 scouts, designer, one adversarial reviewer, reviser; 19 findings, all applied, 2 in part with reasons in the design's section 13). No migration, confirmed. Builders running (wf_13f2f539-6ee, from 01:14 UTC). B, design done and reviewed (wf_c4f857f0-8b2: 3 scouts, designer, one adversarial security reviewer, reviser; 23 findings, all applied but one part each of 6 and 19, rejected with reasons in its section 17). No migration; two small parts wait for #42 (the shell Sign out confirmation, the data-retention row). ADR 0076 reserved for B by the orchestrator (01:19 UTC).
-- **Next step:** builders finish (P done by 02:13 UTC; W, K, L, then integrator and critic), then the draft PR. Priority A before B (orchestrator, 02:16 UTC). A self check-in is set for 03:50 UTC in case the session limit stops the workflow (resume wf_13f2f539-6ee with resumeFromRunId; progress files in the scratchpad's fiw-build/progress).
+- **Stage:** A, draft PR [#52](https://github.com/PureTideWater/PhysicalTherapy/pull/52) open at head f1dcd8ea (6 commits; pushed 04:47 UTC). Reviews running (wf_816c0780-1d8, from 04:55 UTC): the payment-engine reviewer (with its mutation shard run), and the before/after screen capture then the UX and brand review. B designed, waits for A's merge.
+- **Open question to the orchestrator (04:45 UTC):** `tools/screening-capacity/watched-paths.txt` (a #42 file) must gain 9 generated lines, because the worker's export job now imports the renderer; recommended to treat it as a fifth shared file (rule 6, additions only, the second-merged PR re-runs `watched.ts --write`). Until then CI's unit job fails 2 tests of `watched.test.ts`.
+- **Next step:** the fix round once both reviews return: every finding, the watched-paths lines, the full local suite once, one push; then the fresh-clone verification.
 
 ## Log (UTC)
 - 2026-10-26 01:12: A design pushed. 01:14: branch `co-001/figures-in-words` cut from 6ddd587 (worktree installed); builders started (wf_13f2f539-6ee). 01:19: B design pushed; ADR 0076 reserved for B. 02:16: usage-limit warning from the orchestrator; check-in set. ~02:20: the session limit stopped builders W, K and L mid-run (P had finished: 502 packets unit tests, 155 golden-tool tests pass); the machine restarted. 03:49: setup re-run (both clusters up), the build resumed (wf_13f2f539-6ee, resumeFromRunId; P cached, W, K, L continue from their progress files).
+- 04:40: build done: 5 commits by the integrator (typecheck 22 projects, lint, lint:copy, lint:logs, unit 5,325 passed but the 2 watched-paths tests, golden 343, verify-content, engine-freeze clean, the changed db files passed) and one by the completeness critic (f1dcd8ea: a summary names only adjustments that changed the amount; the ambiguous-rate wording as designed). 04:47: branch pushed, draft #52 opened, its description written from the template with update_pull_request and read back identical; subscribed. 04:55: reviews started.
 - 2026-10-26 ~00:20: machine set up (`tools/setup-container.sh` printed OK; `gh api user` is PureTideWater). `claude/build-platform` at 6ddd587. #42 open (143 files; none in the packets, packet review or line-trace pages except the shared synth matrix and registry, rule 6).
 
 ## PR A: every figure explained in words (#38)
-- Branch `co-001/figures-in-words`, worktree `/home/user/figures-in-words`. PR: not opened yet.
+- Branch `co-001/figures-in-words`, worktree `/home/user/figures-in-words`. PR [#52](https://github.com/PureTideWater/PhysicalTherapy/pull/52) (draft), head f1dcd8ea.
 - Design: `designs/lane-b-figures-in-words.md`, review `designs/lane-b-figures-in-words-review.json` (2026-10-26 01:12 UTC).
 
 ## PR B: a narrative survives sign-out (#48)
