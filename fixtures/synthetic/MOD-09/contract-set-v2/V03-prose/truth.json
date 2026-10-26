@@ -1,0 +1,62 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V03",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 10,
+  "tier": "medium",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": "V04",
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Article 2: terms",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in fee schedule exhibit V04, issued with this Agreement."
+        },
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in fee schedule exhibit V04, issued with this Agreement."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": true,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction applies; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1/1/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1/1/2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

@@ -257,7 +257,8 @@ export interface GeneratedFileExpectation {
   readonly sha256: string;
   readonly bytes: number;
   readonly description: string;
-  readonly oracle: OracleExpectation;
+  /** What pyx12 must find in a generated 835; absent for a generated file the 835 oracle does not read (MOD-09's large contracts). */
+  readonly oracle?: OracleExpectation;
 }
 
 export interface CaseExpectation {
