@@ -14,6 +14,7 @@ Open questions: none.
 | 2026-10-26 00:41 | Licence commit | 0e7776c, alone: `packageManager` pnpm 10.28.0 → 10.34.8; `pnpm install --lockfile-only --fix-lockfile` under 10.34.8 gives `git diff --numstat` **43 0** on `pnpm-lock.yaml`, 27 `libc: [glibc]` and 16 `libc: [musl]` (`grep -c '^ *libc: \['`: 0 at 6ddd587, 43 at 0e7776c); the musl exception leaves `allowlist.json`; `pnpm licenses:check` passes (185 production packages), and `pnpm licenses list --prod --json` lists no linuxmusl package. As the design measured at 49514e8. |
 | 2026-10-26 00:45 | Gates commit | 6eae41a, alone: `minimumReleaseAge: 4320`, `minimumReleaseAgeExclude: []`, `trustPolicy: no-downgrade`, `trustPolicyExclude: [semver@6.3.1]` (F2 (b); CQ2 (a)). A frozen install under 10.34.8 still passes. |
 | 2026-10-26 00:55 | Build | Workflow wf_5ed84ad8-764 (`workflow-scripts/lane-b-ci-deps-build-wf_5ed84ad8-764.js`): builders D1 (workflows, pins, release chain), D2 (toolchain, compose, images, capacity tools; no resolution) and D3 (documents, test matrix, synth) in worktrees `/home/user/ci-deps-d1..d3` from 6eae41a; then an integrator in `/home/user/ci-deps`, one push and the draft PR; then two adversarial reviews (CI and test infrastructure; security and supply chain) in fresh clones. Progress files in the session scratchpad; a monitor reports stalls. |
+| 2026-10-26 01:45 | Draft PR | [#48](https://github.com/PureTideWater/PhysicalTherapy/pull/48), head 2d86bb0 (32 commits on 6ddd587, the licence and gates commits first). Builders: D1 (pins at the design's table, rules (a)-(d), the simulated rewrite through `CI_TREE`, compose via `tools/ci/postgres.sh`, release.yml cache-free with `overwrite: true`, `release-dry-run.yml`, dependabot.yml under CQ1 (a), the frozen publish-content copy, `check-action-pins`), D2 (`check-toolchain` with all its rules, the libc rule, trixie digests, compose, capacity tools), D3 (ADR 0066 Part 2, 0063, 0062, runbooks incl. new `dependency-upgrades.md`, reconciliation-001, CI-11 to CI-14). Integrator checks: typecheck, lint, actionlint, `pnpm test` 5,079 passed and 3 skipped locally (vitest list: 4,997 at base, 5,082 at head: 88 new and 3 renamed, 3 replaced; CI expected 5,081 and 1 skipped), synth clean, licences, both audits, `actions:check` live green, `toolchain:check` red on CQ3 alone (pnpm 10.34.8 young until 18:06:37Z, by design), failing-first 7 red on the base and 7 green on the head. O3 confirmed live (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`; the exact exclude passes; a frozen install does not check). Subscribed to the PR. |
 
 ### The plan, and the choices it makes (each the recommended option)
 - **Two phases, because of the release age.** Every commit that changes `pnpm-lock.yaml` or a resolution setting must
@@ -29,7 +30,7 @@ Open questions: none.
   `packageManager`'s pnpm 10.34.8 to the three-day age (CQ3 (a)), and 10.34.8 was published 2026-10-23T18:06:37Z.
   No exclude is added for a version that ages out before the merge.
 
-**Next step:** the build workflow's builders, then the draft PR.
+**Next step:** the two adversarial reviews (running), then phase 2 after 19:18:50Z.
 
 ## ci-browser (CI 3 of 4; `co-001/ci-browser`)
 
