@@ -3,7 +3,7 @@ import { COVERAGE_FORMAT, type RunCoverage } from '@tp/worker/pricing';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { PatternTable, UnpricedReasons } from './display';
+import { FAILURE_TEXT, PatternTable, UnpricedReasons } from './display';
 
 /**
  * A pricing run's coverage card (PRD 7, Pricing runs) as the screen tour found it (C3): a run that priced every line
@@ -66,3 +66,14 @@ function pattern(): RunCoverage['patterns'][number] {
     overpaid_cents: '0',
   };
 }
+
+describe('a failed run’s words', () => {
+  it('never tell the customer the operator was alerted of a read outside the fetch, which no alarm reads yet, and say the month prices by itself', () => {
+    // The worker logs RELEASE_READ_OUTSIDE_FETCH; its alarm comes with the later pull request (docs/adr/0071).
+    const text = FAILURE_TEXT.release_read_outside_fetch ?? '';
+    expect(text).not.toMatch(/alerted/);
+    expect(text).toContain('logged for the operator');
+    expect(text).not.toContain('create a new run');
+    expect(text).toContain('priced again by itself');
+  });
+});

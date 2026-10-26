@@ -65,7 +65,8 @@ export function monitorHandler(): JobHandler<'monitor'> {
       }
       if (plan.waitingOnContent.length > 0) {
         // PaidWhole's step, never the customer's: the months wait, with no run, until a release in force loads the
-        // Medicare content they read (audit #7). The price job alerted once per refused run; this is the per-plan signal.
+        // Medicare content they read (audit #7). The price job logged CONTENT_NOT_LOADED once per refused run; this is the
+        // per-plan line. Both lines' alarms come with the later pull request (docs/adr/0071).
         context.logger.warn('monitoring left months waiting on rule content PaidWhole has not loaded', {
           release_no: plan.releaseNo,
           error_code: 'WAITING_ON_CONTENT',

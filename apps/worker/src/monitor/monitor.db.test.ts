@@ -662,6 +662,18 @@ describe('RCC-05: months that wait on Medicare content PaidWhole has not loaded 
     expect(await failedRun(practice.practiceId)).toBeUndefined();
   });
 
+  it('plans a month whose last run failed release_read_outside_fetch again at each trigger, never as waiting: it prices by itself once the defect is fixed', async () => {
+    const practice = await w.practice('OUTSIDE-FETCH-RETRY');
+    await loadOctober(practice);
+    const fixed = await w.pricing.signedContract(practice, '2026-01-01', { terms: FIXED_FEE });
+    await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05'), 'contract', '2026-01-01', fixed.versionId);
+    // The run as the price job leaves it when a lookup read outside the fetch (content.db.test.ts drives the job itself).
+    const runId = await w.pricing.createRun(practice, OCTOBER.periodFrom, OCTOBER.periodTo, CONTENT_GAP_RELEASE);
+    await w.pricing.owner.query("UPDATE pricing_run SET status = 'failed', failure_code = 'release_read_outside_fetch' WHERE id = $1", [runId]);
+    const planned = await plan(practice);
+    expect(planned).toMatchObject({ outcome: 'planned', created: [OCTOBER], waitingOnContent: [], waitingOnLocation: [] });
+  });
+
   it('plans the month again when a newer line of it arrives', async () => {
     const practice = await maOctober('CONTENT-NEW-LINE');
     const c = await chain();

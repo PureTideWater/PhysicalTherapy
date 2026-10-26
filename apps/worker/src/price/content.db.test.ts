@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readDatabaseUrl, withJobScope } from '@tp/db';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { CONTENT_NOT_LOADED_MESSAGE, ENGINE_ERRORS_MESSAGE } from './execute';
+import { CONTENT_NOT_LOADED_MESSAGE, ENGINE_ERRORS_MESSAGE, READ_OUTSIDE_FETCH_MESSAGE } from './execute';
 import type * as KeyedReleaseModule from './keyed-release';
 import { releaseContentSpans, releaseContentWindows } from './release';
 import { CONTENT_GAP_RELEASE, type Practice, PricingWorld, RELEASE, termsAt } from './test-support/pricing-world';
@@ -35,6 +35,9 @@ vi.mock('./keyed-release', async (importOriginal) => {
 
 /** A scratch release, 900001's records with the GPCIs ending 2026-09-30: a commercial month after September stops on no_gpci. */
 const GPCI_GAP_RELEASE = 900_098;
+
+/** A scratch release, 900007's records with the GPCIs ending 2026-09-30: a month after September reads the MUE outside its span and stops on no_gpci. */
+const MIXED_GAP_RELEASE = 900_097;
 
 let w: PricingWorld;
 
@@ -193,7 +196,7 @@ describe('the precedence of a run’s stops, over the whole run', () => {
     const runId = await priceMonth(target, '2026-09-01', '2026-09-30', logs, 1);
     expect(await runState(runId)).toEqual({ status: 'failed', failure_code: 'release_read_outside_fetch', lines: 0 });
     expect(logs.filter((line) => line.error_code === 'RELEASE_READ_OUTSIDE_FETCH')).toEqual([
-      expect.objectContaining({ level: 'error', msg: 'pricing run read rule content outside the keys it fetched', pricing_run_id: runId }),
+      expect.objectContaining({ level: 'error', msg: READ_OUTSIDE_FETCH_MESSAGE, pricing_run_id: runId }),
     ]);
     expect(logs.filter((line) => line.msg === ENGINE_ERRORS_MESSAGE)).toEqual([]);
   });
@@ -256,6 +259,35 @@ describe('the release’s content windows', () => {
     const target = await w.practice('widened');
     const spans = await withJobScope(w.worker, { jobId: randomUUID(), practiceId: target.practiceId }, (scope) => releaseContentSpans(scope.client, scratch));
     expect(spans.ncci_mue).toEqual([{ from: '2026-01-01', until: '2027-01-01' }]);
+  });
+});
+
+describe('the engine-error page of a refused run', () => {
+  it('logs the engine-error line beside the content alert when other lines of the refused run stopped on engine errors that page the operator', async () => {
+    // A scratch release, 900007's records with the GPCIs ending 2026-09-30, published before the next test's.
+    await w.owner.query("INSERT INTO rule_release (release_no, manifest_sha256, notes) VALUES ($1, $2, 'SYNTHETIC')", [MIXED_GAP_RELEASE, 'c'.repeat(64)]);
+    await w.owner.query(
+      `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, effective_to, source, verification, sha256)
+       SELECT $1, record_type, key, value, effective_from, CASE WHEN record_type = 'pfs_gpci' THEN '2026-09-30'::date ELSE effective_to END, source, verification, sha256
+         FROM rule_record WHERE release_no = $2`,
+      [MIXED_GAP_RELEASE, CONTENT_GAP_RELEASE],
+    );
+    await w.owner.query('UPDATE rule_release SET published_at = now() WHERE release_no = $1', [MIXED_GAP_RELEASE]);
+    // One payment's fixed fee with the coding edits on reads the MUE outside its span; the other's percent of Medicare stops on no_gpci.
+    const target = await w.practice('mue-and-gpci-october');
+    await loadMonth(target, '2026-10-14');
+    await loadMonth(target, '2026-10-14', { other: true, plan: 'SYNPLAN-FX-05' });
+    const edits = await w.signedContract(target, '2026-01-01', { terms: { ...FIXED, flags: { timed_units_rule: 'PER_CODE', apply_ncci: true } } });
+    await w.mapped(target, await w.planOf(target, 'CE:SYNPLAN-FX-05'), 'contract', '2026-01-01', edits.versionId);
+    const percent = await w.signedContract(target, '2026-01-01');
+    await w.mapped(target, await w.planOf(target, 'CE:SYNPLAN-MA-05'), 'contract', '2026-01-01', percent.versionId);
+    for (const claimsPerBatch of [undefined, 1]) {
+      const logs: Record<string, unknown>[] = [];
+      const runId = await priceMonth(target, '2026-10-01', '2026-10-31', logs, claimsPerBatch, MIXED_GAP_RELEASE);
+      expect(await runState(runId)).toEqual({ status: 'failed', failure_code: 'waiting_on_content_mue', lines: 0 });
+      expect(contentAlerts(logs)).toEqual([expect.objectContaining({ level: 'warn', msg: CONTENT_NOT_LOADED_MESSAGE, pricing_run_id: runId, record_count: 6 })]);
+      expect(logs.filter((line) => line.msg === ENGINE_ERRORS_MESSAGE)).toEqual([expect.objectContaining({ level: 'error', pricing_run_id: runId, error_code: 'PRICING_ENGINE_ERROR' })]);
+    }
   });
 });
 

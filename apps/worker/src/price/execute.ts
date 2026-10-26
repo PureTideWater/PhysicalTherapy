@@ -1,7 +1,19 @@
 import { type AgreementRecords, LOCATION_NOT_READY_STATUSES, PricingRefusedError, agreementResolver, assertPricingAllowed, loadAgreementRecords } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
-import { ENGINE_VERSION, type AgreementInput, type IndexedRelease, type LineFacts, type LinePricing, type PracticeSettings, type PricingInput, price } from '@tp/pricing';
+import {
+  ENGINE_ERROR_DETAILS,
+  ENGINE_VERSION,
+  type AgreementInput,
+  type EngineErrorDetail,
+  type IndexedRelease,
+  type LineFacts,
+  type LinePricing,
+  type PracticeSettings,
+  type PricingInput,
+  pagesOperator,
+  price,
+} from '@tp/pricing';
 
 import { type RunCoverage, computeCoverage, operatorAlerts } from './coverage';
 import { type KeyedReleaseView, claimsRequestedKeys } from './keyed-release';
@@ -58,10 +70,13 @@ import { type PricedLineInsert, insertPricedLines, pricedLineRow } from './store
  *   fixed-fee month reads none of them and prices. Such a run, and a complete run with lines stopped by other content
  *   not loaded for their dates (a fee-schedule quarter, a GPCI, a locality: isLoudContentGap()), logs one content
  *   alert (CONTENT_NOT_LOADED). The engine-error page is unchanged meanwhile: a content gap that pages as an engine
- *   error keeps paging until the content alert has its own alarm (the later pull request, infra/lib/jobs.ts).
+ *   error keeps paging until the content alert has its own alarm (the later pull request, infra/lib/jobs.ts), and a
+ *   refused run whose other lines stopped on engine errors that page the operator logs the engine-error line too, as
+ *   it would have complete.
  * - The release is read by key (audit #31): per batch, only the keys its claims can look up (storedReleaseSource());
  *   a lookup outside them fails the run as release_read_outside_fetch before that batch is stored, and logs
- *   RELEASE_READ_OUTSIDE_FETCH for the operator.
+ *   READ_OUTSIDE_FETCH_MESSAGE (RELEASE_READ_OUTSIDE_FETCH) for the operator; its alarm comes with the later pull
+ *   request. The month is planned again at each trigger and fails the same way until the defect is fixed.
  * - Precedence, over the whole run: a read outside the fetch (PaidWhole's defect, never hidden), then the location
  *   (the customer's step), then content. No stop throws inside the batch loop: each line's stop is recorded, and after
  *   the first location stop or content gap the run prices on to its end, storing nothing more, so every claim is seen
@@ -102,6 +117,13 @@ export const ENGINE_ERRORS_MESSAGE = 'pricing run recorded engine errors for the
  * fixed text, which lint:logs requires.
  */
 export const CONTENT_NOT_LOADED_MESSAGE = 'pricing run found lines stopped by rule content not loaded for their dates';
+
+/**
+ * The line a run logs once when a lookup read rule content outside the keys it fetched (release_read_outside_fetch,
+ * PaidWhole's defect), error_code RELEASE_READ_OUTSIDE_FETCH. Its alarm comes with the later pull request, as the
+ * content alert's. The log call writes it as fixed text, which lint:logs requires.
+ */
+export const READ_OUTSIDE_FETCH_MESSAGE = 'pricing run read rule content outside the keys it fetched';
 
 const CLAIMS_PER_BATCH = 500;
 
@@ -157,9 +179,23 @@ class ContentNotLoaded extends Error {
     readonly code: ContentFailureCode,
     /** The lines that read the content outside its spans, and the lines stopped by other content not loaded. */
     readonly lines: number,
+    /** The other lines stopped on engine errors that page the operator, which a complete run would have paged. */
+    readonly operatorLines: number,
   ) {
     super('lines of the run read rule content not loaded for their dates');
   }
+}
+
+/** Whether a line stopped on an engine error that pages the operator (the coverage summary's rule: a detail it does not name is 'unexpected'). */
+function pagesTheOperator(result: LinePricing): boolean {
+  if (result.outcome !== 'unpriced' || result.reason !== 'ENGINE_ERROR') {
+    return false;
+  }
+  return pagesOperator(isEngineErrorDetail(result.detail) ? result.detail : 'unexpected');
+}
+
+function isEngineErrorDetail(value: string | null): value is EngineErrorDetail {
+  return value !== null && (ENGINE_ERROR_DETAILS as readonly string[]).includes(value);
 }
 
 /** A lookup outside the keys the run fetched: the run fails, nothing of it stored. */
@@ -338,6 +374,7 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     const families = new Set<ContentFamily>();
     let gapLines = 0;
     let alertLines = 0;
+    let operatorLines = 0;
     let view: KeyedReleaseView | null = null;
     const seen = (result: LinePricing): void => {
       if (view !== null && view.violation !== null) {
@@ -352,8 +389,13 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       }
       if (gaps.length > 0) {
         gapLines += 1;
-      } else if (isLoudContentGap(result, windows)) {
+        return;
+      }
+      if (isLoudContentGap(result, windows)) {
         alertLines += 1;
+      }
+      if (pagesTheOperator(result)) {
+        operatorLines += 1;
       }
     };
     let after = FIRST_CLAIM;
@@ -379,7 +421,7 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       throw new LocationNotReady('a line of the run stopped on the practice’s location');
     }
     if (families.size > 0) {
-      throw new ContentNotLoaded(contentFailureCode(families), gapLines + alertLines);
+      throw new ContentNotLoaded(contentFailureCode(families), gapLines + alertLines, operatorLines);
     }
     loudLines = alertLines;
     const coverage = await computeCoverage(scope.client, pricingRunId);
@@ -405,6 +447,10 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
       // The month waits for the content; one alert per run, whoever created it (CONTENT_NOT_LOADED_MESSAGE).
       await context.transaction((scope) => failRun(scope.client, practiceId, pricingRunId, error.code));
       context.logger.warn('pricing run found lines stopped by rule content not loaded for their dates', { pricing_run_id: pricingRunId, error_code: 'CONTENT_NOT_LOADED', record_count: error.lines });
+      if (error.operatorLines > 0) {
+        // The refusal never hides the engine-error page its other lines would have raised complete.
+        context.logger.error('pricing run recorded engine errors for the operator', { pricing_run_id: pricingRunId, error_code: 'PRICING_ENGINE_ERROR' });
+      }
       return { outcome: 'failed', failureCode: error.code };
     }
     throw error;

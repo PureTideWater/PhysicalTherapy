@@ -42,8 +42,11 @@ export const FAILURE_TEXT: Readonly<Record<string, string>> = {
     'A line of the period needs Medicare’s multiple-procedure reduction list (MPPR) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
   waiting_on_content_mppr_mue:
     'Lines of the period need Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for dates PaidWhole has not loaded yet, so no line was kept. The month is priced by itself once that content is loaded.',
-  // Audit #31: the price job looked up a key outside the ones it fetched for its batch, which is PaidWhole's defect.
-  release_read_outside_fetch: 'The price job read rule content it had not fetched, so no line was kept and the operator was alerted; create a new run once it is fixed.',
+  // Audit #31: the price job looked up a key outside the ones it fetched for its batch, which is PaidWhole's defect. The
+  // run logs RELEASE_READ_OUTSIDE_FETCH for the operator (its alarm comes later: say "alerted" only then), and the
+  // monitor plans the month again at each trigger, so it prices by itself once the defect is fixed.
+  release_read_outside_fetch:
+    'The price job read rule content it had not fetched, which is PaidWhole’s defect, so no line was kept and it was logged for the operator. The month is priced again by itself once it is fixed.',
 } satisfies Readonly<Record<FailureCode, string>>;
 
 export const RERUN_TEXT: Readonly<Record<RerunReason, string>> = {
