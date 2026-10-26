@@ -7,7 +7,7 @@ import { Field, SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
-import { consoleModelsPage } from '../../../lib/routes/console-models';
+import { MODEL_VALUE_HINT, consoleModelsPage } from '../../../lib/routes/console-models';
 import { setModelFlagAction } from './actions';
 
 export const metadata: Metadata = { title: 'Model features' };
@@ -78,7 +78,7 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
             <FormKeys />
             <SelectField label="Flag" name="key" options={keys} />
             <SelectField label="Applies to" name="target" options={targets} />
-            <Field label="Value" name="value" required maxLength={16} hint="on or off for a switch; whole cents for a budget (500 is $5.00)" />
+            <Field label="Value" name="value" required maxLength={16} hint={MODEL_VALUE_HINT} />
           </ActionForm>
         </CardContent>
       </Card>

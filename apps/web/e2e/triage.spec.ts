@@ -12,12 +12,13 @@ import { startLocalWorker } from './worker';
 
 /**
  * Triage to cases in the browser (PRD 5, J8; PRD 7, Cases and Practice dashboard; PRD 12; test matrix
- * CAS-03, CAS-04, CAS-06, CAS-07, PRC-14): in a practice of its own whose case materiality is 100.00, a
+ * CAS-03, CAS-04, CAS-06, CAS-07, CAS-38, CAS-39, PRC-14): in a practice of its own whose case materiality is 100.00, a
  * billing manager uploads two SYNTHETIC remittances of one payer pattern, CAS-08 (paid 2026-04-08,
  * three lines 30.00 short) and CAS-04 (paid 2026-06-04, three lines 20.00 short). The payer's schedule
  * is signed off beside the browser with a dispute window that closed ten days ago for CAS-08's payment
  * and is open for CAS-04's (measured from today, so the journey holds on any later date), and March to
- * May is priced and triaged by the worker. The pattern waits below the case materiality (CAS-04); the
+ * May is priced and triaged by the worker. The pattern waits below the case materiality (CAS-04), which the
+ * cases page and Settings → Defaults show in dollars and an unchanged save keeps (CAS-38, CAS-39); the
  * manager lowers it, told the consequence first, opens the case on the pattern by keyboard with an owner,
  * and the case attaches the three open lines with the deadline of their window. Triage again adds the
  * three lines past their window struck through with WINDOW_PASSED, out of the actionable total. A line
@@ -70,6 +71,24 @@ test('a pattern below the case materiality waits; lowered, it opens as a case wi
       await page.goto(`/p/${practiceId}`);
       await expect(page.locator('[data-figure="actionable"]')).toContainText('$0.00');
       await expect(page.locator('[data-figure="validated"]')).toContainText('across 6 lines');
+    });
+
+    await test.step('the thresholds read as dollars on the cases page and on Settings → Defaults, in the mono face, and an unchanged save keeps them (CAS-38, CAS-39)', async () => {
+      await page.goto(`/p/${practiceId}/cases`);
+      await expect(page.getByRole('region', { name: 'Materiality' }).getByLabel('Per case (dollars)')).toHaveValue('100.00');
+      await page.goto(`/p/${practiceId}/settings/defaults`);
+      const defaults = page.getByRole('region', { name: 'Materiality' });
+      await expect(defaults).toContainText('Now $5.00 per line and $100.00 per case.');
+      await expect(defaults.locator('.font-mono')).toHaveText(['$5.00', '$100.00']);
+      await expect(defaults.locator('.font-mono').first()).toHaveCSS('font-family', /mono/i);
+      await expect(defaults.getByLabel('Per line (dollars)')).toHaveValue('5.00');
+      await expect(defaults.getByLabel('Per case (dollars)')).toHaveValue('100.00');
+      await defaults.getByRole('button', { name: 'Save materiality' }).click();
+      await expect(page.getByText('The materiality thresholds apply from the next triage.')).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Materiality' })).toContainText('Now $5.00 per line and $100.00 per case.');
+      await page.goto(`/p/${practiceId}/cases`);
+      await expect(page.getByRole('region', { name: 'Materiality' })).toContainText('per-case threshold ($100.00)');
+      await expect(page.getByRole('list', { name: 'Waiting patterns' }).getByRole('listitem')).toHaveAttribute('data-waiting', 'held');
     });
 
     await test.step('the manager lowers the case materiality, told the consequence, and opens the case by keyboard with its owner', async () => {

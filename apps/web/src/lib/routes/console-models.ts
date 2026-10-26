@@ -29,6 +29,9 @@ export const MODEL_FLAGS: Readonly<Record<Exclude<FeatureFlagKey, 'platform.main
 type ModelFlagKey = keyof typeof MODEL_FLAGS;
 const MODEL_FLAG_KEYS = Object.keys(MODEL_FLAGS) as ModelFlagKey[];
 
+/** What the flag form's one value field takes, under it. */
+export const MODEL_VALUE_HINT = 'on or off for a switch; whole cents for a budget (500 is $5.00)';
+
 export interface ModelFlagView {
   readonly key: ModelFlagKey;
   readonly scope: FeatureFlagScope;

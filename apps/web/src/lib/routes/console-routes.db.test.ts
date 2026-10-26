@@ -33,7 +33,7 @@ import {
   supportPage,
   unlockUser,
 } from './console';
-import { consoleModelsPage, setModelFlag } from './console-models';
+import { MODEL_VALUE_HINT, consoleModelsPage, setModelFlag } from './console-models';
 import { practiceHome, supportAccessPage } from './practice';
 import { csrfTokenFor } from '../http/csrf';
 
@@ -614,7 +614,7 @@ describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-
         );
       }
     });
-    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '300' })).status).toBe('ok');
+    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '3.00' })).status).toBe('ok');
     expect((await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: `organization:${world.organizationId}`, value: 'on' })).status).toBe('ok');
     const page = await run(consoleModelsPage, admin.token, undefined, { notice: 'set' });
     if (page.status !== 'ok') {
@@ -631,7 +631,7 @@ describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-
     expect(page.data.spend.find((row) => row.practiceId === world.practiceId)).toMatchObject({ calls: 2, spentCents: '151', budgetCents: '300', percent: 50, killSwitch: true });
     expect((await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: `organization:${world.organizationId}`, value: 'off' })).status).toBe('ok');
     // Refused values name the field; nothing is set.
-    expect(await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: 'global', value: '4.50' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'a budget in whole cents, such as 500 for $5.00' }] });
+    expect(await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: 'global', value: '4.505' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'a budget in dollars and cents, such as 5.00' }] });
     expect(await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: 'global', value: 'maybe' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'on or off' }] });
     const audited = await owner.query<{ action: string; n: number }>(
       "SELECT action, count(*)::int AS n FROM audit_event WHERE actor_id = $1 AND action IN ('model_flag_set', 'feature_flag_set') GROUP BY action ORDER BY action",
@@ -643,6 +643,34 @@ describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-
     ]);
     // Nobody without feature_flag.manage reads the spend, even by calling the function.
     await expect(withActor(app, world.adminUserId, (scope) => scope.client.query("SELECT * FROM console_model_spend('2026-10-17')"))).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('takes a budget in dollars, "5.00" or "5", and stores it as 500 whole cents; the field and its hint say dollars (CAS-38, CAS-39)', async () => {
+    const budget = async () =>
+      (await owner.query<{ value: unknown }>("SELECT value FROM feature_flag WHERE key = 'model.daily_budget_cents' AND scope = 'practice' AND scope_id = $1", [world.practiceId])).rows[0]?.value;
+    for (const value of ['5.00', '5', ' 5.0 ']) {
+      expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '1.23' })).status).toBe('ok');
+      expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value })).status, value).toBe('ok');
+      expect(await budget(), value).toBe('500');
+    }
+    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '999999999.99' })).status).toBe('ok');
+    expect(await budget()).toBe('99999999999');
+    // Above what the save takes, a sign, a third place or words: refused, the budget unchanged.
+    for (const value of ['1000000000.00', '-5.00', '5.001', 'five']) {
+      expect(await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value }), value).toEqual({
+        status: 'invalid',
+        issues: [{ field: 'value', message: 'a budget in dollars and cents, such as 5.00' }],
+      });
+    }
+    expect(await budget()).toBe('99999999999');
+    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '5' })).status).toBe('ok');
+    const page = await run(consoleModelsPage, admin.token);
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    expect(page.data.keys).toContainEqual({ value: 'model.daily_budget_cents', label: 'Daily budget (dollars)' });
+    expect(page.data.flags).toContainEqual(expect.objectContaining({ key: 'model.daily_budget_cents', scope: 'practice', scopeId: world.practiceId, value: '500' }));
+    expect(MODEL_VALUE_HINT).toBe('on or off for a switch; a budget in dollars and cents, such as 5.00');
   });
 });
 
