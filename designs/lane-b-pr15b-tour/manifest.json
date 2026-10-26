@@ -1,0 +1,651 @@
+{
+  "generatedAt": "2026-10-26",
+  "before": {
+    "ref": "6ddd587",
+    "tour_dir": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before"
+  },
+  "after": {
+    "ref": "0e086ed (origin/co-001/pr-15b-ledger-payment-terms)",
+    "tour_dir": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after"
+  },
+  "populate": "/home/user/ops/designs/lane-b-pr15b-tour/ledger-tour.spec.ts (LED-14, LED-15, LED-18) beside the seven route-map populate specs; both runs 13/13 passed from a fresh prepare",
+  "capture": "/home/user/ops/designs/lane-b-pr15b-tour/capture.spec.ts; light theme, full page, dsf 1; PDFs via pdftoppm at 1280",
+  "pairs": [
+    {
+      "name": "led14.dashboard.1280",
+      "route": "/p/[practiceId]",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.dashboard.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.dashboard.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.dashboard.390",
+      "route": "/p/[practiceId]",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.dashboard.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.dashboard.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.reconciliation.1280",
+      "route": "/p/[practiceId]/reconciliation",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.reconciliation.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.reconciliation.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.reconciliation.390",
+      "route": "/p/[practiceId]/reconciliation",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.reconciliation.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.reconciliation.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.reconciliation-case.1280",
+      "route": "/p/[practiceId]/reconciliation?case=[caseId]",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.reconciliation-case.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.reconciliation-case.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.reconciliation-case.390",
+      "route": "/p/[practiceId]/reconciliation?case=[caseId]",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.reconciliation-case.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.reconciliation-case.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.case.1280",
+      "route": "/p/[practiceId]/cases/[caseId]",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.case.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.case.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.case.390",
+      "route": "/p/[practiceId]/cases/[caseId]",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.case.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.case.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.case-submissions.1280",
+      "route": "/p/[practiceId]/cases/[caseId]/submissions",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.case-submissions.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.case-submissions.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.case-submissions.390",
+      "route": "/p/[practiceId]/cases/[caseId]/submissions",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.case-submissions.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.case-submissions.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.roi.1280",
+      "route": "/p/[practiceId]/reports/roi",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.roi.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.roi.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.roi.390",
+      "route": "/p/[practiceId]/reports/roi",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.roi.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.roi.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.roi-statement.1280",
+      "route": "/p/[practiceId]/reports/roi/[statementId]",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.roi-statement.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.roi-statement.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.roi-statement.390",
+      "route": "/p/[practiceId]/reports/roi/[statementId]",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.roi-statement.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.roi-statement.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.reports.1280",
+      "route": "/p/[practiceId]/reports",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.reports.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.reports.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.reports.390",
+      "route": "/p/[practiceId]/reports",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.reports.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.reports.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.audit-report.1280",
+      "route": "/p/[practiceId]/reports/[reportId]",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.audit-report.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.audit-report.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.audit-report.390",
+      "route": "/p/[practiceId]/reports/[reportId]",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.audit-report.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.audit-report.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.abstraction-ledger.1280",
+      "route": "/p/[practiceId]/abstraction/ledger",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.abstraction-ledger.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.abstraction-ledger.1280.png",
+      "role": "contract-specialist"
+    },
+    {
+      "name": "led14.abstraction-ledger.390",
+      "route": "/p/[practiceId]/abstraction/ledger",
+      "practice": "LED-14",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.abstraction-ledger.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.abstraction-ledger.390.png",
+      "role": "contract-specialist"
+    },
+    {
+      "name": "led15.dashboard.1280",
+      "route": "/p/[practiceId]",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.dashboard.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.dashboard.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.dashboard.390",
+      "route": "/p/[practiceId]",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.dashboard.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.dashboard.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.reconciliation.1280",
+      "route": "/p/[practiceId]/reconciliation",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.reconciliation.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.reconciliation.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.reconciliation.390",
+      "route": "/p/[practiceId]/reconciliation",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.reconciliation.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.reconciliation.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.reconciliation-case.1280",
+      "route": "/p/[practiceId]/reconciliation?case=[caseId]",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.reconciliation-case.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.reconciliation-case.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.reconciliation-case.390",
+      "route": "/p/[practiceId]/reconciliation?case=[caseId]",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.reconciliation-case.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.reconciliation-case.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.case.1280",
+      "route": "/p/[practiceId]/cases/[caseId]",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.case.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.case.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.case.390",
+      "route": "/p/[practiceId]/cases/[caseId]",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.case.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.case.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.case-submissions.1280",
+      "route": "/p/[practiceId]/cases/[caseId]/submissions",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.case-submissions.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.case-submissions.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.case-submissions.390",
+      "route": "/p/[practiceId]/cases/[caseId]/submissions",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.case-submissions.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.case-submissions.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.roi.1280",
+      "route": "/p/[practiceId]/reports/roi",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.roi.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.roi.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.roi.390",
+      "route": "/p/[practiceId]/reports/roi",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.roi.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.roi.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.roi-statement.1280",
+      "route": "/p/[practiceId]/reports/roi/[statementId]",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.roi-statement.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.roi-statement.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.roi-statement.390",
+      "route": "/p/[practiceId]/reports/roi/[statementId]",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.roi-statement.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.roi-statement.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.reports.1280",
+      "route": "/p/[practiceId]/reports",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.reports.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.reports.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.reports.390",
+      "route": "/p/[practiceId]/reports",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.reports.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.reports.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.audit-report.1280",
+      "route": "/p/[practiceId]/reports/[reportId]",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.audit-report.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.audit-report.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.audit-report.390",
+      "route": "/p/[practiceId]/reports/[reportId]",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.audit-report.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.audit-report.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.abstraction-ledger.1280",
+      "route": "/p/[practiceId]/abstraction/ledger",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.abstraction-ledger.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.abstraction-ledger.1280.png",
+      "role": "contract-specialist"
+    },
+    {
+      "name": "led15.abstraction-ledger.390",
+      "route": "/p/[practiceId]/abstraction/ledger",
+      "practice": "LED-15",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.abstraction-ledger.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.abstraction-ledger.390.png",
+      "role": "contract-specialist"
+    },
+    {
+      "name": "led18.dashboard.1280",
+      "route": "/p/[practiceId]",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.dashboard.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.dashboard.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.dashboard.390",
+      "route": "/p/[practiceId]",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.dashboard.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.dashboard.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.reconciliation.1280",
+      "route": "/p/[practiceId]/reconciliation",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.reconciliation.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.reconciliation.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.reconciliation.390",
+      "route": "/p/[practiceId]/reconciliation",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.reconciliation.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.reconciliation.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.reconciliation-case.1280",
+      "route": "/p/[practiceId]/reconciliation?case=[caseId]",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.reconciliation-case.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.reconciliation-case.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.reconciliation-case.390",
+      "route": "/p/[practiceId]/reconciliation?case=[caseId]",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.reconciliation-case.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.reconciliation-case.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.case.1280",
+      "route": "/p/[practiceId]/cases/[caseId]",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.case.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.case.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.case.390",
+      "route": "/p/[practiceId]/cases/[caseId]",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.case.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.case.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.case-submissions.1280",
+      "route": "/p/[practiceId]/cases/[caseId]/submissions",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.case-submissions.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.case-submissions.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.case-submissions.390",
+      "route": "/p/[practiceId]/cases/[caseId]/submissions",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.case-submissions.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.case-submissions.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.roi.1280",
+      "route": "/p/[practiceId]/reports/roi",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.roi.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.roi.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.roi.390",
+      "route": "/p/[practiceId]/reports/roi",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.roi.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.roi.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.roi-statement.1280",
+      "route": "/p/[practiceId]/reports/roi/[statementId]",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.roi-statement.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.roi-statement.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.roi-statement.390",
+      "route": "/p/[practiceId]/reports/roi/[statementId]",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.roi-statement.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.roi-statement.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.reports.1280",
+      "route": "/p/[practiceId]/reports",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.reports.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.reports.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.reports.390",
+      "route": "/p/[practiceId]/reports",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.reports.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.reports.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.audit-report.1280",
+      "route": "/p/[practiceId]/reports/[reportId]",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.audit-report.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.audit-report.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.audit-report.390",
+      "route": "/p/[practiceId]/reports/[reportId]",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.audit-report.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.audit-report.390.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.abstraction-ledger.1280",
+      "route": "/p/[practiceId]/abstraction/ledger",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.abstraction-ledger.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.abstraction-ledger.1280.png",
+      "role": "contract-specialist"
+    },
+    {
+      "name": "led18.abstraction-ledger.390",
+      "route": "/p/[practiceId]/abstraction/ledger",
+      "practice": "LED-18",
+      "width": 390,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.abstraction-ledger.390.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.abstraction-ledger.390.png",
+      "role": "contract-specialist"
+    },
+    {
+      "name": "led14.audit-report-pdf.page1.1280",
+      "route": "/p/[practiceId]/reports/[reportId]/pdf",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.audit-report-pdf.page1.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.audit-report-pdf.page1.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.audit-report-pdf.page2.1280",
+      "route": "/p/[practiceId]/reports/[reportId]/pdf",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.audit-report-pdf.page2.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.audit-report-pdf.page2.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led14.roi-statement-pdf.page1.1280",
+      "route": "/p/[practiceId]/reports/roi/[statementId]/pdf",
+      "practice": "LED-14",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led14.roi-statement-pdf.page1.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led14.roi-statement-pdf.page1.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.audit-report-pdf.page1.1280",
+      "route": "/p/[practiceId]/reports/[reportId]/pdf",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.audit-report-pdf.page1.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.audit-report-pdf.page1.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.audit-report-pdf.page2.1280",
+      "route": "/p/[practiceId]/reports/[reportId]/pdf",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.audit-report-pdf.page2.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.audit-report-pdf.page2.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led15.roi-statement-pdf.page1.1280",
+      "route": "/p/[practiceId]/reports/roi/[statementId]/pdf",
+      "practice": "LED-15",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led15.roi-statement-pdf.page1.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led15.roi-statement-pdf.page1.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.audit-report-pdf.page1.1280",
+      "route": "/p/[practiceId]/reports/[reportId]/pdf",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.audit-report-pdf.page1.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.audit-report-pdf.page1.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.audit-report-pdf.page2.1280",
+      "route": "/p/[practiceId]/reports/[reportId]/pdf",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.audit-report-pdf.page2.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.audit-report-pdf.page2.1280.png",
+      "role": "ledger-manager"
+    },
+    {
+      "name": "led18.roi-statement-pdf.page1.1280",
+      "route": "/p/[practiceId]/reports/roi/[statementId]/pdf",
+      "practice": "LED-18",
+      "width": 1280,
+      "before": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-before/png/led18.roi-statement-pdf.page1.1280.png",
+      "after": "/tmp/claude-0/-home-user-PhysicalTherapy/60beef46-8756-559c-bbb4-ddf67ef623a2/scratchpad/pr15b-review/tour-after/png/led18.roi-statement-pdf.page1.1280.png",
+      "role": "ledger-manager"
+    }
+  ],
+  "missing": [],
+  "not_captured": [
+    {
+      "screen": "/p/[practiceId]/cases, /claims, /remittances(/[id]), /reports/monthly, /digests/[id] (design 5.1 values-only routes)",
+      "reason": "not in this brief's capture list; not shot"
+    },
+    {
+      "screen": "/p/[practiceId]/reports/roi/[statementId]/csv",
+      "reason": "a CSV download, not a screen"
+    },
+    {
+      "screen": "LED-16 and LED-17 practices",
+      "reason": "not in this brief; their fixtures were copied but not loaded"
+    }
+  ]
+}

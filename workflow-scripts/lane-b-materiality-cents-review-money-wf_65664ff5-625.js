@@ -1,0 +1,19 @@
+export const meta = {
+  name: 'lane-b-materiality-cents-review-money',
+  description: 'Payment-engine adversarial review of PR #54 (materiality-cents)',
+  phases: [{ title: 'Review', detail: 'payment-engine reviewer' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad'
+const WT = '/home/user/materiality-cents'
+const FINDINGS = { type: 'object', properties: { verdict: { type: 'string', enum: ['merge after fixes', 'merge as is', 'do not merge'] }, findings: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit'] }, file: { type: 'string' }, line: { type: 'number' }, claim: { type: 'string' }, scenario: { type: 'string' }, fix: { type: 'string' } }, required: ['id', 'severity', 'file', 'claim', 'scenario', 'fix'] } }, checked: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' } }, required: ['verdict', 'findings', 'checked', 'summary'] }
+phase('Review')
+return await agent(`You are one of two adversarial reviewers of PaidWhole pull request #54 (PureTideWater/PhysicalTherapy, draft, base claude/build-platform c5195ee, head c74d304c, branch co-001/materiality-cents): settings amounts stored in cents shown and saved as dollars, the console model budget entered in dollars, the upload receipt's PLB total formatted. Read-only at ${WT}: git -C ${WT} diff origin/claude/build-platform...HEAD, and read the changed files whole. Do not edit, commit, push or post on GitHub.
+Save as you go: keep ${SP}/progress/mc-review-money.md up to date (each check and finding), so an interruption loses nothing. If it already exists, continue from it.
+Design: /home/user/ops/designs/lane-b-materiality-cents.md (with its "After the design review" section); its review ${SP}/mc-design-review.json; the build's report ${SP}/mc-build.json.
+YOUR LENS: the payment-engine reviewer's checklist in ${WT}/.claude/agents/payment-engine-reviewer.md (read it and apply every item that touches this diff), and CLAUDE.md's money rules (integer cents as bigint, never a float on an amount). In focus:
+- lib/money-input.ts: dollarsField and dollarsForInput as exact inverses over the stated domain; every input the regex admits or refuses ("5", "5.", ".5", "05.00", " 5.00 ", "1,000.00", "$5", "-1", "5.005", 10 digits); bigint throughout; what happens to a stored value outside the domain (12 digits; non-canonical text; null) on every page that pre-fills from it; no Number() or float anywhere on an amount.
+- Every save path now through dollarsField (workbench.ts, console/practice-settings.ts, console-models.ts' model budget): same cents stored as before for a correct dollar input; the model budget's flag value format still what packages/model-gateway reads (find its reader; a format change there would silently break the budget); the gateway's limits vs dollarsField's.
+- Triage and the case snapshot read the same cents; nothing in packages/triage or apps/worker changed behaviour.
+- receipt-labels.ts and the uploads page: formatUsd(parseCents(...)) on every value it receives (signs, zero, large values, a value that is not canonical cents text: does anything throw on a page?).
+- The tests: do CAS-38 and CAS-39 (docs/product/test-matrix.md) truly prove their rows, or pass vacuously? Is the fast-check property's range the domain the design states? Run the unit tests for the changed files and the three db test files under flock /tmp/laneb-heavy.lock (export PATH=/opt/node24/bin:$PATH; DATABASE_URL=postgres://postgres:test@localhost:5433/postgres for db).
+For each defect: file:line, a concrete failure scenario, severity (blocking | should-fix | nit) and the exact fix. Assume there are some; do not report style preferences.`, { label: 'mc-review-money', phase: 'Review', schema: FINDINGS })

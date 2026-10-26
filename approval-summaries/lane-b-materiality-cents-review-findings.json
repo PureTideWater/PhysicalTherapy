@@ -1,0 +1,169 @@
+{
+ "money": {
+  "verdict": "merge as is",
+  "findings": [
+   {
+    "id": "MC-M1",
+    "severity": "nit",
+    "file": "apps/web/src/lib/money-input.ts",
+    "line": 15,
+    "claim": "dollarsField and dollarsForInput are exact inverses only over [0, 99,999,999,999] cents (11 digits). Every store that holds these values accepts 12 digits: @tp/triage settings.ts:58, practice_set_materiality in 20261024110000_case_workbench.sql:158, the feature_flag_value CHECK, and model-gateway flags.ts:47. dollarsForInput does not enforce its stated domain, so a value outside it is pre-filled as text the save then refuses. The console budget also narrows from 12 digits (the old CENTS regex) to 11.",
+    "scenario": "Seed data or SQL stores line_materiality_cents '999999999999'. The defaults page, the cases page and the console practice-settings page (asDollars) pre-fill '9999999999.99'. Saving the form unchanged, or changing a different field, fails with 'dollars and cents, such as 5.00' on a field the person never edited, and on the console page the whole settings form becomes unsaveable. Likewise a 12-digit model budget set before this PR is still shown, but can no longer be re-entered. Nothing is corrupted. The design (F8) hands this gap to Lane A.",
+    "fix": "Align the domains in one place: change dollarsField's regex to /^\\d{1,10}(\\.\\d{1,2})?$/ so it covers every stored value [0, 999,999,999,999], and update the docstring and the test constant to MOST = 999_999_999_999. Lane A then makes the same change in settings.ts when it adopts dollarsField. Alternatively, keep 11 digits and tighten the triage, DB and gateway regexes to {0,10}, but that needs a migration and so belongs in a separate PR."
+   },
+   {
+    "id": "MC-M2",
+    "severity": "nit",
+    "file": "apps/web/src/lib/routes/defaults-routes.db.test.ts",
+    "line": 139,
+    "claim": "The CAS-39 boundary loop asserts that the stored value equals the value it seeded just before saving. A save that returned ok but wrote nothing, or wrote the same keys under a no-op, would pass all eight boundaries. Only the first test's 500/25000/4500 case, which failed on the base, shows that the save writes at all.",
+    "scenario": "A regression where settingsMaterialityAction returns ok without calling practice_set_materiality, or writes only on change, keeps the boundary test green at 0, 1 and 99,999,999,999.",
+    "fix": "In each iteration, prove the save wrote. For example, read count(*) of audit_event with action IN ('materiality_set','pursuit_set') for the practice before and after saveUnchanged() and assert it rises by 2. Or seed the keys, set practice.settings to settings - 'line_materiality_cents' after reading the page, then assert the key is back with the same value."
+   }
+  ],
+  "checked": [
+   "money-input.ts regex domain: '5', '5.0', ' 5.00 ' (trimmed), '05.00' -> 500n and '000000000.00' -> 0n accepted; '5.', '.5', '1,000.00', '$5', '-1', '+5', '5.005', 10 whole digits and '' refused; ASCII-only \\d (no u flag)",
+   "dollarsField -> parseAmount (bigint digit by digit); dollarsForInput -> parseCents/formatCents (bigint); no Number() or float on an amount in any changed product file (only the test's fc.integer -> String)",
+   "dollarsForInput on non-canonical, null or negative input: parseCents throws, or returns '-5.00' for a negative; every caller's source is canonical (centsToString or PG bigint::text) and triageSettings rejects negatives; asDollars keeps its guard",
+   "Save paths workbench.ts, console/practice-settings.ts and console-models.ts store the same cents as before for a correct dollar input (same regex; practice-settings now also trims, redundant after its preprocess)",
+   "model.daily_budget_cents: the route writes centsToString(bigint), canonical text such as '500'; gateway flags.ts:47 reads ^(0|[1-9]\\d{0,11})$ and the DB CHECK is the same, so the format is compatible; dollarsField's cap of 99,999,999,999 is within the gateway's limit",
+   "No changes in packages/triage, apps/worker, packages/money or packages/model-gateway; triage and the case snapshot (execute.ts:374) read the same keys and cents; workbench refusal message uses formatUsd on Cents typed values",
+   "receipt-labels.ts usd = formatUsd(parseCents(...)): plbTotalCents comes from PG bigint::text or '0', differenceCents from the worker's bigint.toString(), so both are canonical, and signs, zero and large values format as -$1.00 / $0.00 / $1,234.56; it is used in a client component, but @tp/money was already imported client-side; the CSV reason column quotes the new commas; no e2e or brand test depends on the old '$-' text",
+   "Uploads page and cases page <Money> on canonical values; console defaults text from DEFAULT_TRIAGE_SETTINGS",
+   "Removed export centsText: no remaining importer (tsc --noEmit on apps/web clean)",
+   "Tests: the fast-check range [0, 99,999,999,999] matches the design's F8 domain; CAS-38 is covered by the card unit test (words, mono, pre-fills, edges) plus the e2e (cases-page pre-fill 100.00, defaults page, unchanged save); CAS-39 by the property test plus the defaults-routes db test through the real settings.ts parser and the console budget db test ('5.00', '5' and ' 5.0 ' -> '500', resetting to 1.23 between each so the assertion is not vacuous); the e2e step was not run by the build",
+   "Ran under flock: vitest unit money-input, defaults.test and receipt-labels: 28/28 pass; vitest db defaults-routes, console-routes and workbench-routes: 35/35 pass",
+   "Payment-engine checklist: no float, rounding, Medicare flag, window, trace or ledger code touched; no model output reaches a number; a property test is present; no golden line is needed (no pricing change)"
+  ],
+  "summary": "I found no blocking or should-fix money defects in this PR. dollarsField and dollarsForInput are exact inverses over the domain the design states, [0, 99,999,999,999] cents, and both use bigint throughout. Every save path stores the same cents as before for a correct dollar input. The model budget's flag value is still the canonical cents text that packages/model-gateway/src/flags.ts reads. Nothing in triage, the worker, money or the gateway changed. receipt-labels only ever receives canonical cents text (from Postgres bigint::text or the worker's toString), so the new strict parseCents cannot throw on a page in practice. The unit tests (28/28) and the three db test files (35/35) pass, and typecheck is clean. There are two nits. First, the 11-digit save domain is narrower than the 12 digits that every store accepts (triage, the DB function, the flag CHECK, the gateway). An out-of-domain stored value pre-fills text the save refuses, and the console budget cap narrowed. The design already hands this to Lane A. Second, the CAS-39 boundary loop would pass even if the save silently wrote nothing."
+ },
+ "ux": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "UX-1",
+    "severity": "should-fix",
+    "file": "apps/web/src/lib/money-input.ts",
+    "line": 18,
+    "claim": "dollarsField turns down the two ways people most often type money, \"$5\" and \"5,000\". The error it gives, 'dollars and cents, such as 5.00', does not say what was wrong or what to change. Every dollar field this PR moves onto the helper inherits this: the cases page's materiality, the console practice settings, the console model budget and the workbench's materiality save.",
+    "scenario": "A billing manager on the Cases page types \"$250\" (or \"1,000\") in 'Per case (dollars)' and saves. The page shows 'Check the fields marked below. \u2022 caseMateriality: dollars and cents, such as 5.00'. The form resets to the stored value, so a valid-looking 250.00 sits outlined in red next to the error, and nothing says to drop the $ sign or the comma. An operator typing \"$5\" as the model budget gets 'value: a budget in dollars and cents, such as 5.00'.",
+    "fix": "Accept a leading $ and correctly grouped commas, and keep everything else exact: `export const dollarsField = z.string().trim().transform((t) => t.replace(/^\\$\\s*/, '')).pipe(z.string().regex(/^(\\d{1,9}|\\d{1,3}(,\\d{3}){1,2})(\\.\\d{1,2})?$/, 'an amount in dollars, such as 5.00 or 1,250.00')).transform((t) => parseAmount(t.replaceAll(',', '')));`. dollarsForInput stays as it is, so the CAS-39 round trip still holds. Add unit cases: '$5' gives 500, '5,000' gives 500000, '$1,250.50' gives 125050, while '5,00', '50,00.00' and '1,2345' are refused. Use the same message in console-models.ts:166. Add to the Lane A hand-over that settings.ts:271 should import dollarsField, so Settings \u2192 Defaults accepts the same input."
+   },
+   {
+    "id": "UX-2",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/settings/defaults.tsx",
+    "line": 51,
+    "claim": "The two new card components render <ActionForm> without `labels`. A refused save therefore names the field by its schema key ('lineMateriality:', 'caseMateriality:', 'staffRatePerHour:') and not by the label the person sees, and a screen reader reads that key as the control's description (open raw finding a11y-practice-1-01/2-02). The PR wrote these call sites, so the fix belongs here.",
+    "scenario": "A billing manager types \"5.5.0\" in 'Per line (dollars)' on Settings \u2192 Defaults. They read 'lineMateriality: dollars and cents, such as 5.00', and a screen reader says 'Per line (dollars), invalid entry, lineMateriality colon dollars and cents'. If only one of the three pursuit fields is filled, they read 'staffRatePerHour: the pursuit cost needs the staff rate and both times together, or none of them'.",
+    "fix": "Line 51: `<ActionForm action={action} submit=\"Save materiality\" labels={{ lineMateriality: 'Per line', caseMateriality: 'Per case' }} \u2026>`. Line 95: `labels={{ staffRatePerHour: 'Pursuit cost', minutesPerPacket: 'Minutes per packet', minutesPerFollowUp: 'Minutes per follow-up' }}`. Do the same on the cases page materiality form (cases/page.tsx:171) and the console models form (models/page.tsx:77, `labels={{ value: 'Value', key: 'Flag', target: 'Applies to' }}`). Add a defaults.test.tsx assertion that no camelCase key appears in a rendered refusal."
+   },
+   {
+    "id": "UX-3",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+    "line": 83,
+    "claim": "The line page still gives amounts as raw cents with the engine's code names: 'mppr (10000 to 7500 cents)', 'contract_adjustment (\u2026)', and 'unrounded 12345.6789 cents' beside a dollar figure (line 70). This is the one changed screen where a billing manager still has to convert cents in their head. @tp/money already has formatUnroundedUsd, which prints an unrounded amount in formatUsd's form and is used by the payer's copy (b1b6b95e). words.ts already has labelOf, which turns 'mppr' into 'MPPR' and 'contract_adjustment' into 'Contract adjustment'.",
+    "scenario": "A billing manager opens a priced line and reads 'Expected allowed $123.46 (unrounded 12345.6789 cents)' and 'Adjustments: mppr (10000 to 7500 cents)'. They have to divide by 100 to compare these with the dollar figures above, and they see a lowercase code where the rest of the product shows 'MPPR'.",
+    "fix": "Line 70: `(unrounded <span className=\"font-mono tabular-nums\">{formatUnroundedUsd(pricing.expectedUnrounded)}</span>)`, leaving out the parenthesis when expectedUnrounded is null. Line 83: `{labelOf(item.name)} (<span className=\"font-mono tabular-nums\">{formatUnroundedUsd(item.before_cents)}</span> to <span className=\"font-mono tabular-nums\">{formatUnroundedUsd(item.after_cents)}</span>)`. This reads as 'MPPR ($100.00 to $75.00)' and 'unrounded $123.456789', and the unrounded value stays beside the rounded one, as rule 2 requires. Import formatUnroundedUsd from @tp/money and labelOf from lib/copy/words."
+   },
+   {
+    "id": "UX-4",
+    "severity": "should-fix",
+    "file": "apps/web/src/lib/uploads/receipt-labels.ts",
+    "line": 383,
+    "claim": "The receipt reports the PLB total with the 835's sign: positive means withheld from the payment, negative means added (transaction.ts:908, payment = claims \u2212 PLB). Formatting it as '-$10.50' now reads like money taken away when it is money added, such as L6 interest. The parse report on the upload page has the same problem ('provider adjustments -$1.00.', uploads/[documentId]/page.tsx:83). The PR rewrote both sentences and its new test pins the ambiguous form.",
+    "scenario": "An 835 carries PLB L6 interest of -10.50. The receipt reads 'Loaded 1 remittance, 2 claims and 3 lines; provider adjustments of -$10.50.' The billing manager concludes the payer took $10.50 back, when the payer actually paid $10.50 more.",
+    "fix": "Say which way the money went: `const plb = parseCents(parse.plbTotalCents); parts.push(plb > 0n ? `provider adjustments withheld ${formatUsd(plb)} from the payment` : `provider adjustments added ${formatUsd(negateCents(plb))} to the payment`);`. On the upload page: `provider adjustments {plb > 0n ? 'withheld' : 'added'} <Money value={magnitude} />`. Update receipt-labels.test.ts to 'provider adjustments added $1.00 to the payment' and '\u2026withheld $1,234.56 from the payment'. Record the same wording for the remittance page's 'Provider adjustments' fact (remittances/[remittanceId]/page.tsx:84) as a follow-up."
+   },
+   {
+    "id": "UX-5",
+    "severity": "nit",
+    "file": "apps/web/src/components/settings/defaults.tsx",
+    "line": 88,
+    "claim": "The pursuit sentence hard-codes 'minutes', so a value of 1 reads '1 minutes a packet'. Minutes may be 0 to 10,000 (settings.ts:276-281). words.ts's counted() exists to prevent exactly this (the screen tour's C1).",
+    "scenario": "A billing manager saves 1 minute per follow-up and the card reads '$45.00 an hour, 30 minutes a packet, 1 minutes a follow-up.'",
+    "fix": "Render `<Count value={n} /> {n === 1 ? 'minute' : 'minutes'} a packet`, or have Count take the noun and use counted's rule, so the number stays mono and the noun agrees. Add a defaults.test.tsx case with minutesPerFollowUp: 1."
+   },
+   {
+    "id": "UX-6",
+    "severity": "nit",
+    "file": "apps/web/src/components/settings/defaults.tsx",
+    "line": 103,
+    "claim": "The pursuit cost's rule 'All three together, or all blank to clear.' is a hint on the staff-rate field only (open raw finding a11y-practice-2-16, WCAG 1.3.1/3.3.2). A screen reader never hears it on the two minute fields. The PR rebuilt this card, so it is the natural place to group them.",
+    "scenario": "A screen-reader user tabs to 'Minutes per packet', hears no rule, fills only that field, and gets a refusal that names the staff rate.",
+    "fix": "Wrap the three fields in `<fieldset className=\"grid gap-3\"><legend className=\"text-sm font-medium\">Staff rate and times</legend><p id=\"pursuit-rule\" className=\"text-xs text-muted-foreground\">All three together, or all blank to clear.</p>\u2026</fieldset>` with `aria-describedby=\"pursuit-rule\"` on the fieldset, and drop the per-field hint."
+   },
+   {
+    "id": "UX-7",
+    "severity": "nit",
+    "file": "apps/web/src/components/settings/defaults.tsx",
+    "line": 45,
+    "claim": "The card's second sentence is a fragment ('Now $5.00 per line and $250.00 per case.'). The defaults page also never states the product's defaults, while the Cases page's Materiality card does ('The defaults are $5.00 and $250.00'), so the two screens that set the same value explain it differently.",
+    "scenario": "A billing manager on Settings \u2192 Defaults wants to restore the shipped thresholds. Only the Cases page tells them what those are.",
+    "fix": "Use 'The thresholds are <Money line/> per line and <Money case/> per case; the defaults are <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.lineMaterialityCents)} /> and <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.caseMaterialityCents)} />.' and update triage.spec.ts:88 and defaults.test.tsx to match."
+   },
+   {
+    "id": "UX-8",
+    "severity": "nit",
+    "file": "apps/web/src/lib/routes/console-models.ts",
+    "line": 36,
+    "claim": "The budget's unit changes from cents to dollars under one generic 'Value' field. An operator who learned the old hint ('500 is $5.00') and types 500 now sets $500.00, a budget 100 times larger, and the success notice 'The flag is set' does not echo the amount (models/page.tsx:32-36). Also, 'Daily budget (dollars)' doubles as the flag's name in the 'Flags set' table, beside '$7.50', where the unit is redundant.",
+    "scenario": "A platform administrator types 500 for a practice's daily budget out of habit. They see 'The flag is set' and leave without scrolling down to the table, which now reads $500.00.",
+    "fix": "Hint: 'on or off for a switch; a daily budget in dollars, such as 5.00 for five dollars'. Show the table label without the unit (keep MODEL_FLAGS['model.daily_budget_cents'] = 'Daily budget' and put '(dollars)' only in the hint, or keep a separate select label). The full fix stays queued as flows-other-10: split the form by flag, give the budget its own 'Daily budget (dollars)' field with inputMode=\"decimal\", and have the notice name the flag, scope and amount."
+   },
+   {
+    "id": "UX-9",
+    "severity": "nit",
+    "file": "apps/web/src/lib/routes/workbench.ts",
+    "line": 78,
+    "claim": "The open-case refusal now says '$3.00' and '$250.00', which is better than the bare '3.00'. It is still a plain string, so the amounts appear in Plex Sans (brand rule: every money figure in mono; open brand-10). Its field is 'pattern', a hidden input, so the summary reads 'Check the fields marked below. \u2022 pattern: its actionable lines total \u2026' with nothing marked.",
+    "scenario": "A billing manager presses 'Open the case' on a held pattern and reads 'pattern: its actionable lines total $3.00, below the case materiality of $250.00 \u2026' under 'Check the fields marked below.', with no field marked.",
+    "fix": "Throw it with the REFUSED_FIELD from lib/cases/refusals.ts, so refusalState renders 'Refused: its actionable lines total $3.00, below the case materiality of $250.00, so it keeps accumulating; lower the case materiality to open it.'. Leave the mono rendering of money inside error strings to brand-10's <Figures> component."
+   },
+   {
+    "id": "UX-10",
+    "severity": "nit",
+    "file": "apps/web/src/app/p/[practiceId]/uploads/[documentId]/page.tsx",
+    "line": 82,
+    "claim": "In the sentence where the PR set the PLB total in mono, the counts stay in sans and are not inflected: '{parse.claims} claims, {parse.lines} lines, {parse.reversals} reversals' gives '1 claims' and '0 reversals'. The brand rule covers unit counts, and words.ts's counted() exists for the plurals. Line 156 has the same problem.",
+    "scenario": "An 835 with one claim and one line shows 'Parse report: 1 transaction set, 1 claims, 1 lines, 0 reversals; provider adjustments $0.00.'",
+    "fix": "Render each count as `<span className=\"font-mono tabular-nums\">{n}</span> {n === 1 ? 'claim' : 'claims'}`, or use a small CountOf component built on counted's rule, at lines 82 and 156."
+   },
+   {
+    "id": "UX-11",
+    "severity": "nit",
+    "file": "apps/web/src/lib/uploads/receipt-labels.ts",
+    "line": 254,
+    "claim": "'Does not balance by -$1.00': 'by' introduces a size, so a signed amount reads oddly, and the sign's meaning (claims \u2212 PLB \u2212 payment) is not explained.",
+    "scenario": "A held 835's receipt reads 'Held: nothing in it loaded. Does not balance by -$1.00 at segment 4 (BPR), element 2.'",
+    "fix": "Use the magnitude, `by ${formatUsd(abs(difference))}`. If the direction matters to the person, add it in words, e.g. 'the payment is $1.00 more than its claims less adjustments'."
+   },
+   {
+    "id": "UX-12",
+    "severity": "nit",
+    "file": "apps/web/src/components/settings/defaults.tsx",
+    "line": 54,
+    "claim": "The pre-filled dollar inputs show '5.00', '250.00' and '45.00' in Plex Sans, while the same figures one line above are in Plex Mono (seen in all 8 after-shots). No money input in the app is mono, and the brand rule names figures without singling out inputs, so this is a recommendation and not a rule breach.",
+    "scenario": "Settings \u2192 Defaults at 1280 px and 390 px: '$250.00' in the description is mono, and '250.00' in the field directly below is sans.",
+    "fix": "Give money inputs `className=\"font-mono tabular-nums\"` (Field passes className through to Input) here and on cases/page.tsx:177,181. Better, add a MoneyField wrapper (label with '(dollars)', inputMode=\"decimal\", mono) and use it for every dollar input."
+   }
+  ],
+  "checked": [
+   "git diff c5195ee...HEAD (24 files): defaults.tsx, defaults page, cases page, console practices page, console models page and route, workbench.ts, receipt-labels.ts, the upload page, the line page, money-input.ts, practice-settings.ts",
+   "All 16 screenshots, before and after (seeded and pursuit, 1280 and 390, light and dark). After: $5.00, $250.00 and $45.00 in mono through <Money>, minutes in mono, inputs pre-filled 5.00, 250.00 and 45.00 (the 100x bug fixed), no overflow at 390 px, dark tokens readable. The missing save notice in the pursuit shots comes from the capture spec re-opening the page, not from the product",
+   "pnpm lint:copy (under flock, node24): passes, 494 files",
+   "CO-11 forbidden terms: none in the changed copy",
+   "brand.md and BRAND.md money rule (mono, tabular-nums, formatUsd form): met for the displayed figures. Error strings, inputs and some counts still use sans (UX-9, UX-10, UX-12)",
+   "words.ts: counted() and labelOf() are not used where the PR touched plurals and code names (UX-3, UX-5, UX-10)",
+   "@tp/money: formatUnroundedUsd exists and is used by packets, not by the line page (UX-3)",
+   "Refusal text for '$5' and '5,000' through dollarsField and settings.ts, plus ActionForm's labels fallback to the raw key (UX-1, UX-2)",
+   "PLB sign convention in edi835 transaction.ts:906-908, checked against the receipt wording (UX-4)",
+   "Console models: hint, select label, table, default budget sentence, error message (UX-8)",
+   "Card role=region with aria-label: matches the app convention (122 uses), no finding",
+   "/home/user/ops pulled. designs/lane-b-ux-review.md does not exist. Only lane-b-ux-review/raw-findings.md does, and its findings on these screens are cross-referenced: flows-practice-01 and brand-10 are fixed by the PR; flows-other-10 is partly fixed; a11y-practice-1-01/2-02 and 2-16 are still open (UX-2, UX-6)",
+   "Design doc designs/lane-b-materiality-cents.md (F1-F9) compared with the implementation"
+  ],
+  "summary": "The PR fixes what it set out to fix, as the after-screenshots show. Settings \u2192 Defaults now shows $5.00, $250.00 and $45.00 in mono and pre-fills 5.00, 250.00 and 45.00, so an unchanged save no longer multiplies thresholds by 100. The console budget is entered in dollars. The PLB total and the workbench refusal use formatUsd's form. 390 px and dark both look right, and lint:copy passes. Nothing is blocking. Four should-fix items:\n- dollarsField turns down \"$5\" and \"5,000\" with an error that gives no next step.\n- The new cards' ActionForms leave out `labels`, so refusals name fields by raw keys like 'lineMateriality:'.\n- The line page still shows raw cents and engine codes ('mppr (10000 to 7500 cents)'), although formatUnroundedUsd and labelOf already exist.\n- The receipt's '-$10.50' provider adjustment follows the 835 sign and reads as money taken when it is money added.\n\nThe nits cover plurals ('1 minutes', '1 claims'), the pursuit rule grouping, the defaults card wording, the budget unit change with a notice that does not echo the amount, money inside error strings, and sans money inputs. designs/lane-b-ux-review.md does not exist yet, so the related raw findings were cross-referenced instead. Progress log: /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/mc-review-ux.md."
+ }
+}
