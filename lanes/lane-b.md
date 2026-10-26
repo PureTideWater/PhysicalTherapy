@@ -8,7 +8,7 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
 ## Start here (Lane B): the state at 2026-10-26 ~21:10 UTC, the handoff to Lane A
-A session that continues Lane B's work reads this section first, after `../LANES.md`. From 2026-10-27 that is a Lane A
+**Lane A: read `lane-b-handoff-to-lane-a.md` (beside this file) first.** It orders what is due now. A session that continues Lane B's work reads this section first, after `../LANES.md`. From 2026-10-27 that is a Lane A
 session: the co-founder works Lane A from then on. Lane A runs on another Claude account against the same GitHub
 repository, so everything it needs is here, in LANES.md, in the status files (`approval-summaries/lane-b-*-status.md`)
 and on GitHub. This section says:
