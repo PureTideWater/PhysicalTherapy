@@ -1,14 +1,20 @@
+import { cmsQuarterOfDate } from '../schema';
 import { RuleImportError, textLines } from './delimited';
+import { zipFileQuarter } from './locality-plus-four';
 import type { ParseOutcome, ParsedRow, RuleFileParser } from './types';
 
 /**
  * The CMS ZIP code to carrier locality file (ZIP5, fixed-width text), read by the positions of its
  * record layout: state in 1-2, ZIP code in 3-7, carrier in 8-12, pricing locality in 13-14, the
  * rural indicator in 15 (blank, R or B) and the plus-four flag in 21 (1 when the ZIP is split
- * across localities and the ZIP+4 file decides). Later positions are not needed.
+ * across localities and the ZIP+4 file decides). Later positions are not needed but the year and
+ * quarter (YYYYQ) at 76-80: the file is one quarter's, so every line carries the quarter the import
+ * window starts in, as the ZIP9 parser requires (audit #30, docs/adr/0071).
  */
 function parse(text: string, window: { effectiveFrom: string; effectiveTo: string | null }): ParseOutcome {
   const seen = new Set<string>();
+  const start = cmsQuarterOfDate(window.effectiveFrom);
+  const expected = `${String(start.year)}${String(start.quarter)}`;
   const parsed: ParsedRow[] = [];
   for (const line of textLines(text)) {
     if (line.raw.trim() === '') {
@@ -33,6 +39,15 @@ function parse(text: string, window: { effectiveFrom: string; effectiveTo: strin
     const plusFour = raw.length > 20 ? raw.charAt(20) : ' ';
     if (![' ', '0', '1'].includes(plusFour)) {
       throw new RuleImportError(`${at}: plus-four flag ${JSON.stringify(plusFour)} is not 0, 1 or blank`);
+    }
+    const quarter = zipFileQuarter(raw);
+    if (quarter === null) {
+      throw new RuleImportError(`${at}: year and quarter ${JSON.stringify(raw.slice(75, 80))} at 76-80 is not YYYYQ`);
+    }
+    if (quarter !== expected) {
+      throw new RuleImportError(
+        `${at}: the file is of year and quarter ${quarter}, and the import window starts ${window.effectiveFrom}, in ${expected}: import each quarter's ZIP5 file under that quarter's window`,
+      );
     }
     if (seen.has(zip)) {
       throw new RuleImportError(`${at}: ZIP ${zip} appears twice`);
