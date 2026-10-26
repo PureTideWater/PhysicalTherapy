@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 import { ActionForm } from '../../../../components/action-form';
 import { roleNames, utc } from '../../../../components/format';
-import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords } from '../../../../components/reconciliation/display';
+import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -131,7 +131,7 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
   );
 }
 
-function EntryTable({ entries, practiceId, phi, label }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string }) {
+function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string; readonly empty?: string }) {
   return (
     <div className="overflow-x-auto">
       <table aria-label={label} className="w-full text-sm">
@@ -148,7 +148,15 @@ function EntryTable({ entries, practiceId, phi, label }: { readonly entries: rea
           </tr>
         </thead>
         <tbody>
-          <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
+          {entries.length === 0 && empty !== undefined ? (
+            <tr data-entries="none">
+              <td colSpan={8} className="py-1 text-muted-foreground">
+                {empty}
+              </td>
+            </tr>
+          ) : (
+            <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
+          )}
         </tbody>
       </table>
     </div>
@@ -199,7 +207,7 @@ function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: L
           with a further submission.
         </p>
       )}
-      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" />
+      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" empty={lineEntriesEmptyText(line.correction.kind)} />
     </li>
   );
 }

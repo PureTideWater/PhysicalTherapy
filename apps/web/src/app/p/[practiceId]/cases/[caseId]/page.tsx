@@ -15,7 +15,7 @@ import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triag
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
-import { LineCorrectionWords, proofLevelWords, recoveredLabel } from '../../../../../components/reconciliation/display';
+import { LineCorrectionWords, PATIENT_BALANCE_NEXT_STEP, proofLevelWords, recoveredLabel, showsBillableFact } from '../../../../../components/reconciliation/display';
 import { STATUS_TONES } from '../../../../../components/remittances/display';
 import { StatusChip } from '../../../../../components/status';
 
@@ -96,12 +96,14 @@ export default async function CasePage(props: Props) {
               </span>{' '}
               (stage five: cash {proofLevelWords(ledger.proofLevel === 'deposited' ? 'deposited' : 'posted')}, net of recoupments and reversals)
             </Fact>
-            <Fact label="Billable to the patient">
-              <span data-figure="billable">
-                <Money value={corrections.billableCents} />
-              </span>{' '}
-              (the patient’s share of the payer’s corrections; counted in no total)
-            </Fact>
+            {showsBillableFact(corrections) ? (
+              <Fact label="Billable to the patient">
+                <span data-figure="billable">
+                  <Money value={corrections.billableCents} />
+                </span>{' '}
+                (the patient’s share of the payer’s corrections; counted in no total)
+              </Fact>
+            ) : null}
             <Fact label="Deadline (earliest open window)">
               <Deadline on={item.deadlineOn} state={item.deadline} />
             </Fact>
@@ -152,6 +154,11 @@ export default async function CasePage(props: Props) {
               ? 'Not submitted yet.'
               : `Last submitted ${dispute.latestSubmission.submittedOn}; ${dispute.latestSubmission.answered ? 'the payer has answered' : `follow-up ${dispute.latestSubmission.followUpOn}`}.`}
           </p>
+          {corrections.patientBalance ? (
+            <p className="rounded-md border border-dashed p-2" data-next-step="patient-balance">
+              {PATIENT_BALANCE_NEXT_STEP}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-4">
             {canDraft ? (
               <Link className="underline" href={`${base}/packet`}>

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { type DocumentStatus, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
 import { type FigureCheck, type LedgerEntry, type ProofLevel, type ReportReconciliation, type StoredStatement, entriesById, ratioText, recomputeStatement, reportReconciliation, roiStatementCsv } from '@tp/ledger';
-import { centsToString, parseCents } from '@tp/money';
+import { centsToString, parseCents, sumCents } from '@tp/money';
 import {
   type CorrectionKind,
   type LineCorrection,
@@ -180,6 +180,8 @@ export interface BillableView {
   readonly allowedIncreaseCents: string;
   readonly paymentIncreaseCents: string;
   readonly otherReductionCents: string;
+  /** The patient's share's net change, signed (below zero when it fell): shown to every reader, as billable is. */
+  readonly shareChangeCents: string;
   readonly reasons: { readonly deductible: string; readonly coinsurance: string; readonly copay: string; readonly other: string } | null;
   /** The share allocated from the claim's level by charge: the line's charge over the claim's (the exact fraction), or null. */
   readonly allocation: { readonly lineChargeCents: string; readonly claimChargeCents: string } | null;
@@ -205,6 +207,7 @@ export function correctionView(line: LineCorrection | undefined, phi: boolean): 
       allowedIncreaseCents: centsToString(billable.allowedIncreaseCents),
       paymentIncreaseCents: centsToString(billable.paymentIncreaseCents),
       otherReductionCents: centsToString(billable.otherReductionCents),
+      shareChangeCents: centsToString(sumCents([billable.shareChange.deductibleCents, billable.shareChange.coinsuranceCents, billable.shareChange.copayCents, billable.shareChange.otherCents])),
       reasons: phi
         ? {
             deductible: centsToString(billable.shareChange.deductibleCents),

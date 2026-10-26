@@ -42,6 +42,12 @@ test('a correction on a coinsurance line approves what the payer pays more, the 
   await signInWithTotp(page, 'ledger-manager');
   const caseId = await openedCase(page, practiceId, 'LED-14');
 
+  await test.step('a case no correction has reached shows no billable figure', async () => {
+    await page.goto(`/p/${practiceId}/cases/${caseId}`);
+    await expect(page.locator('[data-figure="payer-approved"]')).toHaveText('$0.00');
+    await expect(page.locator('[data-figure="billable"]')).toHaveCount(0);
+  });
+
   await test.step('the adjusted remittance approves the payer’s 24.00, with the patient’s 6.00 beside it', async () => {
     await withWorker(async () => {
       await uploadLedger835(page, practiceId, 'LED-14', 'adjusted.835');
@@ -53,7 +59,8 @@ test('a correction on a coinsurance line approves what the payer pays more, the 
     await expect(line.locator('[data-billable="600"]')).toHaveText(
       'Billable to the patient: $6.00 (coinsurance +$6.00). The payer raised the allowed amount by $30.00 and pays $24.00 of it; the rest is the patient’s share, counted in no total.',
     );
-    await expect(page.locator('[data-figure="approved"]')).toContainText('what payers have agreed to pay on the lines they corrected, never the patient’s share');
+    await expect(page.locator('[data-figure="approved"]')).toContainText('what payers agreed to pay, never the patient’s share; recovered only once posted or deposited');
+    await expect(page.locator('[data-help="payer-approved"]')).toHaveText('Payer approved is net of reversals and of what was taken back before it posted.');
   });
 
   await test.step('the 24.00 deposit recovers the line', async () => {
@@ -118,8 +125,9 @@ test('a correction the deductible took whole writes nothing and shows the balanc
     });
     const line = page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first();
     await expect(line.locator('[data-correction="patient_balance"]')).toHaveText(
-      'Payer corrected; balance is the patient’s. The payer raised the allowed amount by $30.00 and pays nothing more: the patient’s deductible took all of it. No ledger entry is written; counted in no total.',
+      'Billable to the patient: $30.00 (deductible +$30.00). Payer corrected; balance is the patient’s. The payer raised the allowed amount by $30.00 and pays nothing more: the patient’s deductible took all of it. No ledger entry is written; counted in no total. Bill the balance to the patient in the practice-management system; a packet would ask the payer for what it has already allowed.',
     );
+    await expect(line.locator('[data-entries="none"]')).toHaveText('No entry on this line: the correction paid nothing more.');
     await expect(line.getByRole('list', { name: 'ERA: the remittance that reprocessed it' })).toContainText('higher allowed: payer corrected; balance is the patient’s');
     await expect(line.getByRole('list', { name: 'ERA: the remittance that reprocessed it' })).not.toContainText('no change');
     await expect(line.locator('[data-line-stage]')).toHaveText('Actionable');
@@ -134,5 +142,8 @@ test('a correction the deductible took whole writes nothing and shows the balanc
     await expect(page.locator('[data-figure="billable"]')).toHaveText('$30.00');
     await expect(page.locator('[data-figure="payer-approved"]')).toHaveText('$0.00');
     await expect(page.getByRole('list', { name: 'Case lines' }).locator('[data-correction="patient_balance"]')).toContainText('the patient’s deductible took all of it');
+    await expect(page.getByRole('region', { name: 'Packet and dispute' }).locator('[data-next-step="patient-balance"]')).toHaveText(
+      'Bill the balance to the patient in the practice-management system; a packet would ask the payer for what it has already allowed.',
+    );
   });
 });

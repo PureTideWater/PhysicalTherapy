@@ -670,7 +670,10 @@ export function led14(b: CaseBuilder): void {
  * 30.00, approved and deposited 10.00, and a second reprocessing at the same allowed amount paying 20.00
  * takes the 10.00 back (Q2). In its own practice (raised-*): from the original, a correction allowed
  * 100.00 with PR-1 66.00 paying 34.00, less than the 40.00 before it, with nothing approved, is decreased
- * with no entry; a later one paying 50.00 is approved for 10.00, against the 40.00 before it.
+ * with no entry; a later one paying 50.00 is approved for 10.00, against the 40.00 before it. In its own
+ * practice (mixed-*, the UX review's UX-1): from the original, a correction allowed 100.00 with PR-1 50.00
+ * and CO-253 10.00 still paying 40.00 writes no entry and leaves the patient 20.00 of the 30.00 increase,
+ * the other 10.00 the payer's own reduction, never billable.
  */
 export function led15(b: CaseBuilder): void {
   const base = ledBase(b);
@@ -710,8 +713,31 @@ export function led15(b: CaseBuilder): void {
   recoveryScenario(b);
   b.scenario({
     shareKind: 'deductible',
-    variants: { partial: { caseLine: { file: 'partial-original.835', transaction: 0, claim: 0, line: 0 }, files: ['partial-adjusted.835', 'partial-eft-export.csv', 'partial-lowered.835'] }, raisedLower: { caseLine: { file: 'original.835', transaction: 0, claim: 0, line: 0 }, files: ['raised-lower.835', 'raised-after.835'] } },
+    variants: {
+      partial: { caseLine: { file: 'partial-original.835', transaction: 0, claim: 0, line: 0 }, files: ['partial-adjusted.835', 'partial-eft-export.csv', 'partial-lowered.835'] },
+      raisedLower: { caseLine: { file: 'original.835', transaction: 0, claim: 0, line: 0 }, files: ['raised-lower.835', 'raised-after.835'] },
+      mixed: { caseLine: { file: 'original.835', transaction: 0, claim: 0, line: 0 }, files: ['mixed-adjusted.835'] },
+    },
   });
+  // Built after every other file of the case, so none of theirs moves.
+  const otherReduction = dollars('10.00');
+  const mixed = correctionOf(b, 11, original, [
+    therapyLine(b.world, {
+      code: '97110',
+      units: 2,
+      date: LED_SERVICE_DATE,
+      unitCharge: 7500n,
+      allowed: 10000n,
+      b6: true,
+      share: 'none',
+      overrides: { patientShare: [{ reason: '1', amount: cents(5000n) }], extraAdjustments: [{ group: 'CO', items: [{ reason: '253', amount: otherReduction }] }] },
+    }),
+  ]);
+  b.add835(
+    'mixed-adjusted.835',
+    ledRemittance(b, base, 11, adjustedOn, [reversalOf(original), mixed], { method: 'NON' }).file,
+    'From original.835, in a practice of its own: the original reversed (PR-1 -30.00, paid -40.00) and a correction allowed 100.00, CO-45 50.00 with CO-253 10.00, PR-1 deductible 50.00, paid 40.00: BPR02 0.00, no payment (H, NON).',
+  );
   const caseLine = lineOf(original);
   const correctedLine = lineOf(corrected);
   const partialApproved = subtractCents(partialCorrected.paid, partialOriginal.paid);
@@ -736,6 +762,17 @@ export function led15(b: CaseBuilder): void {
       lowered: {
         entries: [ledEntry('approved', partialApproved), ledEntry('deposited', partialApproved), ledEntry('recouped', negateCents(subtractCents(partialCorrected.paid, partialLowered.paid)), 'partial-lowered.835 transaction 0 claim 1')],
         claimMatches: [{ kind: 'claim', outcome: 'approved' }, { kind: 'claim', outcome: 'decreased' }],
+      },
+    },
+    mixed: {
+      entries: [],
+      claimMatches: [{ kind: 'claim', outcome: 'approved' }],
+      correction: 'patient_balance',
+      billableToPatient: {
+        allowedIncreaseCents: centsToString(subtractCents(allowedOf(lineOf(mixed)), allowedOf(caseLine))),
+        paymentIncreaseCents: centsToString(subtractCents(mixed.paid, original.paid)),
+        deductibleCents: centsToString(subtractCents(shareOf(lineOf(mixed), '1'), shareOf(caseLine, '1'))),
+        otherReductionCents: centsToString(otherReduction),
       },
     },
     raisedLower: {

@@ -10,8 +10,11 @@ import { casePatientBalance as reportRule } from '@tp/worker/ledger';
 import { type JobContext, printRoiStatement, reconcileHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
 import type { TriageWorld } from '@tp/worker/testing/triage';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { LineCorrectionWords } from '../../components/reconciliation/display';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
@@ -459,7 +462,7 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
     const [line] = page.linkage.items;
     expect(line?.correction).toEqual({
       kind: null,
-      billable: { billableCents: '600', allowedIncreaseCents: '3000', paymentIncreaseCents: '2400', otherReductionCents: '0', reasons: { deductible: '0', coinsurance: '600', copay: '0', other: '0' }, allocation: null },
+      billable: { billableCents: '600', allowedIncreaseCents: '3000', paymentIncreaseCents: '2400', otherReductionCents: '0', shareChangeCents: '600', reasons: { deductible: '0', coinsurance: '600', copay: '0', other: '0' }, allocation: null },
     });
     // The ERA match's words read its payment increase.
     expect(line?.era).toEqual([expect.objectContaining({ outcome: 'approved', reading: 'approved', allowed: 'higher', paymentIncreaseCents: '2400', standing: true })]);
@@ -487,7 +490,7 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
     expect(line).toMatchObject({ stage: 'actionable', entries: [], shortfallCents: null });
     expect(line?.correction).toEqual({
       kind: 'patient_balance',
-      billable: { billableCents: '3000', allowedIncreaseCents: '3000', paymentIncreaseCents: '0', otherReductionCents: '0', reasons: { deductible: '3000', coinsurance: '0', copay: '0', other: '0' }, allocation: null },
+      billable: { billableCents: '3000', allowedIncreaseCents: '3000', paymentIncreaseCents: '0', otherReductionCents: '0', shareChangeCents: '3000', reasons: { deductible: '3000', coinsurance: '0', copay: '0', other: '0' }, allocation: null },
     });
     expect(line?.era).toEqual([expect.objectContaining({ outcome: 'approved', reading: 'patient_balance', allowed: 'higher', paymentIncreaseCents: '0' })]);
     expect(ok(await call(reconciliationPage, led.viewer, at)).linkage.items[0]?.correction).toMatchObject({ kind: 'patient_balance', billable: { billableCents: '3000', reasons: null } });
@@ -496,6 +499,28 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
     expect(shown.case.state).toBe('submitted');
     expect(shown.ledger).toMatchObject({ approvedCents: '0', recoveredCents: '0' });
     expect(shown.corrections).toMatchObject({ billableCents: '3000', patientBalance: true });
+  });
+
+  it('reads a correction the deductible took only in part as the patient’s 20.00 beside the payer’s own 10.00 reduction, never the whole 30.00 (LED-15 mixed, UX-1)', async () => {
+    const led = await ledPractice('LED-15');
+    await ledger.load(led.practice, 'LED-15/mixed-adjusted.835');
+    await ledger.reconcile(led.practice);
+    const at = { practiceId: led.practice.practiceId };
+    const page = ok(await call(reconciliationPage, led.practice.manager, at));
+    expect(page.totals).toMatchObject({ approvedCents: '0', payerApprovedCents: '0', recoveredCents: '0' });
+    const [line] = page.linkage.items;
+    expect(line).toMatchObject({ entries: [], shortfallCents: null });
+    expect(line?.correction).toEqual({
+      kind: 'patient_balance',
+      billable: { billableCents: '2000', allowedIncreaseCents: '3000', paymentIncreaseCents: '0', otherReductionCents: '1000', shareChangeCents: '2000', reasons: { deductible: '2000', coinsurance: '0', copay: '0', other: '0' }, allocation: null },
+    });
+    // The words a billing manager reads: the patient's 20.00, and the payer's 10.00 apart from it, not billable.
+    const shown = renderToStaticMarkup(createElement(LineCorrectionWords, { correction: line?.correction })).replace(/<[^>]+>/g, '').replaceAll('&#x27;', '’');
+    expect(shown).toContain('Billable to the patient: $20.00 (deductible\u00a0+$20.00).');
+    expect(shown).toContain('pays nothing more: $20.00 is the patient’s share, and $10.00 was reduced by the payer for other reasons, not billable.');
+    expect(shown).not.toContain('took all of it');
+    const shownCase = ok(await call(casePage, led.practice.manager, { ...at, caseId: led.caseId }));
+    expect(shownCase.corrections).toMatchObject({ billableCents: '2000', patientBalance: true });
   });
 
   it('reads the case’s "balance is the patient’s" by the one rule the audit report reads (S3)', () => {

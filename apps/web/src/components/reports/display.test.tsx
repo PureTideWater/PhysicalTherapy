@@ -84,7 +84,8 @@ describe('the audit report on screen after a recovery (N4)', () => {
     expect(shown).toContain(`${STAGE_LABELS.recovered}$30.00`);
     expect(shown).not.toContain('recorded yet');
     const none = text(renderToStaticMarkup(<Headline headline={{ ...CONTENT.headline, payer_approved_cents: '0', recovered_cents: '0' }} practiceId="p" base="/r" />));
-    expect(none).toContain('no payer approval was recorded yet');
+    // One wording with the printed report's (UX-7; apps/worker/src/report/report.test.ts reads the same).
+    expect(none).toContain('Payer approved$0.00what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet');
   });
 
   it('shows each case still actionable in the cases table and its payer approved and recovered by case, the headline’s sums', () => {

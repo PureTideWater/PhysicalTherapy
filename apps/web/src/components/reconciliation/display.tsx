@@ -1,5 +1,6 @@
 import type { DocumentStatus } from '@tp/db/runtime';
 import { recoveredLabel as ledgerRecoveredLabel } from '@tp/ledger';
+import { cents, formatUsd } from '@tp/money';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { ReactNode } from 'react';
 
@@ -66,6 +67,12 @@ export interface TotalsFigures {
   readonly recoveredCents: string;
 }
 
+/** The Payer approved tile's note: short, so the six tiles keep one height (UX-9); its reversal detail is in LEDGER_TOTALS_HELP. */
+export const PAYER_APPROVED_NOTE = 'what payers agreed to pay, never the patient’s share; recovered only once posted or deposited';
+
+/** The totals' help beneath the screen's description: what Payer approved is net of, moved from its tile's note (UX-9). */
+export const LEDGER_TOTALS_HELP = 'Payer approved is net of reversals and of what was taken back before it posted.';
+
 /** The ledger's totals, each its own stage; recovered last, with its proof level. */
 export function LedgerTotals({ totals, title, description }: { readonly totals: TotalsFigures; readonly title: string; readonly description: string }) {
   const figures: readonly { readonly key: string; readonly label: string; readonly cents: string; readonly note: string }[] = [
@@ -73,7 +80,7 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
       key: 'approved',
       label: 'Payer approved',
       cents: totals.payerApprovedCents,
-      note: 'what payers have agreed to pay on the lines they corrected, never the patient’s share, net of reversals and of what was taken back before it posted; recovered only once it is posted or deposited',
+      note: PAYER_APPROVED_NOTE,
     },
     { key: 'posted', label: 'Posted', cents: totals.postedCents, note: 'posting export rows matched to the remittance' },
     { key: 'deposited', label: 'Deposited', cents: totals.depositedCents, note: 'bank export rows matched to the remittance' },
@@ -84,7 +91,9 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
     <Card role="region" aria-label={title}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <CardDescription>
+          {description} <span data-help="payer-approved">{LEDGER_TOTALS_HELP}</span>
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -177,16 +186,19 @@ export function correctionWords(match: Pick<MatchView, 'outcome' | 'reading' | '
   }
 }
 
-/** A signed amount: "+$6.00", or "−$10.00" with the minus sign. */
-function Signed({ cents }: { readonly cents: string }) {
-  const negative = cents.startsWith('-');
+/** A signed amount, its sign inside the mono figure (docs/brand/BRAND.md: every money figure is mono): "+$6.00", or "−$10.00" with the minus sign. */
+function Signed({ cents: text }: { readonly cents: string }) {
+  const negative = text.startsWith('-');
   return (
-    <>
+    <span className="font-mono tabular-nums">
       {negative ? '−' : '+'}
-      <Money value={negative ? cents.slice(1) : cents} />
-    </>
+      {formatUsd(cents(BigInt(negative ? text.slice(1) : text)))}
+    </span>
   );
 }
+
+/** A non-breaking space, so a reason and its amount never break apart ("coinsurance +$6.00" at 390 px). */
+const NBSP = '\u00a0';
 
 const REASON_WORDS: readonly (readonly [keyof NonNullable<BillableView['reasons']>, string])[] = [
   ['deductible', 'deductible'],
@@ -206,29 +218,82 @@ function ShareReasons({ reasons }: { readonly reasons: BillableView['reasons'] }
       {changed.map(([key, word], index) => (
         <span key={key}>
           {index === 0 ? '' : ', '}
-          {word} <Signed cents={reasons[key]} />
+          {word}
+          {NBSP}
+          <Signed cents={reasons[key]} />
         </span>
       ))}
     </>
   );
 }
 
-/** The reasons whose share rose, by name ("deductible", "deductible and copay"), or "share" for a reader who does not read PHI. */
+/**
+ * The reasons whose share rose, by name ("deductible", "deductible and copay"), or "share" for a reader who does not
+ * read PHI, or when any reason fell (the signed reasons beside it say which).
+ */
 function roseWords(reasons: BillableView['reasons']): string {
   if (reasons === null) {
     return 'share';
   }
-  const rose = REASON_WORDS.filter(([key]) => !reasons[key].startsWith('-') && reasons[key] !== '0').map(([, word]) => word);
-  return rose.length === 0 ? 'share' : rose.join(' and ');
+  const changed = REASON_WORDS.filter(([key]) => reasons[key] !== '0');
+  if (changed.some(([key]) => reasons[key].startsWith('-'))) {
+    return 'share';
+  }
+  return changed.length === 0 ? 'share' : changed.map(([, word]) => word).join(' and ');
 }
 
 function Allocation({ billable }: { readonly billable: BillableView }) {
   return billable.allocation === null ? null : (
     <>
       {' '}
-      The patient’s share is the claim’s, allocated to the line by charge (<Money value={billable.allocation.lineChargeCents} /> of <Money value={billable.allocation.claimChargeCents} />).
+      The payer reported the patient’s share for the whole claim; it is split to this line by charge (<Money value={billable.allocation.lineChargeCents} /> of{' '}
+      <Money value={billable.allocation.claimChargeCents} />
+      ).
     </>
   );
+}
+
+/** What to do with a correction the patient's share took (UX-3): on the line's words and the case's Packet and dispute card. */
+export const PATIENT_BALANCE_NEXT_STEP = 'Bill the balance to the patient in the practice-management system; a packet would ask the payer for what it has already allowed.';
+
+/** The payer's other reductions after the patient's share: reduced (not billable), or fallen. */
+function OtherReductions({ cents: text }: { readonly cents: string }) {
+  if (text === '0') {
+    return null;
+  }
+  return text.startsWith('-') ? (
+    <>
+      , and the payer’s other reductions fell by <Money value={text.slice(1)} />
+    </>
+  ) : (
+    <>
+      , and <Money value={text} /> was reduced by the payer for other reasons, not billable
+    </>
+  );
+}
+
+/** "pays nothing more", or what the payer pays of the allowed increase. */
+function Pays({ billable }: { readonly billable: BillableView }) {
+  return billable.paymentIncreaseCents === '0' ? (
+    <>pays nothing more</>
+  ) : (
+    <>
+      pays <Money value={billable.paymentIncreaseCents} /> of it
+    </>
+  );
+}
+
+/**
+ * A line's entries table's empty row (UX-8): a correction that paid nothing more says so; any other line has no entry
+ * yet.
+ */
+export function lineEntriesEmptyText(kind: CorrectionView['kind']): string {
+  return kind === null ? 'No entry on this line yet.' : 'No entry on this line: the correction paid nothing more.';
+}
+
+/** Whether the case page shows its "Billable to the patient" Fact (UX-5): something billable, or a line with a correction that paid nothing more. */
+export function showsBillableFact(corrections: { readonly billableCents: string; readonly lines: Readonly<Record<string, CorrectionView>> }): boolean {
+  return corrections.billableCents !== '0' || Object.values(corrections.lines).some((line) => line.kind !== null);
 }
 
 /**
@@ -244,19 +309,37 @@ export function LineCorrectionWords({ correction, className = '' }: { readonly c
   }
   const box = `rounded-md border border-dashed p-2 text-sm ${className}`.trim();
   if (correction.kind === 'patient_balance') {
+    // "took all of it" only when the patient's share is the whole allowed increase (UX-1); else what is the patient's and what is not.
+    const whole = billable.billableCents === billable.allowedIncreaseCents && billable.otherReductionCents === '0' && billable.paymentIncreaseCents === '0';
     return (
       <p className={box} data-correction="patient_balance" data-billable={billable.billableCents}>
-        Payer corrected; balance is the patient’s. The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and pays nothing more: the patient’s{' '}
-        {roseWords(billable.reasons)} took all of it. No ledger entry is written; counted in no total.
-        <Allocation billable={billable} />
+        Billable to the patient: <Money value={billable.billableCents} /> (<ShareReasons reasons={billable.reasons} />
+        ). Payer corrected; balance is the patient’s. The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and <Pays billable={billable} />:{' '}
+        {whole ? (
+          <>the patient’s {roseWords(billable.reasons)} took all of it.</>
+        ) : (
+          <>
+            <Money value={billable.billableCents} /> is the patient’s share
+            <OtherReductions cents={billable.otherReductionCents} />.
+          </>
+        )}{' '}
+        No ledger entry is written; counted in no total.
+        <Allocation billable={billable} /> {PATIENT_BALANCE_NEXT_STEP}
       </p>
     );
   }
   if (correction.kind === 'other_reductions') {
+    const fell = billable.shareChangeCents.startsWith('-') ? billable.shareChangeCents.slice(1) : null;
     return (
       <p className={box} data-correction="other_reductions">
-        Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and reduced its payment by the same for
-        other reasons, not billable to the patient. No ledger entry is written; counted in no total.
+        Payer corrected; it pays nothing more (other reductions). The payer raised the allowed amount by <Money value={billable.allowedIncreaseCents} /> and reduced its payment by{' '}
+        <Money value={billable.otherReductionCents} /> for other reasons, not billable to the patient
+        {fell === null ? null : (
+          <>
+            ; the patient’s share fell by <Money value={fell} />
+          </>
+        )}
+        . No ledger entry is written; counted in no total.
       </p>
     );
   }

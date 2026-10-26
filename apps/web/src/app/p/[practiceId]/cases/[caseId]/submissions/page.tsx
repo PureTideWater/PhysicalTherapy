@@ -317,7 +317,7 @@ export default async function SubmissionsPage(props: Props) {
                     <Input id="received-on" name="receivedOn" type="date" defaultValue={asOf} min={latest.submittedOn} max={asOf} required />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="amount">Amount the payer will pay (accepted or partial only, dollars)</Label>
+                    <Label htmlFor="amount">Additional amount the payer will pay (accepted or partial only, dollars)</Label>
                     <Input id="amount" name="amount" inputMode="decimal" aria-describedby="amount-hint" />
                     <p id="amount-hint" className="text-xs text-muted-foreground">
                       The additional payment the letter states, not the allowed amount; the patient’s share is never part of it.

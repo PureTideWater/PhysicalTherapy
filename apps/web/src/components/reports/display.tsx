@@ -73,7 +73,8 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
     {
       label: STAGE_LABELS.payer_approved,
       amount: headline.payer_approved_cents,
-      note: approved ? 'what payers have agreed to pay on the lines they corrected, from the recovery ledger; not cash until it posts' : 'no payer approval was recorded yet',
+      // One wording with the printed report's (apps/worker/src/report/html.ts), approval or none (UX-7).
+      note: approved ? 'what payers have agreed to pay on the lines they corrected, from the recovery ledger; not cash until it posts' : 'what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet',
       href: `${base}#stage-payer-approved`,
     },
     { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted or deposited at the practice’s proof level, from the recovery ledger, net of recoupments and reversals', href: `${base}#stage-recovered` },
