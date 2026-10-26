@@ -69,8 +69,8 @@ export function payerAndPlanWords(payer: PayerIdentification): string {
  */
 export const exclusionWords = (code: string): string => interestExclusionText(code);
 
-/** A count and its noun, singular for one (the screen tour's C1, as the web's counted()). */
-export const counted = (count: number, one: string, many = `${one}s`): string => `${String(count)} ${count === 1 ? one : many}`;
+/** A count and its noun, singular for one (the screen tour's C1, as the web's counted()), its digits grouped by thousands ("3,650 days"). */
+export const counted = (count: number, one: string, many = `${one}s`): string => `${String(count).replace(/\B(?=(\d{3})+$)/g, ',')} ${count === 1 ? one : many}`;
 
 /**
  * Whether the rule releases supplied a Medicare fee schedule to this version (D14): a regulation's amount is Original

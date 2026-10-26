@@ -24,7 +24,8 @@ import { PROGRAM_TEXT, counted, exclusionWords, payerAndPlanWords, releaseText, 
  *   Q2 (a));
  * - the dispute window's dates only (Q3 (a)), with the contract's clause or the release's record behind it, and each
  *   line's window and how its expected amount is computed (the method, each step, the one rounding and the patient
- *   share, reported and never subtracted);
+ *   share, reported and never subtracted, in the words: the table has no column of its own for it, which only
+ *   repeated them);
  * - "how its expected amount is computed" (D2) is the words @tp/packets explainPacket(..., 'payer') writes from the
  *   stored traces the approval names, the words the review page shows the reviewer, with the fee schedule worksheets a
  *   payer checks a percent-of-Medicare or Medicare Advantage amount against CMS's own fee schedule with, and no record
@@ -146,20 +147,19 @@ function disputeWindowSection(content: PacketContentV2, words: PacketWords): str
   if (words.rows.length !== content.lines.length || words.rows.some((row, index) => row.row !== content.lines[index]?.row)) {
     throw new TypeError('the payer’s copy words each row of its version; words of other rows are not printed');
   }
+  // The patient share is in each row's words (reported beside the expected amount, never subtracted from it), as on the
+  // review page, so it has no column of its own.
   const rows = content.lines.map((line, index) => {
-    // The patient share beside the expected amount, never subtracted from it (as the review page says): its amount in
-    // the mono face, its words in the text face.
-    const share = line.calculation.patient_share_cents === null ? '' : escapeWithFigures(`${usd(line.calculation.patient_share_cents)}, reported, never subtracted`);
-    const computed: Cell[] = [{ html: computedHtml(words.rows[index] as PacketWords['rows'][number]) }, { html: share }];
-    return nextLevel ? [String(line.row), ...computed] : [String(line.row), line.deadline.ends_on ?? '', ...computed];
+    const computed: Cell = { html: computedHtml(words.rows[index] as PacketWords['rows'][number]) };
+    return nextLevel ? [String(line.row), computed] : [String(line.row), line.deadline.ends_on ?? '', computed];
   });
   return [
     `<h2>Dispute window</h2>`,
     `<p><strong>${escapeHtml(window)}</strong></p>`,
     sources.length === 0 ? '' : `<ul>${sources.join('')}</ul>`,
     nextLevel
-      ? table('How each line’s expected amount is computed', ['Row', 'How the expected amount is computed', 'Patient share'], rows, { code: [1] })
-      : table('Each line’s dispute window and how its expected amount is computed', ['Row', 'Window ends', 'How the expected amount is computed', 'Patient share'], rows, { code: [1], date: [2] }),
+      ? table('How each line’s expected amount is computed', ['Row', 'How the expected amount is computed'], rows, { code: [1] })
+      : table('Each line’s dispute window and how its expected amount is computed', ['Row', 'Window ends', 'How the expected amount is computed'], rows, { code: [1], date: [2] }),
     worksheetsSection(words.worksheets),
   ].join('');
 }
@@ -222,9 +222,16 @@ export function packetReconciliation(reference: string): ReportReconciliation {
   return reportReconciliation({ report: { kind: 'packet_version', id: reference }, proofLevel: DEFAULT_PROOF_LEVEL, statedRecoveredCents: null, recoveredEntryIds: [], ledger: new Map() });
 }
 
-// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors).
+// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors). At a page's foot a
+// heading, a table's caption or its header row never stands alone: each keeps with what follows it, a row of a table
+// is never split across two pages, and its header row prints again at the top of each page the table runs onto. The
+// frame's own table (.pages, which repeats the running header and footer) is left as it is.
 const STYLE = `
   h2 { border-bottom: 1px solid var(--pw-line); padding-bottom: 3pt; }
+  h2, h3, caption { break-after: avoid; page-break-after: avoid; }
+  table:not(.pages) > thead { display: table-header-group; break-after: avoid; page-break-after: avoid; }
+  table:not(.pages) > tbody > tr:first-child { break-before: avoid; page-break-before: avoid; }
+  table:not(.pages) > tbody > tr { break-inside: avoid; page-break-inside: avoid; }
   .meta { color: var(--pw-slate); font-size: 9pt; }
   blockquote { margin: 4pt 0 4pt 12pt; padding-left: 8pt; border-left: 2px solid var(--pw-border-strong); font-style: italic; }
   table { margin: 4pt 0 8pt; font-size: 8pt; }

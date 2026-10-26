@@ -408,14 +408,17 @@ describe('packetHtml: the payer’s copy', () => {
 
   it('T7: states the dispute window’s dates only: the earliest line window at the first level, the level’s own window above it, its evidence, and never a timeliness claim', () => {
     expect(html).toContain('<h2>Dispute window</h2><p><strong>The earliest dispute window among the listed lines ends on 2036-04-05.</strong></p>');
-    expect(html).toContain('<li>The contract’s dispute window: 3650 days (page 1):<blockquote>Disputes are raised within 3650 days of the payment date.</blockquote></li>');
+    expect(html).toContain('<li>The contract’s dispute window: 3,650 days (page 1):<blockquote>Disputes are raised within 3650 days of the payment date.</blockquote></li>');
     expect(maximal).toContain('<li>The Medicare dispute window in effect for the service dates (release 900002).</li>');
     expect(html).toContain('<caption>Each line’s dispute window and how its expected amount is computed</caption>');
-    expect(html).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Window ends</th><th scope="col">How the expected amount is computed</th><th scope="col">Patient share</th></tr></thead>');
+    expect(html).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Window ends</th><th scope="col">How the expected amount is computed</th></tr></thead>');
     // Each line's calculation in the payer's words (combined audit #38): the summary, then each step, every figure in
-    // the mono face; the patient share beside it, never subtracted.
+    // the mono face; the patient share in the words, never subtracted, and in no column of its own (UX review: it
+    // repeated the words).
     expect(html).toContain(`<tr><td>1</td><td>2036-04-05</td><td><p>${SUMMARY}</p><p>Fixed schedule: ${F('$50.00')} per unit.</p>`);
-    expect(html).toContain(`<td>${F('$14.00')}, reported, never subtracted</td></tr>`);
+    expect(html).toContain(`<p>Patient share ${F('$14.00')}, reported beside the expected amount and never subtracted from it.</p>`);
+    expect(html).not.toContain('Patient share</th>');
+    expect(html).not.toContain('reported, never subtracted');
     expect(html).not.toMatch(/FIXED_SCHEDULE|HALF_UP_CENT|paid_plus_pr/);
     // Above the first level the copy states the level's own window alone: no first-level clause or release record, no
     // line's first-level window (in the PDF or the CSV), and each line's calculation still.
@@ -424,7 +427,7 @@ describe('packetHtml: the payer’s copy', () => {
     expect(window).toContain('<h2>Dispute window</h2><p><strong>The window for dispute level 2 ends on 2026-12-01.</strong></p><table');
     expect(window).not.toMatch(/<ul>|The contract’s dispute window|dispute window in effect|Window ends|2036-04-05/);
     expect(window).toContain('<caption>How each line’s expected amount is computed</caption>');
-    expect(window).toContain('<thead><tr><th scope="col">Row</th><th scope="col">How the expected amount is computed</th><th scope="col">Patient share</th></tr></thead>');
+    expect(window).toContain('<thead><tr><th scope="col">Row</th><th scope="col">How the expected amount is computed</th></tr></thead>');
     expect(window).toContain(`<tr><td>1</td><td><p>${SUMMARY}</p><p>Fixed schedule: ${F('$50.00')} per unit.</p>`);
     const secondCsv = packetCsv(insertIdentifiers(level2, draftNarrative(level2), rowsOf(level2)), REFERENCE).split('\r\n');
     expect(secondCsv[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('window_ends_on') + 1)).toBe('');

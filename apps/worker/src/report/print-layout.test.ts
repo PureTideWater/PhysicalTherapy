@@ -221,6 +221,21 @@ describe.skipIf(!chromiumInstalled())('every printed document prints at full siz
     }, 60_000);
   }
 
+  it('the dispute packet never leaves the calculation table’s caption and header row at a page’s foot without its first row (UX review: the table cut at the foot of page 2)', async () => {
+    // A longer narrative moves the table down the page: with these the caption once fell at page 2's foot, its rows on
+    // page 3. The caption, the header row and row 1 now print on one page whatever the narrative's length.
+    const caption = 'Each line’s dispute window and how its expected amount is computed';
+    for (let lines = 0; lines <= 8; lines += 1) {
+      const filler = Array.from({ length: lines }, () => 'SYNTHETIC filler sentence that takes one line of the narrative.').join('\n\n');
+      const runs = await printedText(await renderer.render(packetHtml({ ...exported, narrative: `${exported.narrative}\n\n${filler}` }, payerCopy, words)));
+      const at = runs.findIndex((run) => run.text === caption);
+      const header = runs.findIndex((run, index) => index > at && run.text === 'How the expected amount is computed');
+      const first = runs.findIndex((run, index) => index > header && run.text === '1');
+      expect([at, header, first].every((index) => index !== -1), `${String(lines)} lines`).toBe(true);
+      expect([runs[header]?.page, runs[first]?.page], `${String(lines)} lines of filler`).toEqual([runs[at]?.page, runs[at]?.page]);
+    }
+  }, 180_000);
+
   it('and the check sees a print that shrank to fit', async () => {
     const runs = await printedText(await renderer.render(TOO_WIDE));
     expect(sizeOf(runs, 1, 'Probe')).toBeLessThan(25);
