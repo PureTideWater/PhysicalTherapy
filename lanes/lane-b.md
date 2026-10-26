@@ -40,7 +40,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - #38 (npm minor and patch) was closed by Dependabot at 18:57 UTC: "no longer updatable".
     - Its npm update on de8f9b5 (run 40223237798) failed for every dependency. Dependabot ran pnpm with `--config.minimum-release-age=4320`, and ci-mutation's Stryker 10.1.1 was under three days old.
     - Its versions are still behind at 6ddd587 (vitest and coverage 5.0.4, eslint 10.12.0, postcss 8.5.30, next 16.4.1), so ci-deps takes §3.2's versions.
-    - Dependabot's npm updates resume once Stryker 10.1.1 is three days old, from about 2026-10-26 19:50 UTC.
+    - Dependabot's npm updates resume once Stryker 10.1.1 is three days old, from 2026-10-26T19:18:50Z (corrected by ci-deps' re-read; it had said about 19:50).
 - **CI on `claude/build-platform`:**
   - The push runs on de8f9b5 are green (ci 40223130551, mutation 40223130477, screening-capacity 40223130509).
   - On 6ddd587, mutation 40229005837 (every package) and screening-capacity 40229005836 are green.
@@ -670,3 +670,53 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Unchanged, because they are not his to give** (LANES.md delegation of 2026-10-25): the domain model's approval, release tags, owner-admin settings and legal text's sign-off stay the founder's. Lane B does not ask about them. It records each one where it is needed, under "Waiting on someone", for the founder and Lane A.
   - **The approval question of ~00:10 UTC** (whether the co-founder may approve in his own name) is dropped. It is noted for the founder: a dated delegation line in LANES.md plus a small governance PR would let the co-founder's own approval count as the approval of record. Lane B never signs the founder's name.
   - Sent to all five parallel sessions: decide and record, never wait on a question.
+- **2026-10-26 ~00:30 UTC: the parallel sessions' briefs corrected on #42's shared documents.**
+  - The briefs said "never touch a file #42 changes". That is stricter than LANES.md, which lets the shared documents follow rule 6.
+  - #42 changes four of them: `docs/product/test-matrix.md`, `docs/product/reconciliation-001.md`, `packages/synth/src/cases/matrix.ts` and `registry.ts`, plus amendments to older ADRs. Every new test-matrix row also needs its matrix and registry entries (`packages/synth/src/fixtures.test.ts`). PR 15 changed all of them while #42 was open.
+  - Sent to all five: add rows and entries there under rule 6 (the PR merged second keeps both), and leave every other #42 file alone.
+  - #111's reservation is widened to synth cases DBF-01 to DBF-05 (no-file entries). Its session had held back for want of that.
+  - **Messages to the sessions do not interrupt them:** they arrive as queued notifications, which the session reads between steps (seen in #111's transcript).
+- **2026-10-26 ~00:25 UTC: two more parallel sessions, and two follow-on items for warm sessions.** Each was checked against #42's 143 files and the items already running.
+
+  | Item | Session | Branch | Status file |
+  |---|---|---|---|
+  | #38, then #48 (queue items 7 and 9; the packet pages) | session_01DMD91cYkbNgkEp1nmeSwpy | `co-001/figures-in-words`, then `co-001/narrative-draft` | `lane-b-figures-in-words-status.md` |
+  | #135 (queue item 13; billing pages, not #42's worker billing files) | session_01SbDNvf4ojucLA3uyPfs1FC | `co-001/bank-account-first` | `lane-b-bank-account-first-status.md` |
+  | #46 (queue item 6), after 15b merges | PR 15b's session (session_01Rv82bANhoRiK91FKEN7Pff) | `co-001/verified-seal` | `lane-b-verified-seal-status.md` |
+  | #32 (queue item 10), after #10 merges | #10's session (session_01CwzySVsjqgoXijLDMKj7VG) | `co-001/unmapped-plan` | `lane-b-unmapped-plan-status.md` |
+
+  - #46 shares the report code with 15b, and #32 shares the pricing-run code with #10, so each follows in the warm session rather than running beside it.
+  - Every screen-changing PR takes the UX and brand review, with before-and-after screenshots, and folds in the baseline's findings on its screens once `designs/lane-b-ux-review.md` lands.
+  - The new briefs carry the 00:20 ruling (decide without asking) and the rule-6 exception for #42's four shared documents.
+  - **Not started, with why:**
+    - ci-deps: its re-read is finishing here; it then gets its own session, and ci-browser follows in it;
+    - #113: after ci-deps' CLAUDE.md line;
+    - #49 and the post-#42 items 15 and 16: they wait for #42;
+    - #52: legal text, the founder's sign-off;
+    - #138, the formatter: both lanes idle;
+    - #122: after PR 16.
+- **2026-10-26 ~00:40 UTC: ci-deps' design re-read done (wf_c51b25c9-e94: 5 agents, 1.85M subagent tokens, 1 h 52 min). ci-deps and ci-browser handed to a parallel session.**
+  - **Scouts** (`designs/lane-b-ci/scout-ci-deps-reread-{files,versions}.md`):
+    - the action table is still current;
+    - the file and line references and the stale branches are fixed. Examples: PINNED now at `workflows.test.ts:77-92`; a vacuous `actions/cache@v4` check at `:686`; `supply-chain.yml` deleted.
+    - compose's healthcheck must use TCP (`pg_isready -h 127.0.0.1`), because the socket answers first;
+    - and more: the full lists are in the reports.
+  - **The adversarial review** (`designs/lane-b-ci/ci-deps-reread-review.md`): 1 blocking, 20 should_fix, 16 nits. All 37 were verified and fixed (§3.2.7). B1 was half right: Dependabot's peer probe passes an uncapped 7- or 14-day gate to pnpm, so majors and minors would silently get no PR.
+  - **Three security choices, each taken as recommended under the 00:20 ruling** (recorded at the end of §3.2.7):
+    - CQ1 (a): npm cooldown 3 days, the same as `minimumReleaseAge`;
+    - CQ2 (a): `trustPolicyExclude` for semver 6.3.1 alone;
+    - CQ3 (a): packageManager's pnpm held to the three-day age.
+  - **Improvements outside ci-deps (P1 to P8):**
+    - P1 (pins and digests held to three days; recommended yes), P2 (trivy's version), P4 (a narrower mutation trigger) and P5 (catalog lines) are claimed as their own PRs, under the CI follow-ups row;
+    - P3 (pnpm 11's trustLockfile) and P6 (re-read the ruleset after runbook step 2) are notes for later;
+    - P7, this log's Dependabot resume time, is fixed: 2026-10-26T19:18:50Z.
+  - **The CI session:** session_01TztFLKnDUJniegCFmkfMoc. It runs ci-deps, then ci-browser (re-read first, with the V3, O6 and O7 carry-ins and shell.tsx under Q2), then P1, P2 and P4. Status in `approval-summaries/lane-b-ci-deps-status.md`.
+    - **A9**, the inspection of the regenerated baselines, falls under the 00:20 ruling: an adversarial visual-inspection agent at full resolution, plus a private gallery the co-founder may look at. It does not block the merge.
+    - **When ci-deps merges,** this session gives the co-founder the steps for F1 (a), F2 (a), then F3. Owner-admin settings are never changed by a session.
+  - **Eight parallel sessions now**, plus this one (the UX capture, then its review and the checklist PR).
+- **2026-10-26 ~00:42 UTC: PR 15b's session: design written, in review. One part handed to Lane A.**
+  - All of #12's payment-terms amounts, and "billable to the patient", need no migration (checked against every CHECK and trigger they write through).
+  - The stored case close "payer corrected; balance is the patient's" needs DDL on case and case_line. Added to LANES.md "Handed to Lane A", for PR 8's case schema; 15b records the outcome without it.
+  - **Taken as recommended under the 00:20 ruling** (design §0.5):
+    - Q1: 15b records the outcome, with words from stored rows, and the stored close goes to Lane A;
+    - Q2: a reprocessing that raises or keeps the allowed amount but pays less is matched "decreased", and takes back the payment fall, capped.
