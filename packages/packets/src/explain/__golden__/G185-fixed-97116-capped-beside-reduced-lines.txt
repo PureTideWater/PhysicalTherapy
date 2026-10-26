@@ -1,7 +1,7 @@
 # fixtures/golden/claims/G185-fixed-97116-capped-beside-reduced-lines.json
 
 ## Line 1, internal
-3 units × $25.00 = $75.00 under the contract’s clause on page 1; after the assistant reduction $75.00; after the contract’s adjustment $60.00; rounded once to $60.00; observed allowed $60.00; no variance.
+3 units × $25.00 = $75.00 under the contract’s clause on page 1; after the contract’s adjustment $60.00; rounded once to $60.00; observed allowed $60.00; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $25.00 per unit. The rate record caps the line at $60.00. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 3 units billed, taken as billed. The MUE for code 97116 is 5; the units are within it. 3 × $25.00 = $75.00.
@@ -16,7 +16,7 @@
   [outcome] Priced: $60.00 expected, $60.00 before the one rounding.
 
 ## Line 1, viewer
-3 units × $25.00 = $75.00 under the contract’s clause on page 1; after the assistant reduction $75.00; after the contract’s adjustment $60.00; rounded once to $60.00; observed allowed $60.00; no variance.
+3 units × $25.00 = $75.00 under the contract’s clause on page 1; after the contract’s adjustment $60.00; rounded once to $60.00; observed allowed $60.00; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $25.00 per unit. The rate record caps the line at $60.00. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 3 units billed, taken as billed. The MUE for code 97116 is 5; the units are within it. 3 × $25.00 = $75.00.
@@ -31,7 +31,7 @@
   [outcome] Priced: $60.00 expected, $60.00 before the one rounding.
 
 ## Line 1, payer
-3 units × $25.00 = $75.00 under the contract’s clause on page 1; after the assistant reduction $75.00; after the contract’s adjustment $60.00; rounded once to $60.00; observed allowed $60.00; no variance.
+3 units × $25.00 = $75.00 under the contract’s clause on page 1; after the contract’s adjustment $60.00; rounded once to $60.00; observed allowed $60.00; no variance.
   [terms] Fixed schedule: $25.00 per unit.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $75.00 is unchanged.
   [contract_adjustment] The contract caps the line at $60.00: $75.00 becomes $60.00.
@@ -40,7 +40,7 @@
   [observed] Observed allowed $60.00, the allowed amount the remittance states. Expected $60.00, observed allowed $60.00: no variance.
 
 ## Line 2, internal
-2 units × $25.00 = $50.00 under the contract’s clause on page 1; after the assistant reduction $38.50; after the contract’s adjustment $38.50; rounded once to $38.50; observed allowed $38.50; no variance.
+2 units × $25.00 = $50.00 under the contract’s clause on page 1; after the assistant reduction $38.50; rounded once to $38.50; observed allowed $38.50; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $25.00 per unit. The rate record caps the line at $60.00. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 2 units billed, taken as billed. The MUE for code 97116 is 5; the units are within it. 2 × $25.00 = $50.00.
@@ -55,7 +55,7 @@
   [outcome] Priced: $38.50 expected, $38.50 before the one rounding.
 
 ## Line 2, viewer
-2 units × $25.00 = $50.00 under the contract’s clause on page 1; after the assistant reduction $38.50; after the contract’s adjustment $38.50; rounded once to $38.50; observed allowed $38.50; no variance.
+2 units × $25.00 = $50.00 under the contract’s clause on page 1; after the assistant reduction $38.50; rounded once to $38.50; observed allowed $38.50; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $25.00 per unit. The rate record caps the line at $60.00. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 2 units billed, taken as billed. The MUE for code 97116 is 5; the units are within it. 2 × $25.00 = $50.00.
@@ -70,7 +70,7 @@
   [outcome] Priced: $38.50 expected, $38.50 before the one rounding.
 
 ## Line 2, payer
-2 units × $25.00 = $50.00 under the contract’s clause on page 1; after the assistant reduction $38.50; after the contract’s adjustment $38.50; rounded once to $38.50; observed allowed $38.50; no variance.
+2 units × $25.00 = $50.00 under the contract’s clause on page 1; after the assistant reduction $38.50; rounded once to $38.50; observed allowed $38.50; no variance.
   [terms] Fixed schedule: $25.00 per unit.
   [assistant_reduction] Modifier CQ (services by a therapy assistant): Medicare’s assistant percentage is 77% of the amount. $50.00 becomes $38.50.
   [contract_adjustment] The contract caps the line at $60.00; $38.50 is within it and unchanged.
@@ -79,7 +79,7 @@
   [observed] Observed allowed $38.50, the allowed amount the remittance states. Expected $38.50, observed allowed $38.50: no variance.
 
 ## Line 3, internal
-1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after the multiple procedure payment reduction $25.47072; after the assistant reduction $25.47072; after sequestration $24.7065984; rounded once to $24.70; observed allowed $25.00; variance -$0.30 (overpaid: recorded, never pursued).
+1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after sequestration $24.7065984; rounded once to $24.70; observed allowed $25.00; variance -$0.30 (overpaid: recorded, never pursued).
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-06-16. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -96,7 +96,7 @@
   [outcome] Priced: $24.70 expected, $24.7065984 before the one rounding.
 
 ## Line 3, viewer
-1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after the multiple procedure payment reduction $25.47072; after the assistant reduction $25.47072; after sequestration $24.7065984; rounded once to $24.70; observed allowed $25.00; variance -$0.30 (overpaid: recorded, never pursued).
+1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after sequestration $24.7065984; rounded once to $24.70; observed allowed $25.00; variance -$0.30 (overpaid: recorded, never pursued).
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -113,7 +113,7 @@
   [outcome] Priced: $24.70 expected, $24.7065984 before the one rounding.
 
 ## Line 3, payer
-1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after the multiple procedure payment reduction $25.47072; after the assistant reduction $25.47072; after sequestration $24.7065984; rounded once to $24.70; observed allowed $25.00; variance -$0.30 (overpaid: recorded, never pursued).
+1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after sequestration $24.7065984; rounded once to $24.70; observed allowed $25.00; variance -$0.30 (overpaid: recorded, never pursued).
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($16.26894) and is kept whole; $25.47072 is unchanged.

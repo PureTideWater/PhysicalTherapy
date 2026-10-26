@@ -1,7 +1,7 @@
 # fixtures/golden/claims/G103-fixed-97140-59-bypasses-the-edits.json
 
 ## Line 1, internal
-1 unit × $28.00 = $28.00 under the contract’s clause on page 1; after the assistant reduction $28.00; rounded once to $28.00; observed allowed $28.00; no variance.
+1 unit × $28.00 = $28.00 under the contract’s clause on page 1; rounded once to $28.00; observed allowed $28.00; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $28.00 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. 1 × $28.00 = $28.00.
@@ -15,7 +15,7 @@
   [outcome] Priced: $28.00 expected, $28.00 before the one rounding.
 
 ## Line 1, viewer
-1 unit × $28.00 = $28.00 under the contract’s clause on page 1; after the assistant reduction $28.00; rounded once to $28.00; observed allowed $28.00; no variance.
+1 unit × $28.00 = $28.00 under the contract’s clause on page 1; rounded once to $28.00; observed allowed $28.00; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $28.00 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. 1 × $28.00 = $28.00.
@@ -29,7 +29,7 @@
   [outcome] Priced: $28.00 expected, $28.00 before the one rounding.
 
 ## Line 1, payer
-1 unit × $28.00 = $28.00 under the contract’s clause on page 1; after the assistant reduction $28.00; rounded once to $28.00; observed allowed $28.00; no variance.
+1 unit × $28.00 = $28.00 under the contract’s clause on page 1; rounded once to $28.00; observed allowed $28.00; no variance.
   [terms] Fixed schedule: $28.00 per unit.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $28.00 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
@@ -37,7 +37,7 @@
   [observed] Observed allowed $28.00, the allowed amount the remittance states. Expected $28.00, observed allowed $28.00: no variance.
 
 ## Line 2, internal
-1 unit × $33.33 = $33.33 under the contract’s clause on page 1; after the assistant reduction $33.33; rounded once to $33.33; observed allowed $33.33; no variance.
+1 unit × $33.33 = $33.33 under the contract’s clause on page 1; rounded once to $33.33; observed allowed $33.33; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $33.33 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. 1 × $33.33 = $33.33.
@@ -51,7 +51,7 @@
   [outcome] Priced: $33.33 expected, $33.33 before the one rounding.
 
 ## Line 2, viewer
-1 unit × $33.33 = $33.33 under the contract’s clause on page 1; after the assistant reduction $33.33; rounded once to $33.33; observed allowed $33.33; no variance.
+1 unit × $33.33 = $33.33 under the contract’s clause on page 1; rounded once to $33.33; observed allowed $33.33; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $33.33 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 1 unit billed, taken as billed. The MUE for code 97530 is 5; the units are within it. 1 × $33.33 = $33.33.
@@ -65,7 +65,7 @@
   [outcome] Priced: $33.33 expected, $33.33 before the one rounding.
 
 ## Line 2, payer
-1 unit × $33.33 = $33.33 under the contract’s clause on page 1; after the assistant reduction $33.33; rounded once to $33.33; observed allowed $33.33; no variance.
+1 unit × $33.33 = $33.33 under the contract’s clause on page 1; rounded once to $33.33; observed allowed $33.33; no variance.
   [terms] Fixed schedule: $33.33 per unit.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $33.33 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.

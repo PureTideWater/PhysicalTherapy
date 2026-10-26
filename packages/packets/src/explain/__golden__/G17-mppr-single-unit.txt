@@ -1,7 +1,7 @@
 # fixtures/golden/claims/G17-mppr-single-unit.json
 
 ## Line 1, internal
-1 unit × $27.00 = $27.00 under 42 CFR 422.214; after the multiple procedure payment reduction $27.00; after the assistant reduction $27.00; after sequestration $26.346; rounded once to $26.35; observed allowed $26.00; short $0.35.
+1 unit × $27.00 = $27.00 under 42 CFR 422.214; after sequestration $26.346; rounded once to $26.35; observed allowed $26.00; short $0.35.
   [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
   [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -18,7 +18,7 @@
   [outcome] Priced: $26.35 expected, $26.346 before the one rounding.
 
 ## Line 1, viewer
-1 unit × $27.00 = $27.00 under 42 CFR 422.214; after the multiple procedure payment reduction $27.00; after the assistant reduction $27.00; after sequestration $26.346; rounded once to $26.35; observed allowed $26.00; short $0.35.
+1 unit × $27.00 = $27.00 under 42 CFR 422.214; after sequestration $26.346; rounded once to $26.35; observed allowed $26.00; short $0.35.
   [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
   [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -35,7 +35,7 @@
   [outcome] Priced: $26.35 expected, $26.346 before the one rounding.
 
 ## Line 1, payer
-1 unit × $27.00 = $27.00 under 42 CFR 422.214; after the multiple procedure payment reduction $27.00; after the assistant reduction $27.00; after sequestration $26.346; rounded once to $26.35; observed allowed $26.00; short $0.35.
+1 unit × $27.00 = $27.00 under 42 CFR 422.214; after sequestration $26.346; rounded once to $26.35; observed allowed $26.00; short $0.35.
   [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($18.05) and is kept whole; $27.00 is unchanged.

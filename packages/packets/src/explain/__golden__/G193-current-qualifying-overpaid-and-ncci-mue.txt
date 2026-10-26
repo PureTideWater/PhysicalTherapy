@@ -35,7 +35,7 @@ Not priced: Units above the MUE with NCCI on.
   [outcome] Not priced: Units above the MUE with NCCI on. The line stopped at the units. Remedy: Review the claim.
 
 ## Line 2, internal
-1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after the multiple procedure payment reduction $23.80644; after the assistant reduction $23.80644; after sequestration $23.0922468; rounded once to $23.09; observed allowed $30.00; variance -$6.91 (overpaid: recorded, never pursued).
+1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after sequestration $23.0922468; rounded once to $23.09; observed allowed $30.00; variance -$6.91 (overpaid: recorded, never pursued).
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-08-25. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -52,7 +52,7 @@ Not priced: Units above the MUE with NCCI on.
   [outcome] Priced: $23.09 expected, $23.0922468 before the one rounding.
 
 ## Line 2, viewer
-1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after the multiple procedure payment reduction $23.80644; after the assistant reduction $23.80644; after sequestration $23.0922468; rounded once to $23.09; observed allowed $30.00; variance -$6.91 (overpaid: recorded, never pursued).
+1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after sequestration $23.0922468; rounded once to $23.09; observed allowed $30.00; variance -$6.91 (overpaid: recorded, never pursued).
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -69,7 +69,7 @@ Not priced: Units above the MUE with NCCI on.
   [outcome] Priced: $23.09 expected, $23.0922468 before the one rounding.
 
 ## Line 2, payer
-1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after the multiple procedure payment reduction $23.80644; after the assistant reduction $23.80644; after sequestration $23.0922468; rounded once to $23.09; observed allowed $30.00; variance -$6.91 (overpaid: recorded, never pursued).
+1 unit × $23.80644 = $23.80644 under the contract’s clause on page 1; after sequestration $23.0922468; rounded once to $23.09; observed allowed $30.00; variance -$6.91 (overpaid: recorded, never pursued).
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($14.20668) and is kept whole; $23.80644 is unchanged.

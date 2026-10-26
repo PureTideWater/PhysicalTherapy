@@ -1,7 +1,7 @@
 # fixtures/golden/claims/G63-sequestration-suspended.json
 
 ## Line 1, internal
-2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $36.844; after the assistant reduction $36.844; after sequestration $36.844; rounded once to $36.84; observed allowed $42.00; variance -$5.16 (overpaid: recorded, never pursued).
+2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $36.844; rounded once to $36.84; observed allowed $42.00; variance -$5.16 (overpaid: recorded, never pursued).
   [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
   [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-08-04. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -18,7 +18,7 @@
   [outcome] Priced: $36.84 expected, $36.844 before the one rounding.
 
 ## Line 1, viewer
-2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $36.844; after the assistant reduction $36.844; after sequestration $36.844; rounded once to $36.84; observed allowed $42.00; variance -$5.16 (overpaid: recorded, never pursued).
+2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $36.844; rounded once to $36.84; observed allowed $42.00; variance -$5.16 (overpaid: recorded, never pursued).
   [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
   [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; Medicare’s pooled timed-units rule applies.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -35,7 +35,7 @@
   [outcome] Priced: $36.84 expected, $36.844 before the one rounding.
 
 ## Line 1, payer
-2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $36.844; after the assistant reduction $36.844; after sequestration $36.844; rounded once to $36.84; observed allowed $42.00; variance -$5.16 (overpaid: recorded, never pursued).
+2 units × $21.12 = $42.24 under 42 CFR 422.214; after the multiple procedure payment reduction $36.844; rounded once to $36.84; observed allowed $42.00; variance -$5.16 (overpaid: recorded, never pursued).
   [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] Ranked by practice-expense part on the claim’s day, the first unit is this line’s ($13.49). Each later unit loses 40% of its practice-expense part (the code’s own reduction): unit 2 (rank 2) loses $5.396. $42.24 becomes $36.844.

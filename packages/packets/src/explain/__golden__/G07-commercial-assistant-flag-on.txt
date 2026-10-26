@@ -40,7 +40,7 @@
   [observed] Observed allowed $16.00, the allowed amount the remittance states. Expected $16.26, observed allowed $16.00: short $0.26.
 
 ## Line 2, internal
-1 unit × $19.74 = $19.74 under the contract’s clause on page 1; after the assistant reduction $19.74; rounded once to $19.74; observed allowed $19.74; no variance.
+1 unit × $19.74 = $19.74 under the contract’s clause on page 1; rounded once to $19.74; observed allowed $19.74; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction. Not applied (flag off): the multiple procedure payment reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -55,7 +55,7 @@
   [outcome] Priced: $19.74 expected, $19.74 before the one rounding.
 
 ## Line 2, viewer
-1 unit × $19.74 = $19.74 under the contract’s clause on page 1; after the assistant reduction $19.74; rounded once to $19.74; observed allowed $19.74; no variance.
+1 unit × $19.74 = $19.74 under the contract’s clause on page 1; rounded once to $19.74; observed allowed $19.74; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction. Not applied (flag off): the multiple procedure payment reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -70,7 +70,7 @@
   [outcome] Priced: $19.74 expected, $19.74 before the one rounding.
 
 ## Line 2, payer
-1 unit × $19.74 = $19.74 under the contract’s clause on page 1; after the assistant reduction $19.74; rounded once to $19.74; observed allowed $19.74; no variance.
+1 unit × $19.74 = $19.74 under the contract’s clause on page 1; rounded once to $19.74; observed allowed $19.74; no variance.
   [terms] Percent of Medicare: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97112 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $19.74 is unchanged.

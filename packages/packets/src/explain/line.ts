@@ -245,7 +245,11 @@ function summary(words: Words): Sentence {
   } else {
     base = [figure(words, 'summary.units', 'verbatim'), unitsWord(units.units), ' × ', figure(words, 'summary.unit', 'exact_dollars'), ' = ', figure(words, 'summary.schedule', 'exact_dollars'), clause];
   }
-  const after = adjustments.map((adjustment, index) => ['; after ', ADJUSTMENT_TEXT[adjustment.name], ' ', figure(words, 'summary.after', 'exact_dollars', [index])]);
+  // Only the adjustments that changed the amount (string equality of the engine's text): one that left it unchanged
+  // (no assistant modifier, a code outside the pool, a cap above it) is worded in its own step, never as a reduction here.
+  const after = adjustments.map((adjustment, index) =>
+    adjustment.before_cents === adjustment.after_cents ? null : ['; after ', ADJUSTMENT_TEXT[adjustment.name], ' ', figure(words, 'summary.after', 'exact_dollars', [index])],
+  );
   return say(base, after, '; rounded once to ', figure(words, 'summary.rounded', 'dollars'), '; observed allowed ', figure(words, 'summary.observed', 'dollars'), '; ', varianceWords(words, variance, 'summary.variance'), '.');
 }
 
@@ -310,7 +314,7 @@ function agreementStep(words: Words): StepResult {
     case 'RESOLUTION_FAILED':
       return [say(AGREEMENT_FAILURE_TEXT.RESOLUTION_FAILED)];
     case 'AMBIGUOUS_RATE':
-      return [say(quoted(UNPRICED_MEANING.AMBIGUOUS_RATE), '.'), say('Rate records that match: ', figure(words, 'agreement.matching', 'count'), '.')];
+      return [say(quoted(UNPRICED_MEANING.AMBIGUOUS_RATE), '.'), say(figure(words, 'agreement.matching', 'count'), ' rate records match.')];
     case 'NO_MAPPING':
     case 'NO_AGREEMENT':
     case 'DATE_OUTSIDE_VERSIONS':

@@ -8,6 +8,6 @@
  * The review page, the approve and export-request forms and the export job each hold this value, and each refuses a
  * value that differs from its own: the reviewer reads what the payer reads under the same renderer.
  */
-export const RENDERER_REVISION = 1;
+export const RENDERER_REVISION = 2;
 
-export const WORDS_VERSION = '6cf53b04cef0eaec845df823c39c0d8f0843c4ee4ddb14b2a6fc865ff61cab2f';
+export const WORDS_VERSION = 'add9bd2abbd5ca8c578155160f50a0904685be1b87356176b42e5f02a579ab5c';

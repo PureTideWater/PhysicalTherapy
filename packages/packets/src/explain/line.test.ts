@@ -110,6 +110,17 @@ describe('the summary', () => {
     expect(slots(line, 'summary')).toEqual(['summary.units', 'summary.unit', 'summary.schedule', 'summary.reference', 'summary.after', 'summary.after', 'summary.after', 'summary.rounded', 'summary.observed', 'summary.variance']);
   });
 
+  it('leaves out an adjustment that left the amount unchanged, which its own step words', () => {
+    const line = trace({ units: '2', modifiers: ['GP'] });
+    const assistant = line.steps.adjustments.find((adjustment) => adjustment.name === 'assistant_reduction');
+    expect(assistant?.before_cents).toBe(assistant?.after_cents);
+    for (const audience of ['internal', 'payer'] as const) {
+      expect(summaryOf(line, audience)).not.toContain('assistant reduction');
+      expect(step(line, 'assistant_reduction', audience)).toContain('is unchanged.');
+    }
+    expect(slots(line, 'summary').filter((slot) => slot === 'summary.after')).toHaveLength(2);
+  });
+
   it('reads no variance at zero', () => {
     expect(summaryOf(trace({ ...AUDIT_LINE, observedAllowedCents: cents(10000n) }))).toBe('2 units × $50.00 = $100.00 under the contract’s clause on page 2; rounded once to $100.00; observed allowed $100.00; no variance.');
   });
@@ -142,7 +153,7 @@ describe('step 1, the agreement', () => {
 
   it('counts the rate records an ambiguous rate matches (finding m6)', () => {
     const line = trace({ agreement: { outcome: 'AMBIGUOUS_RATE', mapping: mappingRecord({ kind: 'contract' }), version: versionRecord(), rateRecordIds: ['rr-a', 'rr-b', 'rr-c'] } });
-    expect(step(line, 'agreement')).toBe('More than one rate record matches. Rate records that match: 3.');
+    expect(step(line, 'agreement')).toBe('More than one rate record matches. 3 rate records match.');
     expect(slots(line, 'agreement')).toEqual(['agreement.matching']);
   });
 

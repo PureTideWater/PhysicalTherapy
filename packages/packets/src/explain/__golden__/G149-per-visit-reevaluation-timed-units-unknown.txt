@@ -29,7 +29,7 @@ Not priced: Timed-units rule unknown for the payer.
   [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
 
 ## Line 2, internal
-$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
   [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
@@ -45,7 +45,7 @@ $88.00 once for the visit under the contract’s clause on page 1; after the ass
   [outcome] Priced: $85.36 expected, $85.36 before the one rounding. An NCCI edit stands: a review flag, which does not change the amount.
 
 ## Line 2, viewer
-$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
   [units] 1 unit billed, taken as billed. The MUE for code 97110 is 7; the units are within it. $88.00 per visit; units do not multiply it.
@@ -61,7 +61,7 @@ $88.00 once for the visit under the contract’s clause on page 1; after the ass
   [outcome] Priced: $85.36 expected, $85.36 before the one rounding. An NCCI edit stands: a review flag, which does not change the amount.
 
 ## Line 2, payer
-$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
   [terms] Per visit: $88.00 per visit.
   [per_visit] $88.00 once for the visit, carried by this line (claim line 2); the visit’s lines are claim line 2.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.

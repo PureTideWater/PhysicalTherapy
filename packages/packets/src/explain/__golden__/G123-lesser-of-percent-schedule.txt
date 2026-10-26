@@ -1,7 +1,7 @@
 # fixtures/golden/claims/G123-lesser-of-percent-schedule.json
 
 ## Line 1, internal
-Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contract’s clause on page 1; after the assistant reduction $30.00; rounded once to $30.00; observed allowed $29.00; short $1.00.
+Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contract’s clause on page 1; rounded once to $30.00; observed allowed $29.00; short $1.00.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-19. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -16,7 +16,7 @@ Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contr
   [outcome] Priced: $30.00 expected, $30.00 before the one rounding.
 
 ## Line 1, viewer
-Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contract’s clause on page 1; after the assistant reduction $30.00; rounded once to $30.00; observed allowed $29.00; short $1.00.
+Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contract’s clause on page 1; rounded once to $30.00; observed allowed $29.00; short $1.00.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -31,7 +31,7 @@ Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contr
   [outcome] Priced: $30.00 expected, $30.00 before the one rounding.
 
 ## Line 1, payer
-Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contract’s clause on page 1; after the assistant reduction $30.00; rounded once to $30.00; observed allowed $29.00; short $1.00.
+Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contract’s clause on page 1; rounded once to $30.00; observed allowed $29.00; short $1.00.
   [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97530 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $30.00 is unchanged.
@@ -40,7 +40,7 @@ Lesser of the schedule $33.75 and the line charge $30.00: $30.00 under the contr
   [observed] Observed allowed $29.00, the allowed amount the remittance states. Expected $30.00, observed allowed $29.00: short $1.00.
 
 ## Line 2, internal
-Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the contract’s clause on page 1; after the assistant reduction $73.9625; rounded once to $73.96; observed allowed $70.00; short $3.96.
+Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the contract’s clause on page 1; rounded once to $73.96; observed allowed $70.00; short $3.96.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-19. Code 97161 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -55,7 +55,7 @@ Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the c
   [outcome] Priced: $73.96 expected, $73.9625 before the one rounding.
 
 ## Line 2, viewer
-Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the contract’s clause on page 1; after the assistant reduction $73.9625; rounded once to $73.96; observed allowed $70.00; short $3.96.
+Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the contract’s clause on page 1; rounded once to $73.96; observed allowed $70.00; short $3.96.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97161 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -70,7 +70,7 @@ Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the c
   [outcome] Priced: $73.96 expected, $73.9625 before the one rounding.
 
 ## Line 2, payer
-Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the contract’s clause on page 1; after the assistant reduction $73.9625; rounded once to $73.96; observed allowed $70.00; short $3.96.
+Lesser of the schedule $73.9625 and the line charge $90.00: $73.9625 under the contract’s clause on page 1; rounded once to $73.96; observed allowed $70.00; short $3.96.
   [terms] Lesser of the line charge and 125% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for clinicians who are not qualifying alternative payment model (APM) participants.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97161 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $73.9625 is unchanged.

@@ -1,7 +1,7 @@
 # fixtures/golden/claims/G157-per-visit-mue-at-the-limit-and-a-ptp-pair.json
 
 ## Line 1, internal
-$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
   [units] 5 units billed, taken as billed. The MUE for code 97530 is 5; the units are within it. $88.00 per visit; units do not multiply it.
@@ -17,7 +17,7 @@ $88.00 once for the visit under the contract’s clause on page 1; after the ass
   [outcome] Priced: $85.36 expected, $85.36 before the one rounding.
 
 ## Line 1, viewer
-$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
   [units] 5 units billed, taken as billed. The MUE for code 97530 is 5; the units are within it. $88.00 per visit; units do not multiply it.
@@ -33,7 +33,7 @@ $88.00 once for the visit under the contract’s clause on page 1; after the ass
   [outcome] Priced: $85.36 expected, $85.36 before the one rounding.
 
 ## Line 1, payer
-$88.00 once for the visit under the contract’s clause on page 1; after the assistant reduction $88.00; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
+$88.00 once for the visit under the contract’s clause on page 1; after sequestration $85.36; rounded once to $85.36; observed allowed $85.36; no variance.
   [terms] Per visit: $88.00 per visit.
   [per_visit] $88.00 once for the visit, carried by this line (claim line 1); the visit’s lines are claim line 1 and claim line 2.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $88.00 is unchanged.
@@ -43,7 +43,7 @@ $88.00 once for the visit under the contract’s clause on page 1; after the ass
   [observed] Observed allowed $85.36, the allowed amount the remittance states. Expected $85.36, observed allowed $85.36: no variance.
 
 ## Line 2, internal
-The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; after the assistant reduction $0.00; after sequestration $0.00; rounded once to $0.00; observed allowed $0.00; no variance.
+The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; rounded once to $0.00; observed allowed $0.00; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
   [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. $88.00 per visit; units do not multiply it.
@@ -59,7 +59,7 @@ The visit’s amount is carried by claim line 1; this line’s base is $0.00 und
   [outcome] Priced: $0.00 expected, $0.00 before the one rounding.
 
 ## Line 2, viewer
-The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; after the assistant reduction $0.00; after sequestration $0.00; rounded once to $0.00; observed allowed $0.00; no variance.
+The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; rounded once to $0.00; observed allowed $0.00; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Per visit: $88.00 per visit. Applied, as the rate record’s flags are on: the assistant reduction, sequestration and NCCI edits. Not applied (flag off): the multiple procedure payment reduction. Units as billed; the contract follows Medicare’s pooled timed-units rule.
   [units] 1 unit billed, taken as billed. The MUE for code 97140 is 6; the units are within it. $88.00 per visit; units do not multiply it.
@@ -75,7 +75,7 @@ The visit’s amount is carried by claim line 1; this line’s base is $0.00 und
   [outcome] Priced: $0.00 expected, $0.00 before the one rounding.
 
 ## Line 2, payer
-The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; after the assistant reduction $0.00; after sequestration $0.00; rounded once to $0.00; observed allowed $0.00; no variance.
+The visit’s amount is carried by claim line 1; this line’s base is $0.00 under the contract’s clause on page 1; rounded once to $0.00; observed allowed $0.00; no variance.
   [terms] Per visit: $88.00 per visit.
   [per_visit] The visit’s $88.00 is carried by claim line 1; this line’s base is $0.00.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $0.00 is unchanged.

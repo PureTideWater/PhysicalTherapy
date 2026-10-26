@@ -60,7 +60,7 @@ Lesser of the schedule $76.00 and the line charge $69.00: $69.00 under the contr
   [observed] Observed allowed $69.00, the allowed amount the remittance states. Expected $69.00, observed allowed $69.00: no variance.
 
 ## Line 3, internal
-1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after the multiple procedure payment reduction $25.47072; after the assistant reduction $25.47072; after sequestration $24.7065984; rounded once to $24.70; observed allowed $24.70; no variance.
+1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after sequestration $24.7065984; rounded once to $24.70; observed allowed $24.70; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on 2026-08-27. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -77,7 +77,7 @@ Lesser of the schedule $76.00 and the line charge $69.00: $69.00 under the contr
   [outcome] Priced: $24.70 expected, $24.7065984 before the one rounding.
 
 ## Line 3, viewer
-1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after the multiple procedure payment reduction $25.47072; after the assistant reduction $25.47072; after sequestration $24.7065984; rounded once to $24.70; observed allowed $24.70; no variance.
+1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after sequestration $24.7065984; rounded once to $24.70; observed allowed $24.70; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants. Applied, as the rate record’s flags are on: the multiple procedure payment reduction, the assistant reduction, sequestration and NCCI edits. Units as billed; timed units are counted per code.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
@@ -94,7 +94,7 @@ Lesser of the schedule $76.00 and the line charge $69.00: $69.00 under the contr
   [outcome] Priced: $24.70 expected, $24.7065984 before the one rounding.
 
 ## Line 3, payer
-1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after the multiple procedure payment reduction $25.47072; after the assistant reduction $25.47072; after sequestration $24.7065984; rounded once to $24.70; observed allowed $24.70; no variance.
+1 unit × $25.47072 = $25.47072 under the contract’s clause on page 1; after sequestration $24.7065984; rounded once to $24.70; observed allowed $24.70; no variance.
   [terms] Percent of Medicare: 120% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with the conversion factor for qualifying alternative payment model (APM) participants.
   [fee_schedule] Fee schedule: the 2026 records in force on the service date. Code 97110 at the non-facility rate: place of service 11 is non-facility in the practice’s settings. Locality: practice ZIP 00011 is Medicare carrier 99999, locality 01.
   [mppr] This line’s unit holds the highest practice-expense part of the claim’s day ($16.26894) and is kept whole; $25.47072 is unchanged.

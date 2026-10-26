@@ -55,7 +55,7 @@ Not priced: Timed-units rule unknown for the payer.
   [outcome] Not priced: Timed-units rule unknown for the payer. The line stopped at the units. Remedy: Confirm with the contract or import minutes.
 
 ## Line 3, internal
-1 unit × $31.75 = $31.75 under the contract’s clause on page 1; after the assistant reduction $31.75; rounded once to $31.75; observed allowed $31.75; no variance.
+1 unit × $31.75 = $31.75 under the contract’s clause on page 1; rounded once to $31.75; observed allowed $31.75; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $31.75 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 1 unit billed, taken as billed. The MUE for code 97112 is 6; the units are within it. 1 × $31.75 = $31.75.
@@ -69,7 +69,7 @@ Not priced: Timed-units rule unknown for the payer.
   [outcome] Priced: $31.75 expected, $31.75 before the one rounding.
 
 ## Line 3, viewer
-1 unit × $31.75 = $31.75 under the contract’s clause on page 1; after the assistant reduction $31.75; rounded once to $31.75; observed allowed $31.75; no variance.
+1 unit × $31.75 = $31.75 under the contract’s clause on page 1; rounded once to $31.75; observed allowed $31.75; no variance.
   [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
   [terms] Fixed schedule: $31.75 per unit. Applied, as the rate record’s flags are on: the assistant reduction and NCCI edits. Not applied (flag off): the multiple procedure payment reduction and sequestration. Units as billed; timed units are counted per code.
   [units] 1 unit billed, taken as billed. The MUE for code 97112 is 6; the units are within it. 1 × $31.75 = $31.75.
@@ -83,7 +83,7 @@ Not priced: Timed-units rule unknown for the payer.
   [outcome] Priced: $31.75 expected, $31.75 before the one rounding.
 
 ## Line 3, payer
-1 unit × $31.75 = $31.75 under the contract’s clause on page 1; after the assistant reduction $31.75; rounded once to $31.75; observed allowed $31.75; no variance.
+1 unit × $31.75 = $31.75 under the contract’s clause on page 1; rounded once to $31.75; observed allowed $31.75; no variance.
   [terms] Fixed schedule: $31.75 per unit.
   [assistant_reduction] No modifier for services by a therapy assistant (CQ or CO) is on the line: no reduction; $31.75 is unchanged.
   [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.

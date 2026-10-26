@@ -2,7 +2,7 @@
 
 ## Line 1, internal
 Not priced: More than one rate record matches.
-  [agreement] More than one rate record matches. Rate records that match: 2.
+  [agreement] More than one rate record matches. 2 rate records match.
   [terms] Not reached.
   [units] Not reached.
   [patient_share] Not reached.
@@ -14,7 +14,7 @@ Not priced: More than one rate record matches.
 
 ## Line 1, viewer
 Not priced: More than one rate record matches.
-  [agreement] More than one rate record matches. Rate records that match: 2.
+  [agreement] More than one rate record matches. 2 rate records match.
   [terms] Not reached.
   [units] Not reached.
   [patient_share] Not reached.
