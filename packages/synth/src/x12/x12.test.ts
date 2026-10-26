@@ -2,9 +2,10 @@ import { cents } from '@tp/money';
 import { describe, expect, it } from 'vitest';
 
 import { calendarDate } from '../core/dates';
+import { Random } from '../core/random';
 import { SYNTH_ISA06 } from '../identity';
 import { balancingPayment, documentFor835, formatX12Amount, paymentAmount, transactionBody } from './build835';
-import { SynthWorld, claim, dollars, envelopeOf, line, remittance, reversalOf, singleTransactionFile } from './factory';
+import { SynthWorld, claim, dollars, envelopeOf, line, npiCheckDigit, remittance, reversalOf, singleTransactionFile, syntheticNpi, syntheticTin } from './factory';
 import { type File835, type Remittance835 } from './model';
 import { wrongTransactionDocument } from './other';
 import { DEFAULT_DELIMITERS, X12BuildError, checkDelimiters, renderDocument, seg, segmentText } from './segments';
@@ -24,6 +25,21 @@ function sample(world = new SynthWorld('x12-test'), overrides: Partial<Parameter
 function file(remit: Remittance835, extra: Partial<Parameters<typeof singleTransactionFile>[1]> = {}): File835 {
   return singleTransactionFile(remit, { isa13: 123, date, ...extra });
 }
+
+describe('synthetic identifiers', () => {
+  it('draw an NPI in the 99 range with its check digit and a TIN under the never-assigned 00 prefix, SynthWorld.npi() by the same rule', () => {
+    const random = new Random('identifiers-test');
+    for (let index = 0; index < 200; index += 1) {
+      const npi = syntheticNpi(random);
+      expect(npi).toMatch(/^99\d{8}$/);
+      expect(npi.slice(9)).toBe(npiCheckDigit(npi.slice(0, 9)));
+      expect(syntheticTin(random)).toMatch(/^00-\d{7}$/);
+    }
+    // 80840 + 123456789 is the published NPI example, whose check digit is 3.
+    expect(npiCheckDigit('123456789')).toBe('3');
+    expect(new SynthWorld('same-seed').npi()).toBe(syntheticNpi(new Random('same-seed')));
+  });
+});
 
 describe('segments', () => {
   it('drops trailing empty elements and components but keeps ISA fixed width', () => {

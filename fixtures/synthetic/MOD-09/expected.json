@@ -18,8 +18,8 @@
     },
     {
       "path": "contract-set-v2/V01-table/document.pdf",
-      "sha256": "17bb013d86c4d9e8a983b6d13088f0bf3b223fb042b1fe0e717a9ec8451754ac",
-      "bytes": 25206,
+      "sha256": "1dc6ec5df02ae33c6f53c49be16c2fac11c10555311ff4223e05eb2c6ef6cd8a",
+      "bytes": 25308,
       "kind": "pdf",
       "description": "V01: a SYNTHETIC contract with its rates as a table (text PDF)."
     },
@@ -46,8 +46,8 @@
     },
     {
       "path": "contract-set-v2/V03-prose/document.pdf",
-      "sha256": "9b838506726eb9c965ec490bf24a2d8075e320270e968ed9781d11a1e343a68d",
-      "bytes": 25045,
+      "sha256": "7beab5a5752f4390c3f3ff75df6136617d307c1385945f93cce513bf7f784c69",
+      "bytes": 25442,
       "kind": "pdf",
       "description": "V03: a SYNTHETIC contract with its rates as prose (text PDF)."
     },
@@ -74,15 +74,15 @@
     },
     {
       "path": "contract-set-v2/V05-scanned/document.pdf",
-      "sha256": "d464ddb97595d66dd63f732dd022a9f12e08f59b9c1d4479273d45fa0f9062be",
-      "bytes": 150280,
+      "sha256": "23512901010a2d2efd3d79de180a9e4e4d6337d776813d3079559a2ea52c94d3",
+      "bytes": 152854,
       "kind": "pdf",
       "description": "V05: a SYNTHETIC contract drawn as table, scanned: page images, no text layer."
     },
     {
       "path": "contract-set-v2/V05-scanned/textract.json",
-      "sha256": "ebf60b06d8b72ac76f7cf52bfcb048072af3fff26894b1cb431f5d0a82227180",
-      "bytes": 27600,
+      "sha256": "df44e329d4ce6717e6b4dfd52702e51f5da4ce60d921d487dd6ca3ec1d184b69",
+      "bytes": 27905,
       "kind": "json",
       "description": "V05: the scan reader's recorded text detection for the scanned pages, one block per line (SYNTHETIC)."
     },
@@ -95,8 +95,8 @@
     },
     {
       "path": "contract-set-v2/V06-scanned/document.pdf",
-      "sha256": "06c23398fb27509c6de3648fdee20ccaeae540db27589e4335cf1157b4450683",
-      "bytes": 92715,
+      "sha256": "a5bf2fdbfa999af23b6ecbe761259ac241e23c7bc05d27b8abc2dd67b39dcd6f",
+      "bytes": 92840,
       "kind": "pdf",
       "description": "V06: a SYNTHETIC contract drawn as table, scanned: page images under their own invisible OCR text layer."
     },
@@ -109,8 +109,8 @@
     },
     {
       "path": "contract-set-v2/V07-scanned/document.pdf",
-      "sha256": "697cbc1a322039b33633699bc8c03a29241ee2dc4a2ebd1e5e47537a9c70460b",
-      "bytes": 99505,
+      "sha256": "3fc2ebaaedaf8ef9eb8b9778cc2101abfb625ebb5fa04a12cea3109e37f42841",
+      "bytes": 96735,
       "kind": "pdf",
       "description": "V07: a SYNTHETIC contract drawn as prose, scanned: page images under their own invisible OCR text layer."
     },
@@ -300,8 +300,8 @@
   "generated": [
     {
       "path": "MOD-09/generated/L01-table/document.pdf",
-      "sha256": "6adcaf8ac0443bbf0ee7720a3a2f9bf8d0952739b7c5de1b053464f789a6873b",
-      "bytes": 203545,
+      "sha256": "3d93a5e530bb47331570b72a1d2c04507384bf55d7a2c019086d7af499c5d8dd",
+      "bytes": 204538,
       "description": "L01: a SYNTHETIC contract with its rates as a table (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
     },
     {
@@ -312,8 +312,8 @@
     },
     {
       "path": "MOD-09/generated/L02-prose/document.pdf",
-      "sha256": "517ed3bdd14bc90f7a4178bf53960a5c0acf5b4ea59c79b5e947575b2d424c5c",
-      "bytes": 215016,
+      "sha256": "e22db0186240613d0849033d8c9f2fe1189c0ae623bc2876f9c5f9a5ea8e4e55",
+      "bytes": 215363,
       "description": "L02: a SYNTHETIC contract with its rates as prose (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
     },
     {
@@ -324,14 +324,14 @@
     },
     {
       "path": "MOD-09/generated/L03-scanned/document.pdf",
-      "sha256": "aa44513da91b7cb9f81a5a25e4892a647a22ce2aef9c606749b2769d84c76dad",
-      "bytes": 3367745,
+      "sha256": "fbc3de7b9eb34034effe1d41bbd92b93afac6d061a36bda7e64f7cde137678c2",
+      "bytes": 3380628,
       "description": "L03: a SYNTHETIC contract drawn as table, scanned: page images, no text layer. Generated at test time by ensureLargeContractTier() from @tp/synth."
     },
     {
       "path": "MOD-09/generated/L03-scanned/textract.json",
-      "sha256": "14d101163c04ebdb64ade9ebb45cd7c88e4578fee681414761fbcff790ec0f6e",
-      "bytes": 573166,
+      "sha256": "3b5c81b37f85854947e694bee6858dbb5807e95e9968da14c84a74edd2656d16",
+      "bytes": 574881,
       "description": "L03: the scan reader's recorded text detection for the scanned pages, one block per line (SYNTHETIC). Generated at test time by ensureLargeContractTier() from @tp/synth."
     },
     {
@@ -342,8 +342,8 @@
     },
     {
       "path": "MOD-09/generated/L04-prose/document.pdf",
-      "sha256": "2fae2340726c6e137bbcec9e77d60aaf7be2599b085dbde31d3f2b434e68d285",
-      "bytes": 110551,
+      "sha256": "ff4bc391c8452e9b94d431d570a72da81a3bd0d7d91d82434f39b7a92d98f2fc",
+      "bytes": 110372,
       "description": "L04: a SYNTHETIC contract with its rates as prose (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
     },
     {
@@ -354,8 +354,8 @@
     },
     {
       "path": "MOD-09/generated/L05-table/document.pdf",
-      "sha256": "b60f568f5044ccd752eabed54c9102896953e3e01d4062a8b8e019cb9accb325",
-      "bytes": 94301,
+      "sha256": "71faffb5bf4e7d33e08b75e147e074ce884f2f2bbd7af9f0fbef5a852b2f15ce",
+      "bytes": 93836,
       "description": "L05: a SYNTHETIC exhibit with its rates as a table (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
     },
     {

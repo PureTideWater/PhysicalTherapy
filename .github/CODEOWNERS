@@ -37,11 +37,20 @@
 # request declares in exception.json, so declaring one takes the founder's review.
 /tools/engine-freeze/ @PureTideWater
 
-# The switch that decides which model features a real provider serves in production (docs/adr/0070, Part 2; session
-# ruling 10): the committed baseline, the reports each entry is recomputed from, and the recall and precision floors.
+# The switch that decides which model features a real provider serves in production (docs/adr/0070, Part 2): the
+# committed baseline, the reports each entry is recomputed from, the recall and precision floors and the confirmed
+# prices; and the code that judges them, which decides serving from them (evaluated.ts), parses them (baseline-format.ts,
+# floors-format.ts) and records or refuses an entry (eval/baseline.ts, eval/floors.ts). A pull request could otherwise
+# leave the switch's data alone and serve a feature by changing its judge.
 /packages/model-gateway/eval/baseline.json @PureTideWater
 /packages/model-gateway/eval/floors.json @PureTideWater
 /packages/model-gateway/eval/reports/ @PureTideWater
+/packages/model-gateway/config/models.json @PureTideWater
+/packages/model-gateway/src/evaluated.ts @PureTideWater
+/packages/model-gateway/src/baseline-format.ts @PureTideWater
+/packages/model-gateway/src/floors-format.ts @PureTideWater
+/packages/model-gateway/eval/baseline.ts @PureTideWater
+/packages/model-gateway/eval/floors.ts @PureTideWater
 
 # The published rule releases (content/releases is created by publish-content.yml) and the synthetic releases.
 /content/releases/ @PureTideWater

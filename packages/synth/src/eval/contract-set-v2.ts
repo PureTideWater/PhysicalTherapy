@@ -34,6 +34,7 @@ import { Random } from '../core/random';
 import { EXHIBIT_BANNER } from '../formats/exhibit';
 import { type LineSpan, type RichLine, writeRichPdf } from '../formats/pdf';
 import { type ReadingError, SCAN_COLUMNS, scannedPdf, textractRecording } from '../formats/scan';
+import { syntheticNpi, syntheticTin } from '../x12/factory';
 import {
   type CaseSpec,
   type ContractSetFile,
@@ -379,7 +380,9 @@ const STATES = ['IL', 'OH', 'WI', 'MN', 'IA', 'IN', 'MI', 'MO'];
 /**
  * One sentence of invented legal text holding distracting figures: insurance limits, days, NPIs and
  * TINs, ZIP+4 addresses, telephone numbers, section numbers and dates. A sentence with a dollar figure
- * never holds a code-shaped token, so no boilerplate sentence reads as a rate.
+ * never holds a code-shaped token, so no boilerplate sentence reads as a rate. Its NPIs and TINs are
+ * drawn by the repository's synthetic-identifier rule (syntheticNpi, syntheticTin in ../x12/factory):
+ * an NPI starts 99 with its check digit and a TIN starts 00, so neither can be a real one.
  */
 function boilerplate(random: Random, spec: CaseSpec, article: number, section: number): string {
   const at = `Section ${String(article)}.${String(section)}.`;
@@ -392,7 +395,7 @@ function boilerplate(random: Random, spec: CaseSpec, article: number, section: n
     case 1:
       return `${at} Notices under this Article go to ${party} at ${String(random.int(100, 9_899))} Example Avenue, Suite ${String(random.int(100, 990))}, ${random.pick(CITIES)}, ${random.pick(STATES)} ${random.digits(5)}-${random.digits(4)}, or by telephone at (${String(random.int(201, 989))}) 555-${random.digits(4)}.`;
     case 2:
-      return `${at} Provider's National Provider Identifier is 1${random.digits(9)} and its taxpayer identification number is ${random.digits(2)}-${random.digits(7)}; Provider shall report a change to either within ${days()} days.`;
+      return `${at} Provider's National Provider Identifier is ${syntheticNpi(random)} and its taxpayer identification number is ${syntheticTin(random)}; Provider shall report a change to either within ${days()} days.`;
     case 3:
       return `${at} Either party may end this Article on ${days()} days written notice given no earlier than ${date()}, and sections ${String(article)}.${String(section + 1)} to ${String(article)}.${String(section + 3)} survive its end.`;
     case 4:

@@ -379,6 +379,37 @@ describe('the contract set v2 (MOD-09)', () => {
     }
   });
 
+  it('writes every NPI in its boilerplate in the 99 range with its check digit, and every TIN under a prefix the IRS never assigns', () => {
+    // The repository's synthetic-identifier rule (packages/synth/src/x12/factory.ts, SynthWorld.npi): a real NPI
+    // starts with 1 or 2, so a synthetic one starts with 99 and carries a valid Luhn digit over the 80840 prefix; a
+    // TIN written as an EIN starts with 00, a prefix the IRS never assigns, so neither can be a real provider's or
+    // business's number. The check reads every committed file and the large tier as written: a PDF's text operators
+    // and a reader's recording alike hold each identifier as one token, since a line breaks only between words.
+    const luhn = (npi: string) => {
+      const digits = `80840${npi}`.split('').map(Number).reverse();
+      return digits.reduce((sum, digit, index) => sum + (index % 2 === 1 ? (digit * 2 > 9 ? digit * 2 - 9 : digit * 2) : digit), 0) % 10 === 0;
+    };
+    // A PDF's text is its string operands (its cross-reference table is ten-digit offsets); any other file is its text.
+    const textOf = (filePath: string, bytes: Uint8Array | string) => {
+      const raw = Buffer.from(bytes).toString('latin1');
+      return filePath.endsWith('.pdf') ? [...raw.matchAll(/\((?:\\.|[^\\)])*\)/g)].map((match) => match[0]).join('\n') : raw;
+    };
+    const texts = [...v2Files.map((file) => ({ path: file.path, text: textOf(file.path, file.bytes) })), ...largeFacts.map((file) => ({ path: file.path, text: textOf(file.path, file.data) }))];
+    const npis = texts.flatMap((file) => [...file.text.matchAll(/National Provider Identifier is (\d+)/g)].map((match) => ({ path: file.path, value: match[1] ?? '' })));
+    const tins = texts.flatMap((file) => [...file.text.matchAll(/identification number is (\d+)-(\d+)/g)].map((match) => ({ path: file.path, value: `${match[1] ?? ''}-${match[2] ?? ''}` })));
+    // Every ten-digit run anywhere in the set is an NPI (telephone numbers are written (NNN) 555-NNNN).
+    const tenDigit = texts.flatMap((file) => [...file.text.matchAll(/(?<![\d.])\d{10}(?![\d.])/g)].map((match) => ({ path: file.path, value: match[0] })));
+    expect(npis.length).toBeGreaterThan(30);
+    expect(tins.length).toBe(npis.length);
+    for (const npi of [...npis, ...tenDigit]) {
+      expect(npi.value, npi.path).toMatch(/^99\d{8}$/);
+      expect(luhn(npi.value), `${npi.path} check digit`).toBe(true);
+    }
+    for (const tin of tins) {
+      expect(tin.value, tin.path).toMatch(/^00-\d{7}$/);
+    }
+  });
+
   it('writes every committed file the same way twice, and the manifest first', () => {
     const files = contractSetV2Files();
     expect(files[0]?.path).toBe('contract-set-v2/set.json');
