@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
-import { type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 import { type LedgerEntry, type ReportReconciliation, entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
 
@@ -182,6 +182,39 @@ function shot(name: string): string {
   return path.join(SHOTS, name);
 }
 
+/**
+ * Every control in the header (its links and its disclosure summaries, as many as the width shows) is named by what it
+ * shows (WCAG 2.5.3, Label in Name; test matrix CI-19): its accessible name contains each piece of its visible text,
+ * lower-cased and with whitespace folded, as speech input reads it. The name is Playwright's own computation of it
+ * (toHaveAccessibleName; an aria snapshot prints a summary's text, not its name). The visible text is the control's
+ * innerText as one piece, plus the generated content (::before and ::after) of each of its rendered elements as a piece
+ * of its own, since the account's initial is drawn that way and innerText does not see it. At 390 px that initial is
+ * the account control's only visible text, and axe answers "incomplete" rather than a violation for a one-letter label
+ * (label-content-name-mismatch), so this check is the only guard there.
+ */
+async function expectHeaderNamesHoldTheirText(header: Locator, controls: number): Promise<void> {
+  const shown = header.locator('a[href]:visible, summary:visible, button:visible');
+  await expect(shown).toHaveCount(controls);
+  for (const control of await shown.all()) {
+    const pieces = await control.evaluate((element) => {
+      const fold = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+      // A computed content value holds its text as CSS strings ("W"); anything else (none, normal, a counter, an image)
+      // draws no text this check could read, and is dropped.
+      const generated = (value: string) => [...value.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => (match[1] ?? '').replace(/\\(.)/g, '$1')).join('');
+      const rendered = [element, ...element.querySelectorAll('*')].filter((each) => each.checkVisibility());
+      const drawn = rendered.flatMap((each) => ['::before', '::after'].map((pseudo) => generated(getComputedStyle(each, pseudo).content)));
+      return [fold((element as HTMLElement).innerText), ...drawn.map(fold)].filter((piece) => piece !== '');
+    });
+    const what = await control.evaluate((element) => `the header's <${element.tagName.toLowerCase()}> showing "${(element as HTMLElement).innerText.replace(/\s+/g, ' ').trim()}"`);
+    expect.soft(pieces, `${what} shows no text`).not.toEqual([]);
+    // Soft, so one run names every control whose name leaves out what it shows, at this width.
+    for (const piece of pieces) {
+      const contained = new RegExp(piece.split(' ').map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'i');
+      await expect.soft(control, `${what}: its accessible name must contain its visible text "${piece}"`).toHaveAccessibleName(contained);
+    }
+  }
+}
+
 /** The page's width as the document lays it out, beside the window's: equal when nothing scrolls sideways. */
 async function pageWidths(page: Page): Promise<[number, number]> {
   return page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth] as [number, number]);
@@ -329,6 +362,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await expect(header.locator('[data-slot="lockup"]')).toContainText('PaidWhole');
     await expect(header.getByLabel('Practice switcher')).toContainText(PRACTICE);
     await expect(header.getByLabel('Account menu')).toBeVisible();
+    // Each control is named by what it shows: the lockup's link, the switcher and the account (CI-19).
+    await expectHeaderNamesHoldTheirText(header, 3);
     const active = page.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Practice home', exact: true });
     await expect(active).toHaveAttribute('aria-current', 'page');
     await expect(active).toHaveCSS('text-decoration-color', BRASS);
@@ -420,6 +455,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     const header = page.locator('[data-slot="app-header"]');
     await expect(header.locator('[data-slot="lockup"]')).toBeVisible();
     await expect(header.getByText('Menu')).toBeVisible();
+    // The same at a phone width, where the account shows only its initial and the menu joins them (CI-19).
+    await expectHeaderNamesHoldTheirText(header, 4);
     await page.waitForLoadState('networkidle');
     await page.mouse.move(389, 843);
     await header.screenshot({ path: shot('header-390.png') });
