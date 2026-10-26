@@ -6,6 +6,60 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 
 Open questions: none.
 
+## Handoff (2026-10-26 10:20 UTC): held by the orchestrator's wind-down; for whoever finishes it
+
+The account's weekly usage reached 90% and Lane B goes to Lane A on 2026-10-27. This session stopped at a clean point:
+nothing runs, no scheduled check-in remains (15:15 and 19:20 cancelled), every branch is pushed, and only the two PR
+worktrees remain (`/home/user/ci-deps` at 123b8fa, `/home/user/ci-browser` at 8b38f48; both clean, equal to origin).
+
+### ci-deps, [#48](https://github.com/PureTideWater/PhysicalTherapy/pull/48) (draft), head 123b8fa
+- **CI on 123b8fa** (run 40270689259): every ci.yml job green but `static`, so `all green` is red; unit 5,189 passed and
+  1 skipped; images on trixie, db 1-4 on compose, e2e 1-2, the release dry run (build, push, capacity) green. `mutation`
+  and `screening-capacity gate` were still running at 04:55 and are not read since.
+- **`static` is red by design until 2026-10-26T18:06:38Z:** its Toolchain step (`pnpm toolchain:check`) refuses
+  `packageManager`'s pnpm 10.34.8, published 2026-10-23T18:06:37Z, as under three days old (the co-founder's CQ3 (a)).
+  Every other rule passes. No exclude was added for a version that ages out before the merge. Explained on #48.
+- **The PR is behind its base**: `claude/build-platform` is at 88a0e4e (#47 and #53 among the merges since 6ddd587; #47
+  is already merged in).
+- **Remaining steps, in order, each with its earliest time:**
+  1. Any time: merge the latest `claude/build-platform` in with a merge commit (rule 6). No lockfile conflict was
+     expected at 04:55; if the lockfile conflicts, take the base's and re-resolve after step 3's time, never by hand.
+  2. **From 2026-10-26T15:11Z:** one commit pinning `docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0`
+     in `release.yml` and `release-dry-run.yml` together (re-check the SHA with `git ls-remote`); it clears the node20
+     warning and makes ADR 0066 Part 2's login row true.
+  3. **From 2026-10-26T19:18:50Z** (the locked Stryker 10.1.1 three days old; pnpm refuses any re-resolution before):
+     the bumps, each resolved under the gates with pnpm 10.34.8, as `approval-summaries/lane-b-ci-deps-fix-round-1.md`'s
+     phase-2 plan gives them: vitest and @vitest/coverage-v8 5.0.5 into the catalog; eslint 10.13.0 and typescript-eslint
+     8.72.0 into the catalog; root's and `tools/`'s literal copies as `catalog:`; postcss 8.5.31; next and
+     @next/eslint-plugin-next 16.4.3; the qs override `typed-rest-client>qs: 6.16.1` with its `overrides.json` entry in the
+     same commit; fast-uri 3.1.9 by `pnpm update -r fast-uri --lockfile-only` (name rolldown 1.2.15's and
+     @oxc-project/types' moves); `no-duplicated-versions`' catalog clause; the libc rule; regenerate `watched-paths.txt`
+     if a merge changed it.
+  4. A short adversarial review of the bump commits (supply chain), then the full local suite once (lane-b.md), one push.
+  5. CI green on that head (all four required checks; `static` green after 18:06:38Z), a fresh-clone verification that
+     reads CI's counts, then mark ready and merge with `expectedHeadSha` (lane-b.md "Merging"); if the base moved, merge
+     it again first.
+- **When it merges:** the founder's settings, F1 (a) the default branch, F2 (a) Dependabot alerts and security updates,
+  then F3 SHA pinning: `designs/lane-b-settings-after-ci-deps.md`. Dependabot #40 and #33 are superseded (never merged).
+  `tools/setup-container.sh` should then pin pnpm 10.34.8 (below).
+
+### ci-browser, branch `co-001/ci-browser` at 8b38f48 (pushed; no PR)
+- Phase 1 built on ci-deps' 123b8fa: `approval-summaries/lane-b-ci-browser-build-summary.md`. Two checks are red on
+  purpose until phase 2 (`browser-version`'s catalog line; `browser-build.ts` against 1194).
+- **Next, after ci-deps merges and after 2026-10-26T19:18:50Z:** merge the build branch in; the Playwright 1.64.1 and
+  axe 4.14.0 bump under the gates; lay out revision 1248 (`tools/setup-container.sh` now does it when given
+  `co-001/ci-browser:/home/user/ci-browser` as an argument; the pinned zips are also in this session's scratchpad);
+  regenerate the seven baselines and prove the no-op; the 13 specs with axe 4.14; open the draft PR; the two reviews
+  (UX and brand; CI and test infrastructure); A9's visual-inspection agent and the private gallery; the fix round, the
+  verification and the merge. Design: `designs/lane-b-ci.md` §3.3.
+- **After #42 merges** (a follow-up, ADR 0066 Part 3 "After #42"): the harness's report fields, `run.ts`'s identity
+  read through `image-id.ts`, launch-check's runner-image refusal; and O6, axe 4.14 over #42's mail pages.
+
+### Follow-ups P1, P2, P4: designed and reviewed, not built
+- `designs/lane-b-ci/follow-up-p1-pin-age.md` (`co-001/ci-pin-age`), `follow-up-p2-trivy-version.md`
+  (`co-001/ci-trivy-version`), `follow-up-p4-mutation-trigger.md` (`co-001/ci-mutation-trigger`), each with its
+  `-review.md`; cut each after ci-deps and ci-browser merge.
+
 ## ci-deps (CI 2 of 4; `co-001/ci-deps`, worktree `/home/user/ci-deps`)
 
 | Time (UTC) | Stage | Detail |
