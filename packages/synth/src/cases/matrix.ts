@@ -299,7 +299,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'BIL-04',
     title: 'A card is never refused, and a new bank account takes over',
     assertion:
-      'Through the routes on the simulator, an organization with only a card on file chooses the annual plan and its invoice is paid by card, and an audit invoice issued to it is paid by card; once it adds a bank account, the next open invoice it pays is charged to the bank account, and a renewal of its plan is charged to the bank account, even when the subscription carried the card as its own default',
+      'Through the routes on the simulator, an organization with only a card on file chooses the annual plan and its invoice is paid by card, and an audit invoice issued to it is paid by card; once it adds a bank account, the next open invoice it pays is charged to the bank account; and on the simulator itself, a renewal of its plan is charged to the bank account, even when the subscription carried the card as its own default',
   },
   { id: 'CI-01', title: 'One gate over every CI job', assertion: '`all green` needs every other ci.yml job and passes only when each succeeded; a failed, skipped or cancelled job fails it' },
   { id: 'CI-02', title: "Every route's tests in exactly one of twelve files", assertion: 'Each registered route is in one file; the twelve files exist and each runs its own index' },

@@ -35,7 +35,7 @@ const CARD_BRAND: Readonly<Record<string, string>> = {
   eftpos_au: 'eftpos Australia',
 };
 
-/** "On file: Visa card ending in 4242", or "On file: bank account (ACH) ending in 6789 (its bank's name)". */
+/** "On file: Visa card ending in 4242", or "On file: bank account (ACH) ending in 6789, Synthetic Test Bank" (as Stripe names the bank). */
 function onFile(method: PaymentMethodSummary): string {
   const name = PAYMENT_METHOD_NAME[method.kind] ?? method.kind;
   const lower = `${name.charAt(0).toLowerCase()}${name.slice(1)}`;
@@ -43,7 +43,7 @@ function onFile(method: PaymentMethodSummary): string {
     const brand = method.label === null || method.label === 'unknown' ? null : (CARD_BRAND[method.label] ?? labelOf(method.label));
     return `On file: ${brand === null ? lower : `${brand} ${lower}`} ending in ${method.last4}`;
   }
-  return `On file: ${lower} ending in ${method.last4}${method.label === null ? '' : ` (${method.label})`}`;
+  return `On file: ${lower} ending in ${method.last4}${method.label === null ? '' : `, ${method.label}`}`;
 }
 
 export function PaymentMethodCard({

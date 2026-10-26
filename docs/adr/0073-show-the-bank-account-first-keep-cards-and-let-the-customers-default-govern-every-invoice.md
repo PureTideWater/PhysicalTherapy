@@ -96,7 +96,7 @@ What the repository held at `6ddd587`:
    with a bank account on file only that line shows. One term names the bank account throughout, "bank account (ACH)":
    the card's description reads "A bank account (ACH) or a card. The account or card number never reaches this
    application."; the method on file reads, in medium weight, "On file: Visa card ending in 4242" or "On file: bank
-   account (ACH) ending in 6789 (the bank's name)", or "No payment method on file."; and the invoices' Paid column
+   account (ACH) ending in 6789, Synthetic Test Bank" (the bank as Stripe names it), or "No payment method on file."; and the invoices' Paid column
    takes the same names from one export (`PAYMENT_METHOD_NAME`). No reason is given ("it costs less"): it would invite
    a discount question, which is the founder's pricing decision.
 6. **A bank account waiting on Stripe's deposits (F6).** The form reads `result.setupIntent.status` through a pure
@@ -121,9 +121,9 @@ What the repository held at `6ddd587`:
    and "Add a payment method above, then choose a plan here." in place of the plan form (`data-plan="needs-method"`).
    A card's brand shows as a person reads it ("Visa", "eftpos Australia"); a code not listed reads as its label
    (`labelOf` in `apps/web/src/lib/copy/words.ts`), and Stripe's `unknown` shows no brand. The practice onboarding
-   step reads "Add a payment method and choose a plan / A bank account (ACH) is preferred; a card also works." The web compiles
-   `@tp/billing` (it joins `transpilePackages` in `apps/web/next.config.ts`, F4), since the browser now imports its
-   source.
+   step reads "Add a payment method and choose a plan / A bank account (ACH) is preferred; a card also works." The
+   web compiles `@tp/billing` (it joins `transpilePackages` in `apps/web/next.config.ts`, F4), since the browser now
+   imports its source.
 8. **Not built.** Restricting cards per plan (the audit says not to); an ACH discount (the founder's pricing decision);
    any change to `apps/web/src/components/help.ts` (it already says "ACH or card") or to the worker's refusal of a plan
    without a method (`apps/worker/src/billing/*`); both are #42's files. No table, column, function, policy, role,
@@ -132,7 +132,8 @@ What the repository held at `6ddd587`:
 
 The Stripe set-up in `docs/runbooks/billing.md` gains the dashboard checks this depends on (ACH Direct Debit and cards
 the enabled methods; Financial Connections' option to save bank logins to Link left off; why subscriptions save no
-default of their own, and why a new default becomes every subscription's) and a by-hand staging test of a card customer switching to a bank account.
+default of their own, and why a new default becomes every subscription's) and a by-hand staging test of a card
+customer switching to a bank account.
 
 ## Alternatives considered
 

@@ -9,10 +9,10 @@ import { signInWithTotp, withDatabase } from './helpers';
  * Settings: billing; docs/adr/0050, 0073), on the local Stripe test-mode simulator the e2e server runs with:
  * the group's practice administrator opens Settings, Billing, reads that a bank account is preferred and that a
  * plan waits for a payment method, adds the simulator's test bank account, chooses the monthly plan, settles the
- * test ACH debit and sees the invoice paid. Stripe's events reach the application through the same verification and processing the webhook route
- * uses; the webhook route itself refuses a body without Stripe's signature. Nothing here suspends an
- * organization (the other journeys share the group); billing-routes.db.test.ts covers suspension. Synthetic
- * data only.
+ * test ACH debit and sees the invoice paid. Stripe's events reach the application through the same verification
+ * and processing the webhook route uses; the webhook route itself refuses a body without Stripe's signature.
+ * Nothing here suspends an organization (the other journeys share the group); billing-routes.db.test.ts covers
+ * suspension. Synthetic data only.
  */
 
 async function seededGroup(): Promise<{ readonly id: string; readonly name: string }> {
@@ -56,7 +56,7 @@ test('an organization administrator pays by test ACH: the bank account, the mont
 
   await page.getByRole('button', { name: 'Add test bank account (ACH)' }).click();
   await expect(page.locator('[data-payment-method]')).toHaveAttribute('data-payment-method', 'us_bank_account');
-  await expect(page.locator('[data-payment-method]')).toHaveText('On file: bank account (ACH) ending in 6789 (Simulator test bank)');
+  await expect(page.locator('[data-payment-method]')).toHaveText('On file: bank account (ACH) ending in 6789, Simulator test bank');
   // With the bank account on file, only that a new method replaces it (BIL-03).
   await expect(page.locator('[data-notice="ach-preferred"]')).toHaveCount(0);
   await expect(page.locator('[data-notice="replaces"]')).toHaveText('A new payment method replaces the one on file.');

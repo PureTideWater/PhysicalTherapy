@@ -187,7 +187,7 @@ describe('the Payment method card (BIL-03)', () => {
     expect(textOf(html, 'data-notice="replaces"')).toBe(REPLACES);
     expect(html).not.toContain(PREFERRED);
     expect(html).not.toContain('data-notice="ach-preferred"');
-    expect(textOf(html, 'data-payment-method="us_bank_account"')).toBe('On file: bank account (ACH) ending in 6789 (Synthetic Test Bank)');
+    expect(textOf(html, 'data-payment-method="us_bank_account"')).toBe('On file: bank account (ACH) ending in 6789, Synthetic Test Bank');
   });
 
   it('names each kind of method with the one term, shared with the invoices’ Paid column', () => {
