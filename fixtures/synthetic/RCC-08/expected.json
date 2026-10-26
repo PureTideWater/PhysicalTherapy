@@ -1,0 +1,23 @@
+{
+  "case": "RCC-08",
+  "module": "RCC",
+  "title": "Content due",
+  "assertion": "The calendar names every content but PaidWhole's own; content ending within 45 or 14 days, ended, due with no draft, or overdue is reported with the exact import commands, as is a calendar entry never reviewed or older than 13 months; before any release is published the drafts are judged and the titles say so; the console shows Content due, customers see each family's loaded-through date; the workflow's check job only reads and its notify job alone writes issues, once per title, showing only plain file names from source pages",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "packages/rules/src/calendar.test.ts",
+    "tools/content-calendar/content-calendar.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "apps/web/src/lib/releases/content-through.db.test.ts",
+    "tools/test/workflows.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The calendar is module data and the sources are written to a temporary root; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

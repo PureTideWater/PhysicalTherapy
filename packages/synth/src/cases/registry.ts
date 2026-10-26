@@ -463,6 +463,26 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-15': none(0, "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.", ['tools/stryker/canary/verdict.test.ts', 'tools/test/workflows.test.ts']),
   'CI-16': none(0, "The gate judges shards' reports and equivalents the test builds in memory; no file.", ['tools/stryker/gate.test.ts', 'tools/stryker/mutants.test.ts', 'tools/test/workflows.test.ts']),
   'CI-17': none(0, 'The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.', ['tools/stryker/affected.test.ts', 'tools/stryker/shards.test.ts', 'tools/screening-capacity/watched.test.ts', 'tools/test/workflows.test.ts']),
+  // The release content checks (docs/adr/0071).
+  'RCC-01': none(0, 'The files are written to a temporary root by the test; no file.', ['packages/rules/src/import.test.ts', 'packages/rules/src/parsers/parsers.test.ts']),
+  'RCC-02': none(0, 'The content sets are written to temporary roots, and the fixture releases are read; no file.', ['tools/verify-content/check.test.ts', 'packages/rules/src/coverage.test.ts', 'tools/release/release.test.ts']),
+  'RCC-03': none(0, 'Two numbered releases are written to a temporary root; no file.', ['tools/verify-content/check.test.ts', 'tools/release/release.test.ts', 'packages/rules/src/coverage.test.ts']),
+  'RCC-04': none(7, 'The month is seeded in a scratch database under release 900007; no file.', ['apps/worker/src/price/content.db.test.ts', 'apps/worker/src/price/content.test.ts']),
+  'RCC-05': none(7, 'The months are seeded in a scratch database; no file.', ['apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/src/lib/pricing/content.db.test.ts', 'apps/worker/src/price/content.db.test.ts']),
+  'RCC-06': none(7, 'The priced lines are seeded in a scratch database; no file.', ['packages/triage/src/actionable.test.ts', 'apps/worker/src/triage/triage.db.test.ts', 'apps/worker/src/report/report.test.ts']),
+  'RCC-07': none(7, 'The runs are seeded in a scratch database; the weekly run builds release 900110 outside the repository; no file.', [
+    'apps/worker/src/price/keyed-release.test.ts',
+    'apps/worker/src/price/release-source.db.test.ts',
+    'tools/release-capacity/checks.test.ts',
+    'tools/test/workflows.test.ts',
+  ]),
+  'RCC-08': none(0, 'The calendar is module data and the sources are written to a temporary root; no file.', [
+    'packages/rules/src/calendar.test.ts',
+    'tools/content-calendar/content-calendar.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/releases/content-through.db.test.ts',
+    'tools/test/workflows.test.ts',
+  ]),
 };
 
 export interface CaseDefinition {

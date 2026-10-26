@@ -1,0 +1,21 @@
+{
+  "case": "RCC-03",
+  "module": "RCC",
+  "title": "A release covers less than the one before",
+  "assertion": "Assembly and the checker refuse a release that stops covering a code and date its previous release covered, unless the dates are older than the six-year look-back or closed by the source's own dates (each listed in COVERAGE.md) or withdrawn by a note two different people signed; a listed entry that is no loss, a stale or misdated note, and a missing or unreadable previous release are refused; the drafts note's entries are copied into the release's COVERAGE.md and the note is removed",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/verify-content/check.test.ts",
+    "tools/release/release.test.ts",
+    "packages/rules/src/coverage.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Two numbered releases are written to a temporary root; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
