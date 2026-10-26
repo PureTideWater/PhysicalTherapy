@@ -4,9 +4,10 @@ One parallel Lane B session runs both PRs, one after the other (the orchestrator
 
 ## Now
 - **Stage:** A, design done and reviewed (wf_fd4e0a68-385: 4 scouts, designer, one adversarial reviewer, reviser; 19 findings, all applied, 2 in part with reasons in the design's section 13). No migration, confirmed. Builders running (wf_13f2f539-6ee, from 01:14 UTC). B, design done and reviewed (wf_c4f857f0-8b2: 3 scouts, designer, one adversarial security reviewer, reviser; 23 findings, all applied but one part each of 6 and 19, rejected with reasons in its section 17). No migration; two small parts wait for #42 (the shell Sign out confirmation, the data-retention row). ADR 0076 reserved for B by the orchestrator (01:19 UTC).
-- **Next step:** cut `co-001/figures-in-words` from 6ddd587, run the builders (P, then W, K, L in parallel), open the draft PR.
+- **Next step:** builders finish (P done by 02:13 UTC; W, K, L, then integrator and critic), then the draft PR. Priority A before B (orchestrator, 02:16 UTC). A self check-in is set for 03:50 UTC in case the session limit stops the workflow (resume wf_13f2f539-6ee with resumeFromRunId; progress files in the scratchpad's fiw-build/progress).
 
 ## Log (UTC)
+- 2026-10-26 01:12: A design pushed. 01:14: branch `co-001/figures-in-words` cut from 6ddd587 (worktree installed); builders started (wf_13f2f539-6ee). 01:19: B design pushed; ADR 0076 reserved for B. 02:16: usage-limit warning from the orchestrator; check-in set.
 - 2026-10-26 ~00:20: machine set up (`tools/setup-container.sh` printed OK; `gh api user` is PureTideWater). `claude/build-platform` at 6ddd587. #42 open (143 files; none in the packets, packet review or line-trace pages except the shared synth matrix and registry, rule 6).
 
 ## PR A: every figure explained in words (#38)

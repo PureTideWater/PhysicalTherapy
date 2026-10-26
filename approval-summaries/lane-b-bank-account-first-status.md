@@ -2,7 +2,7 @@
 
 *Kept current at every stage by the Lane B session that builds it. Times UTC.*
 
-- **Stage:** fix round done and pushed (head 744e1d6, ~02:05): every finding fixed, the full local suite passed once on 422344b; CI on 744e1d6 next, then the fresh-clone verification.
+- **Stage:** fresh-clone verification running (wf_bbfe29eb-041, from ~02:18) while CI's e2e (2/2) re-runs once on 744e1d6.
 - **Branch / PR:** `co-001/bank-account-first`, worktree /home/user/bank-account-first / #47 (draft), head 744e1d6 (commits 5ca2263, 56007bd, b15d45f, 422344b, 744e1d6). Base still 6ddd587.
 - **Machine:** setup-container.sh printed OK; `gh api user` is PureTideWater.
 - **Migration:** none (confirmed at design: presentation and three Stripe request parameters; `packages/db` untouched).
@@ -23,7 +23,7 @@
 - **Improvement found:** the card brand shows lowercase ("visa") on the page; capitalized in this PR.
 - **Proposal (outside this PR):** show a bank account still waiting on Stripe's micro-deposit on later visits (needs the
   provider to list open SetupIntents).
-- **CI:** 5ca2263 green (all green, unit, db 1-4, e2e 1-2, lint, static, build, images, domain model, mutation, approval-of-record); screening capacity was still measuring at ~01:20.
+- **CI:** 5ca2263 green. 744e1d6: every job green except e2e (2/2), the known screening flake handed to #42 (screening.spec.ts:339 read `priced`; the retry failed at helpers.ts:87); one PR comment posted (~02:13) and the failed job re-run once (~02:15).
 - **Local checks before the first push:** typecheck 22 projects; lint 0/0; lint:copy, lint:logs pass; unit 5,006 passed,
   3 skipped, 2 failed in tools/screening-capacity/watched.test.ts (the new methods.ts was not in #42's watched list),
   fixed by moving the order into `types.ts`, which the list already holds (affected files then 397/397); billing db
@@ -55,4 +55,5 @@
   through the routes; the simulator emitting customer.subscription.updated when a subscription's default changes; a
   staging check by hand that Stripe's form accepts the resolved token colours, light and dark; showing a pending
   micro-deposit verification on later visits.
-- **Next:** CI on 744e1d6; the fresh-clone verification; merge.
+- **Safety net:** a send_later at 03:50 UTC (trig_01Kzyx6TD5RH8orKUPQKfCRk) resumes any workflow the 5-hour limit stops (the orchestrator's warning, ~02:16).
+- **Next:** the re-run's result and the verification; merge the latest base if it moved; ready; merge.

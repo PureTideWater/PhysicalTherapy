@@ -25,5 +25,7 @@ None yet.
 ## PR
 #49, draft. Head pushed: 38088c68 (WP1 only; the rest pushes once after integration).
 
+- 2026-10-26 ~02:20 UTC: WP1, WP2 (49ef6a56), WP3 (ae9e4b5e) committed locally; WP4 to WP10 and integration running. CI on 38088c68 is red in `changes`, `unit`, `mutation`, `all green`, all one cause: `tools/stryker/affected.ts` does not yet list `packages/rules/src/content.ts`'s new `content/releases` and `content/outgoing` reads (affected.test.ts asserts the same); fix rides the next push (PR comment posted). A send_later at 03:50 UTC resumes the workflow if the session limit stops it.
+
 ## Next step
-Builders and integration, push, then two adversarial reviews.
+Builders and integration; fix affected.ts's directory reads; one push; then two adversarial reviews.

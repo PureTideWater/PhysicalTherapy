@@ -51,9 +51,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - db 9,049 and 1 skipped, over 118 files in 4 shards;
   - e2e 51; golden 188;
   - pyx12 agrees on all 637 synthetic 835s.
-- **Usage:** last read **28% at ~21:20 UTC on 2026-10-25** (the co-founder: "Go as far as we can"). That leaves 52 points to the ~80% line over about 4.5 days to the reset, about 11.5% a day.
-  - This log's earlier readings put it at about 0.7M subagent tokens per 1% of the weekly allowance. From ~21:10 UTC the session and its agents run on a larger model with ultracode on, so re-measure at the next reading.
-  - The weekly reset is Friday 2026-10-30. Its time of day is still not given.
+- **Usage:** last read **53% weekly at ~02:12 UTC on 2026-10-26** (the co-founder's screenshot), with the 5-hour session limit at 90%, resetting at about 03:40 UTC.
+  - **The weekly reset is Friday 2026-10-30 at 15:00 the co-founder's time (UTC-4), so 19:00 UTC.**
+  - **The pace:** 32% at ~23:40 UTC to 53% at ~02:12 UTC, with eight parallel sessions plus this one: about 8 points an hour, and about a fifth of the weekly allowance per 5-hour session window.
+  - **The rule from here:** finish in-flight PRs before follow-ons. Start no new item past ~85% weekly. Keep the last ~10% to bring everything to a clean stop and to update Start here.
 
 ### Next actions, in order
 1. **Machine and reading.** Follow COFOUNDER-START.md's message.
@@ -752,3 +753,41 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - DBF module 13 (#111), RCC module 14 plus fixture release 900007 (the release content checks), BIL module 15 (#135).
     - The next free values are under "Shared counters" in the conventions. #135's session was told BIL = 15.
   - **Handed to Lane A:** `operator_content_coverage()` for #59's later daily `content_due` job. `tp_operator` has no grant on rule objects, and a GRANT on `rule_record` would be DDL on a rule table.
+- **2026-10-26 ~02:15 UTC: the UX capture is done; the image checks run 20 batches at once.**
+  - **Capture** (wf_b56fe7b4-652's capture agent):
+    - **857 shots covering all 83 reachable routes.** At 1280 px light, 385 (84 default, 126 interaction, 75 error, 52 loading, 45 empty, 3 not-found); 83 at 1280 px dark (tokens only), one per route; 389 at 390 px light.
+    - **36 named states that synthetic data cannot show** are each recorded with the reason, never faked. Examples: the screening's "not open yet", a 50-group pager, empty consoles the seed always fills, a tampered ledger.
+    - **The lock** was held about 100 minutes in two fresh-prepare sessions; the final data is session 2 (populate 3.0 min, capture 28 min, a 390 px sticky-header retake).
+    - **Clean at the end:** server stopped, port 3297 free, `tp_e2e_screens` dropped.
+  - **The tour tool grew** (committed here):
+    - `tour.spec.ts` rewritten: a declarative capture helper, stable ids, `TOUR_ONLY`, bounded timeouts, held submits that are truly aborted, and loading shots taken after prefetch;
+    - `screens.config.ts` populates with seven specs (`reports.spec.ts` added), and `run.sh` excludes only the webhook test;
+    - new `reserve.sh` (re-serve a build from a fresh prepare), `build-only.sh` and `batches.py`, with the README.
+  - **The route map is committed** with the 83 real pages. The six phantom paths are kept only in the readable map's "Paths with no page".
+  - **Faster checks:** the workflow runs two agents at a time on this 4-CPU container, so its 20 check batches would have taken about ten rounds. Eighteen background checkers took batches 03 to 20 at once, writing the same progress and verdict files as the workflow's checkers, which take the results when they reach each batch.
+- **2026-10-26 ~02:16 UTC: usage 53% weekly; the 5-hour session limit at 90% (resets about 03:40 UTC). Ready for the limit.**
+  - **The weekly reset time is now known:** Friday 2026-10-30, 15:00 UTC-4, so 19:00 UTC.
+  - **If the session limit runs out first,** model calls fail and every running turn and workflow agent stops. Nothing on disk is lost:
+    - commits and PR branches are pushed, and merges and pushes are atomic;
+    - CI runs on GitHub regardless;
+    - every workflow agent keeps a progress file (the SAVE rule);
+    - every session keeps its status file.
+  - **Recovery is armed, so nothing needs a person:**
+    - this session wakes at 03:45 UTC (send_later trig_01DnPQir4gPp2sMxn3vhqUdA) to check every workflow and session and resume what stopped;
+    - each parallel session was told to schedule its own send_later at 03:50 UTC to resume its workflows from their progress files.
+  - **Priority sent to all eight sessions:** finish the current PR before any follow-on. This session says when to stop starting new work (~85% weekly).
+- **2026-10-26 ~03:50 UTC: the 5-hour session limit hit at about 02:20 to 02:48 UTC, and reset at 03:40. Everything resumed, nothing lost.**
+  - **What stopped:** every session's turn and workflow agents, here and in all eight parallel sessions, with rate_limit 429. Here:
+    - the UX workflow wf_b56fe7b4-652 ended with 19 checkers, the retake and the manifest failed;
+    - 16 of the 18 background checkers stopped part-way.
+  - **What held:**
+    - every progress file: 706 of the 852 images were already judged, and batches 01, 10 and 20 were complete;
+    - every pushed branch and open PR (#47, #49, #50 and #111's), and CI on GitHub;
+    - the screen tour's PNGs and shots.json.
+  - **The container also restarted again** (PostgreSQL down). `tools/setup-container.sh` was re-run and printed OK.
+  - **Resumed at ~03:48 UTC:**
+    - seven fresh checkers judge only the 146 unjudged images, reading the progress files and writing each batch's verify file;
+    - the retake and the manifest run next, as a small workflow;
+    - all eight sessions were sent a resume message (their own 03:50 send_laters are a backup).
+  - **Usage:** this session's rate-limit record now shows the seven-day limit at "allowed_warning", resetting at 1793386800 (Friday 2026-10-30 19:00 UTC, as recorded). The weekly figure is near the line, so new starts stop at ~85% as planned.
+  - **Fixed:** the ops push retry loop. `cmd | tail -1 && break` read tail's exit status, so a rejected push looked like success and was never retried. The pushes were checked: the branch is level with origin. `scratchpad/push-ops.sh` now checks git's own exit status.
