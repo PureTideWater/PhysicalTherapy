@@ -236,5 +236,14 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
   - **What Lane B does now:** the no-migration PR (ADR 0075; test-matrix MAP-06 to MAP-09 and PRC-29 to PRC-31). MAP-10 stays reserved for the Lane B follow-up after #42 and this migration merge.
   - Status: `approval-summaries/lane-b-unmapped-plan-status.md`.
 
+- **2026-10-26, from Lane B's #38 (every figure explained in words, merged as #52, 3486f75): four proposals for Lane A, none needed for #52.**
+  - **Migrations:**
+    - a `words_changed` export failure code;
+    - the stored words version the approver saw (columns on `packet_version`);
+    - optionally, a stored worksheet.
+  - **A #42 file:** a refused-job record in `apps/worker/src/worker.ts`.
+  - **A code-owned PR:** four payment-engine-reviewer checklist lines.
+  - Details: `approval-summaries/lane-b-figures-in-words-status.md`. #48's narrative draft is designed (`designs/lane-b-narrative-draft.md`, ADR 0076, CAS-35 to CAS-37), not started.
+
 ## Delegations from the founder to the co-founder
 - **2026-10-25, Tyler Williams (the founder):** The co-founder may answer for me every decision on Lane B's work: product, cost, wording, engineering and security trade-offs, and which no-migration items Lane B takes. These stay mine: approving docs/product/domain-model.md, release tags, the owner-admin repository settings (I apply them, or I grant the co-founder admin), and sign-off of legal text before it goes to counsel.
