@@ -1,0 +1,4040 @@
+[
+ {
+  "order": 1,
+  "branch": "co-001/ux-forms",
+  "title": "Forms keep what the person typed, and name the refused field",
+  "findings": [
+   "UX-001",
+   "UX-074",
+   "UX-081"
+  ],
+  "cids": [
+   "C-001",
+   "C-013",
+   "C-022"
+  ],
+  "parts": {
+   "C-001": "all",
+   "C-013": "all",
+   "C-022": "ActionForm's busy button and focus"
+  },
+  "files": [
+   "apps/web/src/components/action-form.tsx",
+   "apps/web/src/components/action-form.test.tsx (from PR #50)",
+   "apps/web/e2e/triage.spec.ts",
+   "apps/web/e2e/sign-in.spec.ts",
+   "apps/web/src/components/field.tsx",
+   "packages/ui/src/styles.css",
+   "apps/web/src/lib/http/next.ts",
+   "apps/web/src/lib/http/invoke.ts",
+   "apps/web/src/components/packets/version-form.tsx",
+   "apps/web/src/components/packets/export-status.tsx",
+   "apps/web/src/components/screening/split-form.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx",
+   "apps/web/src/app/console/status/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "PR #50 (adds `refreshOnError` to `action-form.tsx`: the one merged second keeps both)",
+   "PR #50 also changes `components/action-form.test.tsx`, `lib/http/next.ts` (LANES.md rule 6)",
+   "PR #51 (open) also changes `app/p/[practiceId]/cases/[caseId]/page.tsx`, `app/p/[practiceId]/reconciliation/page.tsx`, `app/p/[practiceId]/abstraction/ledger/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 (open) also changes `app/p/[practiceId]/lines/[lineId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `action-form.test.tsx` (a refused state keeps an input, a select, a text area and a check box; clears only password and one-time-code inputs; the summary names the label; focus moves to the summary)",
+   "e2e: `triage.spec.ts` (a refused write-off keeps its reason), `sign-in.spec.ts` (the email survives a refusal)",
+   "axe: the refused state of `/p/[practiceId]/cases/[caseId]`, `/console/models` and `/request-audit`"
+  ],
+  "leavesOut": "Nothing to Lane A or the founder.",
+  "inFlight": "Claimed 2026-10-26 04:35 UTC, its own session; no pull request yet",
+  "waitsOn": ""
+ },
+ {
+  "order": 2,
+  "branch": "co-001/ux-suspended-standing",
+  "title": "A suspended organization never reads \"In good standing\"",
+  "findings": [
+   "UX-004"
+  ],
+  "cids": [
+   "C-010"
+  ],
+  "parts": {
+   "C-010": "one standing in `billing.ts`, the badge and the next step"
+  },
+  "files": [
+   "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+   "apps/web/src/lib/routes/billing.ts"
+  ],
+  "size": "S, about 80 lines",
+  "dependsOn": [],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the standing helper in `billing.ts` (suspended and closed never yield good standing)",
+   "e2e: `billing.spec.ts` (a suspended organization shows \"Suspended by PaidWhole\" and the support link)",
+   "copy: `pnpm lint:copy`"
+  ],
+  "leavesOut": "Lane A: the stored suspension reason, note and time, so the customer's page can say why and what to do next, and the console's reason form (`lib/routes/console.ts`, a #42 file).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 3,
+  "branch": "co-001/ux-table-scroll",
+  "title": "Every table scrolls by keyboard and shows that it scrolls, and phones get one stacked-row layout",
+  "findings": [
+   "UX-011",
+   "UX-079"
+  ],
+  "cids": [
+   "C-002",
+   "C-043"
+  ],
+  "parts": {
+   "C-002": "non42",
+   "C-043": "part (a): the scroll cue in ScrollTable, and the one stacked-row primitive that parts (b) and (c), UX-005 and UX-078 use"
+  },
+  "files": [
+   "apps/web/src/components/scroll-table.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/app/p/[practiceId]/anomalies/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/packet-reviews/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/pricing/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/[contractId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/page.tsx",
+   "apps/web/src/app/p/[practiceId]/remittances/page.tsx",
+   "apps/web/src/app/p/[practiceId]/remittances/[remittanceId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/roi/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/access-log/page.tsx",
+   "apps/web/src/components/contracts/review.tsx",
+   "apps/web/src/components/contracts/display.tsx",
+   "apps/web/src/components/reports/display.tsx",
+   "apps/web/src/components/reports/documents.tsx",
+   "apps/web/src/components/reconciliation/template-mapper.tsx",
+   "apps/web/src/components/pricing/diff.tsx",
+   "apps/web/src/components/uploads/receipts.tsx",
+   "apps/web/src/components/releases/note.tsx",
+   "apps/web/src/components/screening/coverage.tsx",
+   "apps/web/src/app/console/screening/page.tsx",
+   "apps/web/src/app/console/rule-releases/page.tsx",
+   "apps/web/src/app/console/prospects/page.tsx",
+   "apps/web/src/app/console/specialist-queue/page.tsx",
+   "apps/web/src/app/console/tickets/page.tsx",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/app/console/terms/page.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+   "apps/web/e2e/a11y.ts",
+   "apps/web/src/components/stacked-rows.tsx (new)",
+   "apps/web/src/app/brand.css"
+  ],
+  "size": "M, about 300 lines (one component, then a wrapper at each of about 35 sites)",
+  "dependsOn": [
+   "PRs #49, #50 and #51 touch some of the same pages: the one merged second keeps both",
+   "PR #49 also changes `app/console/rule-releases/page.tsx` (LANES.md rule 6)",
+   "PR #50 also changes `app/p/[practiceId]/pricing-runs/[runId]/page.tsx`, `components/pricing/diff.tsx` (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/page.tsx`, `app/p/[practiceId]/abstraction/ledger/page.tsx`, `app/p/[practiceId]/reconciliation/page.tsx`, `components/reports/display.tsx` (LANES.md rule 6)",
+   "PR #52 (open) also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `scroll-table.test.tsx` (named region, tab stop rendered on the server, dropped only while the table fits)",
+   "e2e: `layout-1280.spec.ts` and an `atPhoneWidth` pass over the changed routes (no page wider than the viewport)",
+   "axe: every changed route at 390 px",
+   "unit: `stacked-rows.test.tsx` (each row a heading, a definition list and its actions; the brand's expected, paid, short order kept)"
+  ],
+  "leavesOut": "The three #42 pages (users, console support, support access) take the same wrapper in UX PRs 74, 75 and 76.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 4,
+  "branch": "co-001/ux-screening-result-tables",
+  "title": "The screening result reads on a phone, and its rows say what they are",
+  "findings": [
+   "UX-005",
+   "UX-040",
+   "UX-042",
+   "UX-043",
+   "UX-132",
+   "UX-206"
+  ],
+  "cids": [
+   "C-008",
+   "C-107",
+   "C-118",
+   "C-119",
+   "C-061",
+   "C-203"
+  ],
+  "parts": {
+   "C-008": "all",
+   "C-107": "all",
+   "C-118": "all",
+   "C-119": "all",
+   "C-061": "all",
+   "C-203": "all"
+  },
+  "files": [
+   "apps/web/src/components/screening/anomalies.tsx",
+   "apps/web/src/components/screening/coverage.tsx",
+   "apps/web/e2e/screening-phone.spec.ts (new)",
+   "apps/web/src/components/screening/result.test.tsx",
+   "apps/web/src/lib/screening/labels.ts",
+   "apps/web/src/components/screening/result-summary.tsx"
+  ],
+  "size": "M, about 350 lines",
+  "dependsOn": [
+   "UX PR 3 (`ux-table-scroll`: `ScrollTable` and the stacked-row primitive)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `result.test.tsx` (no screening component uses the short or whole tone; stacked rows hold every column; the count sentence for 0, 1 and 2 anomalies)",
+   "e2e: `screening-phone.spec.ts` (new; it calls `e2e/screening.ts`, which #42 changes, so the PR merged second updates it; at 390 px every cell of the three tables is in view, no page scroll sideways)",
+   "axe: `/screening/results/[resultId]` at 1280 and 390 px",
+   "copy: the screening copy rules (no owed, underpaid or recovered)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 5,
+  "branch": "co-001/ux-download-refusals",
+  "title": "A refused download comes back to its form, never a JSON page",
+  "findings": [
+   "UX-010"
+  ],
+  "cids": [
+   "C-004"
+  ],
+  "parts": {
+   "C-004": "all"
+  },
+  "files": [
+   "apps/web/src/lib/http/handler.ts",
+   "apps/web/src/app/p/[practiceId]/coverage/page.tsx",
+   "apps/web/src/lib/routes/coverage.ts",
+   "apps/web/e2e/onboarding.spec.ts",
+   "apps/web/src/lib/http/route.ts",
+   "apps/web/src/lib/http/invoke.ts",
+   "apps/web/src/lib/http/download-refusal.test.ts (new)"
+  ],
+  "size": "M, about 180 lines",
+  "dependsOn": [
+   "PR #49 changes `coverage/page.tsx` and `lib/routes/coverage.ts`: the one merged second keeps both"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `download-refusal.test.ts` (new; `downloadHandler`'s tests in `http.test.ts` are a #42 file): a navigation refusal answers 303 to its form page, an API refusal as today",
+   "e2e: `onboarding.spec.ts` (a bad code on the fee-schedule letter returns to Coverage with the field marked)",
+   "axe: `/p/[practiceId]/coverage` in the refused state"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 6,
+  "branch": "co-001/ux-sign-in-time",
+  "title": "Each sign-in step says how long it stays open, warns before it closes, and starts again with the email kept",
+  "findings": [
+   "UX-012",
+   "UX-128"
+  ],
+  "cids": [
+   "C-007",
+   "C-042"
+  ],
+  "parts": {
+   "C-007": "now: the limit that binds today (3 minutes), the warning, Start again and the email kept, from one constant (no Cognito change)",
+   "C-042": "the step marker on the invited path"
+  },
+  "files": [
+   "apps/web/src/lib/auth/pending.ts",
+   "apps/web/src/lib/routes/sign-in.ts",
+   "apps/web/src/app/sign-in/page.tsx",
+   "apps/web/src/app/sign-in/enroll/page.tsx",
+   "apps/web/src/app/sign-in/mfa/page.tsx",
+   "apps/web/src/app/sign-in/new-password/page.tsx",
+   "apps/web/src/components/step-timer.tsx (new)"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `step-timer.test.tsx` (the limit is one constant, the shorter of Cognito's 3 minutes and the pending cookie; the polite warning at one minute left)",
+   "e2e: `sign-in.spec.ts` (an expired step returns to `/sign-in` with the email filled; the email never in the URL)",
+   "axe: `/sign-in/enroll` and `/sign-in/mfa` with the warning shown"
+  ],
+  "leavesOut": "The 15-minute Cognito session and the pending cookie (`infra/lib/constructs/identity.ts` and `infra/test/identity.test.ts`, #42 files) land together in UX PR 66. The warning uses today's `Alert`, which UX PR 14 later replaces. The security reviewer confirms the lengths at design.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 7,
+  "branch": "co-001/ux-sign-in-recovery",
+  "title": "Forgot your password: a way back in from the sign-in page",
+  "findings": [
+   "UX-006",
+   "UX-066"
+  ],
+  "cids": [
+   "C-005",
+   "C-075"
+  ],
+  "parts": {
+   "C-005": "parts (1), (5) and (2)'s line: the password reset, the help line, and the lost-factor line on the code and key steps",
+   "C-075": "all"
+  },
+  "files": [
+   "apps/web/src/lib/routes/sign-in.ts",
+   "apps/web/src/app/sign-in/notice.tsx",
+   "apps/web/src/app/sign-in/page.tsx",
+   "apps/web/src/components/hardware-key.tsx",
+   "apps/web/src/app/sign-in/mfa/page.tsx",
+   "apps/web/src/app/sign-in/hardware-key/page.tsx",
+   "apps/web/src/app/sign-in/forgot-password/page.tsx (new)",
+   "apps/web/src/lib/auth/dev-store.ts",
+   "apps/web/src/lib/auth/provider.ts",
+   "apps/web/src/lib/auth/cognito-provider.ts",
+   "apps/web/src/lib/auth/dev-provider.ts",
+   "apps/web/src/lib/auth/sign-in.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "UX PR 1 (`ux-forms`): the reset form keeps the email after a refusal"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the reset route answers alike for a known and an unknown address, uses the `sign_in` bucket (`rate-limit.ts:39`) and records `password_reset_requested` and `password_reset_completed`",
+   "e2e: `sign-in.spec.ts` (a forgotten password is reset and the second factor is still asked)",
+   "axe: `/sign-in/forgot-password` and `/sign-in`",
+   "copy: `pnpm lint:copy`"
+  ],
+  "leavesOut": "An ADR and the security reviewer at design. No IAM change: Cognito's `ForgotPassword` and `ConfirmForgotPassword` are public client calls.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 8,
+  "branch": "co-001/ux-account-security",
+  "title": "A person manages their own sign-in: password, authenticator and a second key, after signing in again",
+  "findings": [
+   "UX-006"
+  ],
+  "cids": [
+   "C-005"
+  ],
+  "parts": {
+   "C-005": "part (4): the Sign-in and security page, with its re-authentication step"
+  },
+  "files": [
+   "apps/web/src/app/account/security/page.tsx (new)",
+   "apps/web/src/lib/routes/account.ts",
+   "apps/web/src/app/account/devices/page.tsx",
+   "apps/web/src/lib/auth/provider.ts",
+   "apps/web/src/lib/auth/cognito-provider.ts",
+   "apps/web/src/lib/auth/dev-provider.ts",
+   "apps/web/src/lib/auth/sign-in.ts"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "UX PR 7 (`ux-sign-in-recovery`: the provider calls it adds)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: each change needs a fresh re-authentication (the password and a code, through the provider) and uses that token for the change alone; the new methods in `cognito-provider.ts` and `dev-provider.ts`",
+   "e2e: `sign-in.spec.ts` (change the password, then sign in with it; a staff member adds a second key)",
+   "axe: `/account/security`"
+  ],
+  "leavesOut": "The account menu's link to the new page (`shell.tsx`, a #42 file) lands in UX PR 67; until then `/account/devices` links to it. The console reset of a lost authenticator lands in UX PR 65, after #42. The Locked badge on Users and roles lands in UX PR 75. An ADR and the security reviewer at design.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 9,
+  "branch": "co-001/ux-home-figures",
+  "title": "One actionable figure on the home and the ROI statement, and the Recovered tile names its period",
+  "findings": [
+   "UX-003",
+   "UX-015",
+   "UX-140"
+  ],
+  "cids": [
+   "C-009",
+   "C-048",
+   "C-183"
+  ],
+  "parts": {
+   "C-009": "all",
+   "C-048": "all",
+   "C-183": "all"
+  },
+  "files": [
+   "packages/triage/src/actionable-sql.ts (new)",
+   "packages/triage/src/index.ts",
+   "apps/web/src/lib/dashboard/queries.ts",
+   "apps/web/src/lib/triage/queries.ts",
+   "apps/worker/src/reconcile/statements.ts",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/components/reconciliation/display.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx",
+   "apps/web/src/components/format.ts"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after PR #51 merges (it changes the home page and the Payer approved note)",
+   "PR #49 (open) also changes `packages/triage/src/index.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #50 (open) also changes `components/format.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/page.tsx`, `components/reconciliation/display.tsx`, `app/p/[practiceId]/cases/[caseId]/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the home tile, Cases and the statement agree on one fixture (a db test); `counted()` on the tile",
+   "e2e: `reconciliation.spec.ts` (the home and the statement show the same actionable amount)",
+   "copy: `pnpm lint:copy` (every recovered carries its proof label)",
+   "unit: LED-11 passes unchanged",
+   "unit: the Recovered tile's period through one `quarter()` helper beside `utc()` in `components/format.ts`, so the date style changes in one place"
+  ],
+  "leavesOut": "The payment-engine review, and the adversarial reviewer's check that `packages/ledger` is untouched: the change is in `statements.ts`'s query and `@tp/triage`. It lands before the first production deploy; if later, the statement page dates the change by `generated_at`. Lane A's PR 11 later refreshes the stored column; the live predicate stays the one definition.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 10,
+  "branch": "co-001/ux-payer-response",
+  "title": "The payer's letter is uploaded inside 'Log a payer response', and its answer starts unchosen",
+  "findings": [
+   "UX-035",
+   "UX-007"
+  ],
+  "cids": [
+   "C-065",
+   "C-011"
+  ],
+  "parts": {
+   "C-065": "all",
+   "C-011": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/submissions/page.tsx",
+   "apps/web/src/lib/packets/submissions.ts",
+   "apps/web/src/lib/contracts/contract-queries.ts",
+   "apps/web/src/lib/routes/contracts.ts",
+   "apps/web/src/components/uploads/uploader.tsx",
+   "apps/web/e2e/packets.spec.ts",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/lib/routes/triage.ts"
+  ],
+  "size": "M, about 320 lines",
+  "dependsOn": [
+   "after PR #51 merges (it changes all three pages)",
+   "UX PR 1 (`ux-forms`)",
+   "PR #51 also changes `app/p/[practiceId]/cases/[caseId]/submissions/page.tsx`, `apps/web/e2e/packets.spec.ts`, `app/p/[practiceId]/cases/[caseId]/page.tsx`, `lib/routes/triage.ts` (LANES.md rule 6)",
+   "PR #52 (open) also changes `apps/web/e2e/packets.spec.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: a payer letter that a payer response links stays out of the tagging and abstraction lists, and a payer's terms letter stays in; the write-off route refuses Window passed while the window is open",
+   "e2e: `packets.spec.ts` (log a partial answer with its letter uploaded in the form; the typed fields survive the scan)",
+   "axe: `/p/[practiceId]/cases/[caseId]/submissions`"
+  ],
+  "leavesOut": "Lane A: the same exclusion in `console_contract_queue()` (a SECURITY DEFINER function, so a migration). `uploader.tsx` changes here only to pass the kind; UX PRs 47, 48 and 49 build the uploader's behaviour on it.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 11,
+  "branch": "co-001/ux-packet-queues",
+  "title": "A packet waiting for someone shows on their home and on Cases",
+  "findings": [
+   "UX-008"
+  ],
+  "cids": [
+   "C-012"
+  ],
+  "parts": {
+   "C-012": "the home queues, the Cases filters and the Packet column"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/lib/dashboard/queries.ts",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/lib/cases/workbench.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after PR #51 merges (home page)",
+   "PR #51 also changes `app/p/[practiceId]/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit (db): each queue counts the right versions, excluding the drafter for approval",
+   "e2e: `packets.spec.ts` (the approver sees the waiting packet on the home and opens it)",
+   "axe: `/p/[practiceId]` and `/p/[practiceId]/cases` with the filters set"
+  ],
+  "leavesOut": "Lane A: the notification kinds (approval requested, approved, export attested), which widen `notification_kind_check`; their display is in #42 files.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 12,
+  "branch": "co-001/ux-case-summary",
+  "title": "The case says what was asked, what the payer accepted and what is left",
+  "findings": [
+   "UX-020",
+   "UX-024",
+   "UX-023",
+   "UX-033",
+   "UX-190"
+  ],
+  "cids": [
+   "C-124",
+   "C-084",
+   "C-082",
+   "C-092",
+   "C-166"
+  ],
+  "parts": {
+   "C-124": "all",
+   "C-084": "all",
+   "C-082": "all",
+   "C-092": "all",
+   "C-166": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/lib/cases/workbench.ts",
+   "apps/web/src/lib/packets/submissions.ts",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/components/triage/display.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/lib/dashboard/queries.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after PR #51 merges (case summary)",
+   "after PR #52 merges (packet subtitle)",
+   "PR #51 also changes `app/p/[practiceId]/cases/[caseId]/page.tsx`, `app/p/[practiceId]/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the summary's figures come from code on a partial-answer fixture; a reopened case words its cause",
+   "e2e: `packets.spec.ts` (after a partial answer the case shows asked, accepted and not accepted)",
+   "copy: `pnpm lint:copy`",
+   "unit: the dispute figures come from one helper that Lane A's PR 13 can import"
+  ],
+  "leavesOut": "Lane A: the case state vocabulary (audit #89, Lane A's PRs 8, 10 and 13) replaces 'Resolved' later. Lane A's PR 13 reuses this PR's dispute figures (asked, accepted, not accepted, from one helper in `lib/cases/workbench.ts`) on its Overview tab, with the stage labels it keeps (section 5).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 13,
+  "branch": "co-001/ux-ledger-corrections",
+  "title": "Ledger corrections list every shortfall and number entries per practice",
+  "findings": [
+   "UX-039",
+   "UX-019",
+   "UX-078",
+   "UX-162"
+  ],
+  "cids": [
+   "C-086",
+   "C-085",
+   "C-034",
+   "C-165"
+  ],
+  "parts": {
+   "C-086": "all",
+   "C-085": "all",
+   "C-034": "the ledger's AdjustForm out of its cell",
+   "C-165": "all"
+  },
+  "files": [
+   "apps/web/src/lib/routes/specialist.ts",
+   "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx",
+   "apps/web/src/lib/reconciliation/queries.ts",
+   "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after PR #51 merges (the ledger page, its queries and `shortfalls.ts`)",
+   "PR #51 also changes `app/p/[practiceId]/abstraction/ledger/page.tsx`, `lib/reconciliation/queries.ts`, `lib/routes/reconciliation-routes.db.test.ts`, `app/p/[practiceId]/reconciliation/page.tsx`, `app/p/[practiceId]/cases/[caseId]/page.tsx`, `app/p/[practiceId]/page.tsx` (LANES.md rule 6)",
+   "PR #52 (open) also changes `app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit (db): `reconciliation-routes.db.test.ts` (shortfalls past the 25th case line; per-practice entry numbers have no gaps)",
+   "e2e: the ledger page at 390 px"
+  ],
+  "leavesOut": "The adversarial reviewer confirms the read side only: `approvalShortfalls` called unchanged, no `packages/ledger` change.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 14,
+  "branch": "co-001/ux-notice",
+  "title": "One Notice with four kinds, told apart by surface, icon, words and role",
+  "findings": [
+   "UX-082"
+  ],
+  "cids": [
+   "C-021"
+  ],
+  "parts": {
+   "C-021": "non42"
+  },
+  "files": [
+   "packages/ui/src/components/alert.tsx",
+   "packages/ui/src/components/components.test.tsx",
+   "apps/web/src/components/action-form.tsx",
+   "apps/web/src/components/packets/display.tsx",
+   "apps/web/src/components/contracts/review.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/regulations/page.tsx",
+   "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "UX PR 1 (`ux-forms`: ActionForm's refusal)",
+   "PR #50 (open) also changes `components/action-form.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 (open) also changes `app/p/[practiceId]/cases/[caseId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 (open) also changes `components/packets/display.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `components.test.tsx` (each kind has its role: note, status, alert only for danger; no status colour)",
+   "e2e: `brand.spec.ts` baselines for the four kinds",
+   "axe: the routes whose notices change"
+  ],
+  "leavesOut": "The screening page and `upload-form.tsx` (#42 files) take the Notice in UX PR 84. No warning hue: a new colour would be the brand owner's.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 15,
+  "branch": "co-001/ux-notice-once",
+  "title": "A success notice shows once, from a flash bound to the write, never from the URL",
+  "findings": [
+   "UX-013"
+  ],
+  "cids": [
+   "C-018"
+  ],
+  "parts": {
+   "C-018": "non42"
+  },
+  "files": [
+   "apps/web/src/lib/http/next.ts",
+   "apps/web/src/lib/http/route.ts",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/agreements/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/defaults/page.tsx",
+   "apps/web/src/lib/routes/compliance.ts",
+   "apps/web/src/lib/routes/console-models.ts",
+   "apps/web/src/app/account/notifications/page.tsx"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "UX PR 14 (`ux-notice`)",
+   "PR #50 (open) also changes `lib/http/next.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 (open) also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the flash cookie is signed, HttpOnly, path-scoped, holds only a code and an opaque id, and lives seconds",
+   "e2e: `packets.spec.ts` (Back and refresh after Request approval show no stale notice)",
+   "axe: a page with its success notice shown"
+  ],
+  "leavesOut": "The notices set in `lib/routes/settings.ts`, `console.ts` and `screening/routes.ts` and on the users page (#42 files) follow in UX PRs 75, 78, 83 and 85.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 16,
+  "branch": "co-001/ux-field-hints",
+  "title": "Every field states the format it checks, and custom forms tie their errors to the field",
+  "findings": [
+   "UX-077",
+   "UX-087",
+   "UX-090"
+  ],
+  "cids": [
+   "C-039",
+   "C-036",
+   "C-071"
+  ],
+  "parts": {
+   "C-039": "non42",
+   "C-036": "the packet reference search and the template sample",
+   "C-071": "all"
+  },
+  "files": [
+   "apps/web/src/components/field.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/page.tsx",
+   "apps/web/src/app/p/[practiceId]/remittances/page.tsx",
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/monthly/page.tsx",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/app/support/page.tsx",
+   "apps/web/src/app/brand.css",
+   "apps/web/src/components/packets/reference-search.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/by-reference/page.tsx",
+   "apps/web/src/components/reconciliation/template-mapper.tsx"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "UX PR 1 (`ux-forms`)",
+   "PR #50 (open) also changes `app/p/[practiceId]/pricing-runs/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `field.test.tsx` (the hint is in `aria-describedby`, the error first)",
+   "axe: `/p/[practiceId]/pricing-runs`, `/p/[practiceId]/reports/monthly`, `/support`, `/p/[practiceId]/cases/by-reference` refused"
+  ],
+  "leavesOut": "The console support page's Ticket field (#42) lands in UX PR 74, the screening file field in UX PR 84.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 17,
+  "branch": "co-001/ux-route-messages",
+  "title": "Every refusal says what to do, in words the role can act on",
+  "findings": [
+   "UX-050",
+   "UX-064"
+  ],
+  "cids": [
+   "C-088",
+   "C-038"
+  ],
+  "parts": {
+   "C-088": "non42",
+   "C-038": "all"
+  },
+  "files": [
+   "apps/web/src/lib/routes/reconciliation.ts",
+   "packages/contracts/src/services.ts",
+   "apps/web/src/lib/routes/pricing.ts",
+   "apps/web/src/lib/routes/roi.ts",
+   "apps/web/src/lib/routes/schemas.ts",
+   "packages/triage/src/cases.ts",
+   "apps/web/src/lib/routes/support.ts",
+   "apps/web/src/lib/routes/onboarding-routes.db.test.ts"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "UX PR 1 (`ux-forms`)",
+   "PR #50 (changes `lib/routes/pricing.ts`)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the Zod error map turns each default code into words; each route message named here has a test",
+   "unit (db): `onboarding-routes.db.test.ts` (an incident with no component ticked gets the route's own message)",
+   "copy: `pnpm lint:copy`"
+  ],
+  "leavesOut": "The two messages in `lib/routes/settings.ts` (#42) land in UX PR 83.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 18,
+  "branch": "co-001/ux-stat-tile",
+  "title": "One figure tile for every headline, in the brand's type",
+  "findings": [
+   "UX-104",
+   "UX-114",
+   "UX-165"
+  ],
+  "cids": [
+   "C-057",
+   "C-106",
+   "C-147"
+  ],
+  "parts": {
+   "C-057": "all",
+   "C-106": "non42",
+   "C-147": "all"
+  },
+  "files": [
+   "apps/web/src/components/brand/stat-tile.tsx (new)",
+   "apps/web/src/components/reports/display.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/components/screening/result-summary.tsx",
+   "apps/web/src/app/console/specialist-queue/page.tsx",
+   "apps/web/src/components/reconciliation/display.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/compare/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/e2e/brand.spec.ts",
+   "apps/web/src/components/remittances/display.tsx",
+   "apps/web/src/components/reports/roi.tsx",
+   "apps/web/src/app/type-scale.test.ts"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after PR #51 merges (reports display, reconciliation display, home, reconciliation page)",
+   "PR #50 (open) also changes `app/p/[practiceId]/pricing-runs/compare/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 also changes `components/reports/display.tsx`, `app/p/[practiceId]/page.tsx`, `components/reconciliation/display.tsx`, `app/p/[practiceId]/reconciliation/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `stat-tile.test.tsx` (a `<dl>` with label, value and note)",
+   "unit: `type-scale.test.ts` fails on `font-mono` beside `font-semibold` or `font-bold`",
+   "e2e: `brand.spec.ts` tile-row baseline at 1280 and 390 px"
+  ],
+  "leavesOut": "The monitoring twin of the mono weight (`components/monitoring/display.tsx`, #42) lands in UX PR 81.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 19,
+  "branch": "co-001/ux-labels",
+  "title": "Stored codes are shown in words, from one label module",
+  "findings": [
+   "UX-100",
+   "UX-166"
+  ],
+  "cids": [
+   "C-017",
+   "C-170"
+  ],
+  "parts": {
+   "C-017": "non42",
+   "C-170": "the console page"
+  },
+  "files": [
+   "apps/web/src/lib/copy/labels.ts (new)",
+   "apps/web/src/lib/copy/words.ts",
+   "apps/web/src/app/p/[practiceId]/settings/access-log/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+   "apps/web/src/components/releases/note.tsx",
+   "apps/web/src/components/reports/display.tsx",
+   "apps/worker/src/report/html.ts",
+   "apps/web/src/app/console/prospects/page.tsx",
+   "apps/web/src/app/console/tickets/page.tsx",
+   "apps/web/src/app/console/organizations/page.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/app/console/status/page.tsx"
+  ],
+  "size": "M, about 260 lines",
+  "dependsOn": [
+   "PRs #51 (reports display, report HTML) and #50 (releases page): the one merged second keeps both",
+   "PR #49 (open) also changes `worker/report/html.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/page.tsx`, `components/reports/display.tsx`, `worker/report/html.ts` (LANES.md rule 6)",
+   "PR #52 (open) also changes `lib/copy/words.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `labels.test.ts` (every stored enum has a label; the fallback for an unmapped code)",
+   "copy: a render test that no listed page prints a raw enum"
+  ],
+  "leavesOut": "The support-access, access-log and users pages (#42) take the labels in UX PRs 75, 76 and 77.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 20,
+  "branch": "co-001/ux-sha256",
+  "title": "A hash is shown whole, wraps evenly, and copies with one button",
+  "findings": [
+   "UX-075",
+   "UX-128"
+  ],
+  "cids": [
+   "C-016",
+   "C-042"
+  ],
+  "parts": {
+   "C-016": "all",
+   "C-042": "the copy button only"
+  },
+  "files": [
+   "apps/web/src/components/sha256.tsx (new)",
+   "apps/web/src/components/packets/display.tsx",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/[reportId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/[reportId]/review/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/documents/[documentId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/packet-reviews/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/app/console/rule-releases/page.tsx",
+   "apps/web/src/app/console/terms/page.tsx",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/app/terms/page.tsx",
+   "apps/web/src/components/copy-button.tsx (new)",
+   "apps/web/src/app/sign-in/enroll/page.tsx"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "PR #52 rewrites the packet trace cells: the one merged second keeps both",
+   "PR #49 (open) also changes `app/console/rule-releases/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 (open) also changes `app/p/[practiceId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 also changes `components/packets/display.tsx`, `app/p/[practiceId]/lines/[lineId]/page.tsx`, `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `sha256.test.tsx` (all 64 characters rendered, 16 to a line; the copy button's name)",
+   "e2e: an `atPhoneWidth` pass over `/p/[practiceId]/reports/roi/[statementId]` and `/p/[practiceId]/lines/[lineId]`",
+   "axe: those routes at 390 px"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 21,
+  "branch": "co-001/ux-status-chip",
+  "title": "One chip for every state, and danger only for failures",
+  "findings": [
+   "UX-018",
+   "UX-106"
+  ],
+  "cids": [
+   "C-104",
+   "C-105"
+  ],
+  "parts": {
+   "C-104": "all",
+   "C-105": "non42"
+  },
+  "files": [
+   "packages/ui/src/components/badge.tsx",
+   "apps/web/src/components/status.tsx",
+   "apps/web/src/app/status/page.tsx",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/components/contracts/review.tsx",
+   "apps/web/src/components/uploads/receipts.tsx",
+   "apps/web/src/app/account/devices/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/agreements/page.tsx",
+   "apps/web/src/components/contracts/display.tsx"
+  ],
+  "size": "M, about 260 lines",
+  "dependsOn": [
+   "PR #51 (open) also changes `app/p/[practiceId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: Badge `destructive` and StatusChip `danger` appear only for failures and refusals; Badge `secondary` or `outline` never beside a state",
+   "e2e: `brand.spec.ts` chip baselines"
+  ],
+  "leavesOut": "The console support page (#42) takes the chip in UX PR 74.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 22,
+  "branch": "co-001/ux-page-header",
+  "title": "One page header: breadcrumb, title, lede and an actions slot",
+  "findings": [
+   "UX-157",
+   "UX-158"
+  ],
+  "cids": [
+   "C-192",
+   "C-144"
+  ],
+  "parts": {
+   "C-192": "non42",
+   "C-144": "all"
+  },
+  "files": [
+   "apps/web/src/components/page-header.tsx (new)",
+   "apps/web/src/app/account/devices/page.tsx",
+   "apps/web/src/app/account/notifications/page.tsx",
+   "apps/web/src/app/settings/billing/page.tsx",
+   "apps/web/src/app/status/page.tsx",
+   "apps/web/src/app/maintenance/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/access-log/page.tsx",
+   "apps/web/src/app/type-scale.test.ts",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/submissions/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/versions/[versionId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/[planId]/page.tsx",
+   "apps/web/src/app/console/practices/[practiceId]/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "PR #52 and the narrative-draft PR change the packet pages; PR #51 the submissions page: coordinate",
+   "PR #51 also changes `app/p/[practiceId]/cases/[caseId]/submissions/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx`, `app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `type-scale.test.ts` (a page's lede must be the PageHeader's)",
+   "e2e: `brand.spec.ts` header baseline at 1280 and 390 px",
+   "axe: the detail pages whose titles split"
+  ],
+  "leavesOut": "Moving 'Help with this screen' out of the shell (`shell.tsx`, #42) lands in UX PR 69. The Verified seal (audit #46, queued) lands first; this PR moves it into the header's right slot.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 23,
+  "branch": "co-001/ux-buttons",
+  "title": "Busy buttons keep focus and say what is happening; destructive actions follow one rule",
+  "findings": [
+   "UX-081",
+   "UX-155"
+  ],
+  "cids": [
+   "C-022",
+   "C-196"
+  ],
+  "parts": {
+   "C-022": "the hardware-key, packet, Stripe and pager buttons",
+   "C-196": "non42"
+  },
+  "files": [
+   "packages/ui/src/components/button.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/app/account/devices/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/versions/[versionId]/page.tsx",
+   "apps/web/src/components/packets/version-form.tsx",
+   "apps/web/src/components/packets/export-status.tsx",
+   "apps/web/src/components/hardware-key.tsx",
+   "apps/web/src/components/billing/stripe-payment-method.tsx",
+   "apps/web/src/components/uploads/receipts.tsx"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "UX PR 1 (`ux-forms`)",
+   "PR #52 and the narrative-draft PR (packet buttons)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `button.test.tsx` (busy sets `aria-disabled`, ignores activation, keeps focus; the status line is polite)",
+   "unit: a test that removing access or a record, reversing one or writing money off takes `destructive`"
+  ],
+  "leavesOut": "The console support page's End now (#42) lands in UX PR 74.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 24,
+  "branch": "co-001/ux-headings-regions",
+  "title": "Headings follow the page, and regions are named by their titles",
+  "findings": [
+   "UX-095",
+   "UX-096"
+  ],
+  "cids": [
+   "C-040",
+   "C-070"
+  ],
+  "parts": {
+   "C-040": "all",
+   "C-070": "all"
+  },
+  "files": [
+   "packages/ui/src/components/card.tsx",
+   "packages/ui/src/states/empty-state.tsx",
+   "apps/web/src/components/uploads/uploader.tsx",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/roi/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/[planId]/page.tsx",
+   "apps/web/src/components/contracts/review.tsx",
+   "apps/web/e2e/a11y.ts",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/versions/[versionId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/[contractId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/coverage/page.tsx",
+   "apps/web/src/app/p/[practiceId]/packet-reviews/page.tsx",
+   "apps/web/src/app/p/[practiceId]/releases/page.tsx",
+   "apps/web/src/components/contracts/display.tsx"
+  ],
+  "size": "L, about 400 lines (a level prop, then many one-line call sites)",
+  "dependsOn": [
+   "PRs #49, #50 and #51 (releases, coverage, reconciliation)",
+   "PR #52 (packet and line pages): mark its new step titles there",
+   "PR #49 also changes `app/p/[practiceId]/coverage/page.tsx`, `app/p/[practiceId]/releases/page.tsx` (LANES.md rule 6)",
+   "PR #50 also changes `app/p/[practiceId]/releases/page.tsx` (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/reconciliation/page.tsx`, `app/p/[practiceId]/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/lines/[lineId]/page.tsx`, `app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx`, `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: a region card without a title is a type error; render test that `aria-labelledby` points at the title",
+   "axe: `heading-order` and `landmark-unique` on the changed routes (by rule id until audit #103 lands)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 25,
+  "branch": "co-001/ux-row-headers",
+  "title": "Every table has headers, and each row's controls say which row they act on",
+  "findings": [
+   "UX-073",
+   "UX-145"
+  ],
+  "cids": [
+   "C-028",
+   "C-145"
+  ],
+  "parts": {
+   "C-028": "non42",
+   "C-145": "all"
+  },
+  "files": [
+   "apps/web/src/components/row-label.tsx (new)",
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx",
+   "apps/web/src/components/pricing/diff.tsx",
+   "apps/web/src/components/packets/display.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/access-log/page.tsx",
+   "apps/web/src/components/reports/documents.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/components/uploads/receipts.tsx",
+   "apps/web/src/components/reports/roi.tsx",
+   "apps/web/src/app/console/status/page.tsx",
+   "apps/web/src/app/console/prospects/page.tsx",
+   "apps/web/src/app/console/tickets/page.tsx",
+   "apps/web/src/app/console/specialist-queue/page.tsx",
+   "apps/web/src/app/account/devices/page.tsx",
+   "apps/web/src/app/status/page.tsx",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/components/contracts/review.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "PRs #50 and #51 (run and reconciliation pages)",
+   "PR #52 (packet schedule and line trace)",
+   "PR #50 also changes `app/p/[practiceId]/pricing-runs/[runId]/page.tsx`, `components/pricing/diff.tsx` (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/abstraction/ledger/page.tsx`, `app/p/[practiceId]/reconciliation/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `components/packets/display.tsx`, `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `row-label.test.tsx` (visible words first, so Label in Name holds)",
+   "axe: `empty-table-header` and `label-content-name-mismatch` by rule id on the changed routes"
+  ],
+  "leavesOut": "The console support and users pages (#42) in UX PRs 74 and 75.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 26,
+  "branch": "co-001/ux-empty-states",
+  "title": "Empty and filtered lists name the filter and the next step, with a link",
+  "findings": [
+   "UX-103",
+   "UX-108",
+   "UX-139",
+   "UX-195"
+  ],
+  "cids": [
+   "C-033",
+   "C-032",
+   "C-179",
+   "C-180"
+  ],
+  "parts": {
+   "C-033": "all",
+   "C-032": "all",
+   "C-179": "all",
+   "C-180": "all"
+  },
+  "files": [
+   "apps/web/src/components/filter-bar.tsx (new)",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/anomalies/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/remittances/page.tsx",
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx",
+   "apps/web/src/app/console/tickets/page.tsx",
+   "apps/web/src/app/console/prospects/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/by-reference/page.tsx",
+   "apps/web/src/app/p/[practiceId]/coverage/page.tsx",
+   "apps/web/src/components/coverage/share.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "PRs #50 (run page) and #51 (reconciliation page)",
+   "PR #49 (Coverage); offer the Coverage and Mapping empty state to audit #32's design",
+   "PR #49 also changes `app/p/[practiceId]/coverage/page.tsx` (LANES.md rule 6)",
+   "PR #50 also changes `app/p/[practiceId]/pricing-runs/[runId]/page.tsx`, `app/p/[practiceId]/pricing-runs/page.tsx` (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/reconciliation/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `filter-bar.test.tsx` (Clear filters shows only while a filter is set)",
+   "e2e: the filtered-empty shots of Cases, Anomalies and console tickets",
+   "copy: `pnpm lint:copy`"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 27,
+  "branch": "co-001/ux-job-status",
+  "title": "Pages that wait on a job refresh themselves and say when it is done",
+  "findings": [
+   "UX-086",
+   "UX-196"
+  ],
+  "cids": [
+   "C-031",
+   "C-186"
+  ],
+  "parts": {
+   "C-031": "all",
+   "C-186": "all"
+  },
+  "files": [
+   "apps/web/src/components/job-status.tsx (new)",
+   "apps/web/src/components/packets/export-status.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/[reportId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/documents/[documentId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/compare/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/[reportId]/review/page.tsx"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "PR #50 (run and compare pages)",
+   "audit #46 (`co-001/verified-seal`, the ROI statement page): coordinate the file",
+   "PR #50 also changes `app/p/[practiceId]/pricing-runs/[runId]/page.tsx`, `app/p/[practiceId]/pricing-runs/compare/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `job-status.test.tsx` (polls every 5 s while queued, stops at ten minutes, announces the end)",
+   "e2e: `reports.spec.ts` (a queued report becomes ready with no reload)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 28,
+  "branch": "co-001/ux-loading-announce",
+  "title": "Loading states say what is loading, and are announced",
+  "findings": [
+   "UX-076"
+  ],
+  "cids": [
+   "C-014"
+  ],
+  "parts": {
+   "C-014": "the label and the announcement"
+  },
+  "files": [
+   "packages/ui/src/states/loading-state.tsx",
+   "packages/ui/src/states/states.test.tsx"
+  ],
+  "size": "S, about 80 lines",
+  "dependsOn": [],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `states.test.tsx` (the status region mounts empty and receives its label a tick later; `aria-busy` on main)"
+  ],
+  "leavesOut": "The header-keeping frame and the missing loading files (through `shell.tsx`, #42) land in UX PR 72.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 29,
+  "branch": "co-001/ux-dates",
+  "title": "One date style on every screen, and dates that never break mid-way",
+  "findings": [
+   "UX-027",
+   "UX-153",
+   "UX-167",
+   "UX-187"
+  ],
+  "cids": [
+   "C-097",
+   "C-146",
+   "C-181",
+   "C-207"
+  ],
+  "parts": {
+   "C-097": "the formatter and the date form (times stay labelled UTC)",
+   "C-146": "all",
+   "C-181": "all",
+   "C-207": "all"
+  },
+  "files": [
+   "apps/web/src/components/when.tsx (new)",
+   "apps/web/src/components/format.ts",
+   "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx",
+   "apps/web/src/app/p/[practiceId]/anomalies/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/[contractId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/access-log/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/roi/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/[reportId]/page.tsx",
+   "apps/web/src/app/console/organizations/page.tsx",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/components/reports/documents.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/monthly/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/documents/[documentId]/page.tsx",
+   "apps/web/src/lib/routes/monitoring.ts",
+   "apps/web/src/lib/routes/reports.ts",
+   "apps/web/src/lib/uploads/receipt-labels.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "PR #50 (changes `components/format.ts`)",
+   "PR #54 (merged; receipt labels)",
+   "PR #51 (open) also changes `app/p/[practiceId]/abstraction/ledger/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `format.test.ts` (calendar dates as Oct 26, 2026; months as September 2026; quarters as Q4 2026 (Oct\u2013Dec); ISO kept in CSV)",
+   "e2e: the monthly summary opens on the latest month with lines",
+   "copy: `pnpm lint:copy`"
+  ],
+  "leavesOut": "Lane A's PR 12: the practice time zone setting and its definer setter; times switch to it when it exists.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 30,
+  "branch": "co-001/ux-counts-and-units",
+  "title": "Counts agree with their nouns, and units print as people write them",
+  "findings": [
+   "UX-115",
+   "UX-138"
+  ],
+  "cids": [
+   "C-054",
+   "C-167"
+  ],
+  "parts": {
+   "C-054": "non42",
+   "C-167": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/regulations/page.tsx",
+   "apps/web/src/components/contracts/review.tsx",
+   "apps/web/src/components/uploads/receipts.tsx",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/app/console/rule-releases/page.tsx",
+   "tools/brand-copy/scan.ts",
+   "apps/web/src/lib/copy/words.ts",
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/app/p/[practiceId]/anomalies/page.tsx",
+   "apps/web/src/components/packets/display.tsx",
+   "apps/web/src/components/pricing/diff.tsx"
+  ],
+  "size": "M, about 260 lines",
+  "dependsOn": [
+   "after PR #52 merges (`words.ts`, packet pages)",
+   "PR #51 (case page)",
+   "PR #49 (open) also changes `app/console/rule-releases/page.tsx`, `tools/brand-copy/scan.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #50 (open) also changes `components/pricing/diff.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/cases/[caseId]/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx`, `app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx`, `components/packets/display.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: count-of-one cases in the display tests; the units formatter on numeric text (never a float)",
+   "copy: the plural-after-count rule in `tools/brand-copy`, with its `scan.test.ts` cases"
+  ],
+  "leavesOut": "The notification plurals (`components/monitoring/display.tsx`, #42) in UX PR 81.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 31,
+  "branch": "co-001/ux-copy-lint",
+  "title": "The copy lint reads every file people read and holds the house rules",
+  "findings": [
+   "UX-101",
+   "UX-129",
+   "UX-168"
+  ],
+  "cids": [
+   "C-053",
+   "C-055",
+   "C-149"
+  ],
+  "parts": {
+   "C-053": "all",
+   "C-055": "all",
+   "C-149": "non42"
+  },
+  "files": [
+   "tools/brand-copy/scan.ts",
+   "tools/brand-copy/scan.test.ts",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/components/screening/convert-form.tsx",
+   "packages/triage/src/cases.ts",
+   "packages/db/src/authz/permissions.ts",
+   "apps/web/src/app/p/[practiceId]/settings/agreements/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/data/page.tsx",
+   "apps/web/src/lib/packets/view.ts",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/versions/[versionId]/page.tsx",
+   "apps/web/src/components/contracts/display.tsx",
+   "apps/web/src/lib/contracts/display.ts",
+   "apps/web/src/app/console/compliance/page.tsx",
+   "packages/compliance/src/controls.ts"
+  ],
+  "size": "M, about 300 lines (most of it the lint and its tests)",
+  "dependsOn": [
+   "UX PR 30 (`ux-counts-and-units`: the plural rule)",
+   "after PR #52 merges (packet page)",
+   "PR #48 (open) also changes `packages/compliance/src/controls.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #49 (open) also changes `tools/brand-copy/scan.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 (open) also changes `app/p/[practiceId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `scan.test.ts` (each new rule fails and passes; the exemption comment works)",
+   "copy: `pnpm lint:copy` green on the whole tree"
+  ],
+  "leavesOut": "The straight quotes in `shell.tsx` and the support-access page (#42) are exempted by name until UX PRs 68 and 76.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 32,
+  "branch": "co-001/ux-dark-tokens",
+  "title": "The dark tokens' defects fixed, and native controls take the brand",
+  "findings": [
+   "UX-117",
+   "UX-160",
+   "UX-164",
+   "UX-208"
+  ],
+  "cids": [
+   "C-035",
+   "C-047",
+   "C-079",
+   "C-197"
+  ],
+  "parts": {
+   "C-035": "all",
+   "C-047": "the static check for palette primitives, with the sign-in layout exempted by name until the alias",
+   "C-079": "all",
+   "C-197": "all"
+  },
+  "files": [
+   "packages/brand/src/tokens.css",
+   "apps/web/src/app/brand.css",
+   "apps/web/e2e/brand.spec.ts",
+   "tools/brand-colors/scan.ts"
+  ],
+  "size": "S, about 120 lines",
+  "dependsOn": [],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `brand.spec.ts` (a print emulation in dark that prints light; checked boxes in Ink)",
+   "unit: a static check that component code uses no palette-primitive utility outside `packages/brand` (`sign-in/layout.tsx` exempted by name until the alias)"
+  ],
+  "leavesOut": "The founder's dark-mode question (6.2): nothing here lets a user reach dark. The sign-in ground's alias token (`--pw-bg-sign-in`) is the brand owner's (F3) and lands with the Appearance setting in UX PR 91.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 33,
+  "branch": "co-001/ux-focus-touch",
+  "title": "Focus is never hidden under the header, targets are 24 px, and phones do not zoom",
+  "findings": [
+   "UX-080",
+   "UX-088",
+   "UX-089",
+   "UX-161"
+  ],
+  "cids": [
+   "C-015",
+   "C-041",
+   "C-045",
+   "C-164"
+  ],
+  "parts": {
+   "C-015": "all",
+   "C-041": "all",
+   "C-045": "all",
+   "C-164": "non42"
+  },
+  "files": [
+   "apps/web/src/app/brand.css",
+   "apps/web/e2e/a11y.ts",
+   "apps/web/src/app/p/[practiceId]/remittances/[remittanceId]/page.tsx",
+   "apps/web/src/components/pricing/diff.tsx",
+   "apps/web/src/components/reports/documents.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "packages/ui/src/components/input.tsx",
+   "packages/ui/src/index.ts",
+   "apps/web/src/components/field.tsx",
+   "apps/web/src/components/uploads/uploader.tsx",
+   "apps/web/src/components/reconciliation/template-mapper.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "docs/adr/0056-wear-the-paidwhole-brand-from-one-token-source-self-hosted-fonts-and-status-as-text-on-tint.md",
+   "packages/ui/src/components/button.tsx",
+   "apps/web/src/app/console/prospects/page.tsx",
+   "apps/web/src/app/console/tickets/page.tsx"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "PR #51 (reconciliation page)",
+   "PR #50 (open) also changes `components/pricing/diff.tsx`, `app/p/[practiceId]/pricing-runs/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/reconciliation/page.tsx`, `app/p/[practiceId]/cases/[caseId]/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `a11y.ts` `tabTo` asserts the focused element is below the header",
+   "axe: `target-size` by rule id on the changed routes",
+   "e2e: at 390 px every control computes 16 px"
+  ],
+  "leavesOut": "The help summary's 44 px row (`shell.tsx`, #42) in UX PR 68. ADR 0056 gains the phone exception to its type scale as a dated '*Amended ...*' line, as ADR 0056:104 does, not an in-place rewrite.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 34,
+  "branch": "co-001/ux-phone-record-lists",
+  "title": "On a phone, record lists stack each row with its actions",
+  "findings": [
+   "UX-078",
+   "UX-079"
+  ],
+  "cids": [
+   "C-034",
+   "C-043"
+  ],
+  "parts": {
+   "C-034": "the console record pages",
+   "C-043": "parts (b) and (c): the sticky naming cell and the stacked working lists"
+  },
+  "files": [
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/app/console/tickets/page.tsx",
+   "apps/web/src/app/console/prospects/page.tsx",
+   "apps/web/src/app/console/models/page.tsx",
+   "apps/web/src/app/console/status/page.tsx",
+   "apps/web/src/app/console/billing/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/app/p/[practiceId]/anomalies/page.tsx",
+   "docs/adr/0056-wear-the-paidwhole-brand-from-one-token-source-self-hosted-fonts-and-status-as-text-on-tint.md (a dated amendment)"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "UX PR 3 (`ux-table-scroll`: the stacked-row primitive)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: an `atPhoneWidth` pass on each changed route (each row's action in view)",
+   "axe: those routes at 390 px"
+  ],
+  "leavesOut": "The users and console support pages (#42) in UX PRs 74 and 75; the ledger's AdjustForm in UX PR 13. ADR 0056's chrome paragraph gains the stacking rule as a dated '*Amended ...*' line.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 35,
+  "branch": "co-001/ux-cases-list-first",
+  "title": "Cases leads with the list; materiality is set in one place",
+  "findings": [
+   "UX-125",
+   "UX-184",
+   "UX-200"
+  ],
+  "cids": [
+   "C-063",
+   "C-198",
+   "C-168"
+  ],
+  "parts": {
+   "C-063": "all",
+   "C-198": "all",
+   "C-168": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/defaults/page.tsx",
+   "apps/web/src/components/packets/reference-search.tsx"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "PR #54 (merged; both materiality forms)",
+   "UX PR 16 (`ux-field-hints`: the reference search)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `triage.spec.ts` (the home's deadline link lands on the list)",
+   "axe: `/p/[practiceId]/cases`"
+  ],
+  "leavesOut": "Tell Lane A: Lane A's PR 13 (audit #125) keeps only the bulk case work.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 36,
+  "branch": "co-001/ux-short-one-name",
+  "title": "One name for the shortfall: 'Short (variance)', with its stage",
+  "findings": [
+   "UX-014"
+  ],
+  "cids": [
+   "C-083"
+  ],
+  "parts": {
+   "C-083": "non42"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/components/pricing/display.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/components/packets/display.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx",
+   "apps/web/src/lib/copy/words.ts",
+   "tools/brand-copy/scan.ts",
+   ".claude/agents/ux-brand-reviewer.md (after PR #55 merges)"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "after PRs #50, #51 and #52 merge (run, case, ledger and packet pages)",
+   "PR #49 (open) also changes `components/pricing/display.tsx`, `tools/brand-copy/scan.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #50 also changes `components/pricing/display.tsx`, `app/p/[practiceId]/pricing-runs/page.tsx`, `app/p/[practiceId]/pricing-runs/[runId]/page.tsx` (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/cases/[caseId]/page.tsx`, `app/p/[practiceId]/abstraction/ledger/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `components/packets/display.tsx`, `lib/copy/words.ts` (LANES.md rule 6)",
+   "PR #55 (open) also changes `.claude/agents/ux-brand-reviewer.md`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "copy: a `tools/brand-copy` rule for the retired exact labels ('Underpaid (validated)', 'Variance (Actionable)'), never the word 'variance'",
+   "unit: the display tests' column headers",
+   "e2e: `brand.spec.ts` keeps its header list (:362-374) unchanged"
+  ],
+  "leavesOut": "The notification words (#42) in UX PR 81. The vocabulary goes in `lib/copy/words.ts` and the reviewer checklist, not BRAND.md (the brand owner's). Tell Lane A's PR 13: 'Short (insurer payment)' is reserved for D31's variance.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 37,
+  "branch": "co-001/ux-reconciliation-order",
+  "title": "Reconciliation leads with what is unmatched",
+  "findings": [
+   "UX-173",
+   "UX-186"
+  ],
+  "cids": [
+   "C-182",
+   "C-205"
+  ],
+  "parts": {
+   "C-182": "all",
+   "C-205": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/ledger/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "after PR #51 merges",
+   "PR #51 also changes `app/p/[practiceId]/reconciliation/page.tsx`, `app/p/[practiceId]/page.tsx`, `app/p/[practiceId]/abstraction/ledger/page.tsx`, `app/p/[practiceId]/cases/[caseId]/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `reconciliation.spec.ts` (the home queue's link lands on Unmatched)",
+   "copy: every recovered carries its proof label"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 38,
+  "branch": "co-001/ux-pricing-runs",
+  "title": "A run says whether it was triaged, and Compare compares like with like",
+  "findings": [
+   "UX-029",
+   "UX-030",
+   "UX-036",
+   "UX-084",
+   "UX-109"
+  ],
+  "cids": [
+   "C-125",
+   "C-137",
+   "C-095",
+   "C-026",
+   "C-046"
+  ],
+  "parts": {
+   "C-125": "all",
+   "C-137": "all",
+   "C-095": "all",
+   "C-026": "the run and compare filters",
+   "C-046": "the run, document and release selects"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx",
+   "apps/web/src/lib/routes/pricing.ts",
+   "apps/web/src/lib/pricing/queries.ts",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/page.tsx",
+   "apps/web/src/components/pricing/display.tsx",
+   "apps/web/src/components/pricing/diff.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/compare/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/submissions/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/[planId]/page.tsx"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after PR #50 merges (run states, `NotInEffectAlert`)",
+   "PR #49 (open) also changes `components/pricing/display.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #50 also changes `app/p/[practiceId]/pricing-runs/[runId]/page.tsx`, `lib/routes/pricing.ts`, `lib/pricing/queries.ts`, `app/p/[practiceId]/pricing-runs/page.tsx`, `components/pricing/display.tsx`, `components/pricing/diff.tsx`, `app/p/[practiceId]/pricing-runs/compare/page.tsx` (LANES.md rule 6)",
+   "PR #51 (open) also changes `app/p/[practiceId]/cases/[caseId]/submissions/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 (open) also changes `lib/pricing/queries.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `diff.test.tsx` (the three missing, unpriced and one-sided cases worded apart)",
+   "e2e: `pricing.spec.ts` (Compare defaults to a run of the same period; Triage this run)",
+   "axe: `/p/[practiceId]/pricing-runs/compare`"
+  ],
+  "leavesOut": "Nothing. ADR 0039 (no automatic triage of a person's run) stands.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 39,
+  "branch": "co-001/ux-line-to-case",
+  "title": "A line names its case, and its basis is shown, not hovered",
+  "findings": [
+   "UX-056",
+   "UX-150"
+  ],
+  "cids": [
+   "C-126",
+   "C-156"
+  ],
+  "parts": {
+   "C-126": "all",
+   "C-156": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/lib/routes/remittances.ts",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "after PRs #52 (line page) and #50 (run page) merge",
+   "PR #50 also changes `app/p/[practiceId]/pricing-runs/[runId]/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/lines/[lineId]/page.tsx`, `lib/routes/remittances.ts` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `viewer-phi.spec.ts` or `pricing.spec.ts` (from a line to its case and back)",
+   "axe: `/p/[practiceId]/claims`"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 40,
+  "branch": "co-001/ux-record-names",
+  "title": "Records and plans are named as their own pages name them",
+  "findings": [
+   "UX-105",
+   "UX-116"
+  ],
+  "cids": [
+   "C-099",
+   "C-101"
+  ],
+  "parts": {
+   "C-099": "all",
+   "C-101": "all"
+  },
+  "files": [
+   "apps/web/src/lib/triage/queries.ts",
+   "apps/web/src/app/p/[practiceId]/mapping/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/[planId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/coverage/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/[contractId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/abstraction/regulations/page.tsx",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+   "packages/packets/src/payer.ts",
+   "apps/web/src/components/pricing/display.tsx",
+   "apps/web/src/components/packets/display.tsx",
+   "apps/web/src/components/contracts/display.tsx"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after PRs #49, #50 and #52 merge",
+   "PR #49 also changes `app/p/[practiceId]/coverage/page.tsx`, `components/pricing/display.tsx` (LANES.md rule 6)",
+   "PR #50 also changes `components/pricing/display.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/lines/[lineId]/page.tsx`, `packages/packets/src/payer.ts`, `components/packets/display.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `planName()` on screen equals the payer's copy; a render test that no listed page prints a bare UUID"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 41,
+  "branch": "co-001/ux-codes-in-words",
+  "title": "Unpriced reasons, methods and 835 fields in plain words",
+  "findings": [
+   "UX-110",
+   "UX-174"
+  ],
+  "cids": [
+   "C-051",
+   "C-184"
+  ],
+  "parts": {
+   "C-051": "all",
+   "C-184": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/[runId]/page.tsx",
+   "apps/web/src/components/pricing/diff.tsx",
+   "apps/web/src/components/pricing/display.tsx",
+   "apps/web/src/app/p/[practiceId]/coverage/page.tsx",
+   "apps/web/src/lib/contracts/remedies.ts",
+   "packages/packets/src/explain.ts (from PR #52)",
+   "apps/web/src/app/p/[practiceId]/remittances/[remittanceId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/uploads/[documentId]/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after PRs #49, #50 and #52 merge; PR #54 (merged; receipt page)",
+   "PR #49 also changes `components/pricing/display.tsx`, `app/p/[practiceId]/coverage/page.tsx` (LANES.md rule 6)",
+   "PR #50 also changes `app/p/[practiceId]/pricing-runs/[runId]/page.tsx`, `components/pricing/diff.tsx`, `components/pricing/display.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `lib/contracts/remedies.ts`, `packages/packets/src/explain.ts` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: every reason in `docs/product/unpriced-reasons.md` has a customer wording; the reference meaning unchanged",
+   "copy: a render test that no reason code reaches a billing manager's screen outside Coverage's reference table"
+  ],
+  "leavesOut": "No content-pipeline change: the reference text stays word for word.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 42,
+  "branch": "co-001/ux-internal-names",
+  "title": "Customers never read the product's internal names",
+  "findings": [
+   "UX-154",
+   "UX-193"
+  ],
+  "cids": [
+   "C-141",
+   "C-176"
+  ],
+  "parts": {
+   "C-141": "non42",
+   "C-176": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/pricing-runs/page.tsx",
+   "apps/web/src/app/p/[practiceId]/pricing-runs/compare/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/lib/packets/export-attempts.ts",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/components/reconciliation/display.tsx",
+   "apps/web/src/lib/cases/timeline.ts",
+   "apps/web/src/components/screening/result-summary.tsx",
+   "apps/web/src/lib/screening/labels.ts",
+   "apps/web/src/components/screening/anomalies.tsx"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "after PRs #51 and #52 merge",
+   "PR #50 (open) also changes `app/p/[practiceId]/pricing-runs/page.tsx`, `app/p/[practiceId]/pricing-runs/compare/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 also changes `app/p/[practiceId]/reconciliation/page.tsx`, `app/p/[practiceId]/page.tsx`, `components/reconciliation/display.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "copy: a `tools/brand-copy` rule for engine version strings, reconcile job and database in read text"
+  ],
+  "leavesOut": "The screening's sentences (`lib/screening/messages.ts`, `routes.ts`, #42) in UX PR 85.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 43,
+  "branch": "co-001/ux-who-did-it",
+  "title": "Histories name who acted, truthfully",
+  "findings": [
+   "UX-017",
+   "UX-022"
+  ],
+  "cids": [
+   "C-098",
+   "C-056"
+  ],
+  "parts": {
+   "C-098": "all",
+   "C-056": "all"
+  },
+  "files": [
+   "apps/web/src/lib/copy/actor.ts (new)",
+   "apps/web/src/lib/reports/queries.ts",
+   "apps/web/src/lib/reports/documents.ts",
+   "apps/web/src/lib/contracts/contract-queries.ts",
+   "apps/web/src/lib/contracts/mapping-queries.ts",
+   "apps/web/src/lib/remittances/queries.ts",
+   "apps/web/src/lib/reconciliation/queries.ts",
+   "apps/web/src/app/p/[practiceId]/reports/[reportId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx",
+   "apps/web/src/lib/packets/review.ts",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after PRs #51 and #52 merge",
+   "PR #51 also changes `lib/reconciliation/queries.ts` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx`, `lib/packets/review.ts`, `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit (db): `actorLabel()` for a member, a former member, PaidWhole staff under a grant and anyone else",
+   "e2e: `packets.spec.ts` (another reviewer reads who attested)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 44,
+  "branch": "co-001/ux-packet-status",
+  "title": "The packet page says where the packet stands and what this person does next",
+  "findings": [
+   "UX-063",
+   "UX-069"
+  ],
+  "cids": [
+   "C-062",
+   "C-123"
+  ],
+  "parts": {
+   "C-062": "all",
+   "C-123": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/lib/packets/queries.ts",
+   "apps/web/src/components/packets/version-form.tsx"
+  ],
+  "size": "L, about 350 lines",
+  "dependsOn": [
+   "after PR #52 and the narrative-draft PR merge",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx`, `lib/packets/queries.ts` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the status strip from the regions' facts for each step and viewer",
+   "e2e: `packets.spec.ts` (the approver's one action is in the first screen at 1280 and 390 px)",
+   "axe: `/p/[practiceId]/cases/[caseId]/packet`"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 45,
+  "branch": "co-001/ux-packet-words",
+  "title": "The packet's checks, lists and review say what to do",
+  "findings": [
+   "UX-126",
+   "UX-130",
+   "UX-151",
+   "UX-194"
+  ],
+  "cids": [
+   "C-078",
+   "C-093",
+   "C-158",
+   "C-177"
+  ],
+  "parts": {
+   "C-078": "all",
+   "C-093": "all",
+   "C-158": "all",
+   "C-177": "all"
+  },
+  "files": [
+   "apps/web/src/lib/packets/view.ts",
+   "apps/web/src/components/packets/version-form.tsx",
+   "apps/web/src/components/packets/narrative-editor.tsx",
+   "apps/web/src/components/packets/display.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx",
+   "apps/web/src/components/packets/countdown.tsx",
+   "apps/web/src/components/packets/download-watch.tsx (new)"
+  ],
+  "size": "M, about 260 lines",
+  "dependsOn": [
+   "after PR #52 and the narrative-draft PR merge (its guarded refresh)",
+   "PR #52 also changes `components/packets/display.tsx`, `app/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: each live-check mismatch code has its sentence; the polite region announces only a change of verdict",
+   "e2e: `packets.spec.ts` (after both downloads the attestation is live with no reload)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 46,
+  "branch": "co-001/ux-waiting-on-someone",
+  "title": "A hand-off that waits on another person shows where the work starts",
+  "findings": [
+   "UX-053",
+   "UX-060",
+   "UX-061"
+  ],
+  "cids": [
+   "C-131",
+   "C-132",
+   "C-133"
+  ],
+  "parts": {
+   "C-131": "all",
+   "C-132": "all",
+   "C-133": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/lib/dashboard/queries.ts",
+   "apps/web/src/lib/packets/contact.ts",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/versions/[versionId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/agreements/page.tsx",
+   "apps/web/src/app/support/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "UX PR 11 (`ux-packet-queues`)",
+   "after PRs #51 and #52 merge",
+   "PR #51 also changes `app/p/[practiceId]/cases/[caseId]/page.tsx`, `app/p/[practiceId]/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit (db): the sign-off queue counts approved versions; the correspondence blocker counts held versions",
+   "e2e: `contracts.spec.ts` (a version waiting for sign-off shows on the home)"
+  ],
+  "leavesOut": "Lane A: an in-app notice to administrators would widen `notification_kind_check`, with C-012's kinds.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 47,
+  "branch": "co-001/ux-uploader",
+  "title": "The uploader keeps chosen files, names them, and sizes in KB, MB and GB",
+  "findings": [
+   "UX-049",
+   "UX-097",
+   "UX-159",
+   "UX-163",
+   "UX-181"
+  ],
+  "cids": [
+   "C-037",
+   "C-072",
+   "C-148",
+   "C-178",
+   "C-185"
+  ],
+  "parts": {
+   "C-037": "all",
+   "C-072": "all",
+   "C-148": "all",
+   "C-178": "all",
+   "C-185": "all"
+  },
+  "files": [
+   "apps/web/src/components/uploads/uploader.tsx",
+   "packages/ui/src/states/empty-state.tsx",
+   "apps/web/src/components/reconciliation/template-mapper.tsx",
+   "apps/web/src/lib/uploads/receipt-labels.ts",
+   "apps/web/src/lib/uploads/limits.ts",
+   "apps/web/src/lib/routes/uploads.ts",
+   "apps/web/src/components/contracts/forms.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx"
+  ],
+  "size": "M, about 280 lines",
+  "dependsOn": [
+   "PR #54 (merged; `receipt-labels.ts`)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `uploader.test.tsx` (an ERA batch with no system keeps its files and starts on the choice)",
+   "e2e: `uploads.spec.ts` (an empty file is named by its file name, in the browser only)",
+   "axe: `/p/[practiceId]/uploads` (the file input is not a tab stop)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 48,
+  "branch": "co-001/ux-uploads-every-kind",
+  "title": "Uploads takes every kind of document a practice sends",
+  "findings": [
+   "UX-062",
+   "UX-197"
+  ],
+  "cids": [
+   "C-138",
+   "C-188"
+  ],
+  "parts": {
+   "C-138": "all",
+   "C-188": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/uploads/page.tsx",
+   "apps/web/src/components/uploads/uploader.tsx",
+   "apps/web/src/lib/routes/uploads.ts",
+   "apps/web/src/lib/uploads/limits.ts",
+   "apps/web/src/components/uploads/receipts.tsx",
+   "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "UX PR 10 (`ux-payer-response`)",
+   "UX PR 47 (`ux-uploader`)",
+   "PR #51 (open) also changes `app/p/[practiceId]/reconciliation/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `uploads.spec.ts` (a contract and a posting export chosen from Uploads reach their intake)",
+   "axe: `/p/[practiceId]/uploads`"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 49,
+  "branch": "co-001/ux-upload-next",
+  "title": "After an upload, the receipt says what it found and what happens next; a refresh loses nothing",
+  "findings": [
+   "UX-048",
+   "UX-123"
+  ],
+  "cids": [
+   "C-077",
+   "C-127"
+  ],
+  "parts": {
+   "C-077": "all",
+   "C-127": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/uploads/[documentId]/page.tsx",
+   "apps/web/src/components/uploads/uploader.tsx",
+   "apps/web/src/components/uploads/receipts.tsx",
+   "apps/web/src/lib/routes/uploads.ts",
+   "apps/web/src/app/p/[practiceId]/remittances/[remittanceId]/page.tsx",
+   "apps/web/src/components/reconciliation/template-mapper.tsx"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "UX PR 47 (`ux-uploader`)",
+   "PR #54 (merged)",
+   "after the narrative-draft PR merges (its leave guard)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the next-step block from loaded lines (code computes every figure)",
+   "e2e: `uploads.spec.ts` (a reload keeps the receipts page and the batch's state); `era-exports.spec.ts` (the mapper keeps its column indexes)"
+  ],
+  "leavesOut": "Nothing. No header text from a customer's export reaches the URL.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 50,
+  "branch": "co-001/ux-validation-request",
+  "title": "A validation request is traced from the cohort to Coverage and back",
+  "findings": [
+   "UX-070"
+  ],
+  "cids": [
+   "C-139"
+  ],
+  "parts": {
+   "C-139": "all"
+  },
+  "files": [
+   "apps/web/src/lib/routes/triage.ts",
+   "apps/web/src/lib/routes/coverage.ts",
+   "apps/web/src/app/p/[practiceId]/coverage/page.tsx",
+   "apps/web/src/lib/dashboard/queries.ts"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "after PRs #49 and #51 merge",
+   "UX PR 15 (`ux-notice-once`)",
+   "PR #49 also changes `lib/routes/coverage.ts`, `app/p/[practiceId]/coverage/page.tsx` (LANES.md rule 6)",
+   "PR #51 also changes `lib/routes/triage.ts` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `anomalies` journey (convert a cohort; Coverage shows the request and links back)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 51,
+  "branch": "co-001/ux-contract-pages",
+  "title": "Contract pages word a signed-off version, its calendar and its pages truthfully",
+  "findings": [
+   "UX-025",
+   "UX-028",
+   "UX-113",
+   "UX-192"
+  ],
+  "cids": [
+   "C-091",
+   "C-100",
+   "C-103",
+   "C-175"
+  ],
+  "parts": {
+   "C-091": "all",
+   "C-100": "all",
+   "C-103": "non42",
+   "C-175": "all"
+  },
+  "files": [
+   "apps/web/src/components/contracts/review.tsx",
+   "apps/web/src/lib/contracts/display.ts",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/[contractId]/page.tsx",
+   "apps/web/src/lib/contracts/contract-queries.ts",
+   "packages/contracts/src/calendar.ts",
+   "apps/web/src/components/contracts/display.tsx",
+   "apps/web/src/app/p/[practiceId]/digests/[digestId]/page.tsx",
+   "apps/web/src/lib/contracts/review.ts",
+   "apps/web/src/components/figures.tsx (new)",
+   "apps/web/e2e/brand.spec.ts"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the alert by version status; the calendar reads the version end at page time",
+   "e2e: `brand.spec.ts` (a dollar amount in a contract sentence computes Plex Mono)",
+   "axe: `/p/[practiceId]/contracts/[contractId]`"
+  ],
+  "leavesOut": "The screening's messages (#42) in UX PR 85.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 52,
+  "branch": "co-001/ux-a11y-names",
+  "title": "Titles name the record, related controls are grouped, cited words are marked for every reader",
+  "findings": [
+   "UX-144",
+   "UX-146",
+   "UX-148"
+  ],
+  "cids": [
+   "C-159",
+   "C-155",
+   "C-157"
+  ],
+  "parts": {
+   "C-159": "all",
+   "C-155": "all",
+   "C-157": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/versions/[versionId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/[contractId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/[planId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/[reportId]/review/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/defaults/page.tsx",
+   "apps/web/src/app/account/notifications/page.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/components/contracts/display.tsx"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "after PRs #51 and #52 merge",
+   "PR #51 also changes `app/p/[practiceId]/cases/[caseId]/page.tsx` (LANES.md rule 6)",
+   "PR #52 also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx`, `app/p/[practiceId]/lines/[lineId]/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: a title holding any field from the PHI list fails",
+   "axe: `/p/[practiceId]/settings/defaults`, `/account/notifications`, the cited page"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 53,
+  "branch": "co-001/ux-settings-pages",
+  "title": "Settings: one look for the section tabs, the agreements told apart, every request a link",
+  "findings": [
+   "UX-026",
+   "UX-152",
+   "UX-177",
+   "UX-188"
+  ],
+  "cids": [
+   "C-094",
+   "C-153",
+   "C-140",
+   "C-208"
+  ],
+  "parts": {
+   "C-094": "the description lines on the home and settings pages (the names wait for audit #51)",
+   "C-153": "all",
+   "C-140": "all",
+   "C-208": "all"
+  },
+  "files": [
+   "apps/web/src/components/settings/nav.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/correspondence/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/pricing/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "PR #51 (open) also changes `app/p/[practiceId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `brand.spec.ts` settings tabs at 1280 and 390 px",
+   "axe: the settings routes"
+  ],
+  "leavesOut": "The chain label in `lib/routes/settings.ts` (#42) in UX PR 83.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 54,
+  "branch": "co-001/ux-read-only-cards",
+  "title": "Read-only roles see what is set and who sets it, not the doer's instructions",
+  "findings": [
+   "UX-107"
+  ],
+  "cids": [
+   "C-130"
+  ],
+  "parts": {
+   "C-130": "non42"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/pricing-runs/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/correspondence/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/proof-level/page.tsx",
+   "apps/web/src/app/p/[practiceId]/settings/pricing/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/mapping/[planId]/page.tsx",
+   "packages/contracts/src/location.ts"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "PR #50 (open) also changes `app/p/[practiceId]/pricing-runs/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 (open) also changes `app/p/[practiceId]/cases/[caseId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `viewer-phi.spec.ts` (a viewer reads no imperative card)",
+   "copy: `pnpm lint:copy`"
+  ],
+  "leavesOut": "The proof-level sentence in `lib/routes/settings.ts` (#42) in UX PR 83.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 55,
+  "branch": "co-001/ux-roi-words",
+  "title": "The ROI statement states only what it measures",
+  "findings": [
+   "UX-032",
+   "UX-175"
+  ],
+  "cids": [
+   "C-087",
+   "C-187"
+  ],
+  "parts": {
+   "C-087": "all",
+   "C-187": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx",
+   "apps/worker/src/reconcile/statement-html.ts",
+   "apps/worker/src/reconcile/statements.ts",
+   "apps/web/src/app/p/[practiceId]/reports/roi/page.tsx",
+   "apps/web/src/app/p/[practiceId]/reports/page.tsx"
+  ],
+  "size": "S, about 100 lines",
+  "dependsOn": [
+   "audit #46 (`co-001/verified-seal`, queued): land with or after it"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: pursuit hours print only for a statement generated after the time log's release (a dated constant in code), so a stored 0.00 before it reads 'not tracked'",
+   "e2e: `reports.spec.ts`"
+  ],
+  "leavesOut": "The 15b session checks that the stored statement's recompute does not expect the printed hours. The payment-engine review confirms that nothing in `statements.ts` changes what recovered computes.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 56,
+  "branch": "co-001/ux-release-pages",
+  "title": "Rule release pages say what this server does and mark the release shown",
+  "findings": [
+   "UX-065",
+   "UX-149"
+  ],
+  "cids": [
+   "C-060",
+   "C-143"
+  ],
+  "parts": {
+   "C-060": "all",
+   "C-143": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/rule-releases/page.tsx",
+   "apps/web/src/app/p/[practiceId]/releases/page.tsx"
+  ],
+  "size": "S, about 120 lines",
+  "dependsOn": [
+   "after PRs #49 and #50 merge",
+   "PR #49 also changes `app/console/rule-releases/page.tsx`, `app/p/[practiceId]/releases/page.tsx` (LANES.md rule 6)",
+   "PR #50 also changes `app/p/[practiceId]/releases/page.tsx` (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "axe: `/console/rule-releases` and `/p/[practiceId]/releases`"
+  ],
+  "leavesOut": "No content-pipeline change.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 57,
+  "branch": "co-001/ux-console-records",
+  "title": "Console pages: the location result, the members table, billing status and model flags read right",
+  "findings": [
+   "UX-034",
+   "UX-038",
+   "UX-057",
+   "UX-099",
+   "UX-142",
+   "UX-202",
+   "UX-204"
+  ],
+  "cids": [
+   "C-111",
+   "C-059",
+   "C-052",
+   "C-044",
+   "C-189",
+   "C-190",
+   "C-200"
+  ],
+  "parts": {
+   "C-111": "all",
+   "C-059": "all",
+   "C-052": "the practice's sentence in `location.ts`",
+   "C-044": "all",
+   "C-189": "all",
+   "C-190": "all",
+   "C-200": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/practices/[practiceId]/page.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/lib/pricing/location.ts",
+   "eslint.config.js",
+   "apps/web/src/app/console/billing/page.tsx",
+   "apps/web/src/lib/routes/billing.ts",
+   "apps/web/src/app/console/models/page.tsx",
+   "apps/web/src/lib/routes/console-models.ts",
+   "packages/contracts/src/location.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "PR #54 (merged; console practice and models pages)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: the `no-restricted-syntax` rule refuses a flex `td`; the flag form needs a choice",
+   "e2e: `models.spec.ts` (a budget is set in dollars and named in the notice)",
+   "axe: the four console routes"
+  ],
+  "leavesOut": "The screening's two ZIP sentences are the founder's (6.2).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 58,
+  "branch": "co-001/ux-soc2-todo",
+  "title": "The SOC 2 page lists its actions, and its evidence reads as words",
+  "findings": [
+   "UX-068",
+   "UX-127"
+  ],
+  "cids": [
+   "C-112",
+   "C-113"
+  ],
+  "parts": {
+   "C-112": "all",
+   "C-113": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/compliance/page.tsx",
+   "apps/web/src/app/console/compliance/actions.ts",
+   "apps/web/src/lib/routes/compliance.ts",
+   "packages/compliance/src/controls.ts"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "PR #48 (open) also changes `packages/compliance/src/controls.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: every evidence item has its shown words; the to-do list counts each action",
+   "axe: `/console/compliance`"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 59,
+  "branch": "co-001/ux-maintenance",
+  "title": "Maintenance is a state a person can wait through, and comes back to the page",
+  "findings": [
+   "UX-047",
+   "UX-198"
+  ],
+  "cids": [
+   "C-122",
+   "C-191"
+  ],
+  "parts": {
+   "C-122": "non42 and no migration: the return path, the in-place refusal, the check and the component status",
+   "C-191": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/status/page.tsx",
+   "apps/web/src/app/maintenance/page.tsx",
+   "apps/web/src/lib/http/next.ts",
+   "apps/web/src/lib/routes/support.ts",
+   "apps/web/src/app/status/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "UX PR 1 (`ux-forms`)",
+   "PR #50 (open) also changes `lib/http/next.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `monitoring.spec.ts` or a new maintenance journey (a form sent during maintenance keeps its text and returns)"
+  ],
+  "leavesOut": "Lane A: the stored expected end and message.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 60,
+  "branch": "co-001/ux-account-pages",
+  "title": "Revoking a device confirms first; staff are told why no digest comes",
+  "findings": [
+   "UX-143",
+   "UX-179"
+  ],
+  "cids": [
+   "C-162",
+   "C-163"
+  ],
+  "parts": {
+   "C-162": "the confirmation and the order",
+   "C-163": "the staff wording"
+  },
+  "files": [
+   "apps/web/src/app/account/devices/page.tsx",
+   "apps/web/src/lib/routes/account.ts",
+   "apps/web/src/app/account/notifications/page.tsx"
+  ],
+  "size": "S, about 120 lines",
+  "dependsOn": [],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: the devices page (Revoke asks first and names the device)",
+   "axe: `/account/devices`, `/account/notifications`"
+  ],
+  "leavesOut": "Lane A: a person-given device name (a column), and per-practice notification choices (widening `user_settings_valid`).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 61,
+  "branch": "co-001/ux-public-frame",
+  "title": "One public frame: header, width and footer",
+  "findings": [
+   "UX-156"
+  ],
+  "cids": [
+   "C-142"
+  ],
+  "parts": {
+   "C-142": "non42"
+  },
+  "files": [
+   "apps/web/src/components/public-header.tsx",
+   "apps/web/src/components/public-layout.tsx (new)",
+   "apps/web/src/app/request-audit/page.tsx",
+   "apps/web/src/components/screening/result-view.tsx",
+   "apps/web/src/app/status/page.tsx",
+   "apps/web/src/app/security/page.tsx",
+   "apps/web/src/app/maintenance/page.tsx"
+  ],
+  "size": "M, about 260 lines",
+  "dependsOn": [],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: `brand.spec.ts` public header and footer baselines",
+   "axe: `/request-audit`, `/status`, `/security`, `/maintenance`"
+  ],
+  "leavesOut": "The screening page (#42) in UX PR 84.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 62,
+  "branch": "co-001/ux-not-found",
+  "title": "A missing record is shown inside the app, with the way back",
+  "findings": [
+   "UX-172",
+   "UX-178"
+  ],
+  "cids": [
+   "C-174",
+   "C-152"
+  ],
+  "parts": {
+   "C-174": "all",
+   "C-152": "all"
+  },
+  "files": [
+   "apps/web/src/app/not-found.tsx",
+   "apps/web/src/lib/http/next.ts",
+   "apps/web/src/lib/http/invoke.ts"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "PR #50 (open) also changes `lib/http/next.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: an unknown case id renders inside the frame with Back to Cases; an unknown practice still renders the root page"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 63,
+  "branch": "co-001/ux-screening-result-first",
+  "title": "The screening result leads with its answer and its next step",
+  "findings": [
+   "UX-044",
+   "UX-134",
+   "UX-136",
+   "UX-185"
+  ],
+  "cids": [
+   "C-120",
+   "C-115",
+   "C-121",
+   "C-201"
+  ],
+  "parts": {
+   "C-120": "all",
+   "C-115": "the reorder and the summary (no redirect anchor)",
+   "C-121": "the non-legal sentences, in place (the kept paragraph does not move: F4)",
+   "C-201": "all"
+  },
+  "files": [
+   "apps/web/src/components/screening/convert-form.tsx",
+   "apps/web/src/app/request-audit/page.tsx",
+   "apps/web/src/components/screening/result-view.tsx",
+   "apps/web/src/components/screening/result-summary.tsx",
+   "apps/web/src/app/screening/results/[resultId]/not-found.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "UX PR 4 (`ux-screening-result-tables`)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `result.test.tsx` (the three summary lines from the page's own figures)",
+   "unit: `legal-surfaces.test.ts` stays green (the kept spans keep their markers and words)",
+   "copy: the screening copy rules"
+  ],
+  "leavesOut": "The redirect's anchor (`lib/screening/routes.ts`, #42) in UX PR 85; the kept notices' shape and the closed link's order are the founder's (F4, 6.2), applied in UX PR 89.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 64,
+  "branch": "co-001/ux-sign-in-words",
+  "title": "Sign-in steps say what went wrong on the step itself",
+  "findings": [
+   "UX-054",
+   "UX-098",
+   "UX-170",
+   "UX-180",
+   "UX-189"
+  ],
+  "cids": [
+   "C-030",
+   "C-074",
+   "C-160",
+   "C-171",
+   "C-161"
+  ],
+  "parts": {
+   "C-030": "all",
+   "C-074": "all",
+   "C-160": "all",
+   "C-171": "all",
+   "C-161": "all"
+  },
+  "files": [
+   "apps/web/src/lib/routes/sign-in.ts",
+   "apps/web/src/lib/http/next.ts",
+   "apps/web/src/components/action-form.tsx",
+   "apps/web/src/app/sign-in/new-password/page.tsx",
+   "apps/web/src/app/sign-in/mfa/page.tsx",
+   "apps/web/src/app/sign-in/enroll/page.tsx",
+   "apps/web/src/lib/routes/schemas.ts",
+   "apps/web/e2e/sign-in.spec.ts",
+   "apps/web/src/components/field.tsx",
+   "apps/web/src/app/sign-in/page.tsx",
+   "apps/web/src/components/hardware-key.tsx",
+   "apps/web/src/app/sign-in/hardware-key/page.tsx",
+   "apps/web/src/app/sign-in/notice.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "UX PR 1 (`ux-forms`)",
+   "UX PR 7 (`ux-sign-in-recovery`)",
+   "PR #50 (open) also changes `lib/http/next.ts`, `components/action-form.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit: `sixDigitCode` accepts a pasted code with spaces; no step's words say whether an account exists",
+   "e2e: `sign-in.spec.ts` (paste a spaced code; Show password; staff sign-in after registering a key)",
+   "axe: the six sign-in routes in their refused states"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 65,
+  "branch": "co-001/ux-second-factor-reset",
+  "title": "A platform administrator resets a lost authenticator from the console",
+  "findings": [
+   "UX-006"
+  ],
+  "cids": [
+   "C-005"
+  ],
+  "parts": {
+   "C-005": "part (2)'s console reset, its IAM grant and its email"
+  },
+  "files": [
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/lib/routes/console.ts",
+   "infra/lib/constructs/application-role.ts",
+   "infra/test/application-role.test.ts",
+   "apps/web/src/lib/auth/provider.ts",
+   "apps/web/src/lib/auth/cognito-provider.ts",
+   "apps/web/src/lib/auth/dev-provider.ts"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 8 (`ux-account-security`: the second key a staff member recovers with)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: the reset needs a platform administrator with a hardware-key session, sets `user.mfa_enrolled` false, ends the sessions and writes the audit event",
+   "infra: `application-role.test.ts` (the one new action, `cognito-idp:AdminSetUserMFAPreference`, on the role the security reviewer chose)",
+   "e2e: `sign-in.spec.ts` (after a reset the person enrols again at the next sign-in)"
+  ],
+  "leavesOut": "The security reviewer at design: which role holds `AdminSetUserMFAPreference` (recommended: a worker job's, not the internet-facing web task's; 6.1 names the trade-off). A lost hardware key has no administrator path (Cognito passkeys): a second key, or a re-invitation.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 66,
+  "branch": "co-001/ux-sign-in-session",
+  "title": "The sign-in steps stay open 15 minutes, Cognito's maximum",
+  "findings": [
+   "UX-012"
+  ],
+  "cids": [
+   "C-007"
+  ],
+  "parts": {
+   "C-007": "Cognito's 15-minute session and the pending cookie, together"
+  },
+  "files": [
+   "infra/lib/constructs/identity.ts",
+   "infra/test/identity.test.ts",
+   "apps/web/src/lib/auth/pending.ts"
+  ],
+  "size": "S, about 60 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 6 (`ux-sign-in-time`: the one constant and the warning)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "infra: `identity.test.ts` (authSession 15 minutes; it pins 3 at :109 today)",
+   "unit: the pending cookie and the stated limit read one constant: 15 minutes, 5 on the code step"
+  ],
+  "leavesOut": "The security reviewer at design: fifteen minutes is the less strict setting, taken for WCAG 2.2.1 (6.1 names the trade-off). What 2.2.1 still leaves unmet under Cognito's cap goes to audit #103's manual checks.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 67,
+  "branch": "co-001/ux-header-menus",
+  "title": "The header menus close as people expect, and name the practice and the account",
+  "findings": [
+   "UX-006",
+   "UX-021",
+   "UX-093",
+   "UX-094",
+   "UX-147"
+  ],
+  "cids": [
+   "C-005",
+   "C-027",
+   "C-023",
+   "C-024",
+   "C-154"
+  ],
+  "parts": {
+   "C-005": "the account menu's Sign-in and security link",
+   "C-027": "all",
+   "C-023": "all",
+   "C-024": "all",
+   "C-154": "all"
+  },
+  "files": [
+   "apps/web/src/components/shell.tsx",
+   "apps/web/src/components/disclosure.tsx (new)",
+   "apps/web/e2e/a11y.ts",
+   "apps/web/src/app/brand.css",
+   "apps/web/e2e/brand.spec.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 8 (`ux-account-security`)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: Escape and a tap outside close each panel and return focus; at 390 px the practice's full name is in view",
+   "axe: each header panel open, by rule id `label-content-name-mismatch`",
+   "brand: regenerate and inspect `header-390` (and `header-1280` if the switcher's text moves) under ADR 0058:225-228, committed in this PR"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 68,
+  "branch": "co-001/ux-skip-and-rail",
+  "title": "A skip link, a rail grouped by job, and the current item marked by more than brass",
+  "findings": [
+   "UX-083",
+   "UX-084",
+   "UX-112",
+   "UX-161",
+   "UX-168",
+   "UX-169"
+  ],
+  "cids": [
+   "C-025",
+   "C-026",
+   "C-069",
+   "C-164",
+   "C-149",
+   "C-150"
+  ],
+  "parts": {
+   "C-025": "all",
+   "C-026": "the rail",
+   "C-069": "all",
+   "C-164": "the help summary",
+   "C-149": "the strings in `shell.tsx`",
+   "C-150": "all"
+  },
+  "files": [
+   "apps/web/src/components/shell.tsx",
+   "apps/web/src/components/public-header.tsx",
+   "apps/web/src/app/sign-in/layout.tsx",
+   "apps/web/e2e/a11y.ts",
+   "apps/web/src/lib/http/route.ts",
+   "apps/web/src/app/console/support/page.tsx",
+   "apps/web/src/app/console/terms/page.tsx",
+   "apps/web/src/components/help.ts"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 67 (`ux-header-menus`)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: the first Tab reaches the skip link and Enter moves into main",
+   "e2e: specs that find rail links by name updated",
+   "brand: `brand.spec.ts` rail baseline"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 69,
+  "branch": "co-001/ux-shell-context",
+  "title": "The practice stays chosen off its pages, and each page's help is its own",
+  "findings": [
+   "UX-102",
+   "UX-111",
+   "UX-157"
+  ],
+  "cids": [
+   "C-066",
+   "C-068",
+   "C-192"
+  ],
+  "parts": {
+   "C-066": "all",
+   "C-068": "all",
+   "C-192": "the help link's move into the page header"
+  },
+  "files": [
+   "apps/web/src/proxy.ts",
+   "apps/web/src/lib/http/invoke.ts",
+   "apps/web/src/lib/http/next.ts",
+   "apps/web/src/components/shell.tsx",
+   "apps/web/src/app/support/page.tsx",
+   "apps/web/src/app/terms/page.tsx",
+   "apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx",
+   "apps/web/src/components/help.ts",
+   "apps/web/src/app/page.tsx",
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 22 (`ux-page-header`)",
+   "PR #50 (open) also changes `lib/http/next.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: the kept practice is used only if the actor still reaches it",
+   "e2e: from a practice to Support and back, the rail keeps the practice"
+  ],
+  "leavesOut": "Nothing. The cookie holds an opaque id only.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 70,
+  "branch": "co-001/ux-organization-area",
+  "title": "The organization's administrator gets an Organization area; 'Billing' is renamed Subscription",
+  "findings": [
+   "UX-120",
+   "UX-121"
+  ],
+  "cids": [
+   "C-067",
+   "C-090"
+  ],
+  "parts": {
+   "C-067": "all",
+   "C-090": "all"
+  },
+  "files": [
+   "apps/web/src/components/shell.tsx",
+   "apps/web/src/lib/http/route.ts",
+   "apps/web/src/lib/http/invoke.ts",
+   "apps/web/src/app/settings/billing/page.tsx",
+   "apps/web/src/lib/routes/billing.ts",
+   "apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx",
+   "apps/web/src/components/settings/nav.tsx",
+   "apps/web/src/app/settings/billing/[organizationId]/page.tsx"
+  ],
+  "size": "M, about 260 lines",
+  "dependsOn": [
+   "after #42 merges"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: `billing.spec.ts` (the administrator reaches users and the subscription from the rail; a billing manager sees no Subscription link)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 71,
+  "branch": "co-001/ux-forbidden",
+  "title": "A refused page has its own title, words for the role, and a link to the next step",
+  "findings": [
+   "UX-051",
+   "UX-092"
+  ],
+  "cids": [
+   "C-020",
+   "C-019"
+  ],
+  "parts": {
+   "C-020": "all",
+   "C-019": "all"
+  },
+  "files": [
+   "apps/web/src/components/shell.tsx",
+   "packages/ui/src/states/permission-state.tsx",
+   "packages/ui/src/states/states.test.tsx",
+   "apps/web/src/app/error.tsx",
+   "apps/web/src/app/**/page.tsx (the 65 callers of Forbidden)",
+   "apps/web/src/app/console/support/page.tsx",
+   "apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx",
+   "apps/web/src/app/p/[practiceId]/support-access/[supportGrantId]/page.tsx",
+   "apps/web/src/components/format.ts",
+   "apps/web/src/app/page.tsx",
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/contracts/page.tsx",
+   "apps/web/src/app/p/[practiceId]/digests/[digestId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/packet/page.tsx",
+   "apps/web/src/app/console/specialist-queue/page.tsx",
+   "apps/web/src/app/console/rule-releases/page.tsx",
+   "apps/web/src/app/settings/billing/[organizationId]/page.tsx"
+  ],
+  "size": "L, about 380 lines (65 callers pass a title)",
+  "dependsOn": [
+   "after #42 merges",
+   "PR #49 (open) also changes `app/console/rule-releases/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #50 (open) also changes `components/format.ts`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #51 (open) also changes `app/p/[practiceId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 (open) also changes `app/p/[practiceId]/cases/[caseId]/packet/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: `states.test.tsx` (the title as h1, the action link)",
+   "axe: the permission state of five routes, `page-has-heading-one` by rule id"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 72,
+  "branch": "co-001/ux-loading-frame",
+  "title": "Loading keeps the header and Menu, and every screen has its loading state",
+  "findings": [
+   "UX-076"
+  ],
+  "cids": [
+   "C-014"
+  ],
+  "parts": {
+   "C-014": "the frame and the missing loading files"
+  },
+  "files": [
+   "apps/web/src/components/loading-frame.tsx (new)",
+   "apps/web/src/components/shell.tsx",
+   "apps/web/src/app/p/[practiceId]/loading.tsx (new)",
+   "apps/web/src/app/p/[practiceId]/settings/loading.tsx (new)",
+   "apps/web/src/app/p/[practiceId]/uploads/loading.tsx (new)",
+   "apps/web/src/app/p/[practiceId]/support-access/[supportGrantId]/loading.tsx (new)",
+   "apps/web/src/app/p/[practiceId]/error.tsx (new)",
+   "apps/web/src/app/**/loading.tsx (40 files)"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 28 (`ux-loading-announce`)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: the held-loading shots show the header and Menu",
+   "axe: three loading states"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 73,
+  "branch": "co-001/ux-console-home",
+  "title": "`/console` is every internal role's home: what needs a person now",
+  "findings": [
+   "UX-052",
+   "UX-182"
+  ],
+  "cids": [
+   "C-108",
+   "C-193"
+  ],
+  "parts": {
+   "C-108": "all",
+   "C-193": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/page.tsx (new)",
+   "apps/web/src/lib/routes/console.ts",
+   "apps/web/src/app/page.tsx",
+   "apps/web/src/components/shell.tsx",
+   "apps/web/src/components/help.ts",
+   "apps/web/src/app/console/organizations/page.tsx"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after #42 merges"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: each internal persona lands on `/console` with its counts linked",
+   "axe: `/console`"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 74,
+  "branch": "co-001/ux-console-support-page",
+  "title": "Console support grants: open ones first, the ticket chosen, End now confirmed",
+  "findings": [
+   "UX-011",
+   "UX-055",
+   "UX-073",
+   "UX-077",
+   "UX-078",
+   "UX-106",
+   "UX-155"
+  ],
+  "cids": [
+   "C-002",
+   "C-110",
+   "C-028",
+   "C-039",
+   "C-034",
+   "C-105",
+   "C-196"
+  ],
+  "parts": {
+   "C-002": "the console support page",
+   "C-110": "the open grants first, the default view and the ticket as a choice",
+   "C-028": "the console support page",
+   "C-039": "the Ticket field",
+   "C-034": "the console support page",
+   "C-105": "the console support page",
+   "C-196": "End now"
+  },
+  "files": [
+   "apps/web/src/app/console/support/page.tsx",
+   "apps/web/src/lib/routes/console.ts"
+  ],
+  "size": "M, about 280 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 3, 16, 21, 23, 25 and 34 (the shared pieces this page takes)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: the support-grant journey",
+   "axe: `/console/support` at 1280 and 390 px"
+  ],
+  "leavesOut": "Lane A: the pending grant request and its decision (a table or a ticket state).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 75,
+  "branch": "co-001/ux-users-page",
+  "title": "Users and roles: the refusal points the right way, two-step verification named, rows stack",
+  "findings": [
+   "UX-006",
+   "UX-011",
+   "UX-013",
+   "UX-067",
+   "UX-073",
+   "UX-078",
+   "UX-100",
+   "UX-166"
+  ],
+  "cids": [
+   "C-005",
+   "C-002",
+   "C-018",
+   "C-089",
+   "C-028",
+   "C-034",
+   "C-017",
+   "C-170"
+  ],
+  "parts": {
+   "C-005": "part (3): the Locked badge with 'Ask PaidWhole support to unlock'",
+   "C-002": "the users page",
+   "C-018": "the users page",
+   "C-089": "all",
+   "C-028": "the users page",
+   "C-034": "the users page",
+   "C-017": "the users page",
+   "C-170": "the users page"
+  },
+  "files": [
+   "apps/web/src/lib/routes/settings.ts",
+   "apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx"
+  ],
+  "size": "M, about 280 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 3, 15, 19, 25 and 34"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: `onboarding.spec.ts` (an invite refusal links to Help and support)",
+   "axe: the users page at 1280 and 390 px"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 76,
+  "branch": "co-001/ux-support-access",
+  "title": "A support grant names its holder, can be ended by the practice, and its reads are grouped",
+  "findings": [
+   "UX-011",
+   "UX-072",
+   "UX-100",
+   "UX-133",
+   "UX-168",
+   "UX-199"
+  ],
+  "cids": [
+   "C-002",
+   "C-136",
+   "C-017",
+   "C-064",
+   "C-149",
+   "C-151"
+  ],
+  "parts": {
+   "C-002": "the support-access page",
+   "C-136": "the holder, the empty states and the request to end",
+   "C-017": "the support-access page",
+   "C-064": "all",
+   "C-149": "the support-access strings",
+   "C-151": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/support-access/[supportGrantId]/page.tsx",
+   "apps/web/src/lib/routes/practice.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 3 and 19"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: the support-grant journey from the practice side",
+   "axe: the support-access page at 390 px"
+  ],
+  "leavesOut": "Lane A: `end_support_grant()`'s actor check widened to a new practice permission (a SECURITY DEFINER change); until then the page offers the request to end.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 77,
+  "branch": "co-001/ux-access-log",
+  "title": "The access log pages both ways, names the record it filters by, and links from records",
+  "findings": [
+   "UX-071",
+   "UX-100",
+   "UX-137"
+  ],
+  "cids": [
+   "C-134",
+   "C-017",
+   "C-135"
+  ],
+  "parts": {
+   "C-134": "the Newer and Newest links, the page shown and the Who read this links",
+   "C-017": "the access-log page",
+   "C-135": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/settings/access-log/page.tsx",
+   "apps/web/src/lib/routes/settings.ts",
+   "apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx",
+   "apps/web/src/app/p/[practiceId]/lines/[lineId]/page.tsx"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "LANES.md queue item 8 (audit #49, the access log's later pages): one PR",
+   "PR #51 (open) also changes `app/p/[practiceId]/cases/[caseId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)",
+   "PR #52 (open) also changes `app/p/[practiceId]/lines/[lineId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit (db): the record labeller reads under RLS and never returns PHI",
+   "e2e: from a case to Who read this"
+  ],
+  "leavesOut": "Lane A: the person, route, action, kind and date filters, and the claim-number lookup (widening `practice_access_log()`).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 78,
+  "branch": "co-001/ux-console-confirm",
+  "title": "The console's widest actions ask for a tick that states the consequence",
+  "findings": [
+   "UX-013",
+   "UX-046"
+  ],
+  "cids": [
+   "C-018",
+   "C-058"
+  ],
+  "parts": {
+   "C-018": "the console notices in `lib/routes/console.ts`",
+   "C-058": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/app/console/status/page.tsx",
+   "apps/web/src/app/console/models/page.tsx",
+   "apps/web/src/components/screening/split-form.tsx",
+   "apps/web/src/app/console/billing/page.tsx",
+   "apps/web/src/app/console/support/page.tsx",
+   "apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx",
+   "apps/web/src/lib/routes/console.ts",
+   "apps/web/src/lib/routes/billing.ts",
+   "apps/web/src/lib/routes/support.ts",
+   "apps/web/src/lib/routes/console-models.ts",
+   "apps/web/src/lib/screening/routes.ts"
+  ],
+  "size": "M, about 320 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "PR #54 (merged)",
+   "UX PR 15 (`ux-notice-once`)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit (db): each route refuses without `confirm`",
+   "e2e: suspend, invoice and maintenance each ask first"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 79,
+  "branch": "co-001/ux-console-org-page",
+  "title": "The console's organization page leads with its records",
+  "findings": [
+   "UX-203"
+  ],
+  "cids": [
+   "C-199"
+  ],
+  "parts": {
+   "C-199": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "apps/web/src/lib/routes/console.ts"
+  ],
+  "size": "M, about 300 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 57 and 78"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: the organization page at 1280 and 390 px",
+   "axe: `/console/organizations/[organizationId]`"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 80,
+  "branch": "co-001/ux-support-tickets",
+  "title": "The support form names the page it came from, and the desk sees each ticket's age",
+  "findings": [
+   "UX-058",
+   "UX-171",
+   "UX-191"
+  ],
+  "cids": [
+   "C-109",
+   "C-172",
+   "C-173"
+  ],
+  "parts": {
+   "C-109": "the page shown on the form, and the age",
+   "C-172": "all",
+   "C-173": "all"
+  },
+  "files": [
+   "apps/web/src/lib/routes/support.ts",
+   "apps/web/src/components/shell.tsx",
+   "apps/web/src/app/support/page.tsx",
+   "apps/web/src/app/console/tickets/page.tsx"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "after #42 merges"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: the help link carries a path with opaque ids only, checked against the route registry"
+  ],
+  "leavesOut": "Lane A: a checked `page_path` column so the desk sees the page, and ticket replies and the thread (a table with `practice_id` and forced RLS), after #42's mail streams.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 81,
+  "branch": "co-001/ux-notification-words",
+  "title": "Notifications: magnitudes in words, counts that agree, and the shortfall in one name",
+  "findings": [
+   "UX-014",
+   "UX-031",
+   "UX-114",
+   "UX-115"
+  ],
+  "cids": [
+   "C-083",
+   "C-081",
+   "C-106",
+   "C-054"
+  ],
+  "parts": {
+   "C-083": "the notifications",
+   "C-081": "all",
+   "C-106": "the monitoring twin",
+   "C-054": "the notifications"
+  },
+  "files": [
+   "apps/web/src/components/monitoring/display.tsx",
+   "apps/web/src/components/monitoring/display.test.tsx (from #42)"
+  ],
+  "size": "S, about 120 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 18, 30 and 36"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: `display.test.tsx` (a recoupment notification never contains '-$'; count-of-one)"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 82,
+  "branch": "co-001/ux-home-by-role",
+  "title": "The practice home leads with each role's own work",
+  "findings": [
+   "UX-119",
+   "UX-141"
+  ],
+  "cids": [
+   "C-129",
+   "C-206"
+  ],
+  "parts": {
+   "C-129": "all",
+   "C-206": "all"
+  },
+  "files": [
+   "apps/web/src/app/p/[practiceId]/page.tsx",
+   "apps/web/src/lib/routes/practice.ts",
+   "apps/web/src/lib/dashboard/queries.ts",
+   "apps/web/src/app/p/[practiceId]/settings/page.tsx",
+   "apps/web/src/lib/routes/settings.ts",
+   "apps/web/src/components/settings/getting-started.tsx (new)"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 9, 11 and 46",
+   "PR #51 (open) also changes `app/p/[practiceId]/page.tsx`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: the home for a billing manager, an administrator and a viewer",
+   "axe: `/p/[practiceId]` for three roles"
+  ],
+  "leavesOut": "Nothing. The combined administrator-and-biller role is audit #90 (Lane A's PR 14).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 83,
+  "branch": "co-001/ux-settings-words",
+  "title": "Settings routes: proof level in short sentences, the chain's agreements told apart, messages with a next step",
+  "findings": [
+   "UX-013",
+   "UX-026",
+   "UX-050",
+   "UX-107",
+   "UX-109",
+   "UX-201"
+  ],
+  "cids": [
+   "C-018",
+   "C-094",
+   "C-088",
+   "C-130",
+   "C-046",
+   "C-169"
+  ],
+  "parts": {
+   "C-018": "the notices set in `lib/routes/settings.ts`",
+   "C-094": "the chain's description line",
+   "C-088": "the two messages in `settings.ts`",
+   "C-130": "the proof-level sentence",
+   "C-046": "the proof-level choice as two radios",
+   "C-169": "all"
+  },
+  "files": [
+   "apps/web/src/lib/routes/settings.ts",
+   "apps/web/src/app/p/[practiceId]/settings/proof-level/page.tsx"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 17, 53 and 54"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: the proof-level words from the current level; `counted()` names both stages",
+   "copy: every recovered carries its proof label"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 84,
+  "branch": "co-001/ux-screening-upload-page",
+  "title": "The screening page runs in the order of the task, and its file is chosen and sent",
+  "findings": [
+   "UX-041",
+   "UX-082",
+   "UX-087",
+   "UX-135",
+   "UX-156",
+   "UX-207"
+  ],
+  "cids": [
+   "C-117",
+   "C-021",
+   "C-036",
+   "C-116",
+   "C-142",
+   "C-204"
+  ],
+  "parts": {
+   "C-117": "all but the kept texts",
+   "C-021": "the screening page and the upload form",
+   "C-036": "the screening file field",
+   "C-116": "all",
+   "C-142": "the screening page",
+   "C-204": "all"
+  },
+  "files": [
+   "apps/web/src/app/screening/page.tsx",
+   "apps/web/src/components/screening/upload-form.tsx",
+   "apps/web/src/lib/screening/sent.ts",
+   "apps/web/src/lib/screening/messages.ts",
+   "apps/web/src/lib/screening/routes.ts"
+  ],
+  "size": "L, about 380 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PRs 14, 16 and 61"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: `screening.spec.ts` (the outline first; the file field marked on a refusal)",
+   "unit: `legal-surfaces.test.ts` green",
+   "copy: the screening copy rules"
+  ],
+  "leavesOut": "The kept notices' shape (C-102) and their \"from your upload\" are the founder's (6.2).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 85,
+  "branch": "co-001/ux-screening-messages",
+  "title": "The screening's messages: one left-out sentence, the result's anchor, figures in mono",
+  "findings": [
+   "UX-013",
+   "UX-057",
+   "UX-079",
+   "UX-113",
+   "UX-134",
+   "UX-154",
+   "UX-205"
+  ],
+  "cids": [
+   "C-018",
+   "C-052",
+   "C-043",
+   "C-103",
+   "C-115",
+   "C-141",
+   "C-202"
+  ],
+  "parts": {
+   "C-018": "the screening notices",
+   "C-052": "the screening's ZIP sentences (:710 taken; :700 and :701 by the founder's answer)",
+   "C-043": "the screening template's stacked reference",
+   "C-103": "the screening messages",
+   "C-115": "the redirect's anchor",
+   "C-141": "the screening sentences",
+   "C-202": "the left-out sentence, by the founder's answer (F5)"
+  },
+  "files": [
+   "apps/web/src/lib/screening/messages.ts",
+   "apps/web/src/lib/screening/routes.ts",
+   "apps/web/src/components/screening/anomalies.tsx",
+   "apps/web/src/app/screening/page.tsx"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 84",
+   "the founder's answer on the ZIP sentences",
+   "the founder's answer on the left-out sentence (F5)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: `messages.test.ts`",
+   "e2e: `screening.spec.ts` (the request confirmation is in view after sending)",
+   "copy: the screening copy rules"
+  ],
+  "leavesOut": "The founder: the screening's two ZIP sentences (:700, :701) and the left-out sentence, held for counsel (F5).",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 86,
+  "branch": "co-001/ux-enrol-qr",
+  "title": "Enrolment shows a QR code",
+  "findings": [
+   "UX-128"
+  ],
+  "cids": [
+   "C-042"
+  ],
+  "parts": {
+   "C-042": "the QR code and its dependency"
+  },
+  "files": [
+   "apps/web/src/app/sign-in/enroll/page.tsx",
+   "apps/web/src/app/sign-in/new-password/page.tsx",
+   "apps/web/package.json",
+   "pnpm-lock.yaml"
+  ],
+  "size": "S, about 100 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "UX PR 20 (`ux-sha256`: the copy button)",
+   "ci-deps' licence and age checks for the QR library (PR #48)",
+   "PR #48 also changes `pnpm-lock.yaml` (LANES.md rule 6)"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: the QR SVG is server-rendered, under the CSP, the secret never logged"
+  ],
+  "leavesOut": "Nothing.",
+  "inFlight": "",
+  "waitsOn": ""
+ },
+ {
+  "order": 87,
+  "branch": "co-001/ux-terms-text",
+  "title": "The terms page shows the terms",
+  "findings": [
+   "UX-009",
+   "UX-026"
+  ],
+  "cids": [
+   "C-006",
+   "C-094"
+  ],
+  "parts": {
+   "C-006": "the render, what changed, and the return to the page the gate came from",
+   "C-094": "the two agreements' names, from audit #51's titles"
+  },
+  "files": [
+   "apps/web/src/app/terms/page.tsx",
+   "apps/web/src/lib/routes/onboarding.ts",
+   "apps/web/src/app/console/terms/page.tsx",
+   "apps/web/src/lib/routes/console-onboarding.ts",
+   "apps/web/src/lib/http/next.ts"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "Lane A's legal-text tables (audit #51)",
+   "the founder's answer (6.2) on which text is the signed-off version",
+   "PR #50 (open) also changes `lib/http/next.ts`: the one merged second keeps both (LANES.md rule 6)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "unit (db): acceptance records the exact hash shown",
+   "e2e: `onboarding.spec.ts` (the gate shows the text and returns to the page)",
+   "axe: `/terms`"
+  ],
+  "leavesOut": "Lane A: the legal-text store (audit #51). The founder: which document is the signed-off version (the counsel list).",
+  "inFlight": "",
+  "waitsOn": "Lane A"
+ },
+ {
+  "order": 88,
+  "branch": "co-001/ux-prospect-context",
+  "title": "An audit request from a screening arrives with its screening",
+  "findings": [
+   "UX-131"
+  ],
+  "cids": [
+   "C-114"
+  ],
+  "parts": {
+   "C-114": "all"
+  },
+  "files": [
+   "apps/web/src/app/console/prospects/page.tsx",
+   "apps/web/src/lib/routes/console-onboarding.ts"
+  ],
+  "size": "M, about 220 lines",
+  "dependsOn": [
+   "Lane A's console read function over `screening_lead`"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "e2e: the prospects page shows a screened request's summary",
+   "axe: `/console/prospects`"
+  ],
+  "leavesOut": "Lane A: the SECURITY DEFINER read that returns only the kept summary's counts and totals.",
+  "inFlight": "",
+  "waitsOn": "Lane A"
+ },
+ {
+  "order": 89,
+  "branch": "co-001/ux-screening-kept-notices",
+  "title": "The screening's kept-data notices, reshaped with every clause kept, and the closed link's order",
+  "findings": [
+   "UX-041",
+   "UX-122",
+   "UX-136"
+  ],
+  "cids": [
+   "C-117",
+   "C-102",
+   "C-121"
+  ],
+  "parts": {
+   "C-117": "the kept texts' 'from your upload'",
+   "C-102": "all",
+   "C-121": "the closed link's order (F4)"
+  },
+  "files": [
+   "apps/worker/src/screening/wording.ts",
+   "apps/web/src/lib/screening/retention.ts",
+   "apps/web/src/components/screening/result-summary.tsx",
+   "apps/web/src/components/screening/upload-form.tsx",
+   "apps/web/src/app/request-audit/page.tsx",
+   "apps/web/src/app/screening/results/[resultId]/not-found.tsx"
+  ],
+  "size": "M, about 200 lines",
+  "dependsOn": [
+   "after #42 merges",
+   "the founder's answer (6.2), then counsel"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "unit: `legal-surfaces.test.ts` (markers kept; the review recorded in this PR)",
+   "copy: the screening copy rules"
+  ],
+  "leavesOut": "The founder, then counsel: the text.",
+  "inFlight": "",
+  "waitsOn": "founder"
+ },
+ {
+  "order": 90,
+  "branch": "co-001/ux-palette",
+  "title": "The palette: link, focus and surfaces adopted, warm greys, a hover a person can see",
+  "findings": [
+   "UX-176"
+  ],
+  "cids": [
+   "C-194"
+  ],
+  "parts": {
+   "C-194": "all"
+  },
+  "files": [
+   "packages/brand/src/tokens.css",
+   "packages/brand/src/tokens.ts",
+   "docs/brand/BRAND.md"
+  ],
+  "size": "S, about 60 lines (tokens only)",
+  "dependsOn": [
+   "the founder's answer (6.2)"
+  ],
+  "after42": false,
+  "visible": true,
+  "tests": [
+   "brand: `tools/brand-colors` contrast table; every `brand.spec.ts` baseline regenerated and inspected"
+  ],
+  "leavesOut": "The brand owner (ADR 0058 D9).",
+  "inFlight": "",
+  "waitsOn": "founder"
+ },
+ {
+  "order": 91,
+  "branch": "co-001/ux-appearance",
+  "title": "People reach dark mode: an Appearance setting, Match my device by default",
+  "findings": [
+   "UX-118",
+   "UX-160"
+  ],
+  "cids": [
+   "C-080",
+   "C-047"
+  ],
+  "parts": {
+   "C-080": "the tokens' device rule, the server-rendered theme, the setting page and the gate (Lane B)",
+   "C-047": "the sign-in ground's alias token (`--pw-bg-sign-in`), after F3"
+  },
+  "files": [
+   "packages/brand/src/tokens.css",
+   "packages/brand/src/tailwind-theme.css",
+   "apps/web/src/app/sign-in/layout.tsx",
+   "apps/web/src/app/layout.tsx",
+   "apps/web/src/app/account/appearance/page.tsx (new)",
+   "apps/web/src/lib/routes/account.ts",
+   "apps/web/src/components/shell.tsx",
+   "apps/web/e2e/brand.spec.ts",
+   "apps/web/e2e/a11y.ts",
+   "docs/adr/0056-wear-the-paidwhole-brand-from-one-token-source-self-hosted-fonts-and-status-as-text-on-tint.md (a dated amendment)"
+  ],
+  "size": "M, about 250 lines",
+  "dependsOn": [
+   "the founder's answer (6.2): F1, and F3 for the alias",
+   "UX PR 32 (`ux-dark-tokens`)",
+   "after #42 merges (the account menu's link in `shell.tsx`, and option (c)'s `tenancy.ts`)",
+   "option (c): Lane A's migration"
+  ],
+  "after42": true,
+  "visible": true,
+  "tests": [
+   "e2e: compared dark baselines (header, sign-in, a tile row, a status table); axe in both themes; no flash of the wrong theme"
+  ],
+  "leavesOut": "The founder (it reverses D9 item 3), and the brand owner for the alias (F3). Lane A, for option (c): `user_settings_valid` widened to an `appearance` key, with `tenancy.ts` after #42. ADR 0056's dark-mode paragraph gains a dated '*Amended ...*' line.",
+  "inFlight": "",
+  "waitsOn": "founder"
+ }
+]
