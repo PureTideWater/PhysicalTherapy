@@ -879,3 +879,13 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Now:** its two adversarial reviews (brand and copy; consistency and fitness for use) and the fix round with the documentation-only suite (wf_2db9e9db-7fd). Then the push, the fresh-clone verification reading CI, and the merge.
 - **2026-10-26 09:48 UTC: #53 (the model evaluation gate) may keep a one-line hunk in a #42 file.** `infra/test/compute.test.ts` pins the permitted CLI's call, and #53 must change it to `readGatewayConfig(process.env, { serving: 'evaluable' })`. It merges cleanly with #42's head (`git merge-tree`), so the orchestrator allowed it under rule 6 and the co-founder's Q2 precedent; the alternative, holding #53 until #42 merges, would block the gate for an unknown time. Noted under LANES.md "Handed to Lane A" for #42's next base merge. #53 is green on every check, and its fresh-clone verification passed.
 - **2026-10-26 09:50 UTC: #84, the model evaluation gate, merged as PR #53 (88a0e4e).** It is the fourth parallel item. CI was green on f8e0bb1, and the fresh-clone verification passed. The session moves to #120, the contract PHI check (`co-001/contract-phi-check`). Merged so far: #47, #46, #54 and #53.
+- **2026-10-26 ~10:05-10:14 UTC: the wind-down for the handoff to Lane A tomorrow morning, and the co-founder's budget ruling.**
+  - **The reading:** the co-founder reported 90% weekly usage (~10:05 UTC), past the ~85% stop for new starts.
+  - **Ruled, the co-founder, ~10:13 UTC:** "You can use 98% of usage. So do what you can up until that. Lane A is running on a different account different usage. Lane A is another Claude account but working from the same git hub repo." So Lane B may spend up to 98%, and the handoff goes through the repository: `claude/build-ops` (LANES.md, this file, the status files) and the PRs.
+  - **Finishing to merge:** #50 (#10), #51 (15b), #52 (#38), #49 (the release content checks), #55 (the checklist, this session), `co-001/ux-suspended-standing` (UX PR 2, built; resumed after the ruling), and ci-deps (#48) tonight after 19:20 UTC, its last steps time-bound.
+  - **Stopped at clean, recorded points** (branch pushed, status file a handoff, nothing running):
+    - `co-001/ux-forms` at 17bbb70: partly built; slice A after #50, C1 and C2 after #51 and #52;
+    - `co-001/contract-phi-check` (#120): stopping after its builders;
+    - #32: design done, not built;
+    - #46 (the Verified seal) and #48's narrative draft: not started;
+    - ci-browser at 8b38f48 (phase 1 built) and the CI follow-ups P1, P2 and P4: designed and reviewed.
