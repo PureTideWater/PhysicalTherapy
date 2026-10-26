@@ -6,6 +6,13 @@ to Lane A tomorrow morning). Nothing is running and no check-in is scheduled.*
 ## Resumed (2026-10-26 10:13 UTC, the orchestrator's change of plan: up to 98% weekly usage allowed; take it to the merge, lean)
 - 10:14: worktree restored from origin at 938f991; check stage running (wf_49f58d38-036), with the base merge (88a0e4e, PR #53); draft PR #56 opened and subscribed; safety-net check-in 12:15 (trig_01Vph3iWdjHuPwC75hFwAxNC).
 
+- 10:27: the check stage passed (wf_49f58d38-036; base 88a0e4e merged at a1c4185; unit 337 files 5,274 passed 3 skipped; lint 1,520 files 0/0; db 42/42; route tests 4,600; no money package affected); pushed a1c4185; PR #56's description written from the template and read back byte for byte.
+- ~10:35: after shots (12, a1c4185) and the gallery, private: https://claude.ai/artifact/CxnGySfnkDBPfMHbSZJFib
+- ~10:40: the two adversarial reviews, both "merge after fixes", none blocking; all accepted (`approval-summaries/lane-b-ux-suspended-standing-review-findings.json`):
+  - correctness against the database's refusal (wf_122b0c50-2d7): SSC-01 several invoices held 30 days (paying the named one does not restart runs); SSC-02 no reopen path exists, so no reopen promise for a closed organization; SSC-03 the ACH caveat on past due; SSC-04 the closed check in the claim insert;
+  - UX and brand with PR #55's checklist (wf_43a5eb15-8b4): UX-1 the past-due hold's wording while suspended; UX-2 the price footnote; UX-3 the closed invoices empty state (no reopen, per SSC-02); UX-4 closed in a neutral tone; UX-5 the Pay anchor under the sticky header; UX-6 one name in the console; UX-7 the console's firm-aware hold; UX-8 "reinstates"; UX-9 the plan refusal's wording.
+- Fix round running (wf_01c39982-072): every finding, then the full local suite once; then one push.
+
 ## Where it stopped (wind-down, 10:10)
 **Stopped at design reviewed (SS-01 to SS-14 accepted), with the build already committed; next step: the build's check
 stage, then the draft PR.** The builders had started (wf_c4497dcf-2f8, from ~09:36) before the wind-down arrived and had

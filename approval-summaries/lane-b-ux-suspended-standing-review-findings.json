@@ -1,0 +1,157 @@
+{
+ "correctness": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "SSC-01",
+    "severity": "should-fix",
+    "file": "apps/web/src/lib/routes/billing.ts",
+    "line": 206,
+    "claim": "The suspended_nonpayment next step says paying the one holding invoice restarts runs. billing_standing (20261029150000_billing.sql:248-260) picks only the oldest failing invoice (ORDER BY first_failed_at, id LIMIT 1). If a second open or uncollectible invoice also failed more than 30 days ago, paying the named invoice moves the hold to that one, and organization_run_refusal keeps refusing. RESTARTS (line 208, used at line 241) and the combined hold 'new runs stay stopped until it is paid as well' (lines 249-256) are then false. The tests only ever build one failing invoice, so they pass vacuously here.",
+    "scenario": "A group's monthly invoice fails by card on 2026-08-01, and the 2026-09-01 invoice fails on the same dead card. On 2026-10-05 both are more than 30 days old. The page says 'Pay SIM-0001 below. A card payment restarts runs at once'. The administrator pays SIM-0001 by card, billing_standing now holds on SIM-0002 (failed 2026-09-01, more than 30 days ago), and uploads and pricing runs are still refused with 'suspended for nonpayment'. The page now names SIM-0002 and makes the same promise again.",
+    "fix": "In organizationBilling (apps/worker/src/billing/account.ts:122-130), add to the organization query `(SELECT count(*) FROM invoice i WHERE i.organization_id = o.id AND i.status IN ('open','uncollectible') AND i.first_failed_at <= now() - interval '30 days')::int AS holding_count` (the same predicate the view uses) and expose it as `holdingCount` on OrganizationBilling/BillingView. In accountStanding, when holdingCount > 1, word the step as 'Pay SIM-0001 and the other N invoices unpaid for 30 days below.', and say runs restart only once all of them are paid (card at once, ACH once settled). Use the same rule for the 'until it is paid as well' clause. Add a db test with two invoices failed 31 and 45 days ago: pay the holding one, then assert that the refusal persists and the standing names the second."
+   },
+   {
+    "id": "SSC-02",
+    "severity": "should-fix",
+    "file": "apps/web/src/lib/routes/billing.ts",
+    "line": 248,
+    "claim": "A closed organization is told it can be reopened, but no product path reopens one. setOrganizationStatus accepts only 'suspended' | 'active' and refuses a closed organization outright ('a closed organization is neither suspended nor reinstated', apps/web/src/lib/routes/console.ts:103-105). No ADR or runbook describes reopening. organization_run_refusal's own sentence for closed is 'no new run starts', with no lift. Yet the closed next step is 'Open a support ticket to reopen it.' (line 266), planRefusal says 'open a support ticket to reopen it' (line 269), and the past-due hold says 'new runs stay stopped even once the organization is reopened' (lines 248 and 256). The closed plus nonpayment hold, 'new runs stay stopped until it is paid as well' (line 255), implies that paying restarts runs, and for a closed organization nothing does.",
+    "scenario": "An organization closed with an invoice unpaid for 31 days reads: 'The organization is closed: its data stays readable, and no new run starts. An invoice is also unpaid since 2026-09-01; new runs stay stopped until it is paid as well.' It pays, and nothing restarts. Its ticket asking to reopen hits a console that refuses to change a closed status.",
+    "fix": "For kind 'closed', drop every reopen promise. Use the next step ticket(' if you have a question about the closure.') and planRefusal 'A closed organization takes no new plan.'. For held, when closed, use ` An invoice is also unpaid since ${day}; it is still owed.` with no clause about runs, and for closed drop `lifted` entirely. Update the BIL-05 rows in docs/product/test-matrix.md, matrix.ts and fixtures/synthetic/BIL-05/expected.json ('offers the ticket to reopen it'), along with account-standing.test.tsx and the closed db test. If reopening is meant to exist, it is a Lane A console and migration change, so record it as a follow-up and do not promise it in customer copy now."
+   },
+   {
+    "id": "SSC-03",
+    "severity": "nit",
+    "file": "apps/web/src/lib/routes/billing.ts",
+    "line": 230,
+    "claim": "The past-due words 'until it is paid' (line 230) and 'unless it is paid by <date>' (line 256) treat an ACH payment as paid when it starts. billing_standing keeps first_failed_at and the open status until the bank settles, so an ACH payment started a day before the stop date still lets runs stop on that date. The suspended_nonpayment step got the ACH caveat (SS-03), but these two did not. 'paid by <date>' is also a calendar date, while the stop is the exact instant first_failed_at + 30 days (for example 15:00 UTC).",
+    "scenario": "Past due since 2026-10-10 15:00 UTC. The page says runs stop 2026-11-09. The administrator pays by bank on 2026-11-08, settlement lands 2026-11-11, and runs are refused 2026-11-09 to 11 even though the page implied paying in time was enough.",
+    "fix": "Append the same caveat to the group past-due notice and the past-due hold, for example '\u2026until it is paid; a bank (ACH) payment counts once the bank settles it, usually within a few days.' Optionally print the stop as a UTC timestamp (utc()) instead of a date."
+   },
+   {
+    "id": "SSC-04",
+    "severity": "nit",
+    "file": "apps/worker/src/billing/account.ts",
+    "line": 263,
+    "claim": "subscribe reads organization.status in its own tp_billing transaction, before currentSubscription, ensureCustomer and the claim INSERT. This is a check-then-act: a status change between the read and the claim is not seen. It is theoretical today because nothing sets 'closed', but the claim is the place that already serializes subscription starts.",
+    "scenario": "Once a close path exists, an organization closed between the status read and the subscription_claim insert still gets a Stripe subscription.",
+    "fix": "Fold the check into the claim statement: `INSERT INTO subscription_claim (organization_id, plan) SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM organization WHERE id = $1 AND status <> 'closed') ON CONFLICT DO NOTHING RETURNING id`. Keep the early read for the specific error, and when the insert returns no row, re-read the status to pick the message."
+   }
+  ],
+  "checked": [
+   "Diff origin/claude/build-platform...HEAD (24 files) read; the changed files read whole: standing.ts, billing.ts accountStanding/organizationBillingPage/consoleBillingPage/payInvoiceAction, account.ts (organizationBilling, subscribe, payOpenInvoice, customerOf), settings billing page.tsx, account-standing.tsx, console billing page, support route and page, seed.ts, synthetic-personas.ts, seed.db.test.ts, billing.spec.ts, the BIL-05/06 matrix, registry and fixtures",
+   "Latest definitions: billing_standing, organization_run_refusal, practice_run_refusal and refuse_new_work_while_suspended exist only in 20261029150000_billing.sql (no later redefinition); a practice is owned only by a group (tenancy.sql practice_owned_by_group), so the firm rows saying nothing about runs is correct",
+   "Every standingKind x kind x status x billing pair against the DB: group and closed groups are right about runs; firm wording makes no run claim; internal is unreachable (ensureCustomer refuses internal, console excludes it, setOrganizationStatus is limited to group/firm)",
+   "Holding invoice: s.invoice_id comes from the view's lateral, limited to i.organization_id = o.id, and is read with tp_app RLS (invoice_owners_read), so another organization's invoice cannot show; payOpenInvoice checks organization_id = $2 as tp_billing and the action asserts organization.billing; #pay-<uuid> is an opaque id in the fragment; no PHI",
+   "subscribe closed refusal: read as tp_billing (status column granted); BillingRefusedError('plan', \u2026) maps to invalid with field plan; tested before the claim or Stripe; a refusal writes no audit event, consistent with the other refusals",
+   "Seed: synthetic names only, dev script only, fresh-database-only seed; the persona gets terms accepted and credentials in the store; seed.db.test signs in every persona, including suspended-admin; no production path imports synthetic-personas",
+   "standing.ts is pure with no imports; account-standing.tsx imports only types from lib/routes/billing; the console sort is stable over STANDING_ORDER",
+   "Support: category comes from a static map keyed by the regex-validated from; no reflection and no redirect",
+   "Security checklist: no migration, no new query outside the existing scoped clients, no logs, no PHI in URLs or errors",
+   "Tests run: vitest unit standing.test.ts, account-standing.test.tsx, packages/synth (15 files, 223 passed); db project billing-routes, onboarding-routes, seed and apps/worker billing under flock on PG18:5433 (4 files, 42 passed). E2e not run"
+  ],
+  "summary": "The PR does what it set out to do. The record's status wins over billing's standing, firms are never told runs stopped, the holding invoice is organization-scoped and payable outside the newest 24, and the closed-plan refusal and the seeded persona are sound. All the named unit and db tests pass (223 unit, 42 db). Two customer-facing sentences are false against the database. (1) With two or more invoices unpaid more than 30 days, paying the one named invoice does not lift billing_standing, yet the page promises that a card payment restarts runs at once (billing.ts:206/241, the combined hold at 249-256). The tests build only one failing invoice, so they pass vacuously on this case. (2) A closed organization is told to open a ticket 'to reopen it' and that runs stay stopped 'even once reopened', but closed is terminal: the console refuses to change a closed status, and the DB refusal names no lift (billing.ts:248-269, mirrored in the BIL-05 matrix text). Two nits: the past-due words leave out the ACH settlement caveat, and the closed check in subscribe sits outside the claim statement. Progress notes: /tmp/claude-0/-home-user-PhysicalTherapy/4b2d015a-84c8-5610-8630-1a03db5b4a46/scratchpad/progress/ss-review-correctness.md"
+ },
+ "ux": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "UX-1",
+    "severity": "should-fix",
+    "file": "apps/web/src/lib/routes/billing.ts",
+    "line": 256,
+    "claim": "The combined-hold sentence for a past-due invoice says new runs \"stay stopped even once PaidWhole lifts the suspension\" (or \"once the organization is reopened\"). The database says otherwise: billing_standing is a live view (packages/db/migrations/20261029150000_billing.sql:248), and billing only holds runs from pastDueSince + 30 days.",
+    "scenario": "Group A is suspended by PaidWhole and also has an invoice that failed on 2026-10-10 (stop date 2026-11-09). The page reads \"unless it is paid by 2026-11-09, new runs stay stopped even once PaidWhole lifts the suspension.\" PaidWhole lifts the suspension on 2026-10-20 and runs start again at once, so the page described something that did not happen. An administrator can also take it to mean that getting the suspension lifted is pointless until they pay. Not in the shots; judged from code and the account-standing.test.tsx expectations.",
+    "fix": "In billing.ts:256, replace the past_due branch with: ` An invoice is also unpaid since ${day(billingHold.since)}; if it is still unpaid on ${stops}, new runs stop that day, even if ${lifted === 'PaidWhole lifts the suspension' ? 'PaidWhole has lifted the suspension' : 'the organization has been reopened'}.` Update account-standing.test.tsx:343 and :371 to match. No migration."
+   },
+   {
+    "id": "UX-2",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+    "line": 108,
+    "claim": "For a closed organization, the plan card swaps the prices for the plan refusal. The footnote \"The plan amounts shown are placeholders until PaidWhole confirms its prices.\" still renders, although no amounts are shown.",
+    "scenario": "The shots billing-closed-1280-light/dark and billing-closed-390-light/dark (after) show the closed organization's Plan card with \"A closed organization takes no new plan; \u2026\" and, directly under it, the footnote about amounts shown. There are none.",
+    "fix": "Render the footnote only when prices are on screen: `{catalog.confirmed || (billing.subscription === null && standing.planRefusal !== null) ? null : <p \u2026>\u2026</p>}`."
+   },
+   {
+    "id": "UX-3",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+    "line": 119,
+    "claim": "For a closed organization with no invoices, the Invoices empty state still gives the next step \"Add a payment method, then choose a plan.\" The same page refuses a plan for that organization (planRefusal; subscribe() throws).",
+    "scenario": "The billing-closed-* shots (after) show \"No invoices yet / Add a payment method, then choose a plan.\" under a Plan card that says a closed organization takes no new plan. The administrator gets two next steps that contradict each other.",
+    "fix": "Choose the nextStep with standing.planRefusal !== null first: 'Invoices appear here if the organization is reopened and chooses a plan.' Keep the current two branches for the other states."
+   },
+   {
+    "id": "UX-4",
+    "severity": "should-fix",
+    "file": "apps/web/src/lib/routes/billing.ts",
+    "line": 262,
+    "claim": "\"Closed\" is drawn as a danger badge in a danger alert, both on the customer billing page and in the console (console/billing/page.tsx:66). Closed is a system state, not a failure. ADR 0056:88-91 says a system state is a neutral badge and danger is for a failure. The PR's own rule is danger only where something is wrong.",
+    "scenario": "An organization closed on purpose (the account ended) shows a red \"Closed\" chip and a red-titled alert on billing-closed-1280-light (after), styled the same as a failed payment. In the console, closed rows also wear the destructive badge, so the red chips no longer single out the organizations that need action.",
+    "fix": "In accountStanding's closed branch, set tone: 'neutral'. Draw its notice with the default Alert variant and role=\"status\" (alert: false), unless billingHold !== null, in which case keep danger and alert for the unpaid invoice. In console/billing/page.tsx:66, use variant={row.standingKind === 'good' || row.standingKind === 'closed' ? 'outline' : 'destructive'}. Update the tone test (account-standing.test.tsx:301) so it covers closed."
+   },
+   {
+    "id": "UX-5",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/settings/billing/[organizationId]/page.tsx",
+    "line": 162,
+    "claim": "The standing's \"Pay <invoice>\" link jumps to #pay-<id>, but the app header is sticky (shell.tsx:315, h-14), and nothing in apps/web or packages/ui sets scroll-margin or scroll-padding. The target lands under the header, hiding the 36px Pay button the link points to (WCAG 2.4.11 and 2.4.3 in practice).",
+    "scenario": "A group suspended for nonpayment has a holding invoice. The administrator follows \"Pay SIM-0002\" in the alert. The page scrolls so the wrapper div sits at the top of the viewport, and the 56px header covers the Pay button. They see no button and have to scroll back. Not shot; judged from code.",
+    "fix": "Give the wrapper div a scroll margin: <div key={invoice.id} id={`pay-${invoice.id}`} className=\"scroll-mt-20\">. Or add `html { scroll-padding-top: 4.5rem }` once in the app stylesheet, which covers every in-page anchor."
+   },
+   {
+    "id": "UX-6",
+    "severity": "nit",
+    "file": "apps/web/src/app/console/billing/page.tsx",
+    "line": 22,
+    "claim": "The console calls the state \"Suspended (PaidWhole)\" while the customer page, the e2e test and the tests call it \"Suspended by PaidWhole\": two names for one thing.",
+    "scenario": "A platform administrator answering a ticket reads \"Suspended (PaidWhole)\" in the console's Standing cell. The customer quotes \"Suspended by PaidWhole\".",
+    "fix": "suspended_by_paidwhole: 'Suspended by PaidWhole'."
+   },
+   {
+    "id": "UX-7",
+    "severity": "nit",
+    "file": "apps/web/src/app/console/billing/page.tsx",
+    "line": 73,
+    "claim": "For a firm suspended by PaidWhole whose billing standing is 'suspended', the console reads \"billing suspended for nonpayment since <suspendedSince>\". standingKind and the customer page treat a firm's billing suspension as past due (\"An invoice is also unpaid since <pastDueSince>\"), so the two screens show different words and a different date for one record.",
+    "scenario": "Firm F (status suspended, invoice failed 2026-09-01). The console says \"billing suspended for nonpayment since 2026-10-01\"; the firm's billing page says \"An invoice is also unpaid since 2026-09-01.\"",
+    "fix": "Choose the words from the firm-aware kind: `const hold = row.standing === 'good' ? null : standingKind('active', row.standing, row.kind);` then render `billing ${hold === 'suspended_nonpayment' ? `suspended for nonpayment since ${utcDate(row.suspendedSince)}` : `past due since ${utcDate(row.pastDueSince)}`}`."
+   },
+   {
+    "id": "UX-8",
+    "severity": "nit",
+    "file": "apps/web/src/lib/routes/billing.ts",
+    "line": 279,
+    "claim": "In \"new runs have stopped until PaidWhole lifts it\", the \"it\" has no clear antecedent. The verb also differs from the practice home, which uses the database reason \"once a platform administrator reinstates it\" (billing.sql:271) and sends the reader to this page.",
+    "scenario": "A practice user reads \"once a platform administrator reinstates it\" on the practice home. Their administrator reads \"until PaidWhole lifts it\" on billing. The actor and the verb both differ for the same event.",
+    "fix": "'PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.' Use \"reinstates\" in `lifted` and in the ticket detail (' to find out why and what reinstates it.') too, and update the tests and e2e/billing.spec.ts:102."
+   },
+   {
+    "id": "UX-9",
+    "severity": "nit",
+    "file": "apps/web/src/lib/routes/billing.ts",
+    "line": 269,
+    "claim": "The plan refusal \"A closed organization takes no new plan; open a support ticket to reopen it.\" reads unidiomatically. Its \"open a support ticket\" is plain text, while the alert above makes the same step a link. The closed alert's title (\"The organization is closed\") is also repeated word for word as the start of its body (line 264).",
+    "scenario": "billing-closed-1280-light (after): the title \"The organization is closed\" sits over \"The organization is closed: its data stays readable\u2026\", and the plan card's ticket step cannot be followed from where it is read.",
+    "fix": "planRefusal: 'A closed organization cannot choose a plan.' Render it with a following <Link href={BILLING_TICKET}>Open a support ticket</Link> to reopen it. Change the group notice body to 'Its data stays readable, and no new run starts.' and the firm's to 'Its data stays readable.' Update the tests."
+   }
+  ],
+  "checked": [
+   "Full diff origin/claude/build-platform...HEAD (24 files), every screen-facing file read whole",
+   "All 24 screenshots: the good state is pixel-identical before and after at every width and theme; read and compared suspended and closed at 1280 light and dark and at 390 light and dark, before and after",
+   "Words: plain, true to the database (billing_standing is a live view, billing.sql:248; suspensionAt = first failure + 30 days), sentence case, consistent with the console, the practice home and the database reasons",
+   "Badge tone: danger for past due and both suspensions, outline for good; the label is always beside the colour, never colour alone; closed flagged (UX-4)",
+   "Alert role: role=alert for stopped, suspended and closed, role=status with the default variant for past due (Alert defaults to alert, alert.tsx:18); nothing moves focus on load",
+   "Link text and targets: 'Open a support ticket' goes to /support?from=billing, which preselects the Billing category through CATEGORY_FROM and SelectField defaultValue; 'Pay <number>' goes to #pay-<id>, which exists even when the holding invoice is older than the newest 24 shown; anchor under the sticky header flagged (UX-5)",
+   "States judged from code, not shot: suspended for nonpayment with the holding invoice (single date in the badge, ACH settle wording), past due (stop date), the combined holds (UX-1), a firm's suspension and unpaid invoice (no claims about runs), the console's Standing cell and its sort by STANDING_ORDER (stable), the practice home's sentence, the support page's preselected category",
+   "Phone width at 390: no sideways scroll, and the alert, note and badge wrap cleanly in both themes",
+   "Dark mode: tokens only, no hex or palette colours in the diff; badge and alert tints read in dark (advisory under ADR 0056:127-130)",
+   "The note above the forms (formsNote) for both suspensions by PaidWhole, group and firm, and the closed organization's plan replacement (UX-2, UX-3, UX-9)",
+   "CO-11 and the brand words: pnpm lint:copy passes (496 files); no 'AI', no recovered claim, no money computed by the copy; invoice amounts through <Money/>",
+   "Not checked: screen-reader announcement on load and keyboard order beyond the code reading; the console billing page and the support page, which have no shots ('not seen')"
+  ],
+  "summary": "The PR does what it claims: a suspended or closed organization no longer reads \"In good standing\", the standing comes from one place (standingKind and accountStanding), and the good state's screens are pixel-identical before and after. Nothing is blocking. Five should-fix defects remain:\n- UX-1: the combined-hold sentence for a past-due invoice says runs \"stay stopped even once PaidWhole lifts the suspension\". Billing's view is live and only holds runs from the stop date, so that is false.\n- UX-2: a closed organization's plan card still says \"The plan amounts shown are placeholders\" with no amounts shown (visible in the shots).\n- UX-3: the closed organization's Invoices empty state still says to choose a plan the page refuses (visible in the shots).\n- UX-4: \"Closed\" uses the danger tone on both screens; ADR 0056 makes a system state a neutral badge.\n- UX-5: the \"Pay <invoice>\" anchor lands under the sticky 56px header with no scroll margin.\n\nFour nits cover naming and wording consistency: \"Suspended (PaidWhole)\" in the console, the firm's billing-hold words in the console, \"lifts it\" against the practice home's \"reinstates it\", and the plan-refusal wording with the repeated closed title. The copy lint passes. Not seen in shots: the console billing page and the support page, which I judged from code."
+ }
+}
