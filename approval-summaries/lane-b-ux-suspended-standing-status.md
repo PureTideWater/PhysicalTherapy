@@ -6,7 +6,7 @@
   - Full local suite on a141023: unit 337 files 5,276 passed 3 skipped; db 120 files 9,077 passed 1 skipped; e2e 52/52 (BIL-06 included); golden 221; oracle 637; lint 1,520 files 0/0; no money package affected (`approval-summaries/lane-b-ux-suspended-standing-fix-suite.md`).
 - **Base merges, each without conflicts:** a1c4185 (#53), a141023 (#55), dedd735 (#50), bffe291 (#52). After the last one: typecheck, synth (0 written), 608 unit tests and the billing db test re-run and passed.
 - **Fresh-clone verification (wf_3df9abd9-3e0):** pass on dedd735; CI totals unit 5,325, db 9,115, e2e 52 (`approval-summaries/lane-b-ux-suspended-standing-verify.md`).
-- **CI on bffe291 (final):** every check green.
+- **CI on bffe291 (final):** every check green. Push runs on 0e28f9b: ci, mutation and screening-capacity all success.
 - **After the merge:** unsubscribed; check-in deleted; main checkout at 0e28f9b; worktrees removed. PostgreSQL was down again from a machine restart, so tp_e2e_screens could not be dropped (harmless, synthetic).
 - **Proposals:**
   - list every invoice the hold counts when one falls outside the newest 24;
