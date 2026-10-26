@@ -91,9 +91,9 @@ HANDOFF.md; LANES.md rule 10).
 - **Repository rules:** the ruleset "Protect the build branch" (F7) requires `all green`, `mutation`,
   `screening-capacity gate` and `approval-of-record`, up to date, through a PR, with no bypass. `main` is unchanged by
   rule: no PR into `main` and no release tag before launch (CLAUDE.md "Merging", ADR 0063).
-- **CI on the tip:** green on 9d3ab33 (#50's merge: ci, mutation, screening-capacity). The last measured counts, on
-  #50's head c4f2742 (which held every merge before it): unit 5,280 and 1 skipped; db 9,112 and 1 skipped, in 120
-  files; e2e 51.
+- **CI on the tip:** green on c355633 (#51's merge: ci, mutation, screening-capacity). The last measured counts, on
+  #51's head 8f35161 (which held every merge before it): unit 5,859 and 1 skipped; db 9,169 and 1 skipped; e2e 54. The
+  mutation gate passed, with `payment.ts` at 100%.
 - **Proposals:** each status file ends with the improvements its session found but did not build (LANES.md's "improve
   as you go"). #10's, for example: a stuck run's operator view and action, two first runs of one period priced out of
   creation order, a detection of lines with no pricing in effect, and `color-scheme: dark` for form controls (also UX
