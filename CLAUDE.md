@@ -28,9 +28,10 @@ proves recovery by reconciling later remittances to posting and deposits.
 - Mark a packet approved by the person who drafted it.
 
 ## Commands
-- pnpm install; pnpm dev (web + worker + local Postgres + MinIO); pnpm db:migrate; pnpm db:seed (synthetic)
+- pnpm install; pnpm dev (web + worker + local Postgres); pnpm db:migrate; pnpm db:seed (synthetic)
 - pnpm test (unit + property); pnpm test:db (catalog + cross-tenant); pnpm test:golden; pnpm test:e2e
 - pnpm verify-content; pnpm lint; pnpm typecheck; pnpm lint:logs; pnpm synth (generate fixtures)
+- pnpm actions:check; pnpm toolchain:check (networked; BASE=origin/claude/build-platform) after a workflow, manifest or lockfile change
 
 ## Conventions
 - The founder's standing rule (2026-10-18): recommend and build only the best option, never weighted by build effort, judged on accuracy, quality, user experience, growth, security and privacy, compliance, reliability, cost to serve, dispute success, time to value, resilience to change, AI safety, maintainability and business readiness.

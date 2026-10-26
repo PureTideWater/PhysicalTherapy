@@ -72,7 +72,7 @@ function lazyEvidence(url: string): EvidenceClient & { end(): Promise<void> } {
  * scratch database, the row counts and the catalog test pass on it, the evidence row is written, and
  * the scratch copy is destroyed. The local restorer needs pg_dump and pg_restore at least as new as
  * the server; where they are older (a newer server than the installed client tools, as on a CI
- * runner against the postgres:18 service), the drill through them is skipped with that reason. A
+ * runner against the compose file's PostgreSQL 18), the drill through them is skipped with that reason. A
  * restore of the source itself still runs everywhere: a server-side copy (CREATE DATABASE ...
  * TEMPLATE, which needs no client tools) restores the source, and the row counts and the catalog test
  * must pass on it.
