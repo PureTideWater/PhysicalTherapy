@@ -22,7 +22,8 @@ CONTEXT (your whole brief).
 - Commits in your own worktree and branch, the repository's style ("area: what and why", full sentences), each ending with exactly:
 ${ATTRIB}
 - Never push (except the integrator), never force, never --no-verify, never post on GitHub except as told, never approve, request changes or merge. No PHI, no model identifier. Failing first: every fix of a behaviour gets a test that fails before it and passes after; record both.
-- Report to the file named; return the structured summary.`
+- Report to the file named; return the structured summary.
+- RESUMED 2026-10-26 ~03:50 UTC: the first run's fixers were stopped at ~02:30 by the account's session limit. Your worktree, your branch's commits and your progress file survive: read the progress file first, then git log and git status in your worktree. Uncommitted changes there are your own unfinished work: finish, test and commit them (or discard them if your progress file says they were abandoned). Do not redo a finding your progress file records as committed.`
 
 const FIX_SCHEMA = {
   type: 'object',
