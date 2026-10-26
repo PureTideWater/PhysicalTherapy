@@ -2291,3 +2291,25 @@ against the code at 6ddd587 before it was fixed. None is rebutted.
 **Outside this item (proposals, not built):** the screening's per-row keyed reads under the quarterly shape are
 measured only once screening-capacity moves to 900110 (later PR, its `run.ts` is #42's); and the stored per-content
 windows belong with #8's stored release counts (Lane A).
+
+### Fix round (2026-10-26, after the two adversarial reviews)
+
+Where a fix departs from this design (ADR 0071, the test matrix and the runbooks carry the built text):
+
+- 5.8.3, the source watch: every decoded link name is matched, not only plain ones; a matching name that is not plain
+  is a change, shown percent-encoded (SB-1, SB-6). Links in single, double or no quotes are read, and a recorded page
+  that lists no matching file is a new finding, `source_lost` (SB-2). Pages and redirects are read over https from
+  the calendar's hosts only, at most three redirects and 5 MiB (SB-3, SB-4). A cut body says how many lines were cut
+  and where the rest is, not that a command prints it (S2).
+- Section 3 and 5.8.4: the findings file holds every finding (bounded at 700,000 bytes), and the notify job, not the
+  CLI, caps a run at 20 new issues, listing the rest in "Content calendar: findings not filed" (SB-5); it reads every
+  page of open issues, refuses a hand-off that is not a list, and comments on the open "check failing" issue at each
+  failing run (S8).
+- 5.9 against 5.10: release-capacity's notify runs on a failure, a cancel or an advisory (the job's `advisories`
+  output), so 5.9's advisory reaches an issue; 5.10's `if: failure()` is superseded (S3, SB-7). A concurrent phase
+  sampled fewer than once each 2 seconds fails.
+- 5.8.2: commands cover every period a family lacks up to today, each only for the contents it lacks then.
+- 5.11 and 5.6.5: the release_read_outside_fetch text no longer says the operator was alerted; the Releases card has
+  five forms (partly loaded, loaded only from a date); the content headline drops claims (money group, M-1 to S1).
+- 5.2: C16 is keyed on the stored path, C17 added, and statedQuarter lives in packages/rules/src/parsers/index.ts
+  (pipeline group). The later PR's monitoring.ts row adds RELEASE_READ_OUTSIDE_FETCH and the NCCI PTP question.
