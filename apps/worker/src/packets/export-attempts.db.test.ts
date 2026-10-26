@@ -10,7 +10,7 @@ import type { JobContext } from '../jobs/handlers';
 import type { Practice } from '../price/test-support/pricing-world';
 import { DocumentStore, type WrittenDocument } from '../storage/documents';
 import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
-import { type PacketExportServices, PacketExportRenderError, PacketExportWordsVersionError, exportFailureCode, exportPacketVersion, packetExportHandler } from './export';
+import { EXPORT_WORDS_CHANGED, type PacketExportServices, exportFailureCode, exportPacketVersion, packetExportHandler } from './export';
 import { PACKET_EXPORT_FAILURES, PACKET_EXPORT_REFUSALS, type PacketExportRefusal, exportReadiness } from './readiness';
 import { EXPORT_REQUEST_REFUSALS, approvePacketVersion, requestPacketExport, writePacketVersion } from './services';
 import { PacketWorld } from './test-support/packet-world';
@@ -289,20 +289,11 @@ async function failing(label: string, services: (setup: Setup, versionId: string
 }
 
 describe('each failed try of the export job', () => {
-  /**
-   * Runs the handler on the attempt (`last` or not), asked from a page this renderer worded unless `wordsVersion` says
-   * otherwise, which rethrows; returns the event it recorded, its log and the error.
-   */
-  async function failedTry(
-    setup: Setup,
-    versionId: string,
-    services: PacketExportServices,
-    last: boolean,
-    wordsVersion: { readonly words_version?: string } = { words_version: WORDS_VERSION },
-  ): Promise<{ events: AttemptEvent[]; logs: Record<string, unknown>[]; job: JobContext; error: unknown }> {
+  /** Runs the handler on the attempt (`last` or not), asked from a page this renderer worded, which rethrows; returns the event it recorded, its log and the error. */
+  async function failedTry(setup: Setup, versionId: string, services: PacketExportServices, last: boolean): Promise<{ events: AttemptEvent[]; logs: Record<string, unknown>[]; job: JobContext; error: unknown }> {
     const logs: Record<string, unknown>[] = [];
     const job = context(setup.practice, last, logs);
-    const error: unknown = await packetExportHandler(services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, ...wordsVersion }, job).then(
+    const error: unknown = await packetExportHandler(services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION }, job).then(
       () => undefined,
       (caught: unknown) => caught,
     );
@@ -338,7 +329,7 @@ describe('each failed try of the export job', () => {
     expect(rows[0]?.exported_at).toBeNull();
   });
 
-  it('records a job asked for under another wording of the calculation, or under none, as a print failure: nothing is printed or stored (combined audit #38, finding M1; CAS-32)', async () => {
+  it('records a job asked for under another wording of the calculation, or under none, as a print failure on its first try, never retried: nothing is printed or stored (combined audit #38, finding M1; CAS-32)', async () => {
     const printed: string[] = [];
     const { setup, versionId, services } = await failing('attempt-words-version', () => ({
       ...w.services,
@@ -349,18 +340,35 @@ describe('each failed try of the export job', () => {
         },
       },
     }));
-    const other = await failedTry(setup, versionId, services, false, { words_version: 'f'.repeat(64) });
-    expect(other.error).toBeInstanceOf(PacketExportRenderError);
-    expect((other.error as PacketExportRenderError).cause).toBeInstanceOf(PacketExportWordsVersionError);
-    expect(other.events.map((event) => [event.action, event.purpose])).toEqual([['packet_export_attempt_failed', 'render_failed']]);
-    // A job queued before the words version was carried names none: refused alike, on its last try too.
-    const none = await failedTry(setup, versionId, services, true, {});
-    expect((none.error as PacketExportRenderError).cause).toBeInstanceOf(PacketExportWordsVersionError);
+    /** One try of the handler under a words version: it ends without an error, so pg-boss retries nothing and the singleton is freed. */
+    const tryUnder = async (wordsVersion: { readonly words_version?: string }) => {
+      const logs: Record<string, unknown>[] = [];
+      const job = context(setup.practice, false, logs);
+      await expect(packetExportHandler(services)({ practice_id: setup.practice.practiceId, packet_version_id: versionId, ...wordsVersion }, job)).resolves.toBeUndefined();
+      return { logs, job, events: await attemptEvents(setup, versionId) };
+    };
+    const other = await tryUnder({ words_version: 'f'.repeat(64) });
+    // Recorded at once as the last failed try (the page shows it failed, not retrying), under the job's own login.
+    expect(other.events).toEqual([
+      {
+        actor_id: other.job.jobId,
+        actor_kind: 'service',
+        action: 'packet_export_failed',
+        object_type: 'packet_version',
+        object_id: versionId,
+        practice_id: setup.practice.practiceId,
+        grant_id: null,
+        purpose: 'render_failed',
+        request_id: other.job.jobId,
+      },
+    ]);
+    expect(other.logs.filter((line) => line.msg === 'packet export failed')).toEqual([expect.objectContaining({ error_code: EXPORT_WORDS_CHANGED, packet_version_id: versionId })]);
+    // A job queued before the words version was carried names none: refused alike.
+    const none = await tryUnder({});
     expect(none.events.map((event) => [event.action, event.purpose])).toEqual([
-      ['packet_export_attempt_failed', 'render_failed'],
+      ['packet_export_failed', 'render_failed'],
       ['packet_export_failed', 'render_failed'],
     ]);
-    expect(none.logs.filter((line) => line.msg === 'packet export failed')).toEqual([expect.objectContaining({ error_code: 'PACKET_EXPORT_RENDER_FAILED', packet_version_id: versionId })]);
     expect(printed).toEqual([]);
     const { rows } = await w.as(setup.practice, setup.practice.manager, (scope) => scope.client.query<{ exported_at: Date | null }>('SELECT exported_at FROM packet_version WHERE id = $1', [versionId]));
     expect(rows[0]?.exported_at).toBeNull();

@@ -61,7 +61,11 @@ export { exportDeadlineStatus } from './readiness';
  * runs before anything is decrypted. A trace that differs, a code with no words or a calculation the words cannot
  * state is a print failure. So is a job whose payload does not carry this deploy's WORDS_VERSION (finding M1): the
  * export was asked for from a page worded by another renderer, so its words may not be the ones the requester read,
- * and the remedy is to request the export again. Nothing is stored for either.
+ * and the remedy is to request the export again. Nothing is stored for either. No try of that job can succeed, so it
+ * is recorded as its last failed try at once and the job ends without a retry, which frees its singleton key for the
+ * request made again from the page this deploy words. Its code is render_failed, whose words name that remedy: the
+ * failure codes are a closed list in Postgres (packet_export_failure_codes()), so a code of its own is a migration
+ * (proposed to Lane A as words_changed).
  */
 
 export interface PacketExportServices {
@@ -86,28 +90,15 @@ export class PacketExportIntegrityError extends Error {
 
 /**
  * The payer's copy could not be printed: the PDF renderer failed, or the copy's renderer refused the version (a code it
- * has no words for, a window without its last day, a stored trace that is not the one its approval names), or the job
- * was asked for under another words version (PacketExportWordsVersionError). Nothing is stored, and the job fails
- * (fixed words; the error is the cause, never logged).
+ * has no words for, a window without its last day, a stored trace that is not the one its approval names). Nothing is
+ * stored, and the job fails (fixed words; the error is the cause, never logged). A job asked for under another words
+ * version is recorded under the same code (render_failed) without a try (packetExportHandler()).
  */
 export class PacketExportRenderError extends Error {
   override readonly name = 'PacketExportRenderError';
 
   constructor(cause: unknown) {
     super('the PDF renderer failed to print the packet', { cause });
-  }
-}
-
-/**
- * The job was asked for from a page worded by another renderer than this one: its payload names another words version,
- * or none (a job queued before the words version was carried). Always the cause of a PacketExportRenderError: the
- * export is a print failure, and the remedy is to request it again (fixed words; no value).
- */
-export class PacketExportWordsVersionError extends Error {
-  override readonly name = 'PacketExportWordsVersionError';
-
-  constructor() {
-    super('the export was asked for under another wording of the calculation than this one prints');
   }
 }
 
@@ -294,22 +285,17 @@ export function exportFailureCode(error: unknown): PacketExportFailure {
   return 'unexpected';
 }
 
+/** The log's code for a job asked for under another words version (its audit event's code is render_failed). */
+export const EXPORT_WORDS_CHANGED = 'PACKET_EXPORT_WORDS_CHANGED';
+
 export function packetExportHandler(services: PacketExportServices): JobHandler<'packet_export'> {
   return async (payload, context) => {
-    let outcome: PacketExportOutcome;
-    try {
-      // Asked for from a page this renderer worded, or not printed (finding M1).
-      if (payload.words_version !== WORDS_VERSION) {
-        throw new PacketExportRenderError(new PacketExportWordsVersionError());
-      }
-      outcome = await exportPacketVersion(context, services, payload.practice_id, payload.packet_version_id);
-    } catch (error) {
-      const code = exportFailureCode(error);
-      // The failed try, in a transaction of its own (the export's rolled back): another try follows, or this was the last.
+    /** The failed try, in a transaction of its own (the export's rolled back): another try follows, or this was the last. */
+    const recordFailure = async (code: PacketExportFailure, last: boolean, errorCode: string) => {
       try {
         await context.transaction((scope) =>
           recordAuditEvent(scope, {
-            action: context.lastAttempt ? 'packet_export_failed' : 'packet_export_attempt_failed',
+            action: last ? 'packet_export_failed' : 'packet_export_attempt_failed',
             objectType: 'packet_version',
             objectId: payload.packet_version_id,
             practiceId: payload.practice_id,
@@ -320,7 +306,20 @@ export function packetExportHandler(services: PacketExportServices): JobHandler<
       } catch {
         context.logger.warn('packet export failure not recorded', { packet_version_id: payload.packet_version_id, error_code: 'PACKET_EXPORT_FAILURE_NOT_RECORDED' });
       }
-      context.logger.warn('packet export failed', { packet_version_id: payload.packet_version_id, error_code: EXPORT_FAILURES[code] });
+      context.logger.warn('packet export failed', { packet_version_id: payload.packet_version_id, error_code: errorCode });
+    };
+    // Asked for from a page this renderer worded, or not printed (finding M1). No later try could print it, so this is
+    // the last: recorded as such, and the job ends here, not retried, so the request made again is queued at once.
+    if (payload.words_version !== WORDS_VERSION) {
+      await recordFailure('render_failed', true, EXPORT_WORDS_CHANGED);
+      return;
+    }
+    let outcome: PacketExportOutcome;
+    try {
+      outcome = await exportPacketVersion(context, services, payload.practice_id, payload.packet_version_id);
+    } catch (error) {
+      const code = exportFailureCode(error);
+      await recordFailure(code, context.lastAttempt, EXPORT_FAILURES[code]);
       throw error;
     }
     if (outcome.outcome === 'missing' || outcome.outcome === 'not_exportable') {

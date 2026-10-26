@@ -42,8 +42,9 @@ shard, `packets-explain`.
 
 **Words only from stored values.** The renderer never adds, subtracts, multiplies, divides, rounds, negates or
 compares a value by size. A figure is a trace value (or the citation's) through a display form that changes its
-form, never its value (`dollars`, `exact_dollars`, `percent`, `per_rvu`, `verbatim`), or the length of an array the
-trace holds (`count`, the one derivation). Words are chosen by a value's kind or by string equality of values the
+form, never its value (`dollars`, `exact_dollars`, `percent`, `per_rvu`, `verbatim`, `integer`, which groups a whole
+number's digits by thousands), or the length of an array the trace holds (`count`, the one derivation, grouped as
+`integer` is). Words are chosen by a value's kind or by string equality of values the
 engine wrote. A sentence is a list of segments; a text segment holds no digit, so no number hides in a template.
 Every figure carries its source path, and `explain/slots.ts` is a hand-written table of the one path each slot may
 print. No model is involved anywhere.
@@ -68,7 +69,10 @@ every word table, the slot table and `RENDERER_REVISION` (`version.test.ts` hold
 - the approve and export-request forms post the version the page was rendered with, and the handlers refuse
   another, writing nothing;
 - the export request puts it in the `packet_export` job payload, and the job refuses a payload whose version is
-  absent or differs, as a print failure.
+  absent or differs as a print failure (`render_failed`, whose words tell the requester to ask for the export again),
+  recorded as the last try at once and never retried, so the request made from the new page is queued at once. The
+  failure codes are a closed list in Postgres (`packet_export_failure_codes()`), so a code of its own
+  (`words_changed`) is a migration, proposed to Lane A.
 
 **The price of C2 (a), the gap no code-only guard closes:** a version approved under one renderer, then a deploy that
 changes the words, then the export requested under the new one. The requester reads and sends the new words, which
@@ -104,7 +108,9 @@ reason; the line page shows the notice. No surface falls back to a code or to `l
   2026-10-26).
 - A wording change is a reviewed change: it moves `WORDS_VERSION`, the golden pins under
   `packages/packets/src/explain/__golden__/` and the unit tests in the same diff. A sentence-form change with no word
-  table change raises `RENDERER_REVISION` by hand.
+  table change raises `RENDERER_REVISION`: `sentence-forms.test.ts` pins the SHA-256 of `explain/line.ts`,
+  `worksheet.ts` and `figures.ts` beside the revision it was written under, so an edit to them fails until the
+  revision is raised and both are written again (mutation runs leave that test out, as Stryker rewrites the files).
 - Reading the trace for a viewer widens what the server reads for them, not what it sends: `pricedLineWords()`'s
   return type has no trace field, and the loader test checks the viewer's serialised page data.
 - A line whose year label disagrees with its lookup (Lane A's open engine defect 2) cannot be worded or printed until
