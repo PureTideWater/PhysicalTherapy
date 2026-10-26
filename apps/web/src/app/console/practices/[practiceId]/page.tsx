@@ -1,9 +1,12 @@
+import { centsToString } from '@tp/money';
+import { DEFAULT_TRIAGE_SETTINGS } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { Field, SelectField } from '../../../../components/field';
+import { Money } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { practiceSettingsPage } from '../../../../lib/routes/console';
@@ -88,7 +91,12 @@ export default async function PracticeSettingsPage(props: Props) {
       <Card>
         <CardHeader>
           <CardTitle>Settings</CardTitle>
-          <CardDescription>Leave a field blank for its default: $5.00 per line, $250.00 per case, cohorts of 30 lines, a $5.00 anomaly threshold; no pursuit cost until all three of its fields are set.</CardDescription>
+          <CardDescription>
+            Leave a field blank for its default: <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.lineMaterialityCents)} /> per line,{' '}
+            <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.caseMaterialityCents)} /> per case, cohorts of{' '}
+            <span className="font-mono tabular-nums">{String(DEFAULT_TRIAGE_SETTINGS.anomalyMinimumCohort)}</span> lines, a <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.anomalyThresholdCents)} /> anomaly
+            threshold; no pursuit cost until all three of its fields are set.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <ActionForm action={setPracticeSettingsAction} submit="Save the settings" className="grid max-w-xl gap-3">

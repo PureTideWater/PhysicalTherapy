@@ -226,7 +226,7 @@ describe('the Cases workbench (CAS-03, CAS-04, CAS-06)', () => {
     expect(before.waiting.map((pattern) => [pattern.status, pattern.actionableLines, pattern.actionableCents, pattern.behaviorText])).toEqual([['held', 3, '6000', 'Paid below the contract rate']]);
     const key = (before.waiting[0] as (typeof before.waiting)[number]).key;
     const pattern = { ...key, contractVersionId: key.contractVersionId ?? '', rateRecordId: key.rateRecordId ?? '' };
-    expect(refused(await call(openCaseAction, practice.manager, P, pattern))).toBe('its actionable lines total 60.00, below the case materiality of 250.00, so it keeps accumulating; lower the case materiality to open it');
+    expect(refused(await call(openCaseAction, practice.manager, P, pattern))).toBe('its actionable lines total $60.00, below the case materiality of $250.00, so it keeps accumulating; lower the case materiality to open it');
     // A viewer reads the list, without the waiting patterns or the forms that change them.
     const viewed = ok(await call(casesPage, viewer, P));
     expect([viewed.canTriage, viewed.waiting]).toEqual([false, []]);

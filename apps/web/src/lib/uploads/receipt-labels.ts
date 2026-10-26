@@ -1,4 +1,5 @@
 import type { DocumentKind, DocumentStatus, ScanStatus } from '@tp/db/runtime';
+import { formatUsd, parseCents } from '@tp/money';
 
 /**
  * A document's receipt (PRD 5, J4: "a receipt per file: received, scanned, parsed, balanced, loaded,
@@ -238,12 +239,8 @@ const ERROR_TEXT: Readonly<Record<ParseErrorCode, string>> = {
   EDI_NOT_835: 'Not an 835',
 };
 
-/** Cents as dollars with two places, without a float: "-1.00". */
-export function centsText(cents: string): string {
-  const negative = cents.startsWith('-');
-  const digits = (negative ? cents.slice(1) : cents).padStart(3, '0');
-  return `${negative ? '-' : ''}${digits.slice(0, -2).replace(/^0+(?=\d)/, '')}.${digits.slice(-2)}`;
-}
+/** Cents, as canonical integer text, as US dollars in a sentence, without a float: "-$1.00", as <Money> shows them. */
+const usd = (cents: string) => formatUsd(parseCents(cents));
 
 /** Where an error is, in words: its segment index and ID and its element (PRD 10: "segment and position"). */
 export function errorPosition(error: ParsedError): string {
@@ -254,7 +251,7 @@ export function errorPosition(error: ParsedError): string {
 /** One error as a sentence: what, where, and by how much for a balance. */
 export function errorText(error: ParsedError): string {
   const what = error.code === 'EDI_SYNTAX' && error.reason === 'truncated' ? 'Cut short' : ERROR_TEXT[error.code];
-  const difference = error.differenceCents === undefined ? '' : ` by $${centsText(error.differenceCents)}`;
+  const difference = error.differenceCents === undefined ? '' : ` by ${usd(error.differenceCents)}`;
   return `${what}${difference} at ${errorPosition(error)}`;
 }
 
@@ -383,7 +380,7 @@ function loadedText(parse: ParseSummary): string {
     parts.push(`${plural(parse.reversals, 'reversal')} linked to its original where loaded`);
   }
   if (parse.plbTotalCents !== '0') {
-    parts.push(`provider adjustments of $${centsText(parse.plbTotalCents)}`);
+    parts.push(`provider adjustments of ${usd(parse.plbTotalCents)}`);
   }
   if (parse.duplicates > 0) {
     if (parse.source === 'era_export') {

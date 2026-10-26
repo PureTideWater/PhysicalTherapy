@@ -66,14 +66,23 @@ export default async function LinePage(props: {
               {pricing.unpricedReason === null ? (
                 <>
                   <Fact label="Expected allowed">
-                    <Money value={pricing.expectedAllowedCents} /> <span className="text-xs text-muted-foreground">(unrounded {pricing.expectedUnrounded} cents)</span>
+                    <Money value={pricing.expectedAllowedCents} /> <span className="text-xs text-muted-foreground">
+                      (unrounded <span className="font-mono tabular-nums">{pricing.expectedUnrounded}</span> cents)
+                    </span>
                   </Fact>
                   <Fact label="Variance">
                     <Money value={pricing.varianceCents} /> {BigInt(pricing.varianceCents ?? '0') < 0n ? <span className="text-xs text-muted-foreground">(overpaid: recorded, never pursued)</span> : null}
                   </Fact>
                   <Fact label="Method">{pricing.method ?? '—'}</Fact>
                   <Fact label="Adjustments">
-                    {pricing.adjustmentsApplied.length === 0 ? 'None' : pricing.adjustmentsApplied.map((item) => `${item.name} (${item.before_cents} to ${item.after_cents} cents)`).join('; ')}
+                    {pricing.adjustmentsApplied.length === 0
+                      ? 'None'
+                      : pricing.adjustmentsApplied.map((item, index) => (
+                          <span key={`${item.name}-${String(index)}`}>
+                            {index === 0 ? null : '; '}
+                            {item.name} (<span className="font-mono tabular-nums">{item.before_cents}</span> to <span className="font-mono tabular-nums">{item.after_cents}</span> cents)
+                          </span>
+                        ))}
                   </Fact>
                   {canReadPhi ? (
                     <Fact label="Dispute window ends">

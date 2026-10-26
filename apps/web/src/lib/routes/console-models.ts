@@ -1,10 +1,12 @@
 import { type FeatureFlagKey, type FeatureFlagScope } from '@tp/db/runtime';
 import { DEFAULT_DAILY_BUDGET_CENTS, type FlagRow, resolveFeatures } from '@tp/model-gateway';
+import { centsToString } from '@tp/money';
 import { z } from 'zod';
 
 import { platformRoute } from '../http/invoke';
 import { InputError, type MutationResult } from '../http/route';
 import { modelPathOf } from '../models/path';
+import { dollarsField } from '../money-input';
 
 /**
  * The console's model controls (PRD 6, Admin console: "feature flags"; PRD 14, Operational limits: "per-practice
@@ -15,7 +17,8 @@ import { modelPathOf } from '../models/path';
  *   practice), and each active practice's model calls and cost today against its daily budget, in counts and
  *   amounts only (console_model_spend; no call, input or output is named).
  * - The one action sets a model flag through set_feature_flag() (feature_flag.manage, checked again there, with its
- *   own audit event): the kill switch on or off, the daily budget in cents, the v1.5 denial-letter reader on or off.
+ *   own audit event): the kill switch on or off, the daily budget (typed in dollars and cents, as every amount a person
+ *   enters, and stored in the flag as whole cents), the v1.5 denial-letter reader on or off.
  *   A kill switch in reach of a practice turns its every model feature off; the most specific budget and letter
  *   setting wins (the gateway's flags.ts).
  */
@@ -23,14 +26,14 @@ import { modelPathOf } from '../models/path';
 /** The model flags the console sets, and what each is called on the screen. */
 export const MODEL_FLAGS: Readonly<Record<Exclude<FeatureFlagKey, 'platform.maintenance'>, string>> = {
   'model.kill_switch': 'Kill switch (every model feature off)',
-  'model.daily_budget_cents': 'Daily budget (cents)',
+  'model.daily_budget_cents': 'Daily budget (dollars)',
   'model.read_denial_letter': 'Denial-letter reader (v1.5)',
 };
 type ModelFlagKey = keyof typeof MODEL_FLAGS;
 const MODEL_FLAG_KEYS = Object.keys(MODEL_FLAGS) as ModelFlagKey[];
 
 /** What the flag form's one value field takes, under it. */
-export const MODEL_VALUE_HINT = 'on or off for a switch; whole cents for a budget (500 is $5.00)';
+export const MODEL_VALUE_HINT = 'on or off for a switch; a budget in dollars and cents, such as 5.00';
 
 export interface ModelFlagView {
   readonly key: ModelFlagKey;
@@ -38,7 +41,7 @@ export interface ModelFlagView {
   readonly scopeId: string | null;
   /** The organization's or practice's name; "Everyone" for a global flag. */
   readonly appliesTo: string;
-  /** "On", "Off", or the budget in cents. */
+  /** "On", "Off", or the budget in whole cents (the page shows it in dollars). */
   readonly value: string;
 }
 
@@ -139,7 +142,6 @@ export const consoleModelsPage = platformRoute({
 });
 
 const TARGET = /^(global|(organization|practice):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-const CENTS = /^(0|[1-9]\d{0,11})$/;
 
 export const setModelFlag = platformRoute({
   id: 'console.models.set_flag',
@@ -157,10 +159,12 @@ export const setModelFlag = platformRoute({
   handle: async ({ scope, input }): Promise<MutationResult> => {
     let value: boolean | string;
     if (input.key === 'model.daily_budget_cents') {
-      if (!CENTS.test(input.value)) {
-        throw new InputError([{ field: 'value', message: 'a budget in whole cents, such as 500 for $5.00' }]);
+      // Dollars and cents, exactly (dollarsField: nine whole digits at most, within what the gateway reads), stored as whole cents.
+      const budget = dollarsField.safeParse(input.value);
+      if (!budget.success) {
+        throw new InputError([{ field: 'value', message: 'a budget in dollars and cents, such as 5.00' }]);
       }
-      value = input.value;
+      value = centsToString(budget.data);
     } else if (input.value === 'on' || input.value === 'off') {
       value = input.value === 'on';
     } else {
@@ -170,7 +174,7 @@ export const setModelFlag = platformRoute({
     const { rows } = await scope.client.query<{ id: string }>('SELECT set_feature_flag($1, $2, $3, $4::jsonb) AS id', [input.key, scopeName, scopeId, JSON.stringify(value)]);
     return { objectId: rows[0]?.id, redirect: '/console/models?notice=set' };
   },
-  sample: { params: () => ({}), input: (refs) => ({ key: 'model.daily_budget_cents', target: `practice:${refs.practiceId}`, value: '750' }) },
+  sample: { params: () => ({}), input: (refs) => ({ key: 'model.daily_budget_cents', target: `practice:${refs.practiceId}`, value: '7.50' }) },
 });
 
 export const CONSOLE_MODEL_ROUTES = [consoleModelsPage, setModelFlag] as const;

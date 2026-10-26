@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/u
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { Money } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../../components/uploads/format-flag';
 import { ReceiptList, ReceiptStatus } from '../../../../../components/uploads/receipts';
@@ -15,7 +16,6 @@ import {
   type ParsedTransaction,
   type Provenance,
   type X12ParseSummary,
-  centsText,
   documentName,
   errorPosition,
   errorText,
@@ -80,7 +80,7 @@ function X12Report({ practiceId, parse }: { readonly practiceId: string; readonl
         <CardTitle>Parse report</CardTitle>
         <CardDescription>
           {parse.transactions === 1 ? '1 transaction set' : `${String(parse.transactions)} transaction sets`}, {parse.claims} claims, {parse.lines} lines, {parse.reversals} reversals; provider
-          adjustments ${centsText(parse.plbTotalCents)}.
+          adjustments <Money value={parse.plbTotalCents} />.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

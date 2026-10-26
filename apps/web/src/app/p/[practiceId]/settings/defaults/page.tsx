@@ -14,7 +14,8 @@ export const metadata: Metadata = { title: 'Materiality and pursuit' };
 /**
  * Materiality and pursuit defaults (PRD 7, Settings: "materiality defaults"; PRD 12): the smallest shortfall worth a
  * line and a case, and what a packet and a follow-up cost the practice, set by the people who work cases. Amounts
- * are dollars and cents; the database keeps them in cents.
+ * are dollars and cents; the database keeps them in cents, which the route returns as stored and the cards
+ * (components/settings/defaults.tsx) show and pre-fill in dollars (test matrix CAS-38, CAS-39).
  */
 export default async function DefaultsSettingsPage(props: { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(defaultsSettingsPage, props);
