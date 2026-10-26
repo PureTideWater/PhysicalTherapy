@@ -33,7 +33,7 @@ HANDOFF.md; LANES.md rule 10).
   | #46 | #111, readable database-function diffs (ADR 0068, DBF-01 to DBF-05) | 4d99df8 | 2026-10-26 04:37 |
   | #54 | the materiality settings' cents shown as dollars, a money bug the UX review found (CAS-38, CAS-39) | 7ef421b | 2026-10-26 08:56 |
   | #53 | #84, the model evaluation gate (ADR 0070 Parts 1 and 2, MOD-07 to MOD-11) | 88a0e4e | 2026-10-26 09:50 |
-  | #55 | the UX and brand reviewer checklist, `.claude/agents/ux-brand-reviewer.md` | 6070e41 | 2026-10-26 10:31 |
+  | #55 | the UX and brand reviewer checklist, `.claude/agents/ux-brand-reviewer.md` | 6070e41 | 2026-10-26 10:30 |
 
 - **Open Lane B PRs at this writing**, each run by its own Lane B session, each told to finish to its merge or stop at
   a clean, recorded step. The status file says exactly where it is:
@@ -869,7 +869,7 @@ HANDOFF.md; LANES.md rule 10).
     - #32: design done, not built;
     - #46 (the Verified seal) and #48's narrative draft: not started;
     - ci-browser at 8b38f48 (phase 1 built) and the CI follow-ups P1, P2 and P4: designed and reviewed.
-- **2026-10-26 ~10:31 UTC: the UX review is complete, and its checklist merged as #55 (6070e41).**
+- **2026-10-26 ~10:30 UTC: the UX review is complete, and its checklist merged as #55 (6070e41).**
   - **The synthesis** (`designs/lane-b-ux-review.md`, wf_3582cebc-d2b): 342 reviewer findings, retake included, in 208 verified problems (16 blocking, 121 should fix, 71 polish; none dropped). They are grouped into 91 PRs in landing order (§3; data in `designs/lane-b-ux-review/synthesis/prs.json`).
     - 19 items go to Lane A (§5).
     - 5 questions go to the founder (§6.2): dark mode, the terms text, the palette, and two screening legal texts.
