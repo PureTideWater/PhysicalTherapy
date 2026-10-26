@@ -51,9 +51,10 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - db 9,049 and 1 skipped, over 118 files in 4 shards;
   - e2e 51; golden 188;
   - pyx12 agrees on all 637 synthetic 835s.
-- **Usage:** last read **28% at ~21:20 UTC on 2026-10-25** (the co-founder: "Go as far as we can"). That leaves 52 points to the ~80% line over about 4.5 days to the reset, about 11.5% a day.
-  - This log's earlier readings put it at about 0.7M subagent tokens per 1% of the weekly allowance. From ~21:10 UTC the session and its agents run on a larger model with ultracode on, so re-measure at the next reading.
-  - The weekly reset is Friday 2026-10-30. Its time of day is still not given.
+- **Usage:** last read **53% weekly at ~02:12 UTC on 2026-10-26** (the co-founder's screenshot), with the 5-hour session limit at 90%, resetting at about 03:40 UTC.
+  - **The weekly reset is Friday 2026-10-30 at 15:00 the co-founder's time (UTC-4), so 19:00 UTC.**
+  - **The pace:** 32% at ~23:40 UTC to 53% at ~02:12 UTC, with eight parallel sessions plus this one: about 8 points an hour, and about a fifth of the weekly allowance per 5-hour session window.
+  - **The rule from here:** finish in-flight PRs before follow-ons. Start no new item past ~85% weekly. Keep the last ~10% to bring everything to a clean stop and to update Start here.
 
 ### Next actions, in order
 1. **Machine and reading.** Follow COFOUNDER-START.md's message.
@@ -764,3 +765,14 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - new `reserve.sh` (re-serve a build from a fresh prepare), `build-only.sh` and `batches.py`, with the README.
   - **The route map is committed** with the 83 real pages. The six phantom paths are kept only in the readable map's "Paths with no page".
   - **Faster checks:** the workflow runs two agents at a time on this 4-CPU container, so its 20 check batches would have taken about ten rounds. Eighteen background checkers took batches 03 to 20 at once, writing the same progress and verdict files as the workflow's checkers, which take the results when they reach each batch.
+- **2026-10-26 ~02:16 UTC: usage 53% weekly; the 5-hour session limit at 90% (resets about 03:40 UTC). Ready for the limit.**
+  - **The weekly reset time is now known:** Friday 2026-10-30, 15:00 UTC-4, so 19:00 UTC.
+  - **If the session limit runs out first,** model calls fail and every running turn and workflow agent stops. Nothing on disk is lost:
+    - commits and PR branches are pushed, and merges and pushes are atomic;
+    - CI runs on GitHub regardless;
+    - every workflow agent keeps a progress file (the SAVE rule);
+    - every session keeps its status file.
+  - **Recovery is armed, so nothing needs a person:**
+    - this session wakes at 03:45 UTC (send_later trig_01DnPQir4gPp2sMxn3vhqUdA) to check every workflow and session and resume what stopped;
+    - each parallel session was told to schedule its own send_later at 03:50 UTC to resume its workflows from their progress files.
+  - **Priority sent to all eight sessions:** finish the current PR before any follow-on. This session says when to stop starting new work (~85% weekly).
