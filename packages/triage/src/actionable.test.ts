@@ -16,6 +16,7 @@ const facts = (overrides: Partial<TriageFacts> = {}): TriageFacts => ({
   contractVersionStatus: 'signed_off',
   contractVersionCoversService: true,
   releaseWithdrawn: false,
+  contentNotLoaded: false,
   writtenOff: false,
   visitVarianceCents: null,
   reviewFlags: [],
@@ -109,9 +110,7 @@ describe('from validated to actionable (PRD 12)', () => {
 
   it('holds a line priced without the Medicare content its terms read for its date, alone and with the other reasons in list order (audit #7)', () => {
     expect(judgeLine(facts({ contentNotLoaded: true }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['CONTENT_NOT_LOADED'], validatedCents: 3000n });
-    // Absent is false: a line no release priced short of its content is judged as before.
     expect(judgeLine(facts({ contentNotLoaded: false }), FIVE, AS_OF).actionable).toBe(true);
-    expect(judgeLine(facts(), FIVE, AS_OF).actionable).toBe(true);
     // A Medicare Advantage non-contracted line, the one that turns every limit on, is held the same way.
     expect(judgeLine(facts({ mappingKind: 'ma_noncontracted', contractVersionStatus: null, contractVersionCoversService: true, contentNotLoaded: true }), FIVE, AS_OF).reasons).toEqual(['CONTENT_NOT_LOADED']);
     expect(
@@ -122,6 +121,13 @@ describe('from validated to actionable (PRD 12)', () => {
       ).reasons,
     ).toEqual(['BELOW_LINE_MATERIALITY', 'RELEASE_WITHDRAWN', 'CONTENT_NOT_LOADED', 'PER_VISIT_REVIEW', 'NCCI_REVIEW', 'WRITTEN_OFF']);
     expect(NOT_ACTIONABLE_REASONS.indexOf('CONTENT_NOT_LOADED')).toBe(NOT_ACTIONABLE_REASONS.indexOf('RELEASE_WITHDRAWN') + 1);
+  });
+
+  it('requires the content fact of every caller, so none judges a line actionable by forgetting it (pnpm typecheck holds this)', () => {
+    const { contentNotLoaded, ...forgotten } = facts({ contentNotLoaded: true });
+    // @ts-expect-error contentNotLoaded is required: a TriageFacts without it does not type-check.
+    const judged = judgeLine(forgotten, FIVE, AS_OF);
+    expect([contentNotLoaded, judged.actionable]).toEqual([true, true]);
   });
 
   it('judges a per-visit line with its visit: at most the visit’s net shortfall, none when the visit was paid in full, and held for review (Q44)', () => {

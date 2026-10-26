@@ -34,8 +34,7 @@ import type { DeadlineStatus } from './deadline';
  *    runs both); and it was not priced without the Medicare limits its terms turn on: its trace read the per-code
  *    MPPR, the general MPPR or the MUE on a date its release's spans do not cover (audit #7; docs/adr/0071): else
  *    CONTENT_NOT_LOADED, held until a release that loads that content prices it again. A run of such lines is
- *    refused today, so this holds a line priced before the refusal existed, or under a release whose span a
- *    correction later narrowed;
+ *    refused today, so this holds a line priced before the refusal existed;
  * 6. it is not a per-visit line (PER_VISIT_REVIEW) and carries no NCCI procedure-to-procedure review
  *    flag (NCCI_REVIEW): until the specialist answers QUESTIONS Q44 (whether a visit's variance is
  *    judged per visit) and Q41 (whether a standing edit keeps a line from becoming actionable), such a
@@ -103,9 +102,9 @@ export interface TriageFacts {
   readonly releaseWithdrawn: boolean;
   /**
    * Whether the line's trace read the per-code MPPR, the general MPPR or the MUE on a date its release's spans do not
-   * cover: it was priced without those limits. Absent is false, for callers that judge lines no release priced.
+   * cover: it was priced without those limits.
    */
-  readonly contentNotLoaded?: boolean;
+  readonly contentNotLoaded: boolean;
   readonly writtenOff: boolean;
   /**
    * For a line of a per-visit visit, the visit's net variance (the sum of the variance of the visit's
@@ -184,7 +183,7 @@ export function judgeLine(facts: TriageFacts, lineMaterialityCents: Cents, asOf:
   if (facts.releaseWithdrawn) {
     reasons.push('RELEASE_WITHDRAWN');
   }
-  if (facts.contentNotLoaded === true) {
+  if (facts.contentNotLoaded) {
     reasons.push('CONTENT_NOT_LOADED');
   }
   if (facts.visitVarianceCents !== null) {
