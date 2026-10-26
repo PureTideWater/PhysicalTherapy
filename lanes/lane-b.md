@@ -202,6 +202,11 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~01:30 UTC:
+  - ADR **0077** (0065 is #42's, 0066 the CI series', and 0067 to 0076 are claimed);
+  - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
+  - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', and 900100 is the screening's scale release);
+  - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
   - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
   - **As its own PR, next in Lane B's queue,** when it is larger or of another kind. Add it to LANES.md as a dated item "on the co-founder's standing direction of 2026-10-25" (one PR per change, LANES rule 5).
@@ -742,3 +747,8 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - Its proposal, to show a bank account still waiting on Stripe's micro-deposits on later visits, is noted for the queue after #135.
   - **The UX capture** is at 709 PNGs (01:17 UTC). Along the way it found and fixed a held submit that was actually sent, and a 390 px loading state taken too early. Both were capture faults, on the synthetic database.
   - Session clocks drift: the #38 session's message said ~02:45 UTC at 01:19. The sessions were told to take times from `date -u`.
+- **2026-10-26 ~01:30 UTC: the release content checks' design is reviewed (no migration); shared counters allocated centrally.**
+  - It found that fixture release numbers and synth module numbers are shared counters the parallel sessions could collide on. Allocated in the claim rows:
+    - DBF module 13 (#111), RCC module 14 plus fixture release 900007 (the release content checks), BIL module 15 (#135).
+    - The next free values are under "Shared counters" in the conventions. #135's session was told BIL = 15.
+  - **Handed to Lane A:** `operator_content_coverage()` for #59's later daily `content_due` job. `tp_operator` has no grant on rule objects, and a GRANT on `rule_record` would be DDL on a rule table.
