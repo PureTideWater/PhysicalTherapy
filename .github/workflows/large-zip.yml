@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# GitHub's bash with pipefail (bash --noprofile --norc -eo pipefail), as ci.yml and the release run theirs.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   large-zip:
     runs-on: ubuntu-24.04

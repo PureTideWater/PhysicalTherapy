@@ -591,6 +591,8 @@ describe('workflows', () => {
     expect(test?.env).toMatchObject({ TP_LARGE_ZIP_MB: '2048' });
     // Chromium first: the db project fails on CI without it rather than skip a printing test (CI-05).
     expect(stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium')).toBeLessThan(steps.indexOf(test as Step));
+    // GitHub's bash with pipefail, as ci.yml and the release run theirs, so no pipe in a step can hide a failure.
+    expect(large.defaults).toEqual({ run: { shell: 'bash' } });
   });
 
   it('rasterize the e2e browser’s text with fixed parameters and its own fontconfig, so the brand baselines compare the same on any Linux host', () => {
