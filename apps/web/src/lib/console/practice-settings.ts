@@ -1,6 +1,8 @@
-import { type Cents, ROUNDING_RULES, centsToString, formatCents, parseAmount, parseCents } from '@tp/money';
+import { type Cents, ROUNDING_RULES, centsToString } from '@tp/money';
 import { TriageSettingsError, triageSettings } from '@tp/triage';
 import { z } from 'zod';
+
+import { dollarsField, dollarsForInput } from '../money-input';
 
 /**
  * A practice's pricing and triage settings as the internal console edits them (PRD 5, J8: "materiality
@@ -30,10 +32,6 @@ export const PRACTICE_SETTING_KEYS = [
 const blank = (value: unknown) => typeof value !== 'string' || value.trim() === '';
 const optional = <T extends z.ZodType>(schema: T) => z.preprocess((value) => (blank(value) ? undefined : String(value).trim()), schema.optional());
 
-const dollars = z
-  .string()
-  .regex(/^\d{1,9}(\.\d{1,2})?$/, 'dollars and cents, such as 5.00')
-  .transform((text) => parseAmount(text));
 const wholeNumber = (max: number) =>
   z
     .string()
@@ -49,11 +47,11 @@ export const practiceSettingsInput = z.object({
   facilityPlaces: optional(places),
   nonFacilityPlaces: optional(places),
   defaultRounding: optional(z.enum(ROUNDING_RULES)),
-  lineMateriality: optional(dollars),
-  caseMateriality: optional(dollars),
+  lineMateriality: optional(dollarsField),
+  caseMateriality: optional(dollarsField),
   anomalyMinimumCohort: optional(wholeNumber(1_000_000).pipe(z.number().min(1, 'at least 1'))),
-  anomalyThreshold: optional(dollars),
-  staffRatePerHour: optional(dollars),
+  anomalyThreshold: optional(dollarsField),
+  staffRatePerHour: optional(dollarsField),
   minutesPerPacket: optional(wholeNumber(10_000)),
   minutesPerFollowUp: optional(wholeNumber(10_000)),
 });
@@ -137,7 +135,7 @@ function record(value: unknown): Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-const asDollars = (value: unknown) => (typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value) ? formatCents(parseCents(value)) : '');
+const asDollars = (value: unknown) => (typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value) ? dollarsForInput(value) : '');
 const asNumber = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : '');
 
 export function settingsForm(stored: unknown): PracticeSettingsForm {

@@ -218,6 +218,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/packets/calculation-words.test.tsx',
     'apps/web/src/components/pricing/line-words.test.tsx',
   ]),
+  // Lane B (co-001/materiality-cents): settings stored in cents are shown and entered in dollars, and a form saved unchanged keeps them.
+  'CAS-38': none(8, 'A practice setting read and shown: no file.', ['apps/web/src/components/settings/defaults.test.tsx', 'apps/web/src/lib/routes/console-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-39': none(8, 'A practice setting read and saved: no file.', [
+    'apps/web/src/lib/money-input.test.ts',
+    'apps/web/src/lib/routes/defaults-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
@@ -481,6 +489,18 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/models.spec.ts',
   ]),
+  // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
+  'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
+  'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
+  'BIL-03': none(11, 'The Payment method card is rendered from props the test passes, and the page from a synthetic organization on the local simulator; no file.', [
+    'apps/web/src/components/billing/billing.test.tsx',
+    'apps/web/e2e/billing.spec.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+  ]),
+  'BIL-04': none(11, 'A synthetic organization pays through the routes on the local simulator, by the simulator’s test card and bank account, and the simulator renews its plan; no file.', [
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+    'packages/billing/src/local.test.ts',
+  ]),
   // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
   'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),
   'CI-02': none(0, 'The partition reads the route registry; no file.', ['apps/web/src/lib/routes/route-tests/partition.test.ts']),
@@ -496,6 +516,12 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-15': none(0, "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.", ['tools/stryker/canary/verdict.test.ts', 'tools/test/workflows.test.ts']),
   'CI-16': none(0, "The gate judges shards' reports and equivalents the test builds in memory; no file.", ['tools/stryker/gate.test.ts', 'tools/stryker/mutants.test.ts', 'tools/test/workflows.test.ts']),
   'CI-17': none(0, 'The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.', ['tools/stryker/affected.test.ts', 'tools/stryker/shards.test.ts', 'tools/screening-capacity/watched.test.ts', 'tools/test/workflows.test.ts']),
+  // The generated function files of the combined audit's item 111 (docs/adr/0068).
+  'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),
+  'DBF-03': none(0, 'The files are rendered from catalog rows the test builds in memory, and from a scratch database; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-04': none(0, 'The directory is written and checked in a temporary directory, and the CLI run against a scratch database; no file.', ['packages/db/src/domain-model/function-files.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-05': none(0, 'The files and the summary are rendered from catalog rows and directories the test builds; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/summary.test.ts']),
 };
 
 export interface CaseDefinition {

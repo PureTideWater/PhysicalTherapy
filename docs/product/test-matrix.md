@@ -121,6 +121,8 @@ PRC-23 and PRC-24 were added in its pull request 6b-2 (audit #33 and #16's minim
 | CAS-32 | A packet’s calculation on the review page and in the PDF | The same words, from the traces its approval names, by one renderer whose version the approval, the export request and the export job agree on; a trace that differs, a line priced by another rate record or another words version is refused |
 | CAS-33 | The fee schedule worksheet | One per distinct set of records, with the year, locality, setting, RVUs, GPCIs, conversion factor and the engine’s expression; never an amount at 100% for a contract that is not at 100% |
 | CAS-34 | A code the words have no words for | Refused on every screen and in the PDF; never shown as a code |
+| CAS-38 | The materiality and pursuit settings show stored cents as dollars | With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says "$5.00 per line and $250.00 per case" and "$45.00 an hour", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget is typed in dollars, as its hint says |
+| CAS-39 | Saving the defaults form unchanged changes nothing | Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents |
 
 ## Ledger (LED)
 
@@ -210,6 +212,18 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 | MOD-05 | Budget exceeded | Calls refused; alert |
 | MOD-06 | Kill switch on | Product works on hand-entered records |
 
+## Billing (BIL)
+
+The series of combined audit #135, adopted by the founder on 2026-10-20 (docs/adr/0073): the bank account shown first and
+preferred, cards still accepted, and the customer's default payment method the one that pays every invoice.
+
+| ID | Case | Assertion |
+| --- | --- | --- |
+| BIL-01 | Stripe's payment form opens on the bank account | The Payment Element's options list `us_bank_account` first and `card` second, from the shared order; tabs with the first open; Apple Pay, Google Pay and Link off; its appearance comes from the brand's live tokens, Stripe's night theme under the dark ones; the start button reads "Add a bank account (ACH) or card" with nothing on file and "Replace with a bank account (ACH) or card" with a method on file; a confirmed setup shows the saved notice, and one waiting on micro-deposits shows the verification notice for Stripe's type (one deposit with a 6-digit code, or two amounts) with Stripe's link, each notice a status; a missing or non-https verification link is an error |
+| BIL-02 | What Stripe is asked to collect and charge | The SetupIntent's `allowed_payment_method_types`, the subscription's and the audit invoice's `payment_method_types` each send exactly `['us_bank_account', 'card']`, bank first, from the shared order, whose module imports nothing but types; the subscription saves no default of its own (`'off'`), and a new default becomes each live subscription's own default too, never cleared, so the customer's and every subscription's agree |
+| BIL-03 | The page says the bank account is preferred | The Payment method card, with Stripe and with the simulator, leads its description with the bank account; with nothing on file it says "A bank account (ACH) is preferred for annual plans and audits."; with a card on file it says that and "A new payment method replaces the one on file."; with a bank account on file it says only the second; a card's brand reads as a person reads it; the simulator lists its bank form before its card form, each with a request key of its own; the page shows the Payment method card before the Plan card, and with nothing on file the Plan card shows the prices and asks for a method instead of offering a plan; the practice onboarding step reads "Add a payment method and choose a plan" |
+| BIL-04 | A card is never refused, and a new bank account takes over | Through the routes on the simulator, an organization with only a card on file chooses the annual plan and its invoice is paid by card, and an audit invoice issued to it is paid by card; once it adds a bank account, the next open invoice it pays is charged to the bank account; and on the simulator itself, a renewal of its plan is charged to the bank account, even when the subscription carried the card as its own default |
+
 ## Continuous integration (CI)
 
 The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
@@ -232,3 +246,17 @@ reserved for the series' later pull requests; CI-15 to CI-17 are the mutation wo
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
 
+
+## Database function diffs (DBF)
+
+The generated function files of combined audit item 111 (docs/adr/0068): one file per function name in
+`packages/db/functions`, written by `pnpm db:domain-model --out`, checked beside the domain model, and shown as diffs in
+the summary that opens each approval.
+
+| ID | Case | Assertion |
+| --- | --- | --- |
+| DBF-01 | Function files of a freshly migrated database | Regenerated exactly, no file missing, extra or different, under any search_path, DateStyle, IntervalStyle, TimeZone, identifier quoting, float digits and bytea output of the connection; a stray file fails `--check` |
+| DBF-02 | A function changed by one line | Only that function's file changes, by that line and its body-hash line, the hash of the body alone (between the dollar quotes, or the SQL-standard body) equal to Appendix C's for a plpgsql and a SQL-standard body; a grant added or given by another grantor, SECURITY DEFINER flipped, `SET search_path` removed or a calling policy added each changes the file; a procedure and a BEGIN ATOMIC body render as the catalog holds them |
+| DBF-03 | Function file names | One file per name, overloads in one file in signature order; a name outside `^[a-z_][a-z0-9_]*$` or over 63 bytes, an aggregate, or a function outside schema public, refused; output the same for any input order |
+| DBF-04 | Writing and checking the directory | `--out` checks the directory before writing anything, removes only stale generated `*.sql` (the banner first), refuses any other `*.sql`, a symlink or a custom FILE without `--functions`, and leaves the README; `--check` reports the document and each file with its first differing line, then exits 1, and exits 2 on an error; the document's text and SHA-256 are the same with the files as without |
+| DBF-05 | Privileges, triggers and the summary | PUBLIC revoked or granted, grant option, grantor, sorted grantees and owner each one line; comment, trigger, policy and event-trigger lines; the summary lists each changed file, SECURITY DEFINER, scope, PUBLIC and privilege changes first, then its diffs within a budget, the list form a prefix of the full one, or one line when the base has none |

@@ -6,10 +6,24 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { APPROVAL_PREFIX, approvalLineOf, awaitingApprovalLine, documentSha256, provenanceLine } from './approval';
-import { documentAtRef } from './history';
+import { documentAtRef, unifiedDiffs } from './history';
 import { fenceFor } from './render';
 import { DOMAIN_MODEL_DOCUMENT, DomainModelError } from './sources';
-import { type DocumentChange, SUMMARY_CATEGORIES, changeLine, contrast, documentChanges, readDocument, readingChanges, renderSummary } from './summary';
+import {
+  type DocumentChange,
+  SUMMARY_CATEGORIES,
+  changeLine,
+  contrast,
+  documentChanges,
+  readDocument,
+  readingChanges,
+  FUNCTION_SECTION_BUDGET,
+  functionHeaders,
+  renderFunctionChanges,
+  renderSummary,
+  sensitiveFunctionFile,
+  touchesPrivilegesOrBehaviour,
+} from './summary';
 
 /**
  * "Changes since the last approved document" (docs/adr/0063) on synthetic schema changes: the committed
@@ -350,5 +364,241 @@ describe('documentAtRef', () => {
     expect(() => documentAtRef(first, { repoRoot: root, document })).toThrow(/has no docs\/product\/domain-model\.md$/);
     expect(() => documentAtRef('--output=x', { repoRoot: root, document })).toThrow(/is not a git ref$/);
     expect(() => documentAtRef('main two', { repoRoot: root, document })).toThrow(/is not a git ref$/);
+  });
+});
+
+describe('DBF-05: "Function definitions changed since REF"', () => {
+  /** A function file as functions.ts prints it, cut down to what these cases change. */
+  const file = (
+    name: string,
+    options: { readonly body?: string; readonly definer?: boolean; readonly grants?: readonly string[]; readonly header?: readonly string[]; readonly owner?: string } = {},
+  ): string =>
+    [
+      `-- ${name}()`,
+      '-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0123456789abcdef',
+      '-- Trigger function of: (none)',
+      '-- Called by policy: (none)',
+      `CREATE OR REPLACE FUNCTION public.${name}()`,
+      ' RETURNS integer',
+      ' LANGUAGE sql',
+      ...(options.header ?? (options.definer === true ? [' STABLE SECURITY DEFINER', " SET search_path TO 'pg_catalog', 'public', 'pg_temp'"] : [' STABLE'])),
+      'AS $function$',
+      `  ${options.body ?? 'SELECT 1'}`,
+      '$function$;',
+      `ALTER FUNCTION public.${name}() OWNER TO ${options.owner ?? 'tp_owner'};`,
+      `REVOKE ALL ON FUNCTION public.${name}() FROM PUBLIC;`,
+      ...(options.grants ?? []).map((role) => `GRANT EXECUTE ON FUNCTION public.${name}() TO ${role};`),
+      '',
+    ].join('\n');
+  const base = {
+    ref: 'origin/main',
+    commit: 'f'.repeat(40),
+    source: 'the files written to `packages/db/functions`',
+    origin: 'generated' as const,
+    directory: 'packages/db/functions',
+  };
+  const FIRST = 'SECURITY DEFINER, tenant scope, privileges or PUBLIC';
+  /** The lines the diff blocks add or remove, their ---/+++ headers aside. */
+  const changedLines = (text: string): string[] =>
+    [...text.matchAll(/^```diff\n([\s\S]*?)\n```$/gm)].flatMap((m) => (m[1] ?? '').split('\n').filter((line) => /^[+-]/.test(line) && !/^(?:--- |\+\+\+ )/.test(line)));
+  const headings = (text: string): string[] => text.split('\n').filter((line) => line.startsWith('#### '));
+
+  it('shows a header-only change, a grant added, as the line it adds, in a fenced diff block under Diffs', () => {
+    const before = new Map([['gate_probe.sql', file('gate_probe')]]);
+    const after = new Map([['gate_probe.sql', file('gate_probe', { grants: ['tp_app'] })]]);
+    const text = renderFunctionChanges({ ...base, before, after });
+    expect(text).toContain('## Function definitions changed since origin/main\n');
+    expect(text).toContain("- These are the files this run generated from the migrated database's catalog.\n");
+    expect(text).toContain('- Compared: `packages/db/functions` at `origin/main` (commit `ffffffffffff`) with the files written to `packages/db/functions`.');
+    expect(text).toContain(`- 1 file changed (0 added, 0 removed), 1 of them first (${FIRST}), then by name; each with the lines it adds and removes:\n\n- \`packages/db/functions/gate_probe.sql\` +1/-0 (${FIRST})\n`);
+    expect(text).toContain(`\n### Diffs\n\n#### \`packages/db/functions/gate_probe.sql\` (${FIRST})\n\n\`\`\`diff\ndiff --git a/packages/db/functions/gate_probe.sql b/packages/db/functions/gate_probe.sql\n`);
+    expect(text).toContain('\n--- a/packages/db/functions/gate_probe.sql\n+++ b/packages/db/functions/gate_probe.sql\n');
+    expect(changedLines(text)).toEqual(['+GRANT EXECUTE ON FUNCTION public.gate_probe() TO tp_app;']);
+    expect(text.endsWith('```\n')).toBe(true);
+  });
+
+  it('names where the files come from, and that --check proves them equal to the catalog, when they come from the working tree', () => {
+    const text = renderFunctionChanges({
+      ...base,
+      origin: 'committed',
+      source: 'the files in `packages/db/functions` in the working tree',
+      before: new Map([['gate_probe.sql', file('gate_probe')]]),
+      after: new Map([['gate_probe.sql', file('gate_probe', { body: 'SELECT 2' })]]),
+    });
+    expect(text).toContain(
+      '- These are the files in `packages/db/functions` in the working tree, not regenerated by this run: `pnpm db:domain-model --check` on a freshly migrated database (a required step of the domain model job) proves they equal the functions of the migrated catalog.\n',
+    );
+  });
+
+  it('a body edited by one line is that line, removed and added, listed +1/-1 and not first', () => {
+    const text = renderFunctionChanges({ ...base, before: new Map([['gate_probe.sql', file('gate_probe')]]), after: new Map([['gate_probe.sql', file('gate_probe', { body: 'SELECT 2' })]]) });
+    expect(changedLines(text)).toEqual(['-  SELECT 1', '+  SELECT 2']);
+    expect(text).toContain('- `packages/db/functions/gate_probe.sql` +1/-1\n');
+    expect(text).toContain('0 of them first');
+  });
+
+  it('puts SECURITY DEFINER, tenant-scope, PUBLIC and privilege changes first, either side counting, then by name, with added and removed files', () => {
+    const before = new Map([
+      ['gate_probe_a.sql', file('gate_probe_a')],
+      ['gate_probe_actor.sql', file('gate_probe_actor', { body: "SELECT current_setting('app.actor_id', true)::uuid" })],
+      ['gate_probe_flip.sql', file('gate_probe_flip', { definer: true })],
+      ['gate_probe_gone.sql', file('gate_probe_gone')],
+      ['gate_probe_owner.sql', file('gate_probe_owner')],
+      ['gate_probe_same.sql', file('gate_probe_same')],
+      ['gate_probe_scope.sql', file('gate_probe_scope', { body: "SELECT set_config('app.practice_ids', '{}', true)" })],
+      ['gate_probe_strict.sql', file('gate_probe_strict', { header: [' STABLE STRICT'] })],
+    ]);
+    const after = new Map([
+      ['gate_probe_a.sql', file('gate_probe_a', { body: 'SELECT 2' })],
+      ['gate_probe_actor.sql', file('gate_probe_actor', { body: "SELECT current_setting('app.actor_id', true)::uuid -- edited" })],
+      ['gate_probe_flip.sql', file('gate_probe_flip')],
+      ['gate_probe_new.sql', file('gate_probe_new')],
+      ['gate_probe_owner.sql', file('gate_probe_owner', { owner: 'tp_app' })],
+      ['gate_probe_same.sql', file('gate_probe_same')],
+      ['gate_probe_scope.sql', file('gate_probe_scope', { body: "SELECT set_config('app.practice_ids', '{}', false)" })],
+      ['gate_probe_strict.sql', file('gate_probe_strict')],
+    ]);
+    const text = renderFunctionChanges({ ...base, before, after });
+    expect(headings(text)).toEqual([
+      `#### \`packages/db/functions/gate_probe_actor.sql\` (${FIRST})`,
+      `#### \`packages/db/functions/gate_probe_flip.sql\` (${FIRST})`,
+      `#### \`packages/db/functions/gate_probe_owner.sql\` (${FIRST})`,
+      `#### \`packages/db/functions/gate_probe_scope.sql\` (${FIRST})`,
+      `#### \`packages/db/functions/gate_probe_strict.sql\` (${FIRST})`,
+      '#### `packages/db/functions/gate_probe_a.sql`',
+      '#### `packages/db/functions/gate_probe_gone.sql`',
+      '#### `packages/db/functions/gate_probe_new.sql`',
+    ]);
+    expect(text).toContain(`- 8 files changed (1 added, 1 removed), 5 of them first (${FIRST}), then by name;`);
+    expect(text).toContain('- `packages/db/functions/gate_probe_new.sql` +13/-0 (added)\n');
+    expect(text).toContain('- `packages/db/functions/gate_probe_gone.sql` +0/-13 (removed)\n');
+    expect(text).toContain('--- /dev/null\n+++ b/packages/db/functions/gate_probe_new.sql\n');
+    expect(text).toContain('--- a/packages/db/functions/gate_probe_gone.sql\n+++ /dev/null\n');
+    expect(text).not.toContain('gate_probe_same.sql');
+    // A new file like a removed one is an addition and a removal, never read as a rename.
+    expect(text).not.toContain('rename from');
+  });
+
+  it('reads SECURITY DEFINER only in a header, and the tenant scope and PUBLIC anywhere (S5, T11)', () => {
+    expect(sensitiveFunctionFile(file('gate_probe', { definer: true }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe'))).toBe(false);
+    // A body line that merely says it, in the shape the old pattern took for a header, is not a definer.
+    expect(sensitiveFunctionFile(file('gate_probe', { body: '\n Runs as SECURITY DEFINER because the caller cannot read it' }))).toBe(false);
+    expect(sensitiveFunctionFile(file('gate_probe', { header: [' STABLE', ' SET app.practice_ids TO \'{}\''] }))).toBe(true);
+    // As pg_get_functiondef prints it: quote_identifier puts a dotted setting name in double quotes.
+    expect(sensitiveFunctionFile(file('gate_probe', { header: [' STABLE', ' SET "app.practice_ids" TO \'{}\''] }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe', { header: [' STABLE', ' SET "app.actor_id" TO \'x\''] }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe', { header: [' STABLE', ' SET "app.practice_idsx" TO \'{}\''] }))).toBe(false);
+    // An invoker that reads the scope (practice_in_scope, app_actor_id): the definers call them as their check.
+    expect(sensitiveFunctionFile(file('gate_probe', { body: "SELECT $1 = ANY (current_setting('app.practice_ids', true)::uuid[])" }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe', { body: "SELECT current_setting ( 'app.actor_id' )" }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe', { body: "SELECT set_config('app.actor_id', $1, true)" }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe', { body: "SELECT current_setting('app.other')" }))).toBe(false);
+    expect(sensitiveFunctionFile(file('gate_probe', { grants: ['PUBLIC'] }))).toBe(true);
+    expect(sensitiveFunctionFile(file('gate_probe', { grants: ['tp_app'] }))).toBe(false);
+    expect(functionHeaders(file('gate_probe', { definer: true }))).toEqual(['CREATE OR REPLACE FUNCTION public.gate_probe()', ' RETURNS integer', ' LANGUAGE sql', ' STABLE SECURITY DEFINER', " SET search_path TO 'pg_catalog', 'public', 'pg_temp'"]);
+    // A SQL-standard body starts at RETURN or BEGIN ATOMIC.
+    const standard = file('gate_probe').replace('AS $function$\n  SELECT 1\n$function$;', 'BEGIN ATOMIC\n SELECT 1;\nEND;');
+    expect(functionHeaders(standard)).toEqual(['CREATE OR REPLACE FUNCTION public.gate_probe()', ' RETURNS integer', ' LANGUAGE sql', ' STABLE']);
+  });
+
+  it('ranks first a diff that touches a privilege, owner, LEAKPROOF, STRICT, SECURITY or SET line, and not a body line that says the word', () => {
+    const touched = (was: string, is: string): boolean => touchesPrivilegesOrBehaviour(unifiedDiffs(new Map([['g.sql', was]]), new Map([['g.sql', is]]), 'd').get('g.sql') ?? '', was, is);
+    expect(touched(file('g'), file('g', { grants: ['tp_app'] }))).toBe(true);
+    expect(touched(file('g'), file('g', { owner: 'tp_app' }))).toBe(true);
+    expect(touched(file('g'), file('g', { header: [' STABLE LEAKPROOF'] }))).toBe(true);
+    expect(touched(file('g', { header: [' STABLE STRICT'] }), file('g'))).toBe(true);
+    expect(touched(file('g'), file('g', { header: [' STABLE', " SET search_path TO 'pg_catalog'"] }))).toBe(true);
+    expect(touched(file('g'), file('g', { body: 'SELECT 2' }))).toBe(false);
+    expect(touched(file('g'), file('g', { body: 'SELECT 1 INTO STRICT x' }))).toBe(false);
+  });
+
+  it('fences a diff whose body holds a line of three backticks with a longer fence', () => {
+    const text = renderFunctionChanges({ ...base, before: new Map([['gate_probe.sql', file('gate_probe')]]), after: new Map([['gate_probe.sql', file('gate_probe', { body: "SELECT E'```'" })]]) });
+    expect(text).toContain('````diff\n');
+    expect(text.endsWith('````\n')).toBe(true);
+  });
+
+  it('says so when no function file changed', () => {
+    const files = new Map([['gate_probe.sql', file('gate_probe')]]);
+    expect(renderFunctionChanges({ ...base, before: files, after: new Map(files) })).toContain('- No function file changed.');
+  });
+
+  it('when the base has no function files, or none but the README, one line with the count, and nothing compared', () => {
+    const after = new Map([
+      ['gate_probe_a.sql', file('gate_probe_a')],
+      ['gate_probe_b.sql', file('gate_probe_b')],
+    ]);
+    const bootstrap = [
+      '## Function definitions changed since origin/main',
+      '',
+      '- The base has no function files (`packages/db/functions` at `origin/main` (commit `ffffffffffff`)): 2 files added, nothing to compare.',
+      '',
+    ].join('\n');
+    expect(renderFunctionChanges({ ...base, before: null, after })).toBe(bootstrap);
+    expect(renderFunctionChanges({ ...base, before: new Map(), after })).toBe(bootstrap);
+  });
+
+  it('names the merge base it compared with when it is not the ref itself (T17)', () => {
+    const text = renderFunctionChanges({ ...base, commit: 'a'.repeat(40), refCommit: 'f'.repeat(40), before: new Map([['g.sql', file('g')]]), after: new Map([['g.sql', file('g', { body: 'SELECT 2' })]]) });
+    expect(text).toContain(
+      '- Compared: `packages/db/functions` at commit `aaaaaaaaaaaa`, the merge base of `origin/main` (commit `ffffffffffff`) and HEAD, with the files written to `packages/db/functions`. Changes merged into `origin/main` after this branch left it are not shown.\n',
+    );
+    expect(renderFunctionChanges({ ...base, refCommit: base.commit, before: new Map([['g.sql', file('g')]]), after: new Map([['g.sql', file('g', { body: 'SELECT 2' })]]) })).toContain(
+      '- Compared: `packages/db/functions` at `origin/main` (commit `ffffffffffff`) with',
+    );
+  });
+
+  /** `n` files, each changed in its body, so each has a diff of about the same size. */
+  const many = (n: number): { readonly before: Map<string, string>; readonly after: Map<string, string> } => {
+    const names = Array.from({ length: n }, (_, i) => `gate_probe_${String(i).padStart(3, '0')}`);
+    return {
+      before: new Map(names.map((name) => [`${name}.sql`, file(name, { body: `SELECT 1 -- ${'x'.repeat(200)}` })])),
+      after: new Map(names.map((name) => [`${name}.sql`, file(name, { body: `SELECT 2 -- ${'y'.repeat(200)}` })])),
+    };
+  };
+
+  it('list mode prints exactly the full text up to its diffs: a byte prefix of it (T1)', () => {
+    const { before, after } = many(5);
+    const full = renderFunctionChanges({ ...base, before, after, mode: 'full' });
+    const list = renderFunctionChanges({ ...base, before, after, mode: 'list' });
+    expect(full.startsWith(list)).toBe(true);
+    expect(list).not.toContain('### Diffs');
+    expect(list).not.toContain('```');
+    expect(full.slice(list.length).startsWith('\n### Diffs\n\n')).toBe(true);
+    // As the CLI prints each, with one newline after: the list copy is still a prefix of the full one.
+    expect(`${full}\n`.startsWith(`${list}\n`)).toBe(true);
+    expect(renderFunctionChanges({ ...base, before, after })).toBe(full);
+    // With nothing changed, or nothing to compare, the two are the same text.
+    expect(renderFunctionChanges({ ...base, before, after: before, mode: 'list' })).toBe(renderFunctionChanges({ ...base, before, after: before, mode: 'full' }));
+    expect(renderFunctionChanges({ ...base, before: null, after, mode: 'list' })).toBe(renderFunctionChanges({ ...base, before: null, after, mode: 'full' }));
+  });
+
+  it('prints diffs in order until the budget, then one line naming those left out, and stays within the budget (S4)', () => {
+    const { before, after } = many(40);
+    const full = renderFunctionChanges({ ...base, before, after, budget: Number.MAX_SAFE_INTEGER });
+    expect(headings(full)).toHaveLength(40);
+    expect(full).not.toContain('Diffs left out');
+    const list = renderFunctionChanges({ ...base, before, after, mode: 'list' });
+    const budget = Buffer.byteLength(list, 'utf8') + Math.floor((Buffer.byteLength(full, 'utf8') - Buffer.byteLength(list, 'utf8')) / 2);
+    const cut = renderFunctionChanges({ ...base, before, after, budget });
+    expect(Buffer.byteLength(cut, 'utf8')).toBeLessThanOrEqual(budget);
+    expect(cut.startsWith(list)).toBe(true);
+    const shown = headings(cut).map((line) => /gate_probe_\d{3}\.sql/.exec(line)?.[0]);
+    expect(shown.length).toBeGreaterThan(5);
+    expect(shown.length).toBeLessThan(40);
+    // The first diffs in order, and the rest named in one line.
+    const all = [...before.keys()];
+    expect(shown).toEqual(all.slice(0, shown.length));
+    const left = cut.split('\n').filter((line) => line.startsWith('- Diffs left out'));
+    expect(left).toEqual([`- Diffs left out, past this section's ${String(budget)}-byte budget (see Files changed): ${all.slice(shown.length).map((n) => `\`${n}\``).join(', ')}`]);
+    expect(cut.endsWith(`${left[0] ?? ''}\n`)).toBe(true);
+    // Every file is in the list either way.
+    for (const name of all) expect(cut).toContain(`- \`packages/db/functions/${name}\` +1/-1\n`);
+    // A budget too small for any diff still names them all, and keeps the list whole.
+    const none = renderFunctionChanges({ ...base, before, after, budget: Buffer.byteLength(list, 'utf8') + 50 });
+    expect(headings(none)).toEqual([]);
+    expect(none).toContain(all.map((n) => `\`${n}\``).join(', '));
+    expect(FUNCTION_SECTION_BUDGET).toBe(900_000);
   });
 });
