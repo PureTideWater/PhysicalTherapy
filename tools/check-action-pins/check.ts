@@ -88,6 +88,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
   if (verify.size === 0) notes.push('no pin is new or used with changed inputs: nothing read from the network');
 
   if (options.event === 'push') {
+    notes.push(`a push: the tags of ${String(unchanged.size)} unchanged pin(s) read again, a moved or unreadable one a warning`);
     for (const ref of [...unchanged].sort()) {
       const pin = parsePin(ref);
       const version = versions.get(ref);
