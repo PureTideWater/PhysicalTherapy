@@ -16,6 +16,8 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 
 - 2026-10-26 ~01:20 UTC: **Builders** running (wf_95daa8e9-fea): synth set v2, the gateway core and the docs in parallel; then the eval harness and gate; then serving and the apps; then an integrator (full checks, generated files, commits). Draft PR opens on its first push.
 
+- 2026-10-26 02:17 UTC: build stage 1 done (synth set v2: synth 178/178 tests, fixtures regenerated idempotently; gateway core; docs); stage 2 (the eval harness, gate and faults) half done. The account's 5-hour limit is at 90% (resets ~03:40 UTC): a self check-in at 03:50 UTC (trig_01XpjmcPPR3qYDuBCCPXa6YT) resumes wf_95daa8e9-fea with resumeFromRunId if it stopped. #84's PR comes before #120's (the orchestrator, 02:16 UTC).
+
 ## For the founder (founder-kept; nothing waits on them)
 - **F1:** the per-field recall and precision floors (`eval/floors.json` ships unset; production refuses a real provider until set). Before the first real-model baseline run.
 - **F2:** whether the data-rights addendum covers keeping an accepted, uncorrected proposal as an evaluation example (legal text). Not built until ruled.
