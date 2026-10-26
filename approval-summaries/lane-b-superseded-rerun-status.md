@@ -21,6 +21,7 @@ Open questions: none.
 | 2026-10-26 03:52 | Fix round resumed | The account's 5-hour session limit stopped wf_11fa7137-42b, and the #32 design wf_98ca48d8-64c, at about 03:15 UTC, before any change was made. Resumed at 03:52 after the 03:40 reset. **CI on 961783a: all green**, every required check passing (all green, mutation, screening-capacity gate, approval-of-record). The #32 design resumes after #50 (the orchestrator's priority). |
 | 2026-10-26 05:21 | Fix round done | 81b7b0c: every finding fixed (`approval-summaries/lane-b-superseded-rerun-fix-round.md`; the triage date in F2 is not taken, with evidence). Full local suite: typecheck 22; lint 1,490 files; unit 5,029 passed, 3 skipped; golden 188; oracle 637 fixtures; db 9,087 passed, 1 skipped, 118 files in 6 shards; e2e 51 passed (E2E_PREBUILT on the stamped commit); engine freeze clean; no mutation shard affected. |
 | 2026-10-26 05:53 | Base merged | a3c583d: claude/build-platform 4d99df8 (#46 db-function diffs, #47 bank account first) merged in with a merge commit; clean, the shared documents keeping both lanes' rows; no lockfile change. Typecheck, synth 158/158 and check:fixtures pass. Pushed; CI running. |
+| 2026-10-26 08:59 | Verification (part) | wf_f83c3757-009. **CI on a3c583d: all green**, every check. The adversarial re-review of the fix round passed with one nit, N1: past 200 held-by runs a re-run can never be accepted. The screens were re-taken on a3c583d (42 shots). The UX re-check found all nine first-round findings fixed, one new should-fix (at 390 px the new Re-run button overflows its card) and nits N2 to N6. The fresh-clone verifier was stopped by the session limit (~06:25 to 08:40 UTC); it is re-run on the final head. The base moved again (#54, 7ef421b). |
 
 **Proposal for Lane A:** the trigger mirror in `pricing_run_rules()` (design §5.2). Recommended, not urgent; it needs the founder's exception for a pricing table.
 
@@ -29,4 +30,4 @@ Open questions: none.
 - **Lane A** (above): the trigger mirror.
 - **Lane B later:** an operator console count of runs stuck queued or running, with an audited action to fail one; a read-only detection of lines with no pricing in effect; `runAction`'s generic "Check the fields marked below." when every issue names a hidden field.
 
-**Next step:** the fresh-clone verification reads CI on a3c583d, with an adversarial re-review of the fix-round delta; then ready and merge.
+**Next step:** a small fix round (the 390 px button, nits N2 to N6, the held-by cap), merge 7ef421b in, push, then the fresh-clone verification reading CI on that head; then ready and merge.

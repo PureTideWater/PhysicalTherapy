@@ -21,7 +21,10 @@ Claude-Session: https://claude.ai/code/session_01W9rDrzhJaxXahvsufd7yC4
 No model name or identifier in any file. Improve as you go: improvements inside your files go in, and are listed.
 Before your last commit: typecheck the packages you changed, eslint your files, your tests and the tests of the code you changed, and pnpm exec tsx tools/screening-capacity/watched.ts equal to the committed list.`
 
-const SAVE = (f) => `Save as you go: keep ${SP}/progress/fix-${f}.md current (each finding: status, commit, test), so an interruption loses nothing. If it exists when you start, continue from it.`
+// RESUMED 2026-10-26 ~09:05 UTC: the account's session limit stopped all four agents at ~06:35 UTC (commits b20b85ef to
+// fb9ffd79 were made; other work was left uncommitted). Each agent continues from its progress file.
+const RESUMED = 'RESUMED after a stop (the session limit, ~06:35 UTC): your earlier run may have left commits (git log ac162d6c..HEAD) and uncommitted work in the worktree (git status, git diff); your progress file says what you did. Continue from there. Uncommitted files of another group may also be present: never touch or commit them.'
+const SAVE = (f) => RESUMED + '\n' + `Save as you go: keep ${SP}/progress/fix-${f}.md current (each finding: status, commit, test), so an interruption loses nothing. If it exists when you start, continue from it.`
 
 const RESULT = {
   type: 'object',
