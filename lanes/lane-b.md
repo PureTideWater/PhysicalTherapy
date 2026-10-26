@@ -203,8 +203,8 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
   - **Wording and visible changes without asking (2026-10-25 ~21:34 UTC):** "Apply wording and visible changes without asking me first." Each takes the recommended option at once and is reported to him afterwards. Cost and security trade-offs still go to him first; founder-kept matters stay the founder's.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
-- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~04:55 UTC:
-  - ADR **0078** (0065 is #42's, 0066 the CI series', and 0067 to 0077 are claimed; 0077 by ux-forms at ~04:55);
+- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~04:35 UTC:
+  - ADR **0078** (0065 is #42's, 0066 the CI series', and 0067 to 0077 are claimed; 0077 by ux-forms at ~04:35);
   - `packages/synth` MODULE_NUMBER **16** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 are claimed);
   - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', and 900100 is the screening's scale release);
   - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
@@ -807,7 +807,7 @@ Where `HANDOFF.md`'s "Start here" disagrees with this section, this section and 
     - so the page reads "$500 per line and $25000 per case" for $5.00 and $250.00, and saving it unchanged sets $500 and $25,000. Triage would then stop pursuing every shortfall under $500.
   - The cases page does it right (`cases/page.tsx:22,177`: `formatCents(parseCents(...))` and `<Money>`). No #42 file is involved.
   - **Claimed** as `co-001/materiality-cents` (CAS-38 to CAS-39) and given to the idle #135 session, with the full pipeline: payment-engine review plus the UX review, and a sweep for the same class of bug across apps/web.
-- **2026-10-26 ~04:45 UTC: the UX review's reviewers are done but one; the retake is done; the synthesis is next.**
+- **2026-10-26 ~04:33 UTC: the UX review's reviewers are done but one; the retake is done; the synthesis is next.**
   - **Ten of eleven reviewers handed back** (words-practice still running). Raw findings by lens, before deduplication:
     - brand 18 (0 blocking);
     - flows: practice 36 (3), other 30 (4);
