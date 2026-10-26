@@ -478,7 +478,8 @@ founder confirms the others by doing their runbook steps, or rules otherwise.
     starts, and `tools/test/required-checks.test.ts` holds every listing to `tools/required-checks.ts`.
 13. **Dependabot's settings on `main`.** The groups and limits on this branch take effect only when `main`'s copy
     changes. On 2026-10-20 the founder ruled for one pull request into `main` that changes it and adds the pull request
-    template (Consequences; the runbook's section on it).
+    template (Consequences; #27, merged 2026-10-20). Amended 2026-10-26: from F1 (a)'s switch Dependabot reads the build
+    branch's copy instead (the runbook's section "The default branch until launch").
 14. **`typecheck.sh`'s time, stated both ways** (Consequences): 8 to 11 s in `apps/web` after an edit of a file few
     others import, 27 to 33 s after an edit of a widely imported module such as `apps/web/src/lib/server/config.ts`.
 15. **approval-of-record's runner.** It runs on `ubuntu-24.04`, as every job has since #24.
