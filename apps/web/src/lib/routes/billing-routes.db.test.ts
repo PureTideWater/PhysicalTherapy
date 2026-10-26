@@ -253,6 +253,56 @@ describe('Settings, billing (J18)', () => {
     const foreign = await failedInvoice(other, 1);
     expect(await call(payInvoiceAction, world.adminUserId, { organizationId: world.organizationId }, { invoiceId: foreign })).toMatchObject({ status: 'invalid' });
   });
+
+  it('never refuses a card for the annual plan or an audit, and charges the next invoice to a bank account once one is added (BIL-04; docs/adr/0073)', async () => {
+    const world = await createTenantWorld(owner, 'SYNTHETIC BILLING CARD THEN BANK');
+    const admin = world.adminUserId;
+    const organizationId = world.organizationId;
+    const platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
+    await addMembership(owner, await createOrganization(owner, 'internal'), platformAdmin, 'platform_admin');
+    tokens.set(platformAdmin, (await openSession(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
+
+    // Only a card on file: the annual plan is taken and its invoice paid by the card at once.
+    ok(await call(simulatedPaymentMethodAction, admin, { organizationId }, GOOD_CARD));
+    expect(ok(await call(organizationBillingPage, admin, { organizationId })).paymentMethod).toMatchObject({ kind: 'card', last4: '4242' });
+    ok(await call(choosePlanAction, admin, { organizationId }, { plan: 'annual' }));
+    const annual = ok(await call(organizationBillingPage, admin, { organizationId }));
+    expect(annual.billing).toMatchObject({ standing: 'good', subscription: { plan: 'annual', status: 'active' } });
+    expect(annual.billing.invoices).toMatchObject([{ kind: 'subscription', status: 'paid', amountPaidCents: annual.catalog.plans.annual.amountCents, paymentMethodKind: 'card' }]);
+
+    // An audit invoice issued to it is paid by the card too. (Invoices issued within the same second have no
+    // order between them, so each is found by what it is.)
+    ok(await call(issueAuditInvoiceAction, platformAdmin, {}, { organizationId }));
+    const audited = ok(await call(organizationBillingPage, admin, { organizationId }));
+    expect(audited.billing.invoices).toHaveLength(2);
+    expect(audited.billing.invoices.find((invoice) => invoice.kind === 'audit')).toMatchObject({ status: 'paid', amountPaidCents: audited.catalog.audit.amountCents, paymentMethodKind: 'card' });
+    const byCard = audited.billing.invoices.map((invoice) => invoice.id);
+
+    // A bank account added replaces the card on file, and the next invoice is debited from it, not the card.
+    ok(await call(simulatedPaymentMethodAction, admin, { organizationId }, ACH));
+    expect(ok(await call(organizationBillingPage, admin, { organizationId })).paymentMethod).toMatchObject({ kind: 'us_bank_account', last4: '6789' });
+    ok(await call(issueAuditInvoiceAction, platformAdmin, {}, { organizationId }));
+    const debiting = ok(await call(organizationBillingPage, admin, { organizationId }));
+    expect(debiting.billing.invoices).toHaveLength(3);
+    const next = debiting.billing.invoices.find((invoice) => !byCard.includes(invoice.id));
+    // The debit has started and the bank has not settled it; the card was not charged.
+    expect(next).toMatchObject({ kind: 'audit', status: 'open', amountPaidCents: '0', firstFailedAt: null });
+    ok(await call(simulateSettlementAction, admin, { organizationId }, {}));
+    const settled = ok(await call(organizationBillingPage, admin, { organizationId }));
+    expect(settled.billing).toMatchObject({ standing: 'good' });
+    expect(settled.billing.invoices.find((invoice) => invoice.id === next?.id)).toMatchObject({
+      kind: 'audit',
+      status: 'paid',
+      amountPaidCents: settled.catalog.audit.amountCents,
+      amountRemainingCents: '0',
+      paymentMethodKind: 'us_bank_account',
+    });
+    // The invoices the card paid stay the card's.
+    expect(settled.billing.invoices.filter((invoice) => byCard.includes(invoice.id)).map((invoice) => [invoice.status, invoice.paymentMethodKind])).toEqual([
+      ['paid', 'card'],
+      ['paid', 'card'],
+    ]);
+  });
 });
 
 describe('the webhook route', () => {

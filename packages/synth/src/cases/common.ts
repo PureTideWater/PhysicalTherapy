@@ -15,7 +15,7 @@ export const EVALUATION_CODES = ['97161', '97162', '97163', '97164'] as const;
 /** A code the SYNTHETIC fee schedule has no value for (test matrix PRC-09). */
 export const CODE_WITHOUT_RVU = '97150';
 
-const MODULE_NUMBER: Record<CaseModule | 'VAR', number> = { PAR: 1, MAP: 2, CON: 3, PRC: 4, CAS: 5, LED: 6, SEC: 7, JOB: 8, MOD: 9, VAR: 10, SCR: 11, CI: 12, DBF: 13 };
+const MODULE_NUMBER: Record<CaseModule | 'VAR', number> = { PAR: 1, MAP: 2, CON: 3, PRC: 4, CAS: 5, LED: 6, SEC: 7, JOB: 8, MOD: 9, VAR: 10, SCR: 11, CI: 12, DBF: 13, BIL: 15 };
 
 /**
  * ISA13 for the n-th interchange of a case: unique across every fixture, so no two cases' files are
