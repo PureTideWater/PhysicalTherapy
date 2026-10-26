@@ -30,6 +30,10 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-26 05:20 UTC: **Reviews done** (wf_f15d6416-cdd; `lane-b-model-eval-gate-review-{ai-safety,security}.md`, findings and verdicts `lane-b-model-eval-gate-review-findings.json`). AI safety: B1 (verified major: the permitted check is skipped after a version change), M1 (--against not tied to the served record), M2 (an omitted scope field silently widens a rate record), M3 (the permitted run mixes the two contract models), m1, m2, m4 confirmed minor, m3 refuted, n1-n4 nits. Security: S1 (unmeasured permitted runs, verified minor), S2 (set v2's NPI/TIN rule, minor), S3 refuted (nit), N1-N4 nits.
 - 2026-10-26 05:25 UTC: **Fix round** running (wf_441cf1ff-868): every finding, then the full local suite once, then one push.
 
+- 2026-10-26 05:30 UTC: CI fully green on 3791fec2 (`images` failed once because Trivy's database mirror returned 404, before any scan; commented on #53 and re-run once: green).
+- 2026-10-26 ~06:35 UTC: the fix round's three fixers done (every finding fixed with a before/after test; dispositions in the scratchpad's fix/*.md, archived at the end). Then the 5-hour limit stopped the suite integrator mid-suite (typecheck, lint, unit, golden, oracle and db shard 1 done); the worker restarted.
+- 2026-10-26 09:00 UTC: `setup-container.sh` re-run (clusters up); wf_441cf1ff-868 resumed (task w3x8gkoi6), the integrator continuing from its progress file.
+
 ## Proposals outside this PR
 - `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).
 - A CLI option to run the twins twice and compare them, in place of the runbook's manual comparison.
