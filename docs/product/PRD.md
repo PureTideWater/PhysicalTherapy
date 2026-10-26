@@ -517,7 +517,7 @@ A line is written off with a reason from a closed list (window passed, payer cor
 
 ### What a customer sees as the headline
 
-Three numbers, never one: actionable (what the packets ask for), payer approved (what has been accepted), recovered (what has posted, net). The flagged and validated totals are shown below them with their labels. This is the independent review's correction made into layout.
+Three numbers, never one: actionable (what the packets ask for), payer approved (what payers have agreed to pay), recovered (what has posted, net). The flagged and validated totals are shown below them with their labels. This is the independent review's correction made into layout.
 
 ## 13. Recovery ledger and reconciliation
 
@@ -527,7 +527,7 @@ The ledger is the product's proof and the thing a buyer of the company will audi
 
 | Stage | Created when | Evidence | Sign |
 | --- | --- | --- | --- |
-| `approved` | A payer response accepts an amount, or an adjusted remittance arrives for a case line with a higher paid amount than the original | Response document, or the new `remittance` and `claim` | Positive |
+| `approved` | A payer response accepts an amount the payer will pay, or an adjusted remittance arrives for a case line with a higher allowed amount than the remittances so far: the payer's payment increase on the line, never the patient's share | Response document, or the new `remittance` and `claim` | Positive |
 | `posted` | A row in the practice's payment-posting export matches the remittance by check or trace number and amount | `posting_row` | Positive |
 | `deposited` | A row in the EFT or bank export matches the trace number and amount | `eft_row` | Positive |
 | `recouped` | A later PLB (WO) or a reversal claim takes back money against a case line | `provider_adjustment` or the reversing `claim` | Negative |
@@ -538,14 +538,14 @@ The recovered total for a case, a practice, a period or a report is the sum of `
 
 ### Matching
 
-1. **Remittance to case line.** A new 835 is parsed as usual; the loader checks each claim against open case lines by payer claim control number first and by patient control number plus service date plus code second. A match with a higher observed allowed than the original creates an `approved` entry for the difference and attaches the new claim to the line; a match with the same or lower amount is recorded as a payer response of kind "reprocessed, no change".
+1. **Remittance to case line.** A new 835 is parsed as usual; the loader checks each claim against open case lines by payer claim control number first and by patient control number plus service date plus code second. A match with a higher observed allowed than the remittances so far is approved: an `approved` entry for the payer's payment increase on the line (its paid amount less what the remittances paid it so far), and no entry when the patient's share took the whole increase, which the case shows as "payer corrected; balance is the patient's", never recovered and never no change. The allowed increase and the patient's share (deductible, coinsurance, copay) are shown beside it as billable to the patient, never counted. A match with the same allowed amount, or a lower one on a line with nothing approved, is recorded as a payer response of kind "reprocessed, no change"; a lower one on an approved line takes back the payment decrease. Every ledger amount is the payer's cash: a line's share of a remittance is what it paid on the line net of the payment it replaced. A reprocessing that raises or keeps the allowed amount but pays less takes back the payment decrease from what is approved; when nothing is approved and the allowed amount is higher, it is recorded as decreased with no entry: higher allowed, lower payment, nothing approved to take back.
 2. **Remittance to posting.** The practice uploads its payment-posting export (CSV from the practice-management system; one template per system, mapped once). Rows match remittances by check or trace number and amount, with a tolerance of zero; partial postings are matched line by line where the export has lines, otherwise at the check level with the case's share allocated pro rata and flagged as allocated.
 3. **Remittance to deposit.** The practice uploads an EFT report or bank export; rows match by TRN02 and amount. Where a bank batches several EFTs into one deposit, the match is at the batch level and flagged. Practices that cannot supply deposit data set their proof level to `posted` and the ROI statement says so.
 4. **Unmatched.** Adjusted payments, postings and deposits that match nothing are listed for manual matching with the evidence side by side; a manual match records the user. Nothing unmatched counts.
 
 ### Recoupments and reversals
 
-A PLB with reason WO or a reversal claim against a case line creates a `recouped` entry at once, reduces the recovered total, reopens the case with a note, and notifies the owner. A forward balance (FB) is recorded but not counted until it resolves. Interest paid by the payer (PLB L6, or a line-level interest amount) is recorded as its own positive entry category `interest` and shown separately from recovered principal.
+A PLB with reason WO or a reversal claim against a case line creates a `recouped` entry at once, reduces the recovered total, reopens the case with a note, and notifies the owner. A reversal takes back the payment it removes above the original: its own claim's approval while an earlier payment of the line stands, every approval its payment carried when nothing stands, and nothing while a later claim of the line stands. A forward balance (FB) is recorded but not counted until it resolves. Interest paid by the payer (PLB L6, or a line-level interest amount) is recorded as its own positive entry category `interest` and shown separately from recovered principal.
 
 ### ROI statement
 
