@@ -8,7 +8,7 @@ import type { JobContext } from '../jobs/handlers';
 import { completeRuns, runReleaseImpact } from './impact';
 import { priceHandler } from './job';
 import type * as ReleaseModule from './release';
-import { KEYED_RECORDS, ReleaseTypeNotRead, forgetSharedReleases, loadRuleRelease, storedReleaseSource, typedRelease } from './release';
+import { KEYED_RECORDS, ReleaseTypeNotRead, forgetSharedReleases, loadRuleRelease, memoryReleaseSource, storedReleaseSource, typedRelease } from './release';
 import { type Practice, PricingWorld, RELEASE, RERUN_RELEASE } from './test-support/pricing-world';
 
 /**
@@ -298,7 +298,7 @@ describe('the release impact check through the keyed read', () => {
       }
       for (const releaseNo of [RELEASE, RERUN_RELEASE]) {
         const keyed = await runReleaseImpact(scope, run, await storedReleaseSource(scope.client, releaseNo), `test-${randomUUID()}`, { claimsPerBatch: 1 });
-        const whole = await runReleaseImpact(scope, run, await loadRuleRelease(scope.client, releaseNo), `test-${randomUUID()}`);
+        const whole = await runReleaseImpact(scope, run, memoryReleaseSource(await loadRuleRelease(scope.client, releaseNo)), `test-${randomUUID()}`);
         expect(keyed).toEqual(whole);
       }
       const changed = await runReleaseImpact(scope, run, await storedReleaseSource(scope.client, RERUN_RELEASE), `test-${randomUUID()}`);

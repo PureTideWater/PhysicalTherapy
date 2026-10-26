@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { compareRuns } from './diff';
 import { completeRuns, runReleaseImpact } from './impact';
-import { currentReleaseNo, loadRuleRelease } from './release';
+import { currentReleaseNo, loadRuleRelease, memoryReleaseSource } from './release';
 import { createRerun } from './rerun';
 import { type Practice, PricingWorld, RELEASE, WINDOW_RELEASE } from './test-support/pricing-world';
 
@@ -84,7 +84,7 @@ describe('a re-run that moves only the dispute windows', () => {
     const release = await asJob(target, (scope) => loadRuleRelease(scope.client, WINDOW_RELEASE));
     const [complete] = await asJob(target, (scope) => completeRuns(scope, target.practiceId, `test-${randomUUID()}`));
     expect(complete?.id).toBe(first);
-    expect(await asJob(target, (scope) => runReleaseImpact(scope, complete as NonNullable<typeof complete>, release, `test-${randomUUID()}`))).toEqual({
+    expect(await asJob(target, (scope) => runReleaseImpact(scope, complete as NonNullable<typeof complete>, memoryReleaseSource(release), `test-${randomUUID()}`))).toEqual({
       pricingRunId: first,
       practiceId: target.practiceId,
       releaseNo: RELEASE,

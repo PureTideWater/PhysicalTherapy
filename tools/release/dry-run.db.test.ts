@@ -7,9 +7,10 @@ import { endPool } from '@tp/db/testing';
 import { MANIFEST_FILE, buildManifest, serializeManifest, serializeRecords } from '@tp/rules';
 import { fileSha256, listContentFiles, readRelease } from '@tp/rules/content';
 import { ReleaseLoadError, loadRelease } from '@tp/rules/loader';
+import type * as WorkerPricing from '@tp/worker/pricing';
 import { PricingWorld } from '@tp/worker/testing';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
 import { databaseRuns } from './database-runs';
@@ -27,6 +28,20 @@ import { RERUN_RELEASE_DIR, SYNTHETIC_RELEASE_DIR } from './synthetic';
  * from files through the same keyed contract. The rollback loads the published release before the one
  * withdrawn when the database lacks it.
  */
+
+/** The candidate source each runReleaseImpact() call of the dry run was given, in order. */
+const candidates = vi.hoisted(() => ({ seen: [] as unknown[] }));
+
+vi.mock('@tp/worker/pricing', async (importOriginal) => {
+  const actual = await importOriginal<typeof WorkerPricing>();
+  return {
+    ...actual,
+    runReleaseImpact: (...args: Parameters<typeof actual.runReleaseImpact>) => {
+      candidates.seen.push(args[2]);
+      return actual.runReleaseImpact(...args);
+    },
+  };
+});
 
 /** A pool whose clients record the text of every statement they run. */
 function recordingPool<C extends ScopeClient>(pool: ScopePool<C>, statements: string[]): ScopePool<C> {
@@ -94,6 +109,10 @@ describe('pnpm release:dry-run against a database', () => {
         `Pricing runs in the database (dry run ${runs.dryRunId}): 2 complete run(s) priced in memory. Runs whose lines would change:`,
         `- run ${runId} (practice ${target.practiceId}, release 900001): 2 of 4 line(s)`,
       ]);
+      // Each run reads the candidate through a source of its own: a source serves every key asked of it so far, so one
+      // run's keys never hide another run's missed key (review N-2).
+      expect(candidates.seen).toHaveLength(2);
+      expect(new Set(candidates.seen).size).toBe(2);
       // The runs' own release read by the batches' keys (release.ts's keyed statement), never whole (loadRuleRelease()'s read).
       expect(statements.some((text) => text.includes('unnest($2::text[], $3::jsonb[]) AS w (record_type, key)'))).toBe(true);
       expect(statements.filter((text) => /FROM rule_record WHERE release_no = \$1 ORDER BY record_type, effective_from/.test(text))).toEqual([]);

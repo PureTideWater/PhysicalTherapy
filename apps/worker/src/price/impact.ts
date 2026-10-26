@@ -1,11 +1,10 @@
 import { loadAgreementRecords } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
-import type { IndexedRelease } from '@tp/pricing';
 
 import { lineResolver, priceClaims, runAsOf } from './execute';
 import { ReleaseReadOutsideFetch, claimsRequestedKeys } from './keyed-release';
 import { FIRST_CLAIM, type RunScope, claimPage } from './lines';
-import { type ReleaseSource, memoryReleaseSource, storedReleaseSource } from './release';
+import { type ReleaseSource, storedReleaseSource } from './release';
 import { runSettings } from './settings';
 import type { PricedLineInsert } from './store';
 
@@ -91,12 +90,12 @@ export async function completeRuns(scope: PracticeScope<ScopeClient>, practiceId
 }
 
 /**
- * The run's lines priced under its own release and under `release`, and how many differ. A release already in memory
- * is read through memoryReleaseSource(), the same keyed contract.
+ * The run's lines priced under its own release and under `candidate`, and how many differ. A release already in memory
+ * is passed as memoryReleaseSource(), the same keyed contract: one source per run, as a source serves every key it was
+ * asked so far, so one run's keys never hide another run's missed key.
  */
-export async function runReleaseImpact(scope: PracticeScope<ScopeClient>, run: ImpactRun, release: ReleaseSource | IndexedRelease, requestId: string, options: ImpactOptions = {}): Promise<RunImpact> {
+export async function runReleaseImpact(scope: PracticeScope<ScopeClient>, run: ImpactRun, candidate: ReleaseSource, requestId: string, options: ImpactOptions = {}): Promise<RunImpact> {
   const purpose = options.purpose ?? 'release_impact';
-  const candidate = 'view' in release ? release : memoryReleaseSource(release);
   const own = run.releaseNo === candidate.releaseNo ? candidate : await storedReleaseSource(scope.client, run.releaseNo);
   const records = await loadAgreementRecords(scope, { practiceId: run.practiceId, requestId, purpose });
   const settings = await runSettings(scope.client, run.practiceId, run.id);
