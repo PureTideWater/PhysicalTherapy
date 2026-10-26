@@ -1,6 +1,7 @@
 'use client';
 
 import { Alert, AlertDescription, AlertTitle, Button } from '@tp/ui';
+import { useRouter } from 'next/navigation';
 import { type ReactNode, useActionState, useEffect, useId, useRef } from 'react';
 
 import type { ActionState } from '../lib/http/next';
@@ -11,6 +12,12 @@ import type { ActionState } from '../lib/http/next';
  * (with a fresh request key) replaces the form. A field's problem is named by the field's label (`labels`; its key
  * where none is given), and the control it names is marked invalid and described by it; the focus, which the
  * disabled button dropped while the request was pending, moves to the first such control, or to the summary.
+ *
+ * A form whose refusal can mean the page itself is out of date (an Accept or Re-run button another person's
+ * change has overtaken: combined audit #10, docs/adr/0037) sets `refreshOnError`: after a refusal the page is
+ * read again (router.refresh, as the export status does). Still rendered, the form keeps its state and its
+ * refusal; replaced by an explanation, that explanation is an Alert (role="alert"), so it is announced. Forms
+ * without the prop are unchanged.
  */
 export function ActionForm({
   action,
@@ -19,6 +26,7 @@ export function ActionForm({
   variant = 'default',
   className,
   labels = {},
+  refreshOnError = false,
 }: {
   readonly action: (state: ActionState, form: FormData) => Promise<ActionState>;
   /** The button's words; may hold a figure in the mono face (<Money/>). */
@@ -28,6 +36,8 @@ export function ActionForm({
   readonly className?: string;
   /** The label of each field a refusal may name, by its key, as the form shows it. */
   readonly labels?: Readonly<Record<string, string>>;
+  /** Read the page again after a refusal, for a form a change elsewhere can overtake. */
+  readonly refreshOnError?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -63,6 +73,7 @@ export function ActionForm({
   }, [state, issueId]);
   return (
     <form ref={formRef} action={formAction} className={className ?? 'flex flex-col gap-4'}>
+      {refreshOnError ? <RefreshAfterRefusal state={state} /> : null}
       {children}
       {state.error === undefined ? null : (
         <Alert variant="destructive" data-state={state.locked === true ? 'locked' : 'error'} ref={summaryRef} tabIndex={-1}>
@@ -89,4 +100,19 @@ export function ActionForm({
       </div>
     </form>
   );
+}
+
+/**
+ * Reads the page again after each refusal (ActionForm's `refreshOnError`). A component of its own, rendered only for
+ * a form that asks, so the router is read only there: every other form renders, as before, outside the app router
+ * too (a component test's renderToString).
+ */
+function RefreshAfterRefusal({ state }: { readonly state: ActionState }) {
+  const router = useRouter();
+  useEffect(() => {
+    if (state.error !== undefined) {
+      router.refresh();
+    }
+  }, [state, router]);
+  return null;
 }

@@ -1,0 +1,22 @@
+{
+  "case": "PRC-25",
+  "module": "PRC",
+  "title": "A late line priced by a newer run of the month, then the older re-run accepted",
+  "assertion": "Refused as `superseded`, in the worker and through the screens. The late line keeps its pricing in effect and the newer run stays in effect. The re-run's page says a newer run of these service dates is in effect, links to it and offers no Accept button. When that run would price nothing differently now, the page says there is nothing more to accept and offers no re-run",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "apps/worker/src/price/rerun.db.test.ts",
+    "apps/worker/src/price/rerun-rule.property.test.ts",
+    "apps/web/src/lib/routes/reruns-routes.db.test.ts",
+    "apps/web/e2e/pricing.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "No file of its own: SYNTHETIC 835s the pricing world already loads.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

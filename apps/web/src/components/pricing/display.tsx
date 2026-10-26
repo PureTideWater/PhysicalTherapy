@@ -1,16 +1,20 @@
 import type { FailureCode, RerunReason, RunCoverage } from '@tp/worker/pricing';
-import { Badge, EmptyState } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, EmptyState } from '@tp/ui';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import { unpricedReasonText } from '../../lib/contracts/remedies';
-import type { RunNames, RunStatus, RunSummary } from '../../lib/pricing/queries';
+import type { RerunAcceptanceView, RunNames, RunStatus, RunSummary } from '../../lib/pricing/queries';
 import { shareOf } from '../../lib/pricing/view';
 import { Money } from '../remittances/display';
 
 /**
  * Display pieces of the Pricing runs screens (PRD 7): a run's state, its coverage as shares worked out
  * in integers, its variance by payer pattern, and why a new run would price differently. Dollar
- * figures carry their label: underpaid lines are validated discrepancies, never "recovered".
+ * figures carry their label: underpaid lines are validated discrepancies, never "recovered". Why a
+ * re-run can no longer be accepted, or a run is not re-run, is said in the same words on every screen
+ * that offers either (combined audit #10; docs/adr/0037, amendment of 2026-10-26), each run named by a
+ * link that reads alone (WCAG 2.4.4).
  */
 
 const STATUS_TEXT: Readonly<Record<RunStatus, string>> = {
@@ -46,8 +50,10 @@ export const RERUN_TEXT: Readonly<Record<RerunReason, string>> = {
 
 /**
  * Where a complete run stands (docs/adr/0037): in effect for its period, a re-run waiting for a person to
- * accept it, a run another one took over from, and whether its rule release was withdrawn (flagged, never
- * changed).
+ * accept it, one that can no longer be accepted (something in effect for overlapping service dates is
+ * newer), one waiting while a first run of those dates is being priced, a run another one took over from,
+ * and whether its rule release was withdrawn (flagged, never changed). "Not in effect" keeps its
+ * data-state of superseded, which predates the re-run states; those have names of their own.
  */
 export function RunStateBadges({ run }: { readonly run: RunSummary }) {
   if (run.status !== 'complete') {
@@ -58,6 +64,14 @@ export function RunStateBadges({ run }: { readonly run: RunSummary }) {
       {run.inEffect ? (
         <Badge variant="outline" data-state="in-effect">
           In effect
+        </Badge>
+      ) : run.rerunOfId !== null && run.acceptedAt === null && run.acceptance === 'superseded' ? (
+        <Badge variant="secondary" data-state="rerun-superseded">
+          Can no longer be accepted
+        </Badge>
+      ) : run.rerunOfId !== null && run.acceptedAt === null && run.acceptance === 'newer_run_pending' ? (
+        <Badge variant="secondary" data-state="rerun-waiting">
+          Re-run waiting for a newer run
         </Badge>
       ) : run.rerunOfId !== null && run.acceptedAt === null ? (
         <Badge variant="secondary" data-state="awaiting-acceptance">
@@ -74,6 +88,186 @@ export function RunStateBadges({ run }: { readonly run: RunSummary }) {
         </Badge>
       )}
     </>
+  );
+}
+
+/** A complete re-run nobody accepted, as a list of a run's re-runs states it: awaiting acceptance, or why not. */
+export function unacceptedRerunText(run: RunSummary): string {
+  return run.acceptance === 'superseded' ? 'can no longer be accepted' : run.acceptance === 'newer_run_pending' ? 'waiting for a newer run to finish' : 'awaiting acceptance';
+}
+
+/** A run's name as a link's text: "Pricing run, 2026-02-01 to 2026-02-28, rule release 900004" (the release left out where the wording names only the dates). */
+export function runName(run: RunSummary, withRelease = true): string {
+  return `Pricing run, ${run.periodFrom} to ${run.periodTo}${withRelease ? `, rule release ${String(run.releaseNo)}` : ''}`;
+}
+
+/** A link to a run's page, its text the run's name (or the words given), so it reads alone. */
+export function RunLink({ practiceId, run, withRelease = true, children }: { readonly practiceId: string; readonly run: RunSummary; readonly withRelease?: boolean; readonly children?: ReactNode }) {
+  return (
+    <Link className="underline" href={`/p/${practiceId}/pricing-runs/${run.id}`} data-run-link={run.id}>
+      {children ?? runName(run, withRelease)}
+    </Link>
+  );
+}
+
+/** Runs as links joined in prose: "A", "A and B", "A, B and C". */
+function RunLinks({ practiceId, runs, withRelease = true }: { readonly practiceId: string; readonly runs: readonly RunSummary[]; readonly withRelease?: boolean }) {
+  return (
+    <>
+      {runs.map((run, index) => (
+        <span key={run.id}>
+          {index === 0 ? '' : index === runs.length - 1 ? ' and ' : ', '}
+          <RunLink practiceId={practiceId} run={run} withRelease={withRelease} />
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The first runs of overlapping dates queued or being priced, in place of a Re-run button (the re-run would be
+ * refused, newer_run_pending): "A newer run of these service dates is being priced: [run]. Re-run once it
+ * finishes." An alert, so that when a refused Re-run form refreshes the page into it, it is announced.
+ */
+export function PendingRunsAlert({ practiceId, runs }: { readonly practiceId: string; readonly runs: readonly RunSummary[] }) {
+  const waiting = runs.every((run) => run.status === 'queued') ? 'waiting to be priced' : runs.every((run) => run.status === 'running') ? 'being priced' : 'waiting to be priced or being priced';
+  return (
+    <Alert data-state="rerun-pending">
+      <AlertDescription>
+        <p>
+          {runs.length === 1 ? `A newer run of these service dates is ${waiting}: ` : `Newer runs of these service dates are ${waiting}: `}
+          <RunLinks practiceId={practiceId} runs={runs} />. {runs.length === 1 ? 'Re-run once it finishes.' : 'Re-run once they finish.'}
+        </p>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/**
+ * Why a complete run is not offered a Re-run button: only the run in effect for its service dates is priced again
+ * (not_in_effect), named here. An alert, so that when a refused Re-run form refreshes the page into it, it is announced.
+ */
+export function NotInEffectAlert({ practiceId, inEffect }: { readonly practiceId: string; readonly inEffect: RunSummary | null }) {
+  return (
+    <Alert data-state="rerun-not-in-effect">
+      <AlertDescription>
+        <p>
+          {inEffect === null ? (
+            'Only the run in effect for these service dates is priced again.'
+          ) : (
+            <>
+              Only the run in effect for these service dates is priced again: <RunLink practiceId={practiceId} run={inEffect} />.
+            </>
+          )}
+        </p>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/** The title of the explanation for a re-run that cannot be accepted, by its state and kind. */
+export function rerunBlockedTitle(acceptance: Exclude<RerunAcceptanceView, { state: 'acceptable' }>): string {
+  if (acceptance.state === 'newer_run_pending') {
+    return 'A newer run of these service dates is being priced';
+  }
+  return acceptance.kind === 'same_period'
+    ? 'A newer run of these service dates is in effect'
+    : acceptance.kind === 'other_period'
+      ? 'A run of some of these service dates was priced after this re-run'
+      : 'This re-run prices a run that was never in effect';
+}
+
+/** The body of the explanation, the same on the re-run's page and on the comparison (the design's wording, §8.2). */
+function RerunBlockedBody({ practiceId, acceptance }: { readonly practiceId: string; readonly acceptance: Exclude<RerunAcceptanceView, { state: 'acceptable' }> }) {
+  if (acceptance.state === 'newer_run_pending') {
+    const one = acceptance.running.length === 1;
+    return (
+      <p>
+        <RunLinks practiceId={practiceId} runs={acceptance.running} withRelease={false} /> {one ? 'is' : 'are'} being priced. Wait until {one ? 'it finishes' : 'they finish'}: once{' '}
+        {one ? 'it completes' : 'they complete'}, re-run the run in effect; if {one ? 'it fails' : 'they fail'}, this re-run can still be accepted.
+      </p>
+    );
+  }
+  if (acceptance.kind === 'same_period') {
+    const newer = acceptance.inEffect ?? acceptance.superseding[0];
+    if (newer === undefined) {
+      return <p>A newer run of these service dates took effect after the run this re-run prices again. Accepting this re-run would replace newer pricing, so it can no longer be accepted.</p>;
+    }
+    return newer.rerun.length > 0 ? (
+      <p data-state="rerun-that-run">
+        <RunLink practiceId={practiceId} run={newer} /> took effect after the run this re-run prices again, and it was priced after this re-run or holds lines loaded since. Accepting this re-run would
+        replace newer pricing, so it can no longer be accepted. Re-run that run to price its lines under what is in force now.
+      </p>
+    ) : (
+      <p data-state="nothing-more">
+        <RunLink practiceId={practiceId} run={newer} /> took effect after the run this re-run prices again. It already prices these lines under rule release {newer.releaseNo} and the mappings and
+        contract versions in force now. There is nothing more to accept.
+      </p>
+    );
+  }
+  if (acceptance.kind === 'other_period') {
+    // The run in effect for the re-run's dates: its original, unless a later run of those dates took effect (createRerun re-runs only it).
+    const earlier = acceptance.inEffect;
+    const one = acceptance.superseding.length === 1;
+    const again =
+      earlier === null ? null : (
+        <>
+          {' '}
+          Re-run{' '}
+          <RunLink practiceId={practiceId} run={earlier}>
+            the earlier run
+          </RunLink>{' '}
+          again: the new re-run is priced after {one ? 'it' : 'them'}, and can then be accepted.
+        </>
+      );
+    return one ? (
+      <p>
+        <RunLinks practiceId={practiceId} runs={acceptance.superseding} withRelease={false} /> was priced after this re-run, so accepting this re-run would put older pricing back on the lines they
+        share. This re-run can no longer be accepted.{again}
+      </p>
+    ) : (
+      <>
+        <p>These runs were priced after this re-run:</p>
+        <ul className="list-disc pl-5">
+          {acceptance.superseding.map((run) => (
+            <li key={run.id}>
+              <RunLink practiceId={practiceId} run={run} withRelease={false} />
+            </li>
+          ))}
+        </ul>
+        <p>
+          Accepting this re-run would put older pricing back on the lines they share. This re-run can no longer be accepted.{again}
+        </p>
+      </>
+    );
+  }
+  return (
+    <p>
+      The run this re-run prices again was never accepted, so its changes are not listed against the pricing it would replace. This re-run can no longer be accepted.
+      {acceptance.inEffect === null ? null : (
+        <>
+          {' '}
+          Re-run <RunLink practiceId={practiceId} run={acceptance.inEffect} />, the run in effect for these service dates, instead.
+        </>
+      )}
+    </p>
+  );
+}
+
+/**
+ * Why a re-run cannot be accepted, in place of its Accept button: superseded (by a newer run of its service dates,
+ * by a run of other dates priced after it, or because the run it prices again was never in effect) or waiting for a
+ * first run being priced. Not destructive (nothing is wrong with the re-run itself). An alert, so that when a refused
+ * Accept form refreshes the page into it, it is announced. The title may be given (the comparison's).
+ */
+export function RerunBlockedAlert({ practiceId, acceptance, title }: { readonly practiceId: string; readonly acceptance: Exclude<RerunAcceptanceView, { state: 'acceptable' }>; readonly title?: string }) {
+  return (
+    <Alert data-state={acceptance.state === 'superseded' ? 'rerun-superseded' : 'rerun-waiting'} data-kind={acceptance.state === 'superseded' ? acceptance.kind : undefined}>
+      <AlertTitle>{title ?? rerunBlockedTitle(acceptance)}</AlertTitle>
+      <AlertDescription className="flex flex-col gap-1">
+        <RerunBlockedBody practiceId={practiceId} acceptance={acceptance} />
+      </AlertDescription>
+    </Alert>
   );
 }
 

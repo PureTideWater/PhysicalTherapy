@@ -1,0 +1,21 @@
+{
+  "case": "PRC-26",
+  "module": "PRC",
+  "title": "Two re-runs of one run, the second priced after the first, accepted in either order and at once",
+  "assertion": "Whichever acceptance commits first, the month ends on the second re-run. Accepting the first after the second is refused as `superseded`. Accepting the second after the first succeeds, and its page lists the changes against the first. Of two acceptances made at once, the first re-run's is refused as `superseded` whatever the timestamps. The second re-run's, when its transaction began before the other acceptance's, is refused as `changed_meanwhile`, and made again it succeeds. An accepted re-run is the run in effect for its period, and nothing deadlocks",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "apps/worker/src/price/rerun.db.test.ts",
+    "apps/worker/src/price/rerun-rule.property.test.ts",
+    "apps/web/src/lib/routes/reruns-routes.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "No file of its own: SYNTHETIC 835s the pricing world already loads.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

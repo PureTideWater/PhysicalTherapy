@@ -22,6 +22,7 @@ import { type PricingReadiness, pricingReadiness } from '../contracts/mapping-qu
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import {
+  type RerunAcceptanceView,
   type RunLineFilter,
   type RunLinePage,
   type RunNames,
@@ -30,6 +31,9 @@ import {
   type RunSummary,
   completeRunOptions,
   listRuns,
+  pendingFirstRuns,
+  periodRunInEffect,
+  rerunAcceptance,
   rerunsOf,
   runLines,
   runNames,
@@ -49,10 +53,14 @@ import { opaqueId, optionalText } from './schemas';
  * A run over a plan with no mapping is refused (MAP-01).
  *
  * Re-runs and comparisons (PRD 7: "compare two runs; re-run under a new release with a diff"; PRD 5, J6
- * and J17; PRD 9, step 4; docs/adr/0037): a complete run is priced again under the release in force
- * (the same roles, mapping.edit), never changing it; the re-run's page shows its diff against the run
- * it prices again, and it is in effect only once one of those roles accepts it. Any two complete runs
- * compare, line for line.
+ * and J17; PRD 9, step 4; docs/adr/0037): the run in effect for its period is priced again under the
+ * release in force (the same roles, mapping.edit), never changing it; the re-run's page shows its diff
+ * against the pricing its acceptance would replace, and it is in effect only once one of those roles
+ * accepts it. A re-run is accepted only while nothing in effect for overlapping service dates is newer
+ * than it (priced after it, pinned to a later release not withdrawn, or holding lines loaded since) and
+ * no first run of those dates is being priced (combined audit #10; docs/adr/0037, amendment of
+ * 2026-10-26; test matrix PRC-25 to PRC-28): its page and the comparison say why not and link to the
+ * run to use instead. Any two complete runs compare, line for line.
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
@@ -123,8 +131,17 @@ export interface PricingRunPageData {
   readonly lines: RunLinePage;
   /** The runs that price this one again, newest first. */
   readonly reruns: readonly RunSummary[];
-  /** For a complete re-run: its diff against the run it prices again (the first page of lines). */
+  /**
+   * For a complete re-run: its diff (the first page of lines) against the pricing its acceptance would replace, the
+   * run in effect for its period, when it can be accepted; otherwise against the run it prices again.
+   */
   readonly diff: RunDiff | null;
+  /** For a complete re-run nobody accepted, not pinned to a withdrawn release: whether it can be accepted now, and the runs to name. */
+  readonly acceptance: RerunAcceptanceView | null;
+  /** For a complete run that is not the run in effect for its period: the one that is, which is re-run instead (null when none is). */
+  readonly periodInEffect: RunSummary | null;
+  /** For a complete run in effect: the first runs of overlapping periods queued or being priced, which it waits for before it is re-run. */
+  readonly rerunPending: readonly RunSummary[];
   /** The release in force, which a re-run pins; null when none is published. */
   readonly release: CurrentRelease | null;
   /** Whether the actor may price runs again and accept re-runs (mapping.edit). */
@@ -144,6 +161,9 @@ export const pricingRunPage = practiceRoute({
       throw new NotFoundError();
     }
     const original = run.rerunOfId === null || run.status !== 'complete' ? undefined : await runSummary(scope, practiceId, run.rerunOfId, request.requestId);
+    const acceptance = original !== undefined && run.acceptedAt === null && run.withdrawal === null ? await rerunAcceptance(scope, practiceId, run, request.requestId) : null;
+    // What the acceptance replaces is the diff's base: a later run of the period may have taken effect since the re-run was created.
+    const base = acceptance?.state === 'acceptable' ? acceptance.replaces : original;
     const current = await currentReleaseNo(scope.client);
     return {
       practiceId,
@@ -153,9 +173,12 @@ export const pricingRunPage = practiceRoute({
       lines: await runLines(scope, practiceId, run.id, params.lines, params.page, request.requestId),
       reruns: await rerunsOf(scope, practiceId, run.id, request.requestId),
       diff:
-        original?.status === 'complete'
-          ? await compareRuns(scope, { practiceId, beforeRunId: original.id, afterRunId: run.id, requestId: request.requestId, filter: 'all', page: 1 })
+        base?.status === 'complete'
+          ? await compareRuns(scope, { practiceId, beforeRunId: base.id, afterRunId: run.id, requestId: request.requestId, filter: 'all', page: 1 })
           : null,
+      acceptance,
+      periodInEffect: run.status === 'complete' && !run.inEffect ? await periodRunInEffect(scope, practiceId, run.periodFrom, run.periodTo, request.requestId) : null,
+      rerunPending: run.status === 'complete' && run.inEffect ? await pendingFirstRuns(scope, practiceId, run.id, request.requestId) : [],
       release: current === null ? null : await releaseHeader(scope.client, current),
       canRerun: rolesPermit(access.roles, 'mapping.edit'),
     };
@@ -171,14 +194,24 @@ export interface RunComparisonPageData {
   readonly after: RunSummary;
   /** Null while either run is still being priced (there are no lines to compare yet). */
   readonly diff: RunDiff | null;
+  /** Whether the actor may accept the second run here: an acceptable re-run, compared with exactly the run its acceptance replaces. */
   readonly canAccept: boolean;
+  /**
+   * For a second run that is a complete re-run nobody accepted, not pinned to a withdrawn release, compared with its
+   * original or with the run its acceptance would replace: whether it can be accepted now, and the runs to name.
+   */
+  readonly acceptance: RerunAcceptanceView | null;
 }
 
 /**
  * Two complete runs of the practice compared (PRD 7, Pricing runs: "compare two runs"): exactly the lines
  * whose expected allowed, unpriced reason or adjustments differ, each with both sides and its causes
- * from the traces, and the lines only one of them priced. When the second is a re-run of the first not
- * yet accepted, the roles that map plans accept it here.
+ * from the traces, and the lines only one of them priced. When the second is a re-run not yet accepted
+ * and the first is exactly what its acceptance would replace (the run in effect for its period), the
+ * roles that map plans accept it here (J17: the diff a person accepts is the change accepting makes).
+ * Compared with its original after a later run took effect, it names the run to compare with instead;
+ * superseded, or waiting for a first run being priced, it says why it cannot be accepted (combined audit
+ * #10; docs/adr/0037, amendment of 2026-10-26).
  */
 export const comparePricingRunsPage = practiceRoute({
   id: 'practice.pricing_runs.compare',
@@ -202,21 +235,33 @@ export const comparePricingRunsPage = practiceRoute({
         throw error;
       }
     }
+    const judged =
+      after.rerunOfId !== null && after.status === 'complete' && after.acceptedAt === null && after.withdrawal === null ? await rerunAcceptance(scope, practiceId, after, request.requestId) : null;
+    // Shown beside its original, or beside the run its acceptance replaces; beside any other run the comparison is just a comparison.
+    const acceptance = judged !== null && (after.rerunOfId === before.id || (judged.state === 'acceptable' && judged.replaces.id === before.id)) ? judged : null;
     return {
       practiceId,
       before,
       after,
       diff,
-      canAccept: diff !== null && rolesPermit(access.roles, 'mapping.edit') && after.rerunOfId === before.id && after.acceptedAt === null && after.withdrawal === null,
+      canAccept: diff !== null && rolesPermit(access.roles, 'mapping.edit') && acceptance?.state === 'acceptable' && acceptance.replaces.id === before.id,
+      acceptance,
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, before: refs.pricingRunId, after: refs.rerunId }) },
 });
 
-/** A refusal of the re-run services, as the field a form shows it against. */
 /** A run of a practice with no pricing location (audit #33): no run is created until its billing ZIP is set. */
 const LOCATION_WAITING = `${locationStatusText('zip_missing')} A run waits until it is set in Pricing settings.`;
 
+/**
+ * A refusal of the re-run services, as the field a form shows it against. Every RerunRefusedError reason maps to
+ * the run's field with the service's message, which names a state and never a value: the acceptance rule's
+ * (superseded, newer_run_pending, changed_meanwhile) and the re-run rule's (not_in_effect, newer_run_pending) are
+ * worded to read after the form's label, "This re-run: ..." on the Accept forms and "This run: ..." (or "That run:
+ * ...", for the run a superseded re-run's page offers instead) on the Re-run forms (docs/adr/0037, amendment of
+ * 2026-10-26). The release mismatch reads after "Rule release".
+ */
 function refusal(error: unknown): InputError | undefined {
   if (error instanceof PricingLocationWaiting) {
     return new InputError([{ field: 'releaseNo', message: LOCATION_WAITING }]);
@@ -231,8 +276,11 @@ function refusal(error: unknown): InputError | undefined {
 }
 
 /**
- * Prices a complete run again under the release in force (J17; MAP-03), for the same period and the
- * same lines, and queues its price job; the run itself never changes. The new run's page shows the diff.
+ * Prices the run in effect for its period again under the release in force (J17; MAP-03), for the same
+ * period and the same lines, and queues its price job; the run itself never changes. The new run's page
+ * shows the diff. A run already replaced, or a re-run nobody accepted, is refused (the run in effect is
+ * re-run instead), and so is any run while a first run of overlapping dates is queued or being priced
+ * (PRC-27, PRC-28).
  */
 export const rerunPricingRunAction = practiceRoute({
   id: 'practice.pricing_runs.rerun',
@@ -267,7 +315,11 @@ export const rerunPricingRunAction = practiceRoute({
 /**
  * Accepts a complete re-run after its diff (J17: "before anyone accepts it"): from then on it is the run
  * in effect for its period. Accepting it again changes nothing; a first run, an open re-run and one
- * pinned to a withdrawn release are refused (the database refuses them too).
+ * pinned to a withdrawn release are refused (the database refuses them too). So is a re-run something
+ * in effect for overlapping service dates is newer than (superseded), one waiting while a first run of
+ * those dates is being priced, and one a run of those dates took effect beside while it was accepted
+ * (combined audit #10, PRC-25 to PRC-28): acceptRun judges under the practice's pricing_current lock, and
+ * a refusal rolls the request back, audit event and all.
  */
 export const acceptPricingRunAction = practiceRoute({
   id: 'practice.pricing_runs.accept',

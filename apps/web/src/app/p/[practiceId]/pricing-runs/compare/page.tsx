@@ -1,11 +1,11 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { DiffSummaryText, DiffTable, SplitChangeText } from '../../../../../components/pricing/diff';
-import { RunStateBadges } from '../../../../../components/pricing/display';
+import { RerunBlockedAlert, RunLink, RunStateBadges } from '../../../../../components/pricing/display';
 import { Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
@@ -48,14 +48,19 @@ function RunHead({ label, practiceId, run }: { readonly label: string; readonly 
  * with a diff"; PRD 9, step 4; docs/adr/0037): exactly the lines whose expected allowed, unpriced
  * reason or adjustments differ, with both runs' results and each line's cause from the traces (a rule
  * record, a contract version, a mapping), and the lines only one of them priced. Neither run changes;
- * when the second re-prices the first and is not yet accepted, the roles that price runs accept it here.
+ * when the second is a re-run not yet accepted and the first is exactly what accepting it replaces (the
+ * run in effect for its period), the roles that price runs accept it here. Compared with its original
+ * after a later run of its dates took effect, the page links to the comparison with that run instead; a
+ * re-run that can no longer be accepted, or waits for a first run being priced, is explained in the
+ * Accept card's place, in the run page's words (combined audit #10; docs/adr/0037, amendment of
+ * 2026-10-26).
  */
 export default async function ComparePricingRunsPage(props: Props) {
   const page = await loadPage(comparePricingRunsPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="pricing_runs" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, before, after, diff, canAccept } = page.data;
+  const { practiceId, before, after, diff, canAccept, acceptance } = page.data;
   const path = `/p/${practiceId}/pricing-runs/compare`;
   const query = { before: before.id, after: after.id };
   return (
@@ -104,17 +109,42 @@ export default async function ComparePricingRunsPage(props: Props) {
         <Card role="region" aria-label="Accept the re-run">
           <CardHeader>
             <CardTitle>Accept the re-run</CardTitle>
-            <CardDescription>The second run prices the first again. Accepting makes it the run in effect for its period; the first run stays as it was.</CardDescription>
+            <CardDescription>
+              {after.rerunOfId === before.id
+                ? 'The second run prices the first again. Accepting makes it the run in effect for its period; the first run stays as it was.'
+                : 'The first run took effect for these service dates after the second was created. Accepting the second makes it the run in effect in the first’s place; the first run stays as it was.'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <ActionForm action={acceptPricingRunFormAction} submit="Accept the second run">
+            <ActionForm action={acceptPricingRunFormAction} submit="Accept the second run" labels={{ runId: 'This re-run' }} refreshOnError>
               <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="runId" value={after.id} />
             </ActionForm>
           </CardContent>
         </Card>
-      ) : null}
+      ) : acceptance === null ? null : acceptance.state === 'acceptable' ? (
+        acceptance.replaces.id === before.id ? null : (
+          <Alert data-state="compare-with-in-effect">
+            <AlertTitle>Compare with the run in effect</AlertTitle>
+            <AlertDescription>
+              <p>
+                Accepting this re-run replaces <RunLink practiceId={practiceId} run={acceptance.replaces} />, the run in effect for these service dates, not the first run here.{' '}
+                <Link className="underline" href={`${path}?before=${acceptance.replaces.id}&after=${after.id}`}>
+                  Compare it with that run
+                </Link>{' '}
+                to see exactly what accepting changes, and to accept it.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )
+      ) : (
+        <RerunBlockedAlert
+          practiceId={practiceId}
+          acceptance={acceptance}
+          title={acceptance.state === 'superseded' ? 'This re-run can no longer be accepted' : 'Wait for the newer run'}
+        />
+      )}
     </AppShell>
   );
 }
