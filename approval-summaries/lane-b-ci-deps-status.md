@@ -6,6 +6,14 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 
 Open questions: none.
 
+## Plan changed (2026-10-26 10:15 UTC): ci-deps is finished tonight by this session
+
+The orchestrator (10:13 UTC): the co-founder allows up to 98% weekly usage and Lane A runs on its own account, so ci-deps
+(#48) is finished tonight. Check-ins re-created: 15:15 UTC (base merge, login v4.7.0, one push) and 19:20 UTC (the
+bumps, the delta review, the full local suite, one push, CI, the fresh-clone verification, the merge, then a message to
+the orchestrator). Re-subscribed to #48. **ci-browser and P1, P2, P4 stay stopped at their recorded points** below. If
+this session stops before the merge, the handoff below still holds.
+
 ## Handoff (2026-10-26 10:20 UTC): held by the orchestrator's wind-down; for whoever finishes it
 
 The account's weekly usage reached 90% and Lane B goes to Lane A on 2026-10-27. This session stopped at a clean point:
