@@ -290,6 +290,33 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'MOD-05', title: 'Budget exceeded', assertion: 'Calls refused; alert' },
   { id: 'MOD-06', title: 'Kill switch on', assertion: 'Product works on hand-entered records' },
   {
+    id: 'MOD-07',
+    title: 'Model change that turns rejected fields into verified wrong values, or leaves a scope field out of a rate record',
+    assertion:
+      'Gate fails: wrong-but-verified (a scope field left out of a rate record included) counted per field apart from rejected and missed, never above its baseline, zero on faithful-text cases and never above the local reference, nor off its misread records, on the others, on the synthetic set and on permitted examples; a run with a failed or refused call is never recorded; a real provider is never recorded with a recall or precision floor unset or unmet; a set change never lands with a model change; a scope field a proposed rate record leaves out is named to the specialist as not stated',
+  },
+  {
+    id: 'MOD-08',
+    title: 'Swapped-row, cross-row and value-only faults',
+    assertion: 'Swapped rows and cross-row quotes rejected as not in the row; merged rows (their codes rejected or verified), a scope field dropped, a flipped flag, a wrong method, a wrong date, an amended figure on the original record or a struck rate taken fails the gate',
+  },
+  {
+    id: 'MOD-09',
+    title: 'Contract evaluation set v2',
+    assertion:
+      '63 documents to 60 codes and 80 pages: multi-row tables, contract-plus-exhibit pairs, scans with OCR errors or their own OCR layer, struck-through rates, each marked faithful or not; its hash covers the pages as read, and a changed set refuses comparison',
+  },
+  {
+    id: 'MOD-10',
+    title: 'Injected-instruction twins and decoy amended rates',
+    assertion: "Each twin's full proposal and review equal its clean twin's and no output string, a label included, holds a word only the injection writes; both rows of every expected conflict proposed and each flagged against the other; any difference, failed twin call or miss fails the gate",
+  },
+  {
+    id: 'MOD-11',
+    title: 'Real provider in production with a purpose unevaluated',
+    assertion: 'That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met, and a contract variant only after a production permitted run of its own examples, compared with what was served',
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:

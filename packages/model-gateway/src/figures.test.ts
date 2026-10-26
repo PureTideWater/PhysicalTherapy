@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { figureInQuote, inQuote, readAmount, readDate, readPercent, readYear, standsAlone, tokenInQuote, wholeInQuote } from './figures';
+import { codeTokens, figureInQuote, figureSpans, inQuote, normalized, readAmount, readDate, readPercent, readYear, standsAlone, tokenInQuote, tokenSpans, wholeInQuote } from './figures';
 import { dateForms } from './redact';
 
 /** Code reads what a model copied; a model never produces an amount or a date (CLAUDE.md, rule 1). */
@@ -159,5 +159,52 @@ describe('figureInQuote (MOD-02)', () => {
     ['amount', 'about $32.50'],
   ] as const)('refuses %s %s, a fragment of a longer figure or not one at all', (kind, written) => {
     expect(figureInQuote(kind, written, quote)).toBe(false);
+  });
+});
+
+describe('figureSpans and tokenSpans', () => {
+  it('find where a figure or a token stands in the quote as normalized reads it, and agree with the booleans', () => {
+    const quote = 'CPT  97110 is $43.10 per unit;\tCPT 97112-GP is $43.10 too.';
+    const text = normalized(quote);
+    const amounts = figureSpans('amount', '$43.10', quote);
+    expect(amounts.map((span) => text.slice(span.start, span.end))).toEqual(['$43.10', '$43.10']);
+    expect(amounts[0]?.start).toBe(text.indexOf('$43.10'));
+    expect(tokenSpans('gp', quote, 'modifiers').map((span) => text.slice(span.start, span.end))).toEqual(['GP']);
+    expect(tokenSpans('9711', quote)).toEqual([]);
+    expect(figureSpans('amount', '$3', quote)).toEqual([]);
+    for (const [written, kind] of [['$43.10', 'amount'], ['$43.1', 'amount'], ['2026', 'year']] as const) {
+      expect(figureInQuote(kind, written, quote)).toBe(figureSpans(kind, written, quote).length > 0);
+    }
+    expect(tokenInQuote('97112', quote)).toBe(true);
+  });
+
+  it('map a figure past a hidden character back to where it stands', () => {
+    const quote = 'CPT 97110\u200b pays $43.10';
+    const [span] = figureSpans('amount', '$43.10', quote);
+    expect(normalized(quote).slice(span?.start, span?.end)).toBe('$43.10');
+  });
+});
+
+describe('codeTokens', () => {
+  const tokens = (quote: string) => codeTokens(quote).map((token) => token.token);
+
+  it('reads whole tokens of HCPCS shape, in order, a code with its modifiers attached', () => {
+    expect(tokens('CPT 97110, G0283 and 0001F; 97112-GP-59 and 9711A')).toEqual(['97110', 'G0283', '0001F', '97112', '9711A']);
+    const [token] = codeTokens('  CPT   97110');
+    expect(token).toEqual({ token: '97110', start: 4, end: 9 });
+  });
+
+  it('is case-sensitive and never upper-cases: no word of a sentence is a code', () => {
+    expect(tokens('For CPT 97110, Payer shall pay the TOTAL; Provider SHALL bill.')).toEqual(['97110']);
+    expect(tokens('g0283 and 0001f')).toEqual([]);
+  });
+
+  it('reads no token inside an amount, a percentage or a date, nor one joined to a longer figure', () => {
+    expect(tokens('$12345 and 12345.00 and 12345% and 971100 and A97110 and 97110/97112 and 97110-97112')).toEqual([]);
+  });
+
+  it('reads a five-digit ZIP code as a code token, but not a ZIP+4', () => {
+    expect(tokens('SYNTHETIC TOWN 99999')).toEqual(['99999']);
+    expect(tokens('SYNTHETIC TOWN 99999-1234')).toEqual([]);
   });
 });

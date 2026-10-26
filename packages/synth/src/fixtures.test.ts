@@ -274,7 +274,7 @@ describe('the 10,000-claim fixture (PAR-29)', () => {
     expect(expected.generated).toHaveLength(1);
     expect(facts.claims).toBe(LARGE_CLAIMS);
     expect(facts.path).toBe(LARGE_FIXTURE_PATH);
-    expect(generatedFile?.oracle.summarySha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(generatedFile?.oracle?.summarySha256).toMatch(/^[0-9a-f]{64}$/);
     const target = await writeLargeFixture(syntheticRoot, facts.sha256);
     const bytes = readFileSync(target);
     expect(bytes.length).toBe(facts.bytes);

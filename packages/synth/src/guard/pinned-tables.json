@@ -48,6 +48,11 @@
       "reason": "A MOD-01 contract-set exhibit table: the set's expected.json records its sha256 and the model gateway's evaluation baseline (packages/model-gateway/eval/baseline.json, set_sha256) is held to the set as it is."
     },
     {
+      "path": "fixtures/synthetic/MOD-09/contract-set-v2/V02-table/exhibit.csv",
+      "sha256": "c8b354e1346568f236fa2b97d1b18de8a329ad563367395926e06a976afaca95",
+      "reason": "A MOD-09 contract-set v2 exhibit table: the set's expected.json records its sha256 and the model gateway's evaluation baseline (packages/model-gateway/eval/baseline.json, set_sha256) is held to the set as it is."
+    },
+    {
       "path": "fixtures/synthetic/audit/AUDIT-01/expected-lines.csv",
       "sha256": "d0d0c4465bc658d184cd8596f4e29e39d749fb94d61657cdd1192a8a40e9039b",
       "reason": "AUDIT-01's expected lines, written by the independent Python worksheet (tools/audit-worksheet) from inputs.json alone; apps/web/src/lib/routes/audit-e2e.db.test.ts matches the audit to it line for line."

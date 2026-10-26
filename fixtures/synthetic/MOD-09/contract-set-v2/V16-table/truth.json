@@ -1,0 +1,307 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V16",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [[0,6]],
+  "records": [
+    {
+      "label": "Exhibit A: 97161",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97161"],"written":["97161"],"page":3,"quote":"97161 - - $149.65 per unit"},
+        "amount": {"value":"14965","written":"$149.65","page":3,"quote":"97161 - - $149.65 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "12/31/2027",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92607 CO POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["92607"],"written":["92607"],"page":3,"quote":"92607 CO 19 $61.74 per unit"},
+        "modifiers": {"value":["CO"],"written":["CO"],"page":3,"quote":"92607 CO 19 $61.74 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":3,"quote":"92607 CO 19 $61.74 per unit"},
+        "amount": {"value":"6174","written":"$61.74","page":3,"quote":"92607 CO 19 $61.74 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "12/31/2027",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97168 POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97168"],"written":["97168"],"page":3,"quote":"97168 - 12 $91.85 per unit"},
+        "places_of_service": {"value":["12"],"written":["12"],"page":3,"quote":"97168 - 12 $91.85 per unit"},
+        "amount": {"value":"9185","written":"$91.85","page":3,"quote":"97168 - 12 $91.85 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "12/31/2027",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97116 CQ 59 POS 11",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97116"],"written":["97116"],"page":3,"quote":"97116 CQ 59 11 $66.15 per unit"},
+        "modifiers": {
+          "value": ["CQ","59"],
+          "written": ["CQ","59"],
+          "page": 3,
+          "quote": "97116 CQ 59 11 $66.15 per unit"
+        },
+        "places_of_service": {"value":["11"],"written":["11"],"page":3,"quote":"97116 CQ 59 11 $66.15 per unit"},
+        "amount": {"value":"6615","written":"$66.15","page":3,"quote":"97116 CQ 59 11 $66.15 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "12/31/2027",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 92608 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["92608"],"written":["92608"],"page":3,"quote":"92608 - 22 $137.14 per unit"},
+        "places_of_service": {"value":["22"],"written":["22"],"page":3,"quote":"92608 - 22 $137.14 per unit"},
+        "amount": {"value":"13714","written":"$137.14","page":3,"quote":"92608 - 22 $137.14 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "12/31/2027",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97533",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97533"],"written":["97533"],"page":3,"quote":"97533 - - $64.01 per unit"},
+        "amount": {"value":"6401","written":"$64.01","page":3,"quote":"97533 - - $64.01 per unit"},
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "12/31/2027",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        }
+      }
+    },
+    {
+      "label": "Section 2.6: 97161",
+      "role": "decoy",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97161"],
+          "written": ["97161"],
+          "page": 2,
+          "quote": "Section 2.6. Effective 8/31/2025, CPT 97161 is reimbursed at $149.10 per unit."
+        },
+        "amount": {
+          "value": "14910",
+          "written": "$149.10",
+          "page": 2,
+          "quote": "Section 2.6. Effective 8/31/2025, CPT 97161 is reimbursed at $149.10 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2025-08-31",
+          "written": "8/31/2025",
+          "page": 2,
+          "quote": "Section 2.6. Effective 8/31/2025, CPT 97161 is reimbursed at $149.10 per unit."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "12/31/2027",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2027."
+        }
+      }
+    }
+  ]
+}

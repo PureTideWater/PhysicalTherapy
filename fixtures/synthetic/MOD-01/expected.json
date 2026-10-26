@@ -53,8 +53,8 @@
     },
     {
       "path": "contract-set/C01-table/truth.json",
-      "sha256": "3d88255c99c0252220d4b1835799019c15ac88822888781964952feb03d99be0",
-      "bytes": 2791,
+      "sha256": "2c9f4a55fe48a52de5cde3d64cb10bbe701365430cf86eaa83c7ea0c4e125e21",
+      "bytes": 2964,
       "kind": "json",
       "description": "C01: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -67,8 +67,8 @@
     },
     {
       "path": "contract-set/C02-table/truth.json",
-      "sha256": "ecdd1adf9ca675fab3811e87ed4dc524089eeef829667223f059bc1fc8a47e32",
-      "bytes": 6977,
+      "sha256": "266a9b3af7f4d09685bd46b1a09e26cef080e758bbed85fa843b3a619657bb10",
+      "bytes": 7172,
       "kind": "json",
       "description": "C02: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -81,8 +81,8 @@
     },
     {
       "path": "contract-set/C03-table/truth.json",
-      "sha256": "3db45692ff095e345bb36d14e7e52d19a4bb37e242e23d20cdf76c8face13fc2",
-      "bytes": 4592,
+      "sha256": "72bfc0980dd0fb3ebad9dd8502a6abe4cbd101805e523613ea932734fc37f7bb",
+      "bytes": 4809,
       "kind": "json",
       "description": "C03: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -95,8 +95,8 @@
     },
     {
       "path": "contract-set/C04-table/truth.json",
-      "sha256": "71e8e29aa4a04e481957e626343bbdb794d9b033b9f460f1fef70b666f838311",
-      "bytes": 3700,
+      "sha256": "aa05eaecaaf89bf8ca32a3f0806e132cbdac6e4ac20ca78a43c03ce4f00790c1",
+      "bytes": 3873,
       "kind": "json",
       "description": "C04: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -109,8 +109,8 @@
     },
     {
       "path": "contract-set/C05-table/truth.json",
-      "sha256": "db05f8874e340944d02e71beafabd3635c77ccf7b0e3ea2c0f98f4de76292259",
-      "bytes": 5548,
+      "sha256": "20d05586d5a7b2d26f256b758e289b02976e8ffa8cc61908825c5b4ba0fc637c",
+      "bytes": 5786,
       "kind": "json",
       "description": "C05: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -123,8 +123,8 @@
     },
     {
       "path": "contract-set/C06-table/truth.json",
-      "sha256": "be04b949ee07a27a74643d72981b01f40654707a528e16322dc1d941bf834a7c",
-      "bytes": 1672,
+      "sha256": "891b2a01f01bd22f1afb0451d4d64249d2b697824c931908c3c6551cd5dcd538",
+      "bytes": 1845,
       "kind": "json",
       "description": "C06: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -137,8 +137,8 @@
     },
     {
       "path": "contract-set/C07-table/truth.json",
-      "sha256": "639b2025a625db01e906e14ef08c8a49d402078a4804f4f348caf62d33dd35d0",
-      "bytes": 9248,
+      "sha256": "71de30ccb052df3f331b912f43d4d792af83229f2c464d4a4a1353f003322cad",
+      "bytes": 9509,
       "kind": "json",
       "description": "C07: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -151,8 +151,8 @@
     },
     {
       "path": "contract-set/C08-table/truth.json",
-      "sha256": "9d5a74eb8ee6e1358776cd76c155ec94eb17fd1ec7acd9d9981ea62935c2581d",
-      "bytes": 6501,
+      "sha256": "ab294c61b5fc29a3a2a4338fb21d36363f1dbc1cd4e6156af1a8171c0b54779b",
+      "bytes": 6718,
       "kind": "json",
       "description": "C08: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -165,8 +165,8 @@
     },
     {
       "path": "contract-set/C09-table/truth.json",
-      "sha256": "5d1b01c7b1d12da2c39b08e84ca4403e1bc16c3ccf9523258ae154b023fbfeae",
-      "bytes": 4871,
+      "sha256": "7a55741ad0d1221143d9785586eb2914daaa9747a6720f031fb5928fd74aa9e6",
+      "bytes": 5110,
       "kind": "json",
       "description": "C09: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -179,8 +179,8 @@
     },
     {
       "path": "contract-set/C10-table/truth.json",
-      "sha256": "ae59e1d29f64a7079c83d8ac8a6ed36cc51ded935ec37d77d170891619ffa727",
-      "bytes": 4105,
+      "sha256": "5c1f0e93094e073f4ff84e448c9924f8d13a37c1000041193183bdc717932e85",
+      "bytes": 4300,
       "kind": "json",
       "description": "C10: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -193,8 +193,8 @@
     },
     {
       "path": "contract-set/C11-table/truth.json",
-      "sha256": "d74e96c0c977d43cf013f31e41056db9b5c54c299d2b4297fdd10231395b53da",
-      "bytes": 2087,
+      "sha256": "c878a85690daf41ecda559ac914f0ec252c280196df3208d54437ba7ff50eaac",
+      "bytes": 2260,
       "kind": "json",
       "description": "C11: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -207,8 +207,8 @@
     },
     {
       "path": "contract-set/C12-table/truth.json",
-      "sha256": "f06681157c266ca056372954cc2e563225f0b9baa0ef74738827778d8fa4c85c",
-      "bytes": 2396,
+      "sha256": "e1bbbf0d9ae4ffcb5058cece33dc0aaddde506963c8e32c733da992105cb1397",
+      "bytes": 2591,
       "kind": "json",
       "description": "C12: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -221,8 +221,8 @@
     },
     {
       "path": "contract-set/C13-table/truth.json",
-      "sha256": "6de48316b33273132ceef8c1815a40da9c23a375198f16af927bf999112e53b0",
-      "bytes": 4138,
+      "sha256": "fce668edf5af455338e5dd0dd6f39d831d23273ce23d22705a5447ce99cf1c25",
+      "bytes": 4355,
       "kind": "json",
       "description": "C13: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -235,8 +235,8 @@
     },
     {
       "path": "contract-set/C14-table/truth.json",
-      "sha256": "554abc9a1d8d4aa34c79a27b42671adebc35958f9fdfbb7bf57f2eb3ef85f86e",
-      "bytes": 2428,
+      "sha256": "2e85d0550d2319df129606839046a00f557b405b2d85877e4b6936196ddb132c",
+      "bytes": 2623,
       "kind": "json",
       "description": "C14: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -249,8 +249,8 @@
     },
     {
       "path": "contract-set/C15-prose/truth.json",
-      "sha256": "c2cbed8656e7d892a8eec02c512a25848c291e6e240e5eb62b52a55c760d4257",
-      "bytes": 3953,
+      "sha256": "5488dfc5dbb1db3d9d4ae1392641705efa6b9442782c6aace7120a1e1130ec32",
+      "bytes": 4148,
       "kind": "json",
       "description": "C15: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -263,8 +263,8 @@
     },
     {
       "path": "contract-set/C16-prose/truth.json",
-      "sha256": "9d660075a0556d8eadb0ff5c29dfbae62dd82186d45861018f7c590c2550ad53",
-      "bytes": 5529,
+      "sha256": "807257e6c34b43f5676af83374e1d376cfd91c2865f909480fc3a6ab9c863a09",
+      "bytes": 5724,
       "kind": "json",
       "description": "C16: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -277,8 +277,8 @@
     },
     {
       "path": "contract-set/C17-prose/truth.json",
-      "sha256": "bb5b14f30e51033cea89208c647d610c353935f185cca673cfefbbec22779409",
-      "bytes": 6821,
+      "sha256": "3a32cded2df4188ae2a4dde2049b1cd47cf90064ce81bd0e4d258d5e06c47742",
+      "bytes": 7016,
       "kind": "json",
       "description": "C17: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -291,8 +291,8 @@
     },
     {
       "path": "contract-set/C18-prose/truth.json",
-      "sha256": "0274788240c8cc827d821898c1d5c002fbd18509dbf24ee7f181788d3895c8c2",
-      "bytes": 3521,
+      "sha256": "b0afb51f190396599905399afd46e47f0aea2be529fd3e84e6b14904c8b36f7f",
+      "bytes": 3694,
       "kind": "json",
       "description": "C18: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -305,8 +305,8 @@
     },
     {
       "path": "contract-set/C19-prose/truth.json",
-      "sha256": "aec02556be35c1da52bbb8c51397c8af5273c0e298f3ca6a1d0c9eadd59dc058",
-      "bytes": 2249,
+      "sha256": "459bfbe76c4956ad8f97c79abd136b34171f52cc2a050aeb1612a27b43fbd670",
+      "bytes": 2400,
       "kind": "json",
       "description": "C19: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -319,8 +319,8 @@
     },
     {
       "path": "contract-set/C20-prose/truth.json",
-      "sha256": "55b42ec572aa61ae94638fb4dd3ec63852be8c3c79426828003da6c711d475fe",
-      "bytes": 4050,
+      "sha256": "8193df016a284fd76a37381f495dbbf067e27ec3008d04a86db3ea1bbdadb2f6",
+      "bytes": 4245,
       "kind": "json",
       "description": "C20: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -333,8 +333,8 @@
     },
     {
       "path": "contract-set/C21-prose/truth.json",
-      "sha256": "dc8106261b688240c11a8cb26e9384bf9f89a71953b389baaa37c86f1716a2b9",
-      "bytes": 4532,
+      "sha256": "b44925363a97b9427a245fd75f5539da88c69059796c65ff281325c889de176d",
+      "bytes": 4727,
       "kind": "json",
       "description": "C21: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -347,8 +347,8 @@
     },
     {
       "path": "contract-set/C22-prose/truth.json",
-      "sha256": "4e14bd7437a1c087516db8ff8a2ca8b193cf12c23489eb1d4f8aa4d6acac4caf",
-      "bytes": 5589,
+      "sha256": "6f9943709bf131d0477de4ba0ab7962c837455a59a642652e78422748c0e8fbb",
+      "bytes": 5784,
       "kind": "json",
       "description": "C22: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -361,8 +361,8 @@
     },
     {
       "path": "contract-set/C23-prose/truth.json",
-      "sha256": "da5a6163b2ab289f22e972b07cd45dc13622cd014875ecd4c8195ef730422e92",
-      "bytes": 3263,
+      "sha256": "e4ed49acc2a2bae86c608e040aabac07b523584ad25810f9279cba8d755f2448",
+      "bytes": 3436,
       "kind": "json",
       "description": "C23: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -375,8 +375,8 @@
     },
     {
       "path": "contract-set/C24-prose/truth.json",
-      "sha256": "fbfe2d40bbf328de62ee3c323de7f82e4b16de13ea7eb4b6dd7e0ea9be7353a5",
-      "bytes": 2623,
+      "sha256": "3f700700c845fd3487b45ca06d8e7284827884a544cb4e5e25e25158433efb08",
+      "bytes": 2774,
       "kind": "json",
       "description": "C24: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -389,8 +389,8 @@
     },
     {
       "path": "contract-set/C25-prose/truth.json",
-      "sha256": "07385546ef852041298d0a1bd3fba9de0ea40ca90856550b6c124e3684b78769",
-      "bytes": 11745,
+      "sha256": "9f1db509c5d3db11d318698adcf606f5348e2e9925c2e1370402433aae60a330",
+      "bytes": 12027,
       "kind": "json",
       "description": "C25: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -403,8 +403,8 @@
     },
     {
       "path": "contract-set/C26-prose/truth.json",
-      "sha256": "9ae163194358bb36944fbaf13cd24c9f06dc25112d85e08d65ccb090a92cf01c",
-      "bytes": 4180,
+      "sha256": "c2c3cfac56f86d92ec6245b0495629660ed77e96e6609cad2ec62e82b9453f75",
+      "bytes": 4353,
       "kind": "json",
       "description": "C26: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -417,8 +417,8 @@
     },
     {
       "path": "contract-set/C27-prose/truth.json",
-      "sha256": "bfc5d4b7129c175f4b626ec0784d36ca6d07b33c4f40f244e79647a631e1b74a",
-      "bytes": 5485,
+      "sha256": "8e2ce5bc42a7f0a48bc9b034a2bed1d76ac4184be857e7bd8e83bd4e7e1105a2",
+      "bytes": 5680,
       "kind": "json",
       "description": "C27: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -438,8 +438,8 @@
     },
     {
       "path": "contract-set/C28-scanned/truth.json",
-      "sha256": "c1ced9e6b4141157bd381643ba092325f6072d3c75c3b9af55fac05bca4d96f4",
-      "bytes": 3823,
+      "sha256": "d66689e93decbac7db20ff4dc37a7e32a81e55c9dadb9ae47ead128876a5e259",
+      "bytes": 4018,
       "kind": "json",
       "description": "C28: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -459,8 +459,8 @@
     },
     {
       "path": "contract-set/C29-scanned/truth.json",
-      "sha256": "78857c427ad85800d4a1067e5a04c54cc1eec43969505d95963b3a6f11d0c8a1",
-      "bytes": 1946,
+      "sha256": "261437c7bdbd101b83a8d146e5745e94ff75d540705a2af4d39478fe9fcd55e7",
+      "bytes": 2097,
       "kind": "json",
       "description": "C29: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -480,8 +480,8 @@
     },
     {
       "path": "contract-set/C30-scanned/truth.json",
-      "sha256": "06da2f4408faee645c07c0bb3ef4d924891febcab2b0e78aca6736cfedf7e6f4",
-      "bytes": 3241,
+      "sha256": "028cabb66abd40fc88f7b6d8e21e235a8b9dc0c62279936505c7d61298fffcbe",
+      "bytes": 3458,
       "kind": "json",
       "description": "C30: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -501,8 +501,8 @@
     },
     {
       "path": "contract-set/C31-scanned/truth.json",
-      "sha256": "b9474bd08df3b1096d675c2a388481883f4fa917ad5c768c5e72ae4bf84de1b4",
-      "bytes": 3159,
+      "sha256": "a517630763a90941d31411d321fba70198e1d44129f4847c5132411aa4fde3da",
+      "bytes": 3332,
       "kind": "json",
       "description": "C31: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -522,8 +522,8 @@
     },
     {
       "path": "contract-set/C32-scanned/truth.json",
-      "sha256": "2568144eb76bf620893173f676dbfc0bc96f9353adc31d40d86ac401754f5650",
-      "bytes": 6225,
+      "sha256": "53a04d585ca5204a6bf9296c984f8ec135f252a9c9ae2eea766edde8cf311e93",
+      "bytes": 6442,
       "kind": "json",
       "description": "C32: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -543,8 +543,8 @@
     },
     {
       "path": "contract-set/C33-scanned/truth.json",
-      "sha256": "b83dcd61bf35830447d0768faf792989c3b6369ca3c3f15c2e8d9c577cddefd5",
-      "bytes": 9448,
+      "sha256": "b8b1697e78d4946cd246f7e2a2dadc18e24860872221306acbd4fc3a2b904607",
+      "bytes": 9708,
       "kind": "json",
       "description": "C33: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -564,8 +564,8 @@
     },
     {
       "path": "contract-set/C34-scanned/truth.json",
-      "sha256": "a1a9a2d926b627f4852e9a95f93e2734ec42e78a09756df40a1f3006bbbb3700",
-      "bytes": 1858,
+      "sha256": "b09cc8aacc39a855495c1229bd323a9611222156f665b5151a53dde225396119",
+      "bytes": 2009,
       "kind": "json",
       "description": "C34: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -585,8 +585,8 @@
     },
     {
       "path": "contract-set/C35-scanned/truth.json",
-      "sha256": "2e706a4fdfa795850bb322f7c9eee884ba2c44cdef4fdc67334075ac28c6ef70",
-      "bytes": 8184,
+      "sha256": "529f089081eb27c5fe3879284b1e52febfcf7ea8b994eb675a9a978b351046da",
+      "bytes": 8401,
       "kind": "json",
       "description": "C35: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -606,8 +606,8 @@
     },
     {
       "path": "contract-set/C36-scanned/truth.json",
-      "sha256": "20c01e18a5e32cbc9356bf9869c2d2138903313ab20b67a216340174d20537ea",
-      "bytes": 3918,
+      "sha256": "9f2370797d9aab91b0efc4389c8bcb09634eed2dd53ce256fe4e64672558dd99",
+      "bytes": 4157,
       "kind": "json",
       "description": "C36: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -627,8 +627,8 @@
     },
     {
       "path": "contract-set/C37-scanned/truth.json",
-      "sha256": "0b966426c3a9e6d586097776f00392c7fdf635b0017dd9cf886040d155f89a98",
-      "bytes": 3927,
+      "sha256": "f8f6c871f207cebd2dd692f02d94084032f33276ac9377d6ebce5e3b10a30d03",
+      "bytes": 4100,
       "kind": "json",
       "description": "C37: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -648,8 +648,8 @@
     },
     {
       "path": "contract-set/C38-scanned/truth.json",
-      "sha256": "631e4527dbe87fb8e94a51e17b4dbeb6ad6470767cc5a354af1f7675f68d2009",
-      "bytes": 6631,
+      "sha256": "f74e18b42e6e6a02a6baed2d1c48c827cfd400396c47b74ab6c9acaa297f41ee",
+      "bytes": 6848,
       "kind": "json",
       "description": "C38: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -669,8 +669,8 @@
     },
     {
       "path": "contract-set/C39-scanned/truth.json",
-      "sha256": "45a3464cfc99e59fc75d86bdc4c697d9a9af363134c8eeb11a2ca48a157f42da",
-      "bytes": 2854,
+      "sha256": "723a089ab5582857cb23e80f2cd505d27bc6bcd096decee7e97ab41a213c3155",
+      "bytes": 3027,
       "kind": "json",
       "description": "C39: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     },
@@ -690,8 +690,8 @@
     },
     {
       "path": "contract-set/C40-scanned/truth.json",
-      "sha256": "f8af59257a4d2b1bfbec26fc5f1a468d7fcfbfb032d06d992819a745f858a296",
-      "bytes": 4619,
+      "sha256": "03a99052ade1d268979aec7fad2191ac0ed364f13f48b7a0cb4c2717874f29e7",
+      "bytes": 4836,
       "kind": "json",
       "description": "C40: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
     }
