@@ -340,8 +340,10 @@ rewrites them stays green unless something really broke:
   `workflows.test.ts`, `dependabot-config.test.ts` and `no-duplicated-versions.test.ts` on that copy (`CI_TREE`) in a
   spawned vitest, which must pass. Its counts are read from vitest's JSON report written to a scratch file
   (`--reporter=json --outputFile`), never from its printed summary, whose colour codes CI's runner turns on (run
-  40255481181): no test failed, all three files ran, and every test passed but the rewrite test itself, which skips
-  inside the run it starts. A second copy with one deliberate break must fail, read from its own report, which proves
+  40255481181): no test failed, all three files ran, and every test's outcome on the copy equals its outcome in a
+  control run of the same files on the repository's own tree, started the same way, so a test that skips in one
+  environment (actionlint's where none is installed, as on CI: run 40269124920 failed on a fixed list of skips) skips
+  in both and no list is kept; what did not pass only skipped, the rewrite test among them. A second copy with one deliberate break must fail, read from its own report, which proves
   the spawned run reads the copy.
 
 **`tools/check-action-pins`** (`pnpm actions:check`, in `static`, on every run) checks the same form offline and, for

@@ -2041,22 +2041,25 @@ describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () =>
       };
       const texts = CI_FILES.flatMap(list).join('\n');
       expect(copy.originals.filter((original) => texts.includes(original))).toEqual([]);
+      // The control: the same three files on the repository's own tree, in a run started the same way, so a test that
+      // skips in this environment (actionlint's where none is installed, as on CI, or any other) skips in both runs and
+      // no list of them is kept here. CI's run 40269124920 failed on such a list.
+      const control = assertionsOn(repositoryRoot);
+      expect(control.status, `${control.output}\n${failures(control.report)}`).toBe(0);
       const green = assertionsOn(copy.dir);
       expect(green.status, `${green.output}\n${failures(green.report)}`).toBe(0);
-      // Every test of the three files ran on the copy and passed, but this one, which skips itself there; none filtered out.
+      // Every test of the three files ran on the copy, none filtered out, and none failed.
       expect(green.report.testResults.map((file) => path.relative(repositoryRoot, file.name)).sort()).toEqual([...TESTS].sort());
       expect(green.report.numFailedTests, failures(green.report)).toBe(0);
       expect(green.report.numTotalTests).toBeGreaterThan(80);
-      // The spawned run has this run's PATH, so it skips actionlint's test exactly when this run does (CI installs none).
-      const lintSkipped = (process.env.ACTIONLINT ?? spawnSync('/bin/sh', ['-c', 'command -v actionlint'], { encoding: 'utf8' }).stdout.trim()) === '';
-      const skips = [SELF, ...(lintSkipped ? ['every workflow passes actionlint'] : [])];
-      expect(green.report.numPassedTests).toBe(green.report.numTotalTests - skips.length);
-      expect(
-        outcomes(green.report)
-          .filter((result) => result.status !== 'passed')
-          .map((result) => `${result.file} ${result.status} ${skips.find((name) => result.fullName.endsWith(name)) ?? result.fullName}`)
-          .sort(),
-      ).toEqual(skips.map((name) => `tools/test/workflows.test.ts skipped ${name}`).sort());
+      expect(green.report.numPassedTests).toBeGreaterThan(80);
+      // The rewrite changes no outcome: each test passed or skipped on the copy exactly as on the repository's tree.
+      const byName = (report: Report) => outcomes(report).map((result) => `${result.file} > ${result.fullName}: ${result.status}`).sort();
+      expect(byName(green.report)).toEqual(byName(control.report));
+      // What did not pass in either run only skipped, and this test was among them, skipping itself there.
+      const notPassed = outcomes(green.report).filter((result) => result.status !== 'passed');
+      expect(notPassed.map((result) => result.status).filter((status) => status !== 'skipped')).toEqual([]);
+      expect(notPassed.map((result) => result.fullName)).toContainEqual(expect.stringContaining(SELF));
 
       // One checkout's persist-credentials removed: the rule that holds it fails on the copy, so the run read the copy.
       const broken = rewrittenCopy((file, text) => (file.endsWith('large-zip.yml') ? text.replace('\n        with: { persist-credentials: false }', '') : text));
