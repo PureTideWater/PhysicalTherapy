@@ -37,3 +37,7 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 ## Next: write design doc sections (1 today cited, 2 TR3, 3 options, 4 decisions, 5 migration, 6 app, 7 words, 8 tests, 9 domain model, 10 founder, 11 files, 12 risks, 13 slices, 14 out of scope)
 - D11 DROPPED: ledger_entry_by_evidence (evidence_id) already exists (20261026090000:61; schema/ledger.ts:159). Prototype rerun after fixing draft.
 - WRITTEN: header, 0 summary, 1 today (1.1-1.8), 2 TR3 semantics
+- WRITTEN: 3 options (3.1-3.5), 4 decisions D1-D11
+- WRITTEN: 5 schema (5.1 objects, 5.2 deploy/rollback, 5.3 SQL) - verify vs prototype output
+- WRITTEN: 6 application (6.1-6.4)
+- WRITTEN: 7 words
