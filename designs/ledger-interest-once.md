@@ -51,7 +51,9 @@ lines at a later reconcile (840 cents credited for 540 of cash, probe R), and an
   the claim whose control number is among them.
 - One PLB L6 is never credited past what it moved, however many reconciles run and whatever later uploads change about
   whom it names, in code and in Postgres; a valid reconcile is never refused by that bound. The reconcile reads whom
-  each L6 is for from one moment's rows, so an upload that commits while it runs cannot tear that reading.
+  each L6 is for from one moment's rows, so an upload that commits while it runs cannot tear that reading. What an L6
+  gave stays where it went, visible on the line: no screen reverses an interest match, as today, and a contract
+  specialist's adjustment can lower an entry that should count nowhere (section 12 risk 5).
 - A PLB L6 that takes interest back becomes a negative interest entry against the lines that hold that chain's
   interest, never below zero on a line. Today it is dropped.
 - N1: an entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split.
@@ -859,8 +861,9 @@ which replaces "interest is a PLB L6 or a claim's interest of its remittance" (t
     cycle cannot loop, served by `claim_by_reversed` and `claim_by_superseded`); and the claims each L6's reference
     candidates reach (`referenceCandidates`, hashed with `cipher.lookupHash`, looked up by
     `claim_by_payer_claim_control_number`, joined to `remittance` for D2's `r.payer_id = <the L6's payer>`), with their
-    chain roots. These are at most two statements after statement 1. It calls `attributeInterest` once and keeps the
-    draws by L6.
+    chain roots. These are at most two statements after statement 1. It takes statement 1's result (S and its L6
+    rows) as its argument rather than reading it, so a test can hand it an earlier moment (section 8.3). It calls
+    `attributeInterest` once and keeps the draws by L6.
   - In the loop, an L6 calls a new `recordInterest` in place of today's (`rem:836-841`, `rem:863-910`): it builds
     `interestWrites`' input (its draws; what it has written, from the entries read at the start and those this pass
     wrote, each entry's chain from its match's claim; per chain, the paid lines from `matches` with their outcomes and
