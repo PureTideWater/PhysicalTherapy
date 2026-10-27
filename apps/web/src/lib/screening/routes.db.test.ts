@@ -1253,7 +1253,8 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
   });
 
   it('answers a refusal by DNS, by SES\'s validation and by the refusal list with the one sentence, and stores nothing of the address', async () => {
-    const services = withServices({ addressChecks: checks('nomail.synthetic.test', (address) => (address.startsWith('gone.') ? { ...HIGH, mailboxExists: 'LOW' } : HIGH)) });
+    const calls: string[] = [];
+    const services = withServices({ addressChecks: checks('nomail.synthetic.test', (address) => (address.startsWith('gone.') ? { ...HIGH, mailboxExists: 'LOW' } : HIGH), calls) });
     const refused = [
       'someone@nomail.synthetic.test',
       'gone.mailbox@clinic-gone.synthetic.test',
@@ -1265,7 +1266,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     // An address a screening email bounced from (its keyed hash on the refusal list): the same sentence, from the database.
     const bounced = 'Bounced.Before@Clinic-Bounced.synthetic.test';
     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [bounced]);
-    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: ` ${bounced} ` }) }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    // Another spelling of that mailbox too (S2), and neither spends one of the day's validations on an upload the database
+    // would refuse (S4).
+    calls.length = 0;
+    for (const spelling of [` ${bounced} `, 'bounced.before+screening@clinic-bounced.synthetic.test']) {
+      expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: spelling }) })), spelling).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    }
+    expect(calls).toEqual([]);
     expect(await prospects(bounced.toLowerCase())).toBe(0);
     expect(await storedText()).not.toMatch(/nomail|clinic-gone|clinic-bounced/i);
   });
@@ -1329,9 +1336,18 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
         messageId,
       ]);
     }
+    const calls: string[] = [];
+    const counted = withServices({ addressChecks: checks(null, () => HIGH, calls) });
     const fourth = 'client.fourth@clinic-client-fourth.synthetic.test';
-    expect(issuesOf(await world.call(screeningSubmit, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
     expect(await prospects(fourth)).toBe(0);
+    // The client past its budget gets the budget's sentence for an address on the refusal list too, so it learns nothing of
+    // the list (S1), and spends none of the day's validations (S4).
+    const listed = 'client.listed@clinic-client-listed.synthetic.test';
+    await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'complained', now() + interval '365 days')", [listed]);
+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address: '198.51.100.90' }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    expect(calls).toEqual([]);
     // Another client is not held by this one's budget.
     expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
     expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);

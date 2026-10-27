@@ -39,7 +39,8 @@
 --   address against the refusal list.
 -- - The consumer (tp_screening) reads screening_mail_gate() before it claims; the web (tp_app) reads
 --   screening_mail_status() (paused; ready once the screening's delivered and bounced probes have come back within
---   48 hours and since the last resume).
+--   48 hours and since the last resume), and screening_submit_mail_refusal() before it spends an address validation
+--   (closed, paused, the budget, the refusal list, in that order; review S4).
 -- - Break-glass notices from a recorded outbox (support_grant_notice and support_grant_notice_recipient, both tenant
 --   tables, registered, read by the application role under the practice's scope): the recipients are recorded first,
 --   one row per current practice administrator, and each is sent in its own transaction; notice_sent is written at the
@@ -1453,6 +1454,23 @@ BEGIN
 END;
 $$;
 
+-- The web's check before it spends one of the day's address validations (review S4; D9): the refusal of an accepted
+-- upload's mail that submit_screening() would give, in its order, writing nothing: screening_closed (no release in
+-- force, or no split approved), screening_paused, screening_bounce_budget (the submitter's keyed subjects), then
+-- screening_contact_undeliverable (the address's mailbox); null when none applies. The submitter's budget comes before
+-- the address, as in the run's trigger (S1), so a client or an account past it learns nothing of the list here either.
+-- The triggers stay the backstop for a change between this read and the submission. Granted to tp_app.
+CREATE FUNCTION screening_submit_mail_refusal(email text, rate_account_subject text, client_subject text) RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT CASE
+           WHEN current_rule_release() IS NULL OR place_of_service_split_in_force() IS NULL
+                OR NOT EXISTS (SELECT 1 FROM rule_release r WHERE r.release_no = current_rule_release() AND r.manifest_sha256 IS NOT NULL) THEN 'screening_closed'
+           WHEN NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN 'screening_paused'
+           WHEN screening_bounce_budget_spent($2, $3) THEN 'screening_bounce_budget'
+           WHEN screening_contact_refused($1) THEN 'screening_contact_undeliverable'
+         END
+$$;
+
 -- ---------------------------------------------------------------------------------------------------
 -- 10. The functions the outboxes replace
 -- ---------------------------------------------------------------------------------------------------
@@ -1470,8 +1488,9 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
   support_grant_notice, support_grant_notice_recipient FROM PUBLIC;
 GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
 
-REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text), screening_mail_sending(),
-  screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
+REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
+  screening_mail_sending(), screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
+  screening_submit_mail_refusal(text, text, text),
   screening_upload_mail_gate(), screening_run_mail_refusal(), screening_run_mail_gate(),
   support_notice_administrators(uuid), support_notice_report_undelivered(uuid, text), support_notice_counts(uuid, text),
   operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
@@ -1493,8 +1512,8 @@ GRANT EXECUTE ON FUNCTION operator_open_support_notice(uuid, text, text), operat
   operator_mail_expire(integer) TO tp_operator;
 GRANT EXECUTE ON FUNCTION billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer), billing_dunning_notice_claim(uuid, text, uuid),
   billing_dunning_notice_sent(uuid, text, uuid, text, text), billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text) TO tp_billing;
-GRANT EXECUTE ON FUNCTION screening_mail_status(), console_mail_streams(), console_pause_mail_stream(text, text), console_resume_mail_stream(text, text),
-  console_mail_undelivered(timestamptz), console_support_grants(),
+GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text, text), console_mail_streams(), console_pause_mail_stream(text, text),
+  console_resume_mail_stream(text, text), console_mail_undelivered(timestamptz), console_support_grants(),
   submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
     integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text, text) TO tp_app;
 GRANT EXECUTE ON FUNCTION screening_mail_gate() TO tp_screening;
