@@ -25,8 +25,14 @@ session (Lane A or Lane B) continues from here.
   **`co-001/wip-ux-forms` 44ed04f** (no PR, no CI): if this container is gone, check that commit out over 4f0b526 and
   continue the fix round from `approval-summaries/lane-b-ux-forms-wip/fix-*.md`. Check-in trig_01UDQayFbYZBj7M92B9swn7Q
   at 2026-10-28 00:20 UTC.
-- **Next:** commit locally; fix round part 2 (the full local suite once, the after shots retaken at the new head, the UX
-  findings re-checked from them); one push; the PR description; the fresh-clone verification reading CI; merge.
+- **Fix round part 1 done** (19:12 to ~20:45 UTC): every fix verified; two that fell short re-fixed (S-A11Y-2's expired
+  invitation, U-UX-2's uploads drop zone). Local commits, **not pushed**: 3b94e23 (the fix round) and ab197e4 (a merge
+  of claude/build-platform 085299b, #76, tests only, no overlap). Saved unpushed-safe at `co-001/wip-ux-forms-2`
+  (ab197e4; no PR, no CI). If this container is gone: check out co-001/wip-ux-forms-2 as co-001/ux-forms's next head.
+- **Running:** fix round part 2, wf_7a81ed15-858: the verifiers' optional follow-ups (one local commit), then the full
+  local suite once; in parallel the after shots retaken at that head and every UX finding re-checked from them.
+- **Next:** one push of the PR branch; the PR description (checks, reviewer table, galleries); the fresh-clone
+  verification reading CI; merge.
 
 ## Handoff
 - **Branch:** `co-001/ux-forms`, head **17bbb70**, pushed, on claude/build-platform 7ef421b (#54 included). Two commits:
@@ -127,3 +133,5 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-27 16:00 | Reviews done; fix round | wf_1a8adc67-91d (23 agents, 95 min): e2e of the never-run specs (one test bug fixed, 22/22), security and accessibility review, UX and brand review from 153+153 shots, every finding verified (16 real). CI on 4f0b526: one e2e failure, the same test bug (PR comment). Tour captures for #74's states committed on claude/build-ops (merged with UX PR 5's download-refusal helpers, both kept). Fix round part 1 started: wf_723c6bc6-add. |
 
 | 2026-10-27 19:20 | Limit stop; resumed | Fix round part 1 (wf_723c6bc6-add): the three fixers done by ~16:51; the 5-hour limit stopped records, check and verifiers at ~17:12. The four galleries published (private). 19:08 the orchestrator's resume: WIP saved to co-001/wip-ux-forms 44ed04f, PostgreSQL restarted, the workflow resumed from its run. |
+
+| 2026-10-27 20:50 | Fix round part 1 done; part 2 | wf_723c6bc6-add finished on resume: check 30/30 e2e and every unit, lint and db check green; 15 fix verifiers (13 resolved, 2 short), re-fix of both (25/25 e2e). Committed locally 3b94e23; base #76 merged ab197e4; saved to co-001/wip-ux-forms-2. Part 2 started: wf_7a81ed15-858. |
