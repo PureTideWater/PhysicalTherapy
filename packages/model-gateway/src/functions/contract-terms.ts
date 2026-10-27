@@ -477,10 +477,14 @@ export function verifyContractTerms(input: ContractPages, output: ContractTermsO
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** The sentence a person reads when a contract names a patient (docs/adr/0070, Part 3): no identifier, kind or count. */
-export const NAMES_PATIENT_MESSAGE = 'this document names a patient of the practice and was not sent';
+/**
+ * The refusal's sentence when a contract holds one of the practice's identifiers (docs/adr/0070, Part 3): no identifier,
+ * kind or count. The person reads the web's notice for the code (apps/web/src/lib/models/notices.ts), not this; both name
+ * the records one way.
+ */
+export const NAMES_PATIENT_MESSAGE = 'this document holds an identifier from the practice’s patient records and was not sent';
 /** The sentence for a check that could not run (the bound, or a load error): the call is refused, never sent unchecked. */
-export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked for patient details and was not sent';
+export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked against the practice’s patient records and was not sent';
 
 /**
  * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway last of its refusals: after

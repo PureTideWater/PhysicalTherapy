@@ -45,9 +45,10 @@ import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from 
  *   page, and the version its approval and the customer's sign-off.
  *   Before anything is sent, the gateway checks the pages against the practice's own records (docs/adr/0070,
  *   Part 3; test matrix MOD-12): a "contract" that holds one of the practice's member IDs, patient control
- *   numbers or payer claim numbers is an EOB or a letter filed as the wrong kind, and is refused
- *   (`names_patient`), as is one that could not be checked (`screen_unavailable`): nothing is sent, no
- *   model_call row is written, and the screen offers hand entry. The check is built here, after the role check
+ *   numbers or payer claim numbers is most often an EOB or a letter filed as the wrong kind, and is refused
+ *   (`names_patient`), as is one that could not be checked (`screen_unavailable`, the bound; `screen_failed`, a read
+ *   that failed, which the next click reads again): nothing is sent, no model_call row is written, and the screen
+ *   gives each case its next step (notices.ts). The check is built here, after the role check
  *   (the route's), the kind check and the pages, from the request's own scope as proof that it reaches the
  *   practice and never read through: the contract specialist holds no phi.read, so the records are read in the
  *   check's own job scope as a service actor, the screen, a fresh ID per request. The gateway requires the
@@ -137,13 +138,13 @@ export interface ScreenLimit {
  * holds: up to SCREEN_MAX_IDENTIFIERS audit_event rows a screen, which no role can remove. So the screens are counted
  * in Postgres (rate_limit_take: fixed windows every web task shares; the hour and the day in buckets of their own,
  * since the function keeps one window per bucket and subject), each subject an HMAC under the server's key as
- * src/lib/http/rate-limit.ts stores them, and a screen past any limit is not run: the person is told the document
- * could not be checked, and enters the terms by hand. A limit is taken only in the gateway's step before the screen
- * (CallContext.beforeScreen), so only a screen about to read counts: a click the gateway refuses anyway, or a document
- * this server remembers naming a patient, counts against none. A version's terms are proposed once (a proposal that
- * records anything moves the version out of draft), so a specialist's day of abstraction meets none of them, and a
- * scripted loop stops within the hour: at most 60 screens of one practice a day, where the review measured a loop
- * writing 1 to 6 million audit rows a minute.
+ * src/lib/http/rate-limit.ts stores them, and a screen past any limit is not run: the person is told the checks allowed
+ * for now are used, to try again later or enter the terms by hand (screen_limited). A limit is taken only in the
+ * gateway's step before the screen (CallContext.beforeScreen), so only a screen about to read counts: a click the
+ * gateway refuses anyway, or a document this server remembers naming a patient, counts against none. A version's terms
+ * are proposed once (a proposal that records anything moves the version out of draft), so a specialist's day of
+ * abstraction meets none of them, and a scripted loop stops within the hour: at most 60 screens of one practice a day,
+ * where the review measured a loop writing 1 to 6 million audit rows a minute.
  */
 export const SCREEN_LIMITS: readonly ScreenLimit[] = [
   { bucket: 'model_screen', subject: 'practice', hits: 20, windowSeconds: 3_600 },
@@ -195,10 +196,10 @@ async function takeScreenLimits(services: ProposeServices, practiceId: string, u
 }
 
 /**
- * What a person reads for a screen past its limits: the document could not be checked, so it was not sent, and the
- * terms are entered by hand. (A notice of its own, saying when to try again, is the notices' to add.)
+ * What a person reads for a screen past its limits: the checks allowed for now are used, so the document was not sent;
+ * try again later, or enter the terms by hand.
  */
-const SCREEN_LIMITED_PROBLEM: ModelProblem = 'screen_unavailable';
+const SCREEN_LIMITED_PROBLEM: ModelProblem = 'screen_limited';
 
 /**
  * The documents this server found naming a patient of their practice: clicked again within the hour, one is refused

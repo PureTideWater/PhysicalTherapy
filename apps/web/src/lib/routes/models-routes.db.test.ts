@@ -612,7 +612,7 @@ describe('the practice records check before a contract is sent (docs/adr/0070, P
     expect((await screenTrail(practiceId)).events.map((event) => event.object_id)).toEqual([exhibitId, draft.documentId]);
   });
 
-  it('refuses, as not checked, a document whose practice records could not be read, and sends nothing', async () => {
+  it('refuses a document whose practice records could not be read, says to try again, and sends nothing', async () => {
     const draft = await draftContract('MODELS SCREEN FAILED');
     const { practiceId } = draft.practice;
     const P = { practiceId };
@@ -628,12 +628,12 @@ describe('the practice records check before a contract is sent (docs/adr/0070, P
     const sentBefore = provider.requests.length;
     logs.length = 0;
 
-    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=screen_unavailable`);
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=screen_failed`);
     expect(provider.requests.length).toBe(sentBefore);
     expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
     expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
-    expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId, model: 'screen_unavailable' })).modelNotice).toBe('screen_unavailable');
-    // The operator's log names the failed read apart from the bound (MODEL_INPUT_SCREEN_UNAVAILABLE); the person reads the same notice for both.
+    expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId, model: 'screen_failed' })).modelNotice).toBe('screen_failed');
+    // The operator's log names the failed read (MODEL_INPUT_SCREEN_FAILED) apart from the bound (MODEL_INPUT_SCREEN_UNAVAILABLE), and so does the person's notice: a failed read is worth a second try (UX-3).
     expect(logs.filter((entry) => entry.error_code === 'MODEL_INPUT_SCREEN_FAILED').map((entry) => entry.practice_id)).toEqual([practiceId]);
     expect(JSON.stringify(logs)).not.toContain('SYNSEALEDELSEWHERE01');
     const trail = await screenTrail(practiceId);
@@ -728,7 +728,7 @@ describe('what a click costs the practice’s audit trail (combined audit item 1
       }
       const sentBefore = provider.requests.length;
       logs.length = 0;
-      expect(redirectOf(await call(proposeTermsAction, past.specialist, { practiceId: at }, { versionId: past.versionId, documentId: past.documentId })), limit.bucket).toBe(`/p/${at}/abstraction/versions/${past.versionId}?model=screen_unavailable`);
+      expect(redirectOf(await call(proposeTermsAction, past.specialist, { practiceId: at }, { versionId: past.versionId, documentId: past.documentId })), limit.bucket).toBe(`/p/${at}/abstraction/versions/${past.versionId}?model=screen_limited`);
       expect(await screenCounts(at), limit.bucket).toEqual({ events: 0, screens: 0, reads: 0 });
       expect(provider.requests.length).toBe(sentBefore);
       expect(await rows(at, 'SELECT 1 FROM model_call WHERE practice_id = $1', [at])).toEqual([]);
