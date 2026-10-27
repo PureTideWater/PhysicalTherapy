@@ -6,6 +6,7 @@ import { ActionForm } from '../../../components/action-form';
 import { utc } from '../../../components/format';
 import { ContentDueSection } from '../../../components/releases/content-due';
 import { ReleaseChanges, ReleaseStatusText } from '../../../components/releases/note';
+import { ScrollBox, ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { ruleReleasesPage } from '../../../lib/routes/rule-releases';
@@ -56,44 +57,46 @@ export default async function RuleReleasesPage(props: Props) {
         {releases.length === 0 ? (
           <EmptyState title="No release is published" nextStep="Prepare release 1 from the verified drafts and open its pull request." />
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Rule releases">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Release</th>
-                <th className="py-1 pr-3 font-medium">Published</th>
-                <th className="py-1 pr-3 text-right font-medium">Records</th>
-                <th className="py-1 pr-3 font-medium">Standing</th>
-                <th className="py-1 pr-3 text-right font-medium">Complete runs</th>
-                <th className="py-1 pr-3 text-right font-medium">Re-runs (accepted)</th>
-                <th className="py-1 text-right font-medium">Lines re-runs changed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {releases.map((release) => {
-                const rows = runs.filter((row) => row.releaseNo === release.releaseNo);
-                const sum = (field: 'runs' | 'reruns' | 'rerunsAccepted' | 'changedLines') => rows.reduce((total, row) => total + row[field], 0);
-                return (
-                  <tr key={release.releaseNo} className="border-t" data-release={release.releaseNo}>
-                    <td className="py-1 pr-3">
-                      <Link className="underline" href={`/console/rule-releases?release=${String(release.releaseNo)}`} aria-current={release.releaseNo === note?.releaseNo ? 'page' : undefined}>
-                        {release.releaseNo}
-                      </Link>
-                    </td>
-                    <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{release.records}</td>
-                    <td className="py-1 pr-3">
-                      {release.withdrawal !== null ? <Badge variant="destructive">Withdrawn</Badge> : release.inForce ? <Badge>In force</Badge> : <span className="text-muted-foreground">Earlier</span>}
-                    </td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{sum('runs')}</td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">
-                      {sum('reruns')} ({sum('rerunsAccepted')})
-                    </td>
-                    <td className="py-1 text-right font-mono tabular-nums">{sum('changedLines')}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ScrollTable label="Rule releases">
+            <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Rule releases">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Release</th>
+                  <th className="py-1 pr-3 font-medium">Published</th>
+                  <th className="py-1 pr-3 text-right font-medium">Records</th>
+                  <th className="py-1 pr-3 font-medium">Standing</th>
+                  <th className="py-1 pr-3 text-right font-medium">Complete runs</th>
+                  <th className="py-1 pr-3 text-right font-medium">Re-runs (accepted)</th>
+                  <th className="py-1 text-right font-medium">Lines re-runs changed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {releases.map((release) => {
+                  const rows = runs.filter((row) => row.releaseNo === release.releaseNo);
+                  const sum = (field: 'runs' | 'reruns' | 'rerunsAccepted' | 'changedLines') => rows.reduce((total, row) => total + row[field], 0);
+                  return (
+                    <tr key={release.releaseNo} className="border-t" data-release={release.releaseNo}>
+                      <td className="py-1 pr-3">
+                        <Link className="underline" href={`/console/rule-releases?release=${String(release.releaseNo)}`} aria-current={release.releaseNo === note?.releaseNo ? 'page' : undefined}>
+                          {release.releaseNo}
+                        </Link>
+                      </td>
+                      <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{release.records}</td>
+                      <td className="py-1 pr-3">
+                        {release.withdrawal !== null ? <Badge variant="destructive">Withdrawn</Badge> : release.inForce ? <Badge>In force</Badge> : <span className="text-muted-foreground">Earlier</span>}
+                      </td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{sum('runs')}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">
+                        {sum('reruns')} ({sum('rerunsAccepted')})
+                      </td>
+                      <td className="py-1 text-right font-mono tabular-nums">{sum('changedLines')}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
       {note === null ? null : (
@@ -112,36 +115,38 @@ export default async function RuleReleasesPage(props: Props) {
               {shownRuns.length === 0 && elsewhere.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No practice has a complete run.</p>
               ) : (
-                <table className="w-full text-left text-sm" aria-label="Affected runs by practice">
-                  <thead className="text-muted-foreground">
-                    <tr>
-                      <th className="py-1 pr-3 font-medium">Practice</th>
-                      <th className="py-1 pr-3 text-right font-medium">Runs pinned to it (in effect)</th>
-                      <th className="py-1 pr-3 text-right font-medium">Re-runs under it (accepted)</th>
-                      <th className="py-1 pr-3 text-right font-medium">Lines those re-runs changed</th>
-                      <th className="py-1 text-right font-medium">Runs in effect on other releases</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...new Set([...shownRuns.map((row) => row.practiceId), ...elsewhere.map((row) => row.practiceId)])].map((practiceId) => {
-                      const here = shownRuns.find((row) => row.practiceId === practiceId);
-                      const other = elsewhere.find((row) => row.practiceId === practiceId);
-                      return (
-                        <tr key={practiceId} className="border-t" data-practice={practiceId}>
-                          <td className="py-1 pr-3">{here?.name ?? other?.name}</td>
-                          <td className="py-1 pr-3 text-right font-mono tabular-nums">
-                            {here?.runs ?? 0} ({here?.runsInEffect ?? 0})
-                          </td>
-                          <td className="py-1 pr-3 text-right font-mono tabular-nums">
-                            {here?.reruns ?? 0} ({here?.rerunsAccepted ?? 0})
-                          </td>
-                          <td className="py-1 pr-3 text-right font-mono tabular-nums">{here?.changedLines ?? 0}</td>
-                          <td className="py-1 text-right font-mono tabular-nums">{other?.runsInEffect ?? 0}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <ScrollTable label="Affected runs by practice">
+                  <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Affected runs by practice">
+                    <thead className="text-muted-foreground">
+                      <tr>
+                        <th className="py-1 pr-3 font-medium">Practice</th>
+                        <th className="py-1 pr-3 text-right font-medium">Runs pinned to it (in effect)</th>
+                        <th className="py-1 pr-3 text-right font-medium">Re-runs under it (accepted)</th>
+                        <th className="py-1 pr-3 text-right font-medium">Lines those re-runs changed</th>
+                        <th className="py-1 text-right font-medium">Runs in effect on other releases</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...new Set([...shownRuns.map((row) => row.practiceId), ...elsewhere.map((row) => row.practiceId)])].map((practiceId) => {
+                        const here = shownRuns.find((row) => row.practiceId === practiceId);
+                        const other = elsewhere.find((row) => row.practiceId === practiceId);
+                        return (
+                          <tr key={practiceId} className="border-t" data-practice={practiceId}>
+                            <td className="py-1 pr-3">{here?.name ?? other?.name}</td>
+                            <td className="py-1 pr-3 text-right font-mono tabular-nums">
+                              {here?.runs ?? 0} ({here?.runsInEffect ?? 0})
+                            </td>
+                            <td className="py-1 pr-3 text-right font-mono tabular-nums">
+                              {here?.reruns ?? 0} ({here?.rerunsAccepted ?? 0})
+                            </td>
+                            <td className="py-1 pr-3 text-right font-mono tabular-nums">{here?.changedLines ?? 0}</td>
+                            <td className="py-1 text-right font-mono tabular-nums">{other?.runsInEffect ?? 0}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </ScrollTable>
               )}
             </div>
           </CardContent>
@@ -161,30 +166,32 @@ export default async function RuleReleasesPage(props: Props) {
             {workspace.drafts.length === 0 ? (
               <p className="text-sm text-muted-foreground">No drafts in content/drafts.</p>
             ) : (
-              <table className="w-full text-left text-sm" aria-label="Drafts">
-                <thead className="text-muted-foreground">
-                  <tr>
-                    <th className="py-1 pr-3 font-medium">Draft file</th>
-                    <th className="py-1 pr-3 font-medium">Record types</th>
-                    <th className="py-1 pr-3 text-right font-medium">Records</th>
-                    <th className="py-1 pr-3 text-right font-medium">L1</th>
-                    <th className="py-1 pr-3 text-right font-medium">L2</th>
-                    <th className="py-1 text-right font-medium">L3</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {workspace.drafts.map((draft) => (
-                    <tr key={draft.file} className="border-t" data-draft={draft.file}>
-                      <td className="py-1 pr-3 font-mono text-xs">{draft.file}</td>
-                      <td className="py-1 pr-3 font-mono text-xs">{draft.recordTypes.join(', ')}</td>
-                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.records}</td>
-                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.levels.L1}</td>
-                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.levels.L2}</td>
-                      <td className="py-1 text-right font-mono tabular-nums">{draft.levels.L3}</td>
+              <ScrollTable label="Drafts">
+                <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Drafts">
+                  <thead className="text-muted-foreground">
+                    <tr>
+                      <th className="py-1 pr-3 font-medium">Draft file</th>
+                      <th className="py-1 pr-3 font-medium">Record types</th>
+                      <th className="py-1 pr-3 text-right font-medium">Records</th>
+                      <th className="py-1 pr-3 text-right font-medium">L1</th>
+                      <th className="py-1 pr-3 text-right font-medium">L2</th>
+                      <th className="py-1 text-right font-medium">L3</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {workspace.drafts.map((draft) => (
+                      <tr key={draft.file} className="border-t" data-draft={draft.file}>
+                        <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{draft.file}</td>
+                        <td className="py-1 pr-3 font-mono text-xs">{draft.recordTypes.join(', ')}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.records}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.levels.L1}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.levels.L2}</td>
+                        <td className="py-1 text-right font-mono tabular-nums">{draft.levels.L3}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollTable>
             )}
             <div className="flex flex-col gap-2">
               <h3 className="font-medium">The content checker</h3>
@@ -195,7 +202,7 @@ export default async function RuleReleasesPage(props: Props) {
               ) : (
                 <div className="flex flex-col gap-1 text-sm" data-state={check.ok ? 'check-passed' : 'check-failed'}>
                   <p>{check.ok ? 'Every content set passes.' : `${String(check.problems.length)} problem(s); a release with a failed check cannot publish.`}</p>
-                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-muted p-3 text-xs">{[check.message, ...check.problems].join('\n')}</pre>
+                  <ScrollBox label="What the content checker found">{[check.message, ...check.problems].join('\n')}</ScrollBox>
                 </div>
               )}
             </div>
@@ -213,7 +220,9 @@ export default async function RuleReleasesPage(props: Props) {
                       </p>
                       <details>
                         <summary className="cursor-pointer underline">RELEASE.md</summary>
-                        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-muted p-3 text-xs">{release.notes}</pre>
+                        <div className="mt-2">
+                          <ScrollBox label={`Release notes of release ${String(release.release)}`}>{release.notes}</ScrollBox>
+                        </div>
                       </details>
                     </li>
                   ))}
