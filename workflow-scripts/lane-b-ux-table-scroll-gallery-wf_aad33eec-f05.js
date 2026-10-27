@@ -1,0 +1,12 @@
+export const meta = {
+  name: 'lane-b-ux-table-scroll-gallery',
+  description: 'Prepare the private before-and-after galleries of PR #79 (two widths) for publishing',
+  phases: [{ title: 'Gallery', detail: 'one agent builds two pub folders from the before and the final after runs' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/13d6f1ba-32aa-5d43-bbf7-78e9ac9db9c8/scratchpad'
+phase('Gallery')
+return await agent(`You prepare the private screenshot galleries of PaidWhole pull request #79 (co-001/ux-table-scroll). Synthetic data only. Write only under ${SP}/gallery79/. Never change a tracked file anywhere, never commit or push. Every shell command starts with export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH; run Python with -I.
+Save as you go: keep ${SP}/progress/gallery79.md up to date; continue from it if it exists.
+The tool: /home/user/ops/tools/lane-b-screen-gallery/README.md (convert.py, build.py, template.html; the section "Any other tour run"). The runs: before ${SP}/screens-before (base e908c214) and the final after ${SP}/screens-after2 (head 88a66bd3); each has shots.json and png/ for the tour, and extra/ (its own shots.json and png/) for the capture spec. The index of what each shot shows: ${SP}/screens-index.md and ${SP}/screens-index-after2.md (verdicts per finding). The first after run (${SP}/screens-after, head 35b14cd5) is superseded: leave it out.
+Build two galleries, one per width: 1280 (light and dark shots) and 390. Each holds the before and after shot of every sample id side by side or in sequence, so a reader compares them: make one combined shots.json per width whose ids are 'before/<id>' and 'after/<id>' (and the capture spec's 'tbl.*' ids the same way; StackedRows shots exist after only), with titles that say Before (e908c21) or After (88a66bd) and the shot's note, and a lede: "PR #79, every table scrolls by keyboard and shows that it scrolls: before (e908c21) and after (88a66bd) at __WIDTH__ px, light and dark, on synthetic data. __COUNT__ shots." Then convert.py and build.py per the README, with GALLERY_TITLE 'PR 79 table scroll' (two to four words, no colon). Each pub folder must hold at most 250 files and 60 MB in all; if one is bigger, say how to split it into publishes of at most 250 files each. Write ${SP}/gallery79/publish.json: for each width, the index.html path, the root, the list of file paths relative to the root, the total bytes, and the shot ids in it.
+Return a short summary with the paths, counts and sizes.`, { label: 'gallery79', phase: 'Gallery' })
