@@ -1,0 +1,133 @@
+{
+ "verdict": "build with changes",
+ "needsMigration": false,
+ "findings": [
+  {
+   "id": "DLR-R01",
+   "severity": "blocking",
+   "area": "D2 enforcement / #42",
+   "claim": "D2 says downloadHandler throws, when the module loads, for any route that has no returnTo. apps/web/src/lib/http/http.test.ts is a #42 file, so this PR cannot edit it, and #42 changes it too. That test builds four fake download routes with publicRoute and no returnTo (http.test.ts:296 'test.download', :309 'test.refusing', :320 'test.json', :327 'test.download_counted') and hands them to downloadHandler (:305, :319, :321, :342). Throwing at definition fails all of them, including the HEAD/POST/PUT/DELETE it.each block.",
+   "fix": "Keep returnTo optional in CommonSpec and Route (it already is optional in D2's type). Do not throw in downloadHandler. A route without returnTo answers a navigation with 303 to '/' and a script with the JSON outcome. Enforce the rule in the new download-refusal.test.ts instead: scan apps/web/src/app/**/route.ts for downloadHandler(X), the same way registry.test.ts:151 does with routesUsed, and require every X found there to have a non-null returnTo. Change D2's 'refuses at definition' and DLR-03's 'the definition refuses one without' to 'the registry test refuses one without'."
+  },
+  {
+   "id": "DLR-R02",
+   "severity": "blocking",
+   "area": "D5/D6 focus vs anchor",
+   "claim": "D2 and DLR-01 put a fragment (#letter, #downloads and so on) on the 303. D6 then relies on autoFocus to put focus on the refused field. React 19 server rendering does emit the autofocus attribute (react-dom-server.node.development.js:1467). But HTML's 'flush autofocus candidates' step skips every autofocus candidate when the document has a target element, which the fragment creates. So the codes field is not focused, and DLR-04's 'focused' assertion fails, or passes only by chance in one engine. Separately, role=alert on content present at first load is not reliably announced.",
+   "fix": "When a refusal has something to focus, send no fragment. For the letter, the 303 is /p/<id>/coverage?refused=invalid&fields=codes&... with no #letter, and the refused field has autoFocus; focusing scrolls it into view. For link refusals, DownloadRefusal renders with tabIndex={-1} and autoFocus and keeps role=alert. Drop 'anchor' from ReturnPage and from DLR-01. Give the field and the notice scroll-margin-top equal to the sticky header plus 16 px until ux-forms' html scroll-padding-top (ADR 0077 D4) lands. DLR-04 asserts toBeFocused() on the field, and on the notice in the link case."
+  },
+  {
+   "id": "DLR-R03",
+   "severity": "blocking",
+   "area": "D7 test conventions (synth)",
+   "claim": "The synth entries are required, not 'if the fixtures test needs them'. packages/synth/src/fixtures.test.ts:39-41 requires TEST_MATRIX, CASES and REGISTRY_IDS to equal the rows of test-matrix.md. :91 requires the committed fixtures to be byte for byte what pnpm synth --all generates, and DBF shows that a no-file case still commits fixtures/synthetic/<id>/expected.json. registry.ts:666 derives the module from the ID prefix. D7's file list leaves out the files that make that work.",
+   "fix": "Add to D7: (1) a test-matrix.md section '## Download refusals (DLR)' with the header '| ID | Case | Assertion |' (not 'Expected') and four rows containing no '|'; (2) matching entries in packages/synth/src/cases/matrix.ts; (3) registry.ts entries 'DLR-01'..'DLR-04': none(1, '<why no file>', [the test paths that exist, e.g. 'apps/web/src/lib/http/download-refusal.test.ts', 'apps/web/e2e/download-refusals.spec.ts']), following ux-forms' FRM entries; (4) 'DLR' appended to CASE_MODULES in packages/synth/src/expected/types.ts:9 (not a #42 file); (5) DLR: 18 in MODULE_NUMBER in packages/synth/src/cases/common.ts:18; (6) the four fixtures/synthetic/DLR-0N/expected.json produced by pnpm synth --all and committed. ux-forms also appends to the same lines of types.ts and common.ts (FRM: 16), so whichever merges second keeps both."
+  },
+  {
+   "id": "DLR-R04",
+   "severity": "should-fix",
+   "area": "D3 fields list",
+   "claim": "The field pattern ^[a-z][a-z_]{0,39}$ drops camelCase issue fields. Issue fields come from issue.path.join('.') (invoke.ts:84), and the path parameters of the download routes are practiceId, caseId, versionId, documentId, statementId and reportId, so a non-opaque versionId refusal carries no field at all.",
+   "fix": "Use ^[a-z][A-Za-z0-9_]{0,39}$ (no '.', so a nested path is dropped), at most 8 fields. Nothing in the page renders the name: it maps each known name to its own words."
+  },
+  {
+   "id": "DLR-R05",
+   "severity": "should-fix",
+   "area": "D2 one page per route",
+   "claim": "Several routes are linked from more than one page, so a single static returnTo moves the person off the page they were on. Report PDF/CSV are linked from /reports (reports/page.tsx:157,161), from /reports/<id>, and the PDF from the review checklist (reports/[reportId]/review/page.tsx:44). Report document PDF/CSV are linked from /reports (:265,269) and its own page. The upload report is linked from receipts.tsx:176, which renders on /reconciliation, /contracts and /uploads/<id>. A reviewer whose report PDF is refused on the review page would be sent to the report page.",
+   "fix": "Let returnTo read one closed parameter, from, with a fixed set of values per route (reportPdf: 'list' | 'review'; reportDocument*: 'list'; uploadReport: 'reconciliation' | 'contracts'). Linking pages add ?from=<value> to the href. Any missing or unknown value falls back to the D2 default. The route's params schema is unchanged, because z.object strips unknown keys. Add these rows to D2's table and these links to D7's files."
+  },
+  {
+   "id": "DLR-R06",
+   "severity": "should-fix",
+   "area": "D6 pattern equivalence",
+   "claim": "The 'pattern accepts exactly what letterCodes accepts' property cannot hold. letterCodes (lib/contracts/letter.ts:21-27) upper-cases before it tests /^[0-9A-Z]{5}$/, so 'ſ9711' (to 'S9711'), 'ßAB1' (to 'SSAB1') and 'ﬀ...' pass the server. The pattern [A-Za-z0-9]{5} rejects them. I checked the proposed pattern under the v flag: [\\s,;]*(?:[A-Za-z0-9]{5}(?:[\\s,;]+[A-Za-z0-9]{5})*)?[\\s,;]* compiles and agrees on ASCII, but returns false for 'ſ9711' where letterCodes accepts it.",
+   "fix": "Tighten letterCodes to test /^[0-9A-Za-z]{5}$/ on the trimmed code before toUpperCase. letter.ts is not a #42 file; add it and letter.test.ts to D7. Use exactly the pattern above, with maxLength={400} (already on the input). The property test generates from an alphabet that includes non-ASCII letters with case mappings (ſ, ß, ı, ﬀ), Unicode spaces and separators, and asserts pattern(v) === accepts(letterCodes(v.trim().split(/[\\s,;]+/))) && v.trim().length <= 400."
+  },
+  {
+   "id": "DLR-R07",
+   "severity": "should-fix",
+   "area": "D2 kept values / D5 page params",
+   "claim": "monthlySummaryPage's params are month: optionalText(month) with no .catch (monitoring.ts:128), and loadPage merges searchParams into the route's params (next.ts:91-97). If the monthly CSV is refused for a bad month and the 303 keeps that month, the monthly page parses as invalid and loadPage calls notFound(), so the person gets a 404. More generally, D2 never says that kept values are validated before they go into the Location.",
+   "fix": "Each returnTo validates every kept value with the schema of the page it returns to: payer and contract with opaqueId, month with /^\\d{4}-(0[1-9]|1[0-2])$/. A value that fails is dropped, never sent. DLR-03 adds the case 'a bad month returns to /reports/monthly without month, and the page renders'."
+  },
+  {
+   "id": "DLR-R08",
+   "severity": "should-fix",
+   "area": "D3 kept codes (PHI and spoofing)",
+   "claim": "'What the person typed' is really whatever the URL holds. A cross-site link (Lax cookies ride a top-level GET) can put up to 400 characters of chosen text into Coverage's codes field ('Call 555-0100 to restore access'). A person who pastes an identifier into the field also gets it copied into a second logged URL, since ALB logs record query strings. Pages never render URL text as words, but the input's value is rendered text.",
+   "fix": "Keep codes only when the trimmed value matches ^[A-Za-z0-9\\s,;]{1,400}$ and each token is at most 10 characters. Otherwise drop it: the field is empty, still marked, and the message names the rule. DLR-03 runs every Location the tests build through urlPhiFindings from @tp/observability (already used by registry.test.ts) and expects no findings. State in D3 that a GET form puts its codes in the URL today, and that this PR copies them only within that alphabet."
+  },
+  {
+   "id": "DLR-R09",
+   "severity": "should-fix",
+   "area": "D5 forbidden and console words",
+   "claim": "The forbidden words name the wrong person and the wrong place. Roles are changed at /settings/organizations/[organizationId]/users, and the product's own words are 'Users and roles are managed by the organization's administrator.' (users/page.tsx:30); there is no practice Settings → Users. The product's permission title is 'Not available to your role' (packages/ui permission-state.tsx:16). The console compliance export has no practice and no organization suspension, so 'your role in this practice' and the suspended line are wrong there.",
+   "fix": "forbidden: title 'Not available to your role'; body 'Your role cannot download this file. Users and roles are managed by your organization’s administrator.' Console: 'Only a platform administrator can download the evidence export.' not_found: 'This file is not available here now. Reload the page to see the files that are.' ('no longer' is wrong for a file that is not ready yet). Note that suspended is effectively unreachable on downloads: no download route is in RUN_STARTING_ROUTES (lib/billing/runs.ts:10). Keep its words, with no role-dependent billing link."
+  },
+  {
+   "id": "DLR-R10",
+   "severity": "should-fix",
+   "area": "D7 overlap with ux-forms",
+   "claim": "D7 says ux-forms changes only components/field.tsx and packages/ui's input. co-001/ux-forms (2 commits ahead, ADR 0077, FRM module 16) changes 85 files, including console/compliance/page.tsx, reports/[reportId]/review/page.tsx, reports/page.tsx, lib/routes/compliance.ts, synth common.ts, types.ts, matrix.ts and registry.ts, and test-matrix.md. Its ADR 0077 also fixes how a refused field looks (D3: 'Error:' and an icon beside the message, under the field) and when focus moves (D4).",
+   "fix": "Correct D7's overlap paragraph with that list, under LANES rule 6. Make the letter field follow ADR 0077 D3: the error <p id=\"letter-codes-error\"> shows 'Error:' and then the message, aria-describedby=\"letter-codes-error letter-codes-hint\", and the codes appear in mono. Say that whichever PR merges second moves the letter onto components/field.tsx. ux-forms' form-hints.test.ts (D9) will pass, because the pattern field carries aria-describedby."
+  },
+  {
+   "id": "DLR-R11",
+   "severity": "should-fix",
+   "area": "D1 navigation detection",
+   "claim": "I checked what each client sends. GET form submit, plain link click and new tab: Sec-Fetch-Mode navigate and Sec-Fetch-Dest document in Chromium, Firefox and Safari 16.4+. fetch(): cors or same-origin, dest empty. Playwright request.get: no Fetch Metadata, accept */* (playwright-core 1.56.1 server/fetch.js:96). page.goto and page.click: navigate/document. new Request() in the unit tests: no Accept at all. But <a download> and the browser's 'Save link as' send mode navigate with dest empty. Treating those as navigations saves the app page's HTML under the file's name.",
+   "fix": "Count a request as a navigation when Sec-Fetch-Mode is navigate and Sec-Fetch-Dest is document (or Dest is absent). Without Fetch Metadata, use the Accept header: text/html with q>0 ranked above application/json and */*. A missing Accept counts as a script. DLR-02 adds 'navigate with dest empty returns JSON' and 'no Accept returns JSON'. No existing test reads a navigation's JSON: the e2e refusal reads use request.get (reports.spec.ts:225, packets.spec.ts:284/310, onboarding.spec.ts:153), and route-tests call invoke directly."
+  },
+  {
+   "id": "DLR-R12",
+   "severity": "should-fix",
+   "area": "DLR-04 e2e placement",
+   "claim": "onboarding.spec.ts has no Coverage letter step, and no e2e anywhere submits the letter (grep for 'Download the letter' or coverage/letter in e2e finds nothing). Its journeys build new practices, so payers and contracts are not at hand there. ux-forms put its e2e in a new spec (forms-keep-input.spec.ts).",
+   "fix": "Put DLR-04 in a new apps/web/e2e/download-refusals.spec.ts on the seeded synthetic practice that has payers. Cases: (1) a letter with 'ABC', submitted with the form's novalidate set in the test to get past the pattern, returns to Coverage with codes kept, aria-invalid set and focus on the field, and axe passes; (2) the pattern blocks 'ABC' (validity.patternMismatch); (3) a good letter fires waitForEvent('download'); (4) a viewer's page.goto(`${reportPath}/csv`) lands on the report page with the forbidden notice, which is the navigating version of reports.spec.ts:225. Replace e2e/onboarding.spec.ts with this file in D7 and the registry entries."
+  },
+  {
+   "id": "DLR-R13",
+   "severity": "nit",
+   "area": "D4 download attribute",
+   "claim": "Removing the attribute is right, and nothing relies on it. No test asserts it. The filenames come from Content-Disposition (uploads.spec.ts:75 checks suggestedFilename against it). Playwright fires 'download' for an attachment navigation without the attribute (packets.spec.ts:367, uploads.spec.ts:73). The packet review's download is recorded by the route when the file is served, not by the click (workbench-routes.db.test.ts:479-510). The attribute is at review/page.tsx:120,129, uploads/[documentId]/page.tsx:296, receipts.tsx:176 and console/compliance/page.tsx:110, as D4 lists.",
+   "fix": "None needed. With R11, a link that keeps download by mistake gets JSON, not a saved HTML page."
+  },
+  {
+   "id": "DLR-R14",
+   "severity": "nit",
+   "area": "D5 page wiring",
+   "claim": "No page reads searchParams directly today. Notices go through the page route's params with .catch(undefined) (coverage model, packet notice, review notice, compliance sent) and come back in page.data. uploads/[documentId]/page.tsx:246 does not declare searchParams in its props at all. None of the new keys (refused, fields, retry, from) collide with an existing page param; the shared ones (month, payer, contract, codes) mean the same thing on both sides.",
+   "fix": "Either path is safe. To keep one convention, build downloadRefusal() as a zod fragment (z.enum(...).optional().catch(undefined) per key) and parse props.searchParams with it. Add searchParams to the uploads page's props. Say in D5 why it is parsed in the page rather than in the route: it is display only and adds no audit."
+  },
+  {
+   "id": "DLR-R15",
+   "severity": "nit",
+   "area": "D2/D3 safety (confirmed)",
+   "claim": "The origin check holds. services.origin is already new URL(APP_ORIGIN).origin (lib/server/config.ts:259). Next 16.4's app-route module leaves the Location header alone, and proxy.ts only sets CSP. CloudFront serves static assets only, and the ALB passes a relative Location through unchanged. Response.redirect() needs an absolute URL in undici, so the builder must use new Response(null, {status: 303, headers}). Path parameters win over query parameters (handler.ts:174).",
+   "fix": "Say in D3: build the 303 with new Response(null, ...); encode kept values with URLSearchParams; ReturnPage.path comes only from route constants plus parameters that passed opaqueId."
+  },
+  {
+   "id": "DLR-R16",
+   "severity": "nit",
+   "area": "D1 count and stale notice",
+   "claim": "There are 15 downloadHandler routes, not fourteen (§1's own list adds up to 15). A later success leaves ?refused=... in the URL, because a download does not navigate, so the notice stays up beside a field that is now correct.",
+   "fix": "Say 15. Clearing the field's error state once the codes input changes is a small client step; or accept the stale notice and record that in ADR 0079."
+  },
+  {
+   "id": "DLR-R17",
+   "severity": "nit",
+   "area": "signInFor / sign-in return path",
+   "claim": "Moving signInFor out of next.ts is safe. next.ts is not a #42 file, and no open co-001 branch changes it (ux-forms touches lib/http/form.ts only; pr-06b-mail-streams touches http.test.ts and rate-limit.ts, and retryMinutes is unchanged at rate-limit.ts:125). The product has no sign-in return path today (no next= or returnTo anywhere in sign-in).",
+   "fix": "Do not add a return path in this PR: it is a second redirect surface that needs its own design. Name it in ADR 0079's 'Revisit when'."
+  },
+  {
+   "id": "DLR-R18",
+   "severity": "nit",
+   "area": "D8 ADR and reviews",
+   "claim": "ADR 0079 is warranted. It sets a rule every future download route must follow (returnTo, checked by the registry test), and lanes/lane-b.md:922 and LANES.md reserve 0079 and module 18 for DLR. Security is the right second lens; the brand reviewer covers the words. Brand: the codes 97110 and 97530 in the hint and in the message must render in mono with tabular numerals (.claude/rules/brand.md).",
+   "fix": "Keep both reviews. Give the security reviewer the hostile-input list from DLR-03 plus the cross-site navigation case from R08."
+  }
+ ],
+ "summary": "The design is sound: Fetch Metadata to detect a navigation, a page each route declares rather than the Referer, closed codes in the URL, and the JSON outcome kept for scripts. It cannot be an open redirect, because the path comes only from route constants and parameters that passed opaqueId, and the origin check behind it is correct. No migration, and no #42 file is needed. Three things block it. (1) The 'throw at definition' rule breaks http.test.ts, a #42 file this PR cannot edit, which builds four download routes without returnTo; enforce returnTo with a file-scan registry test instead. (2) A fragment on the 303 makes browsers skip autofocus, so D6's focused field does not happen; drop the fragment and focus the field or the notice. (3) The synth entries are required, not optional: CASE_MODULES 'DLR', MODULE_NUMBER DLR 18, matrix.ts, registry.ts and four committed expected.json files. The should-fixes are listed in the findings: camelCase field names, routes linked from several pages, the pattern disagreeing with letterCodes on non-ASCII, the month value 404, the forbidden wording, the ux-forms overlap, restricting kept codes and checking each Location with urlPhiFindings, Dest=document, and a dedicated e2e spec. Progress notes: /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/progress/dlr-design-review.md"
+}
