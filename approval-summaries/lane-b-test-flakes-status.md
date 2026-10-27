@@ -25,6 +25,14 @@
 
   Commit b02435c5 is local, not pushed. Fix-round suite wf_8d591f13-47a is running.
 
+- 17:10 UTC: fix-round suite (wf_8d591f13-47a) all passed on b02435c5. Results are in `lane-b-test-flakes-fix-suite.md`:
+  - unit: 6,262 passed, 4 skipped;
+  - db: 9,222 passed, 1 skipped;
+  - e2e: 54;
+  - packets mutation gate: passed, 97.75%.
+
+  One push: b02435c5 to co-001/test-flakes. The base is unchanged at e908c21, so no merge was needed. PR body updated (findings table, checks) and read back byte for byte. Waiting on CI on b02435c, then the fresh-clone verification.
+
 ## Proposals (not built here)
 - `tools/stryker/affected.test.ts:601` took 55.9 s of its 120 s on CI (2.1x headroom).
 - `apps/worker/src/screening/threads.test.ts:100-112` asserts wall-clock bounds (took < 3000; active count after a 100 ms timer) under load; beside the "Not while #42 is open" screening files.
@@ -36,4 +44,4 @@
   - (b) `packages/packets/src/facts.ts`: `quoted(source.quote, dayCounts)` sends a five-digit number in a contract-window quote to codes, not dayCounts. So "10000 visits" passes when the window says 10000 days.
 
 ## Next step
-Read the reviews; fix round with the full local suite once; one push; fresh-clone verification; merge per lanes/lane-b.md; then tell the orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg).
+CI green on b02435c, then the fresh-clone verification (one agent, reads CI). Then merge per lanes/lane-b.md: merge the base in if it moved, mark ready, wait for approval-of-record, then merge_pull_request with method merge and expectedHeadSha. Then tell the orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg).
