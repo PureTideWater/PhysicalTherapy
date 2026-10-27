@@ -99,6 +99,7 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - **Not part of it:** F3 (lookup-hash columns, the scalable form of this check) and F4 (correcting a document's kind) are Lane A's migrations ("Handed to Lane A").
 
 ## Proposals outside this PR
+- `apps/worker/src/price/rerun-rule.property.test.ts:233-253` (#50's PRC-25 to PRC-28 property): its after-run coverage check (every outcome reached at least once) depends on fast-check's unseeded random sequences; on #75's re-run (job 122247109398) `accept:changed_meanwhile` was reached 0 times in 3,000 runs and `unit` failed. Fix: `examples:` with one fixed sequence that reaches each listed outcome (the `:539` unit case builds one), or a pinned seed. Commented on #75.
 - `tools/test/workflows.test.ts:880` (and the other notify tests that run the step's script against a fake `gh`): an explicit timeout (e.g. 30 s). On #75's first CI run (ci 40519277562, job 122241596089) the content-calendar notify test timed out at vitest's default 5 s inside the simulated-Dependabot nested run, failing `unit`; the file is not this PR's, and the base was green. Commented on #75; one re-run of the failed job.
 - `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).
 - A CLI option to run the twins twice and compare them, in place of the runbook's manual comparison.

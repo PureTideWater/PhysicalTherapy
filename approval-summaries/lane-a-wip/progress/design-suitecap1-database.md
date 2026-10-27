@@ -56,3 +56,8 @@ Clone: scratchpad/designs/suitecap1-database at e908c21 (origin/claude/build-pla
 - No other row lockers/deleters of service_line in app code; 7 FKs reference service_line (each insert KEY SHARE-locks it).
 - CLEANUP DONE: dropped tp_design_suitecap1_1 (5433); stopped and removed private cluster /tmp/tp_design_suitecap1_pg (5491).
 - STATUS: probes complete; ready to report.
+## Resume check (2026-10-27, second run)
+- Re-verified at e908c21; #42 now at 098636e3: its migration touches no line_status / ledger_entry_within_* / case_line function (only mail/dunning/support/screening fns + operator_due_support_notices). No shared function with this item.
+- CORRECTED execute.ts lines: advanceStages :326-345 (INSERT :337, ORDER BY service_line_id :340 = per-line locks already taken ascending), lockPractice :396-397, closeWindows :401-410, triageInScope :424 (lock :426, flagged :444, closeWindows :446, validated :450, actionable :464), executeTriage :480-483.
+- patterns.ts openCaseOnPattern :152, lockPractice :157, INSERT :173. report/generate.ts FOR UPDATE :57, triageInScope :73.
+- STATUS: reporting now.

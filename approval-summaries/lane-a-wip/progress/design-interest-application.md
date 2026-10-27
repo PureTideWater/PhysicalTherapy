@@ -37,4 +37,4 @@
 - PRD.md:548 says "PLB L6, or a line-level interest amount" (code reads claim-level AMT I) -> PRD 13 text change in scope.
 - New pure logic belongs in packages/ledger (mutation-tested; stryker/shards.json money-ledger shard must list a new file); reconcile not mutation-tested (15b design 6).
 - #42 app files: none of the interest files; nearby #42 files: apps/web/src/lib/routes/settings.ts (reconcile enqueue :414), routes/index.ts, registry.test.ts, worker runtime.ts; generated watched-paths.txt lists apps/worker/src/reconcile/* (screening-capacity gate runs on them).
-STATUS: reading done; writing final StructuredOutput.
+STATUS: reading done; spot-checked remittances.ts:775-912,932-948, page.tsx:76,84,115,191-194, payment.ts:188-195, stages.ts:44-58, totals.ts:114-135 at e908c214 (still accurate); returning StructuredOutput.
