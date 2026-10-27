@@ -297,10 +297,12 @@ to ADR 0066's rule that a Dependabot pull request passes unaided.
 **CI proves the bytes.** The comparisons carry tolerances (`VISUAL`, `STRICT`), so a green journey does not prove that
 CI renders the committed bytes, and CI's host is not the machine that made them. A baseline step in the first e2e shard,
 on every pull request and every push run with no condition on what changed (the pictures are drawn by application code
-as much as by the browser: a change under 1% would pass the journey and leave the baselines stale), removes the
-committed files, regenerates them with `--update-snapshots=all --retries=0`, requires the run to pass and the pictures
-present after it to be exactly the committed set, and fails on any byte that differs from the commit, printing each
-changed picture's SHA-256 and then the picture as numbered lines of 8,000 base64 characters (`<path> <i>/<n> <chunk>`),
+as much as by the browser: a change under 1% would pass the journey and leave the baselines stale), regenerates them
+with `--update-snapshots=all --retries=0` into an empty directory outside the repository (`E2E_BASELINES_DIR`, which
+`playwright.config.ts` turns into the snapshot path), so each is written from nothing while the tracked tree stays as
+committed, which the prebuilt build's stamp requires; it requires the run to pass and the pictures present after it to
+be exactly the committed set, and fails on any byte that differs from the commit, printing each differing picture's
+SHA-256 and then the picture as numbered lines of 8,000 base64 characters (`<path> <i>/<n> <chunk>`),
 so a log reader that cuts long lines still gets it whole and proves the decode; the failed comparisons' pictures
 print the same way, through the same `tools/ci/print-pictures.sh`. The pull request that moved to 1.64.1
 records its first passing run, with the seven SHA-256s, as this ADR's proof that ubuntu-26.04 renders the committed

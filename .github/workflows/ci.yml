@@ -595,23 +595,32 @@ jobs:
       # The brand baselines regenerated from nothing on this runner, on every pull request and every push, with no path
       # condition: the pictures are drawn by application code (the header, the worker's report covers) as well as by the
       # browser and the runner image, and the journey's comparisons pass a change under their tolerance, so only bytes
-      # prove that CI renders the committed baselines (docs/adr/0058; docs/adr/0066, Part 3). The committed pictures are
-      # removed first, so one the run does not reach shows as missing; one attempt (the config retries once on CI), with
-      # its own output directory and reporter, so the journeys' results above stay as they were. The pictures written are
-      # the ones present after the run, every one having been removed before it, so no message text of Playwright's is
-      # read. It fails on a failed run, on any set of pictures written other than the committed set, or on any byte, and
-      # prints each changed picture's SHA-256, then the picture as lines "<path> <i>/<n> <8,000 base64 characters>", so
-      # a log reader that cuts long lines still gets it whole and proves each decode by its SHA-256 (tools/ci/print-pictures.sh;
-      # docs/runbooks/ci.md, "Upgrading the browser").
+      # prove that CI renders the committed baselines (docs/adr/0058; docs/adr/0066, Part 3). The run writes every
+      # baseline into an empty directory outside the repository (E2E_BASELINES_DIR, playwright.config.ts), laid out as
+      # the repository is, so each is written from nothing while the tracked tree stays clean, as E2E_PREBUILT's build
+      # stamp requires; one attempt (the config retries once on CI), with its own output directory and reporter, so the
+      # journeys' results above stay as they were. The pictures written are the ones present after the run, so no
+      # message text of Playwright's is read. It fails on a failed run, on any set of pictures written other than the
+      # committed set, or on any byte, and prints each differing or extra picture's SHA-256, then the picture as lines
+      # "<path> <i>/<n> <8,000 base64 characters>", under its repository path, so a log reader that cuts long lines still
+      # gets it whole and proves each decode by its SHA-256 (tools/ci/print-pictures.sh; docs/runbooks/ci.md, "Upgrading
+      # the browser").
       - name: The brand baselines, regenerated from nothing
         if: ${{ !cancelled() && steps.browser-install.outcome == 'success' && matrix.shard == 1 }}
         env: { E2E_PREBUILT: "1" }
         run: |
-          git ls-files -- apps/web/e2e/brand.spec.ts-snapshots | LC_ALL=C sort > "$RUNNER_TEMP/baselines-committed"
-          rm -f apps/web/e2e/brand.spec.ts-snapshots/*-chromium-linux.png
+          committed=apps/web/e2e/brand.spec.ts-snapshots
+          fresh="$RUNNER_TEMP/baselines"
+          printer="$PWD/tools/ci/print-pictures.sh"
+          rm -rf "$fresh"
+          mkdir -p "$fresh/apps/web/e2e"
+          git ls-files -- "$committed" | LC_ALL=C sort > "$RUNNER_TEMP/baselines-committed"
           status=0
-          pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 || status=$?
-          find apps/web/e2e/brand.spec.ts-snapshots -type f -name '*-chromium-linux.png' | LC_ALL=C sort > "$RUNNER_TEMP/baselines-written"
+          E2E_BASELINES_DIR="$fresh/apps/web/e2e" pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 || status=$?
+          : > "$RUNNER_TEMP/baselines-written"
+          if [ -d "$fresh/$committed" ]; then
+            (cd "$fresh" && find "$committed" -type f -name '*-chromium-linux.png' | LC_ALL=C sort) > "$RUNNER_TEMP/baselines-written"
+          fi
           failed=0
           if [ "$status" -ne 0 ]; then
             echo "::error title=The brand baselines::the brand journey exited $status while regenerating its baselines"
@@ -623,14 +632,17 @@ jobs:
             LC_ALL=C comm -13 "$RUNNER_TEMP/baselines-committed" "$RUNNER_TEMP/baselines-written" | sed 's/^/  written, not committed: /'
             failed=1
           fi
-          if ! git diff --quiet -- apps/web/e2e/brand.spec.ts-snapshots || [ -n "$(git ls-files --others --exclude-standard -- apps/web/e2e/brand.spec.ts-snapshots)" ]; then
+          LC_ALL=C comm -12 "$RUNNER_TEMP/baselines-committed" "$RUNNER_TEMP/baselines-written" | while IFS= read -r file; do
+            cmp -s "$file" "$fresh/$file" || printf '%s\n' "$file"
+          done > "$RUNNER_TEMP/baselines-differ"
+          if [ -s "$RUNNER_TEMP/baselines-differ" ]; then
             echo "::error title=The brand baselines::this runner renders other bytes than the committed baselines: inspect the pictures below and commit them (docs/runbooks/ci.md, \"Upgrading the browser\")"
-            git status --porcelain -- apps/web/e2e/brand.spec.ts-snapshots
+            sed 's/^/  differs: /' "$RUNNER_TEMP/baselines-differ"
             failed=1
           fi
-          find apps/web/e2e/brand.spec.ts-snapshots -type f -name '*.png' -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
+          (cd "$fresh" && find apps -type f -name '*.png' -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum)
           if [ "$failed" -ne 0 ]; then
-            { git diff --name-only -- apps/web/e2e/brand.spec.ts-snapshots; git ls-files --others --exclude-standard -- apps/web/e2e/brand.spec.ts-snapshots; } | LC_ALL=C sort -u | tools/ci/print-pictures.sh
+            { cat "$RUNNER_TEMP/baselines-differ"; LC_ALL=C comm -13 "$RUNNER_TEMP/baselines-committed" "$RUNNER_TEMP/baselines-written"; } | LC_ALL=C sort -u | (cd "$fresh" && "$printer")
           fi
           exit "$failed"
       # Compose prints no container's log when the job ends, as a service container's was: the database's last lines,

@@ -789,8 +789,9 @@ holds the worker image's headless shell in every job that builds that image into
 measured, saved, tagged or pushed: ci.yml's `images`, the release's `build`, and both measuring jobs,
 `release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (N17).
 
-**The brand baselines, from nothing, on every run.** The first `e2e` shard of every pull request and push removes the
-committed baselines, regenerates them with `--update-snapshots=all --retries=0` into its own output directory, and fails
+**The brand baselines, from nothing, on every run.** The first `e2e` shard of every pull request and push regenerates
+the brand baselines with `--update-snapshots=all --retries=0` into an empty directory outside the repository
+(`E2E_BASELINES_DIR`, the config's snapshot path), so the tracked tree stays clean for the build stamp, and fails
 on a failed run, on any set of pictures written (those present after the run) other than the committed set, or on any
 byte, printing the SHA-256s and each changed picture's SHA-256, then the picture as lines `<path> <i>/<n> <8,000 base64
 characters>` (N19). There is no path condition: the pictures are drawn by application code (the header, the worker's
@@ -899,13 +900,25 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   builds; the record changes only where Google's bytes agree with CI's, and a mirror that serves other bytes than
   Google's is replaced on CI by Google's verified build. Locally, on 2026-10-27, the check passed on both builds and the
   second run wrote nothing; all seven files changed, six of them in bytes only (1.64.1's PNG encoder, ADR 0058).
-- **N19.** The baseline step takes the pictures written as those present after the run, every one having been removed
-  before it, so no message text of Playwright's is read, and prints each changed picture's SHA-256 and then the picture
+- **N19.** The baseline step takes the pictures written as those present after the run in its own empty directory (N20),
+  so no message text of Playwright's is read, and prints each changed picture's SHA-256 and then the picture
   as lines `<path> <i>/<n> <8,000 base64 characters>`: a log reader that cuts long lines still gets every chunk, and the
   SHA-256 proves each decode (where the series is built, CI's logs are read through an API that may cut a
   66,000-character line, and the artifact and raw-log hosts are out of reach). The failed comparisons' step prints its
   diff and actual pictures through the same script, `tools/ci/print-pictures.sh`, where it had printed each as one line
   of up to 400,000 characters; the script has its own test, and both steps' tests run it.
+- **N20.** The baseline step writes into an empty directory outside the repository, not over the committed files. Its
+  first form removed the committed pictures and regenerated them in place; on the pull request's first run the prebuilt
+  build's stamp (`scripts/build-stamp.ts --expect`, CI-06) then refused the dirty tree, so the journey never ran.
+  `E2E_BASELINES_DIR`, an absolute directory, becomes the config's snapshot path; laid out as the repository is, the
+  step compares the set written and each file's bytes with the committed ones and prints a differing picture under its
+  repository path. Each picture is still written from nothing, and the tracked tree stays as committed.
+- **N21.** `browser-build.ts --image` reads the image as root and offline (`docker run --rm --user 0:0 --network none`).
+  As the worker image's own user (`node`) it could not read the headless shell's `deb.deps` and `rpm.deps`, which
+  Chrome for Testing's zips carry as mode 0600 and the image installs as root, so the pull request's first run hashed
+  285 of 287 files and failed closed. The in-image script also names any file it cannot read, so such a failure says
+  why rather than showing as a tree difference. On the same run the browser check passed on CI's own download from
+  Playwright's mirror: its bytes for revision 1248 are Google's, file for file.
 
 ### Consequences
 

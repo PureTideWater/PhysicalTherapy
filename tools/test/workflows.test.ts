@@ -1702,7 +1702,9 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // on one line that a log reader may cut.
       expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k | LC_ALL=C sort | tools/ci/print-pictures.sh");
       expect(step.run).not.toMatch(/base64|sha256sum/);
-      expect(stepNamed(steps, 'The brand baselines, regenerated from nothing').run).toContain('| LC_ALL=C sort -u | tools/ci/print-pictures.sh');
+      const baselines = stepNamed(steps, 'The brand baselines, regenerated from nothing').run ?? '';
+      expect(baselines).toContain('printer="$PWD/tools/ci/print-pictures.sh"');
+      expect(baselines).toContain('| LC_ALL=C sort -u | (cd "$fresh" && "$printer")');
       // Run as GitHub runs it: a shard that left no results prints nothing and passes; one that did prints each picture.
       const dir = mkdtempSync(path.join(scratch, 'pictures-'));
       mkdirSync(path.join(dir, 'tools/ci'), { recursive: true });
@@ -1991,11 +1993,16 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // After the journeys' upload and their failed comparisons' pictures, which its own run leaves untouched.
       expect(index).toBeGreaterThan(stepIndex(steps, (step) => step.run?.includes("-name '*-diff.png'") === true));
       const script = baseline.run ?? '';
-      expect(script.indexOf('rm -f apps/web/e2e/brand.spec.ts-snapshots/*-chromium-linux.png')).toBeLessThan(script.indexOf('playwright test'));
-      expect(script).toContain('pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 || status=$?');
-      // The pictures written are the ones present after the run, every one removed before it: no message text of
+      // Written from nothing into an empty directory outside the repository, so the tracked tree stays as committed,
+      // which E2E_PREBUILT's build stamp requires: a step that removed the committed pictures first made the stamp refuse
+      // the tree, and the journey never ran (PR #77's first run, e2e (1/2)).
+      expect(script).not.toMatch(/\brm\b[^\n]*brand\.spec\.ts-snapshots/);
+      expect(script.indexOf('rm -rf "$fresh"')).toBeLessThan(script.indexOf('playwright test'));
+      expect(script).toContain('fresh="$RUNNER_TEMP/baselines"');
+      expect(script).toContain('E2E_BASELINES_DIR="$fresh/apps/web/e2e" pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 || status=$?');
+      // The pictures written are the ones present after the run in that empty directory: no message text of
       // Playwright's is read, which a release may reword (the review's N5).
-      const written = 'find apps/web/e2e/brand.spec.ts-snapshots -type f -name \'*-chromium-linux.png\' | LC_ALL=C sort > "$RUNNER_TEMP/baselines-written"';
+      const written = '(cd "$fresh" && find "$committed" -type f -name \'*-chromium-linux.png\' | LC_ALL=C sort) > "$RUNNER_TEMP/baselines-written"';
       expect(script.indexOf(written)).toBeGreaterThan(script.indexOf('playwright test'));
       expect(script).not.toMatch(/doesn't exist|writing actual|baselines\.log/);
       const elsewhere = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => step.run?.includes('--update-snapshots') === true).map(() => `${file} ${id}`)));
@@ -2006,8 +2013,9 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     const LARGE = Buffer.from(Array.from({ length: 12_345 }, (_, index) => (index * 7) % 256));
 
     /**
-     * The step's script in a git repository holding two committed baselines, with a stand-in pnpm that renders by mode
-     * and prints none of Playwright's messages, but in 'claimed', where it claims a picture it did not write.
+     * The step's script in a git repository holding two committed baselines, with a stand-in pnpm that refuses a working
+     * tree with uncommitted changes, as E2E_PREBUILT's build stamp does, then renders by mode into E2E_BASELINES_DIR and
+     * prints none of Playwright's messages, but in 'claimed', where it claims a picture it did not write.
      */
     function regenerate(mode: 'same' | 'changed' | 'large' | 'unreached' | 'claimed' | 'extra' | 'failed') {
       const dir = mkdtempSync(path.join(scratch, 'baselines-'));
@@ -2019,6 +2027,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       writeFileSync(path.join(snapshots, 'report-cover-top-chromium-linux.png'), 'cover');
       mkdirSync(path.join(dir, 'tools/ci'), { recursive: true });
       copyFileSync(path.join(repositoryRoot, 'tools/ci/print-pictures.sh'), path.join(dir, 'tools/ci/print-pictures.sh'));
+      // The stand-ins and the runner's temporary directory sit outside a CI checkout; here they are ignored instead.
+      writeFileSync(path.join(dir, '.gitignore'), ['/bin/', '/runner-temp/', '/large.png', '/pnpm-args', '/baselines-dir', ''].join('\n'));
       git('init', '-q', '-b', 'main');
       git('add', '.');
       git('commit', '-q', '-m', 'baselines');
@@ -2032,7 +2042,11 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         [
           '#!/usr/bin/env bash',
           `printf '%s\\n' "$*" > '${dir}/pnpm-args'`,
-          'shots="$PWD/apps/web/e2e/brand.spec.ts-snapshots"',
+          `printf '%s\\n' "\${E2E_BASELINES_DIR:-}" > '${dir}/baselines-dir'`,
+          // scripts/build-stamp.ts --expect refuses any uncommitted change under E2E_PREBUILT=1.
+          '[ -z "$(git status --porcelain)" ] || { echo "build-stamp: the working tree has uncommitted changes"; exit 1; }',
+          'shots="$E2E_BASELINES_DIR/brand.spec.ts-snapshots"',
+          'mkdir -p "$shots"',
           'write() { printf "%s" "$2" > "$shots/$1"; }',
           // Playwright's own line for a missing baseline it writes under --update-snapshots=all (handleMissing).
           'claim() { echo "  A snapshot doesn\'t exist at $shots/$1, writing actual."; }',
@@ -2052,7 +2066,13 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       );
       const script = stepNamed(ciJob('e2e').steps, NAME).run ?? '';
       const result = runScript(script, { ...env, PATH: `${bin}:${process.env.PATH ?? '/usr/bin:/bin'}`, RUNNER_TEMP: temp, E2E_PREBUILT: '1' }, dir);
-      return { ...result, args: readFileSync(path.join(dir, 'pnpm-args'), 'utf8').trim() };
+      return {
+        ...result,
+        args: readFileSync(path.join(dir, 'pnpm-args'), 'utf8').trim(),
+        baselinesDir: readFileSync(path.join(dir, 'baselines-dir'), 'utf8').trim(),
+        temp,
+        tree: git('status', '--porcelain'),
+      };
     }
 
     const sha = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
@@ -2072,12 +2092,19 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       expect(same.output).toContain(`${sha('header')}  apps/web/e2e/brand.spec.ts-snapshots/header-1280-chromium-linux.png`);
       expect(same.output).toContain(`${sha('cover')}  apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png`);
       expect(same.output).not.toContain('::error');
+      // The run wrote into an empty directory under the runner's temporary directory, laid out as the repository is,
+      // and left the tracked tree as committed.
+      expect(same.baselinesDir).toBe(path.join(same.temp, 'baselines/apps/web/e2e'));
+      expect(same.tree).toBe('');
     });
 
     it('fail on a changed picture, printing its SHA-256 and then the picture in numbered chunks of 8,000 base64 characters, on a picture the run did not reach, on one more than committed, and on a failed run', () => {
       const changed = regenerate('changed');
       expect(changed.status).toBe(1);
       expect(changed.output).toContain('::error title=The brand baselines::this runner renders other bytes than the committed baselines');
+      expect(changed.output).toContain('  differs: apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png');
+      expect(changed.output).not.toContain('  differs: apps/web/e2e/brand.spec.ts-snapshots/header-1280-chromium-linux.png');
+      expect(changed.tree).toBe('');
       // GNU base64's -w, as the runner has; only the changed picture is printed, its SHA-256 first.
       if (spawnSync('base64', ['-w', '0'], { input: '' }).status === 0) {
         expect(printed(changed.output, 'report-cover-top-chromium-linux.png')).toEqual([`sha256 ${sha('cover, drawn otherwise')}`, `1/1 ${Buffer.from('cover, drawn otherwise').toString('base64')}`]);

@@ -315,10 +315,12 @@ every path that differs from the committed list, so one red CI run gives everyth
    bytes, and count changed pixels, not bytes, before reading a picture as moved (step 7).
 4. **Fix what new rules find.** A new axe release can enable a rule (4.14.0 enabled `label-content-name-mismatch`,
    WCAG 2.5.3): every journey's `expectAccessible` runs it, so fix the finding in the page, not in the scan.
-5. **Read CI's baseline step.** `e2e (1/M)` removes the committed baselines, regenerates them from nothing with
-   `--update-snapshots=all --retries=0` on CI's runner, requires the pictures present after the run to be exactly the
-   committed set (no message of Playwright's is read) and a clean `git diff --exit-code` over
-   `apps/web/e2e/brand.spec.ts-snapshots`, and prints every picture's SHA-256. On a difference it fails and prints,
+5. **Read CI's baseline step.** `e2e (1/M)` regenerates the brand baselines from nothing with
+   `--update-snapshots=all --retries=0` on CI's runner, into an empty directory outside the repository
+   (`E2E_BASELINES_DIR`, which `playwright.config.ts` turns into the snapshot path, laid out as the repository is), so
+   the tracked tree stays clean for the build stamp; it requires the pictures present after the run to be exactly the
+   committed set (no message of Playwright's is read) and each to equal the committed file byte for byte, and prints
+   every written picture's SHA-256 under its repository path. On a difference it fails and prints,
    for each changed picture, a line `<path> sha256 <hex>` and then the picture's base64 as lines
    `<path> <i>/<n> <8,000 characters>`, so a log reader that cuts long lines still gets it whole. Take every line
    `<path> 1/<n>` to `<path> <n>/<n>` (a gap means a fuller read of the log, never a partial decode; strip the log's
