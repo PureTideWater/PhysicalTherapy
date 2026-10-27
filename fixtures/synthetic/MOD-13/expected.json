@@ -1,0 +1,20 @@
+{
+  "case": "MOD-13",
+  "module": "MOD",
+  "title": "A payer letter whose patient's names, member IDs, claim numbers and date of birth are written any way a letter writes them (placeholder words or months as names, marks, `ß`, typographic apostrophes and dashes, invisible characters, spacing, initials, `_` or `.` in a number)",
+  "assertion": "No letter or digit written as an identifier is sent; every placeholder is exact and each place a claim's number was written is that claim's placeholder (the lowest of equal claims); nothing today's redaction replaced is sent, but a deadline or amount it took for an identifier; text without the patient's forms, common phrases, amounts and deadlines included, is sent unchanged; the self-check finds nothing",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/redact.property.test.ts",
+    "packages/model-gateway/src/functions/denial-letter.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Letters are generated in memory by the property test, which records where it wrote each identifier; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

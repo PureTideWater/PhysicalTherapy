@@ -1,0 +1,20 @@
+{
+  "case": "MOD-14",
+  "module": "MOD",
+  "title": "A letter that writes another patient's member ID or claim number with `_`, `.`, a dash, spaces, an invisible character, after `ID:` or in brackets",
+  "assertion": "The one-patient screen is offered it, in the redacted letter too; an exact placeholder, or a part of one, never",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/redact.property.test.ts",
+    "packages/model-gateway/src/functions/denial-letter.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Letters are generated in memory by the property test; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

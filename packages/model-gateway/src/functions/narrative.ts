@@ -1,10 +1,11 @@
-import { type PacketContent, type VerifierReport, dollars, identifierForms, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { type PacketContent, type VerifierReport, dollars, narrativeFacts, verifyNarrative } from '@tp/packets';
 import { z } from 'zod';
 
 import { InputRefusedError } from '../errors';
 import { type RoleMismatch, roleMismatches } from './narrative-roles';
 import { jsonSha256 } from '../hash';
 import { PROMPTS } from '../prompts';
+import { holdsNameOrNumber } from '../redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { frameFacts } from '../untrusted';
 
@@ -37,6 +38,12 @@ export interface NarrativeInput {
    * by the server from the canonical records: never sent, only checked.
    */
   readonly identifiers: readonly string[];
+  /**
+   * Which of the identifiers are names (the patients' and insureds' last and first names), so the
+   * check before the call reads each as a name and the rest as member IDs and claim numbers. Absent, a
+   * value with no digit is read as a name.
+   */
+  readonly names?: readonly string[];
 }
 
 export interface NarrativeProposal {
@@ -93,11 +100,21 @@ export function narrativeInputs(content: PacketContent) {
   };
 }
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** The case's identifiers as names and numbers (member IDs and claim numbers), as the check before the call reads them. */
+export function identifierKinds(input: Pick<NarrativeInput, 'identifiers' | 'names'>): { readonly names: readonly string[]; readonly numbers: readonly string[] } {
+  const names = new Set(input.names ?? input.identifiers.filter((value) => !/\p{N}/u.test(value)));
+  return { names: [...names], numbers: input.identifiers.filter((value) => !names.has(value)) };
+}
 
-/** Whether any form of the identifiers appears in the text as a whole word, without regard to case. */
-export function mentionsIdentifier(text: string, identifiers: readonly string[]): boolean {
-  return identifierForms(identifiers).some((form) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(form).replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`, 'iu').test(text.normalize('NFKC')));
+/**
+ * Whether any of the identifiers is in the text in a form the letter reader's redaction reads
+ * (../redact.ts): a name with its case, marks, dashes and apostrophes written any way, a number with
+ * its spaces, dashes, invisible characters, or a period or underscore next to a letter. An amount, or a
+ * date written with its separators, is not a number, so the facts' "$1234.50" and "2026-03-05" never
+ * read as a claim's 123450 or 20260305.
+ */
+export function mentionsIdentifier(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
+  return holdsNameOrNumber(text, identifiers);
 }
 
 export const narrativeSpec: PurposeSpec<NarrativeInput, NarrativeOutput, NarrativeProposal> = {
@@ -107,7 +124,7 @@ export const narrativeSpec: PurposeSpec<NarrativeInput, NarrativeOutput, Narrati
   prepare(input) {
     const facts = narrativeInputs(input.content);
     const user = `Draft the pattern statement's narrative from the facts below, in the JSON the schema describes.\n\n${frameFacts('pattern_statement', facts)}`;
-    if (mentionsIdentifier(user, input.identifiers)) {
+    if (mentionsIdentifier(user, identifierKinds(input))) {
       throw new InputRefusedError('identifier_in_input', 'a narrative is drafted from pattern-level facts with no identifiers; one of the case’s identifiers is in them');
     }
     return { user, inputHashes: [jsonSha256(facts)], variant: 'default', context: undefined };

@@ -568,6 +568,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/model-gateway/eval/gate.golden.test.ts',
     'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
+  // The letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27).
+  'MOD-13': none(10, 'Letters are generated in memory by the property test, which records where it wrote each identifier; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  'MOD-14': none(10, 'Letters are generated in memory by the property test; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),

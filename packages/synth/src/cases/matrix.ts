@@ -363,6 +363,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion: 'That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met, and a contract variant only after a production permitted run of its own examples, compared with what was served',
   },
   {
+    id: 'MOD-13',
+    title: "A payer letter whose patient's names, member IDs, claim numbers and date of birth are written any way a letter writes them (placeholder words or months as names, marks, `ß`, typographic apostrophes and dashes, invisible characters, spacing, initials, `_` or `.` in a number)",
+    assertion:
+      "No letter or digit written as an identifier is sent; every placeholder is exact and each place a claim's number was written is that claim's placeholder (the lowest of equal claims); nothing today's redaction replaced is sent, but a deadline or amount it took for an identifier; text without the patient's forms, common phrases, amounts and deadlines included, is sent unchanged; the self-check finds nothing",
+  },
+  {
+    id: 'MOD-14',
+    title: "A letter that writes another patient's member ID or claim number with `_`, `.`, a dash, spaces, an invisible character, after `ID:` or in brackets",
+    assertion:
+      'The one-patient screen is offered it, in the redacted letter too; an exact placeholder, or a part of one, never',
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:

@@ -228,10 +228,15 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 | MOD-09 | Contract evaluation set v2 | 63 documents to 60 codes and 80 pages: multi-row tables, contract-plus-exhibit pairs, scans with OCR errors or their own OCR layer, struck-through rates, each marked faithful or not; its hash covers the pages as read, and a changed set refuses comparison |
 | MOD-10 | Injected-instruction twins and decoy amended rates | Each twin's full proposal and review equal its clean twin's and no output string, a label included, holds a word only the injection writes; both rows of every expected conflict proposed and each flagged against the other; any difference, failed twin call or miss fails the gate |
 | MOD-11 | Real provider in production with a purpose unevaluated | That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met, and a contract variant only after a production permitted run of its own examples, compared with what was served |
+| MOD-13 | A payer letter whose patient's names, member IDs, claim numbers and date of birth are written any way a letter writes them (placeholder words or months as names, marks, `ß`, typographic apostrophes and dashes, invisible characters, spacing, initials, `_` or `.` in a number) | No letter or digit written as an identifier is sent; every placeholder is exact and each place a claim's number was written is that claim's placeholder (the lowest of equal claims); nothing today's redaction replaced is sent, but a deadline or amount it took for an identifier; text without the patient's forms, common phrases, amounts and deadlines included, is sent unchanged; the self-check finds nothing |
+| MOD-14 | A letter that writes another patient's member ID or claim number with `_`, `.`, a dash, spaces, an invisible character, after `ID:` or in brackets | The one-patient screen is offered it, in the redacted letter too; an exact placeholder, or a part of one, never |
 
 MOD-07 to MOD-11 were added by combined audit item #84 (docs/adr/0070): MOD-07 to MOD-10 by Part 1, the evaluation
 gate, and MOD-11 by Part 2, serving each model feature on its own evaluation. MOD-12 is reserved for Part 3, item #120's
 check of a contract against the practice's records, which its own pull request adds.
+
+MOD-13 and MOD-14 were added with the letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27): the
+generated letters' oracle is the generator, which records where it wrote each identifier, not the matcher.
 
 ## Billing (BIL)
 
