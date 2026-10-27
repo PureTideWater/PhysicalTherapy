@@ -400,8 +400,8 @@ them, reach the log (open item O11, now held by the template rather than checked
 **Cost** (Q1; prices read from search results, to be read again on AWS's pages before the first deploy, O12): about $20
 a month per environment, the SQS endpoint $14.60 of it (two zones), 17 alarms $1.70, eight log metrics $2.40, the probes
 and requests well under $1, and the address-validation account's key $1 (ADR 0065); the founder's Q1 figure was about
-$18, and the review's fix round added about $2.20 (the unsent probe's and the refused validation's alarms and metrics,
-and that key). SES at Essentials' $0.16 per 1,000 messages; SES's validation of a screening address at $0.01, at most
+$18, and the review's fix round added about $1.80 (the unsent probe's and the refused validation's alarms and metrics,
+$0.80, and that key, $1). SES at Essentials' $0.16 per 1,000 messages; SES's validation of a screening address at $0.01, at most
 1,000 a day in production.
 
 **Revisit when** staging's phase 2 shows that Cognito needs a sending-authorization policy on the stack's identity, or
