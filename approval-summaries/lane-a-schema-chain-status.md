@@ -25,16 +25,22 @@ GitHub login: PureTideWater.
 | # | Item | Branch | State |
 | --- | --- | --- | --- |
 | 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Building |
-| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); ledger part on `co-001/wip-suite-cap-1-ledger-lock` until Q1 | Not started |
-| 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Not started; PR waits on the founder's exception |
+| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Not started |
+| 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Not started; exception granted, PR opens after SS-01 and SUITE-CAP-1b merge |
 
 ## Decisions taken (recommended option; security: the safer), with reasons
 - None yet.
 
 ## Waiting on someone
 - #42's merge (SS-01's PR opens after it).
-- The founder: SUITE-CAP-1's Q1 (ledger lock key) and the interest fix's ledger freeze exception
-  (`approval-summaries/founder-asks-2026-10-27.md`); each schema PR's domain-model approval.
+- The founder: each schema PR's domain-model approval.
+
+## Rulings received
+- **Founder (Tyler Williams), relayed by the co-founder, 2026-10-27 20:49 UTC** (`approval-summaries/founder-asks-2026-10-27.md`
+  line 3; the orchestrator's message ~20:50 UTC): "Granted: the ledger freeze exceptions in designs/ledger-interest-once.md
+  section 10.1 and designs/suite-cap-1-triage-locks.md section 4.5, as written." Each PR records it word for word, with
+  who and when, in its ADR (0083, 0084) and reconciliation-001, and stays within the granted text.
 
 ## Log
 - 2026-10-27 20:45 UTC: session started; setup OK; SS-01 branch cut from #42's 098636e3 and pushed; wf_8ee54e2b-824 started.
+- 2026-10-27 20:52 UTC: both ledger freeze exceptions granted (above); SUITE-CAP-1b's ledger part goes into its PR, no WIP branch.
