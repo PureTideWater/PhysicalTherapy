@@ -19,6 +19,7 @@ The UX review's PR 3 (UX-011 / C-002; UX-079 / C-043 part (a)). Run as a Lane B 
 - **ux-forms (`co-001/ux-forms`, 17bbb70, another session):** shares `console/compliance/page.tsx`, `console/organizations/[organizationId]/page.tsx`, `p/[practiceId]/cases/page.tsx`, `p/[practiceId]/settings/pricing/page.tsx`, `components/reconciliation/template-mapper.tsx`. The PR merged second keeps both (rule 6).
 
 ## Log
+- 2026-10-27 16:51-17:03 UTC: CI on 35b14cd: `e2e (2/2)` failed only in `screening.spec.ts:135` (the known race at :339 and the retry at helpers.ts:87, LANES.md "Handed to Lane A", 2026-10-25; #42's file, no fix exists yet). One comment on PR #79 said so, and the one re-run of the failed jobs passed: every required check green on 35b14cd (all green, mutation, screening-capacity gate, approval-of-record). The re-run is spent for this head.
 - 2026-10-27 16:43-16:50 UTC: build done (11 commits, head 35b14cd, pushed); draft PR #79 opened and subscribed; reviews workflow wf_e7456d3d-fde started.
 - 2026-10-27 14:07 UTC: resumed after the usage hold; setup all ok (playwright too). 14:20: the design review folded in (section 12, all 16 accepted; DR-10 also takes the words "As PaidWhole recorded it" in place of "as the engine recorded it"). 14:12: build workflow wf_2dbe5cca-58e started.
 - 2026-10-27 01:42 UTC: setup done; branch `co-001/ux-table-scroll` cut at e908c21 in `/home/user/ux-table-scroll`, installed. Next: the design workflow (scouts, author, one reviewer).
