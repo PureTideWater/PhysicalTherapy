@@ -768,8 +768,8 @@ async function shellControls(browser: Browser, c: { key: string; route: string; 
 }
 
 /** A URL notice (?notice=, ?saved=1 ...): the success alert the product shows after a write, opened without the write. */
-function notice(browser: Browser, c: { key: string; route: string; persona: string; path: () => string; name?: string; ready?: (page: Page) => Promise<void> }): Promise<void> {
-  return cap(browser, { key: c.key, route: c.route, persona: c.persona, path: c.path, state: `interaction:${c.name ?? 'notice'}`, ready: c.ready, note: 'The success alert, opened by its URL without the write that would show it.' });
+function notice(browser: Browser, c: { key: string; route: string; persona: string; path: () => string; name?: string; ready?: (page: Page) => Promise<void>; dark?: boolean }): Promise<void> {
+  return cap(browser, { key: c.key, route: c.route, persona: c.persona, path: c.path, state: `interaction:${c.name ?? 'notice'}`, ready: c.ready, dark: c.dark, note: 'The success alert, opened by its URL without the write that would show it.' });
 }
 
 /**
@@ -1989,7 +1989,20 @@ test('practice workflow', async ({ browser }) => {
     },
   });
   await cap(browser, { key: 'p.abstraction-version', route: abv, persona: 'pricing-manager', path: () => L(`/abstraction/versions/${need('version')}`), state: 'error', variant: 'error-forbidden', ready: denied });
-  await notice(browser, { key: 'p.abstraction-version', route: abv, persona: CS, path: () => L(`/abstraction/versions/${need('version')}?model=proposed`), name: 'model-notice' });
+  await notice(browser, { key: 'p.abstraction-version', route: abv, persona: CS, path: () => L(`/abstraction/versions/${need('version')}?model=proposed`), name: 'model-notice', dark: true });
+  // The contract screen's two refusals (PR #75; docs/adr/0070, Part 3), opened by their URL as the notice above. A build
+  // that does not know a code shows no notice (the route's ?model= falls back to none), which is that build's screen.
+  for (const code of ['names_patient', 'screen_unavailable']) {
+    await cap(browser, {
+      key: 'p.abstraction-version',
+      route: abv,
+      persona: CS,
+      path: () => L(`/abstraction/versions/${need('version')}?model=${code}`),
+      state: `interaction:model-${code.replace('_', '-')}`,
+      dark: true,
+      note: `The model notice ?model=${code}, opened by its URL without the model step that would show it (a build that does not know the code shows none).`,
+    });
+  }
   notReached('p.abstraction-version', 'loading', abv, 'not holdable on populated data: the versions are signed off, so neither /abstraction nor the specialist queue links to one');
   notReached('p.abstraction-version', 'draft-forms', abv, 'the draft forms need a draft or proposed version, which no populate spec leaves');
 
@@ -2261,6 +2274,26 @@ test('practice workflow', async ({ browser }) => {
       await page.getByLabel('Payer').first().selectOption({ label: 'SYNTHETIC PAYER C' });
       await page.getByLabel('Contract', { exact: true }).first().selectOption({ index: await optionIndex(page, /^Contract$/, /SYNTHETIC PAYER C AGREEMENT/) });
       await overlap(page, 'Tag to the payer');
+    },
+  });
+  // The upload panel's kind (PR #75; docs/adr/0070, Part 3): a panel of several kinds starts with none, and a file chosen
+  // before the kind is refused in the browser. A build whose panel starts with a kind would upload the file, so the step
+  // stops there with the reason, before any file is chosen.
+  await cap(browser, {
+    key: 'p.contracts',
+    route: ct,
+    persona: 'era-manager',
+    path: () => O('/contracts'),
+    state: 'interaction:no-kind',
+    dark: true,
+    note: 'A synthetic PDF (CON-01 version-1.pdf) chosen before the kind: refused in the browser, nothing uploaded.',
+    act: async (page) => {
+      const panel = page.getByRole('region', { name: 'Upload a contract or exhibit' });
+      const kind = await panel.getByLabel('Kind of document').inputValue();
+      if (kind !== '') throw new Error(`the panel starts with the kind ${kind}, so choosing a file would upload it: not taken on this build`);
+      await panel.getByLabel('Choose files to upload').setInputFiles({ name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(`${SCREENS}/fixtures/synthetic/CON-01/version-1.pdf`) });
+      await refused(page, /Nothing was uploaded/);
+      await expect(panel.locator('[data-state="error"]')).toContainText('Choose the kind of document first, then choose the files again.');
     },
   });
   await cap(browser, { key: 'p.contracts', route: ct, persona: CS, path: () => L('/contracts'), state: 'error', variant: 'error-forbidden', ready: denied });
