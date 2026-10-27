@@ -32,6 +32,12 @@ Brief: `lanes/lane-b-session-brief.md`. Item: ci-browser, then P1, P2, P4; also 
 - **Check-in:** a safety-net message at 07:00 UTC (trig_01RTEGVS4c8vS5hfq4P2217f).
 - **Next:** fold done → phase 2's no-browser steps (the bump under the gates, the new workflows under ci-browser's rules), then the draft PR; the local-browser steps wait on storage.googleapis.com.
 
+### 2026-10-27 21:12 UTC: CI green on 64843249; ADR 0058's proof made; verification, A9 and release-capacity running
+- **Every check green on 64843249**, the four required ones included (`all green`, `mutation` with all seven shards, `screening-capacity gate`, `approval-of-record`); PR mergeable, clean. `images` passes the worker's `--image` with the version gate on a real daemon (26.04, containerd); the dry run builds `web` and `worker` and checks both archives.
+- **ADR 0058's proof:** e2e (1/2) job 122461666053 on ubuntu-26.04 (image 20261012.163.1): the baseline step's journey 4 passed and the seven written from nothing equal the committed files byte for byte (7ddf673c…, 04be07d1…, 4b3a7781…, e5e0370e…, 0517b2a1…, 3ece4f0b…, e982852d…), the same bytes the local Ubuntu 24.04 run made: the host-independence claim holds.
+- **Running:** the fresh-clone verification wf_e2db34b6-575 (`approval-summaries/lane-b-ci-browser-verify-summary.md` when done); A9 wf_e4125b9a-14d (evidence in `designs/lane-b-ci/ci-browser-a9/`, the note `designs/lane-b-ci/ci-browser-a9.md`, the visual inspection); release-capacity dispatched on the branch (run 40584379787 at 64843249; its measurement is expected to fail at triage on SUITE-CAP-1, the known defect handed to Lane A, which today's scheduled run on the base also hit; what it proves here is the job and its `--image` and version gate on 26.04).
+- **Next:** the verification's verdict; A9 committed and linked in the PR; mark ready; approval-of-record's re-run; merge with `expectedHeadSha` 64843249 if the base has not moved.
+
 ### 2026-10-27 21:00 UTC: the fix round integrated and pushed (64843249); PR description updated
 - As in the current-state block. Archived: `approval-summaries/lane-b-ci-browser-fix-round.md`; the tour fix (UX-5) committed here; design §3.3.9 records what the fix round changed.
 
