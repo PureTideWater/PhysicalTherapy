@@ -21,5 +21,6 @@ split"; 1b completes it), test-matrix CAS-41, `packages/synth` case CAS-41 (modu
 - None.
 
 ## Log
+- 2026-10-27 21:24 UTC: the orchestrator's reminder (21:31) taken: never force a push, WIP branches included; a diverged WIP ref gets a fresh name (co-001/wip-suite-cap-1a-2, ...), recorded here. Before figures at 100,000 lines on the base (private cluster, 1,024 locks per transaction; 560 MiB heap flag): A's triage 260.4 s, its actionable advanceStages 207.9 s for 33,334 lines (quadratic), live heap after judging 74.8 MiB, sampled peak 509.2 MiB; A's audit report heap out of memory at about 62 s, twice, holding runLines' 100,000 rows (511.7 MiB live). On the default cluster (64 locks): A's report 53200 at 47.3 s, 14,533 advisory locks.
 - 2026-10-27 20:37 UTC: build workflow wf_34688805-4ff launched.
 - 2026-10-27 20:35 UTC: started; setup OK; worktree and install done.
