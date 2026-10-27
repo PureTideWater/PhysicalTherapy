@@ -769,13 +769,16 @@ self-hosted would reverse the configuration ban and misname a hosted label). It 
 
 **The browser jobs' system packages (V3).** `unit`, every `db` and `e2e` shard, `large-zip` and
 `screening-capacity.yml`'s `capacity` (under its own runner image's key) restore `$RUNNER_TEMP/apt-archives` under
-`apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>` (the runner's own environment, through a
-step, since the `env` context holds only what a workflow sets), falling back to the image version's and the image's
-earlier keys; `tools/ci/apt-archives.sh verify` fetches the signed indexes and copies into apt's archive directory only
-a file whose SHA-256 is the index's for exactly its name, version and architecture, deleting every other, and sets
-`APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit` and the capacity job save on a miss, on the
-build branch's own runs only (push, schedule, dispatch), after the browser check passed. `release.yml` restores no cache
-(Part 2), so its one install stays uncached.
+`apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>`, falling back to the image version's and the
+image's earlier keys. `<ImageOS>` and `<ImageVersion>` are the runner's `ImageOS` and `ImageVersion` environment
+variables, read through a step, since the `env` context holds only what a workflow sets; that version can differ from
+the one "Set up job" prints (in run 40534270846, the pull request's first, the `db` and `e2e` jobs' "Set up job"
+printed 20261012.163.1 and their `ImageVersion`, so their key, was 20261023.163.3), so a key is matched against
+`ImageVersion`, never against "Set up job". `tools/ci/apt-archives.sh verify` fetches the signed indexes and copies into
+apt's archive directory only a file whose SHA-256 is the index's for exactly its name, version and architecture,
+deleting every other, and sets `APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit` and the capacity
+job save on a miss, on the build branch's own runs only (push, schedule, dispatch), after the browser check passed.
+`release.yml` restores no cache (Part 2), so its one install stays uncached.
 
 **The browser check.** Every step that installs Playwright's browsers, in every workflow, carries `id: browser-install`
 and is followed at once by `node tools/ci/browser-build.ts`, before any test runs or any cache is saved. In ci.yml's

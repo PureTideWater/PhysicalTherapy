@@ -258,7 +258,11 @@ lists) is deleted and apt downloads that package. It prints the counts kept and 
 It also writes `/etc/apt/apt.conf.d/90paidwhole-keep-archives` (`APT::Keep-Downloaded-Packages "true";`), so what the
 install downloads stays for `collect`, which warns when it finds no file. The key moves with the runner image and with
 the browser build, and a security update is a new version, which apt fetches and the next miss in `unit` saves. The
-cache can only save time: every file apt uses is one the signed index names. To clear one:
+key's `<ImageOS>` and `<ImageVersion>` are the runner's `ImageOS` and `ImageVersion` environment variables, which the
+`runner-image` step reads, and that version can differ from the one "Set up job" prints: in run 40534270846 (pull
+request #77's first) the `db` and `e2e` jobs' "Set up job" printed 20261012.163.1 while their `ImageVersion`, and so
+their key (`apt-v1-ubuntu26-20261023.163.3-…`), was 20261023.163.3. Match a key against the job's `ImageVersion`, never
+against "Set up job". The cache can only save time: every file apt uses is one the signed index names. To clear one:
 `gh cache list --key tsc-v1-` and `gh cache delete <id>`.
 
 ## Upgrading the browser
