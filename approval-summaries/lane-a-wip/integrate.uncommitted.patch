@@ -127,26 +127,341 @@ index 08d8bea8..79c2c94e 100644
        try {
          await options.mail.send(probeMessage(row.stream, MAIL_PROBE_RECIPIENTS.delivered));
          await options.mail.send(probeMessage(row.stream, MAIL_PROBE_RECIPIENTS.bounced));
-diff --git a/packages/db/migrations/20261107090000_mail_streams.sql b/packages/db/migrations/20261107090000_mail_streams.sql
-index 64017df8..18ec43e3 100644
---- a/packages/db/migrations/20261107090000_mail_streams.sql
-+++ b/packages/db/migrations/20261107090000_mail_streams.sql
-@@ -1104,8 +1104,12 @@ END;
- $$;
+diff --git a/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md b/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md
+index 09ad409b..f9dca688 100644
+--- a/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md
++++ b/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md
+@@ -130,7 +130,8 @@ jobs call and 0050 the dunning outbox.
+   1,000 messages or 50 seconds a run, each SES event recorded once per message and event in its own transaction and
+   deleted from the queue only after that commits (JOB-05); an account alarm's state change pauses the screening
+   stream. It logs IDs and codes only: `MAIL_STREAM_PAUSED`, `NOTICE_UNDELIVERED` (with the support grant's or the
+-  invoice's ID), `INVITATION_UNDELIVERED` (with the invitation's ID), `MAIL_PROBE_MISSED`, and
++  invoice's ID), `INVITATION_UNDELIVERED` (with the invitation's ID), `MAIL_PROBE_MISSED` (on each run while a
++  stream has had no probe back in 26 hours; ADR 0065), and
+   `MAIL_EVENT_UNREADABLE` (with the queue message's ID; the message is left for the dead-letter queue).
+ - **`mail_expiry`, nightly at 03:50 UTC.** It deletes, 1,000 of each a call until none is left
+   (`operator_mail_expire()`), the mail records past their days: a message's row 30 days after it was sent on the
+diff --git a/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md b/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
+index a6e9520f..51183c53 100644
+--- a/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
++++ b/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
+@@ -158,6 +158,18 @@ and `submit_screening`; tp_screening: `screening_mail_gate` alone. `screening_ma
+ `screening_contact_refused()` and every trigger function are granted to no role. No function sets `app.practice_ids`.
+ `operator_record_support_notice()`, `operator_practice_administrator_emails()` and `billing_owner_emails()` are dropped.
  
- -- For the reconcile and the probes: each stream's pause and SES confirmation; a probe is due daily once the last came
---- back, at once after a resume, and again when one has not come back in 26 hours (probe_missed), never while paused or
---- unconfirmed.
-+-- back, at once after a resume, and again 26 hours after one that has not come back, never while paused or unconfirmed.
-+-- probe_missed (MAIL_PROBE_MISSED, review M3) reads the stream's last proof, not its last send: open and confirmed, and
-+-- the older of its last delivered and bounced probe 26 hours old, whether a probe went since or not. A proof counts only
-+-- since the last resume, as readiness counts it (screening_mail_status()); one not back since then counts from the probe
-+-- last sent, and with none sent yet nothing is missed. So a daily probe sent and lost is missed 2 hours after it went,
-+-- and one that cannot be sent 26 hours after the last came back: either way 22 hours before readiness lapses at 48.
- CREATE FUNCTION operator_mail_streams() RETURNS TABLE (stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)
- LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-   SELECT s.stream, s.paused_at IS NOT NULL, s.ses_enabled_confirmed_at IS NOT NULL,
-@@ -1113,10 +1117,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
++**When a stream's probes are missed (review M3 and its follow-up of 2026-10-27).**
++`operator_mail_streams().probe_missed` reads the stream's last proof, not its last send: the stream open and confirmed,
++and the older of its last delivered and bounced probe 26 hours old, whether a probe went since or not. A proof counts
++only since the last resume, as readiness counts it; one not back since then counts from the probe last sent, and with
++none sent yet nothing is missed, so a resume after a long pause, or phase 2's first probes, pages no one while its
++probes are on their way. The platform logs `MAIL_PROBE_MISSED` on every `mail_events` run while it holds, due or not, so
++its alarm stays raised until a probe comes back. The daily probe goes 24 hours after the last came back, so one sent and
++lost pages 2 hours after it went, 22 hours before readiness lapses at 48; as first built, missed was read 26 hours after
++the lost probe's own send, about 50 hours after the last proof and 2 hours after the screening had closed in silence. A
++probe that cannot be sent pages within 15 minutes (`MAIL_PROBE_UNSENT`), and as missed 26 hours after the last proof.
++The schedule is unchanged: a probe not back goes again 26 hours after it went.
++
+ **Address validation in its own account (review S3; the safer option, taken on the co-founder's standing direction of
+ 2026-10-27).** SES's validation of a screening address (`GetEmailAddressInsights`, Q1 (g)) names the address in its
+ request, and AWS records API calls. What AWS's own documentation says, re-checked on 2026-10-27 (its documentation hosts
+@@ -233,16 +245,21 @@ of management events, which CloudTrail does not charge) and the refused validati
+ | The refusal list keyed by the address as typed, or a +tag dropped only at free-mail domains | Another spelling of an inbox that bounced or reported a screening (a +tag, Gmail's dots, googlemail.com) was mailed again (review S2); a business domain's mailbox takes +tags as Gmail's does |
+ | Give an attempt a pause stopped back to the run (attempts less one) | It hands out an attempt number the fence already gave, so a slow earlier attempt could pass it again; a queued run must have no attempt (`screening_run_started`); and it needs PR 6b-3's `screening_run_rules` body copied. Instead the sweep completes a run out of attempts whose rows are all priced (review M7) |
+ | The web's check before the address covering the ZIP statuses too | It would copy PR 6b-2's location rule into a second function to keep in step; a ZIP refusal spends one validation, within the rate limit. Revisit if the validation cap is reached on a real day |
++| A stream missed 26 hours after its last probe's send (as first built) | A daily probe sent and lost paged about 50 hours after the last proof, 2 hours after readiness had lapsed and the screening closed, and a probe never sent never paged as missed (review M3) |
++| Missed from the last proof, counting a proof from before the last resume | A resume after a pause longer than 26 hours would page on every run until its first probes came back |
+ | `client_subject` before `request`, as PR 6b-3 placed its parameters | The previous web's submissions would fail during the deploy window; last, with a default of null, they still work, their runs held to the account's budget alone (a run with no proxy-named client address is the same) |
+ 
+ ## Consequences
+ 
+ - A screening send whose bounce capture is broken cannot count toward the cut-off, so the screening closes: readiness
+   needs the day's probes back (D8).
+-- A probe the platform cannot send pages the operator within 15 minutes (`MAIL_PROBE_UNSENT` in each of three
+-  five-minute periods; review M3), about a day before the stream's readiness lapses: such a probe is never outstanding,
+-  so `MAIL_PROBE_MISSED` would not fire, and the screening would close in silence. It adds one alarm and one log metric
+-  to Q1's figure (about $0.40 a month per environment).
++- Neither a lost probe nor an unsendable one closes the screening in silence (review M3): one sent and lost pages 2
++  hours after it went (`MAIL_PROBE_MISSED`, from the stream's last proof), 22 hours before the stream's readiness
++  lapses, and one the platform cannot send pages within 15 minutes (`MAIL_PROBE_UNSENT` in each of three five-minute
++  periods), about a day before. The unsent alarm adds one alarm and one log metric to Q1's figure (about $0.40 a month
++  per environment); the missed one costs nothing more, its line logged on each minute's run only while a stream is
++  missed. After a fix made once readiness has lapsed, the screening reopens when the unanswered probe goes again, 26
++  hours after it went.
+ - Each environment needs a second AWS account, created by a person, bootstrapped for CDK and holding
+   `tp-<env>-address-validation`, before its first release; a release cannot run without it (the rule), and an
+   application role ever replaced must be named to that stack again, or every validation is refused and pages
+@@ -277,13 +294,15 @@ of management events, which CloudTrail does not charge) and the refused validati
+ ## Revisit when
+ 
+ SES offers tenants with configurable pause thresholds at a confirmed price; staging shows which subtype a bounce from
+-SES's global suppression list carries on the screening set, whose suppression is overridden to none (O11); the
+-screening stream is paused in
+-production (read the reason and the counts before resuming, and whether the floors or the budget need the founder's
+-ruling again); staging, after phase 2, shows whether Cognito needs a sending-authorization policy, that the screening
+-set's empty suppression list both adds nothing to and checks nothing against the account's list, whether the account's
+-reputation metrics publish at launch volume, and whether CloudTrail reads SES's address validation as a read, in the
+-address-validation account alone (open item O11); the validation cap is reached on a real day; PR 6e adds reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
++SES's global suppression list carries on the screening set, whose suppression is overridden to none (O11); the screening
++stream is paused in production (read the reason and the counts before resuming, and whether the floors or the budget
++need the founder's ruling again); staging, after phase 2, shows whether Cognito needs a sending-authorization policy,
++that the screening set's empty suppression list both adds nothing to and checks nothing against the account's list,
++whether the account's reputation metrics publish at launch volume, and whether CloudTrail reads SES's address validation
++as a read, in the address-validation account alone (open item O11); the validation cap is reached on a real day; a
++`MAIL_PROBE_MISSED` is fixed after readiness lapsed and the screening stays closed until the unanswered probe's next
++send (then send it again sooner once missed, which needs the first unanswered send kept beside the last); PR 6e adds
++reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
+ refusal-hash and bounce-budget wording (O4); or the capacity measurement is revisited. The address checks this pull
+ request adds (DNS and SES validation, run together after the row checks, at most one 2-second timeout) fall inside the
+ 60-second promise, and the harness charges them (section 5, G1). How that promise is measured, the free runner with a
+diff --git a/docs/product/domain-model.md b/docs/product/domain-model.md
+index 76086bd1..556bc7eb 100644
+--- a/docs/product/domain-model.md
++++ b/docs/product/domain-model.md
+@@ -2,7 +2,7 @@
+ 
+ > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
+ 
+-- Generated at commit `d14f0ac5ceac775131ed065bfb1ed2d6bc06b3c6` on branch `co-001/pr-06b-mail-streams` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
++- Generated at commit `afd7ff229c86cfe087b3b4df270863020410d39a` on branch `co-001/pr-06b-mail-streams`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+ - Migrations applied: 45; head `20261107090000_mail_streams.sql`
+ - PostgreSQL 18; schema `public`: 98 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
+ - PHI flag: 47 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 39 organization- or user-scoped tables with RLS forced; 8 global tables
+@@ -7035,7 +7035,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
+ | `operator_mail_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `faa298581d4c5479` |
+ | `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eb2b3b2faa1ff637` |
+ | `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
+-| `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `de3024995afee946` |
++| `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `bd8730bedcaddfb4` |
+ | `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
+ | `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eda27a15443050cf` |
+ | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
+@@ -7312,7 +7312,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
+ | 42 | `20261104090000_free_screening.sql` | ADR 0062 | `8bc938ac54150a7d1d93255acb4610851b3d2bd85f37d6b7a521a6ed950b0a43` |
+ | 43 | `20261105090000_pricing_location_and_zip_plus_four.sql` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 | `2182a581fe94dde7667ef5561c12c8e78969c6c4bbbe3a406aff525edd9dc293` |
+ | 44 | `20261106090000_screening_consumer.sql` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 | `d6e449698132fa47d2f89ce7e27a96111efa27b1a258cde899576754f44e26b0` |
+-| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `23767dd2eeeaf49ed086d75299b4a45b7325e784207c1aa14150756953496868` |
++| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `ce6f2df5928cd3070514a7c9514ffcd62a0a5e53e62e0cb3dca5a7be40de33e1` |
+ 
+ ## Cross-checks
+ 
+@@ -7330,4 +7330,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
+ 
+ This document describes the schema at migration head `20261107090000_mail_streams.sql` (45 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+ 
+-Approved by: ________  Date: ________  Document SHA-256: `b12150bb9cb81d7f21776e48799a4592c33ca23cb5ab0e1789d023e82e60a04e`
++Approved by: ________  Date: ________  Document SHA-256: `8ea57066f1a9aa50b5f54c15748ee1d46b3f89ec6681c206db0d86c21674894f`
+diff --git a/docs/runbooks/deliverability.md b/docs/runbooks/deliverability.md
+index ac00a707..3af8b38a 100644
+--- a/docs/runbooks/deliverability.md
++++ b/docs/runbooks/deliverability.md
+@@ -65,9 +65,11 @@ a synthetic mailbox you control, and reads IDs and counts.
+   paged (`NOTICE_UNDELIVERED`). A practice with no administrator gets no message (`NOTICE_UNDELIVERABLE`).
+ - **Probes.** Once the identities are verified (phase 2), the platform sends each stream a message to SES's simulator
+   (`success@` and `bounce@simulator.amazonses.com`) daily, and at once after a resume. Staging and production open the
+-  screening only while its delivered and bounced probes came back within 48 hours and since the last resume. A probe
+-  that does not come back pages (`MAIL_PROBE_MISSED`), and so does one that cannot be sent (`MAIL_PROBE_UNSENT`, once
+-  every run has failed for 15 minutes).
++  screening only while its delivered and bounced probes came back within 48 hours and since the last resume. A stream
++  with no probe back in 26 hours pages (`MAIL_PROBE_MISSED`, from the older of its last delivered and bounced probe:
++  2 hours after a daily probe that went and was lost, 22 hours before readiness lapses, and on every run until one
++  comes back), and a probe that cannot be sent pages sooner (`MAIL_PROBE_UNSENT`, once every run has failed for 15
++  minutes).
+ - **The console** (`/console/mail`, a platform administrator): each stream's state (sending, paused with its reason and
+   the counts that paused it, or resumed and not yet confirmed), the window's sends, bounces and complaints, the last
+   probes, whether the screening is ready to open, its bounce marks, and the last 7 days' undelivered customer messages
+@@ -89,7 +91,7 @@ a synthetic mailbox you control, and reads IDs and counts.
+   | `NOTICE_UNDELIVERED` | a notice not delivered to every recipient (platform log) | 3.3 |
+   | `NOTICE_UNDELIVERABLE` | a notice with no recipient (platform log) | 3.3 |
+   | `INVITATION_UNDELIVERED` | an invitation's email undelivered (platform log) | 3.4 |
+-  | `MAIL_PROBE_MISSED` | a probe not back in 26 hours (platform log) | 3.7 |
++  | `MAIL_PROBE_MISSED` | a stream with no probe back in 26 hours, 22 hours before its readiness lapses (platform log) | 3.7 |
+   | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
+   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
+   | `MAIL_VALIDATION_REFUSED` | AWS refused an address validation: the address-validation role or its call (web log) | 3.8 |
+@@ -281,12 +283,20 @@ A message older than the queue's 4 days is gone; its message's state stays as la
+ 
+ ### 3.7 A probe missed, or not sent (`MAIL_PROBE_MISSED`, `MAIL_PROBE_UNSENT`)
+ 
+-`MAIL_PROBE_MISSED`: a probe went and its event did not come back in 26 hours: the event path is broken somewhere.
+-Check, in order, the identity (still verified), the set's event destination, rule `<p>-mail-events` (its invocations
+-and failed invocations), the queue and the job.
+-
+-`MAIL_PROBE_UNSENT`: for 15 minutes every run's probe send was refused, so nothing goes out to come back, and the
+-stream's readiness lapses 48 hours after its last probe came back (about a day from now). Check, in order:
++`MAIL_PROBE_MISSED`: no probe of the stream has come back in 26 hours, read from the older of its last delivered and
++bounced probe since the last resume (review M3). The daily probe goes 24 hours after the last came back, so a probe
++that went and was lost pages 2 hours after it went, and the stream's readiness lapses 48 hours after the last came
++back: about 22 hours after the page. The platform logs it on every run until a probe comes back, so the alarm stays
++raised until then. With `MAIL_PROBE_UNSENT` as well, no probe was sent: follow its steps below. Alone, a probe went and
++its events did not come back: the event path is broken somewhere. Check, in order, the identity (still verified), the
++set's event destination, rule `<p>-mail-events` (its invocations and failed invocations), the queue and the job. The
++console's mail page shows the stream's last probe sent, delivered and bounced. Once the path is fixed, the stream is
++proven again when a probe's events come back: one not back goes again 26 hours after it went, so after a fix made
++once readiness has lapsed, the screening can stay closed until that send.
++
++`MAIL_PROBE_UNSENT`: for 15 minutes every run's probe send was refused, so nothing goes out to come back:
++`MAIL_PROBE_MISSED` follows 26 hours after the stream's last probe came back, and its readiness lapses at 48 (about a
++day from now). Check, in order:
+ 
+ 1. the account's sending and enforcement (`aws sesv2 get-account --query '{sending: SendingEnabled, enforcement:
+    EnforcementStatus}'`: `true` and `HEALTHY`);
+diff --git a/infra/lib/constructs/monitoring.ts b/infra/lib/constructs/monitoring.ts
+index abfc8950..4b9842a7 100644
+--- a/infra/lib/constructs/monitoring.ts
++++ b/infra/lib/constructs/monitoring.ts
+@@ -29,6 +29,7 @@ import {
+   MAIL_NAMESPACE,
+   MAIL_PLATFORM_ALARM_CODES,
+   MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
++  MAIL_PROBE_HOURS,
+   MAIL_PROBE_UNSENT_ALARM,
+   MAIL_VALIDATION_CAP_CODE,
+   MAIL_VALIDATION_CAP_PERIOD_SECONDS,
+@@ -115,8 +116,8 @@ export interface MonitoringProps {
+  *
+  * The mail streams (docs/adr/0065; audit #76) add eight metric filters, each with its alarm: five codes the platform
+  * jobs log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a
+- * recipient, a notice with no recipient, an invitation not delivered, a probe not back), each alarmed at one in five
+- * minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
++ * recipient, a notice with no recipient, an invitation not delivered, a stream with no probe back in 26 hours, logged on
++ * every run while it holds), each alarmed at one in five minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
+  * has one; the web's code for an address validation AWS refused (the address-validation account's role or its call),
+  * alarmed at one in five minutes; and its code for the day's address validations reaching their cap, alarmed at one in
+  * a day. Each is matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds
+@@ -426,7 +427,7 @@ export class Monitoring extends Construct {
+       NOTICE_UNDELIVERED: `A ${props.environmentName} support-access or dunning notice did not reach a recipient: reach the practice or organization another way.`,
+       NOTICE_UNDELIVERABLE: `A ${props.environmentName} support-access or dunning notice had no one to send to: reach the practice or organization another way.`,
+       INVITATION_UNDELIVERED: `A ${props.environmentName} invitation email was not delivered: tell the inviting administrator.`,
+-      MAIL_PROBE_MISSED: `A ${props.environmentName} mail probe did not come back within 26 hours: check the identity, the event destination, the rule and the queue.`,
++      MAIL_PROBE_MISSED: `No ${props.environmentName} mail probe of a stream has come back in ${String(MAIL_PROBE_HOURS.missed)} hours, whether the last went and was lost or none could be sent (then MAIL_PROBE_UNSENT too): staging and production close the screening ${String(MAIL_PROBE_HOURS.ready)} hours after the last came back; check the identity, the event destination, the rule, the queue and the job (docs/runbooks/deliverability.md, 3.7).`,
+     };
+     const codeAlarms: Partial<Record<MailPlatformAlarmCode, cloudwatch.Alarm>> = {};
+     for (const code of MAIL_PLATFORM_ALARM_CODES) {
+diff --git a/infra/lib/mail.ts b/infra/lib/mail.ts
+index b61484e6..f0d6676c 100644
+--- a/infra/lib/mail.ts
++++ b/infra/lib/mail.ts
+@@ -91,21 +91,30 @@ export const MAIL_EVENTS_QUEUE_PERIOD_SECONDS = 300;
+ /**
+  * The codes the platform jobs log as `error_code` that page the operator, each counted by its own metric filter on the
+  * platform's log group and alarmed at one in five minutes (D5): the screening stream paused, a notice not delivered to a
+- * recipient, a notice with no recipient at all, an invitation not delivered, a probe not back within 26 hours.
++ * recipient, a notice with no recipient at all, an invitation not delivered, a stream with no probe back in 26 hours.
+  */
+ export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED'] as const;
+ export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
+ export const MAIL_PLATFORM_ALARM_PERIOD_SECONDS = 300;
+ 
+ /**
+- * A probe the platform could not send (review M3). While a stream's probe is due, each minute's mail_events run tries
+- * it and, when the send throws, logs MAIL_PROBE_UNSENT and tries again on the next run. Nothing then comes back, but no
+- * probe is outstanding either, so MAIL_PROBE_MISSED never fires, and 48 hours after the last probe came back the
+- * stream is no longer ready: staging and production close the screening. Counted on the platform's log group and
+- * alarmed when each of three five-minute periods has one, so a send that fails once and goes on the next run pages no
+- * one, and a send that keeps failing pages within 15 minutes. The probes go a day apart, so that is about a day before
++ * The probes' hours as the database decides them (D5, D8; review M3), which the tests read from the generated
++ * packages/db/functions: a probe goes daily; a stream is missed once its last proof, the older of its last delivered and
++ * bounced probe, is 26 hours old (operator_mail_streams().probe_missed), and the platform then logs MAIL_PROBE_MISSED on
++ * every minute's run until a probe comes back, so the alarm stays raised; the screening is ready only while both came
++ * back within 48 hours (screening_mail_status()). A daily probe sent and lost pages 2 hours after it went, 22 before
+  * readiness lapses.
+  */
++export const MAIL_PROBE_HOURS = { daily: 24, missed: 26, ready: 48 } as const;
++
++/**
++ * A probe the platform could not send (review M3). While a stream's probe is due, each minute's mail_events run tries
++ * it and, when the send throws, logs MAIL_PROBE_UNSENT and tries again on the next run. Nothing then comes back:
++ * MAIL_PROBE_MISSED follows 26 hours after the last probe did, and at 48 the stream is no longer ready (staging and
++ * production close the screening). This alarm names the cause sooner: counted on the platform's log group and alarmed
++ * when each of three five-minute periods has one, so a send that fails once and goes on the next run pages no one, and
++ * a send that keeps failing pages within 15 minutes, about a day before readiness lapses.
++ */
+ export const MAIL_PROBE_UNSENT_ALARM = { code: 'MAIL_PROBE_UNSENT', periodSeconds: 300, periods: 3 } as const;
+ 
+ /** The web's code when a day's address validations reach the cap (Q1 (g)): counted and alarmed at one in a day. */
+diff --git a/infra/test/mail-streams.test.ts b/infra/test/mail-streams.test.ts
+index 0a99bc37..0b5cfe2d 100644
+--- a/infra/test/mail-streams.test.ts
++++ b/infra/test/mail-streams.test.ts
+@@ -14,6 +14,7 @@ import {
+   MAIL_NAMESPACE,
+   MAIL_PLATFORM_ALARM_CODES,
+   MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
++  MAIL_PROBE_HOURS,
+   MAIL_PROBE_UNSENT_ALARM,
+   MAIL_SIMULATOR_RECIPIENTS,
+   MAIL_STREAMS,
+@@ -375,6 +376,56 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
+     expect(unsent.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
+   });
+ 
++  it('pages a stream with no probe back in 26 hours from the database\'s rule to the operator\'s topic, 22 hours before its readiness lapses (review M3)', () => {
++    const { daily, missed, ready } = MAIL_PROBE_HOURS;
++    // The database decides it (the generated function files, which CI holds equal to a migrated database): missed is the
++    // older of the last delivered and bounced probe since the last resume, a missing one counted from its probe's send,
++    // 26 hours old while the stream is open and confirmed; ready is both back within 48 hours; a probe goes daily.
++    const streams = source('packages/db/functions/operator_mail_streams.sql');
++    expect(streams).toContain(`coalesce(p.proved_at <= now() - interval '${String(missed)} hours', false)`);
++    expect(streams).toContain("least(CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at ELSE s.probe_sent_at END,");
++    expect(streams).toContain("CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at ELSE s.probe_sent_at END) AS proved_at");
++    expect(streams).toContain(`(NOT o.outstanding AND s.probe_sent_at <= now() - interval '${String(daily)} hours')`);
++    expect(source('packages/db/functions/screening_mail_status.sql').split(`now() - interval '${String(ready)} hours'`)).toHaveLength(3);
++    // The platform logs the code on every run while the stream is missed, before it asks whether a probe is due, so the
++    // alarm stays raised until one comes back, sent and lost or never sent.
++    expect(source('apps/worker/src/mail/streams.ts')).toContain("probeMissed: 'MAIL_PROBE_MISSED'");
++    const job = source('apps/worker/src/platform/mail-events.ts');
++    expect(job).toContain('error_code: MAIL_LOG_CODES.probeMissed');
++    expect(job.indexOf('if (row.probe_missed) {')).toBeGreaterThan(0);
++    expect(job.indexOf('if (row.probe_missed) {')).toBeLessThan(job.indexOf('if (!row.probe_due) {'));
++    // Counted on the platform's log group (the platform task's own: compute.test.ts) and alarmed at one in five minutes.
++    const metricName = mailCodeMetricName('MAIL_PROBE_MISSED');
++    expect(metricName).toBe('MailProbeMissed');
++    const filter = resourcesOf(template, 'AWS::Logs::MetricFilter').find(([, candidate]) => JSON.stringify(propertiesOf(candidate).MetricTransformations).includes(`"MetricName":"${metricName}"`));
++    expect(filter).toBeDefined();
++    expect(propertiesOf((filter as [string, CfnResource])[1])).toEqual({
++      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.platformLogGroup)),
++      FilterPattern: '{ $.error_code = "MAIL_PROBE_MISSED" }',
++      MetricTransformations: [{ MetricNamespace: MAIL_NAMESPACE, MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
++    });
++    const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.mailCodeAlarms.MAIL_PROBE_MISSED)));
++    expect(alarm).toMatchObject({
++      Namespace: MAIL_NAMESPACE,
++      MetricName: metricName,
++      Statistic: 'Sum',
++      Period: MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
++      EvaluationPeriods: 1,
++      Threshold: 1,
++      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
++      TreatMissingData: 'notBreaching',
++      AlarmActions: [ref(logicalIdOf(stack, stack.monitoring.operatorTopic))],
++    });
++    expect(alarm.Dimensions).toBeUndefined();
++    expect(alarm.AlarmDescription).toContain(`in ${String(missed)} hours`);
++    expect(alarm.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
++    // A daily probe sent and lost pages 2 hours after it went and, with the alarm's period, well before readiness lapses.
++    expect(MAIL_PROBE_HOURS).toEqual({ daily: 24, missed: 26, ready: 48 });
++    expect(missed - daily).toBe(2);
++    expect(missed * 3600 + MAIL_PLATFORM_ALARM_PERIOD_SECONDS).toBeLessThan(ready * 3600);
++    expect(ready - missed).toBe(22);
++  });
++
+   it('has seventeen mail alarms', () => {
+     const mail = resourcesOf(template, 'AWS::CloudWatch::Alarm').filter(([, alarm]) => {
+       const properties = propertiesOf(alarm);
+diff --git a/packages/db/functions/operator_mail_streams.sql b/packages/db/functions/operator_mail_streams.sql
+index 4168d35f..1f877781 100644
+--- a/packages/db/functions/operator_mail_streams.sql
++++ b/packages/db/functions/operator_mail_streams.sql
+@@ -2,7 +2,7 @@
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+ -- operator_mail_streams()
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: de3024995afee946
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: bd8730bedcaddfb4
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+ CREATE OR REPLACE FUNCTION public.operator_mail_streams()
+@@ -16,10 +16,12 @@ AS $function$
             AND (s.probe_sent_at IS NULL
                  OR (NOT o.outstanding AND s.probe_sent_at <= now() - interval '24 hours')
                  OR (o.outstanding AND s.probe_sent_at <= now() - interval '26 hours')),
@@ -159,101 +474,5 @@ index 64017df8..18ec43e3 100644
 +         LATERAL (SELECT least(CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at ELSE s.probe_sent_at END,
 +                               CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at ELSE s.probe_sent_at END) AS proved_at) p
     ORDER BY s.stream
- $$;
- 
-diff --git a/packages/db/src/mail.db.test.ts b/packages/db/src/mail.db.test.ts
-index 38fa8fff..9a4c6809 100644
---- a/packages/db/src/mail.db.test.ts
-+++ b/packages/db/src/mail.db.test.ts
-@@ -16,6 +16,8 @@ import {
-   MAIL_CUTOFF,
-   MAIL_KINDS,
-   MAIL_PAUSE_REASONS,
-+  MAIL_PROBE_MISSED_HOURS,
-+  MAIL_PROBE_READY_HOURS,
-   MAIL_REFUSAL_REASONS,
-   MAIL_SEND_DAYS,
-   MAIL_STATES,
-@@ -782,7 +784,7 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
-     expect(await code(as(OPERATOR_ROLE, "SELECT operator_mail_stream_confirmed('elsewhere', true)"))).toBe('23514');
-   });
- 
--  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, and the probes go daily or after 26 hours unanswered', async () => {
-+  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, the probes go daily or after 26 hours unanswered, and a stream is missed 26 hours after its last proof', async () => {
-     await resetScreening();
-     const status = async () => (await as<{ paused: boolean; ready: boolean }>(APP_ROLE, 'SELECT * FROM screening_mail_status()'))[0];
-     const probe = (event: string) =>
-@@ -805,16 +807,26 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
-     expect(await status()).toEqual({ paused: false, ready: true });
-     await as(OPERATOR_ROLE, 'SELECT operator_mail_account_signal($1, $2)', ['enforcement_not_healthy', request()]);
-     expect(await status()).toEqual({ paused: true, ready: false });
--    // The schedule: daily once the last came back; again, and missed, 26 hours after one that did not.
-+    // The schedule: daily once the last came back; again 26 hours after one that did not. Missed (review M3) reads the
-+    // stream's last proof, the older of its delivered and bounced probe, 26 hours old, whether a probe went since or not:
-+    // the daily probe goes at 24 hours, so one sent and lost is missed 2 hours later, 22 before readiness lapses at 48.
-     await resetScreening();
-     const due = async () => (await as<{ stream: string; probe_due: boolean; probe_missed: boolean }>(OPERATOR_ROLE, 'SELECT stream, probe_due, probe_missed FROM operator_mail_streams()')).find((row) => row.stream === 'screening');
-     expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: false });
-+    expect(MAIL_PROBE_READY_HOURS - MAIL_PROBE_MISSED_HOURS).toBe(22);
-     for (const [sent, returned, wanted] of [
-       ['23 hours', '22 hours', { probe_due: false, probe_missed: false }],
-       ['25 hours', '24 hours', { probe_due: true, probe_missed: false }],
-       ['25 hours', null, { probe_due: false, probe_missed: false }],
-       ['27 hours', null, { probe_due: true, probe_missed: true }],
-       ['27 hours', '28 hours', { probe_due: true, probe_missed: true }],
-+      // Sent 24 hours after the last came back, and lost.
-+      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS)} hours 1 minute`, { probe_due: false, probe_missed: true }],
-+      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS - 1)} hours 59 minutes`, { probe_due: false, probe_missed: false }],
-+      ['3 hours', '27 hours', { probe_due: false, probe_missed: true }],
-+      // None sent since the last came back (every send refused).
-+      ['28 hours', '27 hours', { probe_due: true, probe_missed: true }],
-+      ['26 hours', '25 hours', { probe_due: true, probe_missed: false }],
-     ] as const) {
-       await owner.query(
-         "UPDATE mail_stream SET probe_sent_at = now() - $1::interval, probe_delivered_at = now() - $2::interval, probe_bounced_at = now() - $2::interval WHERE stream = 'screening'",
-@@ -822,6 +834,29 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
-       );
-       expect(await due(), `${sent} ${String(returned)}`).toEqual({ stream: 'screening', ...wanted });
-     }
-+    // The older of the two proofs decides. A proof from before the last resume does not count: one not back since the
-+    // resume counts from the probe sent after it, and with none sent yet the stream is due and not missed.
-+    for (const [sent, delivered, bounced, resumed, wanted] of [
-+      ['2 hours', '1 hour', '27 hours', null, { probe_due: false, probe_missed: true }],
-+      ['2 hours', '27 hours', '1 hour', null, { probe_due: false, probe_missed: true }],
-+      [null, '30 hours', '30 hours', '1 minute', { probe_due: true, probe_missed: false }],
-+      ['1 minute', '30 hours', '30 hours', '2 minutes', { probe_due: false, probe_missed: false }],
-+      ['27 hours', '30 hours', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
-+      ['27 hours', '26 hours 59 minutes', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
-+      ['2 hours', '1 hour', '30 hours', '28 hours', { probe_due: false, probe_missed: false }],
-+    ] as const) {
-+      await owner.query(
-+        `UPDATE mail_stream SET probe_sent_at = now() - $1::interval, probe_delivered_at = now() - $2::interval, probe_bounced_at = now() - $3::interval,
-+                                resumed_at = now() - $4::interval WHERE stream = 'screening'`,
-+        [sent, delivered, bounced, resumed],
-+      );
-+      expect(await due(), `${String(sent)} ${delivered} ${bounced} ${String(resumed)}`).toEqual({ stream: 'screening', ...wanted });
-+    }
-+    // Never while unconfirmed (a paused stream always is): a stream not meant to be sending is not missed.
-+    await owner.query("UPDATE mail_stream SET resumed_at = NULL, probe_sent_at = now() - interval '28 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
-+    expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: true });
-+    await owner.query("UPDATE mail_stream SET ses_enabled_confirmed_at = NULL WHERE stream = 'screening'");
-+    expect(await due()).toEqual({ stream: 'screening', probe_due: false, probe_missed: false });
-   });
- });
- 
-diff --git a/packages/db/src/schema/operations.ts b/packages/db/src/schema/operations.ts
-index 76315894..404e238f 100644
---- a/packages/db/src/schema/operations.ts
-+++ b/packages/db/src/schema/operations.ts
-@@ -194,7 +194,10 @@ export const SCREENING_BOUNCE_MARK_KINDS = ['client', 'account'] as const;
- export type ScreeningBounceMarkKind = (typeof SCREENING_BOUNCE_MARK_KINDS)[number];
- /** The screening is ready once its delivered and bounced probes came back within this many hours and since the last resume. */
- export const MAIL_PROBE_READY_HOURS = 48;
--/** A probe goes daily, and is missed when it has not come back in 26 hours. */
-+/**
-+ * A probe goes daily; a stream is missed when its last proof, the older of its last delivered and bounced probe since the
-+ * last resume, is this many hours old (review M3): 2 hours after a daily probe sent and lost, 22 before readiness lapses.
-+ */
- export const MAIL_PROBE_MISSED_HOURS = 26;
- 
- /** The pepper of the keyed hash: 32 bytes as hex, made at the migration, read only by mail_recipient_sha256(). */
+ $function$;
+ ALTER FUNCTION public.operator_mail_streams() OWNER TO tp_owner;
