@@ -14,5 +14,7 @@
 ## Log
 - 14:34 UTC: setup OK; worktree and install done; reproducing each.
 
+- 15:00 to 15:03 UTC: all three reproduced (1: notify 7.4 s on one starved CPU, timed out at 5 s; 2: changed_meanwhile 0 in 1 of 40 seeds, median 4; 3: seed 2019154346 fails on 97140). Fixes in the worktree (uncommitted): workflows.test.ts 30 s file timeout; rerun property `examples:` EVERY_OUTCOME plus a `pair` step (changed_meanwhile median 45, every outcome min 28); verifier fc.pre leaves out codes. Sweep (read-only agent): two more proved by injection and fixed (verifier "any other digits" codes in read alphabets; denial-letter names "Patient"/"Name"). Design `designs/lane-b-test-flakes.md`; design review workflow wf_ba275191-0a9 running.
+
 ## Next step
-Reproduce each flake under the lock, then design (one reviewer).
+Read the design review, apply it, commit on co-001/test-flakes, push, open the draft PR.
