@@ -1,3 +1,270 @@
+diff --git a/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx b/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
+index b2d95245..04792ded 100644
+--- a/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
++++ b/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
+@@ -4,10 +4,11 @@ import type { Metadata } from 'next';
+ import { ActionForm } from '../../../../../components/action-form';
+ import { Field, SelectField } from '../../../../../components/field';
+ import { FormKeys } from '../../../../../components/form-keys';
+-import { roleName, utcDate } from '../../../../../components/format';
++import { roleName } from '../../../../../components/format';
+ import { AppShell, Forbidden } from '../../../../../components/shell';
+ import { loadPage } from '../../../../../lib/http/next';
+-import { usersSettingsPage } from '../../../../../lib/routes/settings';
++import { InvitationStateText } from '../../../../../components/settings/invitations';
++import { INVITATION_HELD_BACK, type InvitationView, usersSettingsPage } from '../../../../../lib/routes/settings';
+ import { changeRole, endMembership, inviteUser, resendInvitation } from './actions';
+ 
+ export const metadata: Metadata = { title: 'Users and roles' };
+@@ -116,56 +117,64 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
+           {invitations.length === 0 ? (
+             <p className="text-sm text-muted-foreground">No invitations yet.</p>
+           ) : (
+-            <table className="w-full text-left text-sm" aria-label="Invitations">
+-              <thead className="text-muted-foreground">
+-                <tr>
+-                  <th className="py-1 pr-3 font-medium">Email</th>
+-                  <th className="py-1 pr-3 font-medium">Role</th>
+-                  <th className="py-1 pr-3 font-medium">State</th>
+-                  <th className="py-1 font-medium" />
+-                </tr>
+-              </thead>
+-              <tbody>
++            <>
++              {/* Below the sm breakpoint each invitation is a list item, so the page never scrolls sideways (WCAG 1.4.10). */}
++              <ul className="flex flex-col sm:hidden" aria-label="Invitations">
+                 {invitations.map((invitation) => (
+-                  <tr
+-                    key={invitation.id}
+-                    className="border-t"
+-                    data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.undeliveredAt !== null ? 'undelivered' : invitation.expired ? 'expired' : 'pending'}
+-                  >
+-                    <td className="py-1 pr-3">{invitation.email}</td>
+-                    <td className="py-1 pr-3">{roleName(invitation.role)}</td>
+-                    <td className="py-1 pr-3">
+-                      {/*
+-                        An invitation email reported undelivered (docs/adr/0065, D10): the administrator checks the address and
+-                        invites again. One reported as spam was delivered, and SES now holds the address back from the
+-                        transactional stream, so the person is asked to find it, not sent another (the review of 2026-10-23).
+-                      */}
+-                      {invitation.acceptedAt !== null
+-                        ? `accepted ${utcDate(invitation.acceptedAt)}`
+-                        : invitation.undeliveredAt !== null
+-                          ? invitation.undeliveredReason === 'complained'
+-                            ? `Reported as spam ${utcDate(invitation.undeliveredAt)}: ask the person to find it in their spam folder; one sent again will not reach them`
+-                            : `Not delivered ${utcDate(invitation.undeliveredAt)}: check the address, then invite again`
+-                          : invitation.expired
+-                            ? 'expired'
+-                            : `open until ${utcDate(invitation.expiresAt)}`}
+-                    </td>
+-                    <td className="py-1">
+-                      {invitation.acceptedAt === null ? (
+-                        <ActionForm action={resendInvitation} submit="Send again" variant="outline" className="flex flex-col gap-1">
+-                          <FormKeys />
+-                          <input type="hidden" name="organizationId" value={organization.id} />
+-                          <input type="hidden" name="invitationId" value={invitation.id} />
+-                        </ActionForm>
+-                      ) : null}
+-                    </td>
+-                  </tr>
++                  <li key={invitation.id} className="flex flex-col gap-1 border-t py-2 text-sm" data-invitation={invitationState(invitation)}>
++                    <span className="break-all font-medium">{invitation.email}</span>
++                    <span className="text-muted-foreground">{roleName(invitation.role)}</span>
++                    <InvitationStateText invitation={invitation} />
++                    <ResendForm invitation={invitation} organizationId={organization.id} />
++                  </li>
+                 ))}
+-              </tbody>
+-            </table>
++              </ul>
++              <table className="hidden w-full text-left text-sm sm:table" aria-label="Invitations">
++                <thead className="text-muted-foreground">
++                  <tr>
++                    <th className="py-1 pr-3 font-medium">Email</th>
++                    <th className="py-1 pr-3 font-medium">Role</th>
++                    <th className="py-1 pr-3 font-medium">State</th>
++                    <th className="py-1 font-medium" />
++                  </tr>
++                </thead>
++                <tbody>
++                  {invitations.map((invitation) => (
++                    <tr key={invitation.id} className="border-t" data-invitation={invitationState(invitation)}>
++                      <td className="py-1 pr-3">{invitation.email}</td>
++                      <td className="py-1 pr-3">{roleName(invitation.role)}</td>
++                      <td className="py-1 pr-3">
++                        <InvitationStateText invitation={invitation} />
++                      </td>
++                      <td className="py-1">
++                        <ResendForm invitation={invitation} organizationId={organization.id} />
++                      </td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            </>
+           )}
+         </CardContent>
+       </Card>
+     </AppShell>
+   );
+ }
++
++function invitationState(invitation: InvitationView): string {
++  return invitation.acceptedAt !== null ? 'accepted' : invitation.undeliveredAt !== null ? 'undelivered' : invitation.expired ? 'expired' : 'pending';
++}
++
++/** Send again, for an invitation not accepted, unless SES would hold the email back (INVITATION_HELD_BACK). */
++function ResendForm({ invitation, organizationId }: { readonly invitation: InvitationView; readonly organizationId: string }) {
++  if (invitation.acceptedAt !== null || (invitation.undeliveredReason !== null && INVITATION_HELD_BACK.includes(invitation.undeliveredReason))) {
++    return null;
++  }
++  return (
++    <ActionForm action={resendInvitation} submit="Send again" variant="outline" className="flex flex-col gap-1">
++      <FormKeys />
++      <input type="hidden" name="organizationId" value={organizationId} />
++      <input type="hidden" name="invitationId" value={invitation.id} />
++    </ActionForm>
++  );
++}
+diff --git a/apps/web/src/lib/routes/mail-routes.db.test.ts b/apps/web/src/lib/routes/mail-routes.db.test.ts
+index 086b8267..61799169 100644
+--- a/apps/web/src/lib/routes/mail-routes.db.test.ts
++++ b/apps/web/src/lib/routes/mail-routes.db.test.ts
+@@ -17,7 +17,7 @@ import { inviteMember, supportPage } from './console';
+ import { consoleMailPage, pauseMailStream, resumeMailStream } from './console-mail';
+ import { notificationsPage } from './monitoring';
+ import { type NoticeDelivery, noticeStatus, practiceHome, supportAccessPage } from './practice';
+-import { usersSettingsPage } from './settings';
++import { INVITATION_RESEND_HELD, resendInvitationAction, usersSettingsPage } from './settings';
+ 
+ /**
+  * What the pages read of the mail path (audit #76; docs/adr/0065, D6 to D10; the founder's Q9 and Q12 of 2026-10-21;
+@@ -262,9 +262,31 @@ describe('an invitation whose email was not delivered (SEC-19)', () => {
+     // Reported as spam: it reached the person, so the page says so rather than "Not delivered" (the review of 2026-10-23).
+     await owner.query("UPDATE invitation SET undelivered_reason = 'complained' WHERE id = $1", [invitationId]);
+     expect((await view())?.undeliveredReason).toBe('complained');
+-    for (const reason of ['suppressed', 'rejected']) {
+-      await owner.query('UPDATE invitation SET undelivered_reason = $2 WHERE id = $1', [invitationId, reason]);
+-      expect((await view())?.undeliveredReason, reason).toBe('undelivered');
++    // Held back by SES's suppression list (an earlier bounce or spam report, M1): its own reason, since checking the
++    // address and inviting again would be held back the same way (the review of 2026-10-27); rejected reads undelivered.
++    await owner.query("UPDATE invitation SET undelivered_reason = 'suppressed' WHERE id = $1", [invitationId]);
++    expect((await view())?.undeliveredReason).toBe('suppressed');
++    await owner.query("UPDATE invitation SET undelivered_reason = 'rejected' WHERE id = $1", [invitationId]);
++    expect((await view())?.undeliveredReason).toBe('undelivered');
++    // The administrator is not offered to send again an email SES would hold back, and a resend posted anyway is refused
++    // and sends nothing: Cognito's resend would void the temporary password of the one reported as spam. Bounced and
++    // rejected ones may be sent again.
++    const resend = () => run(resendInvitationAction, token, { invitationId }, { organizationId: world.organizationId });
++    for (const [reason, refused] of [
++      ['complained', true],
++      ['suppressed', true],
++      ['bounced', false],
++      ['rejected', false],
++    ] as const) {
++      await owner.query('UPDATE invitation SET undelivered_at = sent_at, undelivered_reason = $2 WHERE id = $1', [invitationId, reason]);
++      const before = (await owner.query<{ sends: number }>('SELECT sends FROM invitation WHERE id = $1', [invitationId])).rows[0]?.sends;
++      const outcome = await resend();
++      if (refused) {
++        expect(outcome, reason).toMatchObject({ status: 'invalid', issues: [{ field: 'invitationId', message: INVITATION_RESEND_HELD }] });
++        expect((await owner.query<{ sends: number }>('SELECT sends FROM invitation WHERE id = $1', [invitationId])).rows[0]?.sends, reason).toBe(before);
++      } else {
++        expect(outcome.status, reason).toBe('ok');
++      }
+     }
+     // A late report of an email a resend replaced flags nothing.
+     await owner.query("UPDATE invitation SET undelivered_at = sent_at - interval '10 minutes' WHERE id = $1", [invitationId]);
+diff --git a/apps/web/src/lib/routes/settings.ts b/apps/web/src/lib/routes/settings.ts
+index e35a0658..70451aff 100644
+--- a/apps/web/src/lib/routes/settings.ts
++++ b/apps/web/src/lib/routes/settings.ts
+@@ -876,13 +876,28 @@ export interface InvitationView {
+    */
+   readonly undeliveredAt: Date | null;
+   /**
+-   * Why, beside undeliveredAt: 'complained' when the email reached the person and was reported as spam (SES then holds
+-   * the address back from the transactional stream, so one sent again does not reach them), else 'undelivered'
+-   * (bounced, held back by SES's suppression list, or rejected); null with undeliveredAt.
++   * Why, beside undeliveredAt: 'complained' when the email reached the person and was reported as spam, and 'suppressed'
++   * when SES held it back with the account's suppression list (an earlier bounce or spam report); either way SES holds
++   * back another one to the address until PaidWhole's support releases it (docs/runbooks/deliverability.md, 3.3 and 3.4;
++   * the review of 2026-10-27), so the administrator is not offered to send it again. 'undelivered' when it bounced or
++   * was rejected, where the address is to be checked; null with undeliveredAt.
+    */
+-  readonly undeliveredReason: 'complained' | 'undelivered' | null;
++  readonly undeliveredReason: InvitationUndeliveredView | null;
+ }
+ 
++/** An undelivered invitation's reason as the users page words it (InvitationView.undeliveredReason). */
++export type InvitationUndeliveredView = 'complained' | 'suppressed' | 'undelivered';
++
++/** The reasons SES holds another invitation email back for until support releases the address: no resend is offered. */
++export const INVITATION_HELD_BACK: readonly InvitationUndeliveredView[] = ['complained', 'suppressed'];
++
++function undeliveredView(reason: string | null): InvitationUndeliveredView {
++  return reason === 'complained' || reason === 'suppressed' ? reason : 'undelivered';
++}
++
++/** The refusal of a resend the mail service would hold back (the review of 2026-10-27). */
++export const INVITATION_RESEND_HELD = 'our mail service is holding this address back: ask PaidWhole support to release it and send the invitation again';
++
+ const organizationParams = z.object({ organizationId: opaqueId, notice: optionalText(z.enum(['invited', 'role_changed', 'ended', 'resent'])).catch(undefined) });
+ 
+ async function organizationKind(client: Parameters<typeof practiceOrganization>[0], organizationId: string): Promise<'group' | 'firm' | 'internal'> {
+@@ -947,7 +962,7 @@ export const usersSettingsPage = organizationRoute({
+           acceptedAt: row.accepted_at,
+           expired: row.expired,
+           undeliveredAt: row.undelivered_at,
+-          undeliveredReason: row.undelivered_at === null ? null : row.undelivered_reason === 'complained' ? 'complained' : 'undelivered',
++          undeliveredReason: row.undelivered_at === null ? null : undeliveredView(row.undelivered_reason),
+         }),
+       ),
+       notice: params.notice ?? null,
+@@ -1088,12 +1103,23 @@ export const resendInvitationAction = organizationRoute({
+   input: z.object({ invitationId: opaqueId }),
+   audit: { action: 'invitation_resent', objectType: 'invitation' },
+   handle: async ({ scope, organizationId, input, services }): Promise<MutationResult> => {
++    // The flag on the email last sent, as the page reads it: one reported as spam or held back by SES's suppression list
++    // is not sent again from here, since SES would hold the new one back too and Cognito's resend voids the temporary
++    // password of the one the person may still find (the review of 2026-10-27); PaidWhole's support releases the address
++    // and sends it from the console (docs/runbooks/deliverability.md, 3.4).
+     const invitation = (
+-      await scope.client.query<{ email: string }>('SELECT u.email FROM invitation i JOIN "user" u ON u.id = i.user_id WHERE i.id = $1 AND i.organization_id = $2', [input.invitationId, organizationId])
++      await scope.client.query<{ email: string; held: string | null }>(
++        `SELECT u.email, CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_reason END AS held
++           FROM invitation i JOIN "user" u ON u.id = i.user_id WHERE i.id = $1 AND i.organization_id = $2`,
++        [input.invitationId, organizationId],
++      )
+     ).rows[0];
+     if (invitation === undefined) {
+       throw new NotFoundError();
+     }
++    if (invitation.held !== null && INVITATION_HELD_BACK.includes(undeliveredView(invitation.held))) {
++      throw new InputError([{ field: 'invitationId', message: INVITATION_RESEND_HELD }]);
++    }
+     if ((await scope.client.query<{ resent: boolean }>('SELECT resend_invitation($1) AS resent', [input.invitationId])).rows[0]?.resent !== true) {
+       throw new InputError([{ field: 'invitationId', message: 'this invitation was accepted, or its membership has ended' }]);
+     }
+diff --git a/apps/web/src/lib/screening/rate.ts b/apps/web/src/lib/screening/rate.ts
+index 5c442153..1659380a 100644
+--- a/apps/web/src/lib/screening/rate.ts
++++ b/apps/web/src/lib/screening/rate.ts
+@@ -6,10 +6,11 @@
+  * only as the rate limiter's keyed hash, never in clear.
+  *
+  * A mailbox is counted once however its address is spelled, by the rule the screening's refusal list keys it by
+- * (canonicalMailbox(), @tp/db; mail_recipient_canonical() in SQL): NFKC, ASCII white space and case, a domain's
+- * trailing dots, googlemail.com read as gmail.com, a "+tag" dropped, and at gmail.com the local part's dots dropped
+- * (Gmail delivers every one of those spellings to one inbox). The address stored and mailed to is the one typed; only
+- * the count's key is canonical.
++ * (canonicalMailbox(), @tp/db; mail_recipient_canonical() in SQL): ASCII white space and case, a domain's trailing
++ * dots, googlemail.com read as gmail.com and me.com and mac.com as icloud.com, a "+tag" dropped, and at gmail.com the
++ * local part's dots dropped (each provider delivers every one of those spellings to one inbox); an address with any
++ * character outside ASCII, which the form refuses, is counted as read. The address stored and mailed to is the one
++ * typed; only the count's key is canonical.
+  */
+ 
+ import { canonicalMailbox, canonicalMailboxParts } from '@tp/db/runtime';
 diff --git a/apps/web/src/lib/screening/routes.db.test.ts b/apps/web/src/lib/screening/routes.db.test.ts
 index f4273b98..22277c08 100644
 --- a/apps/web/src/lib/screening/routes.db.test.ts
@@ -98,6 +365,31 @@ index f4273b98..22277c08 100644
      // Another client is not held by this one's budget.
      expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
      expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
+diff --git a/apps/web/src/lib/screening/routes.ts b/apps/web/src/lib/screening/routes.ts
+index 277500f1..b3d8bba6 100644
+--- a/apps/web/src/lib/screening/routes.ts
++++ b/apps/web/src/lib/screening/routes.ts
+@@ -625,12 +625,15 @@ export const screeningSubmit = publicRoute({
+     if (hint.message !== null && !kept) {
+       throw new InputError([{ field: 'contactEmail', message: hint.message }]);
+     }
+-    // What the database would refuse for the mail, in its order (closed, paused, the submitter's bounce budget, then the
+-    // address on the refusal list), before any check that is asked or paid for (review S4): the day's validations are
+-    // never spent on an upload the database refuses for its mail, and a client or an account past its budget gets the
+-    // budget's sentence whatever the address (S1). submit_screening()'s triggers stay the backstop.
++    // What the database would refuse for the submitter, in its order (closed, paused, the submitter's bounce budget),
++    // before any check that is asked or paid for (review S4): the day's validations are never spent on an upload the
++    // database refuses for its mail, and a client or an account past its budget gets the budget's sentence whatever the
++    // address (S1). The address's refusal list is not asked here: submit_screening()'s run trigger answers for it after
++    // the address checks and the ZIP, row and band checks, so a ZIP the release cannot price or a mailbox SES cannot
++    // confirm is answered alike for a listed and an unlisted address, and nothing tells the list to a client that sends
++    // no screening (the review of 2026-10-27). The triggers stay the backstop.
+     const refusal = await withClient(services.pool, async (client) =>
+-      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [prospect.contactEmail, rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
++      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2) AS refusal', [rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
+     );
+     if (refusal !== null) {
+       throw new InputError([submitIssue(refusal)]);
 diff --git a/apps/worker/src/mail/events.test.ts b/apps/worker/src/mail/events.test.ts
 index 63709a82..8ec69807 100644
 --- a/apps/worker/src/mail/events.test.ts
@@ -128,8 +420,29 @@ index 63709a82..8ec69807 100644
      });
      expect(MAIL_BOUNCE_SUBTYPES).toContain('on_account_suppression_list');
      // The same on every stream: a support notice's, a dunning notice's and Cognito's.
+diff --git a/apps/worker/src/mail/events.ts b/apps/worker/src/mail/events.ts
+index 365827f0..1301ac41 100644
+--- a/apps/worker/src/mail/events.ts
++++ b/apps/worker/src/mail/events.ts
+@@ -81,6 +81,8 @@ export interface MailEventRecord {
+   readonly messageId: string;
+   readonly stream: MailStream;
+   readonly event: MailEvent;
++  /** SES's own event type (detail.eventType, one this job reads): a Complaint SES raised for a suppressed address is recorded as its bounce. */
++  readonly sesEventType: string;
+   /** When SES accepted the message (mail.timestamp). */
+   readonly mailAt: Date;
+   /** When the event happened, where SES says. */
+@@ -205,6 +207,7 @@ function sesEvent(parsed: z.infer<typeof SES_EVENT>, prefix: string): MailQueueE
+       messageId: detail.mail.messageId,
+       stream,
+       event: recorded,
++      sesEventType: detail.eventType,
+       mailAt: new Date(detail.mail.timestamp),
+       eventAt,
+       recipient,
 diff --git a/apps/worker/src/platform/mail-events.db.test.ts b/apps/worker/src/platform/mail-events.db.test.ts
-index 0566acc8..74cc3d13 100644
+index 0566acc8..e6eb282c 100644
 --- a/apps/worker/src/platform/mail-events.db.test.ts
 +++ b/apps/worker/src/platform/mail-events.db.test.ts
 @@ -60,7 +60,7 @@ beforeEach(async () => {
@@ -234,7 +547,7 @@ index 0566acc8..74cc3d13 100644
 +    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: [] });
 +  });
 +
-+  it('logs each probe event it records by its message ID, stream, SES event type, state and bounce subtype, and no address, so a staging check reads its outcome (the review of 2026-10-27)', async () => {
++  it('logs each probe event it records by its message ID, stream, SES event type, state and bounce subtype codes, and no address, so a staging check reads its outcome (the review of 2026-10-27)', async () => {
 +    const queue = new MemoryQueue();
 +    // A probe the platform sent, delivered; and one sent by hand through the notices set to an address on the account's
 +    // suppression list for an earlier complaint, which SES answers with a Complaint of subtype OnAccountSuppressionList.
@@ -251,17 +564,180 @@ index 0566acc8..74cc3d13 100644
 +    await run({ source: queue }, logger);
 +    const probes = lines.filter((line) => line.msg === 'mail probe event recorded');
 +    expect(probes).toEqual([
-+      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream: 'transactional', ses_event_type: 'Send', mail_state: 'sent', bounce_subtype: null }),
-+      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream: 'transactional', ses_event_type: 'Delivery', mail_state: 'delivered', bounce_subtype: null }),
-+      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream: 'notices', ses_event_type: 'Send', mail_state: 'sent', bounce_subtype: null }),
-+      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream: 'notices', ses_event_type: 'Complaint', mail_state: 'suppressed', bounce_subtype: 'on_account_suppression_list' }),
++      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream_code: 'transactional', ses_event_type: 'Send', mail_state_code: 'sent', bounce_subtype_code: null }),
++      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream_code: 'transactional', ses_event_type: 'Delivery', mail_state_code: 'delivered', bounce_subtype_code: null }),
++      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream_code: 'notices', ses_event_type: 'Send', mail_state_code: 'sent', bounce_subtype_code: null }),
++      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream_code: 'notices', ses_event_type: 'Complaint', mail_state_code: 'suppressed', bounce_subtype_code: 'on_account_suppression_list' }),
 +    ]);
 +    expect(JSON.stringify(lines)).not.toMatch(/@|simulator|synthetic/);
    });
  
    it('reports a break-glass notice not delivered to an administrator once, by the grant’s ID, from its events in any order (SEC-19)', async () => {
+diff --git a/apps/worker/src/platform/mail-events.ts b/apps/worker/src/platform/mail-events.ts
+index 79c2c94e..adf9b2ea 100644
+--- a/apps/worker/src/platform/mail-events.ts
++++ b/apps/worker/src/platform/mail-events.ts
+@@ -21,12 +21,16 @@ import { type NoticeClient, asOperator } from './support-notices';
+  *    included, keeps a paused set sending), enabled while it is open; the stream is confirmed sending only once SES
+  *    reads the set enabled again, and the screening's runs are claimed only then (screening_run_mail_gate). Only the
+  *    screening set is ever disabled: the transactional and notices streams never pause.
+- * 2. Probes, once the stack's identities are verified (phase 2): a stream due one (daily, at once after a resume, again
+- *    26 hours after one that has not come back) sends one message to SES's simulator's success address and one to its
+- *    bounce address, through the stream's set, and nothing else. A stream whose last proof is 26 hours old (the older of
+- *    its last delivered and bounced probe, since the last resume) logs MAIL_PROBE_MISSED on every run until a probe
+- *    comes back, due or not, so a probe sent and lost pages 2 hours after it went and one that cannot be sent pages too,
+- *    each 22 hours before the screening's readiness lapses (review M3).
++ * 2. Probes, once the stack's identities are verified (phase 2): a stream due one (at once after a resume, daily once
++ *    the last came back, and hourly while it is missed) sends one message to SES's simulator's success address and one
++ *    to its bounce address, through the stream's set, and nothing else. A missed stream (operator_mail_streams(): both
++ *    probes back since the last resume and the older 26 hours old, or one not back an hour after the first probe sent
++ *    since then) logs MAIL_PROBE_MISSED on every run until both come back, due or not, so its alarm stays raised: a
++ *    probe sent and lost pages 2 hours after it went and one that cannot be sent pages too, each 22 hours before the
++ *    screening's readiness lapses (review M3), and a resumed stream whose probes do not come back pages an hour after
++ *    they went, however often they go again (the review of 2026-10-27). Each probe event recorded is logged by its SES
++ *    message ID, stream, SES event type, state and bounce subtype (no address: a probe goes to the simulator or to the
++ *    operator's synthetic mailbox), which the staging checks read (docs/runbooks/deliverability.md, section 2).
+  * 3. Drain the queue: up to 10 messages a receive, at most 1,000 or 50 seconds a run. Each SES event is recorded once
+  *    per message and event, in any order (operator_record_mail_event(), by SES's message ID and the state's rank), in a
+  *    transaction scoped to its support notice's practice (its tp_practice tag) or to none; the message is deleted from
+@@ -268,13 +272,13 @@ function logPaused(logger: Logger, reason: MailPauseReason, requestId: string):
+ function logProbeMissed(logger: Logger, stream: MailStream, requestId: string): void {
+   switch (stream) {
+     case 'transactional':
+-      logger.error('transactional mail probe has not come back in 26 hours', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
++      logger.error('transactional mail probe has not come back', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
+       return;
+     case 'notices':
+-      logger.error('notices mail probe has not come back in 26 hours', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
++      logger.error('notices mail probe has not come back', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
+       return;
+     case 'screening':
+-      logger.error('screening mail probe has not come back in 26 hours', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
++      logger.error('screening mail probe has not come back', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
+       return;
+   }
+ }
+@@ -371,8 +375,9 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
+   const probesMissed: MailStream[] = [];
+   if (options.probes) {
+     for (const row of await streams()) {
+-      // Missed is read from the stream's last proof, due or not (review M3): logged on every run while it holds, so its
+-      // alarm stays raised until a probe comes back, whether the last went and was lost or none could be sent.
++      // Missed is read from the stream's proofs since the last resume, due or not (review M3): logged on every run while
++      // it holds, so its alarm stays raised until both come back, whether the last went and was lost, none could be sent,
++      // or a re-send went (the review of 2026-10-27).
+       if (row.probe_missed) {
+         probesMissed.push(row.stream);
+         logProbeMissed(logger, row.stream, requestId);
+@@ -448,6 +453,18 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
+         continue;
+       }
+       recorded += 1;
++      if (entry.record.kind === 'probe') {
++        // A probe's outcome, readable by its message ID (the staging checks of docs/runbooks/deliverability.md, section 2;
++        // the review of 2026-10-27): no address, since a probe goes only to the simulator or the operator's own mailbox.
++        logger.info('mail probe event recorded', {
++          job_id: requestId,
++          ses_message_id: entry.record.messageId,
++          mail_stream_code: entry.record.stream,
++          ses_event_type: entry.record.sesEventType,
++          mail_state_code: row.state,
++          bounce_subtype_code: entry.record.event === 'bounce' ? entry.record.bounceSubtype : null,
++        });
++      }
+       if (row.notice_undelivered !== null) {
+         logger.error('support-access notice not delivered to every administrator', { job_id: requestId, support_grant_id: row.notice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
+       }
+diff --git a/infra/lib/constructs/monitoring.ts b/infra/lib/constructs/monitoring.ts
+index 4b9842a7..7a86ae51 100644
+--- a/infra/lib/constructs/monitoring.ts
++++ b/infra/lib/constructs/monitoring.ts
+@@ -427,7 +427,7 @@ export class Monitoring extends Construct {
+       NOTICE_UNDELIVERED: `A ${props.environmentName} support-access or dunning notice did not reach a recipient: reach the practice or organization another way.`,
+       NOTICE_UNDELIVERABLE: `A ${props.environmentName} support-access or dunning notice had no one to send to: reach the practice or organization another way.`,
+       INVITATION_UNDELIVERED: `A ${props.environmentName} invitation email was not delivered: tell the inviting administrator.`,
+-      MAIL_PROBE_MISSED: `No ${props.environmentName} mail probe of a stream has come back in ${String(MAIL_PROBE_HOURS.missed)} hours, whether the last went and was lost or none could be sent (then MAIL_PROBE_UNSENT too): staging and production close the screening ${String(MAIL_PROBE_HOURS.ready)} hours after the last came back; check the identity, the event destination, the rule, the queue and the job (docs/runbooks/deliverability.md, 3.7).`,
++      MAIL_PROBE_MISSED: `A ${props.environmentName} mail stream's probes have not come back: ${String(MAIL_PROBE_HOURS.missed)} hours after the older of its last delivered and bounced probe, or ${String(MAIL_PROBE_HOURS.firstProof)} hour after the first probe sent since a resume, sent and lost or never sent (then MAIL_PROBE_UNSENT too). It stays raised, and the probes go again hourly, until both come back. Staging and production close the screening ${String(MAIL_PROBE_HOURS.ready)} hours after the last came back, and keep a resumed one closed until both are back; check the identity, the event destination, the rule, the queue and the job (docs/runbooks/deliverability.md, 3.7).`,
+     };
+     const codeAlarms: Partial<Record<MailPlatformAlarmCode, cloudwatch.Alarm>> = {};
+     for (const code of MAIL_PLATFORM_ALARM_CODES) {
+diff --git a/infra/lib/mail.ts b/infra/lib/mail.ts
+index f0d6676c..895f1ba1 100644
+--- a/infra/lib/mail.ts
++++ b/infra/lib/mail.ts
+@@ -98,14 +98,16 @@ export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
+ export const MAIL_PLATFORM_ALARM_PERIOD_SECONDS = 300;
+ 
+ /**
+- * The probes' hours as the database decides them (D5, D8; review M3), which the tests read from the generated
+- * packages/db/functions: a probe goes daily; a stream is missed once its last proof, the older of its last delivered and
+- * bounced probe, is 26 hours old (operator_mail_streams().probe_missed), and the platform then logs MAIL_PROBE_MISSED on
+- * every minute's run until a probe comes back, so the alarm stays raised; the screening is ready only while both came
+- * back within 48 hours (screening_mail_status()). A daily probe sent and lost pages 2 hours after it went, 22 before
+- * readiness lapses.
++ * The probes' hours as the database decides them (D5, D8; review M3 and the review of 2026-10-27), which the tests read
++ * from the generated packages/db/functions: a probe goes daily, and hourly while its stream is missed; a stream is
++ * missed once its last proof, the older of its last delivered and bounced probe since the last resume, is 26 hours old,
++ * or, with one not back since the resume, an hour after the first probe sent since then, which a re-send never moves
++ * (operator_mail_streams().probe_missed); the platform then logs MAIL_PROBE_MISSED on every minute's run until both
++ * come back, so the alarm stays raised; the screening is ready only while both came back within 48 hours
++ * (screening_mail_status()). A daily probe sent and lost pages 2 hours after it went, 22 before readiness lapses; a
++ * resumed stream whose probes do not come back pages an hour after they went.
+  */
+-export const MAIL_PROBE_HOURS = { daily: 24, missed: 26, ready: 48 } as const;
++export const MAIL_PROBE_HOURS = { daily: 24, firstProof: 1, missed: 26, ready: 48 } as const;
+ 
+ /**
+  * A probe the platform could not send (review M3). While a stream's probe is due, each minute's mail_events run tries
+diff --git a/infra/test/mail-streams.test.ts b/infra/test/mail-streams.test.ts
+index 0b5cfe2d..9eef59ee 100644
+--- a/infra/test/mail-streams.test.ts
++++ b/infra/test/mail-streams.test.ts
+@@ -376,16 +376,21 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
+     expect(unsent.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
+   });
+ 
+-  it('pages a stream with no probe back in 26 hours from the database\'s rule to the operator\'s topic, 22 hours before its readiness lapses (review M3)', () => {
+-    const { daily, missed, ready } = MAIL_PROBE_HOURS;
++  it('pages a stream with no probe back in 26 hours, or a resumed one an hour after its first probe, from the database\'s rule to the operator\'s topic, 22 hours before its readiness lapses (review M3; the review of 2026-10-27)', () => {
++    const { daily, firstProof, missed, ready } = MAIL_PROBE_HOURS;
+     // The database decides it (the generated function files, which CI holds equal to a migrated database): missed is the
+-    // older of the last delivered and bounced probe since the last resume, a missing one counted from its probe's send,
+-    // 26 hours old while the stream is open and confirmed; ready is both back within 48 hours; a probe goes daily.
++    // older of the last delivered and bounced probe since the last resume 26 hours old, or, with one not back since the
++    // resume, the first probe sent since then an hour old (a re-send never moves it), while the stream is open and
++    // confirmed; ready is both back within 48 hours; a probe goes daily, and hourly while missed.
+     const streams = source('packages/db/functions/operator_mail_streams.sql');
+-    expect(streams).toContain(`coalesce(p.proved_at <= now() - interval '${String(missed)} hours', false)`);
+-    expect(streams).toContain("least(CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at ELSE s.probe_sent_at END,");
+-    expect(streams).toContain("CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at ELSE s.probe_sent_at END) AS proved_at");
++    expect(streams).toContain(`THEN least(p.delivered, p.bounced) <= now() - interval '${String(missed)} hours'`);
++    expect(streams).toContain(`ELSE s.first_probe_sent_at <= now() - interval '${String(firstProof)} hour' END, false) AS missed`);
++    expect(streams).toContain("CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at END AS delivered");
++    expect(streams).toContain("CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at END AS bounced");
+     expect(streams).toContain(`(NOT o.outstanding AND s.probe_sent_at <= now() - interval '${String(daily)} hours')`);
++    expect(streams).toContain(`(m.missed AND s.probe_sent_at <= now() - interval '${String(firstProof)} hour')`);
++    expect(source('packages/db/functions/operator_mail_probe_sent.sql')).toContain('first_probe_sent_at = coalesce(s.first_probe_sent_at, now())');
++    expect(source('packages/db/functions/console_resume_mail_stream.sql')).toContain('first_probe_sent_at = NULL');
+     expect(source('packages/db/functions/screening_mail_status.sql').split(`now() - interval '${String(ready)} hours'`)).toHaveLength(3);
+     // The platform logs the code on every run while the stream is missed, before it asks whether a probe is due, so the
+     // alarm stays raised until one comes back, sent and lost or never sent.
+@@ -417,10 +422,11 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
+       AlarmActions: [ref(logicalIdOf(stack, stack.monitoring.operatorTopic))],
+     });
+     expect(alarm.Dimensions).toBeUndefined();
+-    expect(alarm.AlarmDescription).toContain(`in ${String(missed)} hours`);
++    expect(alarm.AlarmDescription).toContain(`${String(missed)} hours after the older of its last delivered and bounced probe, or ${String(firstProof)} hour after the first probe sent since a resume`);
++    expect(String(alarm.AlarmDescription).length).toBeLessThanOrEqual(1024);
+     expect(alarm.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
+     // A daily probe sent and lost pages 2 hours after it went and, with the alarm's period, well before readiness lapses.
+-    expect(MAIL_PROBE_HOURS).toEqual({ daily: 24, missed: 26, ready: 48 });
++    expect(MAIL_PROBE_HOURS).toEqual({ daily: 24, firstProof: 1, missed: 26, ready: 48 });
+     expect(missed - daily).toBe(2);
+     expect(missed * 3600 + MAIL_PLATFORM_ALARM_PERIOD_SECONDS).toBeLessThan(ready * 3600);
+     expect(ready - missed).toBe(22);
 diff --git a/packages/db/migrations/20261107090000_mail_streams.sql b/packages/db/migrations/20261107090000_mail_streams.sql
-index 18ec43e3..1ac5e7e4 100644
+index 18ec43e3..1a0e0324 100644
 --- a/packages/db/migrations/20261107090000_mail_streams.sql
 +++ b/packages/db/migrations/20261107090000_mail_streams.sql
 @@ -20,10 +20,12 @@
@@ -413,6 +889,118 @@ index 18ec43e3..1ac5e7e4 100644
        ON CONFLICT (recipient_sha256) DO UPDATE SET reason = EXCLUDED.reason, recorded_at = EXCLUDED.recorded_at, expires_at = EXCLUDED.expires_at;
      END IF;
      IF held.state = 'bounced' AND priced.id IS NOT NULL THEN
+@@ -1103,26 +1127,30 @@ BEGIN
+ END;
+ $$;
+ 
+--- For the reconcile and the probes: each stream's pause and SES confirmation; a probe is due daily once the last came
+--- back, at once after a resume, and again 26 hours after one that has not come back, never while paused or unconfirmed.
+--- probe_missed (MAIL_PROBE_MISSED, review M3) reads the stream's last proof, not its last send: open and confirmed, and
+--- the older of its last delivered and bounced probe 26 hours old, whether a probe went since or not. A proof counts only
+--- since the last resume, as readiness counts it (screening_mail_status()); one not back since then counts from the probe
+--- last sent, and with none sent yet nothing is missed. So a daily probe sent and lost is missed 2 hours after it went,
+--- and one that cannot be sent 26 hours after the last came back: either way 22 hours before readiness lapses at 48.
++-- For the reconcile and the probes: each stream's pause and SES confirmation. probe_missed (MAIL_PROBE_MISSED, review M3
++-- and the review of 2026-10-27) reads the stream's proofs since the last resume, as readiness counts them
++-- (screening_mail_status()), never its last send, while it is open and confirmed: with both its delivered and its
++-- bounced probe back since then, the older 26 hours old, whether a probe went since or not, so a daily probe sent and
++-- lost is missed 2 hours after it went and one that cannot be sent 26 hours after the last came back, either way 22
++-- hours before readiness lapses at 48; with one not back since then, the first probe sent since then an hour old
++-- (first_probe_sent_at, which a re-send never moves), while the screening is closed for want of it; with none sent yet,
++-- nothing. A probe is due at once after a resume, daily once the last came back, and hourly while the stream is missed,
++-- so a fixed event path reopens the screening within the hour; never while paused or unconfirmed.
+ CREATE FUNCTION operator_mail_streams() RETURNS TABLE (stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+   SELECT s.stream, s.paused_at IS NOT NULL, s.ses_enabled_confirmed_at IS NOT NULL,
+          s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL
+            AND (s.probe_sent_at IS NULL
+                 OR (NOT o.outstanding AND s.probe_sent_at <= now() - interval '24 hours')
+-                OR (o.outstanding AND s.probe_sent_at <= now() - interval '26 hours')),
+-         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND coalesce(p.proved_at <= now() - interval '26 hours', false)
++                OR (m.missed AND s.probe_sent_at <= now() - interval '1 hour')),
++         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND m.missed
+     FROM mail_stream s,
+          LATERAL (SELECT s.probe_sent_at IS NOT NULL
+                          AND (coalesce(s.probe_delivered_at < s.probe_sent_at, true) OR coalesce(s.probe_bounced_at < s.probe_sent_at, true)) AS outstanding) o,
+-         LATERAL (SELECT least(CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at ELSE s.probe_sent_at END,
+-                               CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at ELSE s.probe_sent_at END) AS proved_at) p
++         LATERAL (SELECT CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at END AS delivered,
++                         CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at END AS bounced) p,
++         LATERAL (SELECT coalesce(CASE WHEN p.delivered IS NOT NULL AND p.bounced IS NOT NULL THEN least(p.delivered, p.bounced) <= now() - interval '26 hours'
++                                       ELSE s.first_probe_sent_at <= now() - interval '1 hour' END, false) AS missed) m
+    ORDER BY s.stream
+ $$;
+ 
+@@ -1154,7 +1182,7 @@ BEGIN
+   IF stream IS NULL OR stream NOT IN ('transactional', 'notices', 'screening') THEN
+     RAISE EXCEPTION 'unknown mail stream' USING ERRCODE = 'check_violation', CONSTRAINT = 'mail_stream_name';
+   END IF;
+-  UPDATE mail_stream s SET probe_sent_at = now() WHERE s.stream = stream;
++  UPDATE mail_stream s SET probe_sent_at = now(), first_probe_sent_at = coalesce(s.first_probe_sent_at, now()) WHERE s.stream = stream;
+ END;
+ $$;
+ 
+@@ -1250,7 +1278,7 @@ BEGIN
+   END IF;
+   UPDATE mail_stream s
+      SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL,
+-         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
++         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, first_probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
+    WHERE s.stream = stream AND s.paused_at IS NOT NULL;
+   IF NOT FOUND THEN
+     RETURN false;
+@@ -1482,19 +1510,22 @@ END;
+ $$;
+ 
+ -- The web's check before it spends one of the day's address validations (review S4; D9): the refusal of an accepted
+--- upload's mail that submit_screening() would give, in its order, writing nothing: screening_closed (no release in
+--- force, or no split approved), screening_paused, screening_bounce_budget (the submitter's keyed subjects), then
+--- screening_contact_undeliverable (the address's mailbox); null when none applies. The submitter's budget comes before
+--- the address, as in the run's trigger (S1), so a client or an account past it learns nothing of the list here either.
+--- The triggers stay the backstop for a change between this read and the submission. Granted to tp_app.
+-CREATE FUNCTION screening_submit_mail_refusal(email text, rate_account_subject text, client_subject text) RETURNS text
++-- upload's mail that submit_screening() would give for its submitter, in its order, writing nothing: screening_closed
++-- (no release in force, or no split approved), screening_paused, then screening_bounce_budget (the submitter's keyed
++-- subjects); null when none applies. It takes no address and never reads the refusal list (the review of 2026-10-27):
++-- read here, before the address checks and submit_screening()'s ZIP checks, the list told any client whether an address
++-- had bounced or complained in the last 12 months, by which refusal a ZIP the release cannot price or a mailbox SES
++-- could not confirm drew, with nothing recorded and nothing sent. The run's trigger answers for the list after them all,
++-- so every path that ends without an email answers a listed address as any other; a listed address spends one
++-- validation, within the rate limit. The triggers stay the backstop for a change between this read and the submission.
++-- Granted to tp_app.
++CREATE FUNCTION screening_submit_mail_refusal(rate_account_subject text, client_subject text) RETURNS text
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+   SELECT CASE
+            WHEN current_rule_release() IS NULL OR place_of_service_split_in_force() IS NULL
+                 OR NOT EXISTS (SELECT 1 FROM rule_release r WHERE r.release_no = current_rule_release() AND r.manifest_sha256 IS NOT NULL) THEN 'screening_closed'
+            WHEN NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN 'screening_paused'
+-           WHEN screening_bounce_budget_spent($2, $3) THEN 'screening_bounce_budget'
+-           WHEN screening_contact_refused($1) THEN 'screening_contact_undeliverable'
++           WHEN screening_bounce_budget_spent($1, $2) THEN 'screening_bounce_budget'
+          END
+ $$;
+ 
+@@ -1515,9 +1546,9 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
+   support_grant_notice, support_grant_notice_recipient FROM PUBLIC;
+ GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
+ 
+-REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
++REVOKE ALL ON FUNCTION mail_recipient_canonical(text, boolean), mail_recipient_sha256(text, boolean), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
+   screening_mail_sending(), screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
+-  screening_submit_mail_refusal(text, text, text),
++  screening_submit_mail_refusal(text, text),
+   screening_upload_mail_gate(), screening_run_mail_refusal(), screening_run_mail_gate(),
+   support_notice_administrators(uuid), support_notice_report_undelivered(uuid, text), support_notice_counts(uuid, text),
+   operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
+@@ -1539,7 +1570,7 @@ GRANT EXECUTE ON FUNCTION operator_open_support_notice(uuid, text, text), operat
+   operator_mail_probe_sent(text), operator_mail_expire(integer) TO tp_operator;
+ GRANT EXECUTE ON FUNCTION billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer), billing_dunning_notice_claim(uuid, text, uuid),
+   billing_dunning_notice_sent(uuid, text, uuid, text, text), billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text) TO tp_billing;
+-GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text, text), console_mail_streams(), console_pause_mail_stream(text, text),
++GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text), console_mail_streams(), console_pause_mail_stream(text, text),
+   console_resume_mail_stream(text, text), console_mail_undelivered(timestamptz), console_support_grants(),
+   submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
+     integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text, text) TO tp_app;
 diff --git a/packages/db/src/mail-address.test.ts b/packages/db/src/mail-address.test.ts
 index 3b06d3dd..25bd816c 100644
 --- a/packages/db/src/mail-address.test.ts
@@ -455,6 +1043,111 @@ index 3b06d3dd..25bd816c 100644
 +    expect(canonicalMailboxParts('ｊａｎｅ＠ｇｍａｉｌ．ｃｏｍ')).toBeNull();
    });
  });
+diff --git a/packages/db/src/mail-address.ts b/packages/db/src/mail-address.ts
+index 6b580975..79a3395a 100644
+--- a/packages/db/src/mail-address.ts
++++ b/packages/db/src/mail-address.ts
+@@ -3,44 +3,57 @@
+  * same inbox, so the screening's refusal list (mail_recipient_sha256()) and its bounce budget's account (the web's
+  * screeningRateAccount()) read every one of them as one mailbox. It is used only to look an address up and to count it,
+  * never to send: the address mailed is the one typed. mail_recipient_canonical() in migration 20261107090000 is the same
+- * rule in SQL, and mail.db.test.ts holds the two equal on a table of spellings.
++ * rule in SQL, and mail.db.test.ts holds the two equal on a table of spellings and on every Unicode code point.
+  *
+  * In order:
+- * 1. Unicode NFKC, so a compatibility form (a fullwidth letter, a no-break space) reads as what it shows; NFKC composes
+- *    as NFC does, so a decomposed accent reads as the composed one.
+- * 2. ASCII white space dropped at either end.
+- * 3. ASCII letters in lower case: the rule every mail provider applies to an ASCII address, and no locale's rule for
+- *    other letters, which the screening's form refuses anyway.
++ * 1. ASCII white space dropped at either end.
++ * 2. ASCII letters in lower case: the rule every mail provider applies to an ASCII address, and no locale's rule for
++ *    other letters.
++ * 3. An address with any character outside ASCII stands as read: the screening's form takes only ASCII, and no Unicode
++ *    table, whose version moves with Node and with the database server, decides a key (the review of 2026-10-27:
++ *    Node's NFKC and PostgreSQL's differed on U+A7F1).
+  * 4. Split at the last @. An address with no local part or no domain stands as read so far.
+- * 5. The domain's trailing dots dropped, and googlemail.com read as gmail.com (Google's two names for one service).
+- * 6. A sub-address dropped: everything from the first + of the local part, at every domain. The + separator (RFC 5233)
+- *    reaches the base mailbox at Gmail and Google Workspace, Outlook.com and Microsoft 365, Fastmail and Proton, which
+- *    most practices use, and an address at a provider without sub-addressing has no + in its own name; the rare
+- *    exception is refused a screening, the safer side.
+- * 7. At gmail.com alone, the local part's dots dropped: Google says dots do not matter in a Gmail address, and they do
+- *    in a Google Workspace one, so no other domain loses them.
++ * 5. The domain's trailing dots dropped; googlemail.com read as gmail.com, and me.com and mac.com as icloud.com (each
++ *    provider's names for one account's mailbox, a name reserved across them).
++ * 6. A sub-address dropped: everything from the first + of the local part, at every domain, unless keepTag. The +
++ *    separator (RFC 5233) reaches the base mailbox at Gmail and Google Workspace, Outlook.com and Microsoft 365, Fastmail
++ *    and Proton, which most practices use, so a complaint from any spelling refuses the mailbox. keepTag keeps it, as a
++ *    permanent bounce is keyed (the review of 2026-10-27): a +tag spelling bounces where the server has no
++ *    sub-addressing, which says nothing of the base mailbox.
++ * 7. At gmail.com alone, the local part's dots dropped (Google says dots do not matter in a Gmail address, and they do
++ *    in a Google Workspace one), and its sub-address dropped even with keepTag (Gmail delivers every one to the base
++ *    mailbox).
+  * A local part that 6 or 7 would leave empty is kept as read.
+  */
+ 
+ /** ASCII white space at either end: space, tab, line feed, vertical tab, form feed and carriage return. */
+ const EDGE_SPACE = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g;
+ const ASCII_UPPER = /[A-Z]/g;
++const NOT_ASCII = /[^\x00-\x7f]/;
+ 
+-/** Google's other name for gmail.com. */
++/** Each provider's other names for one mailbox (step 5). */
+ const GMAIL = 'gmail.com';
+-const GOOGLEMAIL = 'googlemail.com';
++const SAME_MAILBOX: Readonly<Record<string, string>> = { 'googlemail.com': GMAIL, 'me.com': 'icloud.com', 'mac.com': 'icloud.com' };
+ 
+-/** An address read through steps 1 to 3: the form every later step starts from. */
++export interface MailboxOptions {
++  /** Keep the sub-address (step 6), as a permanent bounce is keyed; gmail.com drops it still (step 7). */
++  readonly keepTag?: boolean;
++}
++
++/** An address read through steps 1 and 2: the form every later step starts from. */
+ function readAddress(address: string): string {
+-  return address
+-    .normalize('NFKC')
+-    .replace(EDGE_SPACE, '')
+-    .replace(ASCII_UPPER, (letter) => letter.toLowerCase());
++  return address.replace(EDGE_SPACE, '').replace(ASCII_UPPER, (letter) => letter.toLowerCase());
+ }
+ 
+-/** The canonical mailbox's two parts, or null for an address with no local part or no domain (steps 4 and 5 found none). */
+-export function canonicalMailboxParts(address: string): { readonly local: string; readonly domain: string } | null {
++/**
++ * The canonical mailbox's two parts, or null for an address with a character outside ASCII (step 3), or with no local
++ * part or no domain (steps 4 and 5 found none).
++ */
++export function canonicalMailboxParts(address: string, options: MailboxOptions = {}): { readonly local: string; readonly domain: string } | null {
+   const read = readAddress(address);
++  if (NOT_ASCII.test(read)) {
++    return null;
++  }
+   const at = read.lastIndexOf('@');
+   if (at <= 0) {
+     return null;
+@@ -49,15 +62,15 @@ export function canonicalMailboxParts(address: string): { readonly local: string
+   if (trimmed === '') {
+     return null;
+   }
+-  const domain = trimmed === GOOGLEMAIL ? GMAIL : trimmed;
++  const domain = SAME_MAILBOX[trimmed] ?? trimmed;
+   const local = read.slice(0, at);
+-  const untagged = local.split('+')[0] ?? '';
++  const untagged = options.keepTag === true && domain !== GMAIL ? local : (local.split('+')[0] ?? '');
+   const mailbox = domain === GMAIL ? untagged.replace(/\./g, '') : untagged;
+   return { local: mailbox === '' ? local : mailbox, domain };
+ }
+ 
+-/** The canonical mailbox of an address (steps 1 to 7), or the address as read when it has no local part or no domain. */
+-export function canonicalMailbox(address: string): string {
+-  const parts = canonicalMailboxParts(address);
++/** The canonical mailbox of an address (steps 1 to 7), or the address as read when step 3 or 4 leaves it as read. */
++export function canonicalMailbox(address: string, options: MailboxOptions = {}): string {
++  const parts = canonicalMailboxParts(address, options);
+   return parts === null ? readAddress(address) : `${parts.local}@${parts.domain}`;
+ }
 diff --git a/packages/db/src/mail.db.test.ts b/packages/db/src/mail.db.test.ts
 index 9a4c6809..243b528e 100644
 --- a/packages/db/src/mail.db.test.ts
@@ -702,6 +1395,44 @@ index 9a4c6809..243b528e 100644
      // Never while unconfirmed (a paused stream always is): a stream not meant to be sending is not missed.
      await owner.query("UPDATE mail_stream SET resumed_at = NULL, probe_sent_at = now() - interval '28 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
      expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: true });
+diff --git a/packages/db/src/schema/index.ts b/packages/db/src/schema/index.ts
+index a1d92998..840d6366 100644
+--- a/packages/db/src/schema/index.ts
++++ b/packages/db/src/schema/index.ts
+@@ -257,6 +257,7 @@ export {
+   MAIL_EVENTS,
+   MAIL_KINDS,
+   MAIL_PAUSE_REASONS,
++  MAIL_PROBE_FIRST_PROOF_HOURS,
+   MAIL_PROBE_MISSED_HOURS,
+   MAIL_PROBE_READY_HOURS,
+   MAIL_REFUSAL_DAYS,
+diff --git a/packages/db/src/schema/operations.ts b/packages/db/src/schema/operations.ts
+index 404e238f..61a3c3a8 100644
+--- a/packages/db/src/schema/operations.ts
++++ b/packages/db/src/schema/operations.ts
+@@ -199,6 +199,12 @@ export const MAIL_PROBE_READY_HOURS = 48;
+  * last resume, is this many hours old (review M3): 2 hours after a daily probe sent and lost, 22 before readiness lapses.
+  */
+ export const MAIL_PROBE_MISSED_HOURS = 26;
++/**
++ * A stream with a probe not back since the last resume is missed this many hours after the first probe sent since then
++ * (first_probe_sent_at, which a re-send never moves; the review of 2026-10-27), and a missed stream's probe goes again
++ * this often until one comes back.
++ */
++export const MAIL_PROBE_FIRST_PROOF_HOURS = 1;
+ 
+ /** The pepper of the keyed hash: 32 bytes as hex, made at the migration, read only by mail_recipient_sha256(). */
+ export const mailRecipientKey = pgTable('mail_recipient_key', {
+@@ -220,6 +226,8 @@ export const mailStream = pgTable('mail_stream', {
+   /** When the platform's reconcile read the stream's SES set enabled while open; cleared by a pause, a resume or a read of it disabled. */
+   sesEnabledConfirmedAt: timestamp('ses_enabled_confirmed_at', { withTimezone: true }),
+   probeSentAt: timestamp('probe_sent_at', { withTimezone: true }),
++  /** The first probe sent since the last resume (or ever); a re-send never moves it, and a resume clears it. */
++  firstProbeSentAt: timestamp('first_probe_sent_at', { withTimezone: true }),
+   probeDeliveredAt: timestamp('probe_delivered_at', { withTimezone: true }),
+   probeBouncedAt: timestamp('probe_bounced_at', { withTimezone: true }),
+   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 diff --git a/packages/db/src/screening.db.test.ts b/packages/db/src/screening.db.test.ts
 index 126310aa..96940aba 100644
 --- a/packages/db/src/screening.db.test.ts
@@ -903,3 +1634,22 @@ index de635f23..5e214074 100644
 +  ['No At Sign', 'no at sign'],
 +  ['', ''],
 +];
+diff --git a/packages/observability/src/fields.ts b/packages/observability/src/fields.ts
+index 9c8e45fb..86989598 100644
+--- a/packages/observability/src/fields.ts
++++ b/packages/observability/src/fields.ts
+@@ -43,6 +43,14 @@ export const ALLOWED_LOG_FIELDS = [
+   'invoice_id',
+   'invitation_id',
+   'queue_message_id',
++  // A probe's recorded event (the review of 2026-10-27; docs/runbooks/deliverability.md, section 2): SES's message ID and
++  // the codes the platform read and recorded (the stream, SES's event type, the state and the bounce's subtype), each
++  // from a closed list. Logged only for a probe, which goes to SES's simulator or the operator's synthetic mailbox.
++  'ses_message_id',
++  'mail_stream_code',
++  'ses_event_type',
++  'mail_state_code',
++  'bounce_subtype_code',
+   'error_code',
+ ] as const;
+ 
