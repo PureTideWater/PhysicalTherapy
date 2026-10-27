@@ -22,3 +22,16 @@ Started 2026-10-27. Clone: $P/pr42v/review-security
 ## Lead L4 S3 validation account: reading
 - Trust: AccountPrincipal(app account) + ArnEquals aws:PrincipalArn=app role + StringNotEquals PrincipalAccount!=self; role allows only ses:GetEmailAddressInsights; trail WRITE_ONLY. App role: Deny GetEmailAddressInsights, Deny sts:AssumeRole own-account roles, conditional Allow AssumeRole on MailValidationRoleArn. Rule ReleaseNeedsAddressValidationRole. Web config requires ARN deployed. Session name fixed. errorName only in logs. Residual (90d event history, org trail, readOnly check) in ADR 0065 + runbook + data-retention.
 ## Lead S6: sound (DigestSendFailed carries sendErrorName only).
+- L1 variant 2 PROVEN (sec-probe2.json): valid ZIP, SES MEDIUM: listed -> ADDRESS_REFUSED, unlisted -> MAILBOX_UNCONFIRMED; nothing recorded/sent. Same root cause (precheck reads list before address checks + ZIP).
+- Wording nit candidate: retention.ts pages say address deleted with result (30 d) but validation account event history keeps it 90 d (ADR residual 1 defers to counsel O4).
+- Definers (catalog on tp_pr6b4v_security_1): all new/recreated owner tp_owner, search_path pg_catalog, public, pg_temp, PUBLIC revoked; grants exact: screening_submit_mail_refusal tp_app, operator_mail_cutoff tp_operator, operator_mail_streams tp_operator, console_mail_streams tp_app, operator_record_mail_event tp_operator; invokers no grant; screening_run_bounce_budget gone. SOUND.
+- S3 synth (production): trust/role/trail/app deny+conditional allow/rule as designed. infra+web+worker unit 10 files 216 pass. SOUND.
+- iCloud aliasing confirmed (tidbits/appleinsider 2012: all three domains deliver to one account, names reserved). nit.
+## FINDINGS (final)
+- F1 blocking: precheck list-before-ZIP/address-checks oracle (2 variants proven)
+- F2 should_fix: +tag bounce poisons base mailbox 365 d (proven)
+- F3 nit: iCloud aliases escape key
+- F4 nit: U+A7F1 TS/SQL skew; agreement test fixed table
+- F5 nit: prospect pages say address deleted; AWS event history 90 d
+NEXT: cleanup (drop tp_pr6b4v_security_1 + any test DBs, delete clone), StructuredOutput.
+- CLEANUP DONE: tp_pr6b4v_security_1 dropped (no other tp_ DBs), clone deleted. /home/user/pr6b4 untouched. Evidence kept in scratchpad/pr42v/sec-*.json, walk-*.json, synth-dump.json, tools/walk.mjs.

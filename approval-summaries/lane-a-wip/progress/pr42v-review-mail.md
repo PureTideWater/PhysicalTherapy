@@ -20,3 +20,5 @@
 - NITs drafted: F4 ADR 0065 (a) bound omits sweep main thread (finishOrFail completes, fails); F5 SendingPausedException for a disabled set unproven (SDK doc: account paused) while M6/M7 rely on it; no O11 check
 - PR body (6f23c42b) M3 row says 'still pages about 2 h after readiness lapses' -> stale vs c37fa7cc (local; to update at push) - note only
 - NEXT: maybe check deploy-window/previous image for screening_run_mail_refusal trigger rename; then StructuredOutput; cleanup clone + verify no tp_test_ dbs
+- CLEANUP: clone scratchpad/pr42v/review-mail deleted (probe file went with it); no tp_test_* db left; tp_pr6b4v_security_1 is the security reviewer's (left alone). /home/user/pr6b4 clean at c37fa7cc. Nothing pushed or posted.
+- FINAL: 3 should_fix (F1 M3 flap after resume/first activation; F2 runbook staging checks unreadable; F3 suppressed invitation 'invite again' loop), 2 nits (F4 ADR (a) bound; F5 SendingPausedException unproven). DONE except StructuredOutput.
