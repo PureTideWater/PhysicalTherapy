@@ -48,3 +48,12 @@ Started 2026-10-27. Reviewing /home/user/ops/designs/ledger-interest-once.md (87
 ## STATUS: analysis complete; writing StructuredOutput. Verdict: build with changes. All probe DBs dropped (tp_design_interest_21).
 
 # ROUND 2 (started 2026-10-27 ~19:5x): design revised (123962 bytes, mtime 19:46) after round-1 findings; header says sect 15 records each finding. Reviewing the revision.
+- R2: read whole revised design (1374 lines). #42 now 6f23c42b; ledger fns byte-identical to base (rechecked). Sect 15 maps F1-F8, N1-N3; pending = second look at 3.6-3.9, 4, 5, 8.
+## R2 leads (open)
+- R2-L1 out-of-order fixture: later-named chain is 'another patient's claim' (no case line) -> DB test passes under per-(L6,chain) keying (F1 regression undetected). Candidate should_fix.
+- R2-L2 skip RETURN NULL: verify old rled insertMatch/recordInterest on 0 rows; other job-shaped writers of 1-ID interest matches (seeds, tour, e2e, synth oracle)
+- R2-L3 rollback: old code reading negative interest (entryProblems callers, totals/roi/statement validation, roi_statement_rules)
+- R2-L4 seq vs matched_at across txns (now() = txn start before lock wait); reversalRule uses matched_at
+- R2-L5 catalog test lists of triggers/functions; lockLedger key form == hashtextextended('ledger:'||id,0)?
+- R2-L6 job ever writes reversed/adjusted entries on interest (floor refusal path for job)?
+- R2-L7 pool remainder / bound proofs (sound so far by hand)
