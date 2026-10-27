@@ -65,6 +65,59 @@ index bbb92f08..0e105cad 100644
      // Where the run stands in the queue: its tier (Q7), and how many runs are pricing or ahead of it.
      let wait: ScreeningQueuePlace | null;
      try {
+diff --git a/tools/screening-capacity/measure.test.ts b/tools/screening-capacity/measure.test.ts
+index 5bf27b80..fd104010 100644
+--- a/tools/screening-capacity/measure.test.ts
++++ b/tools/screening-capacity/measure.test.ts
+@@ -7,7 +7,22 @@ import { describe, expect, it } from 'vitest';
+ import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
+ import { COMMANDS } from '../../infra/lib/constructs/compute';
+ import { MIB, MIN_ROUND_TRIP_MS, NETWORK_DELAY_MS, cpuLayout, postgresLimit, productionLimits } from './limits';
+-import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, untilComplete, workerStarted } from './measure';
++import {
++  ADDRESS_CHECKED_MESSAGE,
++  addressCheckTimes,
++  anonBytes,
++  cpuThrottling,
++  emailedLines,
++  ioMax,
++  median,
++  memoryEvents,
++  phaseLines,
++  phasesByRun,
++  pricedRuns,
++  psqlTimings,
++  untilComplete,
++  workerStarted,
++} from './measure';
+ import {
+   CommandError,
+   ROUND_TRIP_SCRIPT,
+@@ -100,6 +115,24 @@ describe('the consumer’s log', () => {
+   });
+ });
+ 
++describe('the web’s log', () => {
++  it('reads the address checks’ measured time by run, numbers only, a run’s first line kept', () => {
++    const lines = [
++      'not json',
++      JSON.stringify({ request_id: 'q-1', screening_run_id: 'r-1', elapsed_ms: 2_004, time: '2026-10-27T12:00:02.000Z', level: 'info', msg: 'screening address checked' }),
++      JSON.stringify({ screening_run_id: 'r-2', elapsed_ms: 2_131, time: '2026-10-27T12:00:03.000Z', level: 'info', msg: 'screening address checked' }),
++      JSON.stringify({ screening_run_id: 'r-1', elapsed_ms: 9, time: '2026-10-27T12:00:04.000Z', level: 'info', msg: 'screening address checked' }),
++      JSON.stringify({ screening_run_id: 'r-3', elapsed_ms: 'slow', time: '2026-10-27T12:00:04.000Z', level: 'info', msg: 'screening address checked' }),
++      JSON.stringify({ screening_run_id: 'r-4', error_code: 'SCREENING_NOT_QUEUED', time: '2026-10-27T12:00:05.000Z', level: 'warn', msg: 'screening run not queued; the sweep will send it' }),
++    ];
++    expect([...addressCheckTimes(lines)]).toEqual([
++      ['r-1', 2_004],
++      ['r-2', 2_131],
++    ]);
++    expect(ADDRESS_CHECKED_MESSAGE).toBe('screening address checked');
++  });
++});
++
+ describe('a result link, opened once its run commits', () => {
+   /** A clock the waits move: sleep advances it, and nothing waits for real. */
+   function clock() {
 diff --git a/tools/screening-capacity/measure.ts b/tools/screening-capacity/measure.ts
 index fb382e27..bbbb6194 100644
 --- a/tools/screening-capacity/measure.ts
@@ -97,6 +150,86 @@ index fb382e27..bbbb6194 100644
  /**
   * Waits until each upload's run reads `complete`, at most `waitMs` for them all, and returns the uploads whose run did
   * not (in the order given). The consumer sends a result's email inside its completion's transaction and commits after
+diff --git a/tools/screening-capacity/report.test.ts b/tools/screening-capacity/report.test.ts
+index 12f570a4..0c4f520b 100644
+--- a/tools/screening-capacity/report.test.ts
++++ b/tools/screening-capacity/report.test.ts
+@@ -17,6 +17,8 @@ import {
+   TIME_MODES,
+   type TimeMode,
+   type TimeRule,
++  type UploadMeasure,
++  addressCheckSpan,
+   jobResult,
+   limitProblems,
+   mailHeldLines,
+@@ -472,11 +474,26 @@ describe('the checks the build controls fail the run', () => {
+     ['a CPU quota not applied', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'platform' ? { ...item, nanoCpus: null } : item)) }) }), /^limit not applied: platform: CPU quota none/],
+     ['a memory limit not applied', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'web' ? { ...item, memorySwapBytes: (item.memoryBytes ?? 0) * 2 } : item)) }) }), /^limit not applied: web: memory/],
+     ['io.max not applied', measured({ applied: applied({ ioMax: null }) }), /^limit not applied: postgres: io\.max not set/],
+-    // The screening's mail (PR 6b-4): the address checks' worst case charged to every upload (G1), no run held by the gate.
+-    ['the address checks not charged', measured({ mail: { addressCheckMs: 0, screeningReady: true, heldLines: 0 } }), /^address checks not charged: the web's DNS check and address validation answered after 0 ms; every upload is charged their worst case, 2000 ms, inside its time to email \(G1\)$/],
+-    ['a report written before the mail streams', measured({ mail: undefined }), /^address checks not charged: the web's DNS check and address validation answered after no ms/],
+-    ['the screening stream not seeded ready', measured({ mail: { addressCheckMs: 2_000, screeningReady: false, heldLines: 0 } }), /^screening mail not ready: /],
+-    ['a run held by the mail gate', measured({ mail: { addressCheckMs: 2_000, screeningReady: true, heldLines: 1 } }), /^screening mail held runs: the consumer logged 1 line of a run waiting while the screening's mail was not sending$/],
++    // The screening's mail (PR 6b-4): the address checks' worst case charged to every upload as the web measured it (G1;
++    // review M4: never the delay the harness configured), no run held by the gate.
++    [
++      'an upload whose address checks the web did not measure (no line for its run)',
++      measured({ scenarios: withUpload('S2-1', { addressCheckMs: null }) }),
++      /^address checks not measured: S2-1 has no line of the web's measured address checks for its run, so its time to email may not carry their worst case \(G1\)$/,
++    ],
++    [
++      'an upload of S4\'s run that is not the middle one whose address checks the web did not measure',
++      measured({ scenarios: withUpload('S4-4', { addressCheckMs: null }, 'S4#3') }),
++      /^address checks not measured: S4#3 S4-4 has no line/,
++    ],
++    [
++      'an upload whose address checks answered under their worst case (a stand-in skipped or shortened)',
++      measured({ scenarios: withUpload('S1-1', { addressCheckMs: ADDRESS_CHECK_CHARGE_MS - 1 }) }),
++      /^address checks not charged: S1-1's DNS check and address validation took 1999 ms on the web; every upload is charged their worst case, 2000 ms, inside its time to email \(G1\)$/,
++    ],
++    ['the screening stream not seeded ready', measured({ mail: { screeningReady: false, heldLines: 0 } }), /^screening mail not ready: /],
++    ['a report written before the mail streams', measured({ mail: undefined }), /^screening mail not ready: /],
++    ['a run held by the mail gate', measured({ mail: { screeningReady: true, heldLines: 1 } }), /^screening mail held runs: the consumer logged 1 line of a run waiting while the screening's mail was not sending$/],
+     ['a round trip under 2 ms', measured({ applied: applied({ roundTripMedianMs: 0.4 }) }), /^limit not applied: postgres: median round trip 0\.40 ms, under 2 ms$/],
+     ['a runner too small', measured({ runnerProblems: ['the runner has 1 CPU; the test needs 2'] }), /^runner too small: the runner has 1 CPU/],
+     ['a wrong row count', measured({ scenarios: withS1(scenario({}, [upload({ storedRows: 49_999 })])) }), /^row count: S1-1 stored 49999 of 50000$/],
+@@ -556,13 +573,32 @@ describe('the report', () => {
+     const full = report(measured(), ENFORCED);
+     expect(full.workflow).toEqual(SYNTHETIC_RUN);
+     expect(markdown(full, ENFORCED)).toContain(`Measured by ${SYNTHETIC_RUN.ref}, run ${SYNTHETIC_RUN.runId}, attempt 1.`);
+-    // The screening's mail as the harness ran it (PR 6b-4): the address checks charged, the stream seeded ready.
++    // The screening's mail as the harness ran it (PR 6b-4): the address checks as the web measured them, the stream seeded ready.
+     expect(markdown(full, ENFORCED)).toContain(
+-      "Screening mail: every upload's address checks answered after 2.0 s, inside its time to email (G1); the screening stream was seeded sending and ready, and 0 run lines waited on the mail gate.",
++      'Screening mail: the web measured the address checks of 16 of 16 uploads at 2.0 to 2.0 s, inside each time to email (G1); the screening stream was seeded sending and ready, and 0 run lines waited on the mail gate.',
+     );
+     expect(ADDRESS_CHECK_CHARGE_MS).toBe(2_000);
+   });
+ 
++  it('judges the address checks by the time the web measured on each upload, never the delay the harness set (review M4)', () => {
++    // Exactly the worst case passes; the summary gives the span measured and how many uploads had a line.
++    const atLine = measured({ scenarios: withUpload('S1-1', { addressCheckMs: ADDRESS_CHECK_CHARGE_MS }) });
++    expect(verdict(atLine, ENFORCED).reasons).toEqual([]);
++    const spread = measured({ scenarios: withUpload('S3-1', { addressCheckMs: 2_456 }, null, withUpload('S1-1', { addressCheckMs: ADDRESS_CHECK_CHARGE_MS })) });
++    expect(addressCheckSpan(spread.scenarios)).toEqual({ measured: 16, uploads: 16, leastMs: 2_000, mostMs: 2_456 });
++    expect(markdown(report(spread, ENFORCED), ENFORCED)).toContain('Screening mail: the web measured the address checks of 16 of 16 uploads at 2.0 to 2.5 s, inside each time to email (G1);');
++    // No line on any upload (a web that skips the checks on the harness's path, or no longer logs them): every upload
++    // fails, whatever the harness gave the stand-ins, and the summary says none was measured.
++    const none = measured({ scenarios: measured().scenarios.map((item) => ({ ...item, uploads: item.uploads.map((entry) => ({ ...entry, addressCheckMs: null })) })) });
++    const reasons = verdict(none, ADVISORY).reasons;
++    expect(reasons.filter((reason) => reason.startsWith('address checks not measured: '))).toHaveLength(16);
++    expect(verdict(none, ADVISORY).pass).toBe(false);
++    expect(markdown(report(none, ADVISORY), ADVISORY)).toContain("Screening mail: the web measured no upload's address checks (16 uploads);");
++    // A report written before this round has no field on its uploads: read as no line.
++    const before = measured({ scenarios: withUpload('S5-1', {}, null, measured().scenarios).map((item) => ({ ...item, uploads: item.uploads.map(({ addressCheckMs: _ms, ...rest }) => rest as UploadMeasure) })) });
++    expect(verdict(before, ENFORCED).reasons).toContain("address checks not measured: S5-1 has no line of the web's measured address checks for its run, so its time to email may not carry their worst case (G1)");
++  });
++
+   it('counts the consumers’ lines of a run the mail gate held, by the worker’s own code', () => {
+     expect(SCREENING_MAIL_HELD_CODE).toBe(SCREENING_MAIL_PAUSED_CODE);
+     const lines = [
 diff --git a/tools/screening-capacity/report.ts b/tools/screening-capacity/report.ts
 index 3877514d..9c47fd9f 100644
 --- a/tools/screening-capacity/report.ts
@@ -234,10 +367,50 @@ index 3877514d..9c47fd9f 100644
  function consumerLine(full: Report): string {
    const consumer = full.consumer;
 diff --git a/tools/screening-capacity/run.ts b/tools/screening-capacity/run.ts
-index 32609ab8..3134ed02 100644
+index 32609ab8..c0a97782 100644
 --- a/tools/screening-capacity/run.ts
 +++ b/tools/screening-capacity/run.ts
-@@ -977,7 +977,6 @@ async function main(): Promise<number> {
+@@ -44,7 +44,7 @@ import {
+   productionLimits,
+   runnerTooSmall,
+ } from './limits';
+-import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
++import { addressCheckTimes, anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
+ import {
+   ADDRESS_CHECK_CHARGE_MS,
+   type AppliedLimits,
+@@ -748,6 +748,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context,
+   const phases = phasesByRun(consumerPhases);
+   const emailed = emailedLines(consumerLog);
+   const platformRuns = pricedRuns(await runtime.logs('platform'));
++  // The web's measured address checks, by run (read before the next scenario restarts the web): the verdict holds each
++  // upload's to their worst case, never the delay the harness gave the stand-ins (review M4).
++  const addressChecks = addressCheckTimes(await runtime.logs('web'));
+   const runs = new Map<string, string>();
+   const uploads: UploadMeasure[] = [];
+   const client = await owner.client();
+@@ -784,6 +787,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context,
+       waitReason: facts?.waitReason ?? null,
+       queuePriority: facts?.queuePriority ?? null,
+       logged: logged === undefined ? null : { elapsedMs: logged.elapsedMs, atMs: Date.parse(logged.at) - scenarioStart, tier: logged.tier },
++      addressCheckMs: facts === null ? null : (addressChecks.get(facts.id) ?? null),
+     });
+   }
+   for (const entry of prepared) {
+@@ -853,9 +857,9 @@ async function main(): Promise<number> {
+   // The ZIP9 file's size (open item O8): the release is built at the production shape.
+   let release: Measurements['release'] = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0, zip9: scaleZip9Size(SCALE_RELEASE_SHAPE) };
+   let aborted: string | null = null;
+-  // The screening's mail as the harness runs it (PR 6b-4): the address checks' charge given to the web, the stream seeded
+-  // ready, and the consumers' lines of a run the mail gate held (none, or the run is not production's).
+-  let mail: NonNullable<Measurements['mail']> = { addressCheckMs: 0, screeningReady: false, heldLines: 0 };
++  // The screening's mail as the harness runs it (PR 6b-4): the stream seeded ready, and the consumers' lines of a run the
++  // mail gate held (none, or the run is not production's). The address checks' time is each upload's, read from the web.
++  let mail: NonNullable<Measurements['mail']> = { screeningReady: false, heldLines: 0 };
+   // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
+   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
+   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
+@@ -977,7 +981,6 @@ async function main(): Promise<number> {
        cpuset: layout.consumer,
        command: serviceCommand(name),
      }));
@@ -245,3 +418,27 @@ index 32609ab8..3134ed02 100644
      say(`starting web, platform and the screening consumer (${String(consumers.length)} task of ${String(screening.cpus)} vCPU and ${String(screening.memoryMiB)} MiB, ${String(limits.screeningConcurrency)} at once)`);
      await startWeb(runtime, web, 'setup');
      await startWorker(runtime, platform, 'setup');
+diff --git a/tools/screening-capacity/test-support/measurements.ts b/tools/screening-capacity/test-support/measurements.ts
+index 4e0c3ee2..d78c9f73 100644
+--- a/tools/screening-capacity/test-support/measurements.ts
++++ b/tools/screening-capacity/test-support/measurements.ts
+@@ -127,6 +127,8 @@ export function uploadBase(overrides: Partial<UploadMeasure>): UploadMeasure {
+     waitReason: null,
+     queuePriority: 0,
+     logged: null,
++    // The web's measured address checks: the stand-ins' 2-second delay and a few milliseconds of the web's own (G1).
++    addressCheckMs: ADDRESS_CHECK_CHARGE_MS + 13,
+     ...overrides,
+   };
+ }
+@@ -219,8 +221,8 @@ export function measured(overrides: Partial<Measurements> = {}): Measurements {
+     only: [],
+     notStarted: [],
+     aborted: null,
+-    // The address checks' worst case charged to every upload, the screening stream seeded ready, no run held (PR 6b-4).
+-    mail: { addressCheckMs: ADDRESS_CHECK_CHARGE_MS, screeningReady: true, heldLines: 0 },
++    // The screening stream seeded ready, no run held (PR 6b-4); each upload's address checks are its own (uploadBase).
++    mail: { screeningReady: true, heldLines: 0 },
+     ...overrides,
+   };
+ }

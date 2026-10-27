@@ -35,3 +35,8 @@ Clone: $P/designs/ss01-author
 - decisions added: reason code shown to owner-source only to the owner's members (DB returns null otherwise); practice_grants gains grantee_status (DROP+CREATE); trigger guards INSERT (non-owner inserts active only); internal-active CHECK with DO preflight; 2 reserved audit actions organization_suspended/organization_reinstated (reason change = organization_suspended again); reinstate reasons resolved|in_error as two one-click buttons; suspend takes the UX-046 tick (UX PR 78 drops its suspend part); SS-08 words chosen at send time from kind+status, firms' & closed groups' run clauses dropped; suspension mail notice + Q13 -> own next schema PR; packet_export refused audit (worker gate) in this PR (app only); dictionary stays verbatim; areas.json gets organization_status_change (tenancy); ADR 0080 + dated amendments on 0050/0055 (#42 text).
 - NEXT: write doc sections 0-17 to /home/user/ops/designs/ss-01-suspension.md
 - WRITTEN: sections 0,1,2,3 of /home/user/ops/designs/ss-01-suspension.md. NEXT: 4 schema.
+- WRITTEN: section 4 schema. NEXT: 5 app changes
+- WRITTEN: section 5 app. NEXT: 6 words
+- WRITTEN: section 6 words. NEXT: 7 SS-08
+- WRITTEN: section 7 SS-08. NEXT: 8 reopen, 9 rulings
+- WRITTEN: sections 8, 9. NEXT: 10 tests
