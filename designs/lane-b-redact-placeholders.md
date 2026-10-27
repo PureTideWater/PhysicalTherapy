@@ -162,6 +162,66 @@ output (a label word may itself be a replaced name part); the guarantee rests on
 
 ## 6. Coordination
 `co-001/contract-phi-check` (#120, in another session) appends `screenIdentifier` and `identifierRuns` to `redact.ts`
-and adds `redact.test.ts`, and amends ADR 0054. This PR keeps its new tests in `redact.property.test.ts`, changes
-`redact.ts` above that appended block, and adds its ADR 0054 amendment as its own dated section, so the PR merged second
-resolves a small textual conflict keeping both (LANES rule 6).
+right after `identifierCandidates`, adds `redact.test.ts`, amends ADR 0070 (Part 3; not ADR 0054), and also changes
+`packages/model-gateway/src/index.ts` and `testing.ts`. This PR keeps its new tests in `redact.property.test.ts`, changes
+`redact.ts` above that appended block (but rewrites `identifierCandidates`, the function the block follows, so the PR
+merged second resolves an adjacent-hunk conflict keeping both), adds nothing to `index.ts` or `testing.ts`, and adds its
+ADR 0054 amendment as its own dated section. MOD-13 and MOD-14 are free (that branch stops at MOD-12).
+
+## 7. Review and departures (as built, 2026-10-27)
+
+Each finding of the design review, and how the build applied it:
+
+1. **Default-ignorables removed word boundaries (blocking).** Applied. In the view names and numbers are matched on, a
+   run of default-ignorables (and a mark with nothing to sit on) becomes one U+00AD, which is neither a letter nor a
+   digit (so it bounds a word) and is in both joiner classes (so it joins inside one). The Hangul fillers and U+180E are
+   white space. `datesIn` runs on the view with them dropped and on the view with them as spaces, and the readings are
+   united. `identifierCandidates`' tokens treat them as a joiner between tokens, so it offers the single tokens and
+   the joined runs. Named tests: ZWSP between words, between a label and an ID, after a DOB; Hangul filler between words.
+2. **Tests that prove only the matcher (blocking).** Applied. MOD-13's oracle is the generator: it records each
+   segment it wrote an identifier, name part, initial or date of birth into, and asserts each letter or digit of them
+   lies in a replaced span (`redactionSpans`, exported for this, with the output asserted equal to the letter with
+   those spans replaced). A frozen copy of today's redaction, with positions tracked, is a second oracle: every letter
+   or digit it replaced is replaced now, except in a date that is not a date of birth or an amount (findings 4 and 6).
+   An over-redaction property sends common phrases, amounts, deadlines and `REF-SYN-77` unchanged. Deseret (with case)
+   and an emoji next to a name are in the generator and in named tests.
+3. **Name joiners made names of common phrases.** Applied: inside a part, a space or `.` only where it leaves pieces
+   of two letters or more each capitalized as written (`spacedPiecesPass`); between the parts the records hold apart,
+   white space, `.` and `,` join freely (so `jane q zephyra` and `Zephyra, Jane` still match). Dashes, apostrophes, `_`
+   and invisible characters join anywhere.
+4. **`.` made numbers of amounts; mentionsIdentifier's reach.** Applied. `.` and `_` join a number only next to a
+   letter. A digits-only number is not taken after a currency sign or before cents. Departure (safer): a digits-only
+   number inside a date that is not a date of birth is dropped only when written with separators; "Claim 20270315"
+   (also a compact date) is still replaced, since dropping every date-shaped match would send a date-shaped claim
+   number. `mentionsIdentifier` takes typed lists (`{ names, numbers }`); `NarrativeInput.names` (optional) says which
+   identifiers are names, the worker's `scheduleIdentifiers`/`packetDraftInputs` now return `names` and the web drafter
+   passes them; without it a value with no digit is a name (the eval set and older callers).
+5. **Longest-member merge dropped a claim.** Applied: the placeholder is chosen by kind (claim, lowest n; member;
+   date of birth; name). MOD-13 asserts each written claim's span is a claim placeholder no higher than its own.
+6. **A month-name patient removed the deadline.** Applied: a name match inside a date that is not a date of birth is
+   not taken; dates of birth are replaced whole. Named test: JUNE's "June 30, 2027" survives, "DOB June 3, 1961" does not.
+7. **Initials missed and over-redacted.** Applied: zero or more white space, apostrophes or dashes between an initial
+   and its name; case judged on the NFKC text, a lower-case initial taken next to a lower-case name; after a name (past
+   an optional comma) only when `.` follows or no lower-case word does. Named tests for each case. Bare monograms are a
+   residual in the ADR.
+8. **Missing separators; forms folded the same way.** Applied: U+2212 and U+2043 in both joiner classes and the name
+   split; every form is compacted from the same fold as the letter. Named tests: `JOSÉ GARCÍA` against "Jose Garcia",
+   an ID written with U+2212.
+9. **Two tokenizers.** Applied: `identifierTokenRuns(text, { joins, maxTokens, keep })` in `redact.ts` is the one
+   tokenizer; `identifierCandidates` calls it with the letter's joiners. Proposal to #120: `identifierRuns` calls it
+   with the contract screen's stricter `JOIN` (or a follow-on if #120 merges first). Section 6 corrected.
+10. **The barrier must survive the fold (nit).** Applied: U+0001 (`BARRIER`), with a test that `fold` keeps it.
+11. **Residuals (nit).** Applied: listed in the ADR 0054 amendment. Proposals (glued-name check, SSN and phone by
+    pattern as a PRD 14 question) are in the status file, not built.
+12. **`identifierSpans` in packets (nit).** Kept as a proposal: it should adopt the shared fold and matcher, with the
+    default-ignorable and joiner fixes.
+
+Other departures:
+- Name forms include each word of a name as well as each part ("O'BRIEN" gives `OBRIEN`, `BRIEN`), so `O’Brien` is
+  one placeholder rather than an initial and a part.
+- MOD-13's and MOD-14's registry entries use module 10 (`completesIn: 10`), as MOD-07 to MOD-11 do, not 9; the fixtures
+  test requires each row's generated `fixtures/synthetic/MOD-1x/expected.json` (written by `pnpm synth --case`), so both
+  are added, holding no document.
+- The differential and oracle checks compare letters and digits only: a comma or space the old whole-name form
+  swallowed is not PHI.
+- The existing property test's `fc.pre` (excluding names `PATIENT`/`NAME`) is removed: those names now redact.
