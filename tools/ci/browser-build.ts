@@ -31,9 +31,10 @@ import path from 'node:path';
  * upgrade's, or a mirror's other bytes).
  *
  * With --image it checks a built worker image instead and needs no node_modules: the image's own
- * node_modules/playwright-core/browsers.json (`docker run --rm --entrypoint cat`) and the headless shell's tree,
- * hashed inside the image by the command above (`docker run --rm --entrypoint sh`). The worker prints customers' PDFs
- * with that headless shell.
+ * node_modules/playwright-core/browsers.json and the headless shell's tree, hashed inside the image by the command
+ * above, each read with `docker run --rm --user 0:0 --network none --entrypoint <cat|sh>`: as root, so the image's
+ * runtime user cannot hide a file from the hash (Chrome for Testing's deb.deps and rpm.deps are mode 0600), and offline.
+ * The worker prints customers' PDFs with that headless shell.
  *
  * Run by Node 24 directly, with no install: Node's own modules and erasable TypeScript only (browser-build.test.ts
  * holds that). --list prints every file's line of each build found; a build that fails the check has them printed anyway.
@@ -85,7 +86,8 @@ export interface FoundBuild {
   readonly dir: string | null;
   /** Each regular file's "<sha256>  <path>" line, sorted by path bytes. */
   readonly lines: readonly string[];
-  /** Entries under the build's directory that are neither regular files nor directories (a symbolic link, say). */
+  /** Entries under the build's directory no tree SHA-256 covers: neither a regular file nor a directory (a symbolic link,
+   * say), or a file the check cannot read (marked "(unreadable)"). */
   readonly others: readonly string[];
   /** What `<binary> --version` printed, or why it did not run. */
   readonly version: string;
@@ -210,15 +212,23 @@ export const IMAGE_SCRIPT = [
   'if [ ! -d "$dir" ]; then set -- */; if [ "$#" -eq 1 ] && [ -d "$1" ]; then dir=${1%/}; else echo missing; exit 0; fi; fi',
   'echo "dir $dir"',
   'find "$dir" ! -type f ! -type d -exec printf \'other %s\\n\' {} \\;',
+  'find "$dir" -type f ! -readable -exec printf \'unreadable %s\\n\' {} \\;',
   'find "$dir" -type f -print0 | LC_ALL=C sort -z | xargs -0r sha256sum | sed \'s/^/file /\'',
   'if [ -x "$dir/$binary" ]; then printf \'version %s\\n\' "$("$dir/$binary" --version 2>&1 | head -n 1 || true)"; fi',
 ].join('\n');
 
+/**
+ * How the --image mode starts a container: as root, so the image's runtime user (the worker's is `node`) cannot hide a
+ * file from the hash (Chrome for Testing's zips carry `deb.deps` and `rpm.deps` as mode 0600, and the image installs the
+ * build as root), and with no network, since the check only reads the image.
+ */
+export const IMAGE_RUN = ['run', '--rm', '--user', '0:0', '--network', 'none', '--entrypoint'] as const;
+
 /** The headless shell as a built image holds it, read with `docker run` (the image's own browsers.json, its tree). */
 export function imageBuild(ref: string, recorded: RecordedBuild, env: NodeJS.ProcessEnv): FoundBuild {
   const docker = (args: string[]) => execFileSync('docker', args, { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] });
-  const pins = pinned(docker(['run', '--rm', '--entrypoint', 'cat', ref, 'node_modules/playwright-core/browsers.json']), 'chromium-headless-shell');
-  const output = docker(['run', '--rm', '--entrypoint', 'sh', ref, '-c', IMAGE_SCRIPT, 'sh', pins.revision, recorded.dir, recorded.path.slice(recorded.dir.length + 1)]);
+  const pins = pinned(docker([...IMAGE_RUN, 'cat', ref, 'node_modules/playwright-core/browsers.json']), 'chromium-headless-shell');
+  const output = docker([...IMAGE_RUN, 'sh', ref, '-c', IMAGE_SCRIPT, 'sh', pins.revision, recorded.dir, recorded.path.slice(recorded.dir.length + 1)]);
   const where = `${ref}: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${pins.revision}`;
   const rows = output.split('\n').filter((row) => row !== '');
   const dir = rows.find((row) => row.startsWith('dir '))?.slice(4) ?? null;
@@ -229,7 +239,11 @@ export function imageBuild(ref: string, recorded: RecordedBuild, env: NodeJS.Pro
     where,
     dir,
     lines: lines.filter((line) => !odd.includes(line)),
-    others: [...rows.filter((row) => row.startsWith('other ')).map((row) => row.slice(6)), ...odd],
+    others: [
+      ...rows.filter((row) => row.startsWith('other ')).map((row) => row.slice(6)),
+      ...rows.filter((row) => row.startsWith('unreadable ')).map((row) => `${row.slice(11)} (unreadable)`),
+      ...odd,
+    ],
     version: rows.find((row) => row.startsWith('version '))?.slice(8) ?? 'not run: no binary at the recorded path',
   };
 }
@@ -283,7 +297,7 @@ export function compare(name: BuildName, record: BrowserRecord, recordFile: stri
     problems.push(message);
   }
   if (found.others.length > 0) {
-    problems.push(`${title}'s build holds ${String(found.others.length)} entries that are neither regular files nor directories, which no tree SHA-256 covers: ${found.others.join(', ')}.`);
+    problems.push(`${title}'s build holds ${String(found.others.length)} entries that no tree SHA-256 covers (neither a regular file nor a directory, or a file the check cannot read): ${found.others.join(', ')}.`);
   }
   if (problems.length === 0) report.push(`${title}: equal to browser.json in every file`);
   return { report, problems, listFiles: found.dir !== null && problems.length > 0 };

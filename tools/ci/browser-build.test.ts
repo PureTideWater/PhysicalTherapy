@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
-import { BUILDS, type BrowserRecord, type BuildName, RECORD, listFile, playwrightCore, readRecord, run, sha256, treeLines, treeSha256 } from './browser-build';
+import { BUILDS, type BrowserRecord, type BuildName, IMAGE_SCRIPT, RECORD, listFile, playwrightCore, readRecord, run, sha256, treeLines, treeSha256 } from './browser-build';
 
 /**
  * tools/ci/browser-build.ts, the browser build check (test matrix CI-18; docs/adr/0058), on stand-in builds in a
@@ -206,12 +206,12 @@ describe('the browser build check (CI-18)', () => {
     symlinkSync('/etc/hostname', path.join(shellDir(), 'resources', 'link.pak'));
     const { status, err } = check();
     expect(status).toBe(1);
-    expect(err).toEqual([expect.stringMatching(/^The headless shell's build holds 1 entries that are neither regular files nor directories, which no tree SHA-256 covers: chrome-headless-shell-linux64\/resources\/link\.pak\.$/)]);
+    expect(err).toEqual([expect.stringMatching(/^The headless shell's build holds 1 entries that no tree SHA-256 covers \(neither a regular file nor a directory, or a file the check cannot read\): chrome-headless-shell-linux64\/resources\/link\.pak\.$/)]);
     // Every one is named, not the first ten.
     const links = Array.from({ length: 11 }, (_, index) => `resources/link-${String(index).padStart(2, '0')}.pak`);
     for (const name of links) symlinkSync('/etc/hostname', path.join(shellDir(), name));
     const named = [...links, 'resources/link.pak'].map((name) => `chrome-headless-shell-linux64/${name}`).sort();
-    expect(check().err).toEqual([`The headless shell's build holds 12 entries that are neither regular files nor directories, which no tree SHA-256 covers: ${named.join(', ')}.`]);
+    expect(check().err).toEqual([`The headless shell's build holds 12 entries that no tree SHA-256 covers (neither a regular file nor a directory, or a file the check cannot read): ${named.join(', ')}.`]);
   });
 
   it('fails when the installed playwright-core pins another revision or version than the record, naming what it found', () => {
@@ -272,11 +272,14 @@ describe('the browser build check (CI-18)', () => {
   });
 
   describe('--image, against a stand-in docker', () => {
-    /** A `docker run --rm --entrypoint <cat|sh> <ref> …` that runs in a stand-in image: /app and /ms-playwright. */
+    /**
+     * A `docker run --rm --user 0:0 --network none --entrypoint <cat|sh> <ref> …` that runs in a stand-in image: /app and
+     * /ms-playwright. Any other form is refused, so the check reads the image as root and offline.
+     */
     const DOCKER = `#!/usr/bin/env bash
 set -eu
-[ "$1 $2 $3" = "run --rm --entrypoint" ] || { echo "unexpected: $*" >&2; exit 97; }
-entrypoint=$4 ref=$5; shift 5
+[ "$1 $2 $3 $4 $5 $6 $7" = "run --rm --user 0:0 --network none --entrypoint" ] || { echo "unexpected: $*" >&2; exit 97; }
+entrypoint=$8 ref=$9; shift 9
 [ "$ref" = "registry.example/tp-worker:test" ] || { echo "no such image: $ref" >&2; exit 98; }
 cd "$IMAGE_ROOT/app"
 case "$entrypoint" in
@@ -327,6 +330,18 @@ exit 99
       // Every file the image holds, as --list prints it.
       const revisionDir = path.join(current.dir, 'image/ms-playwright', `chromium_headless_shell-${REVISION}`);
       expect(out.filter((line) => line.startsWith('  ')).map((line) => line.trim())).toEqual(treeLines(revisionDir, DIRS['chromium-headless-shell'].dir).lines);
+    });
+
+    it('reads the image as root with no network, and fails on a file the check cannot read, naming it', () => {
+      // The stand-in refuses any docker run without --user 0:0 --network none; this one also reports a file the script's
+      // find could not read, as it would for the image's runtime user on Chrome for Testing's mode-0600 deb.deps.
+      const env = image();
+      copyShell(REVISION);
+      expect(IMAGE_SCRIPT).toContain('find "$dir" -type f ! -readable -exec printf');
+      writeFileSync(path.join(current.dir, 'bin', 'docker'), DOCKER.replace('exec sh "$@" ;;', `sh "$@"; echo 'unreadable ${DIRS['chromium-headless-shell'].dir}/deb.deps'; exit 0 ;;`));
+      const { status, err } = check(['--image', 'registry.example/tp-worker:test'], env);
+      expect(status).toBe(1);
+      expect(err).toEqual([`The headless shell's build holds 1 entries that no tree SHA-256 covers (neither a regular file nor a directory, or a file the check cannot read): ${DIRS['chromium-headless-shell'].dir}/deb.deps (unreadable).`]);
     });
 
     it('fails when the image pins another revision, and when its build is not there', () => {

@@ -285,7 +285,8 @@ per build:
   `setup-container.sh`'s `CFT_BUILDS` rows equal.
 
 `node tools/ci/browser-build.ts` checks the builds Playwright installed (under `PLAYWRIGHT_BROWSERS_PATH`, else
-`~/.cache/ms-playwright`); `--image <ref>` checks a built worker image's headless shell inside the image; `--list`
+`~/.cache/ms-playwright`); `--image <ref>` checks a built worker image's headless shell inside the image, as root and offline (`docker run --rm
+--user 0:0 --network none`: the image's own user cannot read Chrome for Testing's mode-0600 `deb.deps` and `rpm.deps`); `--list`
 prints every file's line of each build it found. A build that fails the check has its every file's line printed
 anyway, two spaces in, as `--list` prints them, and on a tree difference at the recorded revision the message names
 every path that differs from the committed list, so one red CI run gives everything a new record needs.
